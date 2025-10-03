@@ -4,7 +4,7 @@ import torch
 
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq, AutoTokenizer
 
-from .reranking_evaluator import DEF_TOP_K, DEF_MAX_LENGTH
+from .reranking_evaluator import DEF_TOP_K, DEF_MAX_LENGTH, reranking_base_on_causallm_arch
 from .utils import mock_torch_cuda_is_available, mock_AwqQuantizer_validate_environment
 
 
@@ -452,9 +452,14 @@ def load_reranking_genai_pipeline(model_dir, device="CPU", ov_config=None):
 
 
 def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False):
+    try:
+        config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
+    except Exception:
+        config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+
     if use_hf:
         logger.info("Using HF Transformers API")
-        if 'qwen3' in model_id.lower():
+        if reranking_base_on_causallm_arch(config):
             from transformers import AutoModelForCausalLM
             model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True)
         else:
@@ -466,7 +471,7 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
     else:
         logger.info("Using Optimum API")
         model_cls = None
-        if 'qwen3' in model_id.lower():
+        if reranking_base_on_causallm_arch(config):
             from optimum.intel.openvino import OVModelForCausalLM
             model_cls = OVModelForCausalLM
         else:
@@ -478,7 +483,7 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
                 model_id, device=device, ov_config=ov_config, safety_checker=None,
             )
         except ValueError as e:
-            logger.error("Failed to load reranking pipeline. Details:\n", e)
+            logger.error("Failed to load reranking pipeline, an attempt will be made again with updated parameters. Details:\n", e)
             model = model_cls.from_pretrained(
                 model_id,
                 trust_remote_code=True,

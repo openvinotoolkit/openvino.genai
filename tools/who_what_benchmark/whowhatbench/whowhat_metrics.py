@@ -198,7 +198,7 @@ class RerankingSimilarity:
                 # documets on the same position of top_n is different
                 if i >= len(prediction_data) or int(score[0]) != int(prediction_data[i][0]):
                     per_query_text.append(math.inf)
-                    mean_per_query_text.append(abs(score[1] - prediction_data[i][1]))
+                    mean_per_query_text.append(len(gold_data))
                 else:
                     per_query_text.append(abs(score[1] - prediction_data[i][1]))
                     mean_per_query_text.append(abs(score[1] - prediction_data[i][1]))
