@@ -11,7 +11,10 @@ int main(int argc, char* argv[]) try {
     std::string prompt = argv[2];
     std::string device = "CPU";  // GPU can be used as well
 
-    ov::genai::LLMPipeline pipe(models_path, device);
+    ov::genai::SchedulerConfig cache_size;
+    cache_size.cache_size = 1000;
+    // cache_size.num_kv_blocks = 1000000;
+    ov::genai::LLMPipeline pipe(models_path, device, ov::genai::scheduler_config(cache_size));
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
     std::string result = pipe.generate(prompt, config);
