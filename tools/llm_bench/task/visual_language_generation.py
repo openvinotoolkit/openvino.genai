@@ -221,6 +221,15 @@ def run_visual_language_generation_genai(
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
     gen_config.ignore_eos = True
+    # Configure CDPruner
+    if args.get('pruning_ratio') is not None:
+        gen_config.pruning_ratio = args['pruning_ratio']
+        if gen_config.pruning_ratio > 0 and gen_config.pruning_ratio < 100:
+            if args.get('relevance_weight') is not None:
+                gen_config.relevance_weight = args['relevance_weight']
+    else:
+        # Disable CDPruner
+        gen_config.pruning_ratio = 0
     kwargs = {}
     if len(images) >= 1:
         kwargs["images"] = images

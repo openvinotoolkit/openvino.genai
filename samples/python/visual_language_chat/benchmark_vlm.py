@@ -42,6 +42,8 @@ def main():
     parser.add_argument("-n", "--num_iter", type=int, default=2, help="Number of iterations")
     parser.add_argument("-mt", "--max_new_tokens", type=int, default=20, help="Maximal number of new tokens")
     parser.add_argument("-d", "--device", type=str, default="CPU", help="Device")
+    parser.add_argument("--pruning_ratio", type=int, default=0, help="Percentage of visual tokens to prune (0 to disable)")
+    parser.add_argument("--relevance_weight", type=float, help="Relevance weight for the model")
 
     args = parser.parse_args()
 
@@ -68,6 +70,14 @@ def main():
 
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = args.max_new_tokens
+    config.pruning_ratio = args.pruning_ratio if args.pruning_ratio is not None else 0
+    if config.pruning_ratio > 0 and config.pruning_ratio < 100:
+        print(f'[CDPruner] Enabling CDPruner with {config.pruning_ratio}% visual token pruning')
+        if args.relevance_weight is not None:
+            config.relevance_weight = args.relevance_weight
+            print(f'[CDPruner] Setting relevance weight to {config.relevance_weight}')
+    else:
+        config.pruning_ratio = 0
 
     if device == "NPU":
         pipe = ov_genai.VLMPipeline(models_path, device)
