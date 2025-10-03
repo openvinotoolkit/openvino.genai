@@ -171,3 +171,27 @@ class ImageSimilarity:
 
     def evaluate(self, gt, prediction):
         return evaluate_image_similarity(self.processor, self.model, gt, prediction)
+
+
+class EmbedsSimilarity:
+    def evaluate(self, data_gold, data_prediction):
+        embeds_gold = data_gold["embeds_path"].values
+        embeds_prediction = data_prediction["embeds_path"].values
+
+        metric_per_gen = []
+        metric_per_passages = []
+        for gold, prediction in tqdm(
+            zip(embeds_gold, embeds_prediction), desc="Embeds Similarity evaluation"
+        ):
+            with open(gold, 'rb') as f:
+                gold_data = np.load(f)
+
+            with open(prediction, 'rb') as f:
+                prediction_data = np.load(f)
+
+            cos_sim = F.cosine_similarity(torch.from_numpy(gold_data), torch.from_numpy(prediction_data))
+            metric_per_passages.append(cos_sim.detach().numpy())
+            metric_per_gen.append(torch.mean(cos_sim).item())
+
+        metric_dict = {"similarity": np.mean(metric_per_gen)}
+        return metric_dict, {"similarity": metric_per_gen, "similarity_per_passages": metric_per_passages}

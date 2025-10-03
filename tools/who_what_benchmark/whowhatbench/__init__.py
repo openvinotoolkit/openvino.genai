@@ -5,6 +5,7 @@ from .text2image_evaluator import Text2ImageEvaluator
 from .visualtext_evaluator import VisualTextEvaluator
 from .im2im_evaluator import Image2ImageEvaluator
 from .inpaint_evaluator import InpaintingEvaluator
+from .embeddings_evaluator import EmbeddingsEvaluator
 
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "VisualTextEvaluator",
     "Image2ImageEvaluator",
     "InpaintingEvaluator",
+    "EmbeddingsEvaluator",
     "EVALUATOR_REGISTRY",
 ]
