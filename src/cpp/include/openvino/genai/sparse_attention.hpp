@@ -10,7 +10,8 @@ namespace ov::genai {
 enum class SparseAttentionMode {
     TRISHAPE, /** Sparse attention will be applied to prefill stage only, with a configurable number of start and recent
                *  cache tokens to be retained. A number of prefill tokens in the end of the prompt can be configured to
-               *  have dense attention applied to them instead, to retain generation accuracy.*/
+               *  have dense attention applied to them instead, to retain generation accuracy.
+               *  https://arxiv.org/pdf/2412.10319 */
     XATTENTION /** Following https://arxiv.org/pdf/2503.16428, introduces
                 *  importance score threshold-based block sparsity into the prefill stage.
                 *  Computing importance scores introduces an overhead, but the total inference
