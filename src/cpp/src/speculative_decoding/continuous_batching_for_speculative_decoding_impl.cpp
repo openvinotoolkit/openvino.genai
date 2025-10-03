@@ -14,6 +14,11 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::Contin
     bool is_validation_mode_enabled) {
     m_tokenizer = tokenizer;
     m_generation_config = generation_config;
+    if (m_generation_config.assistant_confidence_threshold == 0.f) {
+        if (m_generation_config.num_assistant_tokens == 0) {
+            m_generation_config.num_assistant_tokens = default_num_assistant_tokens;
+        }
+    }
     m_is_validation_mode_enabled = is_validation_mode_enabled;
     initialize_pipeline(model, scheduler_config, device, plugin_config);
 }
@@ -319,7 +324,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
         auto pipeline_metrics = get_metrics();
         if (num_generated_tokens > 0) {
             raw_perf_metrics.m_durations.emplace_back(generation_duration);
-            raw_perf_metrics.m_inference_durations[0] = MicroSeconds(pipeline_metrics.inference_duration);
+            raw_perf_metrics.m_inference_durations[0] += MicroSeconds(pipeline_metrics.inference_duration);
             raw_perf_metrics.m_batch_sizes.emplace_back(num_generated_tokens);
         }
 

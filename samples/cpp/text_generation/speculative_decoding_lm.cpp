@@ -13,10 +13,15 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
-    // Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded
-    // add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration
-    config.num_assistant_tokens = 5;
-    // add parameter to enable speculative decoding to generate candidates by draft_model while candidate probability is higher than `assistant_confidence_threshold`
+    // Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded.
+    // Add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration.
+    // NOTE: ContinuousBatching backend uses `num_assistant_tokens` as is. Stateful backend uses `num_assistant_tokens`'s copy as initial
+    // value and adjusts it based on recent number of accepted tokens. If `num_assistant_tokens` is not set, it defaults to `5` for both
+    // backends.
+    config.num_assistant_tokens = 4;
+    // Add parameter to enable speculative decoding to generate candidates by draft_model while candidate probability is higher than
+    // `assistant_confidence_threshold`.
+    // NOTE: `assistant_confidence_threshold` is supported only by ContinuousBatching backend.
     // config.assistant_confidence_threshold = 0.4;
 
     std::string main_model_path = argv[1];
@@ -25,6 +30,8 @@ int main(int argc, char* argv[]) try {
 
     // User can run main and draft model on different devices.
     // Please, set device for main model in `LLMPipeline` constructor and in in `ov::genai::draft_model` for draft.
+    // CPU, GPU and NPU can be used. Please be aware that GPU is performant only with Continuous Batching pipeline, so it is not recommented
+    // to use it in conjuction with NPU or in configuration when main model doesn't work in Paged Attention mode.
     std::string main_device = "CPU", draft_device = "CPU";
 
     ov::genai::LLMPipeline pipe(
