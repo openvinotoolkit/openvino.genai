@@ -34,6 +34,24 @@ std::pair<std::string, Any> generation_config(const GenerationConfig& config) {
     return {utils::CONFIG_ARG_NAME, Any::make<GenerationConfig>(config)};
 }
 
+inline void apply_eagle_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& properties, const std::filesystem::path& mapping_path) {
+    if (model->has_rt_info("eagle3_mode") && model->get_rt_info<bool>("eagle3_mode")) {
+        std::cout << "Eagle3 model is detected from rt_info. Applying eagle3_mode property." << std::endl;
+        properties["eagle3_mode"] = true;
+        OPENVINO_ASSERT(model->has_rt_info("hidden_layers_list"), "hidden layers list is not found in eagle3 model rt_info");
+        properties["hidden_layers_list"] = model->get_rt_info<std::vector<int>>("hidden_layers_list");
+        if (!mapping_path.empty()) {
+            properties["dt_mapping_path"] = mapping_path; // d2t mapping path
+        }
+    }
+}
+
+inline void apply_eagle_rt_info(std::shared_ptr<ov::Model>& model,
+                                ov::AnyMap& properties,
+                                const std::string& mapping_path) {
+    apply_eagle_rt_info(model, properties, std::filesystem::path(mapping_path));
+}
+
 std::pair<std::string, Any> draft_model(
     const std::filesystem::path& models_path,
     const std::string& device,
@@ -42,6 +60,7 @@ std::pair<std::string, Any> draft_model(
 
     std::filesystem::path openvino_model_name = "openvino_model.xml";
     auto model = utils::singleton_core().read_model(models_path / openvino_model_name, {}, plugin_config);
+    apply_eagle_rt_info(model, plugin_config, models_path);
     auto generation_config = utils::from_config_json_if_exists(models_path);
     auto tokenizer = ov::genai::Tokenizer(models_path);
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
@@ -57,6 +76,7 @@ std::pair<std::string, Any> draft_model(
     auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
 
     auto model = utils::singleton_core().read_model(model_str, weights_tensor);
+    apply_eagle_rt_info(model, plugin_config, model_str);
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
 }
 
