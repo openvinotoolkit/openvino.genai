@@ -10,7 +10,7 @@ import re
 
 @pytest.fixture(scope="module")
 def ov_pipe(request):
-    _, _, models_path = download_and_convert_model(request.param)
+    models_path = download_and_convert_model(request.param).models_path
     return create_ov_pipeline(models_path)
 
 class Person(BaseModel):
