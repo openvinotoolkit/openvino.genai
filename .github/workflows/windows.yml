@@ -75,7 +75,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-medium
+    runs-on: aks-linux-medium-st
     container:
       image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
       volumes:
@@ -101,7 +101,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-8-cores-16gb
+    runs-on: aks-win-8-cores-16gb-st
     env:
       CMAKE_GENERATOR: 'Ninja' # Ninja is the only Windows native generator supported by ccache
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
@@ -293,7 +293,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-8-cores-16gb
+    runs-on: aks-win-8-cores-16gb-st
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\ov
       SRC_DIR: ${{ github.workspace }}\src
@@ -452,7 +452,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-medium
+    runs-on: aks-linux-medium-st
     container:
       image: openvinogithubactions.azurecr.io/library/python:3.12-slim
       volumes:
@@ -500,7 +500,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-4-cores-8gb
+    runs-on: aks-win-4-cores-8gb-st
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/install/ov
       SRC_DIR: ${{ github.workspace }}/src
@@ -552,7 +552,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-4-cores-8gb
+    runs-on: aks-win-4-cores-8gb-st
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -642,7 +642,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-16-cores-32gb
+    runs-on: aks-win-16-cores-32gb-st
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
@@ -695,31 +695,31 @@ jobs:
             marker: 'llm'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM_samples.test }}
-            runner: 'aks-win-16-cores-32gb'
+            runner: 'aks-win-16-cores-32gb-st'
           - name: 'Whisper'
             marker: 'whisper'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Whisper_samples.test }}
-            runner: 'aks-win-4-cores-8gb'
+            runner: 'aks-win-4-cores-8gb-st'
           - name: 'dreamlike_anime_1_0'
             marker: 'dreamlike_anime_1_0'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Image_generation_samples.test }}
-            runner: 'aks-win-8-cores-32gb'
+            runner: 'aks-win-8-cores-32gb-st'
           - name: 'LCM_Dreamshaper_v7_int8_ov'
             marker: 'LCM_Dreamshaper_v7_int8_ov'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Image_generation_samples.test }}
-            runner: 'aks-win-8-cores-16gb'
+            runner: 'aks-win-8-cores-16gb-st'
           - name: 'Rag'
             marker: 'rag'
             cmd: 'tests/python_tests/samples'
-            runner: 'aks-win-4-cores-8gb'
+            runner: 'aks-win-4-cores-8gb-st'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG_samples.test }}
           - name: 'Speech generation'
             marker: 'speech_generation'
             cmd: 'tests/python_tests/samples'
-            runner: 'aks-win-4-cores-8gb'
+            runner: 'aks-win-4-cores-8gb-st'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
 
     needs: [ smart_ci, openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
@@ -821,7 +821,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-8-cores-16gb
+    runs-on: aks-win-8-cores-16gb-st
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
