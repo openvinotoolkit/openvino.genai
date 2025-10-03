@@ -131,6 +131,10 @@ public:
         m_load_time_ms += std::chrono::duration_cast<std::chrono::milliseconds>(stop_time - start_time).count();
     }
 
+    virtual void export_model(const std::filesystem::path& export_dir) {
+        OPENVINO_THROW("Export model is not implemented for this pipeline");
+    }
+
     virtual ~DiffusionPipeline() = default;
 
 protected:

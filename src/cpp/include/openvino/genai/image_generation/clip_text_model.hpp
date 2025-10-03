@@ -91,6 +91,14 @@ public:
 
     ov::Tensor get_output_tensor(const size_t idx);
 
+    /**
+     * @brief Exports compiled model to a specified directory.
+     * @param export_path A path to a directory to export compiled model to
+     *
+     * See @ref ov::genai::blob_path property to load previously exported model and for more details.
+     */
+    void export_model(const std::filesystem::path& export_path);
+
 private:
     Config m_config;
     AdapterController m_adapter_controller;
@@ -100,6 +108,8 @@ private:
 protected:
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
+
+    void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties);
 };
 
 } // namespace genai

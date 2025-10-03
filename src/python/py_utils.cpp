@@ -341,6 +341,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     } else if ((py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::StreamerBase>(py_obj) || py::isinstance<std::monostate>(py_obj)) && property_name == "streamer") {
         auto streamer = py::cast<ov::genai::pybind::utils::PyBindStreamerVariant>(py_obj);
         return ov::genai::streamer(pystreamer_to_streamer(streamer)).second;
+    } else if (py::isinstance(py_obj, py::module_::import("pathlib").attr("Path"))) {
+        return py::cast<std::filesystem::path>(py_obj);
     }
     OPENVINO_THROW(py::str(py_obj.get_type()), " isn't supported for argument ", property_name);
 }
