@@ -14,7 +14,7 @@ from .registry import register_evaluator, BaseEvaluator
 from .whowhat_metrics import EmbedsSimilarity
 
 
-DEF_MAX_LENGTH = 100
+DEF_MAX_LENGTH = 200
 
 
 def prepare_default_data(num_samples=None):
@@ -135,7 +135,7 @@ class EmbeddingsEvaluator(BaseEvaluator):
             with torch.no_grad():
                 outputs = model(**inputs)
 
-            if model.config.model_type == "qwen3" or kwargs.get("pooling_type", "last_token"):
+            if kwargs.get("pooling_type", "last_token"):
                 embeddings = last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
             elif kwargs.get("pooling_type", "mean"):
                 embeddings = mean_pooling(outputs.last_hidden_state, inputs["attention_mask"])

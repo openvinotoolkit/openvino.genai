@@ -437,15 +437,15 @@ def load_embedding_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwa
         exit(-1)
 
     config = openvino_genai.TextEmbeddingPipeline.Config()
-    if kwargs.get("pooling_type"):
-        if kwargs.get("pooling_type") == "mean":
+    if kwargs.get("embeds_pooling"):
+        if kwargs.get("embeds_pooling") == "mean":
             config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.MEAN
-        elif kwargs.get("pooling_type") == "last_token":
+        elif kwargs.get("embeds_pooling") == "last_token":
             config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.LAST_TOKEN
         else:
             config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.CLS
     config.max_length = DEF_MAX_LENGTH
-    config.normalize = kwargs.get("normalize", False)
+    config.normalize = kwargs.get("embeds_normalize", False)
     config.pad_to_max_length = True
 
     logger.info("Using OpenVINO GenAI TextEmbeddingPipeline API")

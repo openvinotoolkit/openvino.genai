@@ -204,10 +204,11 @@ def parse_args():
         help="Inference with empty adapters. Applicable for GenAI only.",
     )
     parser.add_argument(
-        "--embeds_pooling",
+        "--embeds_pooling_type",
         choices=["cls", "mean", "last_token"],
         default=None,
-        help="Pooling type CLS or MEAN. Applicable only for text embeddings")
+        help="Pooling type CLS or MEAN for encoders, LAST_TOKEN for decoders. "
+             "Different post-processing is applied depending on the padding side. Applicable only for text embeddings")
     parser.add_argument(
         "--embeds_normalize",
         action="store_true",
@@ -533,7 +534,7 @@ def create_evaluator(base_model, args):
                 test_data=prompts,
                 num_samples=args.num_samples,
                 gen_embeds_fn=genai_gen_embedding if args.genai else None,
-                pooling_type=args.embeds_pooling,
+                pooling_type=args.embeds_pooling_type,
                 normalize=args.embeds_normalize,
                 padding_side=args.embeds_padding_side,
             )
@@ -643,7 +644,7 @@ def main():
         else:
             kwargs["alphas"] = [1.0] * len(args.adapters)
     kwargs["empty_adapters"] = args.empty_adapters
-    kwargs["embeds_pooling"] = args.embeds_pooling
+    kwargs["embeds_pooling"] = args.embeds_pooling_type
     kwargs["embeds_normalize"] = args.embeds_normalize
     kwargs["embeds_padding_side"] = args.embeds_padding_side
 
