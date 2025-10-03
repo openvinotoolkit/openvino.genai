@@ -10,8 +10,8 @@ if(BUILD_TOKENIZERS)
     set_target_properties(openvino_tokenizers PROPERTIES
         # Generator expressions to disable appending a per-configuration subdirectory (Release, Debug).
         # ARCHIVE_OUTPUT is irrelevant. It's here just to keep all the artifacts in one place.
-        ARCHIVE_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
-        LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
-        RUNTIME_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
+        ARCHIVE_OUTPUT_DIRECTORY "$<1:${GENAI_ARCHIVE_OUTPUT_DIRECTORY}>"
+        LIBRARY_OUTPUT_DIRECTORY "$<1:${GENAI_LIBRARY_OUTPUT_DIRECTORY}>"
+        RUNTIME_OUTPUT_DIRECTORY "$<1:${GENAI_RUNTIME_OUTPUT_DIRECTORY}>"
     )
 endif()

@@ -24,117 +24,57 @@ FetchContent_MakeAvailable(indicators)
 
 # create main sample executable
 
-add_executable(text2image text2image.cpp imwrite.cpp)
-
-target_include_directories(text2image PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(text2image PRIVATE openvino::genai indicators::indicators)
-
-set_target_properties(text2image PROPERTIES
-    # Ensure out of box LC_RPATH on macOS with SIP
-    INSTALL_RPATH_USE_LINK_PATH ON)
-
-install(TARGETS text2image
-        RUNTIME DESTINATION samples_bin/
-        COMPONENT samples_bin
-        EXCLUDE_FROM_ALL)
+ov_add_sample(
+        NAME text2image
+        SOURCES text2image.cpp imwrite.cpp
+        DEPENDENCIES indicators::indicators openvino::genai
+        INCLUDE_DIRECTORIES ${CMAKE_BINARY_DIR})
 
 # create text2image concurrent sample executable
 
-add_executable(text2image_concurrency text2image_concurrency.cpp imwrite.cpp)
-
-target_include_directories(text2image_concurrency PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(text2image_concurrency PRIVATE openvino::genai indicators::indicators)
-
-set_target_properties(text2image_concurrency PROPERTIES
-    # Ensure out of box LC_RPATH on macOS with SIP
-    INSTALL_RPATH_USE_LINK_PATH ON)
-
-install(TARGETS text2image_concurrency
-        RUNTIME DESTINATION samples_bin/
-        COMPONENT samples_bin
-        EXCLUDE_FROM_ALL)
+ov_add_sample(
+        NAME text2image_concurrency
+        SOURCES text2image_concurrency.cpp imwrite.cpp
+        DEPENDENCIES indicators::indicators openvino::genai
+        INCLUDE_DIRECTORIES ${CMAKE_BINARY_DIR})
 
 # create LoRA sample executable
 
-add_executable(lora_text2image lora_text2image.cpp imwrite.cpp)
-
-target_include_directories(lora_text2image PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(lora_text2image PRIVATE openvino::genai indicators::indicators)
-
-set_target_properties(lora_text2image PROPERTIES
-    # Ensure out of box LC_RPATH on macOS with SIP
-    INSTALL_RPATH_USE_LINK_PATH ON)
-
-install(TARGETS lora_text2image
-        RUNTIME DESTINATION samples_bin/
-        COMPONENT samples_bin
-        EXCLUDE_FROM_ALL)
+ov_add_sample(
+        NAME lora_text2image
+        SOURCES lora_text2image.cpp imwrite.cpp
+        DEPENDENCIES indicators::indicators openvino::genai)
 
 # create heterogeneous_stable_diffusion sample executable
 
-add_executable(heterogeneous_stable_diffusion
-    heterogeneous_stable_diffusion.cpp
-    imwrite.cpp)
-
-target_include_directories(heterogeneous_stable_diffusion PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(heterogeneous_stable_diffusion PRIVATE openvino::genai indicators::indicators)
-
-set_target_properties(heterogeneous_stable_diffusion PROPERTIES
-    # Ensure out of box LC_RPATH on macOS with SIP
-    INSTALL_RPATH_USE_LINK_PATH ON)
-
-install(TARGETS heterogeneous_stable_diffusion
-        RUNTIME DESTINATION samples_bin/
-        COMPONENT samples_bin
-        EXCLUDE_FROM_ALL)
+ov_add_sample(
+        NAME heterogeneous_stable_diffusion
+        SOURCES heterogeneous_stable_diffusion.cpp imwrite.cpp
+        DEPENDENCIES indicators::indicators openvino::genai)
 
 # create image2image sample executable
 
-add_executable(image2image image2image.cpp load_image.cpp imwrite.cpp)
-
-target_include_directories(image2image PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}")
-target_link_libraries(image2image PRIVATE openvino::genai indicators::indicators)
-
-set_target_properties(image2image PROPERTIES
-    # Ensure out of box LC_RPATH on macOS with SIP
-    INSTALL_RPATH_USE_LINK_PATH ON)
-
-install(TARGETS image2image
-        RUNTIME DESTINATION samples_bin/
-        COMPONENT samples_bin
-        EXCLUDE_FROM_ALL)
+ov_add_sample(
+        NAME image2image
+        SOURCES image2image.cpp load_image.cpp imwrite.cpp
+        DEPENDENCIES indicators::indicators openvino::genai
+        INCLUDE_DIRECTORIES ${CMAKE_BINARY_DIR})
 
 # create image2image concurrent sample executable
 
-add_executable(image2image_concurrency image2image_concurrency.cpp load_image.cpp imwrite.cpp)
-
-target_include_directories(image2image_concurrency PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(image2image_concurrency PRIVATE openvino::genai indicators::indicators)
-
-set_target_properties(image2image_concurrency PROPERTIES
-    # Ensure out of box LC_RPATH on macOS with SIP
-    INSTALL_RPATH_USE_LINK_PATH ON)
-
-install(TARGETS image2image_concurrency
-        RUNTIME DESTINATION samples_bin/
-        COMPONENT samples_bin
-        EXCLUDE_FROM_ALL)
+ov_add_sample(
+        NAME image2image_concurrency
+        SOURCES image2image_concurrency.cpp load_image.cpp imwrite.cpp
+        DEPENDENCIES indicators::indicators openvino::genai
+        INCLUDE_DIRECTORIES ${CMAKE_BINARY_DIR})
 
 # create inpainting executable
 
-add_executable(inpainting inpainting.cpp load_image.cpp imwrite.cpp)
-
-target_include_directories(inpainting PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}")
-target_link_libraries(inpainting PRIVATE openvino::genai indicators::indicators)
-
-set_target_properties(inpainting PROPERTIES
-    # Ensure out of box LC_RPATH on macOS with SIP
-    INSTALL_RPATH_USE_LINK_PATH ON)
-
-install(TARGETS inpainting
-        RUNTIME DESTINATION samples_bin/
-        COMPONENT samples_bin
-        EXCLUDE_FROM_ALL)
+ov_add_sample(
+        NAME inpainting
+        SOURCES inpainting.cpp load_image.cpp imwrite.cpp
+        DEPENDENCIES indicators::indicators openvino::genai
+        INCLUDE_DIRECTORIES ${CMAKE_BINARY_DIR})
 
 # benchmark_image_gen
 
@@ -149,14 +89,8 @@ FetchContent_Declare(cxxopts
     URL_HASH SHA256=523175f792eb0ff04f9e653c90746c12655f10cb70f1d5e6d6d9491420298a08)
 FetchContent_MakeAvailable(cxxopts)
 
-add_executable(benchmark_image_gen benchmark_image_gen.cpp load_image.cpp imwrite.cpp)
-target_include_directories(benchmark_image_gen PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_BINARY_DIR}")
-target_link_libraries(benchmark_image_gen PRIVATE openvino::genai cxxopts::cxxopts indicators::indicators)
-set_target_properties(benchmark_image_gen PROPERTIES
-    # Ensure out of box LC_RPATH on macOS with SIP
-    INSTALL_RPATH_USE_LINK_PATH ON)
-
-install(TARGETS benchmark_image_gen
-        RUNTIME DESTINATION samples_bin/
-        COMPONENT samples_bin
-        EXCLUDE_FROM_ALL)
+ov_add_sample(
+        NAME benchmark_image_gen
+        SOURCES benchmark_image_gen.cpp load_image.cpp imwrite.cpp
+        DEPENDENCIES cxxopts::cxxopts indicators::indicators openvino::genai
+        INCLUDE_DIRECTORIES ${CMAKE_BINARY_DIR})
