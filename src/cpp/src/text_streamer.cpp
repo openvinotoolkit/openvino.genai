@@ -122,7 +122,39 @@ void TextStreamer::end() {
     return;
 }
 
-ov::genai::StreamerBase::~StreamerBase() = default;
+StreamerBase::~StreamerBase() = default;
+
+TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<ParserVariant> parsers) 
+    : TextStreamer(tokenizer, [this](std::string s) -> CallbackTypeVariant {
+                return this->write(s);
+    }) {
+        for (auto& parser : parsers) {
+            if (std::holds_alternative<std::string>(parser)) {
+                auto parser_name = std::get<std::string>(parser);
+                auto parser = IncrementalParserBase::get_parser(parser_name);
+                if (!parser) {
+                    OPENVINO_THROW("Parser with name " + parser_name + " is not registered");
+                }
+                m_parsers.push_back(parser);
+            } else {
+                m_parsers.push_back(std::get<std::shared_ptr<IncrementalParserBase>>(parser));
+            }
+        }
+    }
+
+CallbackTypeVariant TextParserStreamer::write(std::string message) {
+    for (auto& parser: m_parsers) {
+        if (parser->is_active()) {
+            message = parser->parse(m_parsed_message, m_text_buffer, message);
+        }
+        // Message can be modified inside parser, if parser for example extracted tool calling from message content
+        // but parser 
+        m_parsed_message["content"] += message;
+    }
+
+    m_text_buffer = message;
+    return write(m_parsed_message);
+}
 
 }  // namespace genai
 }  // namespace ov
