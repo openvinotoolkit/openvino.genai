@@ -26,6 +26,7 @@ from optimum.intel.openvino import (
     OVModelForSequenceClassification
 )
 from llm_bench_utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPipeline, OVChatGLMModel
+from dataclasses import dataclass, field
 
 
 def normalize_model_ids(model_ids_list):
@@ -49,27 +50,23 @@ def get_use_case_by_model_id(model_type, task=None):
     return None, None
 
 
+@dataclass
 class UseCase:
-    task = None
-    model_types = []
-    ov_cls = None
-    pt_cls = AutoModel
-    tokenizer_cls = AutoTokenizer
-
-    def __init__(self, model_types, ov_cls=None, pt_cls=None, tokenizer_cls=None):
-        self.model_types = model_types
-        self.ov_cls = ov_cls if ov_cls else self.ov_cls
-        self.pt_cls = pt_cls if pt_cls else self.pt_cls
-        self.tokenizer_cls = tokenizer_cls if tokenizer_cls else self.tokenizer_cls
+    task = ''
+    model_types: list[str] = field(default_factory=list)
+    ov_cls: type | None = None
+    pt_cls: type | None = AutoModel
+    tokenizer_cls: type = AutoTokenizer
 
     def eq_use_case(self, user_model_id, user_task=None):
         return ((user_task is None or user_task == self.task) and user_model_id in self.model_types)
 
 
+@dataclass
 class UseCaseImageGen(UseCase):
     task = "image_gen"
-    ov_cls = OVDiffusionPipeline
-    pt_cls = DiffusionPipeline
+    ov_cls: type | None = OVDiffusionPipeline
+    pt_cls: type | None = DiffusionPipeline
 
     TASK = {
         "text2img": {"name": 'text-to-image', "ov_cls": OVDiffusionPipeline},
@@ -78,60 +75,69 @@ class UseCaseImageGen(UseCase):
     }
 
 
+@dataclass
 class UseCaseVLM(UseCase):
     task = "visual_text_gen"
-    ov_cls = OVModelForVisualCausalLM
-    pt_cls = None
+    ov_cls: type | None = OVModelForVisualCausalLM
+    pt_cls: type | None = None
 
 
+@dataclass
 class UseCaseSpeech2Text(UseCase):
     task = "speech_to_text"
-    ov_cls = OVModelForSpeechSeq2Seq
-    pt_cls = None
+    ov_cls: type | None = OVModelForSpeechSeq2Seq
+    pt_cls: type | None = None
 
 
+@dataclass
 class UseCaseTextGen(UseCase):
     task = "text_gen"
-    ov_cls = OVModelForCausalLM
-    pt_cls = AutoModelForCausalLM
+    ov_cls: type | None = OVModelForCausalLM
+    pt_cls: type | None = AutoModelForCausalLM
 
 
+@dataclass
 class UseCaseCodeGen(UseCase):
     task = 'code_gen'
-    ov_cls = OVModelForCausalLM
-    pt_cls = AutoModelForCausalLM
+    ov_cls: type | None = OVModelForCausalLM
+    pt_cls: type | None = AutoModelForCausalLM
 
 
+@dataclass
 class UseCaseImageCls(UseCase):
     task = 'image_cls'
-    ov_cls = OVModelForCausalLM
-    pt_cls = AutoModelForCausalLM
+    ov_cls: type | None = OVModelForCausalLM
+    pt_cls: type | None = AutoModelForCausalLM
 
 
+@dataclass
 class UseCaseLDMSuperResolution(UseCase):
     task = 'ldm_super_resolution'
-    ov_cls = OVLDMSuperResolutionPipeline
-    pt_cls = LDMSuperResolutionPipeline
+    ov_cls: type | None = OVLDMSuperResolutionPipeline
+    pt_cls: type | None = LDMSuperResolutionPipeline
 
 
+@dataclass
 class UseCaseTextEmbeddings(UseCase):
     task = 'text_embed'
-    ov_cls = OVModelForFeatureExtraction
-    pt_cls = AutoModel
+    ov_cls: type | None = OVModelForFeatureExtraction
+    pt_cls: type | None = AutoModel
 
 
+@dataclass
 class UseCaseTextReranker(UseCase):
     task = 'text_rerank'
-    ov_cls = OVModelForSequenceClassification
-    pt_cls = AutoModelForSequenceClassification
+    ov_cls: type | None = OVModelForSequenceClassification
+    pt_cls: type | None = AutoModelForSequenceClassification
 
 
+@dataclass
 class UseCaseTextToSpeech(UseCase):
     task = 'text_to_speech'
-    ov_cls = OVModelForTextToSpeechSeq2Seq
-    pt_cls = SpeechT5ForTextToSpeech
-    tokenizer_cls = SpeechT5Processor
-    vocoder_cls = SpeechT5HifiGan
+    ov_cls: type | None = OVModelForTextToSpeechSeq2Seq
+    pt_cls: type | None = SpeechT5ForTextToSpeech
+    tokenizer_cls: type = SpeechT5Processor
+    vocoder_cls: type = SpeechT5HifiGan
 
 
 USE_CASES = {
@@ -141,7 +147,7 @@ USE_CASES = {
     'speech_to_text': [UseCaseSpeech2Text(['whisper'])],
     'image_cls': [UseCaseImageCls(['vit'])],
     'code_gen': [UseCaseCodeGen(["codegen", "codegen2", "stable-code"]),
-                 UseCaseCodeGen(['replit'], OVMPTModel),
+                 UseCaseCodeGen(['replit'], ov_cls=OVMPTModel),
                  UseCaseCodeGen(['codet5'], ov_cls=OVModelForSeq2SeqLM)],
     'text_gen': [UseCaseTextGen(['arcee', "decoder", "falcon", "glm", "aquila", "gpt2", "open-llama", "openchat", "neural-chat", "llama",
                                  "tiny-llama", "tinyllama", "opt", "opt-", "pythia", "pythia-", "stablelm", "stablelm-", "stable-zephyr-", "rocket-",
@@ -158,7 +164,7 @@ USE_CASES = {
     'ldm_super_resolution': [UseCaseLDMSuperResolution(['ldm-super-resolution'])],
     'text_embed': [UseCaseTextEmbeddings(["qwen3", "bge", "bert", "albert", "roberta", "xlm-roberta"])],
     'text_rerank': [UseCaseTextReranker(["bge", "bert", "albert", "roberta", "xlm-roberta"]),
-                    UseCaseTextReranker("qwen3", OVModelForCausalLM, AutoModelForCausalLM)],
+                    UseCaseTextReranker("qwen3", ov_cls=OVModelForCausalLM, pt_cls=AutoModelForCausalLM)],
     'text_to_speech': [UseCaseTextToSpeech(['speecht5'])],
 }
 

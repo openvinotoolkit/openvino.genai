@@ -300,6 +300,22 @@ def convert_ov_tokenizer(tokenizer_path):
     export_tokenizer(hf_tokenizer, tokenizer_path)
 
 
+def is_inpainting_model(model_args, use_case, model_index_data):
+    is_inpainting_by_class_name = "Inpaint" in model_index_data.get("_class_name", "")
+    all_inputs_for_inpainting_set = ((model_args.get("media") or model_args.get("images")) and model_args.get("mask_image"))
+    return (model_args.get("task", "") == use_case.TASK["inpainting"]["name"] or all_inputs_for_inpainting_set or is_inpainting_by_class_name)
+
+
+def is_image_to_image_model(model_args, use_case):
+    all_inputs_for_im2im_set = (model_args.get("media") or model_args.get("images"))
+    return model_args.get("task", "") == use_case.TASK["img2img"]["name"] or all_inputs_for_im2im_set
+
+
+def is_text_to_image_model(model_args, use_case):
+    # default case, if task is not set, this pipeline will be setup
+    return model_args.get("task", "") == use_case.TASK["text2img"]["name"] or not model_args.get("task")
+
+
 def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
     model_index_data = {}
     with open(str(model_path / "model_index.json"), 'r') as f:
@@ -307,10 +323,9 @@ def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
 
     image_gen_use_case = kwargs['use_case']
     model_class = image_gen_use_case.TASK["text2img"]["ov_cls"]
-    if (kwargs.get("task", "") == image_gen_use_case.TASK["inpainting"]['name'] or ((kwargs.get("media") or kwargs.get("images")) and kwargs.get("mask_image"))
-            or "Inpaint" in model_index_data.get("_class_name", "")):
+    if is_inpainting_model(kwargs, image_gen_use_case, model_index_data):
         model_class = image_gen_use_case.TASK["inpainting"]["ov_cls"]
-    elif (kwargs.get("task") == image_gen_use_case.TASK["img2img"]['name'] or kwargs.get("media") or kwargs.get("images")):
+    elif is_image_to_image_model(kwargs, image_gen_use_case):
         model_class = image_gen_use_case.TASK["img2img"]["ov_cls"]
 
     model_path = Path(model_path)
@@ -431,14 +446,13 @@ def create_genai_image_gen_model(model_path, device, ov_config, model_index_data
 
     image_gen_use_case = kwargs['use_case']
     image_gen_pipeline_class = openvino_genai.Text2ImagePipeline
-    if (kwargs.get("task") == image_gen_use_case.TASK["inpainting"]["name"] or ((kwargs.get("media") or kwargs.get("images")) and kwargs.get("mask_image"))
-            or "Inpaint" in model_index_data.get("_class_name", "")):
+    if is_inpainting_model(kwargs, image_gen_use_case, model_index_data):
         log.info("Selected Inpainting image generation pipeline")
         image_gen_pipeline_class = openvino_genai.InpaintingPipeline
-    elif kwargs.get("task") == image_gen_use_case.TASK["img2img"]["name"] or kwargs.get("media") or kwargs.get("images"):
+    elif is_image_to_image_model(kwargs, image_gen_use_case):
         log.info("Selected Image to Image image generation pipeline")
         image_gen_pipeline_class = openvino_genai.Image2ImagePipeline
-    elif kwargs.get("task") == image_gen_use_case.TASK["text2img"]["name"] or not kwargs.get("task"):
+    elif is_text_to_image_model(kwargs, image_gen_use_case):
         log.info("Selected Text to Image image generation pipeline")
     else:
         log.warning(f'Task {kwargs.get("task")} is not defined. Text to Image image generation pipeline will be used.')

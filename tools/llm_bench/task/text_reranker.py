@@ -53,9 +53,7 @@ class TextRerankerOptimum(CommonPipeline):
         )
         for i, ele in enumerate(inputs["input_ids"]):
             inputs["input_ids"][i] = prefix_tokens + ele + suffix_tokens
-        inputs = self.tokenizer.pad(inputs, padding=True, return_tensors="pt", max_length=max_length)
-        for key in inputs:
-            inputs[key] = inputs[key].to(self.model.device)
+        inputs = self.tokenizer.pad(inputs, padding=True, return_tensors="pt", max_length=max_length).to(self.model.device)
         return inputs
 
     @execution_time_in_sec
