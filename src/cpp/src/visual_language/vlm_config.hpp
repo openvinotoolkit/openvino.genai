@@ -76,6 +76,7 @@ public:
     std::string vision_start_token = "<|vision_start|>";
     /// @brief A placeholder for image embeddings in text for Qwen2VL model.
     std::string image_pad_token = "<|image_pad|>";
+    std::string video_pad_token = "<|video_pad|>";
     /// @brief A string token denoting end of vision embeddings for Qwen2VL model.
     std::string vision_end_token = "<|vision_end|>";
     

@@ -52,8 +52,11 @@ protected:
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
     std::vector<ov::genai::EncodedImage> m_history_images;
+    std::vector<std::vector<ov::genai::EncodedImage>> m_history_videos;
     std::vector<size_t> m_history_image_ids;
+    std::vector<size_t> m_history_video_ids;
     size_t m_image_id = 0;
+    size_t m_video_id = 0;
 
     float m_load_time_ms = 0.0f;
     // to access m_load_time_ms
@@ -95,6 +98,12 @@ public:
                                  const std::vector<ov::Tensor>& rgbs,
                                  GenerationConfig sampling_params);
 
+    GenerationHandle add_request(uint64_t request_id,
+                                 const std::string& prompt,
+                                 const std::vector<ov::Tensor>& images,
+                                 const std::vector<ov::Tensor>& videos,
+                                 GenerationConfig sampling_params);
+
     /**
      * Checks whether server (pipeline) has non-finished requests and step() should be called within a loop
      */
@@ -128,6 +137,12 @@ public:
              const std::vector<std::vector<ov::Tensor>>& rgbs,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer);
+
+    virtual std::vector<VLMDecodedResults> generate(const std::vector<std::string>& prompts,
+                                                    const std::vector<std::vector<ov::Tensor>>& images,
+                                                    const std::vector<std::vector<ov::Tensor>>& videos,
+                                                    const std::vector<GenerationConfig>& sampling_params,
+                                                    const StreamerVariant& streamer);
 
     /**
      * Starts chat with a given system prompt

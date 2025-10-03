@@ -10,6 +10,7 @@
 #include "visual_language/processor_config.hpp"
 #include "circular_buffer_queue.hpp"
 
+
 namespace ov::genai {
 /// @brief A pair describing image size.
 struct ImageSize {
@@ -57,6 +58,12 @@ struct EncodedImage {
     ResampledImage resampled_image;
 };
 
+struct NormlizedPrompt {
+    std::string unified_prompt;
+    std::vector<size_t> images_sequence;
+    std::vector<size_t> videos_sequence;
+};
+
 /// @brief A class used to infer embeddings of an image using
 /// ov::InferRequest and configured by ProcessorConfig.
 class VisionEncoder {
@@ -99,6 +106,11 @@ public:
     /// @return Resulting embeddings for the resized source image and
     /// its slices.
     virtual EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map = {}) = 0;
+
+    /// @brief Compute embeddings of a or mulitple video given
+    virtual std::vector<ov::genai::EncodedImage> encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map = {}) {
+        OPENVINO_THROW("The current model does not support 'video' input, please use 'images' instead.");
+    }
 
     /// @brief Gets processor config
     /// @return Processor config

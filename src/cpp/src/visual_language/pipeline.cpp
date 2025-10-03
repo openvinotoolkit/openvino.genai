@@ -46,6 +46,7 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     size_t m_max_kv_cache_size = std::numeric_limits<size_t>::max();
     bool m_is_npu = false;
     size_t m_image_id = 0;
+    size_t m_video_id = 0;
     ChatHistory m_history;
 
 public:
@@ -152,11 +153,20 @@ public:
 
     VLMDecodedResults generate(
         const std::string& prompt,
-        const std::vector<ov::Tensor>& rgbs,
+        const std::vector<ov::Tensor>& images,
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
+        return generate(prompt, images, {}, generation_config, streamer);
+    }
 
+    VLMDecodedResults generate(
+        const std::string& prompt,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) override {
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
@@ -177,22 +187,28 @@ public:
         generation_config.validate();
 
         if (m_is_npu) {
-            OPENVINO_ASSERT(rgbs.size() <= 1u, "Currently only batch size equal to 1 is supported for NPU device!");
+            OPENVINO_ASSERT(images.size() <= 1u, "Currently only batch size equal to 1 is supported for NPU device!");
             OPENVINO_ASSERT(generation_config.is_greedy_decoding() || generation_config.is_multinomial(),
                 "Currently only greedy and multinomial decoding are supported for NPU device!");
             OPENVINO_ASSERT(generation_config.num_return_sequences == 1u,
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
         }
 
-        const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
-        auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
+        auto encoded_images = m_inputs_embedder->encode_images(images);
+        std::vector<std::vector<ov::genai::EncodedImage>> encoded_videos;
+        for (auto& vd : videos) {
+            auto encoded_vd = m_inputs_embedder->encode_video({vd});
+            encoded_videos.push_back(encoded_vd);
+        }
+        auto norm_prompt = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
 
         if (m_is_chat_conversation) {
-            m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
-            unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
+            m_history.push_back({{"role", "user"}, {"content", norm_prompt.unified_prompt}});
+            norm_prompt.unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
 
-            for (size_t idx = 0; idx < image_sequence.size(); idx++) {
-                image_sequence[idx] -= m_image_id;
+            for (size_t idx = 0; idx < norm_prompt.images_sequence.size(); idx++) {
+                norm_prompt.images_sequence[idx] -= m_image_id;
+                norm_prompt.videos_sequence[idx] -= m_video_id;
             }
         }
         else {
@@ -203,9 +219,9 @@ public:
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         if (m_inputs_embedder->has_token_type_ids()) {
-            std::tie(inputs_embeds, token_type_ids) = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
+            std::tie(inputs_embeds, token_type_ids) = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(norm_prompt.unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, norm_prompt.images_sequence);
         } else {
-            inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
+            inputs_embeds = m_inputs_embedder->get_inputs_embeds(norm_prompt.unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, norm_prompt.images_sequence);
         }
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
@@ -272,6 +288,7 @@ public:
 
             if (finish_info.streaming_finish_status != ov::genai::GenerationStatus::CANCEL) {
                 m_image_id += encoded_images.size();
+                m_video_id += encoded_videos.size();
                 // Tail of chat template is missing in KV cache.
                 // Find the tail to concatenate it with the next input prompt.
                 m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
@@ -318,6 +335,7 @@ public:
         OPENVINO_ASSERT(!m_is_npu, "finish_chat() isn't supported in VLMPipeline for NPU device");
         m_is_chat_conversation = false;
         m_image_id = 0;
+        m_video_id = 0;
         // Resetting state may be slow.
         m_language.reset_state();
         m_language.get_tensor("attention_mask").set_shape({0, 0});
@@ -451,11 +469,21 @@ VLMPipeline::~VLMPipeline() = default;
 
 VLMDecodedResults VLMPipeline::generate(
     const std::string& prompt,
-    const std::vector<ov::Tensor>& rgbs,
+    const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& videos,
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(prompt, rgbs, generation_config, streamer);
+    return m_pimpl->generate(prompt, images, videos, generation_config, streamer);
+}
+
+VLMDecodedResults VLMPipeline::generate(
+    const std::string& prompt,
+    const std::vector<ov::Tensor>& images,
+    const GenerationConfig& generation_config,
+    const StreamerVariant& streamer
+) {
+    return m_pimpl->generate(prompt, images, generation_config, streamer);
 }
 
 VLMDecodedResults VLMPipeline::generate(
