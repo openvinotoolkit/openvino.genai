@@ -71,7 +71,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-medium-st
+    runs-on: aks-linux-medium
     container:
       image: 'openvinogithubactions.azurecr.io/openvino_provider:0.1.0'
       volumes:
@@ -143,7 +143,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-${{ matrix.build-type }}-cpack
           path: ${{ env.CCACHE_DIR }}
-        
+
       - name: Generate product manifest
         id: create_manifest
         uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
@@ -156,7 +156,7 @@ jobs:
 
       - name: Clean ccache stats
         run: ccache --zero-stats --show-config
-          
+
       - name: CMake Build
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
@@ -202,7 +202,7 @@ jobs:
           name: genai_tests_${{ matrix.build-type }}
           path: ${{ env.INSTALL_TESTS_DIR }}
           if-no-files-found: 'error'
-          
+
       - name: Upload manifest
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -260,7 +260,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-wheel
           path: ${{ env.CCACHE_DIR }}\
-          
+
       - name: Set CI environment
         id: create_manifest
         uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
