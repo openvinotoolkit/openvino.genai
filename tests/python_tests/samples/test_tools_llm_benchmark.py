@@ -7,7 +7,7 @@ import sys
 
 from conftest import SAMPLES_PY_DIR, convert_model, download_test_content
 from test_utils import run_sample
-from utils.hugging_face import download_and_convert_embeddings_models, download_and_convert_rerank_model
+from utils.hugging_face import download_and_convert_embeddings_models, download_and_convert_model
 
 convert_draft_model = convert_model
 download_mask_image = download_test_content
@@ -243,7 +243,8 @@ class TestBenchmarkLLM:
         ["-d", "cpu", "-n", "2", "--task", "text_embed", "--embedding_padding_side", "left", "--embedding_pooling", "last_token"],
         ["-d", "cpu", "-n", "2", "--task", "text_embed", "--embedding_padding_side", "left", "--embedding_pooling", "last_token", "--optimum"],
     ])
-    def test_python_tool_llm_benchmark_text_embeddings_qwen3(self, convert_model, sample_args):
+    def test_python_tool_llm_benchmark_text_embeddings_qwen3(self, download_and_convert_embeddings_models, sample_args):
+        convert_model, hf_tokenizer, models_path = download_and_convert_embeddings_models
         benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
         benchmark_py_command = [
             sys.executable, 
@@ -272,7 +273,7 @@ class TestBenchmarkLLM:
 
 
     @pytest.mark.samples
-    @pytest.mark.parametrize("download_and_convert_rerank_model", ["Qwen/Qwen3-Reranker-0.6B"], indirect=True)
+    @pytest.mark.parametrize("download_and_convert_model", ["Qwen/Qwen3-Reranker-0.6B"], indirect=True)
     @pytest.mark.parametrize("sample_args", [
         ["-d", "cpu", "-n", "1", "--task", "text_rerank", "--optimum"],
     ])
