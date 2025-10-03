@@ -203,7 +203,9 @@ public:
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         if (m_inputs_embedder->has_token_type_ids()) {
-            std::tie(inputs_embeds, token_type_ids) = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
+            ov::Tensor prompt_ids_tmp;
+            std::tie(inputs_embeds, prompt_ids_tmp) = m_inputs_embedder->get_inputs_embeds_with_prompt_ids(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
+            token_type_ids = m_inputs_embedder->get_inputs_token_type_ids(prompt_ids_tmp, perf_metrics);
         } else {
             inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
         }
