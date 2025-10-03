@@ -105,6 +105,8 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_create(const char* mo
  */
 OPENVINO_GENAI_C_EXPORTS void ov_genai_llm_pipeline_free(ov_genai_llm_pipeline* pipe);
 
+#ifndef OV_GENAI_STREAMMING_STATUS_DEFINED
+#define OV_GENAI_STREAMMING_STATUS_DEFINED
 typedef enum {
     OV_GENAI_STREAMMING_STATUS_RUNNING = 0,  // Continue to run inference
     OV_GENAI_STREAMMING_STATUS_STOP =
@@ -112,7 +114,10 @@ typedef enum {
     OV_GENAI_STREAMMING_STATUS_CANCEL = 2  // Stop generate, drop last prompt and all generated tokens from history, KV
                                            // cache includes history but last step
 } ov_genai_streamming_status_e;
+#endif // OV_GENAI_STREAMMING_STATUS_DEFINED
 
+#ifndef OV_GENAI_STREAMER_CALLBACK_DEFINED
+#define OV_GENAI_STREAMER_CALLBACK_DEFINED
 /**
  * @brief Structure for streamer callback functions with arguments.
  *
@@ -125,6 +130,7 @@ typedef struct {
         OPENVINO_C_API_CALLBACK* callback_func)(const char* str, void* args);  //!< Pointer to the callback function
     void* args;  //!< Pointer to the arguments passed to the callback function
 } streamer_callback;
+#endif // OV_GENAI_STREAMER_CALLBACK_DEFINED
 
 /**
  * @brief Generate results by ov_genai_llm_pipeline
