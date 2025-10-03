@@ -45,8 +45,7 @@ public:
                         "Continuous batching: execution device is expected to be single CPU / single GPU / multi GPUs");
         m_device = execution_devices[0];
         // set block_size depending on device
-        const size_t cpu_block_size = 32, gpu_block_size = 16;
-        m_block_size = all_gpu_device ? gpu_block_size : cpu_block_size;
+        const size_t cpu_block_size = 32, gpu_block_size = 16, gpu_block_size_xattn = 256;
 
         if (all_gpu_device) {
             m_context = m_request.get_compiled_model().get_context();
@@ -75,6 +74,13 @@ public:
             }
         }
 
+        bool has_xattention = false;
+        if ((m_key_shapes[0][2].get_length() == m_value_shapes[0][2].get_length()) &&
+            (m_key_shapes[0][3].get_length() == m_value_shapes[0][3].get_length()) &&
+            (m_key_shapes[0][2].get_length() == gpu_block_size_xattn)) {
+            has_xattention = true;        
+        }
+        m_block_size = all_gpu_device ? ( has_xattention ? gpu_block_size_xattn : gpu_block_size ) : cpu_block_size;
         m_num_decoder_layers = m_value_precisions.size();
         OPENVINO_ASSERT(m_num_decoder_layers == m_key_precisions.size(), "Invalid case: a different number of K and V caches in a LLM model");
     }
