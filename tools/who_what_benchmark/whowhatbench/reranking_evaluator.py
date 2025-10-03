@@ -17,6 +17,10 @@ DEFAULT_MAX_LENGTH = 200
 DEFAULT_MAX_LENGTH_QWEN = 8192
 
 
+def reranking_base_on_causallm_arch(config):
+    return config.model_type == "qwen3" and "Qwen3ForCausalLM" in config.architectures
+
+
 def preprocess_fn(example):
     return {
         "query": example["query"],
@@ -27,7 +31,7 @@ def preprocess_fn(example):
 def prepare_default_data(num_samples=None):
     DATASET_NAME = "microsoft/ms_marco"
     NUM_SAMPLES = num_samples if num_samples else 24
-    set_seed(70)
+    set_seed(42)
     default_dataset = datasets.load_dataset(
         DATASET_NAME, 'v2.1', split="test", streaming=True
     ).shuffle(42).take(NUM_SAMPLES)
@@ -65,7 +69,7 @@ class RerankingEvaluator(BaseEvaluator):
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
         self.similarity = RerankingSimilarity()
-        # self.last_cmp = None
+        self.last_cmp = None
 
     def get_generation_fn(self):
         return self.generation_fn
@@ -106,6 +110,9 @@ class RerankingEvaluator(BaseEvaluator):
             device = "cpu"
             if hasattr(model, "device"):
                 device = model.device
+
+            # post/pre processing for qwen models added according to transformers Qwen3-Embedding-0.6B model card:
+            # https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
             if model.config.model_type == "qwen3":
                 prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the'\
                          + 'Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
@@ -122,9 +129,7 @@ class RerankingEvaluator(BaseEvaluator):
                 )
                 for i, ele in enumerate(input_data["input_ids"]):
                     input_data["input_ids"][i] = prefix_tokens + ele + suffix_tokens
-                input_data = tokenizer.pad(input_data, padding=True, return_tensors="pt", max_length=DEFAULT_MAX_LENGTH_QWEN)
-                for key in input_data:
-                    input_data[key] = input_data[key].to(device)
+                input_data = tokenizer.pad(input_data, padding=True, return_tensors="pt", max_length=DEFAULT_MAX_LENGTH_QWEN).to(device)
             else:
                 tokenizer_kwargs = {"truncation": True, "padding": True, "max_length": DEFAULT_MAX_LENGTH}
                 inputs = [query] * len(passages)
@@ -133,9 +138,8 @@ class RerankingEvaluator(BaseEvaluator):
             with torch.no_grad():
                 outputs = model(**input_data).logits
 
-            if model.config.model_type == "qwen3":
+            if reranking_base_on_causallm_arch(model.config):
                 batch_scores = outputs[:, -1, :]
-
                 token_false_id = tokenizer.convert_tokens_to_ids("no")
                 token_true_id = tokenizer.convert_tokens_to_ids("yes")
                 true_vector = batch_scores[:, token_true_id]

@@ -7,6 +7,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelF
 from .embeddings_evaluator import DEFAULT_MAX_LENGTH as EMBED_DEFAULT_MAX_LENGTH
 from .reranking_evaluator import DEFAULT_MAX_LENGTH as RERANK_DEFAULT_MAX_LENGTH
 from .reranking_evaluator import DEFAULT_TOP_K as RERANK_DEFAULT_TOP_K
+from .reranking_evaluator import reranking_base_on_causallm_arch
 from .utils import mock_torch_cuda_is_available, mock_AwqQuantizer_validate_environment
 
 
