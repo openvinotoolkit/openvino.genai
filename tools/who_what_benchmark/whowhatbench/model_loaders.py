@@ -4,7 +4,7 @@ import torch
 
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq, AutoTokenizer
 
-from .embeddings_evaluator import DEF_MAX_LENGTH
+from .embeddings_evaluator import DEFAULT_MAX_LENGTH
 from .utils import mock_torch_cuda_is_available, mock_AwqQuantizer_validate_environment
 
 
@@ -437,15 +437,15 @@ def load_embedding_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwa
         exit(-1)
 
     config = openvino_genai.TextEmbeddingPipeline.Config()
-    if kwargs.get("pooling_type"):
-        if kwargs.get("pooling_type") == "mean":
+    if kwargs.get("embeds_pooling"):
+        if kwargs.get("embeds_pooling") == "mean":
             config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.MEAN
-        elif kwargs.get("pooling_type") == "last_token":
+        elif kwargs.get("embeds_pooling") == "last_token":
             config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.LAST_TOKEN
         else:
             config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.CLS
-    config.max_length = DEF_MAX_LENGTH
-    config.normalize = kwargs.get("normalize", False)
+    config.max_length = DEFAULT_MAX_LENGTH
+    config.normalize = kwargs.get("embeds_normalize", False)
     config.pad_to_max_length = True
 
     logger.info("Using OpenVINO GenAI TextEmbeddingPipeline API")
@@ -474,7 +474,7 @@ def load_embedding_model(model_id, device="CPU", ov_config=None, use_hf=False, u
                 model_id, device=device, ov_config=ov_config, safety_checker=None,
             )
         except ValueError as e:
-            logger.error("Failed to load inpaiting pipeline. Details:\n", e)
+            logger.error("Failed to load embedding pipeline. Details:\n", e)
             model = OVModelForFeatureExtraction.from_pretrained(
                 model_id,
                 trust_remote_code=True,

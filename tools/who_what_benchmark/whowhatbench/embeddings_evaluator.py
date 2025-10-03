@@ -14,7 +14,7 @@ from .registry import register_evaluator, BaseEvaluator
 from .whowhat_metrics import EmbedsSimilarity
 
 
-DEF_MAX_LENGTH = 100
+DEFAULT_MAX_LENGTH = 200
 
 
 def prepare_default_data(num_samples=None):
@@ -128,16 +128,16 @@ class EmbeddingsEvaluator(BaseEvaluator):
             device = "cpu"
             if hasattr(model, "device"):
                 device = model.device
-            tokenizer_kwargs = {'padding': 'max_length', 'max_length': DEF_MAX_LENGTH,
+            tokenizer_kwargs = {'padding': 'max_length', 'max_length': DEFAULT_MAX_LENGTH,
                                 'truncation': True, 'padding_side': kwargs.get('padding_side', 'right')}
             inputs = self.tokenizer(passages, return_tensors="pt", **tokenizer_kwargs).to(device)
 
             with torch.no_grad():
                 outputs = model(**inputs)
 
-            if model.config.model_type == "qwen3" or kwargs.get("pooling_type", "last_token"):
+            if kwargs.get("pooling_type") == "last_token":
                 embeddings = last_token_pool(outputs.last_hidden_state, inputs["attention_mask"])
-            elif kwargs.get("pooling_type", "mean"):
+            elif kwargs.get("pooling_type") == "mean":
                 embeddings = mean_pooling(outputs.last_hidden_state, inputs["attention_mask"])
             else:
                 embeddings = outputs.last_hidden_state[:, 0]
@@ -163,7 +163,7 @@ class EmbeddingsEvaluator(BaseEvaluator):
 
         embeds_paths = []
         passages = []
-        inptus = (
+        inputs = (
             data.values
             if self.num_samples is None
             else data.values[: self.num_samples]
@@ -172,7 +172,7 @@ class EmbeddingsEvaluator(BaseEvaluator):
         if not os.path.exists(result_dir):
             os.makedirs(result_dir)
 
-        for i, data in tqdm(enumerate(inptus), desc="Evaluate pipeline"):
+        for i, data in tqdm(enumerate(inputs), desc="Evaluate pipeline"):
             kwargs = {'padding_side': self.padding_side,
                       'pooling_type': self.pooling_type,
                       'normalize': self.normalize}
