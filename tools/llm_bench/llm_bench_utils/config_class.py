@@ -130,6 +130,15 @@ class UseCaseTextReranker(UseCase):
     ov_cls: type | None = OVModelForSequenceClassification
     pt_cls: type | None = AutoModelForSequenceClassification
 
+    def adjust_model_class_by_config(self, config):
+        if self.is_qwen_causallm_arch(config):
+            self.ov_cls = OVModelForCausalLM
+            self.pt_cls = AutoModelForCausalLM
+
+    @staticmethod
+    def is_qwen_causallm_arch(config):
+        return config.model_type == "qwen3" and "Qwen3ForCausalLM" in config.architectures
+
 
 @dataclass
 class UseCaseTextToSpeech(UseCase):
@@ -163,8 +172,7 @@ USE_CASES = {
                  UseCaseTextGen(["phi", "phi-"], ov_cls=OVModelForSeq2SeqLM)],
     'ldm_super_resolution': [UseCaseLDMSuperResolution(['ldm-super-resolution'])],
     'text_embed': [UseCaseTextEmbeddings(["qwen3", "bge", "bert", "albert", "roberta", "xlm-roberta"])],
-    'text_rerank': [UseCaseTextReranker(["bge", "bert", "albert", "roberta", "xlm-roberta"]),
-                    UseCaseTextReranker("qwen3", ov_cls=OVModelForCausalLM, pt_cls=AutoModelForCausalLM)],
+    'text_rerank': [UseCaseTextReranker(["qwen3", "bge", "bert", "albert", "roberta", "xlm-roberta"])],
     'text_to_speech': [UseCaseTextToSpeech(['speecht5'])],
 }
 

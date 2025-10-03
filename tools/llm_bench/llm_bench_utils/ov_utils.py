@@ -757,6 +757,7 @@ def create_text_embeddings_model(model_path, device, memory_data_collector, **kw
         if pooling_type == "cls":
             out_embd = token_embeddings[:, 0]
         elif pooling_type == 'last_token':
+            # from transformers Qwen3-Embedding-0.6B model card: https://huggingface.co/Qwen/Qwen3-Embedding-0.6B#transformers-usage
             left_padding = attention_mask[:, -1].sum() == attention_mask.shape[0]
             if left_padding:
                 out_embd = token_embeddings[:, -1]
@@ -1220,8 +1221,9 @@ def create_text_reranker_model(model_path: Path, device: str, memory_monitor: Me
                 f"GenAI pipeline loading failed with following error: {exp}"
                 "Benchmark will be switched to Optimum Intel pipeline realization"
             )
-
-        log.info("Selected Optimum Intel for benchmarking")
+    model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=trust_remote_code)
+    kwargs['use_case'].adjust_model_class_by_config(model_config)
+    log.info("Selected Optimum Intel for benchmarking")
     if kwargs.get("mem_consumption"):
         memory_monitor.start()
     start = time.perf_counter()

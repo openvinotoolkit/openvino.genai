@@ -265,9 +265,9 @@ class TestBenchmarkLLM:
     def test_python_tool_llm_benchmark_text_reranking(self, convert_model, sample_args):
         benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
         benchmark_py_command = [
-            sys.executable, 
-            benchmark_script, 
-            "-m", convert_model, 
+            sys.executable,
+            benchmark_script,
+            "-m", convert_model,
         ] + sample_args
         run_sample(benchmark_py_command)
 
@@ -277,11 +277,12 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize("sample_args", [
         ["-d", "cpu", "-n", "1", "--task", "text_rerank", "--optimum"],
     ])
-    def test_python_tool_llm_benchmark_text_reranking_qwen3(self, convert_model, sample_args):
+    def test_python_tool_llm_benchmark_text_reranking_qwen3(self, download_and_convert_model, sample_args):
+        _, _, models_path = download_and_convert_model
         benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
         benchmark_py_command = [
             sys.executable, 
             benchmark_script, 
-            "-m", convert_model, 
+            "-m", models_path,
         ] + sample_args
         run_sample(benchmark_py_command)

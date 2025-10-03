@@ -36,7 +36,10 @@ class TextRerankerOptimum(CommonPipeline):
 
         self.top_n = args.get("rerank_top_n")
         self.max_length = args.get("rerank_max_length")
+        self.use_case = args.get("use_case")
 
+    # according to transformers Qwen3-Embedding-0.6B model card:
+    # https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
     @execution_time_in_sec
     def tokenize_qwen(self, input_text):
         prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the'\
@@ -73,8 +76,12 @@ class TextRerankerOptimum(CommonPipeline):
 
     @execution_time_in_sec
     def generate(self, input_data: Any, **kwargs):
-        outputs = self.model(**input_data).logits
-        if self.model.config.model_type == "qwen3":
+        with torch.no_grad():
+            outputs = self.model(**input_data).logits
+
+        # according to transformers Qwen3-Embedding-0.6B model card:
+        # https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
+        if self.use_case.is_qwen_causallm_arch(self.model.config):
             batch_scores = outputs[:, -1, :]
 
             token_false_id = self.tokenizer.convert_tokens_to_ids("no")
@@ -187,7 +194,7 @@ class TextRerankerOptimum(CommonPipeline):
         return iter_data, []
 
     def run(self, input_text: str, iter_num: int, prompt_index: int, proc_id: int, bench_hook: object | None) -> tuple[dict, list]:
-        if self.model.config.model_type == "qwen3":
+        if self.use_case.is_qwen_causallm_arch(self.model.config):
             tokenized_input, tokenization_time = self.tokenize_qwen(input_text)
         else:
             tokenized_input, tokenization_time = self.tokenize(input_text)
@@ -453,6 +460,6 @@ def get_texts_from_file(args: dict) -> list:
             texts_list = [
                 "Intel Core Ultra processors incorporate an AI-optimized architecture that supports "
                 + "new user experiences and the next wave of commercial applications.",
-                "Intel Core Ultra processors are designed to provide enhanced performance and efficiency for a wide range of computing tasks.",
+                "Intel Core Ultra processors are designed to provide enhanced performance and efficiency for a wide range of computing tasks."
             ]
     return texts_list
