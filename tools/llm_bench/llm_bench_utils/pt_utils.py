@@ -7,6 +7,7 @@ import torch
 import json
 import logging as log
 from pathlib import Path
+from transformers import AutoConfig
 
 from llm_bench_utils.memory_monitor import MemMonitorWrapper
 import llm_bench_utils.hook_common as hook_common
@@ -274,8 +275,14 @@ def create_text_reranker_model(model_path: Path, device: str, memory_monitor: Me
         raise RuntimeError(f'==Failure ==: model path:{model_path} is not directory or directory is empty')
 
     log.info(f'Load text reranker model from model path:{model_path}')
-    model_class = kwargs['use_case'].pt_cls
-    token_class = kwargs['use_case'].tokenizer_cls
+    try:
+        model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=False)
+    except Exception:
+        model_config = AutoConfig.from_pretrained(model_path, trust_remote_code=True)
+    rerank_use_case = kwargs['use_case']
+    rerank_use_case.adjust_model_class_by_config(model_config)
+    model_class = rerank_use_case.pt_cls
+    token_class = rerank_use_case.tokenizer_cls
     if kwargs.get("mem_consumption"):
         memory_monitor.start()
     start = time.perf_counter()

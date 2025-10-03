@@ -203,7 +203,6 @@ def analyze_args(args):
         log.info(f"OV Config={model_args['config']}")
     elif model_framework == 'pt':
         log.info(f"PT Config={model_args['config']}")
-    # model_args['model_type'] = get_model_type(args)
     model_args['model_name'] = model_name
 
     cb_config = None
