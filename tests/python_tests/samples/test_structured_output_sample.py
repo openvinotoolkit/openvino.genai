@@ -95,6 +95,8 @@ def test_python_structured_output_sample(convert_model, prompt, expected_quantit
     ("Solve the equation 18x + 7 - 8 = 0 step by step.", "x = 0 or x = -3"),
 ])
 def test_cpp_structured_output_sample(convert_model, prompt, final_answer):
+    if sys.platform == 'darwin':
+            pytest.xfail("Ticket 173586")
     cpp_sample = os.path.join(SAMPLES_CPP_DIR, "structured_output_generation")
     cpp_command = [cpp_sample, convert_model]
 
