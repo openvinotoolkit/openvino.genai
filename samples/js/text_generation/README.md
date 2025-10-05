@@ -19,6 +19,13 @@ pip install huggingface-hub
 huggingface-cli download <model> --local-dir <output_folder>
 ```
 
+### Using GGUF models
+
+To run any samples with a GGUF model, simply provide the path to the .gguf file via the `model_dir` parameter.
+
+This capability is currently available in preview mode and supports a limited set of topologies, including SmolLM and Qwen2.5. For other models 
+and architectures, we still recommend converting the model to the IR format using the `optimum-intel` tool.
+
 ## Sample Descriptions
 ### Common information
 
@@ -73,6 +80,16 @@ Recommended models: meta-llama/Llama-2-7b-hf, etc
 - **Run Command:**
   ```bash
   node multinomial_causal_lm.js model_dir prompt
+  ```
+
+### 5. LLM ReAct Agent Sample (`react_sample`)
+- **Description:**
+Interactive ReAct Agent powered by OpenVINO.
+Recommended models: Qwen/Qwen2.5-3B-Instruct, Qwen/Qwen2.5-7B-Instruct
+- **Main Feature:** Real-time reasoning-action from user's input.
+- **Run Command:**
+  ```bash
+  node react_sample.js model_dir
   ```
 
 ### Troubleshooting

@@ -8,6 +8,7 @@
 #include <openvino/runtime/core.hpp>
 #include "openvino/genai/generation_config.hpp"
 #include "sampling/structured_output/structured_output_controller.hpp"
+#include "tokenizer/tokenizer_impl.hpp"
 #include "json_utils.hpp"
 #include "utils.hpp"
 
@@ -221,6 +222,7 @@ void StructuredOutputConfig::update_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "regex", regex);
     read_anymap_param(properties, "grammar", grammar);
     read_anymap_param(properties, "structural_tags_config", structural_tags_config);
+    read_anymap_param(properties, "compound_grammar", compound_grammar);
     read_anymap_param(properties, "backend", backend);
 }
 
@@ -229,6 +231,7 @@ size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
     if (max_new_tokens != SIZE_MAX) {
         return max_new_tokens;
     } else {
+        OPENVINO_ASSERT(max_length > prompt_length, "Internal error: generation_config.max_length should be bigger than number of prompt tokens");
         return max_length - prompt_length;
     }
 }
@@ -359,13 +362,42 @@ void StructuredOutputConfig::validate() const {
                     "Please recompile with -DENABLE_" + upper_name + "=ON option to enable it.");
 
     OPENVINO_ASSERT(
-        (json_schema.has_value() + regex.has_value() + grammar.has_value() + structural_tags_config.has_value()) == 1,
-        "Only one of json, regex, grammar or structural_tags_config should be set in StructuredOutputConfig, but got: ",
+        (json_schema.has_value() + regex.has_value() + grammar.has_value() + structural_tags_config.has_value() + compound_grammar.has_value()) == 1,
+        "Only one of json, regex, grammar, structural_tags_config, or compound_grammar should be set in StructuredOutputConfig, but got: ",
         (json_schema.has_value() ? "json=" + *json_schema +", " : ""),
         (regex.has_value() ? "regex=" + *regex + ", " : ""),
         (grammar.has_value() ? "grammar=" + *grammar : ""),
-        (structural_tags_config.has_value() ? "structural_tags_config=" + structural_tags_config->to_string() : "")
+        (structural_tags_config.has_value() ? "structural_tags_config=" + structural_tags_config->to_string() : ""),
+        (compound_grammar.has_value() ? "compound_grammar=" + std::visit([](const auto& g) -> std::string {
+            if constexpr (
+                std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<ov::genai::StructuredOutputConfig::Concat>> ||
+                std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<ov::genai::StructuredOutputConfig::Union>>
+            ) {
+                return g ? g->to_string() : "null";
+            } else {
+                return g.to_string();
+            }
+        }, *compound_grammar) : "")
     );
+}
+
+void StructuredOutputConfig::validate(Tokenizer& tokenizer) const {
+    validate();
+    OPENVINO_ASSERT(tokenizer.m_pimpl != nullptr, "Tokenizer not initialized properly");
+    tokenizer.m_pimpl->get_structured_output_controller()->validate_grammar(*this);
+}
+
+
+std::shared_ptr<ov::genai::StructuredOutputConfig::Concat>
+operator+(const ov::genai::StructuredOutputConfig::CompoundGrammar& lhs,
+          const ov::genai::StructuredOutputConfig::CompoundGrammar& rhs) {
+    return std::make_shared<ov::genai::StructuredOutputConfig::Concat>(lhs, rhs);
+}
+
+std::shared_ptr<ov::genai::StructuredOutputConfig::Union>
+operator|(const ov::genai::StructuredOutputConfig::CompoundGrammar& lhs,
+          const ov::genai::StructuredOutputConfig::CompoundGrammar& rhs) {
+    return std::make_shared<ov::genai::StructuredOutputConfig::Union>(lhs, rhs);
 }
 
 GenerationConfig beam_search() {

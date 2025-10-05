@@ -1,0 +1,26 @@
+{   
+    "num_kv_blocks": 300,
+    "dynamic_split_fuse": true,
+    "max_num_batched_tokens": 256,
+    "max_num_seqs": 256,
+    "use_cache_eviction": true,
+    "enable_prefix_caching": false,
+    "cache_eviction_config": {
+        "start_size": 32,
+        "recent_size": 32,
+        "max_cache_size": 128,
+        "aggregation_mode": "NORM_SUM",
+        "apply_rotation": false,
+        "snapkv_window_size": 8,
+        "kvcrush_config": {"budget": 0, "anchor_point_mode": "RANDOM", "rng_seed": 0}
+    },
+    "sparse_attention_config": {
+        "mode": "TRISHAPE",
+        "num_last_dense_tokens_in_prefill": 100, 
+        "num_retained_start_tokens_in_cache": 128, 
+        "num_retained_recent_tokens_in_cache": 1920, 
+        "xattention_threshold": 0.8, 
+        "xattention_block_size": 64, 
+        "xattention_stride": 8
+    }
+}

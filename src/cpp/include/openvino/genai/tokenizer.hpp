@@ -7,6 +7,7 @@
 #include <vector>
 #include <initializer_list>
 #include <filesystem>
+#include <optional>
 
 #include "openvino/runtime/tensor.hpp"
 #include "openvino/genai/visibility.hpp"
@@ -15,12 +16,15 @@
 namespace ov {
 namespace genai {
 
-using ChatHistory = std::vector<std::unordered_map<std::string, std::string>>;
+using ChatHistory = std::vector<ov::AnyMap>;
+using ToolDefinitions = std::vector<ov::AnyMap>;
+
 using Vocab = std::unordered_map<std::string, int64_t>;  // similar to huggingface .get_vocab() output format
 
 struct TokenizedInputs {
     ov::Tensor input_ids;
     ov::Tensor attention_mask;
+    std::optional<ov::Tensor> token_type_ids;
 };
 
 /**
@@ -34,10 +38,6 @@ struct TokenizedInputs {
  * 4. chat_template entry from rt_info section of ov::Model
  * 5. If the template is known to be not supported by GenAI, it's
  *     replaced with a simplified supported version.
- * 6. If the template was not in the list of not supported GenAI
- *     templates from (5), it's replaced with simplified_chat_template entry
- *     from rt_info section of ov::Model.
- * 7. Replace not supported instructions with equivalents.
 */
 class OPENVINO_GENAI_EXPORTS Tokenizer {
 public:
@@ -161,8 +161,9 @@ public:
     * @brief encode a single prompt
     * @param prompt std::string with input prompt
     * @param add_special_tokens whether to add special tokens
-    * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined, taken from IR.
+    * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined, taken from IR (where default value from original HF/GGUF model is stored).
     * @param pad_to_max_length either pad to max_length, or pad to the longest sequence in the batch. Default is false.
+    * @param padding_side side to pad, either "left" or "right". If not defined value is taken from IR (where default value from original HF/GGUF model is stored).
     * @return pair of [input_ids, attention_mask]
     */
     template <typename... Properties>
@@ -174,8 +175,9 @@ public:
     * @brief encode batch of prompts.
     * @param prompts vector storing batch of prompts
     * @param add_special_tokens whether to add special tokens
-    * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined, taken from IR.
+    * @param max_length optional maximum length to which output will be truncated and/or padded. If not defined, taken from IR (where default value from original HF/GGUF model is stored).
     * @param pad_to_max_length either pad to max_length, or pad to the longest sequence in the batch. Default is false.
+    * @param padding_side side to pad, either "left" or "right". If not defined value is taken from IR (where default value from original HF/GGUF model is stored).
     * @return pair of [input_ids, attention_mask]
     */
     template <typename... Properties>
@@ -241,20 +243,26 @@ public:
     }
 
     /**
-     * @brief Embeds input prompts with special tags for a chat scenario.
+     * @brief Applies a chat template to format chat history into a prompt string.
      *
      * For example, for Qwen family models, the prompt "1+1=" would be transformed into
      * <|im_start|>user\n1+1=<|im_end|>\n<|im_start|>assistant\n.
      *
-     * @param history A vector of maps, with chat history, e.g. [{"role": "user", "content": "prompt"}, ...].
+     * @param history A vector of chat messages, where each message is represented as a map, e.g. [{"role": "user", "content": "prompt"}, ...].
      * @param add_generation_prompt Whether to add an ending that indicates the start of generation.
-     * @param chat_template An optional chat template string, if not specified will be taken from the tokenizer.
-     * @return A string with the transformed and concatenated prompts from the chat history.
+     * @param chat_template An optional custom chat template string, if not specified will be taken from the tokenizer.
+     * @param tools An optional vector of tool definitions to be used in the chat template.
+     * @param extra_context An optional map of additional variables to be used in the chat template.
+     * @return A string with the formatted and concatenated prompts from the chat history.
      * @throws Exception if the chat template was unable to parse the input history.
      */
-    std::string apply_chat_template(ChatHistory history,
-                                    bool add_generation_prompt,
-                                    const std::string& chat_template = {}) const;
+    std::string apply_chat_template(
+        ChatHistory history,
+        bool add_generation_prompt,
+        const std::string& chat_template = {},
+        const ToolDefinitions& tools = {},
+        const ov::AnyMap& extra_context = {}
+    ) const;
 
     /// @brief Override a chat_template read from tokenizer_config.json.
     /// @param chat_template The new template to override with.
@@ -300,17 +308,27 @@ public:
      * @throws Exception if the detokenizer is not available.
      */
     const std::vector<std::string>& get_vocab_vector() const;
+    
+     /// @brief Check if the tokenizer supports paired input.
+    bool supports_paired_input() const;
 
     Tokenizer() = default;
     ~Tokenizer();
-private:
+    bool operator==(const Tokenizer& other) const {
+        return m_pimpl == other.m_pimpl;
+    }
     class TokenizerImpl;
+private:
+    friend class StructuredOutputConfig;
+    friend class Sampler;
     std::shared_ptr<TokenizerImpl> m_pimpl;
 };
 
+static constexpr ov::Property<bool> add_second_input{"add_second_input"};
 static constexpr ov::Property<bool> add_special_tokens{"add_special_tokens"};
 static constexpr ov::Property<bool> skip_special_tokens{"skip_special_tokens"};
 static constexpr ov::Property<bool> pad_to_max_length{"pad_to_max_length"};
+static constexpr ov::Property<std::string> padding_side{"padding_side"};
 
 }  // namespace genai
 }  // namespace ov

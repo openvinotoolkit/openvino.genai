@@ -23,6 +23,13 @@ pip install huggingface-hub
 huggingface-cli download <model> --local-dir <output_folder>
 ```
 
+### Using GGUF models
+
+To run any samples with a GGUF model, simply provide the path to the .gguf file via the `<MODEL_DIR>` parameter.
+
+This capability is currently available in preview mode and supports a limited set of topologies, including SmolLM and Qwen2.5. For other models 
+and architectures, we still recommend converting the model to the IR format using the `optimum-intel` tool.
+
 ## Sample Descriptions
 ### Common information
 Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html) to get common information about OpenVINO samples.
@@ -116,7 +123,7 @@ This approach reduces the need for multiple infer requests to the main model, en
 
 Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/speculative-sampling) that provides an example of LLM-powered text generation in Python.
 
-Recommended models: meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLlama-1.1B-Chat-v1.0 as draft model, etc
+Recommended models: meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLlama-1.1B-Chat-v1.0 as draft model. Note that GGUF models are not supported as draft models.
 - **Main Feature:** Reduces latency while generating high-quality text.
 - **Run Command:**
   ```bash
@@ -131,6 +138,16 @@ This sample demonstrates greedy decoding using Low-Rank Adaptation (LoRA) fine-t
   ```bash
   ./lora_greedy_causal_lm <MODEL_DIR> <ADAPTER_SAFETENSORS_FILE> "<PROMPT>"
   ```
+
+> [!NOTE]
+> ### LoRA `alpha` interpretation in OpenVINO GenAI
+> The OpenVINO GenAI implementation merges the traditional LoRA parameters into a **single effective scaling factor** used during inference.
+>
+> In this context, the `alpha` value already includes:
+> - normalization by LoRA rank (`alpha / rank`)
+> - any user-defined scaling factor (`weight`)
+>
+> This means `alpha` in GenAI should be treated as the **final scaling weight** applied to the LoRA update — not the raw `alpha` parameter from training.
 
 ### 8. Encrypted Model Causal LM (`encrypted_model_causal_lm`)
 - **Description:** 
@@ -168,7 +185,7 @@ For more information how performance metrics are calculated please follow [perfo
 - `-n, --num_iter` (default: `3`): Number of iterations.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
 
-### 11. Structured Output Sample (`structured_output_sample`)
+### 10. Structured Output Sample (`structured_output_sample`)
 - **Description:**  
 This sample demonstrates how to use OpenVINO GenAI to generate structured outputs, such as JSON, from text prompts. It showcases step-by-step reasoning, allowing a language model to break down tasks (e.g., solving equations) and present each step in a structured format.
 

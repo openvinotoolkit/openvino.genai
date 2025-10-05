@@ -3,14 +3,13 @@
 
 #pragma once
 
-#include <string>
-#include <iostream>
 #include <fstream>
-
+#include <iostream>
 #include <openvino/runtime/tensor.hpp>
+#include <string>
 
 template <typename T>
-void print_array(T * array, size_t size) {
+void print_array(T* array, size_t size) {
     std::cout << " => [ ";
     for (size_t i = 0; i < std::min(size, size_t(10)); ++i) {
         std::cout << array[i] << " ";
@@ -18,19 +17,62 @@ void print_array(T * array, size_t size) {
     std::cout << " ] " << std::endl;
 }
 
+template <typename T>
+void print_tensor(ov::Tensor tensor) {
+    const auto shape = tensor.get_shape();
+    const size_t rank = shape.size();
+    const auto* data = tensor.data<T>();
+
+    if (rank > 3) {
+        print_array(data, tensor.get_size());
+        return;
+    }
+
+    const size_t batch_size = shape[0];
+    const size_t seq_length = shape[1];
+
+    std::cout << " => [ \n";
+    for (size_t batch = 0; batch < batch_size; ++batch) {
+        std::cout << "  [ ";
+        const size_t batch_offset = batch * seq_length;
+
+        if (rank == 2) {
+            for (size_t j = 0; j < std::min(seq_length, size_t(10)); ++j) {
+                std::cout << data[batch_offset + j] << " ";
+            }
+            std::cout << "]\n";
+            continue;
+        }
+
+        const size_t hidden_size = shape[2];
+
+        for (size_t seq = 0; seq < seq_length; ++seq) {
+            if (seq != 0)
+                std::cout << "    ";
+            std::cout << "[ ";
+            const size_t seq_offset = (batch_offset + seq) * hidden_size;
+            for (size_t h = 0; h < std::min(hidden_size, size_t(10)); ++h) {
+                std::cout << data[seq_offset + h] << " ";
+            }
+            std::cout << "]\n";
+        }
+    }
+    std::cout << " ]" << std::endl;
+}
+
 inline void print_tensor(std::string name, ov::Tensor tensor) {
     std::cout << name;
     std::cout << " " << tensor.get_shape().to_string();
     if (tensor.get_element_type() == ov::element::i32) {
-        print_array(tensor.data<int>(), tensor.get_size());
+        print_tensor<int>(tensor);
     } else if (tensor.get_element_type() == ov::element::i64) {
-        print_array(tensor.data<int64_t>(), tensor.get_size());
+        print_tensor<int64_t>(tensor);
     } else if (tensor.get_element_type() == ov::element::f32) {
-        print_array(tensor.data<float>(), tensor.get_size());
+        print_tensor<float>(tensor);
     } else if (tensor.get_element_type() == ov::element::boolean) {
-        print_array(tensor.data<bool>(), tensor.get_size());
+        print_tensor<bool>(tensor);
     } else if (tensor.get_element_type() == ov::element::f16) {
-        print_array(tensor.data<ov::float16>(), tensor.get_size());
+        print_tensor<ov::float16>(tensor);
     }
 }
 

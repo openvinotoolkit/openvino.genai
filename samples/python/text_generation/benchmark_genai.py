@@ -29,7 +29,7 @@ def main():
     if len(prompt) == 0:
         raise RuntimeError(f'Prompt is empty!')
 
-    print(f'openvino runtime version: {get_version()}')
+    print(f'openvino runtime version: {get_version()}, genai version: {ov_genai.__version__}')
 
     # Perf metrics is stored in DecodedResults. 
     # In order to get DecodedResults instead of a string input should be a list.
@@ -41,12 +41,14 @@ def main():
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = args.max_new_tokens
 
-    scheduler_config = ov_genai.SchedulerConfig()
-    scheduler_config.enable_prefix_caching = False
-    scheduler_config.max_num_batched_tokens = sys.maxsize
+    if device == "NPU":
+        pipe = ov_genai.LLMPipeline(models_path, device)
+    else:
+        scheduler_config = ov_genai.SchedulerConfig()
+        scheduler_config.enable_prefix_caching = False
+        scheduler_config.max_num_batched_tokens = sys.maxsize
+        pipe = ov_genai.LLMPipeline(models_path, device, scheduler_config=scheduler_config)
 
-    pipe = ov_genai.LLMPipeline(models_path, device, scheduler_config=scheduler_config)
-    
     input_data = pipe.get_tokenizer().encode(prompt)
     prompt_token_size = input_data.input_ids.get_shape()[1]
     print(f"Prompt token size: {prompt_token_size}")
