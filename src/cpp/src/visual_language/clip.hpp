@@ -64,3 +64,7 @@ std::vector<clip_image_u8> get_image_patches(
 std::pair<int, int> select_best_resolution(const std::pair<int, int> & original_size, const std::vector<std::pair<int, int>> & possible_resolutions);
 
 clip_image_u8 resize_and_pad_image(const clip_image_u8& image, const std::pair<int, int>& target_resolution, uint8_t pad_value = 0);
+
+clip_image_u8 center_crop(const clip_image_u8& image, size_t crop_height, size_t crop_width);
+
+clip_image_f32 normalize_and_convert_to_chw(const clip_image_u8& img, const std::array<double, 3>& image_mean, const std::array<double, 3>& image_std);

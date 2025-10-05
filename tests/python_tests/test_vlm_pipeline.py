@@ -34,6 +34,7 @@ import platform
 import requests
 import sys
 import os
+import numpy as np
 import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import (
@@ -138,6 +139,47 @@ def cat_image(pytestconfig):
     return from_cache_or_download(pytestconfig, cat_url, "cat.jpg")
 
 
+def read_video_pyav(container, indices):
+    '''
+    Decode the video with PyAV decoder.
+    '''
+    frames = []
+    container.seek(0)
+    start_index = indices[0]
+    end_index = indices[-1]
+    for i, frame in enumerate(container.decode(video=0)):
+        if i > end_index:
+            break
+        if i >= start_index and i in indices:
+            frames.append(frame)
+    return np.stack([x.to_ndarray(format="rgb24") for x in frames])
+
+def resize_video(video, shape):
+    video_resized = []
+    for frame in video:
+        pil_image = PIL.Image.fromarray(frame)
+        resized = pil_image.resize(shape)
+        video_resized.append(np.array(resized))
+    return np.array(video_resized)
+
+@pytest.fixture(scope="module")
+def child_video(pytestconfig):
+    from huggingface_hub import hf_hub_download
+    import av
+    video_path = hf_hub_download(repo_id="raushan-testing-hf/videos-test", filename="sample_demo_1.mp4", repo_type="dataset")
+    container = av.open(video_path)
+
+    # get 10 frames from video
+    total_frames = container.streams.video[0].frames
+    indices = np.arange(0, total_frames, total_frames / 10).astype(int)
+
+    return read_video_pyav(container, indices)
+
+@pytest.fixture(scope="module")
+def child_video_32x32(child_video):
+    return resize_video(child_video, (32, 32))
+
+
 @pytest.fixture(scope="module")
 def cat_tensor(cat_image):
     return openvino.Tensor(cat_image)
@@ -148,12 +190,18 @@ def car_tensor(pytestconfig):
     car_url = "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg"
     return openvino.Tensor(from_cache_or_download(pytestconfig, car_url, "car.jpg"))
 
+@pytest.fixture(scope="module")
+def child_video_32x32_tensor(child_video_32x32):
+    return openvino.Tensor(child_video_32x32)
 
 @pytest.fixture(scope="module")
 def handwritten_tensor(pytestconfig):
     handwritten_url = "https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350"
     return openvino.Tensor(from_cache_or_download(pytestconfig, handwritten_url, "handwritten.png"))
 
+video_model_ids = [
+    "katuni4ka/tiny-random-llava-next-video",
+]
 
 model_ids = [
     "katuni4ka/tiny-random-minicpmv-2_6",
@@ -165,7 +213,8 @@ model_ids = [
     "katuni4ka/tiny-random-qwen2vl",
     "katuni4ka/tiny-random-qwen2.5-vl",
     "katuni4ka/tiny-random-gemma3",
-    "qnguyen3/nanoLLaVA"
+    "qnguyen3/nanoLLaVA",
+    *video_model_ids
 ]
 
 # On macOS, transformers<4.52 is required, but this causes gemma3 to fail
@@ -251,6 +300,56 @@ def test_vlm_continuous_batching_generate_vs_add_request(config, cat_tensor):
 
     for idx, images in enumerate(image_links_list):
         handle = cb_pipe.add_request(idx, prompts[0], images, generation_config)
+        while handle.get_status() != GenerationStatus.FINISHED:
+            cb_pipe.step()
+        outputs = handle.read_all()
+        for out_idx, output in enumerate(outputs):
+            text = tokenizer.decode(output.generated_ids)
+            assert text == res_generate[idx].texts[out_idx]
+            assert abs(output.score - res_generate[idx].scores[out_idx]) < eps
+            assert (
+                output.finish_reason == GenerationFinishReason.STOP
+                or output.finish_reason == GenerationFinishReason.LENGTH
+            )
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("model_id", video_model_ids)
+@pytest.mark.parametrize("config", configs)
+def test_vlm_continuous_batching_generate_vs_add_request_video(model_id, config, cat_tensor, child_video_32x32_tensor):
+    scheduler_config = SchedulerConfig()
+    models_path = get_ov_model(model_id)
+    ov_pipe = VLMPipeline(
+        models_path,
+        "CPU",
+        scheduler_config=scheduler_config,
+        **get_default_llm_properties(),
+    )
+    generation_config = config
+    generation_config.max_new_tokens = 30
+    eps = 0.001
+    images_list = [[], [cat_tensor], [cat_tensor]]
+    videos_list = [[child_video_32x32_tensor], [child_video_32x32_tensor], []]
+
+    res_generate = []
+    for idx, images in enumerate(images_list):
+        videos = videos_list[idx]
+        res_generate.append(
+            ov_pipe.generate(
+                prompts[0], images=images, videos=videos, generation_config=generation_config
+            )
+        )
+
+    cb_pipe = ContinuousBatchingPipeline(
+        models_path,
+        scheduler_config=scheduler_config,
+        device="CPU",
+        properties=get_default_llm_properties(),
+    )
+    tokenizer = cb_pipe.get_tokenizer()
+
+    for idx, images in enumerate(images_list):
+        videos = videos_list[idx]
+        handle = cb_pipe.add_request(idx, prompts[0], images=images, videos=videos, generation_config=generation_config)
         while handle.get_status() != GenerationStatus.FINISHED:
             cb_pipe.step()
         outputs = handle.read_all()
@@ -363,6 +462,73 @@ def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
     ov_pipe.finish_chat()
     gc.collect()
 
+@pytest.fixture(scope="module", params=[
+    pytest.param(
+        [[[], [], []], [[], [ "child_video_32x32_tensor"], []]],
+        id="Video on second iteration"
+    ),
+    pytest.param(
+        [[["cat_tensor"], [], []], [["child_video_32x32_tensor"], [], ["child_video_32x32_tensor"]]],
+        id="Image + video on first iteration, image on third iteration"
+    ),
+    pytest.param(
+        [[["cat_tensor", "car_tensor", "handwritten_tensor"], []], [["child_video_32x32_tensor"], ["child_video_32x32_tensor"]]],
+        id="3 images + video on first iteration, video on second iteration"
+    ),
+])
+def iteration_images_and_videos(request):
+    params = []
+    for param in request.param:
+        params.append([[request.getfixturevalue(image) for image in bundle] for bundle in param])
+    return params
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("model_id", video_model_ids)
+@pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
+@pytest.mark.parametrize("backend", attention_backend)
+def test_vlm_pipeline_chat_with_video(model_id, system_message, iteration_images_and_videos, backend):
+    def streamer(word: str) -> bool:
+        nonlocal result_from_streamer
+        result_from_streamer.append(word)
+        return False
+
+    models_path = get_ov_model(model_id)
+    ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
+    generation_config = ov_pipe.get_generation_config()
+    generation_config.max_new_tokens = 30
+    generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
+
+    ov_pipe.start_chat(system_message)
+    iteration_images = iteration_images_and_videos[0]
+    iteration_videos = iteration_images_and_videos[1]
+
+    images = iteration_images[0]
+    videos = iteration_videos[0]
+
+    result_from_streamer = []
+    res = ov_pipe.generate(
+        prompts[0],
+        images=images,
+        videos=videos,
+        generation_config=generation_config,
+        streamer=streamer,
+    )
+    assert res.texts[0] == "".join(result_from_streamer)
+
+    for idx, image_set in enumerate(iteration_images[1:]):
+        result_from_streamer = []
+        videos = iteration_videos[idx]
+        res = ov_pipe.generate(
+            prompts[1],
+            images=image_set,
+            videos=videos,
+            generation_config=generation_config,
+            streamer=streamer,
+        )
+        assert res.texts[0] == "".join(result_from_streamer)
+
+    ov_pipe.finish_chat()
+    gc.collect()
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("backend", attention_backend)
@@ -522,7 +688,7 @@ def test_vlm_npu_no_image():
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("backend", attention_backend)
-def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, image_sequence, backend):
+def test_vlm_pipeline_chat_streamer_cancel_second_generate(request, model_id, image_sequence, backend):
     callback_questions = [
         "Explain in details 1+1=",
         "Why is the Sun yellow?",
@@ -549,10 +715,15 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, image_seque
     generation_config.ignore_eos = True
     generation_config.do_sample = False
 
+    images_and_videos = {"images": image_sequence}
+    if model_id in video_model_ids:
+        video = request.getfixturevalue("child_video_32x32_tensor")
+        images_and_videos["videos"] = video
+
     results_with_cancel = ""
     ov_pipe.start_chat()
     results_with_cancel += ov_pipe.generate(
-        callback_questions[0], images=image_sequence, generation_config=generation_config
+        callback_questions[0], **images_and_videos, generation_config=generation_config
     ).texts[0]
     # doesn't add to results_with_cancel as it should be complitely removed from the history
     ov_pipe.generate(
@@ -562,17 +733,17 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, image_seque
         streamer=streamer,
     )
     results_with_cancel += ov_pipe.generate(
-        callback_questions[2], images=image_sequence, generation_config=generation_config
+        callback_questions[2], **images_and_videos, generation_config=generation_config
     ).texts[0]
     ov_pipe.finish_chat()
 
     results = ""
     ov_pipe.start_chat()
     results += ov_pipe.generate(
-        callback_questions[0], images=image_sequence, generation_config=generation_config
+        callback_questions[0], **images_and_videos, generation_config=generation_config
     ).texts[0]
     results += ov_pipe.generate(
-        callback_questions[2], images=image_sequence, generation_config=generation_config
+        callback_questions[2], **images_and_videos, generation_config=generation_config
     ).texts[0]
     ov_pipe.finish_chat()
 
@@ -581,10 +752,10 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(model_id, image_seque
     results = ""
     ov_pipe.start_chat()
     results += ov_pipe.generate(
-        callback_questions[0], images=image_sequence, generation_config=generation_config
+        callback_questions[0], **images_and_videos, generation_config=generation_config
     ).texts[0]
     results += ov_pipe.generate(
-        callback_questions[2], images=image_sequence, generation_config=generation_config
+        callback_questions[2], **images_and_videos, generation_config=generation_config
     ).texts[0]
     ov_pipe.finish_chat()
 
@@ -645,7 +816,7 @@ def test_start_chat_clears_history_cb_api(image_sequence):
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", model_ids)
 @pytest.mark.parametrize("backend", attention_backend)
-def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, image_sequence, backend):
+def test_vlm_pipeline_chat_streamer_cancel_first_generate(request, model_id, image_sequence, backend):
     callback_questions = [
         "Why is the Sun yellow?",
         "1+1=",
@@ -674,10 +845,15 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, image_sequen
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
     generation_config.do_sample = False
 
+    images_and_videos = {"images": image_sequence}
+    if model_id in video_model_ids:
+        video = request.getfixturevalue("child_video_32x32_tensor")
+        images_and_videos["videos"] = video
+
     ov_pipe.start_chat()
     _ = ov_pipe.generate(
         callback_questions[0],
-        images=image_sequence,
+        **images_and_videos,
         generation_config=generation_config,
         streamer=streamer,
     )
@@ -686,7 +862,7 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(model_id, image_sequen
     streamer_generation_result = ""
     _ = ov_pipe.generate(
         callback_questions[0],
-        images=image_sequence,
+        **images_and_videos,
         generation_config=generation_config,
         streamer=streamer,
     )
@@ -731,6 +907,7 @@ tag_inserted_by_template = [
     ("katuni4ka/tiny-random-qwen2.5-vl", lambda idx: "<|vision_start|><|image_pad|><|vision_end|>"),
     ("katuni4ka/tiny-random-gemma3", lambda idx: "<start_of_image>"),
     ("qnguyen3/nanoLLaVA", lambda idx: "<image>\n"),
+    ("katuni4ka/tiny-random-llava-next-video", lambda idx: "<image>"),
 ]
 
 image_id_ignorant =  tag_inserted_by_template + [
@@ -953,19 +1130,25 @@ def cat_image_32x32(cat_image):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize(
-    "model_id, image_name, backend",
+    "model_id, image_name, video_name, backend",
     [
-        pytest.param("katuni4ka/tiny-random-qwen2vl", "cat_image_336x336", "SDPA"),
-        pytest.param("katuni4ka/tiny-random-qwen2vl", "cat_image_336x336", "PA"),
-        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", "SDPA"),
-        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
-        pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", "SDPA", marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) if sys.platform == "darwin" else pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", "SDPA"),
-        pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", "PA", marks=pytest.mark.xfail(reason="CVS-171180")),
-        pytest.param("qnguyen3/nanoLLaVA", "cat_image_384x384", "SDPA"),
-        pytest.param("qnguyen3/nanoLLaVA", "cat_image_384x384", "PA"),
+        pytest.param("katuni4ka/tiny-random-qwen2vl", "cat_image_336x336", None, "SDPA"),
+        pytest.param("katuni4ka/tiny-random-qwen2vl", "cat_image_336x336", None, "PA"),
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", None, "SDPA"),
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", None, "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
+        pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", None, "SDPA", marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) if sys.platform == "darwin" else pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", None, "SDPA"),
+        pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", None, "PA", marks=pytest.mark.xfail(reason="CVS-171180")),
+        pytest.param("qnguyen3/nanoLLaVA", "cat_image_384x384", None, "SDPA"),
+        pytest.param("qnguyen3/nanoLLaVA", "cat_image_384x384", None, "PA"),
+        pytest.param("katuni4ka/tiny-random-llava-next-video", "cat_image_336x336", None, "SDPA"),
+        pytest.param("katuni4ka/tiny-random-llava-next-video", "cat_image_336x336", None, "PA"),
+        pytest.param("katuni4ka/tiny-random-llava-next-video", None, "child_video_32x32", "SDPA"),
+        pytest.param("katuni4ka/tiny-random-llava-next-video", None, "child_video_32x32", "PA"),
+        pytest.param("katuni4ka/tiny-random-llava-next-video", "cat_image_336x336", "child_video_32x32", "SDPA"),
+        pytest.param("katuni4ka/tiny-random-llava-next-video", "cat_image_336x336", "child_video_32x32", "PA"),
     ],
 )
-def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, backend):
+def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, video_name, backend):
     class NanollavaProcessorWrapper:
         def __init__(self, processor, config, model_dtype):
             self.processor = processor
@@ -982,25 +1165,37 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, ba
             trust_remote_code=True)
         return NanollavaProcessorWrapper(hf_model.process_images, hf_model.config, hf_model.dtype)
 
-
-    resized_image = request.getfixturevalue(image_name)
-
     prompt = "Describe this image."
+    resized_image = None
+    resized_video = None
+    conversation = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text"},
+            ],
+        }
+    ]
+    if video_name is not None:
+        prompt = "Describe this video."
+        resized_video = request.getfixturevalue(video_name)
+        conversation[0]["content"] = [{"type": "video"}] + conversation[0]["content"]
+    if image_name is not None:
+        resized_image = request.getfixturevalue(image_name)
+        if video_name is not None:
+            prompt = "Describe this image and video."
+        else:
+            prompt = "Describe this image."
+        conversation[0]["content"] = [{"type": "image"}] + conversation[0]["content"]
+
+    conversation[0]["content"][-1]["text"] = prompt
+
     max_new_tokens = 100
 
     model_path = get_ov_model(model_id)
 
     # Run the model with optimum-intel
     model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
-    conversation = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "image"},
-                {"type": "text", "text": prompt},
-            ],
-        }
-    ]
     tokenizer = None
     if model.config.model_type == "llava-qwen2":
         processor = get_nanollava_processor()
@@ -1009,15 +1204,18 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, ba
         from optimum.intel.openvino.modeling_visual_language import MODEL_TYPE_TO_CLS_MAPPING
         preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type].preprocess_inputs
         inputs = preprocess_inputs(prompt, resized_image, processor, tokenizer, config=model.config)
-
     else:
         processor = transformers.AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
         # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
         if model.config.model_type == "gemma3":
             processor.tokenizer.add_bos_token = False
+        params = {}
+        if resized_image is not None:
+            params["images"] = [resized_image]
+        if resized_video is not None:
+            params["videos"] = [resized_video]
         templated_prompt = processor.apply_chat_template(conversation, add_generation_prompt=True)
-        inputs = processor(text=[templated_prompt], images=[resized_image], padding=True, return_tensors="pt")
-
+        inputs = processor(text=[templated_prompt], **params, padding=True, return_tensors="pt")
 
     output_ids = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
     input_ids = inputs["input_ids"] if isinstance(inputs, dict) else inputs.input_ids
@@ -1032,7 +1230,12 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, ba
 
     # Run the model with GenAI
     vlm = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
-    genai_output = vlm.generate(prompt, images=[openvino.Tensor(resized_image)], max_new_tokens=max_new_tokens, do_sample=False)
+    params = {}
+    if resized_image is not None:
+        params["images"] = [openvino.Tensor(resized_image)]
+    if resized_video is not None:
+        params["videos"] = [openvino.Tensor(resized_video)]
+    genai_output = vlm.generate(prompt, **params, max_new_tokens=max_new_tokens, do_sample=False)
     genai_text = genai_output.texts[0]
 
     assert optimum_text == genai_text
