@@ -1,6 +1,7 @@
 import subprocess  # nosec B404
 import pytest
 import logging
+import sys
 from test_cli_image import run_wwb
 from constants import WWB_CACHE_PATH
 
@@ -16,6 +17,8 @@ logger = logging.getLogger(__name__)
     ],
 )
 def test_vlm_basic(model_id, model_type):
+    if sys.platform == 'darwin':
+        pytest.xfail("Ticket 173169")
     GT_FILE = WWB_CACHE_PATH / "gt.csv"
     MODEL_PATH = WWB_CACHE_PATH.joinpath(model_id.replace("/", "--"))
     MODEL_PATH = MODEL_PATH if MODEL_PATH.exists() else model_id

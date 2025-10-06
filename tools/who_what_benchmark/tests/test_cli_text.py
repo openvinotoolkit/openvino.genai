@@ -53,6 +53,7 @@ def teardown_module():
         shutil.rmtree(cache_dir)
 
 
+@pytest.mark.skipif((sys.platform == "darwin"), reason='173169')
 def test_text_target_model():
     run_wwb([
         "--base-model",
@@ -92,6 +93,8 @@ def test_text_gt_data(tmp_path):
 
 
 def test_text_output_directory(tmp_path):
+    if sys.platform == 'darwin':
+        pytest.xfail("Ticket 173169")
     temp_file_name = tmp_path / "gt.csv"
     output = run_wwb([
         "--base-model",
@@ -126,6 +129,8 @@ def test_text_output_directory(tmp_path):
 
 
 def test_text_verbose():
+    if sys.platform == 'darwin':
+        pytest.xfail("Ticket 173169")
     output = run_wwb([
         "--base-model",
         base_model_path,
@@ -190,6 +195,8 @@ def test_text_hf_model(model_id, tmp_path):
 
 
 def test_text_genai_model():
+    if sys.platform == 'darwin':
+        pytest.xfail("Ticket 173169")
     output = run_wwb([
         "--base-model",
         base_model_path,
@@ -206,6 +213,8 @@ def test_text_genai_model():
 
 
 def test_text_genai_cb_model(tmp_path):
+    if sys.platform == 'darwin':
+        pytest.xfail("Ticket 173169")
     config_path = tmp_path / "config.json"
     with open(config_path, "w") as f:
         config = {
