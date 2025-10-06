@@ -66,25 +66,6 @@ nlohmann::ordered_json* JsonContainer::get_json_value_ptr(AccessMode mode) const
 }
 
 JsonContainer& JsonContainer::operator=(const JsonContainer& other) {
-    // if (this != &other) {
-    //     m_json = other.m_json;
-    //     m_path = other.m_path;
-    // }
-    // return *this;
-
-    // Hybrid approach
-    // if (this != &other) {
-    //     if (!m_path.empty()) {
-    //         // This is a path-based access - do value assignment
-    //         nlohmann::ordered_json other_value = other.to_json();
-    //         auto json_value_ptr = get_json_value_ptr(AccessMode::Write);
-    //         *json_value_ptr = other_value;
-    //     } else {
-    //         // This is a root container - do standard assignment
-    //         m_json = other.m_json;
-    //         m_path = other.m_path;
-    //     }
-    // }
     if (this != &other) {
         auto json_value_ptr = get_json_value_ptr(AccessMode::Write);
         *json_value_ptr = other.to_json();
