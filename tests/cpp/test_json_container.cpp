@@ -43,7 +43,24 @@ TEST(JsonContainerTest, constructors) {
     EXPECT_EQ(any_map_json["key1"].get_string(), TEST_STRING);
     EXPECT_DOUBLE_EQ(any_map_json["key2"].get_double(), DOUBLE_VALUE);
 
-    // From JSON string
+    // Copy constructor
+    JsonContainer original({{"key", "value"}});
+    JsonContainer copied(original);
+    EXPECT_EQ(copied, original);
+    copied["key"] = "modified";
+    EXPECT_NE(copied, original);
+    EXPECT_EQ(original["key"].get_string(), "value");
+    EXPECT_EQ(copied["key"].get_string(), "modified");
+
+    // Move constructor
+    JsonContainer source({{"temp", "data"}});
+    std::string source_json_string = source.to_json_string();
+    JsonContainer target(std::move(source));
+    EXPECT_EQ(target["temp"].get_string(), "data");
+    EXPECT_EQ(target.to_json_string(), source_json_string);
+}
+
+TEST(JsonContainerTest, from_json_string) {
     std::string json_str = R"({"name": "test", "count": 10, "flag": false, "data": [1, 2, 3]})";
     JsonContainer json_from_string = JsonContainer::from_json_string(json_str);
     EXPECT_TRUE(json_from_string.is_object());
@@ -56,28 +73,11 @@ TEST(JsonContainerTest, constructors) {
     EXPECT_EQ(json_from_string["data"][0].get_int(), 1);
     EXPECT_EQ(json_from_string["data"][1].get_int(), 2);
     EXPECT_EQ(json_from_string["data"][2].get_int(), 3);
-
     EXPECT_THROW(JsonContainer::from_json_string("invalid json string"), ov::Exception);
 }
 
-TEST(JsonContainerTest, copy_move_equality) {
-    // Copy
+TEST(JsonContainerTest, equality) {
     JsonContainer original({{"key", "value"}});
-    
-    JsonContainer copied(original);
-    EXPECT_EQ(copied, original);
-    
-    copied["key"] = "modified";
-    EXPECT_NE(copied, original);
-    EXPECT_EQ(original["key"].get_string(), "value");
-    EXPECT_EQ(copied["key"].get_string(), "modified");
-
-    // Move
-    JsonContainer source({{"temp", "data"}});
-    JsonContainer moved = std::move(source);
-    EXPECT_EQ(moved["temp"].get_string(), "data");
-    
-    // Equality
     JsonContainer different({{"other", "value"}});
     EXPECT_NE(original, different);
     JsonContainer original_same_structure({{"key", "value"}});
@@ -85,6 +85,87 @@ TEST(JsonContainerTest, copy_move_equality) {
     JsonContainer nested = JsonContainer::from_json_string(R"({"nested": {"key": "value"}})");
     JsonContainer original_same_structure_different_path = nested["nested"];
     EXPECT_EQ(original, original_same_structure_different_path);
+}
+
+TEST(JsonContainerTest, copy) {
+    JsonContainer source({{"key", "value"}});
+    
+    // Copy assignment
+    JsonContainer copy_target;
+    copy_target = source;
+    EXPECT_EQ(copy_target, source);
+    EXPECT_EQ(copy_target["key"].get_string(), "value");
+    copy_target["key"] = "modified";
+    copy_target["new_key"] = "added";
+    EXPECT_NE(copy_target, source);
+    EXPECT_EQ(source["key"].get_string(), "value");
+    EXPECT_EQ(copy_target["key"].get_string(), "modified");
+    EXPECT_FALSE(source.contains("new_key"));
+
+    // Copy assignment to path
+    JsonContainer root({{"section1", JsonContainer({{"value", "old"}})},
+                        {"section2", JsonContainer({{"value", "other"}})}});
+    JsonContainer other_section({{"value", "new_content"}, {"extra", "data"}});
+    root["section1"] = other_section;
+    EXPECT_EQ(root["section1"]["value"].get_string(), "new_content");
+    EXPECT_EQ(root["section1"]["extra"].get_string(), "data");
+    EXPECT_EQ(root["section2"]["value"].get_string(), "other");
+    other_section["value"] = "modified_source";
+    EXPECT_EQ(root["section1"]["value"].get_string(), "new_content");
+
+    // Copy method (explicit)
+    JsonContainer original({{"nested", JsonContainer({{"key", "value"}})}});
+    JsonContainer copied = original.copy();
+    EXPECT_EQ(copied, original);
+    EXPECT_EQ(copied["nested"]["key"].get_string(), "value");
+    copied["nested"]["key"] = "modified";
+    copied["new_section"] = JsonContainer({{"data", "new"}});
+    EXPECT_EQ(original["nested"]["key"].get_string(), "value");
+    EXPECT_FALSE(original.contains("new_section"));
+    EXPECT_NE(copied, original);
+}
+
+TEST(JsonContainerTest, share) {
+    JsonContainer original({{"key", "value"}});
+
+    JsonContainer shared = original.share();
+    EXPECT_EQ(shared, original);
+    EXPECT_EQ(shared["key"].get_string(), "value");
+    shared["key"] = "modified";
+    shared["new_key"] = "added";
+    EXPECT_EQ(original["key"].get_string(), "modified");
+    EXPECT_EQ(original["new_key"].get_string(), "added");
+    EXPECT_EQ(shared, original);
+    JsonContainer other({{"key", "other_value"}});
+    shared = other;
+    EXPECT_EQ(shared["key"].get_string(), "other_value");
+    EXPECT_EQ(original["key"].get_string(), "other_value");
+    EXPECT_FALSE(shared.contains("new_key"));
+    EXPECT_FALSE(original.contains("new_key"));
+
+    // Sharing chains
+    JsonContainer root = JsonContainer::from_json_string(R"({"level1": {"level2": {"data": "original"}}})");
+    JsonContainer shared_root = root.share();
+    JsonContainer shared_level1 = root["level1"].share();
+    JsonContainer shared_level2 = root["level1"]["level2"].share();
+    EXPECT_EQ(shared_root["level1"]["level2"]["data"].get_string(), "original");
+    EXPECT_EQ(shared_level1["level2"]["data"].get_string(), "original");
+    EXPECT_EQ(shared_level2["data"].get_string(), "original");
+    shared_level2["data"] = "modified";
+    shared_level2["new_data"] = "added";
+    EXPECT_EQ(root["level1"]["level2"]["data"].get_string(), "modified");
+    EXPECT_EQ(shared_root["level1"]["level2"]["data"].get_string(), "modified");
+    EXPECT_EQ(shared_level1["level2"]["data"].get_string(), "modified");
+    EXPECT_EQ(shared_level2["new_data"].get_string(), "added");
+}
+
+TEST(JsonContainerTest, move_assignment) {
+    JsonContainer source({{"key", "value"}});
+    JsonContainer move_target({{"old", "data"}});
+    move_target = std::move(source);
+    EXPECT_EQ(move_target["key"].get_string(), "value");
+    EXPECT_FALSE(move_target.contains("old"));
+    EXPECT_EQ(move_target.to_json_string(), source.to_json_string());
 }
 
 TEST(JsonContainerTest, primitive_values) {
