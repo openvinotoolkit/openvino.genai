@@ -47,7 +47,6 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
     std::optional<AdapterConfig> adapters;
     auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
     OPENVINO_ASSERT(!adapters, "Adapters are not currently supported for Video Generation Pipeline.");
-
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, *filtered_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Flux Transformer 2D model");
     m_request = compiled_model.create_infer_request();
