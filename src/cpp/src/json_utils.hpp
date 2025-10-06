@@ -19,12 +19,20 @@ namespace ov {
 namespace genai {
 namespace utils {
 
+template<typename, typename = void>
+constexpr bool is_std_array = false;
+
+template<typename T, std::size_t N>
+constexpr bool is_std_array<std::array<T, N>> = true;
+
 /// @brief reads value to param if T argument type is aligned with value stores in json
 /// if types are not compatible leave param unchanged
 template <typename T>
 void read_json_param(const nlohmann::json& data, const std::string& name, T& param) {
     if (data.contains(name)) {
-        if (data[name].is_number() || data[name].is_boolean() || data[name].is_string() || data[name].is_object()) {
+        if (data[name].is_number() || data[name].is_boolean() || data[name].is_string() || data[name].is_object()
+            || (is_std_array<T> && data[name].is_array())
+        ) {
             param = data[name].get<T>();
         }
     } else if (name.find(".") != std::string::npos) {
