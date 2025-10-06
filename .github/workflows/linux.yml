@@ -61,8 +61,6 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           skip_when_only_listed_labels_set: 'GH Pages Docs'
           skip_when_only_listed_files_changed: '*.md,*.rst,*.png,*.jpg,*.svg,*.gif'
-          labeler_config: genai_repository/.github/labeler.yml
-          components_config: genai_repository/.github/components.yml
 
       - name: Show affected components
         run: echo "${{ toJSON(steps.smart_ci.outputs.affected_components) }}"
