@@ -3030,10 +3030,13 @@ class TextEmbeddingPipeline:
                 Instruction to use for embedding a query.
             embed_instruction (str, optional):
                 Instruction to use for embedding a document.
+            padding_side (str, optional):
+                Side to use for padding "left" or "right"
         """
         embed_instruction: str | None
         normalize: bool
         pad_to_max_length: bool | None
+        padding_side: str | None
         pooling_type: TextEmbeddingPipeline.PoolingType
         query_instruction: str | None
         @typing.overload
@@ -3065,10 +3068,13 @@ class TextEmbeddingPipeline:
           CLS : First token embeddings
         
           MEAN : The average of all token embeddings
+        
+          LAST_TOKEN : Last token embeddings
         """
         CLS: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.CLS: 0>
+        LAST_TOKEN: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.LAST_TOKEN: 2>
         MEAN: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.MEAN: 1>
-        __members__: typing.ClassVar[dict[str, TextEmbeddingPipeline.PoolingType]]  # value = {'CLS': <PoolingType.CLS: 0>, 'MEAN': <PoolingType.MEAN: 1>}
+        __members__: typing.ClassVar[dict[str, TextEmbeddingPipeline.PoolingType]]  # value = {'CLS': <PoolingType.CLS: 0>, 'MEAN': <PoolingType.MEAN: 1>, 'LAST_TOKEN': <PoolingType.LAST_TOKEN: 2>}
         def __eq__(self, other: typing.Any) -> bool:
             ...
         def __getstate__(self) -> int:
@@ -3220,9 +3226,9 @@ class Tokenizer:
     @typing.overload
     def __init__(self, tokenizer_model: str, tokenizer_weights: openvino._pyopenvino.Tensor, detokenizer_model: str, detokenizer_weights: openvino._pyopenvino.Tensor, **kwargs) -> None:
         ...
-    def apply_chat_template(self, history: collections.abc.Sequence[collections.abc.Mapping[str, str]], add_generation_prompt: bool, chat_template: str = '') -> str:
+    def apply_chat_template(self, history: collections.abc.Sequence[typing.Any], add_generation_prompt: bool, chat_template: str = '', tools: collections.abc.Sequence[typing.Any] = [], extra_context: typing.Any = {}) -> str:
         """
-        Embeds input prompts with special tags for a chat scenario.
+        Applies a chat template to format chat history into a prompt string.
         """
     @typing.overload
     def decode(self, tokens: collections.abc.Sequence[typing.SupportsInt], skip_special_tokens: bool = True) -> str:
