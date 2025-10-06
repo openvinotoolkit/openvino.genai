@@ -12,7 +12,7 @@ import datasets
 import numpy as np
 
 
-DEF_TOP_K = 5
+DEFAULT_TOP_K = 5
 DEFAULT_MAX_LENGTH = 200
 DEFAULT_MAX_LENGTH_QWEN = 8192
 
@@ -114,22 +114,31 @@ class RerankingEvaluator(BaseEvaluator):
             # post/pre processing for qwen models added according to transformers Qwen3-Embedding-0.6B model card:
             # https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
             if model.config.model_type == "qwen3":
-                prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the'\
+                prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the '\
                          + 'Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
                 suffix = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
                 task = "Given a web search query, retrieve relevant passages that answer the query"
-                prefix_tokens = tokenizer.encode(prefix, add_special_tokens=False)
-                suffix_tokens = tokenizer.encode(suffix, add_special_tokens=False)
                 pairs = []
-                for doc in passages:
-                    pairs.append(f"<Instruct>: {task}\n<Query>: {query}\n<Document>: {doc}")
-                input_data = tokenizer(
-                    pairs, padding=False, truncation="longest_first", return_attention_mask=False,
-                    max_length=DEFAULT_MAX_LENGTH_QWEN - len(prefix_tokens) - len(suffix_tokens)
-                )
-                for i, ele in enumerate(input_data["input_ids"]):
-                    input_data["input_ids"][i] = prefix_tokens + ele + suffix_tokens
-                input_data = tokenizer.pad(input_data, padding=True, return_tensors="pt", max_length=DEFAULT_MAX_LENGTH_QWEN).to(device)
+                if reranking_base_on_causallm_arch(model.config):
+                    for doc in passages:
+                        pairs.append(f"<Instruct>: {task}\n<Query>: {query}\n<Document>: {doc}")
+                    prefix_tokens = tokenizer.encode(prefix, add_special_tokens=False)
+                    suffix_tokens = tokenizer.encode(suffix, add_special_tokens=False)
+                    input_data = tokenizer(
+                        pairs, padding=False, truncation="longest_first", return_attention_mask=False,
+                        max_length=DEFAULT_MAX_LENGTH_QWEN - len(prefix_tokens) - len(suffix_tokens)
+                    )
+                    for i, ele in enumerate(input_data["input_ids"]):
+                        input_data["input_ids"][i] = prefix_tokens + ele + suffix_tokens
+                    input_data = tokenizer.pad(input_data,
+                                               padding=True,
+                                               return_tensors="pt",
+                                               max_length=DEFAULT_MAX_LENGTH_QWEN,
+                                               padding_side="left").to(device)
+                else:
+                    for doc in passages:
+                        pairs.append(f"{prefix}<Instruct>: {task}\n<Query>: {query}\n<Document>: {doc}{suffix}")
+                    input_data = tokenizer(pairs, padding=True, truncation=True, max_length=DEFAULT_MAX_LENGTH_QWEN, return_tensors="pt", padding_side="left")
             else:
                 tokenizer_kwargs = {"truncation": True, "padding": True, "max_length": DEFAULT_MAX_LENGTH}
                 inputs = [query] * len(passages)
@@ -157,26 +166,26 @@ class RerankingEvaluator(BaseEvaluator):
             for index, (score, _) in enumerate(zip(scores, passages)):
                 sorted_scores.append(np.array([index, score.numpy()]))
             sorted_scores.sort(key=lambda x: x[1], reverse=True)
-            return np.array(sorted_scores[:DEF_TOP_K])
+            return np.array(sorted_scores[:DEFAULT_TOP_K])
 
         gen_answer_fn = gen_answer_fn or default_gen_answer
 
         # TODO: add possibility to use custom dataset/csv
-        data = pd.DataFrame.from_dict(prepare_default_data(self.num_samples))
+        df = pd.DataFrame.from_dict(prepare_default_data(self.num_samples))
 
         scores_path = []
         passages = []
         query = []
-        inptus = (
-            data.values
+        inputs = (
+            df.values
             if self.num_samples is None
-            else data.values[: self.num_samples]
+            else df.values[: self.num_samples]
         )
 
         if not os.path.exists(result_dir):
             os.makedirs(result_dir)
 
-        for i, data in tqdm(enumerate(inptus), desc="Evaluate pipeline"):
+        for i, data in tqdm(enumerate(inputs), desc="Evaluate pipeline"):
             result = gen_answer_fn(model, self.tokenizer, data[0], data[1])
             query.append(data[0])
             passages.append(data[1])
@@ -186,6 +195,6 @@ class RerankingEvaluator(BaseEvaluator):
             scores_path.append(result_path)
 
         res_data = {"query": query, "passages": passages, "top_n_scores_path": scores_path}
-        df = pd.DataFrame(res_data)
+        df_result = pd.DataFrame(res_data)
 
-        return df
+        return df_result

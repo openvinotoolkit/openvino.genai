@@ -5,9 +5,7 @@ import torch
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq, AutoTokenizer
 
 from .embeddings_evaluator import DEFAULT_MAX_LENGTH as EMBED_DEFAULT_MAX_LENGTH
-from .reranking_evaluator import DEFAULT_MAX_LENGTH as RERANK_DEFAULT_MAX_LENGTH
-from .reranking_evaluator import DEFAULT_TOP_K as RERANK_DEFAULT_TOP_K
-from .reranking_evaluator import reranking_base_on_causallm_arch
+from .reranking_evaluator import DEFAULT_MAX_LENGTH as RERANK_DEFAULT_MAX_LENGTH, DEFAULT_TOP_K as RERANK_DEFAULT_TOP_K, reranking_base_on_causallm_arch
 from .utils import mock_torch_cuda_is_available, mock_AwqQuantizer_validate_environment
 
 
@@ -488,6 +486,7 @@ def load_embedding_model(model_id, device="CPU", ov_config=None, use_hf=False, u
             )
     return model
 
+
 def load_reranking_genai_pipeline(model_dir, device="CPU", ov_config=None):
     try:
         import openvino_genai
@@ -553,7 +552,7 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
             )
 
     return model
-                
+
 
 def load_model(
     model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False, **kwargs
