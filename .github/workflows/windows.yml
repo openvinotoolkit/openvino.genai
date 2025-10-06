@@ -23,7 +23,7 @@ env:
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: C:/mount/caches/huggingface/win
-  OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/e7aedda1b3a775f44116d2c7945a190c51be547f
+  OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/
   OPENVINO_LOG_LEVEL: 5
   ARTIFACTS_SHARE: '/mount/build-artifacts'
   BASE_PRODUCT_TYPE: public_windows_vs2022
