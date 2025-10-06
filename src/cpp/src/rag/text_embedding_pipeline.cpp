@@ -30,6 +30,7 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     properties_copy.erase(normalize.name());
     properties_copy.erase(embed_instruction.name());
     properties_copy.erase(query_instruction.name());
+    properties_copy.erase(padding_side.name());
 
     return properties_copy;
 }
@@ -94,6 +95,36 @@ std::shared_ptr<op::Op> get_mean_pooling_op(std::shared_ptr<Model> model,
     return std::make_shared<op::v1::Divide>(sum_hidden_state, max_expanded_mask);
 }
 
+std::shared_ptr<op::Op> get_last_token_pooling_op(std::shared_ptr<Model> model,
+                                                  const ov::Output<ov::Node>& last_hidden_state_node,
+                                                  const TextEmbeddingPipeline::Config& config) {
+    const auto left_padding = config.padding_side.has_value() && config.padding_side.value() == "left";
+
+    // shortcut for left padding. We can slice last token directly
+    if (left_padding) {
+        auto start = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
+        auto stop = std::make_shared<op::v0::Constant>(ov::element::i64,
+                                                       ov::Shape{1},
+                                                       std::vector<int64_t>{std::numeric_limits<int64_t>::max()});
+        auto step = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+        auto axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+
+        auto slice = std::make_shared<op::v8::Slice>(last_hidden_state_node, start, stop, step, axis);
+
+        auto squeeze_axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+        return std::make_shared<op::v15::Squeeze>(slice, squeeze_axis);
+    }
+
+    auto attention_mask = model->input("attention_mask").get_node()->outputs()[0];
+
+    auto axis_1 = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+    auto reduce_sum = std::make_shared<op::v1::ReduceSum>(attention_mask, axis_1);
+    auto subtract_1 = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
+    auto subtract = std::make_shared<op::v1::Subtract>(reduce_sum, subtract_1);
+
+    return std::make_shared<op::v8::Gather>(last_hidden_state_node, subtract, axis_1, 1);
+}
+
 std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model, const TextEmbeddingPipeline::Config& config) {
     ov::preprocess::PrePostProcessor processor(model);
 
@@ -102,6 +133,8 @@ std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model, const 
             return get_cls_pooling_op(node);
         } else if (config.pooling_type == TextEmbeddingPipeline::PoolingType::MEAN) {
             return get_mean_pooling_op(model, node);
+        } else if (config.pooling_type == TextEmbeddingPipeline::PoolingType::LAST_TOKEN) {
+            return get_last_token_pooling_op(model, node, config);
         }
 
         OPENVINO_THROW("Pooling type is not supported");
@@ -150,6 +183,7 @@ TextEmbeddingPipeline::Config::Config(const ov::AnyMap& properties) {
     read_anymap_param(properties, ov::genai::normalize.name(), normalize);
     read_anymap_param(properties, ov::genai::embed_instruction.name(), embed_instruction);
     read_anymap_param(properties, ov::genai::query_instruction.name(), query_instruction);
+    read_anymap_param(properties, ov::genai::padding_side.name(), padding_side);
 };
 
 void TextEmbeddingPipeline::Config::validate() const {
@@ -196,6 +230,10 @@ public:
 
         if (m_config.pad_to_max_length) {
             m_tokenization_params.insert({pad_to_max_length.name(), *m_config.pad_to_max_length});
+        }
+
+        if (m_config.padding_side) {
+            m_tokenization_params.insert({padding_side.name(), *m_config.padding_side});
         }
 
         ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
