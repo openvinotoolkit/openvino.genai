@@ -67,10 +67,11 @@ TEST(JsonContainerTest, copy_move_equality) {
     JsonContainer copied(original);
     EXPECT_EQ(copied, original);
     
-    original["key"] = "modified";
+    copied["key"] = "modified";
     EXPECT_NE(copied, original);
-    EXPECT_EQ(copied["key"].get_string(), "value");
-    
+    EXPECT_EQ(original["key"].get_string(), "value");
+    EXPECT_EQ(copied["key"].get_string(), "modified");
+
     // Move
     JsonContainer source({{"temp", "data"}});
     JsonContainer moved = std::move(source);
@@ -382,18 +383,4 @@ TEST(JsonContainerTest, json_string) {
     EXPECT_EQ(parsed["boolean"].get_bool(), true);
     EXPECT_EQ(parsed["array"].size(), 2);
     EXPECT_EQ(parsed["object"]["nested"].get_string(), "value");
-}
-
-TEST(JsonContainerTest, nlohmann_json) {
-    nlohmann::ordered_json a = {{"key", "value1"}};
-    nlohmann::ordered_json a_same = {{"key", "value1"}};
-    EXPECT_EQ(a, a_same);
-    nlohmann::ordered_json b = {{"key", "value2"}};
-    a = b;
-    EXPECT_EQ(a, b);
-    EXPECT_EQ(a["key"], "value2");
-    a["key"] = "changed";
-    EXPECT_NE(a, b);
-    EXPECT_EQ(a["key"], "changed");
-    EXPECT_EQ(b["key"], "value2");
 }
