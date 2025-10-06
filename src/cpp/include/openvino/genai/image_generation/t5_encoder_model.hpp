@@ -76,10 +76,14 @@ public:
 
     ov::Tensor get_output_tensor(const size_t idx);
 
+    ov::Tensor get_prompt_attention_mask() const;
+
 private:
     AdapterController m_adapter_controller;
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
+    //TODO: skip filling when pipeline doesn't use attention mask
+    ov::Tensor m_prompt_attention_mask;
 
     Tokenizer m_tokenizer;
 };

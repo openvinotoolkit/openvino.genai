@@ -9,7 +9,7 @@
 
 #include "json_utils.hpp"
 #include "utils.hpp"
-// #include "lora/helper.hpp"
+#include "lora/helper.hpp"
 
 namespace ov {
 namespace genai {
@@ -99,10 +99,9 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
     std::optional<AdapterConfig> adapters;
     auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
-    if (adapters) {
-        adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or("transformer"));
-        m_adapter_controller = AdapterController(m_model, *adapters, device);
-    }
+    OPENVINO_ASSERT(!adapters, "Adapters are not currently supported for Video Generation Pipeline.");
+    //     adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or("transformer"));
+    //     m_adapter_controller = AdapterController(m_model, *adapters, device);
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, *filtered_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Flux Transformer 2D model");
     m_request = compiled_model.create_infer_request();

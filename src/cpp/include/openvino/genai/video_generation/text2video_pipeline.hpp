@@ -17,17 +17,17 @@ struct VideoGenerationConfig : public ImageGenerationConfig {
     size_t num_frames = 161;
 };
 
-struct LTXVideoTransformer3DModel {
-    struct OPENVINO_GENAI_EXPORTS Config {  // TODO: video fields instead
-        size_t in_channels = 128;  // Comes from transformer/config.json  // TODO: Could I just use model shape?
-        bool guidance_embeds = false;
-        size_t m_default_sample_size = 128;
-        size_t patch_size = 1;  // TODO: read from transformer/config.json
-        size_t patch_size_t = 1;  // TODO: read from transformer/config.json
-    };
-    ov::InferRequest m_ireq;
-    LTXVideoTransformer3DModel(const std::filesystem::path& dir, const std::string& device, const ov::AnyMap& properties)
-    : m_ireq{utils::singleton_core().compile_model(dir / "openvino_model.xml", device, properties).create_infer_request()} {}
+// struct LTXVideoTransformer3DModel {
+//     struct OPENVINO_GENAI_EXPORTS Config {  // TODO: video fields instead
+//         size_t in_channels = 128;  // Comes from transformer/config.json  // TODO: Could I just use model shape?
+//         bool guidance_embeds = false;
+//         size_t m_default_sample_size = 128;
+//         size_t patch_size = 1;  // TODO: read from transformer/config.json
+//         size_t patch_size_t = 1;  // TODO: read from transformer/config.json
+//     };
+//     ov::InferRequest m_ireq;
+//     LTXVideoTransformer3DModel(const std::filesystem::path& dir, const std::string& device, const ov::AnyMap& properties)
+//     : m_ireq{utils::singleton_core().compile_model(dir / "openvino_model.xml", device, properties).create_infer_request()} {}
 // inputs[
 // <ConstOutput: names[hidden_states] shape[?,?,128] type: f32>,
 // <ConstOutput: names[encoder_hidden_states] shape[?,?,4096] type: f32>,
@@ -55,21 +55,21 @@ struct LTXVideoTransformer3DModel {
 // outputs[
 // <ConstOutput: names[out_sample] shape[?,?,64] type: f32>
 // ]>
-    Config get_config() const {return Config{};}
-    void set_hidden_states(const std::string& tensor_name, const ov::Tensor& encoder_hidden_states) {
-        OPENVINO_ASSERT(m_ireq, "Transformer model must be compiled first");
-        m_ireq.set_tensor(tensor_name, encoder_hidden_states);
-    }
-    ov::Tensor infer(const ov::Tensor& latent_model_input, const ov::Tensor& timestep) {
-        OPENVINO_ASSERT(m_ireq, "Transformer model must be compiled first. Cannot infer non-compiled model");
+//     Config get_config() const {return Config{};}
+//     void set_hidden_states(const std::string& tensor_name, const ov::Tensor& encoder_hidden_states) {
+//         OPENVINO_ASSERT(m_ireq, "Transformer model must be compiled first");
+//         m_ireq.set_tensor(tensor_name, encoder_hidden_states);
+//     }
+//     ov::Tensor infer(const ov::Tensor& latent_model_input, const ov::Tensor& timestep) {
+//         OPENVINO_ASSERT(m_ireq, "Transformer model must be compiled first. Cannot infer non-compiled model");
 
-        m_ireq.set_tensor("hidden_states", latent_model_input);
-        m_ireq.set_tensor("timestep", timestep);
-        m_ireq.infer();
+//         m_ireq.set_tensor("hidden_states", latent_model_input);
+//         m_ireq.set_tensor("timestep", timestep);
+//         m_ireq.infer();
 
-        return m_ireq.get_output_tensor();
-    }
-};
+//         return m_ireq.get_output_tensor();
+//     }
+// };
 struct AutoencoderKLLTXVideo {
     struct OPENVINO_GENAI_EXPORTS Config {
         size_t in_channels = 3;
