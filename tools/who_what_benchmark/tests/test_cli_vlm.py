@@ -21,7 +21,6 @@ def test_vlm_basic(model_id, model_type):
         pytest.xfail("Ticket 173169")
     GT_FILE = WWB_CACHE_PATH / "gt.csv"
     MODEL_PATH = WWB_CACHE_PATH.joinpath(model_id.replace("/", "--"))
-    MODEL_PATH = MODEL_PATH if MODEL_PATH.exists() else model_id
 
     if not MODEL_PATH.exists():
         result = subprocess.run(["optimum-cli", "export",
