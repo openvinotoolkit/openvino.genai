@@ -13,6 +13,8 @@
 #include <openvino/core/except.hpp>
 #include <openvino/core/any.hpp>
 
+#include "openvino/genai/json_container.hpp"
+
 namespace ov {
 namespace genai {
 namespace utils {
@@ -70,6 +72,8 @@ inline nlohmann::ordered_json any_map_to_json(const ov::AnyMap& any_map);
 inline nlohmann::ordered_json any_to_json(const ov::Any& value) {
     if (value.is<std::string>()) {
         return value.as<std::string>();
+    } else if (value.is<int>()) {
+        return value.as<int>();
     } else if (value.is<int64_t>()) {
         return value.as<int64_t>();
     } else if (value.is<float>()) {
@@ -96,6 +100,8 @@ inline nlohmann::ordered_json any_to_json(const ov::Any& value) {
             array_json.push_back(any_map_to_json(map));
         }
         return array_json;
+    } else if (value.is<ov::genai::JsonContainer>()) {
+        return value.as<ov::genai::JsonContainer>().to_json();
     } else {
         OPENVINO_THROW("Failed to convert Any to JSON, unsupported type: ", value.type_info().name());
     }
