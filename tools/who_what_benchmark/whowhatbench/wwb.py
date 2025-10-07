@@ -304,6 +304,7 @@ def load_processor(args):
                     self.config = config
                     self.model_dtype = model_dtype
                     self.tokenizer = tokenizer
+
                 def __call__(self, images, return_tensors):
                     return {"pixel_values": self.processor(images, self.config).to(dtype=self.model_dtype)}
 
