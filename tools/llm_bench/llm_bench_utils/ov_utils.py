@@ -1226,15 +1226,22 @@ def create_text_reranker_model(model_path: Path, device: str, memory_monitor: Me
     log.info("Selected Optimum Intel for benchmarking")
     if kwargs.get("mem_consumption"):
         memory_monitor.start()
-    start = time.perf_counter()
-    ov_model = kwargs['use_case'].ov_cls.from_pretrained(
-        model_path,
-        device=device,
-        ov_config=ov_config,
-        trust_remote_code=trust_remote_code,
-        use_cache=False
-    )
-    end = time.perf_counter()
+    try:
+        start = time.perf_counter()
+        ov_model = kwargs['use_case'].ov_cls.from_pretrained(
+            model_path, device=device, ov_config=ov_config, trust_remote_code=trust_remote_code
+        )
+        end = time.perf_counter()
+    except ValueError:
+        start = time.perf_counter()
+        ov_model = kwargs['use_case'].ov_cls.from_pretrained(
+            model_path,
+            trust_remote_code=trust_remote_code,
+            use_cache=False,
+            device=device,
+            ov_config=ov_config
+        )
+        end = time.perf_counter()
 
     if kwargs.get("mem_consumption"):
         memory_monitor.stop_and_collect_data('compilation_phase')

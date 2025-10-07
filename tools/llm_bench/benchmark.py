@@ -313,7 +313,7 @@ def main():
                 if ir_conversion_frontend != '':
                     framework = framework + '(' + ir_conversion_frontend + ')'
                 model_precision = llm_bench_utils.model_utils.get_model_precision(model_path.parts)
-            case, model_name = llm_bench_utils.model_utils.get_model_name(args.model)
+            case, model_name = llm_bench_utils.model_utils.get_model_name(args.model, args.task)
             if model_name is None:
                 model_name = llm_bench_utils.model_utils.get_model_name_with_path_part(args.model)
             if args.report is not None:

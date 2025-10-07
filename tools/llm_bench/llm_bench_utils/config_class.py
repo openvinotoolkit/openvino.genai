@@ -58,9 +58,6 @@ class UseCase:
     pt_cls: type | None = AutoModel
     tokenizer_cls: type = AutoTokenizer
 
-    def eq_use_case(self, user_model_id, user_task=None):
-        return ((user_task is None or user_task == self.task) and user_model_id in self.model_types)
-
 
 @dataclass
 class UseCaseImageGen(UseCase):

@@ -289,10 +289,10 @@ def get_model_name(model_name_or_path, task=None):
         else:
             possible_use_cases = USE_CASES[task]
     for model_name in reversed(model_names):
-        for cases in possible_use_cases:
-            for use_case in cases:
-                if use_case.eq_use_case(model_name.lower()):
-                    return use_case, model_name
+        for use_case in possible_use_cases:
+            for m_type in use_case.model_types:
+                if model_name.lower().startswith(m_type):
+                    return use_case, m_type
 
     return None, None
 
