@@ -156,6 +156,31 @@ def handwritten_tensor(pytestconfig):
     handwritten_url = "https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350"
     return openvino.Tensor(from_cache_or_download(pytestconfig, handwritten_url, "handwritten.png"))
 
+# Return video with shape: [num_frames, height, width, 3]
+def create_countdown_frames():
+    frames_count = 5
+    height = 240
+    width = 360
+    frame_list = []
+    for count in range(frames_count, 0, -1):
+        frame = np.zeros((height, width, 3), dtype=np.uint8)
+        text = str(count)
+        (text_width, text_height), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 3, 4)
+
+        text_x = (width - text_width) // 2
+        text_y = (height + text_height) // 2
+
+        cv2.putText(frame, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX,
+            3, (255, 255, 255), 4, cv2.LINE_AA
+        )
+
+        frame_list.append(frame)
+    ov_tensor = openvino.Tensor(np.stack(frame_list))
+    return ov_tensor
+
+@pytest.fixture(scope="module")
+def countdown_video():
+    return create_countdown_frames()
 
 model_ids = [
     "katuni4ka/tiny-random-minicpmv-2_6",
@@ -168,6 +193,11 @@ model_ids = [
     "katuni4ka/tiny-random-qwen2.5-vl",
     "katuni4ka/tiny-random-gemma3",
     "qnguyen3/nanoLLaVA"
+]
+
+model_video_ids = [
+    "katuni4ka/tiny-random-qwen2vl",
+    "katuni4ka/tiny-random-qwen2.5-vl"
 ]
 
 # On macOS, transformers<4.52 is required, but this causes gemma3 to fail
@@ -212,6 +242,33 @@ def test_vlm_pipeline(model_id, backend, cat_tensor, handwritten_tensor, car_ten
 
     gc.collect()
 
+@pytest.mark.precommit
+@pytest.mark.parametrize("model_id", model_video_ids)
+@pytest.mark.parametrize("backend", attention_backend)
+def test_vlm_pipeline_video_input(model_id, backend, cat_tensor, countdown_video):
+    def streamer(word: str) -> bool:
+        nonlocal result_from_streamer
+        result_from_streamer.append(word)
+        return False
+
+    models_path = get_ov_model(model_id)
+    ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
+    generation_config = ov_pipe.get_generation_config()
+    generation_config.max_new_tokens = 30
+    generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
+
+    for images, videos in [[], [countdown_video]], [[cat_tensor], [countdown_video]]:
+        result_from_streamer = []
+        res = ov_pipe.generate(
+            prompts[0],
+            images=images,
+            videos=videos,
+            generation_config=generation_config,
+            streamer=streamer,
+        )
+        assert res.texts[0] == "".join(result_from_streamer)
+
+    gc.collect()
 
 configs = [
     get_greedy(),
@@ -952,33 +1009,6 @@ def cat_image_384x384(cat_image):
 def cat_image_32x32(cat_image):
     return cat_image.resize((32, 32))
 
-# Return video with shape: [num_frames, height, width, 3]
-def create_countdown_frames():
-    frames_count = 5
-    height = 240
-    width = 360
-    frame_list = []
-    for count in range(frames_count, 0, -1):
-        frame = np.zeros((height, width, 3), dtype=np.uint8)
-        text = str(count)
-        (text_width, text_height), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 3, 4)
-
-        text_x = (width - text_width) // 2
-        text_y = (height + text_height) // 2
-
-        cv2.putText(frame, text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX,
-            3, (255, 255, 255), 4, cv2.LINE_AA
-        )
-
-        frame_list.append(frame)
-    ov_tensor = openvino.Tensor(np.stack(frame_list))
-    return ov_tensor
-
-@pytest.fixture(scope="module")
-def countdown_video():
-    return create_countdown_frames()
-
-
 @pytest.mark.precommit
 @pytest.mark.parametrize(
     "model_id, image_name, backend",
@@ -1067,20 +1097,20 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, ba
     gc.collect()
 
 
-@pytest.mark.precommit
-@pytest.mark.parametrize(
-    "model_id, video_name, backend",
-    [
-        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "countdown_video", "SDPA"),
-        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "countdown_video", "PA"),
-    ],
-)
-def test_vlm_pipeline_video_input(request, model_id, video_name, backend):
-    video_tensor = request.getfixturevalue(video_name)
-    prompt = "Describe this video."
-    max_new_tokens = 10
+# @pytest.mark.precommit
+# @pytest.mark.parametrize(
+#     "model_id, video_name, backend",
+#     [
+#         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "countdown_video", "SDPA"),
+#         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "countdown_video", "PA"),
+#     ],
+# )
+# def test_vlm_pipeline_video_input(request, model_id, video_name, backend):
+#     video_tensor = request.getfixturevalue(video_name)
+#     prompt = "Describe this video."
+#     max_new_tokens = 10
 
-    model_path = get_ov_model(model_id)
+#     model_path = get_ov_model(model_id)
 
-    vlm = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
-    genai_output = vlm.generate(prompt, videos=[video_tensor], max_new_tokens=max_new_tokens)
+#     vlm = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
+#     genai_output = vlm.generate(prompt, videos=[video_tensor], max_new_tokens=max_new_tokens)
