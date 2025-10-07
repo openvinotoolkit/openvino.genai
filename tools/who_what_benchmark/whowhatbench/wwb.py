@@ -297,7 +297,29 @@ def load_processor(args):
         preprocessor_id = model_id
 
     try:
-        preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
+        if config.model_type == 'llava-qwen2':
+            class NanollavaProcessorWrapper:
+                def __init__(self, processor, config, model_dtype, tokenizer):
+                    self.processor = processor
+                    self.config = config
+                    self.model_dtype = model_dtype
+                    self.tokenizer = tokenizer
+                def __call__(self, images, return_tensors):
+                    return {"pixel_values": self.processor(images, self.config).to(dtype=self.model_dtype)}
+
+            model_id = "qnguyen3/nanoLLaVA"
+            from transformers import AutoModelForCausalLM
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                device_map='auto',
+                trust_remote_code=True)
+            tokenizer = AutoTokenizer.from_pretrained(
+                model_id,
+                trust_remote_code=True)
+            preprocessor = NanollavaProcessorWrapper(model.process_images, model.config, model.dtype, tokenizer)
+            config = model.config
+        else:
+            preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
     except Exception:
         preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=True)
     return preprocessor, config
