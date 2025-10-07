@@ -21,7 +21,6 @@
 #include "visual_language/gemma3/classes.hpp"
 
 #include "utils.hpp"
-#include "debug_utils.hpp"
 
 namespace ov::genai {
 

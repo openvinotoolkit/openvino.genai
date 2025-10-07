@@ -47,18 +47,18 @@ public:
         GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
         config.update_generation_config(config_map);
 
-        std::vector<ov::Tensor> image_rgbs = {};
-        std::vector<ov::Tensor> video_rgbs = {};
+        std::vector<ov::Tensor> images_vector = {};
+        std::vector<ov::Tensor> videos_vector = {};
         if (config_map.end() != image) {
-            image_rgbs = {image->second.as<ov::Tensor>()};
+            images_vector = {image->second.as<ov::Tensor>()};
         }
 
         if (config_map.end() != images) {
             if (images->second.is<std::vector<ov::Tensor>>()) {
                 auto imgs = images->second.as<std::vector<ov::Tensor>>();
-                image_rgbs.insert(image_rgbs.end(), imgs.begin(), imgs.end());
+                images_vector.insert(images_vector.end(), imgs.begin(), imgs.end());
             } else if (images->second.is<ov::Tensor>()) {
-                image_rgbs.push_back(std::move(images->second.as<ov::Tensor>()));
+                images_vector.push_back(std::move(images->second.as<ov::Tensor>()));
             } else {
                 OPENVINO_THROW("Unknown images type.");
             }
@@ -66,15 +66,15 @@ public:
 
         if (config_map.end() != videos) {
             if (videos->second.is<std::vector<ov::Tensor>>()) {
-                video_rgbs = videos->second.as<std::vector<ov::Tensor>>();
+                videos_vector = videos->second.as<std::vector<ov::Tensor>>();
             } else if (videos->second.is<ov::Tensor>()) {
-                video_rgbs = {videos->second.as<ov::Tensor>()};
+                videos_vector = {videos->second.as<ov::Tensor>()};
             } else {
                 OPENVINO_THROW("Unknown videos type.");
             }
         }
 
-        return generate(prompt, image_rgbs, video_rgbs, config, utils::get_streamer_from_map(config_map));
+        return generate(prompt, images_vector, videos_vector, config, utils::get_streamer_from_map(config_map));
     }
 
     virtual void start_chat(const std::string& system_message) = 0;

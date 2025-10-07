@@ -152,16 +152,16 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 std::vector<VLMDecodedResults>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
              const std::vector<std::string>& prompts,
-             const std::vector<std::vector<ov::Tensor>>& rgbs_vector,
+             const std::vector<std::vector<ov::Tensor>>& images_vector,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) {
-    return generate(prompts, rgbs_vector, {{}}, sampling_params, streamer);
+    return generate(prompts, images_vector, {{}}, sampling_params, streamer);
 }
 
 std::vector<VLMDecodedResults>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
              const std::vector<std::string>& prompts,
-             const std::vector<std::vector<ov::Tensor>>& rgbs_vector,
+             const std::vector<std::vector<ov::Tensor>>& images_vector,
              const std::vector<std::vector<ov::Tensor>>& video_vector,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer)  {
@@ -169,7 +169,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
 
     OPENVINO_ASSERT(prompts.size() == sampling_params.size(), "Number of prompts should be equal to the number of generation configs.");
-    OPENVINO_ASSERT(prompts.size() == rgbs_vector.size() || prompts.size() == video_vector.size(), "Number of prompts should be equal to the number of images or video vectors.");
+    OPENVINO_ASSERT(prompts.size() == images_vector.size() || prompts.size() == video_vector.size(), "Number of prompts should be equal to the number of images or video vectors.");
 
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<ov::Tensor> token_type_ids_list;
@@ -183,7 +183,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         const auto& prompt = prompts[0];
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
 
-        encoded_images = m_inputs_embedder->encode_images(rgbs_vector[0]);
+        encoded_images = m_inputs_embedder->encode_images(images_vector[0]);
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
 
         encoded_videos = m_inputs_embedder->encode_videos(video_vector[0]);
@@ -199,7 +199,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         m_inputs_embedder->set_apply_chat_template_status(false);
         if (m_inputs_embedder->has_token_type_ids()) {
-            auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(templated_history, m_history_images, vlm_perf_metrics[0], rgbs_vector.size() > 0, m_history_image_ids);
+            auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(templated_history, m_history_images, vlm_perf_metrics[0], images_vector.size() > 0, m_history_image_ids);
             input_embeds_list.push_back(std::move(embeds));
             token_type_ids_list.push_back(std::move(tt_ids));
         } else {
@@ -220,10 +220,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             const auto& prompt = prompts[i];
             auto start_get_inputs_embeds = std::chrono::steady_clock::now();
             
-            auto image_rgbs = rgbs_vector.size() > 0 ? rgbs_vector[i] : std::vector<ov::Tensor>{};
-            auto video_rgbs = video_vector.size() > 0 ? video_vector[i] : std::vector<ov::Tensor>{};
-            const auto encoded_images = m_inputs_embedder->encode_images(image_rgbs);
-            const auto encoded_videos = m_inputs_embedder->encode_videos(video_rgbs);
+            auto image_to_encode = images_vector.size() > 0 ? images_vector[i] : std::vector<ov::Tensor>{};
+            auto video_to_encode = video_vector.size() > 0 ? video_vector[i] : std::vector<ov::Tensor>{};
+            const auto encoded_images = m_inputs_embedder->encode_images(image_to_encode);
+            const auto encoded_videos = m_inputs_embedder->encode_videos(video_to_encode);
 
             auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
 

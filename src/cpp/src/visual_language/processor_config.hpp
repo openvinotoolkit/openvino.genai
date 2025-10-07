@@ -60,6 +60,18 @@ public:
     size_t temporal_patch_size = 2;
     size_t merge_size = 2;
 
+    // LLaVA-NeXT-Video specific params
+    size_t num_additional_image_tokens = 1;
+    
+    // Fused rescale and normalize values obtained by formula: new_mean = mean * (1.0 / scale), new_std = std * (1.0 / rescale_factor)
+    // Original config normalize values:
+    // image_mean = (0.48145466, 0.4578275, 0.40821073)
+    // image_std = (0.26862954, 0.26130258, 0.27577711)
+    // scale = 1/255
+    std::array<double, 3> image_mean_llava_next_video{122.77094, 116.74602, 104.093735};
+    std::array<double, 3> image_std_llava_next_video{68.500534, 66.632164, 70.32316};
+
+
     /// @brief Default constructor
     ProcessorConfig() = default;
     /// @brief Construct ProcessorConfig from values in json_path.
@@ -67,7 +79,5 @@ public:
     /// @param json_path A path to a file to extract the values from.
     explicit ProcessorConfig(const std::filesystem::path& json_path);
 
-    // should this stay here?
-    size_t num_additional_image_tokens = 1;
 };
 }  // namespace ov::genai

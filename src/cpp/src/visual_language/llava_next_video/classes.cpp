@@ -42,12 +42,8 @@ clip_image_f32 preprocess_clip_image_llava_next_video(const clip_image_u8& image
     // Center crop
     clip_image_u8 cropped_image = center_crop(resized_image, config.crop_size_height, config.crop_size_width);
 
-    // llava-next-video specific preprocess params
-    auto image_mean = std::array<double, 3>{122.77094, 116.74602, 104.093735};
-    auto image_std = std::array<double, 3>{68.500534, 66.632164, 70.32316};
-
     // Normalize
-    clip_image_f32 normalized_image = normalize_and_convert_to_chw(cropped_image, image_mean, image_std);
+    clip_image_f32 normalized_image = normalize_and_convert_to_chw(cropped_image, config.image_mean_llava_next_video, config.image_mean_llava_next_video);
 
     return normalized_image;
 }
