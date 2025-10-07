@@ -36,7 +36,7 @@ def test_vlm_basic(model_id, model_type, tmp_path):
     # Collect reference with HF model
     run_wwb([
         "--base-model",
-        MODEL_PATH,
+        model_id,
         "--num-samples",
         "1",
         "--gt-data",
