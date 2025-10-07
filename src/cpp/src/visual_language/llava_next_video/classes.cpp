@@ -239,33 +239,13 @@ ov::Tensor InputsEmbedderLLaVANextVideo::get_inputs_embeds(
     auto end_tokenizer_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
     metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
-
-    auto data = text_embeds.data<float>();
-    for (size_t i = 0; i < ov::shape_size(text_embeds.get_shape()); i++) {
-        if (data[i] != data[i]) {
-            break;
-        }
-    }
     if (!image_embeds.empty()) {
         int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
         text_embeds = utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
     }
-    data = text_embeds.data<float>();
-    for (size_t i = 0; i < ov::shape_size(text_embeds.get_shape()); i++) {
-        if (data[i] != data[i]) {
-            break;
-        }
-    }
-
     if (!video_embeds.empty()) {
         int64_t video_token_id = encoded_video_token.data<int64_t>()[encoded_video_token.get_size() - 1];
         text_embeds = utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, video_embeds, video_token_id);
-    }
-    data = text_embeds.data<float>();
-    for (size_t i = 0; i < ov::shape_size(text_embeds.get_shape()); i++) {
-        if (data[i] != data[i]) {
-            break;
-        }
     }
     return text_embeds;
 }

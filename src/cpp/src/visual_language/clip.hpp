@@ -15,11 +15,9 @@ struct clip_ctx {
     size_t image_size = 0;
 };
 
-
 struct clip_ctx_double {
-    double image_mean[3] = {0.0f, 0.0f, 0.0f};
-    double image_std[3] = {1.0f, 1.0f, 1.0f};
-    size_t image_size = 0;
+    double image_mean[3] = {0.0, 0.0, 0.0};
+    double image_std[3] = {1.0, 1.0, 1.0};
 };
 
 // RGB uint8 image

@@ -61,8 +61,7 @@ public:
     size_t merge_size = 2;
 
     // LLaVA-NeXT-Video specific params
-    size_t num_additional_image_tokens = 1;
-    
+
     // Fused rescale and normalize values obtained by formula: new_mean = mean * (1.0 / scale), new_std = std * (1.0 / rescale_factor)
     // Original config normalize values:
     // image_mean = (0.48145466, 0.4578275, 0.40821073)
