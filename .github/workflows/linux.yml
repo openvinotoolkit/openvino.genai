@@ -583,10 +583,10 @@ jobs:
         run: python -m pytest -v ./${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
 
-      - name: WWB Test nanoLLaVA
+      - name: Test nanoLLaVA
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
         run: |
-          python -m pip install -r ${{ env.SRC_DIR }}/tools/who_what_benchmark/tests/nanollava_requirements.txt
+          python -m pip install transformers==4.48.0
           python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
         working-directory: ${{ env.SRC_DIR }}
 
