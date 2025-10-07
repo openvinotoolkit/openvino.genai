@@ -92,6 +92,9 @@ static std::unique_ptr<LLMPipelineImplBase> create(
     auto properties_without_draft_model = properties;
     auto draft_model_descr = ov::genai::utils::extract_draft_model_from_config(properties_without_draft_model);
     if (draft_model_descr.model != nullptr) {
+        OPENVINO_ASSERT(device != "GPU" && draft_model_descr.device != "GPU",
+            "Speculative Decoding with \"ATTENTION_BACKEND\" : \"SDPA\" or any of the models on NPU "
+            "doesn't support GPU device either for main or draft models currently!");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, {}, generation_config);
         return std::make_unique<StatefulSpeculativeLLMPipeline>(main_model_descr, draft_model_descr);
     }
