@@ -287,6 +287,7 @@ private:
 /*
  * utils that allow to use generate() in the following way:
  * pipe.generate(prompt, ov::genai::image(image_tensor)).
+ * pipe.generate(prompt, ov::genai::images(video_tensor)).
  * pipe.generate(prompt, ov::genai::videos(video_tensor)).
 */
 static constexpr ov::Property<ov::Tensor> image{"image"};
