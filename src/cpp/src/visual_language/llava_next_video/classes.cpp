@@ -45,7 +45,7 @@ clip_image_f32 preprocess_clip_image_llava_next_video(const clip_image_u8& image
     // Normalize
     clip_ctx_double ctx;
     std::copy(config.image_mean_llava_next_video.begin(), config.image_mean_llava_next_video.end(), ctx.image_mean);
-    std::copy(config.image_mean_llava_next_video.begin(), config.image_mean_llava_next_video.end(), ctx.image_std);
+    std::copy(config.image_std_llava_next_video.begin(), config.image_std_llava_next_video.end(), ctx.image_std);
     clip_image_f32 normalized_image = normalize_and_convert_to_chw(cropped_image, ctx);
 
     return normalized_image;
