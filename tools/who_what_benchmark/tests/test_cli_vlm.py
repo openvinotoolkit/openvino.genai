@@ -9,14 +9,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.parametrize(
-    ("model_id", "model_type", "optimum_threshold", "genai_threshold"),
-    [
-        ("katuni4ka/tiny-random-llava", "visual-text", None, None),
-        ("qnguyen3/nanoLLaVA", "visual-text", 0.99, 0.88),
-    ],
-)
-def test_vlm_basic(model_id, model_type, optimum_threshold, genai_threshold, tmp_path):
+def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path):
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
     GT_FILE = tmp_path / "gt.csv"
@@ -98,3 +91,23 @@ def test_vlm_basic(model_id, model_type, optimum_threshold, genai_threshold, tmp
         model_type,
         "--genai",
     ])
+
+@pytest.mark.parametrize(
+    ("model_id", "model_type"),
+    [
+        ("katuni4ka/tiny-random-llava", "visual-text"),
+    ],
+)
+def test_vlm_basic(model_id, model_type, tmp_path):
+    run_test(model_id, model_type, None, None, tmp_path)
+
+
+@pytest.mark.nanollava
+@pytest.mark.parametrize(
+    ("model_id", "model_type", "optimum_threshold", "genai_threshold"),
+    [
+        ("qnguyen3/nanoLLaVA", "visual-text", 0.99, 0.88),
+    ],
+)
+def test_vlm_nanollava(model_id, model_type, optimum_threshold, genai_threshold, tmp_path):
+    run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
