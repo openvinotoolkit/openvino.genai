@@ -15,6 +15,13 @@ struct clip_ctx {
     size_t image_size = 0;
 };
 
+
+struct clip_ctx_double {
+    double image_mean[3] = {0.0f, 0.0f, 0.0f};
+    double image_std[3] = {1.0f, 1.0f, 1.0f};
+    size_t image_size = 0;
+};
+
 // RGB uint8 image
 struct clip_image_u8 {
     int nx;
@@ -67,4 +74,4 @@ clip_image_u8 resize_and_pad_image(const clip_image_u8& image, const std::pair<i
 
 clip_image_u8 center_crop(const clip_image_u8& image, size_t crop_height, size_t crop_width);
 
-clip_image_f32 normalize_and_convert_to_chw(const clip_image_u8& img, const std::array<double, 3>& image_mean, const std::array<double, 3>& image_std);
+clip_image_f32 normalize_and_convert_to_chw(const clip_image_u8& img, const clip_ctx_double& image_mean_std);

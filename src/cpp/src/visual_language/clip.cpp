@@ -297,9 +297,11 @@ clip_image_u8 center_crop(const clip_image_u8& image, size_t crop_height, size_t
     return cropped_image;
 }
 
-clip_image_f32 normalize_and_convert_to_chw(const clip_image_u8& img, const std::array<double, 3>& image_mean, const std::array<double, 3>& image_std) {
+clip_image_f32 normalize_and_convert_to_chw(const clip_image_u8& img, const clip_ctx_double& image_mean_std) {
     const size_t nx = img.nx;
     const size_t ny = img.ny;
+    const auto& image_mean = image_mean_std.image_mean;
+    const auto& image_std = image_mean_std.image_std; 
 
     clip_image_f32 res;
     res.nx = nx;
