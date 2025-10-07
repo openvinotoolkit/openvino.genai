@@ -178,6 +178,7 @@ class VisualTextEvaluator(TextEvaluator):
                     self.tokenizer,
                     self.max_new_tokens,
                     self._crop_question,
+                    self.generation_config,
                 )
             )
 
