@@ -149,7 +149,7 @@ def test_text_language(tmp_path):
     temp_file_name = tmp_path / "gt.csv"
     run_wwb([
         "--base-model",
-        'Qwen/Qwen2-0.5B',
+        "Qwen/Qwen2-0.5B",
         "--gt-data",
         temp_file_name,
         "--num-samples",

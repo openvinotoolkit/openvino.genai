@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
         ("katuni4ka/tiny-random-llava", "visual-text"),
     ],
 )
-def test_vlm_basic(model_id, model_type):
+def test_vlm_basic(model_id, model_type, tmp_path):
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
-    GT_FILE = WWB_CACHE_PATH / "gt.csv"
+    GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = WWB_CACHE_PATH.joinpath(model_id.replace("/", "--"))
 
     if not MODEL_PATH.exists():
