@@ -14,13 +14,19 @@ from utils.hugging_face import generation_config_to_hf, download_and_convert_mod
 from utils.comparation import compare_generation_results
 from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, get_main_pipeline_types, PipelineType, convert_decoded_results_to_generation_result
 
+def get_npu_llm_properties_for_test():
+    config = get_default_llm_properties()
+    config["NPUW_DEVICES"] = "CPU"
+    config["GENERATE_HINT"] = "BEST_PERF"
+    return config
+
 models_and_input = [
     ("HuggingFaceTB/SmolLM2-360M", "HuggingFaceTB/SmolLM2-135M", "Alan Turing was a")]
 devices = [
-    ('CPU', 'CPU'),
-    ('CPU', 'NPUW:CPU'),
-    ('NPUW:CPU', 'CPU'),
-    ('NPUW:CPU', 'NPUW:CPU')
+    # FIXME: add 'CPU' and 'GPU' cases in future
+    ('CPU', 'NPU'),
+    ('NPU', 'CPU'),
+    ('NPU', 'NPU')
 ]
 @pytest.mark.parametrize("main_model,draft_model,prompt", models_and_input)
 @pytest.mark.parametrize("main_device,draft_device", devices)
@@ -31,19 +37,14 @@ def test_string_inputs(main_model, main_device, draft_model, draft_device, promp
     __, __, draft_model_path = download_and_convert_model(draft_model)
 
     # Create OpenVINO GenAI pipeline:
-    draft_config = get_default_llm_properties()
-    if draft_device == "NPUW:CPU":
-        draft_device = "NPU"
-        draft_config["NPUW_DEVICES"] = "CPU"
-        draft_config["GENERATE_HINT"] = "BEST_PERF"
+    draft_config = get_npu_llm_properties_for_test() \
+                       if (draft_device == "NPU") else \
+                   get_default_llm_properties()
     ov_draft_model = ov_genai.draft_model(draft_model_path, draft_device, **draft_config)
 
-    main_config = get_default_llm_properties()
-    if main_device == "NPUW:CPU":
-        main_device = "NPU"
-        main_config["NPUW_DEVICES"] = "CPU"
-        main_config["GENERATE_HINT"] = "BEST_PERF"
-    main_config["ATTENTION_BACKEND"] = "SDPA"
+    main_config = get_npu_llm_properties_for_test() \
+                      if (main_device == "NPU") else \
+                  get_default_llm_properties()
     ov_pipe = ov_genai.LLMPipeline(main_model_path, main_device, main_config, draft_model=ov_draft_model)
 
     # Run reference HF model:
@@ -65,10 +66,14 @@ def test_perf_metrics():
     import time
     start_time = time.perf_counter()
     model_id = 'katuni4ka/tiny-random-gemma2'
-    generation_config = ov_genai.GenerationConfig(do_sample=False, max_new_tokens=20, ignore_eos=True, num_assistant_tokens=5)
     _, _, model_path = download_and_convert_model(model_id)
-    ov_pipe = create_ov_pipeline(model_path, pipeline_type=PipelineType.STATEFUL_SPECULATIVE_DECODING)
+
+    # Create OpenVINO GenAI pipeline:
+    ov_draft_model = ov_genai.draft_model(model_path, "NPU", **get_npu_llm_properties_for_test())
+    ov_pipe = ov_genai.LLMPipeline(model_path, "NPU", get_npu_llm_properties_for_test(), draft_model=ov_draft_model)
+
     prompt = 'table is made of'
+    generation_config = ov_genai.GenerationConfig(do_sample=False, max_new_tokens=20, ignore_eos=True, num_assistant_tokens=5)
     perf_metrics = ov_pipe.generate([prompt], generation_config).perf_metrics
     total_time = (time.perf_counter() - start_time) * 1000
 
@@ -141,9 +146,12 @@ def test_extended_perf_metrics():
     import time
     start_time = time.perf_counter()
     model_id : str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-    generation_config = ov_genai.GenerationConfig(do_sample=False, max_new_tokens=20, ignore_eos=True, num_assistant_tokens=5)
     _, _, model_path = download_and_convert_model(model_id)
-    ov_pipe = create_ov_pipeline(model_path, pipeline_type=PipelineType.STATEFUL_SPECULATIVE_DECODING)
+
+    ov_draft_model = ov_genai.draft_model(model_path, "NPU", **get_npu_llm_properties_for_test())
+    ov_pipe = ov_genai.LLMPipeline(model_path, "NPU", get_npu_llm_properties_for_test(), draft_model=ov_draft_model)
+
+    generation_config = ov_genai.GenerationConfig(do_sample=False, max_new_tokens=20, ignore_eos=True, num_assistant_tokens=5)
     extended_perf_metrics = ov_pipe.generate(["Why is the Sun yellow?"], generation_config).extended_perf_metrics
     total_time = (time.perf_counter() - start_time) * 1000
 

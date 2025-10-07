@@ -92,9 +92,10 @@ static std::unique_ptr<LLMPipelineImplBase> create(
     auto properties_without_draft_model = properties;
     auto draft_model_descr = ov::genai::utils::extract_draft_model_from_config(properties_without_draft_model);
     if (draft_model_descr.model != nullptr) {
-        OPENVINO_ASSERT(device != "GPU" && draft_model_descr.device != "GPU",
-            "Speculative Decoding with \"ATTENTION_BACKEND\" : \"SDPA\" or any of the models on NPU "
-            "doesn't support GPU device either for main or draft models currently!");
+        // FIXME: Add support for StatefulSpeculativeLLMPipeline for non-NPU devices for both models.
+        OPENVINO_ASSERT(device == "NPU" || draft_model_descr.device == "NPU",
+            "Stateful Speculative Decoding is expected to be launched when NPU is requsted as "
+            "execution device for one or both models.");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, {}, generation_config);
         return std::make_unique<StatefulSpeculativeLLMPipeline>(main_model_descr, draft_model_descr);
     }
@@ -144,7 +145,9 @@ ov::genai::LLMPipeline::LLMPipeline(
     }
 
     if (m_pimpl == nullptr) {
-        m_pimpl = StatefulPipeline::create(models_path, tokenizer, device, properties);
+        // FIXME: Switch to StatefulPipeline::create after resolving issues
+        //        with GPU and CPU for StatefulSpeculativeLLMPipeline
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(models_path, tokenizer, device, properties);
     }
 
     m_pimpl->save_load_time(start_time);
@@ -179,7 +182,9 @@ ov::genai::LLMPipeline::LLMPipeline(
     }
 
     if (m_pimpl == nullptr) {
-        m_pimpl = StatefulPipeline::create(models_path, device, properties);
+        // FIXME: Switch to StatefulPipeline::create after resolving issues
+        //        with GPU and CPU for StatefulSpeculativeLLMPipeline
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(models_path, device, properties);
     }
 
     m_pimpl->save_load_time(start_time);
@@ -224,7 +229,9 @@ ov::genai::LLMPipeline::LLMPipeline(
     }
 
     if (m_pimpl == nullptr) {
-        m_pimpl = StatefulPipeline::create(
+        // FIXME: Switch to StatefulPipeline::create after resolving issues
+        //        with GPU and CPU for StatefulSpeculativeLLMPipeline
+        m_pimpl = std::make_unique<StatefulLLMPipeline>(
             utils::singleton_core().read_model(model_str, weights_tensor),
             tokenizer,
             device,

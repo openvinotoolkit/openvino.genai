@@ -41,15 +41,13 @@ class PipelineType(Enum):
     PAGED_ATTENTION = 2
     CONTINUOUS_BATCHING = 3
     SPECULATIVE_DECODING = 4
-    STATEFUL_SPECULATIVE_DECODING = 5
-    PROMPT_LOOKUP_DECODING = 6
-    AUTO = 7
+    PROMPT_LOOKUP_DECODING = 5
+    AUTO = 6
 
 
 def get_all_pipeline_types():
-    return [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION, PipelineType.CONTINUOUS_BATCHING, PipelineType.SPECULATIVE_DECODING, PipelineType.STATEFUL_SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING, PipelineType.AUTO]
+    return [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION, PipelineType.CONTINUOUS_BATCHING, PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING, PipelineType.AUTO]
 
-# TODO: Add PipelineType.STATEFUL_SPECULATIVE_DECODING, make its tests green.
 def get_main_pipeline_types():
     return [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION, PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING]
 
@@ -99,10 +97,6 @@ def create_ov_pipeline(models_path: Path,
     elif pipeline_type == PipelineType.SPECULATIVE_DECODING:
         ov_draft_model = draft_model(models_path) if draft_model_path is None else draft_model(draft_model_path)
         return LLMPipeline(models_path, device, ov_config, scheduler_config=scheduler_config, draft_model=ov_draft_model)
-    elif pipeline_type == PipelineType.STATEFUL_SPECULATIVE_DECODING:
-        ov_draft_model = draft_model(models_path) if draft_model_path is None else draft_model(draft_model_path)
-        ov_config["ATTENTION_BACKEND"] = "SDPA"
-        return LLMPipeline(models_path, device, ov_config, draft_model=ov_draft_model)
     elif pipeline_type == PipelineType.PROMPT_LOOKUP_DECODING:
         return LLMPipeline(models_path, device, ov_config, scheduler_config=scheduler_config, prompt_lookup=True)
     else:
@@ -133,9 +127,6 @@ def prepare_generation_config_by_pipe_type(generation_config : GenerationConfig,
     if pipeline_type == PipelineType.SPECULATIVE_DECODING:
         assert not generation_config.is_beam_search()
         generation_config.assistant_confidence_threshold = 0.9
-    elif pipeline_type == PipelineType.STATEFUL_SPECULATIVE_DECODING:
-        assert not generation_config.is_beam_search()
-        generation_config.num_assistant_tokens = 5
     elif pipeline_type == PipelineType.PROMPT_LOOKUP_DECODING:
         assert not generation_config.is_beam_search()
         generation_config.num_assistant_tokens = 5
