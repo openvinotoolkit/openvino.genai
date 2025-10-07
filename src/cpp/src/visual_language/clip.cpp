@@ -298,19 +298,19 @@ clip_image_u8 center_crop(const clip_image_u8& image, size_t crop_height, size_t
 }
 
 clip_image_f32 normalize_and_convert_to_chw(const clip_image_u8& img, const std::array<double, 3>& image_mean, const std::array<double, 3>& image_std) {
-    const int nx = img.nx;
-    const int ny = img.ny;
+    const size_t nx = img.nx;
+    const size_t ny = img.ny;
 
     clip_image_f32 res;
     res.nx = nx;
     res.ny = ny;
     res.buf.resize(3 * nx * ny);
 
-    for (int y = 0; y < ny; y++) {
-        for (int x = 0; x < nx; x++) {
-            for (int c = 0; c < 3; c++) {
+    for (size_t y = 0; y < ny; y++) {
+        for (size_t x = 0; x < nx; x++) {
+            for (size_t c = 0; c < 3; c++) {
                 const uint8_t val = img.buf[3 * (y * nx + x) + c];
-                const int i = (y * nx + x) + c * nx * ny;
+                const size_t i = (y * nx + x) + c * nx * ny;
 
                 // perform division in double values, to align with python,
                 // as some models are sensitive to small values deviations, like llava-next-video
