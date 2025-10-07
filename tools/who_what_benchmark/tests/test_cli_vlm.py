@@ -92,6 +92,7 @@ def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
         "--genai",
     ])
 
+
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [
