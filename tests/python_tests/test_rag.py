@@ -285,6 +285,7 @@ def test_embedding_constructors(download_and_convert_embeddings_models):
     ],
 )
 @pytest.mark.precommit
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
 def test_qwen3_embedding(download_and_convert_embeddings_models, dataset_documents, config):
     opt_model, hf_tokenizer, models_path = download_and_convert_embeddings_models
     embeddings_opt = run_qwen3_embedding_optimum(opt_model, hf_tokenizer, dataset_documents, config.padding_side)
