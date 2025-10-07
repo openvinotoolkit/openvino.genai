@@ -38,7 +38,7 @@ def run_wwb(args):
 
 def setup_module():
     for model_id in OV_IMAGE_MODELS:
-        MODEL_PATH = MODEL_CACHE.joinpath(model_id.replace("/", "--"))
+        MODEL_PATH = MODEL_CACHE / model_id.replace("/", "--")
         subprocess.run(["optimum-cli", "export", "openvino", "--model", model_id, MODEL_PATH], capture_output=True, text=True)
 
 
@@ -122,7 +122,7 @@ def test_image_model_genai(model_id, model_type, tmp_path):
         pytest.xfail("Ticket 173169")
 
     GT_FILE = tmp_path / "gt.csv"
-    MODEL_PATH = MODEL_CACHE.joinpath(model_id.replace("/", "--"))
+    MODEL_PATH = MODEL_CACHE / model_id.replace("/", "--")
     MODEL_PATH = MODEL_PATH if MODEL_PATH.exists() else model_id
 
     run_wwb([

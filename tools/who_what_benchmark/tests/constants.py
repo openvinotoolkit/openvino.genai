@@ -20,7 +20,7 @@ def get_wwb_cache_dir(temp_dir=tempfile.TemporaryDirectory()) -> Path:
             pass
     else:
         ov_cache = temp_dir.name
-    return Path(ov_cache).joinpath("wwb_cache")
+    return Path(ov_cache) / "wwb_cache"
 
 
 WWB_CACHE_PATH = get_wwb_cache_dir()

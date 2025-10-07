@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 model_id = "facebook/opt-125m"
 cache_dir = WWB_CACHE_PATH
-base_model_path = os.path.join(cache_dir, "opt125m")
-target_model_path = os.path.join(cache_dir, "opt125m_int8")
+base_model_path = cache_dir / "opt125m"
+target_model_path = cache_dir / "opt125m_int8"
 
 gptq_model_id = "ybelkada/opt-125m-gptq-4bit"
 awq_model_id = "TitanML/tiny-mixtral-AWQ-4bit"
