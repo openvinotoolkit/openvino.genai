@@ -208,14 +208,12 @@ def cb_pipeline_required(args):
 
 def create_genai_text_gen_model(model_path, device, ov_config, memory_data_collector, **kwargs):
     import openvino_genai
-    from transformers import AutoTokenizer
     from packaging.version import parse
 
-    if not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists():
+    if Path(model_path).suffix != '.gguf'\
+       and (not (model_path / "openvino_tokenizer.xml").exists() or not (model_path / "openvino_detokenizer.xml").exists()):
         raise ValueError("OpenVINO Tokenizer model is not found in model directory. Please convert tokenizer using following command:\n"
                          "convert_tokenizer --with-detokenizer MODEL_DIR --output MODEL_DIR ")
-
-    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
 
     config = {}
     draft_model_path = kwargs.get("draft_model", '')
@@ -288,7 +286,7 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_data_colle
             return self.token_generation_time
     streamer = TokenStreamer(llm_pipe.get_tokenizer()) if use_streamer_metrics else None
 
-    return llm_pipe, tokenizer, end - start, streamer, True
+    return llm_pipe, None, end - start, streamer, True
 
 
 def convert_ov_tokenizer(tokenizer_path):
