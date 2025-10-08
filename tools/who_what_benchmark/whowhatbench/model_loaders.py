@@ -4,6 +4,7 @@ import torch
 
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq, AutoTokenizer
 
+from .embeddings_evaluator import DEFAULT_MAX_LENGTH
 from .utils import mock_torch_cuda_is_available, mock_AwqQuantizer_validate_environment
 
 
@@ -20,7 +21,7 @@ class GenAIModelWrapper:
         self.model = model
         self.model_type = model_type
 
-        if model_type == "text" or model_type == "visual-text":
+        if model_type in ["text", "visual-text", "text-embedding"]:
             try:
                 self.config = AutoConfig.from_pretrained(model_dir)
             except Exception:
@@ -428,6 +429,63 @@ def load_inpainting_model(
     return model
 
 
+def load_embedding_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
+    try:
+        import openvino_genai
+    except ImportError as e:
+        logger.error("Failed to import openvino_genai package. Please install it. Details:\n", e)
+        exit(-1)
+
+    config = openvino_genai.TextEmbeddingPipeline.Config()
+    if kwargs.get("embeds_pooling"):
+        if kwargs.get("embeds_pooling") == "mean":
+            config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.MEAN
+        elif kwargs.get("embeds_pooling") == "last_token":
+            config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.LAST_TOKEN
+        else:
+            config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.CLS
+    config.max_length = DEFAULT_MAX_LENGTH
+    config.normalize = kwargs.get("embeds_normalize", False)
+    config.pad_to_max_length = True
+
+    logger.info("Using OpenVINO GenAI TextEmbeddingPipeline API")
+    pipeline = openvino_genai.TextEmbeddingPipeline(model_dir, device.upper(), config, **ov_config)
+
+    return GenAIModelWrapper(
+        pipeline,
+        model_dir,
+        "text-embedding"
+    )
+
+
+def load_embedding_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
+    if use_hf:
+        from transformers import AutoModel
+        logger.info("Using HF Transformers API")
+        model = AutoModel.from_pretrained(model_id, trust_remote_code=True)
+    elif use_genai:
+        logger.info("Using OpenVINO GenAI API")
+        model = load_embedding_genai_pipeline(model_id, device, ov_config, **kwargs)
+    else:
+        logger.info("Using Optimum API")
+        from optimum.intel.openvino import OVModelForFeatureExtraction
+        try:
+            model = OVModelForFeatureExtraction.from_pretrained(
+                model_id, device=device, ov_config=ov_config, safety_checker=None,
+            )
+        except ValueError as e:
+            logger.error("Failed to load embedding pipeline. Details:\n", e)
+            model = OVModelForFeatureExtraction.from_pretrained(
+                model_id,
+                trust_remote_code=True,
+                use_cache=True,
+                device=device,
+                ov_config=ov_config,
+                safety_checker=None
+            )
+    return model
+
+
 def load_model(
     model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False, **kwargs
 ):
@@ -452,5 +510,7 @@ def load_model(
         return load_imagetext2image_model(model_id, device, ov_options, use_hf, use_genai)
     elif model_type == "image-inpainting":
         return load_inpainting_model(model_id, device, ov_options, use_hf, use_genai)
+    elif model_type == "text-embedding":
+        return load_embedding_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")
