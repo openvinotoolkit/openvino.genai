@@ -1163,11 +1163,10 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, ba
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "countdown_video", "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
     ],
 )
-def test_vlm_pipeline_video_input_match_optimum(request, model_id, video_name, backend):
-    video_tensor = request.getfixturevalue(video_name)
-    if isinstance(video_tensor, openvino.Tensor):
-        video_torch_tensor = torch.from_numpy(video_tensor.data)
-        video_frames = torch.unbind(video_torch_tensor, dim=0)
+def test_vlm_pipeline_match_optimum_video_input(request, model_id, video_name, backend):
+    video_ov_tensor = request.getfixturevalue(video_name)
+    assert(isinstance(video_ov_tensor, openvino.Tensor))
+    video_torch_tensor = torch.from_numpy(video_ov_tensor.data)
 
     prompt = "Describe this video."
     max_new_tokens = 20
@@ -1188,8 +1187,7 @@ def test_vlm_pipeline_video_input_match_optimum(request, model_id, video_name, b
 
     processor = transformers.AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
     templated_prompt = processor.apply_chat_template(conversation, add_generation_prompt=True)
-
-    inputs = processor(text=[templated_prompt], videos=[video_frames], padding=True, return_tensors="pt")
+    inputs = processor(text=[templated_prompt], video=video_torch_tensor, padding=True, return_tensors="pt")
 
     output_ids = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
     input_ids = inputs["input_ids"] if isinstance(inputs, dict) else inputs.input_ids
@@ -1200,7 +1198,7 @@ def test_vlm_pipeline_video_input_match_optimum(request, model_id, video_name, b
 
     # Run the model with GenAI
     vlm = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
-    genai_output = vlm.generate(prompt, videos=[video_tensor], max_new_tokens=max_new_tokens, do_sample=False)
+    genai_output = vlm.generate(prompt, videos=[video_ov_tensor], max_new_tokens=max_new_tokens, do_sample=False)
     genai_text = genai_output.texts[0]
 
     assert optimum_text == genai_text
