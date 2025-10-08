@@ -143,10 +143,6 @@ MODELS = {
     "tiny-random-SpeechT5ForTextToSpeech": {
         "name": "hf-internal-testing/tiny-random-SpeechT5ForTextToSpeech",
         "convert_args": ["--model-kwargs",  json.dumps({"vocoder": "fxmarty/speecht5-hifigan-tiny"})]
-    },
-    "stabilityai_sdxl_turbo": {
-        "name": "stabilityai/sdxl-turbo",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'int8']
     }
 }
 

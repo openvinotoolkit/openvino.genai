@@ -23,9 +23,6 @@ using ModelsMap = std::map<std::string, std::pair<std::string, ov::Tensor>>;
  * `pipeline.export_model` method.
  *
  * Use of compiled blobs can significantly reduce model load time, especially for large models.
- *
- * For the GPU, NPU device `ov::cache_mode(ov::CacheMode::OPTIMIZE_SPEED)` property is required during export. It
- * overrides the default behavior in order to obtain blobs with weights.
  */
 static constexpr ov::Property<std::filesystem::path> blob_path{"blob_path"};
 

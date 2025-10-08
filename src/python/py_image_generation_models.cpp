@@ -103,8 +103,6 @@ void init_clip_text_model(py::module_& m) {
                 Exports compiled model to a specified directory. Can significantly reduce model load time, especially for large models.
                 export_path (os.PathLike): A path to a directory to export compiled model to.
 
-                For the NPU device, the `ov.cache_mode(ov.CacheMode.OPTIMIZE_SPEED)` property is required to override the default behavior of the NPU plugin in order to obtain blobs with weights.
-
                 Use `blob_path` property to load previously exported models.
             )");
 }
@@ -284,8 +282,6 @@ void init_unet2d_condition_model(py::module_& m) {
         .def("export_model", &ov::genai::UNet2DConditionModel::export_model, py::arg("export_path"), R"(
                 Exports compiled model to a specified directory. Can significantly reduce model load time, especially for large models.
                 export_path (os.PathLike): A path to a directory to export compiled model to.
-
-                For the NPU device, the `ov.cache_mode(ov.CacheMode.OPTIMIZE_SPEED)` property is required to override the default behavior of the NPU plugin in order to obtain blobs with weights.
 
                 Use `blob_path` property to load previously exported models.
             )");
@@ -538,8 +534,6 @@ void init_autoencoder_kl(py::module_& m) {
             R"(
                 Exports compiled models to a specified directory. Can significantly reduce model load time, especially for large models.
                 export_path (os.PathLike): A path to a directory to export compiled models to.
-
-                For the NPU device, the `ov.cache_mode(ov.CacheMode.OPTIMIZE_SPEED)` property is required to override the default behavior of the NPU plugin in order to obtain blobs with weights.
 
                 Use `blob_path` property to load previously exported models.
             )"
