@@ -59,7 +59,7 @@ def embed_iterate_data(
     iter_data['iteration'] = iter_idx
     iter_data['input_size'] = in_size
     iter_data['infer_count'] = infer_count
-    iter_data['total_time'] = total_time
+    iter_data['generation_time'] = total_time
     iter_data['latency'] = latency
     iter_data['first_token_latency'] = -1
     iter_data['other_tokens_avg_latency'] = -1
@@ -72,4 +72,6 @@ def embed_iterate_data(
     iter_data['prompt_idx'] = prompt_idx
     iter_data['tokenization_time'] = tokenization_time[0] if len(tokenization_time) > 0 else ''
     iter_data['detokenization_time'] = ''
+    iter_data['result_md5'] = ''
+    iter_data['output_size'] = ''
     return iter_data
