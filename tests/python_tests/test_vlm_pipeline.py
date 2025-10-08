@@ -276,14 +276,11 @@ configs = [
     get_beam_search(),
 ]
 
-video_input = [False, True]
-
 @pytest.mark.precommit
 @pytest.mark.parametrize("config", configs)
-@pytest.mark.parametrize("is_video_input", video_input)
-def test_vlm_continuous_batching_generate_vs_add_request(config, is_video_input, cat_tensor, countdown_video):
+def test_vlm_continuous_batching_generate_vs_add_request(config, cat_tensor):
     scheduler_config = SchedulerConfig()
-    models_path = get_ov_model(model_video_ids[0] if is_video_input else model_ids[0])
+    models_path = get_ov_model(model_ids[0])
     ov_pipe = VLMPipeline(
         models_path,
         "CPU",
@@ -293,23 +290,15 @@ def test_vlm_continuous_batching_generate_vs_add_request(config, is_video_input,
     generation_config = config
     generation_config.max_new_tokens = 30
     eps = 0.001
-    vision_links_list = [[], [countdown_video]] if is_video_input else [[], [cat_tensor]]
+    vision_links_list = [[], [cat_tensor]]
 
     res_generate = []
-    if is_video_input:
-        for videos in vision_links_list:
-            res_generate.append(
-                ov_pipe.generate(
-                    prompts[0], videos=videos, generation_config=generation_config
-                )
+    for images in vision_links_list:
+        res_generate.append(
+            ov_pipe.generate(
+                prompts[0], images=images, generation_config=generation_config
             )
-    else:
-        for images in vision_links_list:
-            res_generate.append(
-                ov_pipe.generate(
-                    prompts[0], images=images, generation_config=generation_config
-                )
-            )
+        )
 
     cb_pipe = ContinuousBatchingPipeline(
         models_path,
@@ -320,10 +309,62 @@ def test_vlm_continuous_batching_generate_vs_add_request(config, is_video_input,
     tokenizer = cb_pipe.get_tokenizer()
 
     for idx, images in enumerate(vision_links_list):
-        if is_video_input:
-            handle = cb_pipe.add_request(idx, prompts[0], [], images, generation_config)
-        else:
-            handle = cb_pipe.add_request(idx, prompts[0], images, generation_config)
+        handle = cb_pipe.add_request(idx, prompts[0], images, generation_config)
+
+        while handle.get_status() != GenerationStatus.FINISHED:
+            cb_pipe.step()
+        outputs = handle.read_all()
+        for out_idx, output in enumerate(outputs):
+            text = tokenizer.decode(output.generated_ids)
+            assert text == res_generate[idx].texts[out_idx]
+            assert abs(output.score - res_generate[idx].scores[out_idx]) < eps
+            assert (
+                output.finish_reason == GenerationFinishReason.STOP
+                or output.finish_reason == GenerationFinishReason.LENGTH
+            )
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("config", configs)
+@pytest.mark.parametrize(
+    "backend",
+    [
+        pytest.param("SDPA"),
+        pytest.param("PA", marks=pytest.mark.xfail(reason="CVS-167316")),
+    ],
+)
+def test_vlm_continuous_batching_generate_vs_add_request_video_input(config, backend, countdown_video):
+    scheduler_config = SchedulerConfig()
+    models_path = get_ov_model(model_video_ids[0])
+    ov_pipe = VLMPipeline(
+        models_path,
+        "CPU",
+        ATTENTION_BACKEND=backend,
+        **get_default_llm_properties(),
+    )
+    generation_config = config
+    generation_config.max_new_tokens = 30
+    eps = 0.001
+    video_links_list = [[], [countdown_video]]
+
+    res_generate = []
+    for videos in video_links_list:
+        res_generate.append(
+            ov_pipe.generate(
+                prompts[0], videos=videos, generation_config=generation_config
+            )
+        )
+
+    cb_pipe = ContinuousBatchingPipeline(
+        models_path,
+        scheduler_config=scheduler_config,
+        device="CPU",
+        properties=get_default_llm_properties(),
+    )
+    tokenizer = cb_pipe.get_tokenizer()
+
+    for idx, videos in enumerate(video_links_list):
+        handle = cb_pipe.add_request(idx, prompts[0], [], videos, generation_config)
 
         while handle.get_status() != GenerationStatus.FINISHED:
             cb_pipe.step()
