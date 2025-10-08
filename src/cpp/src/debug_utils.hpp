@@ -23,7 +23,7 @@ void print_tensor(ov::Tensor tensor) {
     const size_t rank = shape.size();
     const auto* data = tensor.data<T>();
 
-    if (rank > 2) {
+    if (rank != 2) {
         print_array(data, tensor.get_size());
         return;
     }

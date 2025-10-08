@@ -6,13 +6,14 @@ import pytest
 import gc
 from pathlib import Path
 from openvino_genai import TextEmbeddingPipeline, TextRerankPipeline
-from utils.hugging_face import download_and_convert_embeddings_models, download_and_convert_rerank_model
+from utils.hugging_face import download_and_convert_embeddings_models, download_and_convert_rerank_model, download_and_convert_model_fixture
 from langchain_core.documents.base import Document
 from langchain_community.embeddings import OpenVINOBgeEmbeddings
 from langchain_community.document_compressors.openvino_rerank import OpenVINOReranker
 from typing import Literal, Union
 import sys
 import platform
+import torch
 from optimum.intel import OVModelForSequenceClassification
 from utils.qwen3_reranker_utils import qwen3_reranker_format_queries, qwen3_reranker_format_document
 
@@ -27,6 +28,7 @@ RERANK_TEST_MODELS = [
 ]
 
 QWEN3_RERANK_SEQ_CLS = "tomaarsen/Qwen3-Reranker-0.6B-seq-cls"
+QWEN3_RERANK = "Qwen/Qwen3-Reranker-0.6B"
 
 TEXT_DATASET = f"The commercial PC market is propelled by premium\
 computing solutions that drive user productivity and help\
@@ -193,16 +195,27 @@ def run_qwen3_rerank_optimum(
         config = TextRerankPipeline.Config()
 
     concatenated = [query + doc for doc in documents]
-
     inputs = tokenizer(
         concatenated,
         padding=True,
         truncation=True,
         return_tensors="pt",
     )
-    logits = model(**inputs).logits.squeeze()
+    logits = model(**inputs).logits
 
-    scores = logits.sigmoid()
+    # support seq-cls reranker
+    if logits.shape[1] == 1:
+        scores = logits.squeeze().sigmoid()
+    # original postprocessing
+    else:
+        token_false_id = tokenizer.convert_tokens_to_ids("no")
+        token_true_id = tokenizer.convert_tokens_to_ids("yes")
+        batch_scores = logits[:, -1, :]
+        true_vector = batch_scores[:, token_true_id]
+        false_vector = batch_scores[:, token_false_id]
+        batch_scores = torch.stack([false_vector, true_vector], dim=1)
+        batch_scores = torch.nn.functional.log_softmax(batch_scores, dim=1)
+        scores = batch_scores[:, 1].exp()
 
     with_ids = list(enumerate(scores.tolist()))
     sorted_by_score = sorted(with_ids, key=lambda x: x[1], reverse=True)
@@ -483,8 +496,44 @@ def test_rerank_documents(download_and_convert_rerank_model, dataset_documents, 
     ],
 )
 @pytest.mark.precommit
-def test_qwen3_rerank_documents(download_and_convert_rerank_model, query, task, documents, config):
+def test_qwen3_seq_cls_rerank_documents(download_and_convert_rerank_model, query, task, documents, config):
     opt_model, hf_tokenizer, models_path = download_and_convert_rerank_model
+
+    formatted_query = qwen3_reranker_format_queries(query, task)
+    formatted_documents = [qwen3_reranker_format_document(doc) for doc in documents]
+
+    opt_result = run_qwen3_rerank_optimum(opt_model, hf_tokenizer, formatted_query, formatted_documents, config)
+    genai_result = run_text_rerank_genai(models_path, formatted_query, formatted_documents, config)
+
+    assert_rerank_results(opt_result, genai_result)
+
+
+@pytest.mark.parametrize("download_and_convert_model_fixture", [QWEN3_RERANK], indirect=True)
+@pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
+@pytest.mark.parametrize("task", ["Given a web search query, retrieve relevant passages that answer the query"])
+@pytest.mark.parametrize(
+    "documents",
+    [
+        [
+            "Venus is often called Earth's twin because of its similar size and proximity.",
+            "Mars, known for its reddish appearance, is often referred to as the Red Planet.",
+            "Jupiter, the largest planet in our solar system, has a prominent red spot.",
+            "Saturn, famous for its rings, is sometimes mistaken for the Red Planet.",
+        ]
+    ],
+)
+@pytest.mark.parametrize(
+    "config",
+    [
+        TextRerankPipeline.Config(top_n=4),
+    ],
+    ids=[
+        "top_n=4",
+    ],
+)
+@pytest.mark.precommit
+def test_qwen3_rerank_documents(download_and_convert_model_fixture, query, task, documents, config):
+    opt_model, hf_tokenizer, models_path = download_and_convert_model_fixture
 
     formatted_query = qwen3_reranker_format_queries(query, task)
     formatted_documents = [qwen3_reranker_format_document(doc) for doc in documents]
