@@ -62,10 +62,11 @@ def parse_args():
     parser.add_argument(
         "--model-type",
         type=str,
-        choices=["text", "text-to-image", "visual-text", "image-to-image", "image-inpainting", "text-embedding"],
+        choices=["text", "text-to-image", "visual-text", "image-to-image", "image-inpainting", "text-embedding", "text-reranking"],
         default="text",
         help="Indicated the model type: 'text' - for causal text generation, 'text-to-image' - for image generation, "
-        "visual-text - for Visual Language Models, image-to-image - for image generation based on image and prompt",
+        "visual-text - for Visual Language Models, image-to-image - for image generation based on image and prompt "
+        "image-inpainting - for image generation based on image, mask and prompt, text-reranking - for reranking a list of texts based on relevance to query",
     )
     parser.add_argument(
         "--data-encoder",
@@ -218,6 +219,12 @@ def parse_args():
         choices=["left", "right"],
         default=None,
         help="Side to use for padding 'left' or 'right'. Applicable only for text embeddings")
+    parser.add_argument(
+        "--rag-config",
+        type=str,
+        default=None,
+        help="Path to the JSON file with config for Embedding/Reranker Pipeline",
+    )
 
     return parser.parse_args()
 
@@ -434,6 +441,10 @@ def genai_gen_embedding(model, tokenizer, passages, **kwargs):
     return embeddings
 
 
+def genai_gen_reranking(model, tokenizer, query, documents):
+    return model.rerank(query, documents)
+
+
 def is_model_with_automatic_crop(config):
     return "internvl" in config.model_type or "minicpmv" in config.model_type
 
@@ -538,6 +549,15 @@ def create_evaluator(base_model, args):
                 normalize=args.embeds_normalize,
                 padding_side=args.embeds_padding_side,
             )
+        elif task == "text-reranking":
+            return EvaluatorCLS(
+                base_model=base_model,
+                tokenizer=load_tokenizer(args),
+                gt_data=args.gt_data,
+                test_data=prompts,
+                num_samples=args.num_samples,
+                gen_rerank_fn=genai_gen_reranking if args.genai else None
+            )
         else:
             raise ValueError(f"Unsupported task: {task}")
     except KeyError as e:
@@ -614,6 +634,21 @@ def read_cb_config(path):
     except json.JSONDecodeError:
         logger.error(f"Invalid JSON format in configuration file: {path}")
         return {}
+
+
+def print_rag_results(evaluator):
+    metric_of_interest = "similarity"
+    worst_examples = evaluator.worst_examples(
+        top_k=5, metric=metric_of_interest)
+    for i, e in enumerate(worst_examples):
+        logger.info(
+            "======================================================================================================="
+        )
+        logger.info(f"Top-{i+1} example:")
+        logger.info("## Query:\n%s\n", e["query"])
+        logger.info("## Passages num:\n%s\n", len(e["passages"]))
+        logger.info("## Similarity:\n%s\n", e["similarity"])
+        logger.info("## Top_n scores:\n%s\n", e["per_text_score_list"])
 
 
 def main():
@@ -708,6 +743,8 @@ def main():
             print_image_results(evaluator)
         elif args.model_type in ['text-embedding']:
             print_embeds_results(evaluator)
+        elif args.model_type in ['text-reranking']:
+            print_rag_results(evaluator)
 
 
 if __name__ == "__main__":
