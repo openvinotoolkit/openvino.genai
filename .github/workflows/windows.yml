@@ -348,8 +348,8 @@ jobs:
 
       - name: Download and install ffmpeg
         run: |
-          Invoke-WebRequest -Uri https://www.gyan.dev/ffmpeg/builds/ffmpeg-git-essentials.7z -OutFile ffmpeg.7z
-          Expand-Archive -Force ffmpeg.7z 
+          Invoke-WebRequest -Uri https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip -OutFile ffmpeg.zip
+          Expand-Archive -Force ffmpeg.zip 
           Add-Content -Path $env:GITHUB_PATH -Value "${{ github.workspace }}/ffmpeg/bin"
 
       - name: Set CI environment
