@@ -163,21 +163,31 @@ def resize_video(video, shape):
     return np.array(video_resized)
 
 @pytest.fixture(scope="module")
-def child_video(pytestconfig):
-    from huggingface_hub import hf_hub_download
-    import av
-    video_path = hf_hub_download(repo_id="raushan-testing-hf/videos-test", filename="sample_demo_1.mp4", repo_type="dataset")
-    container = av.open(video_path)
+def synthetic_video(pytestconfig):
+    # TODO: use real video
+    car_url = "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg"
+    image = from_cache_or_download(pytestconfig, car_url, "car.jpg")
 
-    # get 10 frames from video
-    total_frames = container.streams.video[0].frames
-    indices = np.arange(0, total_frames, total_frames / 10).astype(int)
+    # make 10 frames
+    total_frames = 10
+    frames = []
+    frames.append(np.array(image))
+    shift = 3
+    for i in range(1, total_frames):
+        new_frame = np.zeros(np.array(image).shape, np.array(image).dtype)
 
-    return read_video_pyav(container, indices)
+        width, height = image.size
+        for x in range(0, width):
+            for y in range(0, height):
+                # shift previous frame
+                new_frame[y, x] = frames[i-1][y, (x - shift + width) % width]
+        frames.append(new_frame)
+
+    return frames
 
 @pytest.fixture(scope="module")
-def child_video_32x32(child_video):
-    return resize_video(child_video, (32, 32))
+def synthetic_video_32x32(synthetic_video):
+    return resize_video(synthetic_video, (32, 32))
 
 
 @pytest.fixture(scope="module")
@@ -191,8 +201,8 @@ def car_tensor(pytestconfig):
     return openvino.Tensor(from_cache_or_download(pytestconfig, car_url, "car.jpg"))
 
 @pytest.fixture(scope="module")
-def child_video_32x32_tensor(child_video_32x32):
-    return openvino.Tensor(child_video_32x32)
+def synthetic_video_32x32_tensor(synthetic_video_32x32):
+    return openvino.Tensor(synthetic_video_32x32)
 
 @pytest.fixture(scope="module")
 def handwritten_tensor(pytestconfig):
@@ -273,7 +283,7 @@ add_request_model_ids = [
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", add_request_model_ids)
 @pytest.mark.parametrize("config", configs)
-def test_vlm_continuous_batching_generate_vs_add_request(model_id, config, cat_tensor, child_video_32x32_tensor):
+def test_vlm_continuous_batching_generate_vs_add_request(model_id, config, cat_tensor, synthetic_video_32x32_tensor):
     scheduler_config = SchedulerConfig()
     models_path = get_ov_model(model_id)
     ov_pipe = VLMPipeline(
@@ -287,7 +297,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(model_id, config, cat_t
     eps = 0.001
     if model_id in video_model_ids:
         images_list = [[], [cat_tensor], [cat_tensor]]
-        videos_list = [[child_video_32x32_tensor], [child_video_32x32_tensor], []]
+        videos_list = [[synthetic_video_32x32_tensor], [synthetic_video_32x32_tensor], []]
     else:
         images_list = [[], [cat_tensor]]
         videos_list = [[], []]
@@ -427,15 +437,15 @@ def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
 
 @pytest.fixture(scope="module", params=[
     pytest.param(
-        [[[], [], []], [[], [ "child_video_32x32_tensor"], []]],
+        [[[], [], []], [[], [ "synthetic_video_32x32_tensor"], []]],
         id="Video on second iteration"
     ),
     pytest.param(
-        [[["cat_tensor"], [], []], [["child_video_32x32_tensor"], [], ["child_video_32x32_tensor"]]],
+        [[["cat_tensor"], [], []], [["synthetic_video_32x32_tensor"], [], ["synthetic_video_32x32_tensor"]]],
         id="Image + video on first iteration, image on third iteration"
     ),
     pytest.param(
-        [[["cat_tensor", "car_tensor", "handwritten_tensor"], []], [["child_video_32x32_tensor"], ["child_video_32x32_tensor"]]],
+        [[["cat_tensor", "car_tensor", "handwritten_tensor"], []], [["synthetic_video_32x32_tensor"], ["synthetic_video_32x32_tensor"]]],
         id="3 images + video on first iteration, video on second iteration"
     ),
 ])
@@ -680,7 +690,7 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(request, model_id, im
 
     images_and_videos = {"images": image_sequence}
     if model_id in video_model_ids:
-        video = request.getfixturevalue("child_video_32x32_tensor")
+        video = request.getfixturevalue("synthetic_video_32x32_tensor")
         images_and_videos["videos"] = video
 
     results_with_cancel = ""
@@ -810,7 +820,7 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(request, model_id, ima
 
     images_and_videos = {"images": image_sequence}
     if model_id in video_model_ids:
-        video = request.getfixturevalue("child_video_32x32_tensor")
+        video = request.getfixturevalue("synthetic_video_32x32_tensor")
         images_and_videos["videos"] = video
 
     ov_pipe.start_chat()
@@ -1105,10 +1115,10 @@ def cat_image_32x32(cat_image):
         pytest.param("qnguyen3/nanoLLaVA", "cat_image_384x384", None, "PA"),
         pytest.param("katuni4ka/tiny-random-llava-next-video", "cat_image_336x336", None, "SDPA"),
         pytest.param("katuni4ka/tiny-random-llava-next-video", "cat_image_336x336", None, "PA"),
-        pytest.param("katuni4ka/tiny-random-llava-next-video", None, "child_video_32x32", "SDPA"),
-        pytest.param("katuni4ka/tiny-random-llava-next-video", None, "child_video_32x32", "PA"),
-        pytest.param("katuni4ka/tiny-random-llava-next-video", "cat_image_336x336", "child_video_32x32", "SDPA"),
-        pytest.param("katuni4ka/tiny-random-llava-next-video", "cat_image_336x336", "child_video_32x32", "PA"),
+        pytest.param("katuni4ka/tiny-random-llava-next-video", None, "synthetic_video_32x32", "SDPA"),
+        pytest.param("katuni4ka/tiny-random-llava-next-video", None, "synthetic_video_32x32", "PA"),
+        pytest.param("katuni4ka/tiny-random-llava-next-video", "cat_image_336x336", "synthetic_video_32x32", "SDPA"),
+        pytest.param("katuni4ka/tiny-random-llava-next-video", "cat_image_336x336", "synthetic_video_32x32", "PA"),
     ],
 )
 def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, video_name, backend):
