@@ -55,6 +55,7 @@ def get_similarity(output: str) -> float:
     return float(matches[-1])
 
 
+@pytest.mark.common_scope
 @pytest.mark.parametrize(
     ("model_id", "model_type", "backend"),
     [
@@ -98,6 +99,7 @@ def test_image_model_types(model_id, model_type, backend, tmp_path):
     assert similarity >= 0.98
 
 
+@pytest.mark.common_scope
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     list(itertools.product(OV_IMAGE_MODELS,
@@ -198,6 +200,7 @@ def test_image_model_genai(model_id, model_type, tmp_path):
     ])
 
 
+@pytest.mark.common_scope
 @pytest.mark.parametrize(
     ("model_id", "model_type", "backend"),
     [
