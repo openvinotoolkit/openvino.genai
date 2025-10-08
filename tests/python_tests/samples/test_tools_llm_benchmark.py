@@ -5,8 +5,10 @@ import os
 import pytest
 import sys
 
-from conftest import SAMPLES_PY_DIR, convert_model, download_test_content
 from test_utils import run_sample
+from data.models import get_gguf_model_list
+from utils.hugging_face import download_gguf_model
+from conftest import SAMPLES_PY_DIR, convert_model, download_test_content
 from utils.hugging_face import download_and_convert_embeddings_models, download_and_convert_model
 
 convert_draft_model = convert_model
@@ -284,5 +286,22 @@ class TestBenchmarkLLM:
             sys.executable, 
             benchmark_script, 
             "-m", models_path,
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+
+    @pytest.mark.samples
+    @pytest.mark.parametrize("sample_args", [
+        ["-d", "cpu", "-n", "1"],
+        ["-d", "cpu", "-n", "1", "-f", "pt"],
+    ])
+    def test_python_tool_llm_benchmark_gguf_format(self, sample_args):
+        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        gguf_model = get_gguf_model_list()[0]
+        gguf_full_path = download_gguf_model(gguf_model["gguf_model_id"], gguf_model["gguf_filename"])
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m", gguf_full_path,
         ] + sample_args
         run_sample(benchmark_py_command)
