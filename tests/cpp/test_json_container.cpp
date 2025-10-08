@@ -383,7 +383,7 @@ TEST(JsonContainerTest, container_conversion) {
     EXPECT_TRUE(jc.is_string());
     EXPECT_EQ(jc.get_string(), "primitive");
 
-    // Test primitive to array convertion
+    // Test primitive to array conversion
     jc.to_empty_array();
     EXPECT_TRUE(jc.is_array());
     EXPECT_EQ(jc.size(), 0);
@@ -391,7 +391,7 @@ TEST(JsonContainerTest, container_conversion) {
     EXPECT_EQ(jc.size(), 1);
     EXPECT_EQ(jc[0].get_string(), "item1");
 
-    // Test array to object convertion
+    // Test array to object conversion
     jc.to_empty_object();
     EXPECT_TRUE(jc.is_object());
     EXPECT_EQ(jc.size(), 0);
