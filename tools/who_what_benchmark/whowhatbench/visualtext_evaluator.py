@@ -141,6 +141,10 @@ class VisualTextEvaluator(TextEvaluator):
                 tokenizer=tokenizer,
                 **get_ignore_parameters_flag()
             )
+            if isinstance(tokens, tuple) and isinstance(tokens[0], list) and isinstance(tokens[0][0], str):
+                # Some models return a decoded output, like miniCPM-o
+                # The output tuple has format (<list of decoded strings>, <GenerateDecoderOnlyOutput>)
+                return tokens[0][0]
             if crop_question:
                 tokens = tokens[:, inputs["input_ids"].shape[-1] :]
 
