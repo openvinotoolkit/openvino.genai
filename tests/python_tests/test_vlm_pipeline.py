@@ -55,10 +55,6 @@ from utils.generation_config import (
 )
 from utils.constants import get_default_llm_properties, get_ov_cache_models_dir
 
-# needed for video decoding
-import imageio_ffmpeg
-import os
-os.environ["PATH"] += os.pathsep + os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe())
 
 def get_ov_model(model_id):
     ov_cache_models_dir = get_ov_cache_models_dir()

@@ -346,6 +346,13 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-wheel
           path: ${{ env.CCACHE_DIR }}
 
+      - name: Download and install ffmpeg
+        run: |
+          Invoke-WebRequest -Uri https://www.gyan.dev/ffmpeg/builds/ffmpeg-git-essentials.7z -OutFile ffmpeg.7z
+          Expand-Archive -Path 'ffmpeg.7z' -DestinationPath 'C:\temp\ffmpeg'
+          Move-Item -Path 'C:\temp\ffmpeg\*' -Destination 'C:\ffmpeg'
+          Add-Content -Path $env:GITHUB_PATH -Value "C:\ffmpeg\bin\"
+
       - name: Set CI environment
         id: create_manifest
         uses: openvinotoolkit/openvino/.github/actions/create_manifest@master

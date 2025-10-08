@@ -32,5 +32,4 @@ rouge==1.0.1
 peft==0.17.1
 
 # video decoding
-imageio-ffmpeg
 av
