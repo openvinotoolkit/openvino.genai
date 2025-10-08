@@ -91,6 +91,16 @@ public:
      * @throw ov::Exception if parsing fails
      */
     static JsonContainer from_json_string(const std::string& json_str);
+    
+    /**
+     * @brief Create JsonContainer as an empty JSON object.
+     */
+    static JsonContainer object();
+
+    /**
+     * @brief Create JsonContainer as an empty JSON array.
+     */
+    static JsonContainer array();
 
     /**
      * @brief Assignment operator for JSON primitive types (bool, int64_t, double, string, etc.).

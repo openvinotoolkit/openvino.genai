@@ -57,6 +57,14 @@ JsonContainer JsonContainer::from_json_string(const std::string& json_str) {
     }
 }
 
+JsonContainer JsonContainer::object() {
+    return JsonContainer(nlohmann::ordered_json::object());
+}
+
+JsonContainer JsonContainer::array() {
+    return JsonContainer(nlohmann::ordered_json::array());
+}
+
 nlohmann::ordered_json* JsonContainer::get_json_value_ptr(AccessMode mode) const {
     auto json_pointer = nlohmann::ordered_json::json_pointer(m_path);
     if (mode == AccessMode::Read && !m_json->contains(json_pointer)) {
