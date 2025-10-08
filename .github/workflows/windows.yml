@@ -349,9 +349,8 @@ jobs:
       - name: Download and install ffmpeg
         run: |
           Invoke-WebRequest -Uri https://www.gyan.dev/ffmpeg/builds/ffmpeg-git-essentials.7z -OutFile ffmpeg.7z
-          Expand-Archive -Path 'ffmpeg.7z' -DestinationPath 'C:\temp\ffmpeg'
-          Move-Item -Path 'C:\temp\ffmpeg\*' -Destination 'C:\ffmpeg'
-          Add-Content -Path $env:GITHUB_PATH -Value "C:\ffmpeg\bin\"
+          Expand-Archive -Force ffmpeg.7z 
+          Add-Content -Path $env:GITHUB_PATH -Value "${{ github.workspace }}/ffmpeg/bin"
 
       - name: Set CI environment
         id: create_manifest
