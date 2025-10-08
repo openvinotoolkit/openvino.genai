@@ -310,7 +310,7 @@ TEST(JsonContainerTest, array_operations) {
     EXPECT_THROW(jc[100].to_json(), ov::Exception);
 
     // Test out-of-bounds assignment expands array with nulls
-    jc.set_array();
+    jc.to_empty_array();
     EXPECT_EQ(jc.size(), 0);
     jc[2] = "value";  // Should create nulls at indices 0-1
     EXPECT_TRUE(jc.is_array());
@@ -358,7 +358,7 @@ TEST(JsonContainerTest, object_operations) {
     EXPECT_EQ(jc["key1"].get_string(), "value");
 
     // Test object key assignment with integer (converted to string)
-    jc.set_object();
+    jc.to_empty_object();
     EXPECT_EQ(jc.size(), 0);
     jc[5] = "value";
     EXPECT_TRUE(jc.is_object());
@@ -384,7 +384,7 @@ TEST(JsonContainerTest, container_conversion) {
     EXPECT_EQ(jc.get_string(), "primitive");
 
     // Test primitive to array convertion
-    jc.set_array();
+    jc.to_empty_array();
     EXPECT_TRUE(jc.is_array());
     EXPECT_EQ(jc.size(), 0);
     jc.push_back("item1");
@@ -392,7 +392,7 @@ TEST(JsonContainerTest, container_conversion) {
     EXPECT_EQ(jc[0].get_string(), "item1");
 
     // Test array to object convertion
-    jc.set_object();
+    jc.to_empty_object();
     EXPECT_TRUE(jc.is_object());
     EXPECT_EQ(jc.size(), 0);
     jc["key"] = "value";
@@ -434,7 +434,7 @@ TEST(JsonContainerTest, json_string) {
         {"string", "test"},
         {"number", 42},
         {"boolean", true},
-        {"array", JsonContainer().set_array().push_back(1).push_back(2)},
+        {"array", JsonContainer().to_empty_array().push_back(1).push_back(2)},
         {"object", JsonContainer({{"nested", "value"}})}
     });
     
@@ -446,7 +446,7 @@ TEST(JsonContainerTest, json_string) {
     jc["string"] = "test";
     jc["number"] = 42;
     jc["boolean"] = true;
-    jc["array"].set_array().push_back(1).push_back(2);
+    jc["array"].to_empty_array().push_back(1).push_back(2);
     jc["object"]["nested"] = "value";
 
     std::string json_string = jc.to_json_string();

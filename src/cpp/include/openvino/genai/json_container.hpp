@@ -169,13 +169,13 @@ public:
      * @brief Convert this container to an empty object.
      * @return Reference to this container for chaining
      */
-    JsonContainer& set_object();
+    JsonContainer& to_empty_object();
 
     /**
      * @brief Convert this container to an empty array.
      * @return Reference to this container for chaining
      */
-    JsonContainer& set_array();
+    JsonContainer& to_empty_array();
 
     /**
      * @brief Check if object contains a key.

@@ -205,13 +205,13 @@ std::string JsonContainer::get_string() const {
     return json_value_ptr->get<std::string>();
 }
 
-JsonContainer& JsonContainer::set_object() {
+JsonContainer& JsonContainer::to_empty_object() {
     auto json_value_ptr = get_json_value_ptr(AccessMode::Write);
     *json_value_ptr = nlohmann::ordered_json::object();
     return *this;
 }
 
-JsonContainer& JsonContainer::set_array() {
+JsonContainer& JsonContainer::to_empty_array() {
     auto json_value_ptr = get_json_value_ptr(AccessMode::Write);
     *json_value_ptr = nlohmann::ordered_json::array();
     return *this;
