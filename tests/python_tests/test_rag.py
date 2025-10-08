@@ -13,8 +13,9 @@ from langchain_community.document_compressors.openvino_rerank import OpenVINORer
 from typing import Literal, Union
 import sys
 import platform
+from optimum.intel import OVModelForFeatureExtraction, OVModelForSequenceClassification
+from torch import Tensor
 import torch
-from optimum.intel import OVModelForSequenceClassification
 from utils.qwen3_reranker_utils import qwen3_reranker_format_queries, qwen3_reranker_format_document
 
 EMBEDDINGS_TEST_MODELS = [
@@ -135,8 +136,38 @@ def run_text_embedding_langchain(
         return ov_embeddings.embed_query(documents[0])
 
 
+def last_token_pool(last_hidden_states: Tensor, attention_mask: Tensor) -> Tensor:
+    left_padding = attention_mask[:, -1].sum() == attention_mask.shape[0]
+    if left_padding:
+        return last_hidden_states[:, -1]
+    else:
+        sequence_lengths = attention_mask.sum(dim=1) - 1
+        batch_size = last_hidden_states.shape[0]
+        batch_dim = torch.arange(batch_size, device=last_hidden_states.device)
+        result = last_hidden_states[batch_dim, sequence_lengths]
+        return result
+
+
+# from transformers Qwen3-Embedding-0.6B model card: https://huggingface.co/Qwen/Qwen3-Embedding-0.6B#transformers-usage
+def run_qwen3_embedding_optimum(
+    model: OVModelForFeatureExtraction,
+    tokenizer,
+    documents: list[str],
+    padding_side: Literal["left", "right"] = "left",
+):
+    encoded = tokenizer(
+        documents,
+        padding=True,
+        truncation=True,
+        padding_side=padding_side,
+        return_tensors="pt",
+    )
+    outputs = model(**encoded)
+    return last_token_pool(outputs.last_hidden_state, encoded["attention_mask"])
+
+
 EmbeddingResult = Union[list[list[float]], list[list[int]], list[float], list[int]]
-MAX_EMBEDDING_ERROR = 2e-6
+MAX_EMBEDDING_ERROR = 2e-6 if sys.platform != "darwin" else 0.02  # ARM64 macs have different results
 
 
 def validate_embedding_results(result_1: EmbeddingResult, result_2: EmbeddingResult):
@@ -160,10 +191,11 @@ def run_text_embedding_pipeline_with_ref(
 
 
 def assert_rerank_results(result_1: list[tuple[int, float]], result_2: list[tuple[int, float]]):
+    score_diff_max = 1e-6 if sys.platform != "darwin" else 2e-4  # ARM64 macs have different results
     assert len(result_1) == len(result_2), f"Results length mismatch: {len(result_1)} != {len(result_2)}"
     for pair_1, pair_2 in zip(result_1, result_2):
         assert pair_1[0] == pair_2[0], f"Document IDs do not match: {pair_1[0]} != {pair_2[0]}"
-        assert abs(pair_1[1] - pair_2[1]) < 1e-6, f"Scores do not match for document ID {pair_1[0]}: " f"{pair_1[1]} != {pair_2[1]}"
+        assert abs(pair_1[1] - pair_2[1]) < score_diff_max, f"Scores do not match for document ID {pair_1[0]}: " f"{pair_1[1]} != {pair_2[1]}"
 
 
 def run_text_rerank_langchain(
@@ -283,6 +315,23 @@ def test_embedding_constructors(download_and_convert_embeddings_models):
         pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
         PERFORMANCE_HINT_NUM_REQUESTS=2,
     )
+
+
+@pytest.mark.parametrize("download_and_convert_embeddings_models", ["Qwen/Qwen3-Embedding-0.6B"], indirect=True)
+@pytest.mark.parametrize(
+    "config",
+    [
+        TextEmbeddingPipeline.Config(normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN, padding_side="left"),
+        TextEmbeddingPipeline.Config(normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN),
+    ],
+)
+@pytest.mark.precommit
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
+def test_qwen3_embedding(download_and_convert_embeddings_models, dataset_documents, config):
+    opt_model, hf_tokenizer, models_path = download_and_convert_embeddings_models
+    embeddings_opt = run_qwen3_embedding_optimum(opt_model, hf_tokenizer, dataset_documents, config.padding_side)
+    embeddings_genai = run_text_embedding_genai(models_path, dataset_documents, config, "embed_documents")
+    validate_embedding_results(embeddings_genai, embeddings_opt.tolist())
 
 
 @pytest.mark.parametrize("download_and_convert_embeddings_models", EMBEDDINGS_TEST_MODELS, indirect=True)
