@@ -545,6 +545,7 @@ def test_rerank_documents(download_and_convert_rerank_model, dataset_documents, 
     ],
 )
 @pytest.mark.precommit
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
 def test_qwen3_seq_cls_rerank_documents(download_and_convert_rerank_model, query, task, documents, config):
     opt_model, hf_tokenizer, models_path = download_and_convert_rerank_model
 
@@ -581,6 +582,7 @@ def test_qwen3_seq_cls_rerank_documents(download_and_convert_rerank_model, query
     ],
 )
 @pytest.mark.precommit
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
 def test_qwen3_rerank_documents(download_and_convert_model_fixture, query, task, documents, config):
     opt_model, hf_tokenizer, models_path = download_and_convert_model_fixture
 
