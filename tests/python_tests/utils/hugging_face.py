@@ -215,10 +215,10 @@ def download_and_convert_rerank_model(request):
 @pytest.fixture()
 def download_and_convert_model_fixture(request):
     model_id = request.param
-    tokekizer_kwargs = {
+    tokenizer_kwargs = {
         "padding_side": "left"
     }
-    return _download_and_convert_model(model_id, OVModelForCausalLM, **tokekizer_kwargs)
+    return _download_and_convert_model(model_id, OVModelForCausalLM, **tokenizer_kwargs)
 
 
 def _download_and_convert_model(model_id: str, model_class: Type[OVModel], **tokenizer_kwargs):

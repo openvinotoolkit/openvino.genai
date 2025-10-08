@@ -95,7 +95,7 @@ std::shared_ptr<Model> apply_qwen3_postprocessing(std::shared_ptr<Model> model,
 
     processor.output().postprocess().custom([&output_shape,
                                              &params](const ov::Output<ov::Node>& node) -> std::shared_ptr<ov::Node> {
-        // to support models with embedded prostprocessing like tomaarsen/Qwen3-Reranker-0.6B-seq-cls
+        // to support models with embedded postprocessing like tomaarsen/Qwen3-Reranker-0.6B-seq-cls
         if (output_shape[1] == 1) {
             return std::make_shared<op::v0::Sigmoid>(node);
         }
