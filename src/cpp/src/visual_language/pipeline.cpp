@@ -199,10 +199,7 @@ public:
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
         }
 
-        ov::AnyMap vision_config;
-        
         // Add text prompt to vision config for CDPruner
-        vision_config["text_prompt"] = prompt;
         if (generation_config.pruning_ratio > 0 && generation_config.pruning_ratio < 100) {
             std::cout << "[CDPruner] Warning: Pruning is disabled. It is only supported when using PA as the attention "
                          "backend."
@@ -213,7 +210,7 @@ public:
         m_inputs_embedder->set_visual_token_pruning_config(generation_config.pruning_ratio,
                                                            generation_config.relevance_weight);
 
-        const auto encoded_images = m_inputs_embedder->encode_images(rgbs, vision_config);
+        const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
         auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
 
         if (m_is_chat_conversation) {
