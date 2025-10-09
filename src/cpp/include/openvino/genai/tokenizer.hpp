@@ -13,11 +13,13 @@
 #include "openvino/genai/visibility.hpp"
 #include <openvino/runtime/properties.hpp>
 
+#include "openvino/genai/chat_history.hpp"
+
 namespace ov {
 namespace genai {
 
-using ChatHistory = std::vector<ov::AnyMap>;
-using ToolDefinitions = std::vector<ov::AnyMap>;
+using ov::genai::JsonContainer;
+using ov::genai::ChatHistory;
 
 using Vocab = std::unordered_map<std::string, int64_t>;  // similar to huggingface .get_vocab() output format
 
@@ -248,20 +250,20 @@ public:
      * For example, for Qwen family models, the prompt "1+1=" would be transformed into
      * <|im_start|>user\n1+1=<|im_end|>\n<|im_start|>assistant\n.
      *
-     * @param history A vector of chat messages, where each message is represented as a map, e.g. [{"role": "user", "content": "prompt"}, ...].
+     * @param history Chat history containing the conversation messages, where each message is a JSON-like object, e.g. [{"role": "user", "content": "prompt"}, ...].
      * @param add_generation_prompt Whether to add an ending that indicates the start of generation.
      * @param chat_template An optional custom chat template string, if not specified will be taken from the tokenizer.
-     * @param tools An optional vector of tool definitions to be used in the chat template.
-     * @param extra_context An optional map of additional variables to be used in the chat template.
+     * @param tools An optional JSON-like array of tool definitions to be used in the chat template.
+     * @param extra_context An optional JSON-like object with additional variables to be used in the chat template.
      * @return A string with the formatted and concatenated prompts from the chat history.
      * @throws Exception if the chat template was unable to parse the input history.
      */
     std::string apply_chat_template(
-        ChatHistory history,
+        const ChatHistory& history,
         bool add_generation_prompt,
         const std::string& chat_template = {},
-        const ToolDefinitions& tools = {},
-        const ov::AnyMap& extra_context = {}
+        const JsonContainer& tools = JsonContainer::array(),
+        const JsonContainer& extra_context = JsonContainer::object()
     ) const;
 
     /// @brief Override a chat_template read from tokenizer_config.json.
