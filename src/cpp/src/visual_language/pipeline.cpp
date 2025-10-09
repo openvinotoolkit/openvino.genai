@@ -21,6 +21,20 @@
 
 using namespace ov::genai;
 
+namespace {
+void update_npu_properties(const std::filesystem::path& models_dir, ov::AnyMap& properties) {
+    auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
+    switch (vlm_config.model_type) {
+        case VLMModelType::GEMMA3:
+            properties.insert({"NPUW_LLM_PREFILL_HINT", "STATIC"});
+            properties.insert({"NPUW_F16IC", "NO"});
+            break;
+        default:
+            break;
+    }
+}
+}
+
 class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     // A config to follow for text generation.
     GenerationConfig m_generation_config;
@@ -85,6 +99,7 @@ public:
         if (m_is_npu) {
             embedder_device = "CPU";
             utils::KVDesc kv_desc;
+            update_npu_properties(models_dir, lm_properties);
             std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(language_model, lm_properties, kv_pos);
             m_max_prompt_len = kv_desc.max_prompt_len;
             m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
