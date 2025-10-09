@@ -4,6 +4,7 @@
 #include "tokenizer/tokenizer_impl.hpp"
 #include "add_second_input_pass.hpp"
 #include "sampling/structured_output/structured_output_controller.hpp"
+#include "openvino/genai/version.hpp"
 
 namespace ov {
 namespace genai {
@@ -273,7 +274,8 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
     std::shared_ptr<ov::Model> ov_tokenizer = nullptr;
     std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
     auto [filtered_properties, enable_save_ov_model] = utils::extract_gguf_properties(properties);
-    if (is_gguf_model(models_path)) {
+    
+    if (ov::genai::is_gguf_model(models_path)) {
         std::map<std::string, GGUFMetaData> tokenizer_config{};
         std::tie(ov_tokenizer, ov_detokenizer, tokenizer_config) =
             create_tokenizer_from_config(m_shared_object_ov_tokenizers, models_path);
@@ -293,6 +295,8 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
         if (!m_chat_template.empty()) {
             m_chat_template = patch_gguf_chat_template(m_chat_template);
         }
+        ov_tokenizer->set_rt_info(ov::genai::get_version().buildNumber, "openvino_genai_version");
+        ov_detokenizer->set_rt_info(ov::genai::get_version().buildNumber, "openvino_genai_version");
 
         if (enable_save_ov_model){
             std::filesystem::path gguf_model_path(models_path);
@@ -372,8 +376,14 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
     auto core = get_core_singleton();
     std::string device = "CPU";  // only CPU is supported for now
 
-    // Saving IR version was added only in 24.5, so if it's missing, then it's older than 24.5
-    m_older_than_24_5 = !(ov_tokenizer ? ov_tokenizer : ov_detokenizer)->has_rt_info("openvino_tokenizers_version");
+    // Save openvino GenAI runtime version was added in 25.4 for GGUF models,
+    // if we have it in ov::Model, then it's newer than 24.5 we don't need to check 'openvino_tokenizers' version.
+    if ((ov_tokenizer ? ov_tokenizer : ov_detokenizer)->has_rt_info("openvino_genai_version")) {
+        m_older_than_24_5 = false;
+    } else {
+        // Saving IR version was added only in 24.5, so if it's missing, then it's older than 24.5
+        m_older_than_24_5 = !(ov_tokenizer ? ov_tokenizer : ov_detokenizer)->has_rt_info("openvino_tokenizers_version");
+    }
 
     if (ov_tokenizer) {
         ov::pass::Manager manager;
@@ -716,34 +726,49 @@ std::vector<std::string> Tokenizer::TokenizerImpl::decode(const std::vector<std:
     return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
 }
 
-std::string Tokenizer::TokenizerImpl::apply_chat_template(ChatHistory history,
-                                bool add_generation_prompt,
-                                const std::string& chat_template) const {
+std::string Tokenizer::TokenizerImpl::apply_chat_template(
+    ChatHistory history,
+    bool add_generation_prompt,
+    const std::string& chat_template,
+    const ToolDefinitions& tools,
+    const ov::AnyMap& extra_context
+) const {
     std::string chat_tpl = chat_template.empty() ? m_chat_template : remap_template(chat_template);
     OPENVINO_ASSERT(!chat_tpl.empty(),
                     "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
                     " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario."
                     " For more information see the section Troubleshooting in README.md");
-
-    minja::chat_template minja_template(chat_tpl, m_bos_token, m_eos_token);
-
-    nlohmann::ordered_json messages = nlohmann::ordered_json::array();
+    
+    nlohmann::ordered_json messages_json = nlohmann::ordered_json::array();
     for (const auto& message : history) {
-        nlohmann::ordered_json msg;
-        for (const auto& [key, value] : message) {
-            msg[key] = value;
-        }
-        messages.push_back(msg);
+        nlohmann::ordered_json message_json = ov::genai::utils::any_map_to_json(message);
+        messages_json.push_back(message_json);
     }
 
+    nlohmann::ordered_json tools_json = nlohmann::ordered_json::array();
+    for (const auto& tool : tools) {
+        nlohmann::ordered_json tool_json = ov::genai::utils::any_map_to_json(tool);
+        tools_json.push_back(tool_json);
+    }
+
+    minja::chat_template minja_template(chat_tpl, m_bos_token, m_eos_token);
+    
     minja::chat_template_inputs minja_inputs;
-    minja_inputs.messages = messages;
+    minja_inputs.messages = messages_json;
+    if (!tools_json.empty()) {
+        minja_inputs.tools = tools_json;
+    }
     minja_inputs.add_generation_prompt = add_generation_prompt;
     minja_inputs.extra_context = nlohmann::ordered_json::object();
     minja_inputs.extra_context["bos_token"] = m_bos_token;
     minja_inputs.extra_context["eos_token"] = m_eos_token;
     minja_inputs.extra_context["pad_token"] = m_pad_token;
 
+    if (!extra_context.empty()) {
+        auto extra_context_json = ov::genai::utils::any_map_to_json(extra_context);
+        minja_inputs.extra_context.update(extra_context_json);
+    }
+    
     std::string result;
     try {
         result = minja_template.apply(minja_inputs);
@@ -756,8 +781,8 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(ChatHistory history,
                         "Minja's error: ", error.what());
     }
     OPENVINO_ASSERT(!result.empty(), "Applied chat template resulted in an empty string. "
-                                        "Please check the chat template or apply template manually to your prompt before calling generate."
-                                        "For example: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
+                                     "Please check the chat template or apply template manually to your prompt before calling generate."
+                                     "For example: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
     return result;
 }
 

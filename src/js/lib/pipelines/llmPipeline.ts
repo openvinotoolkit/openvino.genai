@@ -1,6 +1,6 @@
 import util from "node:util";
 import addon from "../addon.js";
-import { GenerationConfig, StreamingStatus } from "../utils.js";
+import { GenerationConfig, StreamingStatus, LLMPipelineProperties } from "../utils.js";
 
 export type ResolveFunction = (arg: { value: string; done: boolean }) => void;
 export type Options = {
@@ -9,7 +9,15 @@ export type Options = {
 };
 
 interface Tokenizer {
-  /** Embeds input prompts with special tags for a chat scenario. */
+  /** Applies a chat template to format chat history into a prompt string. */
+  // TODO Update bindings for new ChatHistory type, tools and extra context
+  // applyChatTemplate(
+  //   chatHistory: Record<string, any>[],
+  //   addGenerationPrompt: boolean,
+  //   chatTemplate?: string,
+  //   tools?: Record<string, any>[],
+  //   extraContext?: Record<string, any>,
+  // ): string;
   applyChatTemplate(
     chatHistory: { role: string; content: string }[],
     addGenerationPrompt: boolean,
@@ -144,15 +152,17 @@ export class DecodedResults {
 }
 
 export class LLMPipeline {
-  modelPath: string | null = null;
-  device: string | null = null;
+  modelPath: string;
+  device: string;
   pipeline: any | null = null;
+  properties: LLMPipelineProperties;
   isInitialized = false;
   isChatStarted = false;
 
-  constructor(modelPath: string, device: string) {
+  constructor(modelPath: string, device: string, properties: LLMPipelineProperties) {
     this.modelPath = modelPath;
     this.device = device;
+    this.properties = properties;
   }
 
   async init() {
@@ -161,7 +171,7 @@ export class LLMPipeline {
     this.pipeline = new addon.LLMPipeline();
 
     const initPromise = util.promisify(this.pipeline.init.bind(this.pipeline));
-    const result = await initPromise(this.modelPath, this.device);
+    const result = await initPromise(this.modelPath, this.device, this.properties);
 
     this.isInitialized = true;
 

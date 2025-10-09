@@ -108,7 +108,7 @@ class StableDiffusionHook:
         pipe.vae_decoder.request = my_vae_decoder
 
 
-class EmbedForwardHook:
+class RAGForwardHook:
     def __init__(self):
         self.tm_list = []
         self.tm_infer_list = []
@@ -141,16 +141,17 @@ class EmbedForwardHook:
 
         model.forward = types.MethodType(new_forward, model)
 
-        if hasattr(model, "request"):
-            old_request = model.request
+        if model.config.model_type != "qwen3":
+            if hasattr(model, "request"):
+                old_request = model.request
 
-            def new_request(inputs, share_inputs=True, **kwargs):
-                t1 = time.time()
-                r = old_request(inputs, share_inputs=share_inputs, **kwargs)
-                t2 = time.time()
-                self_.tm_infer_list.append(t2 - t1)
-                return r
-            model.request = new_request
+                def new_request(inputs, share_inputs=True, **kwargs):
+                    t1 = time.time()
+                    r = old_request(inputs, share_inputs=share_inputs, **kwargs)
+                    t2 = time.time()
+                    self_.tm_infer_list.append(t2 - t1)
+                    return r
+                model.request = new_request
 
 
 class TTSHook:

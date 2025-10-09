@@ -51,7 +51,7 @@ jobs:
 
       - name: Get affected components
         id: smart_ci
-        uses: openvinotoolkit/openvino/.github/actions/smart-ci@master
+        uses: openvinotoolkit/openvino/.github/actions/smart-ci@36a8f092d3250e7a2a365f0445e61297d91c358e
         with:
           repository: ${{ github.repository }}
           pr: ${{ github.event.number }}
@@ -513,7 +513,7 @@ jobs:
           - name: 'Cacheopt E2E'
             cmd: 'tests/python_tests/test_kv_cache_eviction.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
-            timeout: 240
+            timeout: 360
           - name: 'LLM & VLM'
             cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py --override-ini cache_dir=/mount/caches/pytest/'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
@@ -521,7 +521,7 @@ jobs:
           - name: 'GGUF Reader tests'
             cmd: 'tests/python_tests/test_gguf_reader.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
-            timeout: 60
+            timeout: 360
           - name: 'Tokenizer tests'
             cmd: 'tests/python_tests/test_tokenizer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
@@ -535,7 +535,7 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
             timeout: 30
           - name: 'WWB tests'
-            cmd: '/tools/who_what_benchmark/tests'
+            cmd: '/tools/who_what_benchmark/tests -m "not nanollava"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 90
     defaults:
@@ -581,6 +581,13 @@ jobs:
       - name: Tests
         if: ${{ matrix.test.run_condition }}
         run: python -m pytest -v ./${{ matrix.test.cmd }}
+        working-directory: ${{ env.SRC_DIR }}
+
+      - name: Test nanoLLaVA
+        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+        run: |
+          python -m pip install transformers==4.48.0
+          python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
         working-directory: ${{ env.SRC_DIR }}
 
   genai_samples_tests:
@@ -642,6 +649,9 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
+      # The debug logging includes messages about the time it takes to read the GGUF model.
+      # These messages differ from run to run, so we cannot compare the results of the CPP, Python, and JavaScript parts.
+      OPENVINO_LOG_LEVEL: 1
 
     steps:
       - name: Clone openvino.genai

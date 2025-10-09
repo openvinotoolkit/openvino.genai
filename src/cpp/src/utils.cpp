@@ -704,6 +704,75 @@ ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov
     return inputs_embeds;
 }
 
+size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_layers) {
+    OPENVINO_ASSERT(device.find("GPU") != std::string::npos, "get_available_gpu_memory() is applicable for GPU only.");
+
+    ov::Core core = utils::singleton_core();
+    auto memory_statistics = core.get_property(device, ov::intel_gpu::memory_statistics);
+    auto device_type = core.get_property(device, ov::device::type);
+
+    // sum up all used device memory
+    std::vector<std::string> device_memory_types = {"cl_mem", "usm_device"};
+    size_t used_device_mem = 0;
+    for (auto mem_type: device_memory_types) {
+        used_device_mem += memory_statistics[mem_type];
+    }
+
+    if (device_type == ov::device::Type::INTEGRATED) {
+        used_device_mem += memory_statistics["usm_host"];
+    }
+
+    // there could be unaccounted extra memory reserved by kernels, kept
+    // in memory pools, etc
+    // therefore, add a threshold to account for this
+    float used_memory_threshold = 1.1;
+    used_device_mem *= used_memory_threshold;
+
+    // total device memory in bytes
+    auto total_device_memory = core.get_property(device, ov::intel_gpu::device_total_mem_size);
+
+    // max allocatable memory size on GPU
+    auto max_alloc_memory_size = core.get_property(device, ov::intel_gpu::device_max_alloc_mem_size);
+
+    // Total KV-cache size if a single tensor is limited by 'device_max_alloc_mem_size' property
+    auto max_allocatable_kv_cache = max_alloc_memory_size * num_decoder_layers * 2;
+
+    return std::min(total_device_memory - used_device_mem, max_allocatable_kv_cache);
+}
+
+std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_properties(const ov::AnyMap& external_properties) {
+    ov::AnyMap properties = external_properties;
+    std::optional<std::filesystem::path> blob_path;
+
+    auto blob_path_it = properties.find(ov::genai::blob_path.name());
+    if (blob_path_it != properties.end()) {
+        blob_path = blob_path_it->second.as<std::filesystem::path>();
+        OPENVINO_ASSERT(!blob_path->empty(), ov::genai::blob_path.name(), " property is empty");
+        properties.erase(blob_path_it);
+    }
+
+    return {properties, blob_path};
+}
+
+ov::CompiledModel import_model(const std::filesystem::path& blob_path,
+                               const std::string& device,
+                               const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(!blob_path.empty(), "blob path is empty");
+    ov::Tensor blob_tensor = ov::read_tensor_data(blob_path);
+    return ov::genai::utils::singleton_core().import_model(blob_tensor, device, properties);
+}
+
+void export_model(ov::CompiledModel& compiled_model, const std::filesystem::path& blob_path) {
+    OPENVINO_ASSERT(!blob_path.empty(), "blob path is empty");
+
+    std::filesystem::create_directories(blob_path.parent_path());
+
+    std::ofstream out(blob_path, std::ios::out | std::ios::binary);
+    OPENVINO_ASSERT(out.is_open(), "Cannot open file to write: " + blob_path.string());
+    compiled_model.export_model(out);
+    out.close();
+}
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
