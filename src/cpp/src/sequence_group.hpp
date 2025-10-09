@@ -68,12 +68,18 @@ class Sequence {
 
     Sequence(const Sequence& seq, const uint64_t id) :
         m_generated_ids(seq.m_generated_ids),
+        m_generated_log_probs(seq.m_generated_log_probs),
         m_grouped_id(id),
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob),
         m_sequence_group(seq.m_sequence_group),
         m_type(seq.m_type),
-        m_hidden_size(seq.m_hidden_size) {
+        m_hidden_size(seq.m_hidden_size),
+        m_prefix_hashes(seq.m_prefix_hashes),
+        m_generated_ids_embeds(seq.m_generated_ids_embeds),
+        m_position_ids(seq.m_position_ids),
+        m_rope_delta(seq.m_rope_delta)
+         {
         OPENVINO_ASSERT(seq.m_id != m_id);
     }
 
