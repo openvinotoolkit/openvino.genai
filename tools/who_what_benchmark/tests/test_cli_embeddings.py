@@ -1,7 +1,6 @@
 import subprocess  # nosec B404
 import pytest
 import logging
-import sys
 from test_cli_image import run_wwb
 
 
@@ -12,19 +11,18 @@ logger = logging.getLogger(__name__)
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [
-        ("katuni4ka/tiny-random-llava", "visual-text"),
+        ("BAAI/bge-small-en-v1.5", "text-embedding"),
+        ("Qwen/Qwen3-Embedding-0.6B", "text-embedding"),
     ],
 )
-def test_vlm_basic(model_id, model_type, tmp_path):
-    if sys.platform == 'darwin':
-        pytest.xfail("Ticket 173169")
+def test_embeddings_basic(model_id, model_type, tmp_path):
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = tmp_path / model_id.replace("/", "--")
 
     result = subprocess.run(["optimum-cli", "export",
                              "openvino", "-m", model_id,
                              MODEL_PATH, "--task",
-                             "image-text-to-text",
+                             "feature-extraction",
                              "--trust-remote-code"],
                             capture_output=True,
                             text=True,
