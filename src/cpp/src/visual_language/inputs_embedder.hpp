@@ -163,7 +163,7 @@ private:
             const std::string& device,
             const ov::AnyMap device_config);
     
-        ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
+        virtual ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
     
         ov::Tensor update_history(const ov::Tensor& new_chat_tokens);
 
@@ -190,6 +190,7 @@ private:
 
     friend class InputsEmbedderMiniCPM;
     friend class InputsEmbedderLLaVA;
+    friend class InputsEmbedderNanoLLaVA;
     friend class InputsEmbedderLLaVANext;
     friend class InputsEmbedderInternVLChat;
     friend class InputsEmbedderPhi3V;

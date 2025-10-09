@@ -23,7 +23,7 @@ void print_tensor(ov::Tensor tensor) {
     const size_t rank = shape.size();
     const auto* data = tensor.data<T>();
 
-    if (rank > 2) {
+    if (rank > 3) {
         print_array(data, tensor.get_size());
         return;
     }
@@ -35,10 +35,27 @@ void print_tensor(ov::Tensor tensor) {
     for (size_t batch = 0; batch < batch_size; ++batch) {
         std::cout << "  [ ";
         const size_t batch_offset = batch * seq_length;
-        for (size_t j = 0; j < seq_length; ++j) {
-            std::cout << data[batch_offset + j] << " ";
+
+        if (rank == 2) {
+            for (size_t j = 0; j < std::min(seq_length, size_t(10)); ++j) {
+                std::cout << data[batch_offset + j] << " ";
+            }
+            std::cout << "]\n";
+            continue;
         }
-        std::cout << "]\n";
+
+        const size_t hidden_size = shape[2];
+
+        for (size_t seq = 0; seq < seq_length; ++seq) {
+            if (seq != 0)
+                std::cout << "    ";
+            std::cout << "[ ";
+            const size_t seq_offset = (batch_offset + seq) * hidden_size;
+            for (size_t h = 0; h < std::min(hidden_size, size_t(10)); ++h) {
+                std::cout << data[seq_offset + h] << " ";
+            }
+            std::cout << "]\n";
+        }
     }
     std::cout << " ]" << std::endl;
 }
