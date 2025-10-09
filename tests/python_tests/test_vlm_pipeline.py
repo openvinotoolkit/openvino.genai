@@ -290,10 +290,10 @@ def test_vlm_continuous_batching_generate_vs_add_request(config, cat_tensor):
     generation_config = config
     generation_config.max_new_tokens = 30
     eps = 0.001
-    vision_links_list = [[], [cat_tensor]]
+    image_links_list = [[], [cat_tensor]]
 
     res_generate = []
-    for images in vision_links_list:
+    for images in image_links_list:
         res_generate.append(
             ov_pipe.generate(
                 prompts[0], images=images, generation_config=generation_config
@@ -308,7 +308,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(config, cat_tensor):
     )
     tokenizer = cb_pipe.get_tokenizer()
 
-    for idx, images in enumerate(vision_links_list):
+    for idx, images in enumerate(image_links_list):
         handle = cb_pipe.add_request(idx, prompts[0], images, generation_config)
 
         while handle.get_status() != GenerationStatus.FINISHED:
