@@ -3003,10 +3003,13 @@ class TextEmbeddingPipeline:
                 Instruction to use for embedding a query.
             embed_instruction (str, optional):
                 Instruction to use for embedding a document.
+            padding_side (str, optional):
+                Side to use for padding "left" or "right"
         """
         embed_instruction: str | None
         normalize: bool
         pad_to_max_length: bool | None
+        padding_side: str | None
         pooling_type: TextEmbeddingPipeline.PoolingType
         query_instruction: str | None
         @typing.overload
@@ -3038,10 +3041,13 @@ class TextEmbeddingPipeline:
           CLS : First token embeddings
         
           MEAN : The average of all token embeddings
+        
+          LAST_TOKEN : Last token embeddings
         """
         CLS: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.CLS: 0>
+        LAST_TOKEN: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.LAST_TOKEN: 2>
         MEAN: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.MEAN: 1>
-        __members__: typing.ClassVar[dict[str, TextEmbeddingPipeline.PoolingType]]  # value = {'CLS': <PoolingType.CLS: 0>, 'MEAN': <PoolingType.MEAN: 1>}
+        __members__: typing.ClassVar[dict[str, TextEmbeddingPipeline.PoolingType]]  # value = {'CLS': <PoolingType.CLS: 0>, 'MEAN': <PoolingType.MEAN: 1>, 'LAST_TOKEN': <PoolingType.LAST_TOKEN: 2>}
         def __eq__(self, other: typing.Any) -> bool:
             ...
         def __getstate__(self) -> int:
@@ -3159,9 +3165,9 @@ class TextStreamer(StreamerBase):
     
     tokenizer: Tokenizer object to decode tokens into text.
     callback: User-defined callback function to process the decoded text, callback should return either boolean flag or StreamingStatus.
-    
+    detokenization_params: AnyMap with detokenization parameters, e.g. ov::genai::skip_special_tokens(...)
     """
-    def __init__(self, tokenizer: Tokenizer, callback: collections.abc.Callable[[str], bool | openvino_genai.py_openvino_genai.StreamingStatus]) -> None:
+    def __init__(self, tokenizer: Tokenizer, callback: collections.abc.Callable[[str], bool | openvino_genai.py_openvino_genai.StreamingStatus], detokenization_params: collections.abc.Mapping[str, typing.Any] = {}) -> None:
         ...
     def end(self) -> None:
         ...
@@ -3193,9 +3199,9 @@ class Tokenizer:
     @typing.overload
     def __init__(self, tokenizer_model: str, tokenizer_weights: openvino._pyopenvino.Tensor, detokenizer_model: str, detokenizer_weights: openvino._pyopenvino.Tensor, **kwargs) -> None:
         ...
-    def apply_chat_template(self, history: collections.abc.Sequence[collections.abc.Mapping[str, str]], add_generation_prompt: bool, chat_template: str = '') -> str:
+    def apply_chat_template(self, history: collections.abc.Sequence[typing.Any], add_generation_prompt: bool, chat_template: str = '', tools: collections.abc.Sequence[typing.Any] = [], extra_context: typing.Any = {}) -> str:
         """
-        Embeds input prompts with special tags for a chat scenario.
+        Applies a chat template to format chat history into a prompt string.
         """
     @typing.overload
     def decode(self, tokens: collections.abc.Sequence[typing.SupportsInt], skip_special_tokens: bool = True) -> str:
@@ -3456,6 +3462,8 @@ class VLMPipeline:
             InternVL2: <image>\\n
             llava-1.5-7b-hf: <image>
             LLaVA-NeXT: <image>
+            nanoLLaVA: <image>\\n
+            nanoLLaVA-1.5: <image>\\n
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
@@ -3495,6 +3503,8 @@ class VLMPipeline:
             InternVL2: <image>\\n
             llava-1.5-7b-hf: <image>
             LLaVA-NeXT: <image>
+            nanoLLaVA: <image>\\n
+            nanoLLaVA-1.5: <image>\\n
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
@@ -3533,6 +3543,8 @@ class VLMPipeline:
             InternVL2: <image>\\n
             llava-1.5-7b-hf: <image>
             LLaVA-NeXT: <image>
+            nanoLLaVA: <image>\\n
+            nanoLLaVA-1.5: <image>\\n
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
