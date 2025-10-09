@@ -208,7 +208,7 @@ EncodedResults StatefulLLMPipeline::generate(
 
     if (is_chat_conversation)
         // if chat was run in StringInputs mode, but it was called EncodedInputs generate, last m_history entry will be with assistant role
-        OPENVINO_ASSERT(m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS || m_history.back()["role"] == "user",
+        OPENVINO_ASSERT(m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS || m_history.last()["role"] == "user",
                         "Chat doesn't support switching between input types. Please, continue using StringInputs or restart the chat.");
 
     if (!is_chat_conversation) {
