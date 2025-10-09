@@ -42,8 +42,6 @@ py::list handle_utf8(const std::vector<std::string>& decoded_res) {
     return res;
 }
 
-namespace {
-
 bool py_object_is_any_map(const py::object& py_obj) {
     if (!py::isinstance<py::dict>(py_obj)) {
         return false;
@@ -148,7 +146,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
             return structural_tags;
         } else {
             auto _list = py_obj.cast<py::list>();
-            enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE, TENSOR};
+            enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE, TENSOR, DICT};
             PY_TYPE detected_type = PY_TYPE::UNKNOWN;
             for (const auto& it : _list) {
                 auto check_type = [&](PY_TYPE type) {
@@ -170,6 +168,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                     check_type(PY_TYPE::PARTIAL_SHAPE);
                 } else if (py::isinstance<ov::Tensor>(it)) {
                     check_type(PY_TYPE::TENSOR);
+                } else if (py::isinstance<py::dict>(it)) {
+                    check_type(PY_TYPE::DICT);
                 }
             }
 
@@ -189,6 +189,13 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                 return _list.cast<std::vector<ov::PartialShape>>();
             case PY_TYPE::TENSOR:
                 return _list.cast<std::vector<ov::Tensor>>();
+            case PY_TYPE::DICT: {
+                std::vector<ov::AnyMap> any_map_list(_list.size());
+                for (const auto& item : _list) {
+                    any_map_list.push_back(py_object_to_any_map(item.cast<py::dict>()));
+                }
+                return any_map_list;
+            }
             default:
                 OPENVINO_THROW("Property \"" + property_name + "\" got unsupported type.");
             }
@@ -345,8 +352,6 @@ void add_deprecation_warning_for_chunk_streamer(std::shared_ptr<StreamerBase> st
     }
     OPENVINO_SUPPRESS_DEPRECATED_END
 }
-
-} // namespace
 
 ov::AnyMap properties_to_any_map(const std::map<std::string, py::object>& properties) {
     ov::AnyMap properties_to_cpp;
