@@ -277,8 +277,8 @@ def load_visual_text_model(
                     model_id, trust_remote_code=trust_remote_code, device_map=device.lower()
                 )
             except ValueError:
-                if config.model_type == "phi4mm":
-                    if "activation_checkpointing" in config.audio_processor["config"]:
+                if config.model_type == "phi4mm" or config.model_type == "llava-qwen2":
+                    if hasattr(config, "audio_processor") and "activation_checkpointing" in config.audio_processor["config"]:
                         config.audio_processor["config"]["activation_checkpointing"] = ""
                     config._attn_implementation = "sdpa"
                     from_pretrained_kwargs = {"config": config}
