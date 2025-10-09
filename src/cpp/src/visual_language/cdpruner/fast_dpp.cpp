@@ -28,10 +28,12 @@
 #endif
 
 // SIMD headers
-#ifdef _MSC_VER
-#    include <intrin.h>
-#else
-#    include <x86intrin.h>
+#if defined(OPENVINO_ARCH_X86_64)
+#    ifdef _MSC_VER
+#        include <intrin.h>
+#    else
+#        include <x86intrin.h>
+#    endif
 #endif
 
 namespace ov::genai::cdpruner {
