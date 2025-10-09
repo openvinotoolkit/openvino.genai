@@ -223,6 +223,8 @@ public:
 
             for (size_t idx = 0; idx < norm_prompt.images_sequence.size(); idx++) {
                 norm_prompt.images_sequence[idx] -= m_image_id;
+            }
+            for (size_t idx = 0; idx < norm_prompt.videos_sequence.size(); idx++) {
                 norm_prompt.videos_sequence[idx] -= m_video_id;
             }
         }
