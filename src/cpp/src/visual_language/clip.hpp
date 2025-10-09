@@ -9,6 +9,7 @@
 
 #include "openvino/runtime/tensor.hpp"
 
+// TODO: switch image normalization to double: CVS-174746
 struct clip_ctx {
     float image_mean[3] = {0.0f, 0.0f, 0.0f};
     float image_std[3] = {1.0f, 1.0f, 1.0f};
