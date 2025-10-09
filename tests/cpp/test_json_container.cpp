@@ -465,3 +465,18 @@ TEST(JsonContainerTest, json_string) {
     EXPECT_EQ(parsed["array"].size(), 2);
     EXPECT_EQ(parsed["object"]["nested"].get_string(), "value");
 }
+
+TEST(JsonContainerTest, subcontainers_modifications) {
+    JsonContainer messages = JsonContainer::array();
+    messages.push_back({{"role", "system"}, {"content", "assistant"}});
+    messages.push_back({{"role", "user"}, {"content", "question"}});
+    messages.push_back({{"role", "assistant"}, {"content", "answer"}});
+
+    auto middle = messages[1];
+    middle["content"] = "modified_question";
+    EXPECT_EQ(messages[1]["content"].get_string(), "modified_question");
+
+    messages.erase(1);
+    messages.erase(1);
+    EXPECT_THROW(middle["content"].get_string(), ov::Exception);
+}
