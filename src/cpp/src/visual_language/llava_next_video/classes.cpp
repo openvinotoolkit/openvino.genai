@@ -44,11 +44,15 @@ clip_image_f32 preprocess_clip_image_llava_next_video(const clip_image_u8& image
 
     // Normalize
     clip_ctx_double ctx;
-    std::copy(config.image_mean_llava_next_video.begin(), config.image_mean_llava_next_video.end(), ctx.image_mean);
-    std::copy(config.image_std_llava_next_video.begin(), config.image_std_llava_next_video.end(), ctx.image_std);
-    clip_image_f32 normalized_image = normalize_and_convert_to_chw(cropped_image, ctx);
 
-    return normalized_image;
+    // apply fused normalize and rescale to 1.0/255, by the formula: 
+    // new_mean = mean * (1.0 / scale), new_std = std * (1.0 / rescale_factor)
+    for (size_t c = 0; c < 3; c++) {
+        ctx.image_mean[c] = config.image_mean[c] * 255;
+        ctx.image_std[c] = config.image_std[c] * 255;
+    }
+
+    return normalize_and_convert_to_chw(cropped_image, ctx);
 }
 
 VisionEncoderLLaVANextVideo::VisionEncoderLLaVANextVideo(
