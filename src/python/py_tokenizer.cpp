@@ -74,7 +74,7 @@ namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
 using ov::genai::ChatHistory;
-using ov::genai::ToolDefinitions;
+using ov::genai::JsonContainer;
 using ov::genai::TokenizedInputs;
 using ov::genai::Tokenizer;
 
@@ -251,29 +251,29 @@ void init_tokenizer(py::module_& m) {
             R"(Decode a batch of tokens into a list of string prompt.)")
 
         .def("apply_chat_template", [](Tokenizer& tok,
-                                        const std::vector<py::object>& history,
+                                        const py::object& history,
                                         bool add_generation_prompt,
                                         const std::string& chat_template,
-                                        const std::vector<py::object>& tools,
+                                        const py::object& tools,
                                         const py::object& extra_context) {
-            auto history_anymap = ChatHistory{};
-            for (const auto& message : history) {
-                ov::AnyMap message_anymap = pyutils::py_object_to_any_map(message);
-                history_anymap.push_back(message_anymap);
+            ChatHistory chat_history;
+            if (py::isinstance<ChatHistory>(history)) {
+                chat_history = py::cast<ChatHistory>(history);
+            } else if (py::isinstance<py::list>(history)) {
+                chat_history = ChatHistory(pyutils::py_object_to_json_container(history));
+            } else {
+                throw py::type_error("history must be a list of dicts or ChatHistory object");
             }
-            auto tools_anymap = ToolDefinitions{};
-            for (const auto& tool : tools) {
-                ov::AnyMap tool_anymap = pyutils::py_object_to_any_map(tool);
-                tools_anymap.push_back(tool_anymap);
-            }
-            ov::AnyMap extra_context_anymap = pyutils::py_object_to_any_map(extra_context);
-            return tok.apply_chat_template(history_anymap, add_generation_prompt, chat_template, tools_anymap, extra_context_anymap);
+
+            JsonContainer tools_jc = pyutils::py_object_to_json_container(tools);
+            JsonContainer extra_context_jc = pyutils::py_object_to_json_container(extra_context);
+            return tok.apply_chat_template(chat_history, add_generation_prompt, chat_template, tools_jc, extra_context_jc);
         },
             py::arg("history"),
             py::arg("add_generation_prompt"),
             py::arg("chat_template") = "",
-            py::arg("tools") = std::vector<ov::AnyMap>(),
-            py::arg("extra_context") = ov::AnyMap({}),
+            py::arg("tools") = py::list(),
+            py::arg("extra_context") = py::dict(),
             R"(Applies a chat template to format chat history into a prompt string.)")
 
         .def(
