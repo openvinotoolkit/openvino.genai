@@ -9,6 +9,7 @@
 
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/json_container.hpp"
 
 namespace py = pybind11;
 using ov::genai::StreamerBase;
@@ -46,5 +47,7 @@ ov::genai::GenerationConfig update_config_from_kwargs(ov::genai::GenerationConfi
 ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& py_streamer);
 
 ov::AnyMap py_object_to_any_map(const py::object& py_obj);
+
+ov::genai::JsonContainer py_object_to_json_container(const py::object& obj);
 
 }  // namespace ov::genai::pybind::utils

@@ -447,4 +447,13 @@ ov::genai::GenerationConfig update_config_from_kwargs(ov::genai::GenerationConfi
     return config;
 }
 
+ov::genai::JsonContainer py_object_to_json_container(const py::object& obj) {
+    if (obj.is_none()) {
+        return JsonContainer();
+    }
+    py::module_ json_module = py::module_::import("json");
+    std::string json_string = py::cast<std::string>(json_module.attr("dumps")(obj));
+    return JsonContainer::from_json_string(json_string);
+}
+
 }  // namespace ov::genai::pybind::utils
