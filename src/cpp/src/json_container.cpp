@@ -1,8 +1,6 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <regex>
-
 #include "openvino/core/except.hpp"
 
 #include "openvino/genai/json_container.hpp"
