@@ -1065,6 +1065,7 @@ def cat_image_384x384(cat_image):
 def cat_image_32x32(cat_image):
     return cat_image.resize((32, 32))
 
+
 @pytest.mark.precommit
 @pytest.mark.parametrize(
     "model_id, image_name, backend",

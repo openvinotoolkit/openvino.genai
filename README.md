@@ -164,7 +164,7 @@ result = pipe.generate(prompt, image=image_data, max_new_tokens=100)
 # To input multiple images, use 'images='
 # result = pipe.generate(prompt, images=[image_data], max_new_tokens=100)
 
-# To input videos frames, use 'videos='
+# To input videos frames, use 'videos=', frames_data layout = [Frame num, H, W, C]
 # result = pipe.generate(prompt, videos=[frames_data], max_new_tokens=100)
 
 print(result.texts[0])
