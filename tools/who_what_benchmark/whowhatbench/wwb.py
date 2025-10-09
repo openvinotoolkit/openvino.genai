@@ -62,10 +62,11 @@ def parse_args():
     parser.add_argument(
         "--model-type",
         type=str,
-        choices=["text", "text-to-image", "visual-text", "image-to-image", "image-inpainting"],
+        choices=["text", "text-to-image", "visual-text", "image-to-image", "image-inpainting", "text-embedding", "text-reranking"],
         default="text",
         help="Indicated the model type: 'text' - for causal text generation, 'text-to-image' - for image generation, "
-        "visual-text - for Visual Language Models, image-to-image - for image generation based on image and prompt",
+        "visual-text - for Visual Language Models, image-to-image - for image generation based on image and prompt "
+        "image-inpainting - for image generation based on image, mask and prompt, text-reranking - for reranking a list of texts based on relevance to query",
     )
     parser.add_argument(
         "--data-encoder",
@@ -203,6 +204,27 @@ def parse_args():
         action="store_true",
         help="Inference with empty adapters. Applicable for GenAI only.",
     )
+    parser.add_argument(
+        "--embeds_pooling_type",
+        choices=["cls", "mean", "last_token"],
+        default=None,
+        help="Pooling type CLS or MEAN for encoders, LAST_TOKEN for decoders. "
+             "Different post-processing is applied depending on the padding side. Applicable only for text embeddings")
+    parser.add_argument(
+        "--embeds_normalize",
+        action="store_true",
+        help="Normalize embeddings. Applicable only for text embeddings")
+    parser.add_argument(
+        "--embeds_padding_side",
+        choices=["left", "right"],
+        default=None,
+        help="Side to use for padding 'left' or 'right'. Applicable only for text embeddings")
+    parser.add_argument(
+        "--rag-config",
+        type=str,
+        default=None,
+        help="Path to the JSON file with config for Embedding/Reranker Pipeline",
+    )
 
     return parser.parse_args()
 
@@ -297,7 +319,30 @@ def load_processor(args):
         preprocessor_id = model_id
 
     try:
-        preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
+        if config.model_type == 'llava-qwen2':
+            class NanollavaProcessorWrapper:
+                def __init__(self, processor, config, model_dtype, tokenizer):
+                    self.processor = processor
+                    self.config = config
+                    self.model_dtype = model_dtype
+                    self.tokenizer = tokenizer
+
+                def __call__(self, images, return_tensors):
+                    return {"pixel_values": self.processor(images, self.config).to(dtype=self.model_dtype)}
+
+            model_id = "qnguyen3/nanoLLaVA"
+            from transformers import AutoModelForCausalLM
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                device_map='auto',
+                trust_remote_code=True)
+            tokenizer = AutoTokenizer.from_pretrained(
+                model_id,
+                trust_remote_code=True)
+            preprocessor = NanollavaProcessorWrapper(model.process_images, model.config, model.dtype, tokenizer)
+            config = model.config
+        else:
+            preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
     except Exception:
         preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=True)
     return preprocessor, config
@@ -414,6 +459,15 @@ def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_to
     return out.texts[0]
 
 
+def genai_gen_embedding(model, tokenizer, passages, **kwargs):
+    embeddings = model.embed_documents(passages)
+    return embeddings
+
+
+def genai_gen_reranking(model, tokenizer, query, documents):
+    return model.rerank(query, documents)
+
+
 def is_model_with_automatic_crop(config):
     return "internvl" in config.model_type or "minicpmv" in config.model_type
 
@@ -506,9 +560,29 @@ def create_evaluator(base_model, args):
                 is_genai=args.genai,
                 seed=args.seed,
             )
+        elif task == "text-embedding":
+            return EvaluatorCLS(
+                base_model=base_model,
+                tokenizer=load_tokenizer(args),
+                gt_data=args.gt_data,
+                test_data=prompts,
+                num_samples=args.num_samples,
+                gen_embeds_fn=genai_gen_embedding if args.genai else None,
+                pooling_type=args.embeds_pooling_type,
+                normalize=args.embeds_normalize,
+                padding_side=args.embeds_padding_side,
+            )
+        elif task == "text-reranking":
+            return EvaluatorCLS(
+                base_model=base_model,
+                tokenizer=load_tokenizer(args),
+                gt_data=args.gt_data,
+                test_data=prompts,
+                num_samples=args.num_samples,
+                gen_rerank_fn=genai_gen_reranking if args.genai else None
+            )
         else:
             raise ValueError(f"Unsupported task: {task}")
-
     except KeyError as e:
         raise ValueError(
             f"Attempted to load evaluator for '{task}', but no evaluator for this model type found! "
@@ -557,6 +631,19 @@ def print_image_results(evaluator):
         logger.info(e)
 
 
+def print_embeds_results(evaluator):
+    metric_of_interest = "similarity"
+    worst_examples = evaluator.worst_examples(
+        top_k=5, metric=metric_of_interest)
+    for i, e in enumerate(worst_examples):
+        logger.info(
+            "======================================================================================================="
+        )
+        logger.info(f"Top-{i+1} example:")
+        logger.info("## Passages num:\n%s\n", len(e["passages"]))
+        logger.info("## Similarity:\n%s\n", e["similarity"])
+
+
 def read_cb_config(path):
     import json
 
@@ -570,6 +657,21 @@ def read_cb_config(path):
     except json.JSONDecodeError:
         logger.error(f"Invalid JSON format in configuration file: {path}")
         return {}
+
+
+def print_rag_results(evaluator):
+    metric_of_interest = "similarity"
+    worst_examples = evaluator.worst_examples(
+        top_k=5, metric=metric_of_interest)
+    for i, e in enumerate(worst_examples):
+        logger.info(
+            "======================================================================================================="
+        )
+        logger.info(f"Top-{i+1} example:")
+        logger.info("## Query:\n%s\n", e["query"])
+        logger.info("## Passages num:\n%s\n", len(e["passages"]))
+        logger.info("## Similarity:\n%s\n", e["similarity"])
+        logger.info("## Top_n scores:\n%s\n", e["per_text_score_list"])
 
 
 def main():
@@ -600,6 +702,9 @@ def main():
         else:
             kwargs["alphas"] = [1.0] * len(args.adapters)
     kwargs["empty_adapters"] = args.empty_adapters
+    kwargs["embeds_pooling"] = args.embeds_pooling_type
+    kwargs["embeds_normalize"] = args.embeds_normalize
+    kwargs["embeds_padding_side"] = args.embeds_padding_side
 
     if args.gt_data and os.path.exists(args.gt_data):
         evaluator = create_evaluator(None, args)
@@ -659,6 +764,10 @@ def main():
             print_text_results(evaluator)
         elif "text-to-image" in args.model_type or "image-to-image" in args.model_type:
             print_image_results(evaluator)
+        elif args.model_type in ['text-embedding']:
+            print_embeds_results(evaluator)
+        elif args.model_type in ['text-reranking']:
+            print_rag_results(evaluator)
 
 
 if __name__ == "__main__":
