@@ -51,6 +51,10 @@ public:
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
 
+    void set_position_ids(ov::Tensor position_ids);
+
+    void set_rope_delta(int64_t rope_delta);
+
     std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta);
 
     // returns embedding model which converts token_id(s) to embedding vectors
@@ -106,6 +110,9 @@ private:
         // length of attention_mask/kv cache at the beginning of generation()
         size_t m_prev_hist_length = 0;
         virtual ~IInputsEmbedder() = default;
+        // position ids
+        ov::Tensor m_position_ids;
+        int64_t m_rope_delta = 0;
 
     public:
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) = 0;
@@ -121,6 +128,14 @@ private:
         virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
     
         virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
+        
+        void set_position_ids(ov::Tensor position_ids) {
+            m_position_ids = position_ids;
+        }
+
+        void set_rope_delta(int64_t rope_delta) {
+            m_rope_delta = rope_delta;
+        }
 
         virtual std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta);
 

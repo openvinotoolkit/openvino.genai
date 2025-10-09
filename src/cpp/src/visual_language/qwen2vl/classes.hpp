@@ -63,9 +63,6 @@ protected:
     //  - attention_mask: [1, ?, ?]
     // Output: [N, hidden_size]
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_embeddings_merger;
-
-    ov::Tensor m_position_ids;
-    int64_t m_rope_delta = 0;
     ov::Tensor m_merged_image_embeddings;
 
     bool m_with_cu_seqlens_input = false;

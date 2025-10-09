@@ -236,7 +236,8 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                               const std::vector<GenerationConfig>& sampling_params,
                                                               const StreamerVariant& streamer,
-                                                              std::optional<std::vector<ov::Tensor>> token_type_ids) {
+                                                              const std::optional<std::vector<ov::Tensor>> token_type_ids,
+                                                              const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>> position_ids) {
     OPENVINO_ASSERT(!token_type_ids.has_value());
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
     m_draft_pipeline->raw_perf_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};

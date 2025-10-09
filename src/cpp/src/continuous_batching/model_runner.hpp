@@ -54,7 +54,7 @@ class ModelRunner {
     // Cached pre-allocated tensors to avoid CPU->GPU copy
     ov::Tensor m_cached_input_ids;
     ov::Tensor m_cached_inputs_embeds;
-   // ov::Tensor m_cached_position_ids;
+    ov::Tensor m_cached_position_ids;
     ov::Tensor m_cached_past_lens;
     ov::Tensor m_cached_subsequence_begins;
     ov::Tensor m_cached_block_indices_begins;
@@ -170,9 +170,6 @@ public:
         ov::Tensor input_ids = _get_or_resize_tensor(m_cached_input_ids, "input_ids", {total_num_tokens}, ov::element::i64);
         ov::Tensor inputs_embeds = _get_or_resize_tensor(m_cached_inputs_embeds, "inputs_embeds",
             {total_num_tokens, hidden_size}, ov::element::f32);
-        // ov::Tensor position_ids = _get_or_resize_tensor(m_cached_position_ids, "position_ids",
-        //     {total_num_tokens}, ov::element::i64);
-
         // PA specific parameters
         ov::Tensor past_lens = _get_or_resize_tensor(m_cached_past_lens, "past_lens",
             {batch_size_in_sequences}, ov::element::i32);
@@ -210,10 +207,10 @@ public:
             else {
                 position_ids_shape = {total_num_tokens};
             }
-            position_ids = ov::Tensor(ov::element::i64, position_ids_shape);
+            position_ids = _get_or_resize_tensor(m_cached_position_ids, "position_ids", position_ids_shape, ov::element::i64);
         } else if (sequence_group_type == SequenceGroupType::TOKENS) {
             input_ids_data = input_ids.data<int64_t>();
-            position_ids = ov::Tensor(ov::element::i64, {total_num_tokens});
+            position_ids = _get_or_resize_tensor(m_cached_position_ids, "position_ids", {total_num_tokens}, ov::element::i64);
         }
 
         int64_t
@@ -386,16 +383,12 @@ public:
         }
         if (position_ids.get_shape().size() > 2) {
             // flatten positions ids for 3D position ids case
-            ov::Tensor flatten_pos_ids(ov::element::i64, {ov::shape_size(position_ids.get_shape())});
-            std::memcpy(flatten_pos_ids.data<int64_t>(), position_ids.data<int64_t>(), position_ids.get_byte_size());
-            position_ids = flatten_pos_ids;
+            position_ids.set_shape({ov::shape_size(position_ids.get_shape())});
         }
-         m_request.set_tensor("position_ids", position_ids);
-
-        // // typical LLM parameters
-        // if (!m_cached_position_ids) {
-        //     m_request.set_tensor("position_ids", position_ids);
-        // }
+        // typical LLM parameters
+        if (!m_cached_position_ids) {
+            m_request.set_tensor("position_ids", position_ids);
+        }
         // PA specific parameters
         if (!m_cached_past_lens) {
             m_request.set_tensor("past_lens", past_lens);
