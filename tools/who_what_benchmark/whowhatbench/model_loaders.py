@@ -64,7 +64,7 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
             "Failed to import openvino_genai package. Please install it.")
         exit(-1)
 
-    config = {}
+    config = ov_config if ov_config is not None else {}
     draft_model_path = kwargs.get("draft_model", '')
     if draft_model_path:
         if not Path(draft_model_path).exists():
@@ -74,16 +74,13 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
 
     is_continuous_batching = kwargs.get("cb_config", None) is not None
 
-    if draft_model_path:
-        logger.info("Using OpenVINO GenAI LLMPipeline speculative API")
-        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, **config)
-    elif is_continuous_batching:
+    if is_continuous_batching:
         logger.info("Using OpenVINO GenAI Continuous Batching API")
         scheduler_config = get_scheduler_config_genai(kwargs["cb_config"])
-        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, scheduler_config=scheduler_config, **ov_config)
+        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, scheduler_config=scheduler_config, **config)
     else:
         logger.info("Using OpenVINO GenAI LLMPipeline API")
-        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, **ov_config)
+        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, **config)
 
     return GenAIModelWrapper(pipeline, model_dir, "text")
 

@@ -132,7 +132,9 @@ class TextEvaluator(BaseEvaluator):
         return res
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
-        def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question, use_chat_template=False):
+        def default_gen_answer(model, tokenizer, prompt, gen_config, crop_question):
+            max_new_tokens = gen_config.max_new_tokens
+            use_chat_template = gen_config.apply_chat_template
             is_awq = getattr(model, "is_awq", None) is not None
             device = "cpu"
             if hasattr(model, "device"):
@@ -185,6 +187,7 @@ class TextEvaluator(BaseEvaluator):
                 answers.append(
                     gen_answer_fn(
                         model,
+                        self.tokenizer,
                         p,
                         generation_config,
                         self._crop_question

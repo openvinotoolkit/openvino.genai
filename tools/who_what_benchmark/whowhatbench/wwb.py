@@ -360,10 +360,10 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
     return "".join(output)
 
 
-def genai_gen_text(model, question, gen_config, skip_question):
+def genai_gen_text(model, tokenizer, question, gen_config, skip_question):
     return model.generate(question, gen_config)
 
-def llamacpp_gen_text(model, question, gen_config, skip_question):
+def llamacpp_gen_text(model, tokenizer, question, gen_config, skip_question):
     max_new_tokens = gen_config.max_new_tokens
     use_chat_template = gen_config.apply_chat_template
     if use_chat_template:
