@@ -147,7 +147,7 @@ std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::op::v0::Result>> patch
     auto img_normalized_2 = create_normalization(img_resized_2, image_mean, image_scale);
 
     int64_t concat_axis = 0;
-    ov::NodeVector inputs_to_concat = {img_normalized_1, img_normalized_2};
+    ov::OutputVector inputs_to_concat = {img_normalized_1->output(0), img_normalized_2->output(0)};
     auto temporal_images = std::make_shared<ov::op::v0::Concat>(inputs_to_concat, concat_axis);
 
     auto result_temperal_images = std::make_shared<ov::op::v0::Result>(temporal_images);
@@ -157,12 +157,13 @@ std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::op::v0::Result>> patch
                                         "else_body"),
             result_temperal_images};
 }
-
+#define WITH_IF_NODE 0
 std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model> model_org,
-                                                       const ov::Tensor& image_mean_tensor,
-                                                       const ov::Tensor& image_scale_tensor) {
+                                                       const ov::op::v0::Constant& image_mean_tensor,
+                                                       const ov::op::v0::Constant& image_scale_tensor) {
+#if WITH_IF_NODE
     auto same_image = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{1});
-
+#endif
     auto raw_images_1 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
     auto raw_images_2 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
 
@@ -172,9 +173,10 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
     auto reshape_shape4d = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{4});
     auto reshape_shape2d = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
 
+#if WITH_IF_NODE
     same_image->set_friendly_name("same_image");
     same_image->output(0).get_tensor().set_names({"same_image"});
-
+#endif
     raw_images_1->set_friendly_name("raw_images_1");
     raw_images_1->output(0).get_tensor().set_names({"raw_images_1"});
     raw_images_2->set_friendly_name("raw_images_2");
@@ -195,7 +197,8 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
     auto image_mean = std::make_shared<ov::op::v0::Constant>(image_mean_tensor);
     auto image_scale = std::make_shared<ov::op::v0::Constant>(image_scale_tensor);
 
-    // If
+    // with If
+#if WITH_IF_NODE
     auto then_raw_images_1 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
     auto then_resize_target_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
     auto then_tile_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{4});
@@ -230,13 +233,33 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
     if_op->set_input(tile_shape->output(0), then_tile_shape, nullptr);
 
     auto temporal_images = if_op->set_output(model_then.second, model_else.second);
-
     auto img_8d =
         create_transpose_patches(temporal_images.get_node_shared_ptr(),
                                  reshape_shape8d,
                                  std::make_shared<ov::op::v0::Constant>(ov::element::i32,
                                                                         Shape{8},
                                                                         std::vector<int32_t>{0, 2, 5, 3, 6, 1, 4, 7}));
+#else
+    auto img_f32_nchw_1 = create_f32_nchw_input(raw_images_1);
+    auto img_resized_1 = create_bicubic_resize(img_f32_nchw_1, resize_shape);
+    auto img_normalized_1 = create_normalization(img_resized_1, image_mean, image_scale);
+
+    auto img_f32_nchw_2 = create_f32_nchw_input(raw_images_2);
+    auto img_resized_2 = create_bicubic_resize(img_f32_nchw_2, resize_shape);
+    auto img_normalized_2 = create_normalization(img_resized_2, image_mean, image_scale);
+
+    int64_t concat_axis = 0;
+    ov::OutputVector inputs_to_concat = {img_normalized_1->output(0), img_normalized_2->output(0)};
+    auto temporal_images = std::make_shared<ov::op::v0::Concat>(inputs_to_concat, concat_axis);
+    // auto temporal_images = std::make_shared<ov::op::v0::Tile>(img_normalized_1, tile_shape);
+
+    auto img_8d =
+        create_transpose_patches(temporal_images,
+                                 reshape_shape8d,
+                                 std::make_shared<ov::op::v0::Constant>(ov::element::i32,
+                                                                        Shape{8},
+                                                                        std::vector<int32_t>{0, 2, 5, 3, 6, 1, 4, 7}));
+#endif
 
     auto img_4d = create_transpose_patches(
         img_8d,
@@ -251,7 +274,7 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
     ov::replace_node(params_org[0], img_2d);
 
     auto results = model_org->get_results();
-
+#if WITH_IF_NODE
     return std::make_shared<ov::Model>(results,
                                        ov::ParameterVector{same_image,
                                                            raw_images_1,
@@ -261,6 +284,16 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
                                                            reshape_shape8d,
                                                            reshape_shape4d,
                                                            reshape_shape2d});
+#else
+    return std::make_shared<ov::Model>(results,
+                                       ov::ParameterVector{raw_images_1,
+                                                           raw_images_2,
+                                                           resize_shape,
+                                                           tile_shape,
+                                                           reshape_shape8d,
+                                                           reshape_shape4d,
+                                                           reshape_shape2d});
+#endif
 }
 }  // namespace
 
@@ -594,8 +627,8 @@ std::unique_ptr<CircularBufferQueue<ov::InferRequest>> create_vision_encoder_ire
     for (auto& v : a_image_scale)
         v = 1.0f / (v * 255.0f);
 
-    ov::Tensor image_mean(ov::element::f32, {1, a_image_mean.size(), 1, 1}, a_image_mean.data());
-    ov::Tensor image_scale(ov::element::f32, {1, a_image_scale.size(), 1, 1}, a_image_scale.data());
+    auto image_mean = ov::op::v0::Constant(ov::element::f32, ov::Shape{1, a_image_mean.size(), 1, 1}, a_image_mean.data());
+    auto image_scale = ov::op::v0::Constant(ov::element::f32, ov::Shape{1, a_image_scale.size(), 1, 1}, a_image_scale.data());
 
     auto model = patch_preprocess_into_model(model_org, image_mean, image_scale);
     auto compiled_model = utils::singleton_core().compile_model(model, device, config);
@@ -727,8 +760,10 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vec
 
     OPENVINO_ASSERT(config.temporal_patch_size == 2u, "temporal_patch_size != 2.");
 
+#if WITH_IF_NODE
     std::vector<float> same_image_data{images.size() == 2u ? 1.f : 0.f};
     ov::Tensor same_image(ov::element::f32, ov::Shape{1}, same_image_data.data());
+#endif
     ov::Tensor input_image_1(ov::element::u8, image_shape, images[0].data<uint8_t>());
     ov::Tensor input_image_2(ov::element::u8,
                              image_shape,
@@ -767,7 +802,9 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vec
     ov::Tensor reshape_shape2d(ov::element::i64, ov::Shape{2}, last_output_shape);
 
     // Same image means just duplicating input_image_1 as input_image_2 or not.
+#if WITH_IF_NODE
     encoder.set_tensor("same_image", same_image);
+#endif
     encoder.set_tensor("raw_images_1", input_image_1);
     encoder.set_tensor("raw_images_2", input_image_2);
     encoder.set_tensor("resize_shape", target_shape);
