@@ -48,8 +48,8 @@ auto vlm_generate_docstring = R"(
     :param images: image or list of images
     :type images: list[ov.Tensor] or ov.Tensor
 
-    :param video: list of frames
-    :type video: list[ov.Tensor]
+    :param videos: list of frames
+    :type videos: list[ov.Tensor]
 
     :param generation_config: generation_config
     :type generation_config: GenerationConfig or a dict
