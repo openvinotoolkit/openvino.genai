@@ -1,7 +1,6 @@
 import subprocess  # nosec B404
 import pytest
 import logging
-import sys
 from test_cli_image import run_wwb
 
 
@@ -12,19 +11,17 @@ logger = logging.getLogger(__name__)
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [
-        ("katuni4ka/tiny-random-llava", "visual-text"),
+        ("cross-encoder/ms-marco-TinyBERT-L2-v2", "text-reranking"),
     ],
 )
-def test_vlm_basic(model_id, model_type, tmp_path):
-    if sys.platform == 'darwin':
-        pytest.xfail("Ticket 173169")
+def test_reranking_basic(model_id, model_type, tmp_path):
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = tmp_path / model_id.replace("/", "--")
 
     result = subprocess.run(["optimum-cli", "export",
                              "openvino", "-m", model_id,
                              MODEL_PATH, "--task",
-                             "image-text-to-text",
+                             "text-classification",
                              "--trust-remote-code"],
                             capture_output=True,
                             text=True,
@@ -90,4 +87,54 @@ def test_vlm_basic(model_id, model_type, tmp_path):
         "--model-type",
         model_type,
         "--genai",
+    ])
+
+
+@pytest.mark.parametrize(
+    ("model_id", "model_type"),
+    [
+        ("Qwen/Qwen3-Reranker-0.6B", "text-reranking"),
+    ],
+)
+def test_reranking_qwen(model_id, model_type, tmp_path):
+    GT_FILE = tmp_path / "gt.csv"
+    MODEL_PATH = tmp_path / model_id.replace("/", "--")
+
+    result = subprocess.run(["optimum-cli", "export",
+                             "openvino", "-m", model_id,
+                             MODEL_PATH, "--task",
+                             "text-generation",
+                             "--trust-remote-code"],
+                            capture_output=True,
+                            text=True,
+                            )
+    assert result.returncode == 0
+
+    # Collect reference with HF model
+    run_wwb([
+        "--base-model",
+        model_id,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--hf",
+    ])
+
+    # test Optimum
+    run_wwb([
+        "--target-model",
+        MODEL_PATH,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
     ])

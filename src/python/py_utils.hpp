@@ -45,4 +45,6 @@ ov::genai::GenerationConfig update_config_from_kwargs(ov::genai::GenerationConfi
 
 ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& py_streamer);
 
+ov::AnyMap py_object_to_any_map(const py::object& py_obj);
+
 }  // namespace ov::genai::pybind::utils
