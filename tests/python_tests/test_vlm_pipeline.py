@@ -138,22 +138,6 @@ def cat_image(pytestconfig):
     cat_url = "https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11"
     return from_cache_or_download(pytestconfig, cat_url, "cat.jpg")
 
-
-def read_video_pyav(container, indices):
-    '''
-    Decode the video with PyAV decoder.
-    '''
-    frames = []
-    container.seek(0)
-    start_index = indices[0]
-    end_index = indices[-1]
-    for i, frame in enumerate(container.decode(video=0)):
-        if i > end_index:
-            break
-        if i >= start_index and i in indices:
-            frames.append(frame)
-    return np.stack([x.to_ndarray(format="rgb24") for x in frames])
-
 def resize_video(video, shape):
     video_resized = []
     for frame in video:
