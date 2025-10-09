@@ -6,17 +6,17 @@ import pytest
 import gc
 from pathlib import Path
 from openvino_genai import TextEmbeddingPipeline, TextRerankPipeline
-from utils.hugging_face import download_and_convert_embeddings_models, download_and_convert_rerank_model
+from utils.hugging_face import download_and_convert_embeddings_models, download_and_convert_rerank_model, download_and_convert_model_fixture
 from langchain_core.documents.base import Document
 from langchain_community.embeddings import OpenVINOBgeEmbeddings
 from langchain_community.document_compressors.openvino_rerank import OpenVINOReranker
 from typing import Literal, Union
 import sys
 import platform
-from optimum.intel import OVModelForFeatureExtraction
-import openvino as ov
+from optimum.intel import OVModelForFeatureExtraction, OVModelForSequenceClassification
 from torch import Tensor
 import torch
+from utils.qwen3_reranker_utils import qwen3_reranker_format_queries, qwen3_reranker_format_document
 
 EMBEDDINGS_TEST_MODELS = [
     "BAAI/bge-small-en-v1.5",
@@ -27,6 +27,9 @@ RERANK_TEST_MODELS = [
     "cross-encoder/ms-marco-TinyBERT-L2-v2",  # sigmoid applied
     # "answerdotai/ModernBERT-base",  # 2 classes output, softmax applied. Skip until langchain OpenVINORerank supports it.
 ]
+
+QWEN3_RERANK_SEQ_CLS = "tomaarsen/Qwen3-Reranker-0.6B-seq-cls"
+QWEN3_RERANK = "Qwen/Qwen3-Reranker-0.6B"
 
 TEXT_DATASET = f"The commercial PC market is propelled by premium\
 computing solutions that drive user productivity and help\
@@ -164,7 +167,7 @@ def run_qwen3_embedding_optimum(
 
 
 EmbeddingResult = Union[list[list[float]], list[list[int]], list[float], list[int]]
-MAX_EMBEDDING_ERROR = 2e-6 if sys.platform != 'darwin' else 0.02  # ARM64 macs have different results
+MAX_EMBEDDING_ERROR = 2e-6 if sys.platform != "darwin" else 0.02  # ARM64 macs have different results
 
 
 def validate_embedding_results(result_1: EmbeddingResult, result_2: EmbeddingResult):
@@ -188,7 +191,7 @@ def run_text_embedding_pipeline_with_ref(
 
 
 def assert_rerank_results(result_1: list[tuple[int, float]], result_2: list[tuple[int, float]]):
-    score_diff_max = 1e-6 if sys.platform != 'darwin' else 2e-4  # ARM64 macs have different results
+    score_diff_max = 1e-6 if sys.platform != "darwin" else 2e-4  # ARM64 macs have different results
     assert len(result_1) == len(result_2), f"Results length mismatch: {len(result_1)} != {len(result_2)}"
     for pair_1, pair_2 in zip(result_1, result_2):
         assert pair_1[0] == pair_2[0], f"Document IDs do not match: {pair_1[0]} != {pair_2[0]}"
@@ -211,6 +214,44 @@ def run_text_rerank_langchain(
     reranked_documents = reranker.compress_documents(documents=langchain_documents, query=query)
 
     return [(doc.metadata["id"], float(doc.metadata.get("relevance_score", -1))) for doc in reranked_documents]
+
+
+def run_qwen3_rerank_optimum(
+    model: OVModelForSequenceClassification,
+    tokenizer,
+    query: str,
+    documents: list[str],
+    config: TextRerankPipeline.Config | None = None,
+):
+    if not config:
+        config = TextRerankPipeline.Config()
+
+    concatenated = [query + doc for doc in documents]
+    inputs = tokenizer(
+        concatenated,
+        padding=True,
+        truncation=True,
+        return_tensors="pt",
+    )
+    logits = model(**inputs).logits
+
+    # support seq-cls reranker
+    if logits.shape[1] == 1:
+        scores = logits.squeeze().sigmoid()
+    # original postprocessing
+    else:
+        token_false_id = tokenizer.convert_tokens_to_ids("no")
+        token_true_id = tokenizer.convert_tokens_to_ids("yes")
+        batch_scores = logits[:, -1, :]
+        true_vector = batch_scores[:, token_true_id]
+        false_vector = batch_scores[:, token_false_id]
+        batch_scores = torch.stack([false_vector, true_vector], dim=1)
+        batch_scores = torch.nn.functional.log_softmax(batch_scores, dim=1)
+        scores = batch_scores[:, 1].exp()
+
+    with_ids = list(enumerate(scores.tolist()))
+    sorted_by_score = sorted(with_ids, key=lambda x: x[1], reverse=True)
+    return sorted_by_score[: config.top_n]
 
 
 def run_text_rerank_genai(
@@ -285,6 +326,7 @@ def test_embedding_constructors(download_and_convert_embeddings_models):
     ],
 )
 @pytest.mark.precommit
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
 def test_qwen3_embedding(download_and_convert_embeddings_models, dataset_documents, config):
     opt_model, hf_tokenizer, models_path = download_and_convert_embeddings_models
     embeddings_opt = run_qwen3_embedding_optimum(opt_model, hf_tokenizer, dataset_documents, config.padding_side)
@@ -476,3 +518,78 @@ def test_rerank_constructors(download_and_convert_rerank_model):
 def test_rerank_documents(download_and_convert_rerank_model, dataset_documents, query, config):
     _, _, models_path = download_and_convert_rerank_model
     run_text_rerank_pipeline_with_ref(models_path, query, dataset_documents, config)
+
+
+# aligned with https://huggingface.co/tomaarsen/Qwen3-Reranker-0.6B-seq-cls#updated-transformers-usage
+@pytest.mark.parametrize("download_and_convert_rerank_model", [QWEN3_RERANK_SEQ_CLS], indirect=True)
+@pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
+@pytest.mark.parametrize("task", ["Given a web search query, retrieve relevant passages that answer the query"])
+@pytest.mark.parametrize(
+    "documents",
+    [
+        [
+            "Venus is often called Earth's twin because of its similar size and proximity.",
+            "Mars, known for its reddish appearance, is often referred to as the Red Planet.",
+            "Jupiter, the largest planet in our solar system, has a prominent red spot.",
+            "Saturn, famous for its rings, is sometimes mistaken for the Red Planet.",
+        ]
+    ],
+)
+@pytest.mark.parametrize(
+    "config",
+    [
+        TextRerankPipeline.Config(top_n=4),
+    ],
+    ids=[
+        "top_n=4",
+    ],
+)
+@pytest.mark.precommit
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
+def test_qwen3_seq_cls_rerank_documents(download_and_convert_rerank_model, query, task, documents, config):
+    opt_model, hf_tokenizer, models_path = download_and_convert_rerank_model
+
+    formatted_query = qwen3_reranker_format_queries(query, task)
+    formatted_documents = [qwen3_reranker_format_document(doc) for doc in documents]
+
+    opt_result = run_qwen3_rerank_optimum(opt_model, hf_tokenizer, formatted_query, formatted_documents, config)
+    genai_result = run_text_rerank_genai(models_path, formatted_query, formatted_documents, config)
+
+    assert_rerank_results(opt_result, genai_result)
+
+
+@pytest.mark.parametrize("download_and_convert_model_fixture", [QWEN3_RERANK], indirect=True)
+@pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
+@pytest.mark.parametrize("task", ["Given a web search query, retrieve relevant passages that answer the query"])
+@pytest.mark.parametrize(
+    "documents",
+    [
+        [
+            "Venus is often called Earth's twin because of its similar size and proximity.",
+            "Mars, known for its reddish appearance, is often referred to as the Red Planet.",
+            "Jupiter, the largest planet in our solar system, has a prominent red spot.",
+            "Saturn, famous for its rings, is sometimes mistaken for the Red Planet.",
+        ]
+    ],
+)
+@pytest.mark.parametrize(
+    "config",
+    [
+        TextRerankPipeline.Config(top_n=4),
+    ],
+    ids=[
+        "top_n=4",
+    ],
+)
+@pytest.mark.precommit
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
+def test_qwen3_rerank_documents(download_and_convert_model_fixture, query, task, documents, config):
+    opt_model, hf_tokenizer, models_path = download_and_convert_model_fixture
+
+    formatted_query = qwen3_reranker_format_queries(query, task)
+    formatted_documents = [qwen3_reranker_format_document(doc) for doc in documents]
+
+    opt_result = run_qwen3_rerank_optimum(opt_model, hf_tokenizer, formatted_query, formatted_documents, config)
+    genai_result = run_text_rerank_genai(models_path, formatted_query, formatted_documents, config)
+
+    assert_rerank_results(opt_result, genai_result)
