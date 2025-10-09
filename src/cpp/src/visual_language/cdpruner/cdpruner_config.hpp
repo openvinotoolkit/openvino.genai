@@ -17,6 +17,19 @@ struct Config {
     /// @brief Weight for balancing relevance vs diversity (0.0 to 1.0)
     float relevance_weight = 0.5f;
 
+    /**
+     * @brief Update configuration parameters from environment variables.
+     *
+     * The following environment variables are read:
+     *   - CDPRUNER_PRUNING_RATIO: Percentage of visual tokens to retain after pruning (integer, 0-100).
+     *   - CDPRUNER_DEBUG_MODE: Enable debug output (boolean, "0" or "1").
+     *   - CDPRUNER_USE_CL_KERNEL: Use OpenCL kernel for DPP computation (boolean, "0" or "1").
+     *   - CDPRUNER_SPLIT_THRESHOLD: Threshold for splitting large kernel matrices (integer).
+     *   - CDPRUNER_ENABLE_FRAME_CHUNKING: Enable frame-level chunking for multi-frame video processing (boolean, "0" or
+     * "1").
+     *
+     * If an environment variable is not set, the default value specified in the Config struct is used.
+     */
     void update_from_env();
     /// @brief Device to run CDPruner computations on
     std::string device = "CPU";
