@@ -198,8 +198,6 @@ def test_apply_chat_template_with_tools_and_extra_context(model_tmp_path, ov_hf_
             }
         }
     }]
-    # In GenAI order of dict keys is not preserved (sorted alphabetically, due to conversion to AnyMap)
-    tools = [json.loads(json.dumps(tool, sort_keys=True)) for tool in tools]
 
     add_generation_prompt = True
 
