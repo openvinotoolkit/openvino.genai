@@ -1167,7 +1167,6 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, ba
 def test_vlm_pipeline_match_optimum_video_input(request, model_id, video_name, backend):
     video_ov_tensor = request.getfixturevalue(video_name)
     assert(isinstance(video_ov_tensor, openvino.Tensor))
-    video_torch_tensor = torch.from_numpy(video_ov_tensor.data)
 
     prompt = "Describe this video."
     max_new_tokens = 20
@@ -1176,25 +1175,19 @@ def test_vlm_pipeline_match_optimum_video_input(request, model_id, video_name, b
 
     # Run the model with optimum-intel
     model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
-    conversation = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "video"},
-                {"type": "text", "text": prompt},
-            ],
-        }
-    ]
-
     processor = transformers.AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
-    templated_prompt = processor.apply_chat_template(conversation, add_generation_prompt=True)
-    inputs = processor(text=[templated_prompt], video=video_torch_tensor, padding=True, return_tensors="pt")
 
-    output_ids = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
-    input_ids = inputs["input_ids"] if isinstance(inputs, dict) else inputs.input_ids
-    generated_ids = [output_ids[len(input_ids) :] for input_ids, output_ids in zip(input_ids, output_ids)]
+    inputs = model.preprocess_inputs(text=prompt, video=video_ov_tensor.data, processor=processor)
+    generation_args = {
+        "max_new_tokens": max_new_tokens,
+        "temperature": 0.0,
+        "do_sample": False
+    }
 
-    optimum_output = processor.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+    generate_ids = model.generate(**inputs, eos_token_id=processor.tokenizer.eos_token_id, **generation_args)
+
+    generate_ids = generate_ids[:, inputs['input_ids'].shape[1]:]
+    optimum_output = processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
     optimum_text = optimum_output[0]
 
     # Run the model with GenAI
