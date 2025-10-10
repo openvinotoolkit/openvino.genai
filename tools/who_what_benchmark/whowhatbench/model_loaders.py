@@ -8,6 +8,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelF
 from .embeddings_evaluator import DEFAULT_MAX_LENGTH as EMBED_DEFAULT_MAX_LENGTH
 from .reranking_evaluator import DEFAULT_MAX_LENGTH as RERANK_DEFAULT_MAX_LENGTH, DEFAULT_TOP_K as RERANK_DEFAULT_TOP_K, reranking_base_on_causallm_arch
 from .utils import mock_torch_cuda_is_available, mock_AwqQuantizer_validate_environment
+import os
 
 
 logging.basicConfig(level=logging.INFO)
@@ -66,6 +67,10 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
             "Failed to import openvino_genai package. Please install it.")
         exit(-1)
 
+    pipeline_path = model_dir
+    if kwargs.get('gguf_file'):
+        pipeline_path = os.path.join(model_dir, kwargs['gguf_file'])
+
     config = ov_config if ov_config is not None else {}
     draft_model_path = kwargs.get("draft_model", '')
     if draft_model_path:
@@ -79,10 +84,10 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     if is_continuous_batching:
         logger.info("Using OpenVINO GenAI Continuous Batching API")
         scheduler_config = get_scheduler_config_genai(kwargs["cb_config"])
-        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, scheduler_config=scheduler_config, **config)
+        pipeline = openvino_genai.LLMPipeline(pipeline_path, device=device, scheduler_config=scheduler_config, **config)
     else:
         logger.info("Using OpenVINO GenAI LLMPipeline API")
-        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, **config)
+        pipeline = openvino_genai.LLMPipeline(pipeline_path, device=device, **config)
 
     return GenAIModelWrapper(pipeline, model_dir, "text")
 
@@ -98,21 +103,24 @@ def load_text_llamacpp_pipeline(model_dir):
     return model
 
 
-def load_text_hf_pipeline(model_id, device):
+def load_text_hf_pipeline(model_id, device, **kwargs):
     model_kwargs = {}
-
+    if kwargs.get('gguf_file'):
+        model_kwargs['gguf_file'] = kwargs['gguf_file']
     if not torch.cuda.is_available or device.lower() == "cpu":
         trust_remote_code = False
-        try:
-            config = AutoConfig.from_pretrained(model_id)
-        except Exception:
-            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-            trust_remote_code = True
         is_gptq = False
         is_awq = False
-        if getattr(config, "quantization_config", None):
-            is_gptq = config.quantization_config["quant_method"] == "gptq"
-            is_awq = config.quantization_config["quant_method"] == "awq"
+        if not kwargs.get('gguf_file'):
+            try:
+                config = AutoConfig.from_pretrained(model_id)
+            except Exception:
+                config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+                trust_remote_code = True
+
+            if getattr(config, "quantization_config", None):
+                is_gptq = config.quantization_config["quant_method"] == "gptq"
+                is_awq = config.quantization_config["quant_method"] == "awq"
         if is_gptq or is_awq:
             # infer in FP32
             model_kwargs["torch_dtype"] = torch.float32
@@ -139,7 +147,7 @@ def load_text_model(
 ):
     if use_hf:
         logger.info("Using HF Transformers API")
-        model = load_text_hf_pipeline(model_id, device)
+        model = load_text_hf_pipeline(model_id, device, **kwargs)
     elif use_genai:
         model = load_text_genai_pipeline(model_id, device, ov_config, **kwargs)
     elif use_llamacpp:
