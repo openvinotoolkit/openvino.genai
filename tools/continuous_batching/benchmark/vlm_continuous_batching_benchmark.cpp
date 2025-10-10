@@ -68,12 +68,12 @@ struct VLMDataset {
 
     float get_average_input_len() const {
         OPENVINO_ASSERT(!empty());
-        return static_cast<float>(m_total_input_len / size());
+        return static_cast<float>(m_total_input_len) / size();
     }
 
     float get_average_output_len() const {
         OPENVINO_ASSERT(!empty());
-        return static_cast<float>(m_total_output_len / size());
+        return static_cast<float>(m_total_output_len) / size();
     }
 
     bool empty() const {
