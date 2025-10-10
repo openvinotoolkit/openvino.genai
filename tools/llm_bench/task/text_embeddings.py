@@ -117,6 +117,7 @@ def run_text_embeddings_genai(input_text, num, model, tokenizer, args, iter_data
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start()
     start = time.perf_counter()
+    print(f"Embedding documents using model {model} and input {input_text_list}")
     model.embed_documents(input_text_list)
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
