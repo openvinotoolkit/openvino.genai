@@ -2,21 +2,15 @@ import subprocess  # nosec B404
 import pytest
 import logging
 import sys
-from test_cli_image import run_wwb
 from constants import WWB_CACHE_PATH
+from test_cli_image import run_wwb, get_similarity
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.parametrize(
-    ("model_id", "model_type"),
-    [
-        ("katuni4ka/tiny-random-llava", "visual-text"),
-    ],
-)
-def test_vlm_basic(model_id, model_type, tmp_path):
+def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path):
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
     GT_FILE = tmp_path / "gt.csv"
@@ -49,7 +43,7 @@ def test_vlm_basic(model_id, model_type, tmp_path):
     ])
 
     # test Optimum
-    run_wwb([
+    output = run_wwb([
         "--target-model",
         MODEL_PATH,
         "--num-samples",
@@ -61,9 +55,12 @@ def test_vlm_basic(model_id, model_type, tmp_path):
         "--model-type",
         model_type,
     ])
+    if optimum_threshold is not None:
+        similarity = get_similarity(output)
+        assert similarity >= optimum_threshold
 
     # test GenAI
-    run_wwb([
+    output = run_wwb([
         "--target-model",
         MODEL_PATH,
         "--num-samples",
@@ -78,6 +75,9 @@ def test_vlm_basic(model_id, model_type, tmp_path):
         "--output",
         WWB_CACHE_PATH,
     ])
+    if genai_threshold is not None:
+        similarity = get_similarity(output)
+        assert similarity >= genai_threshold
 
     # test w/o models
     run_wwb([
@@ -93,3 +93,24 @@ def test_vlm_basic(model_id, model_type, tmp_path):
         model_type,
         "--genai",
     ])
+
+
+@pytest.mark.parametrize(
+    ("model_id", "model_type"),
+    [
+        ("katuni4ka/tiny-random-llava", "visual-text"),
+    ],
+)
+def test_vlm_basic(model_id, model_type, tmp_path):
+    run_test(model_id, model_type, None, None, tmp_path)
+
+
+@pytest.mark.nanollava
+@pytest.mark.parametrize(
+    ("model_id", "model_type", "optimum_threshold", "genai_threshold"),
+    [
+        ("qnguyen3/nanoLLaVA", "visual-text", 0.99, 0.88),
+    ],
+)
+def test_vlm_nanollava(model_id, model_type, optimum_threshold, genai_threshold, tmp_path):
+    run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)

@@ -223,7 +223,14 @@ def parse_args():
         "--rag-config",
         type=str,
         default=None,
-        help="Path to the JSON file with config for Embedding/Reranker Pipeline",
+        help="Path to the JSON file with config for Embedding/Reranker Pipeline")
+    parser.add_argument(
+        "--gguf-file",
+        type=str,
+        default=None,
+        help="Path to GGUF model file for tokenizer loading. "
+        "If the base/target model is a local path, gguf-file should be just the filename (e.g., 'model.gguf'). "
+        "If the base/target model is a HuggingFace model ID, gguf-file should be a relative path.",
     )
 
     return parser.parse_args()
@@ -264,38 +271,43 @@ def load_prompts(args):
 
 
 def load_tokenizer(args):
+    # Define kwargs based on args attributes
+    kwargs = {}
+    if args.gguf_file:
+        kwargs['gguf_file'] = args.gguf_file
+
     tokenizer = None
     if args.tokenizer is not None:
         if args.llamacpp:
             from llama_cpp.llama_tokenizer import LlamaHFTokenizer
-            tokenizer = LlamaHFTokenizer.from_pretrained(args.tokenizer)
+            tokenizer = LlamaHFTokenizer.from_pretrained(args.tokenizer, **kwargs)
         else:
             try:
                 tokenizer = AutoTokenizer.from_pretrained(
-                    args.tokenizer, trust_remote_code=False
+                    args.tokenizer, trust_remote_code=False, **kwargs
                 )
             except Exception:
                 tokenizer = AutoTokenizer.from_pretrained(
-                    args.tokenizer, trust_remote_code=True
+                    args.tokenizer, trust_remote_code=True, **kwargs
                 )
     elif args.base_model is not None:
         try:
             tokenizer = AutoTokenizer.from_pretrained(
-                args.base_model, trust_remote_code=False
+                args.base_model, trust_remote_code=False, **kwargs
             )
         except Exception:
             tokenizer = AutoTokenizer.from_pretrained(
-                args.base_model, trust_remote_code=True
+                args.base_model, trust_remote_code=True, **kwargs
             )
     elif args.target_model is not None:
         try:
             tokenizer = AutoTokenizer.from_pretrained(
-                args.target_model, trust_remote_code=False
+                args.target_model, trust_remote_code=False, **kwargs
             )
         except Exception:
             try:
                 tokenizer = AutoTokenizer.from_pretrained(
-                    args.target_model, trust_remote_code=True
+                    args.target_model, trust_remote_code=True, **kwargs
                 )
             except Exception:
                 logger.error(f"Cannot load the tokenizer for model type \"{args.model_type}\" from {args.target_model}")
@@ -319,7 +331,30 @@ def load_processor(args):
         preprocessor_id = model_id
 
     try:
-        preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
+        if config.model_type == 'llava-qwen2':
+            class NanollavaProcessorWrapper:
+                def __init__(self, processor, config, model_dtype, tokenizer):
+                    self.processor = processor
+                    self.config = config
+                    self.model_dtype = model_dtype
+                    self.tokenizer = tokenizer
+
+                def __call__(self, images, return_tensors):
+                    return {"pixel_values": self.processor(images, self.config).to(dtype=self.model_dtype)}
+
+            model_id = "qnguyen3/nanoLLaVA"
+            from transformers import AutoModelForCausalLM
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                device_map='auto',
+                trust_remote_code=True)
+            tokenizer = AutoTokenizer.from_pretrained(
+                model_id,
+                trust_remote_code=True)
+            preprocessor = NanollavaProcessorWrapper(model.process_images, model.config, model.dtype, tokenizer)
+            config = model.config
+        else:
+            preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=False)
     except Exception:
         preprocessor = AutoProcessor.from_pretrained(preprocessor_id, trust_remote_code=True)
     return preprocessor, config
@@ -672,6 +707,8 @@ def main():
     if args.from_onnx:
         kwargs["from_onnx"] = args.from_onnx
         kwargs["use_cache"] = False
+    if args.gguf_file:
+        kwargs["gguf_file"] = args.gguf_file
     if args.adapters is not None:
         kwargs["adapters"] = args.adapters
         if args.alphas is not None:
