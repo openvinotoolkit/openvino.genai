@@ -261,11 +261,6 @@ def parse_args():
         default=None,
         help="Config option assistant_confidence_threshold for Speculative decoding.",
     )
-    parser.add_argument(
-        "--eagle3-mode",
-        action="store_true",
-        help="Flag to indicate whether to use eagle3 for speculative decoding.",
-    )
 
     return parser.parse_args()
 
@@ -781,8 +776,6 @@ def main():
             kwargs["draft_device"] = args.draft_device
         if args.draft_cb_config is not None:
             kwargs["draft_cb_config"] = args.draft_cb_config
-        if args.eagle3_mode:
-            kwargs["eagle3_mode"] = args.eagle3_mode
 
     if args.gt_data and os.path.exists(args.gt_data):
         evaluator = create_evaluator(None, args)

@@ -71,23 +71,22 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     if kwargs.get('gguf_file'):
         pipeline_path = os.path.join(model_dir, kwargs['gguf_file'])
 
-    config = ov_config if ov_config is not None else {}
     draft_model_path = kwargs.get("draft_model", '')
     if draft_model_path:
         if not Path(draft_model_path).exists():
             raise RuntimeError(f'Error: Draft model path does not exist: {draft_model_path}')
         draft_device = kwargs.get('draft_device', None) or device
-        config['draft_model'] = openvino_genai.draft_model(draft_model_path, draft_device.upper())
+        ov_config['draft_model'] = openvino_genai.draft_model(draft_model_path, draft_device.upper())
 
     is_continuous_batching = kwargs.get("cb_config", None) is not None
 
     if is_continuous_batching:
         logger.info("Using OpenVINO GenAI Continuous Batching API")
         scheduler_config = get_scheduler_config_genai(kwargs["cb_config"])
-        pipeline = openvino_genai.LLMPipeline(pipeline_path, device=device, scheduler_config=scheduler_config, **config)
+        pipeline = openvino_genai.LLMPipeline(pipeline_path, device=device, scheduler_config=scheduler_config, **ov_config)
     else:
         logger.info("Using OpenVINO GenAI LLMPipeline API")
-        pipeline = openvino_genai.LLMPipeline(pipeline_path, device=device, **config)
+        pipeline = openvino_genai.LLMPipeline(pipeline_path, device=device, **ov_config)
 
     return GenAIModelWrapper(pipeline, model_dir, "text")
 
