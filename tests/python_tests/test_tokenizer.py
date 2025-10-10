@@ -10,7 +10,7 @@ import openvino.properties.hint as hints
 import pytest
 from data.models import get_models_list
 from data.tokenizer_configs import get_tokenizer_configs
-from openvino_genai import Tokenizer
+from openvino_genai import Tokenizer, ChatHistory
 from openvino_tokenizers import convert_tokenizer
 from transformers import AutoTokenizer
 
@@ -180,6 +180,16 @@ def test_apply_chat_template_nested_content(model_tmp_path, ov_hf_tokenizers, to
     )
 
     assert_hf_equals_genai(hf_full_history_str, ov_full_history_str)
+
+    chat_history = ChatHistory(messages)
+    
+    assert chat_history.get_messages() == messages
+
+    genai_templated_chat_history = genai_tokenizer.apply_chat_template(
+        chat_history, add_generation_prompt=add_generation_prompt
+    )
+
+    assert genai_templated_chat_history == ov_full_history_str
 
 
 @pytest.mark.precommit
