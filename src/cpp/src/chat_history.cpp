@@ -21,7 +21,7 @@ ChatHistory::ChatHistory(const std::vector<ov::AnyMap>& messages) :
 }
 
 ChatHistory::ChatHistory(std::initializer_list<std::initializer_list<std::pair<std::string, ov::Any>>> messages) :
-    m_messages(JsonContainer::array()){
+    m_messages(JsonContainer::array()) {
     for (const auto& message : messages) {
         m_messages.push_back(JsonContainer(message));
     }
