@@ -148,7 +148,7 @@ class GenerationInfo {
             last_read_time = new_read_time;
         }
 
-        void update_generated_ids(std::vector<int64_t>& gen_ids) {
+        void update_generated_ids(const std::vector<int64_t>& gen_ids) {
             generated_ids.insert(generated_ids.end(), gen_ids.begin(), gen_ids.end());
         }
     };
