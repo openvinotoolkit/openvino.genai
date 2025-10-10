@@ -29,9 +29,9 @@ int main(int argc, char* argv[]) try {
     std::string prompt = argv[3];
 
     // User can run main and draft model on different devices.
-    // Please, set device for main model in `LLMPipeline` constructor and in in `ov::genai::draft_model` for draft.
-    // CPU, GPU and NPU can be used. Please be aware that GPU is performant only with Continuous Batching pipeline, so it is not recommented
-    // to use it in conjuction with NPU.
+    // Please, set device for main model in `LLMPipeline` constructor and in `ov::genai::draft_model` for draft.
+    // CPU, GPU and NPU can be used. For NPU, the preferred configuration is when both the main and draft models
+    // use NPU.
     std::string main_device = "CPU", draft_device = "CPU";
 
     ov::genai::LLMPipeline pipe(

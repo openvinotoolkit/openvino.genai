@@ -20,8 +20,7 @@ def main():
 
     # User can run main and draft model on different devices.
     # Please, set device for main model in `openvino_genai.LLMPipeline` constructor and in `openvino_genai.draft_model` for draft.
-    # CPU, GPU and NPU can be used. Please be aware that GPU is performant only with Continuous Batching pipeline, so it is not
-    # recommented to use it in conjuction with NPU.
+    # CPU, GPU and NPU can be used. For NPU, the preferred configuration is when both the main and draft models use NPU.
     main_device = 'CPU'
     draft_device = 'CPU'
 
