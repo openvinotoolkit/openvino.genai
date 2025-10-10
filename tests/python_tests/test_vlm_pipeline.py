@@ -1166,7 +1166,7 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, ba
 )
 def test_vlm_pipeline_match_optimum_video_input(request, model_id, video_name, backend):
     video_ov_tensor = request.getfixturevalue(video_name)
-    assert(isinstance(video_ov_tensor, openvino.Tensor))
+    assert isinstance(video_ov_tensor, openvino.Tensor)
 
     prompt = "Describe this video."
     max_new_tokens = 20
