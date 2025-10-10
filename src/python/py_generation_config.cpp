@@ -139,6 +139,19 @@ void add_grammar_operators(PyClass& py_cls) {
         });
 };
 
+std::vector<StructuredOutputConfig::StructuralTag> collect_structural_tags(py::iterable elements,
+                                                                           const char* context) {
+    std::vector<StructuredOutputConfig::StructuralTag> tags;
+    for (py::handle element : elements) {
+        tags.emplace_back(pyutils::py_obj_to_compound_grammar(
+            py::reinterpret_borrow<py::object>(element)));
+    }
+    if (tags.size() < 2) {
+        throw py::value_error(std::string(context) + " requires at least two elements");
+    }
+    return tags;
+};
+
 void init_generation_config(py::module_& m) {
     // Binding for StopCriteria
     py::enum_<StopCriteria>(m, "StopCriteria", stop_criteria_docstring)
@@ -224,27 +237,35 @@ void init_generation_config(py::module_& m) {
     add_grammar_operators(qwen_xml);
 
     concat
-        .def_static("__new__", [](py::object cls, py::object left, py::object right) {
+        .def(py::init([](py::iterable elements) {
             return std::make_shared<StructuredOutputConfig::Concat>(
-                std::vector<StructuredOutputConfig::StructuralTag>{
-                    pyutils::py_obj_to_compound_grammar(left),
-                    pyutils::py_obj_to_compound_grammar(right)
-                }
-            );
-        }, "Concat combines two grammars sequentially, e.g. \"A B\" means A followed by B")
+                collect_structural_tags(elements, "StructuredOutputConfig.Concat"));
+        }), py::arg("elements"),
+        "Concat combines grammar elements from an iterable sequentially, e.g. "
+        "[A, B, C] means A followed by B followed by C.")
+        .def(py::init([](py::args args) {
+            return std::make_shared<StructuredOutputConfig::Concat>(
+                collect_structural_tags(py::reinterpret_borrow<py::iterable>(args),
+                                        "StructuredOutputConfig.Concat"));
+        }),
+        "Concat combines positional grammar elements sequentially, e.g. Concat(A, B, C).")
         .def_readwrite("elements", &StructuredOutputConfig::Concat::elements)
         .def("__repr__", [](const StructuredOutputConfig::Concat& self) { return self.to_string(); });
     add_grammar_operators(concat);
 
     union_
-        .def_static("__new__", [](py::object cls, py::object left, py::object right) {
+        .def(py::init([](py::iterable elements) {
             return std::make_shared<StructuredOutputConfig::Union>(
-                std::vector<StructuredOutputConfig::StructuralTag>{
-                    pyutils::py_obj_to_compound_grammar(left),
-                    pyutils::py_obj_to_compound_grammar(right)
-                }
-            );
-        }, "Union combines two grammars in parallel, e.g. \"A | B\" means either A or B")
+                collect_structural_tags(elements, "StructuredOutputConfig.Union"));
+        }), py::arg("elements"),
+        "Union combines grammar elements from an iterable in parallel, e.g. "
+        "[A, B, C] means A or B or C.")
+        .def(py::init([](py::args args) {
+            return std::make_shared<StructuredOutputConfig::Union>(
+                collect_structural_tags(py::reinterpret_borrow<py::iterable>(args),
+                                        "StructuredOutputConfig.Union"));
+        }),
+        "Union combines positional grammar elements in parallel, e.g. Union(A, B, C).")
         .def_readwrite("elements", &StructuredOutputConfig::Union::elements)
         .def("__repr__", [](const StructuredOutputConfig::Union& self) { return self.to_string(); });
     add_grammar_operators(union_);

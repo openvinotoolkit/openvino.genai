@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
+from json import tool
 import re
 import json
 from datetime import datetime
@@ -11,9 +12,7 @@ from pprint import pprint
 from openvino_genai import (
     LLMPipeline,
     GenerationConfig,
-    StructuredOutputConfig,
-    StructuralTagsConfig,
-    StructuralTagItem,
+    StructuredOutputConfig as SOC,
     StreamingStatus,
 )
 from typing import ClassVar
@@ -125,17 +124,17 @@ def main():
 
         pipe.start_chat(sys_message)
         if use_structural_tags:
-            config.structured_output_config = StructuredOutputConfig(
-                structural_tags_config=StructuralTagsConfig(
-                    structural_tags=[
-                        StructuralTagItem(
+            config.structured_output_config = SOC(
+                structural_tags_config=SOC.TriggeredTags(
+                    triggers=["<function="],
+                    tags=[
+                        SOC.Tag(
                             begin=f'<function="{name}">',
-                            schema=json.dumps(tool.model_json_schema()),
+                            content=SOC.JSONSchema(json.dumps(tool.model_json_schema())),
                             end="</function>",
                         )
                         for name, tool in tools.items()
-                    ],
-                    triggers=["<function="],
+                    ]
                 )
             )
             config.do_sample = True

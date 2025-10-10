@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "xgrammar_backend.hpp"
+#include "logger.hpp"
 #include <iostream>
 
 namespace ov {
@@ -71,6 +72,11 @@ xgrammar::Grammar XGrammarStructuredOutput::create_grammar(const std::optional<S
             using ConfigType = std::decay_t<decltype(config)>;
             if constexpr (std::is_same_v<ConfigType, StructuralTagsConfig>) {
                 // Old format: StructuralTagsConfig
+                Logger::warn(
+                    "The use of \"structural_tags_config\" with StructuralTagsConfig instance is deprecated and will be removed in future releases. "
+                    "Use TriggeredTags instead."
+                );
+                
                 std::ostringstream oss;
                 oss << "{\"type\": \"structural_tag\", \"format\": " << config.to_json() << "}";
                 auto result = xgrammar::Grammar::FromStructuralTag(oss.str());
@@ -94,6 +100,10 @@ xgrammar::Grammar XGrammarStructuredOutput::create_grammar(const std::optional<S
             }
         }, structured_output_config.value().structural_tags_config.value());
     } else if (structured_output_config.value().compound_grammar.has_value()) {
+        Logger::warn(
+            "The use of \"compound_grammar\" is deprecated and will be removed in future releases.\n" 
+            "Pass the same input to \"structural_tags_config\" instead."
+        );
         return parse_structural_tag(structured_output_config.value().compound_grammar.value());
     }
 

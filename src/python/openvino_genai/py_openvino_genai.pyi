@@ -2618,13 +2618,18 @@ class StructuredOutputConfig:
         def __repr__(self) -> str:
             ...
     class Concat:
-        @staticmethod
-        def __new__(arg0: typing.Any, arg1: typing.Any, arg2: typing.Any) -> StructuredOutputConfig.Concat:
-            """
-            Concat combines two grammars sequentially, e.g. "A B" means A followed by B
-            """
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
+        @typing.overload
+        def __init__(self, elements: collections.abc.Iterable) -> None:
+            """
+            Concat combines grammar elements from an iterable sequentially, e.g. [A, B, C] means A followed by B followed by C.
+            """
+        @typing.overload
+        def __init__(self, *args) -> None:
+            """
+            Concat combines positional grammar elements sequentially, e.g. Concat(A, B, C).
+            """
         def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
@@ -2755,13 +2760,18 @@ class StructuredOutputConfig:
         def triggers(self, arg0: collections.abc.Sequence[str]) -> None:
             ...
     class Union:
-        @staticmethod
-        def __new__(arg0: typing.Any, arg1: typing.Any, arg2: typing.Any) -> StructuredOutputConfig.Union:
-            """
-            Union combines two grammars in parallel, e.g. "A | B" means either A or B
-            """
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
+        @typing.overload
+        def __init__(self, elements: collections.abc.Iterable) -> None:
+            """
+            Union combines grammar elements from an iterable in parallel, e.g. [A, B, C] means A or B or C.
+            """
+        @typing.overload
+        def __init__(self, *args) -> None:
+            """
+            Union combines positional grammar elements in parallel, e.g. Union(A, B, C).
+            """
         def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:

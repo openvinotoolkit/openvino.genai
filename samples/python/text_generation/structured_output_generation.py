@@ -70,7 +70,7 @@ def main():
         except EOFError:
             break
         pipe.start_chat(sys_message)
-        config.structured_output_config = StructuredOutputConfig(json_schema = json.dumps(ItemQuantities.model_json_schema()))
+        config.structured_output_config = StructuredOutputConfig(json_schema=json.dumps(ItemQuantities.model_json_schema()))
         config.do_sample = False
         res = json.loads(pipe.generate(prompt, config))
         pipe.finish_chat()
@@ -82,7 +82,7 @@ def main():
         pipe.start_chat(sys_message_for_items)
         generate_has_run = False
         for item, quantity in res.items():
-            config.structured_output_config = StructuredOutputConfig(json_schema = json.dumps(items_map[item].model_json_schema()))
+            config.structured_output_config = StructuredOutputConfig(json_schema=json.dumps(items_map[item].model_json_schema()))
             for _ in range(quantity):
                 generate_has_run = True
                 json_strs = pipe.generate(prompt, config)

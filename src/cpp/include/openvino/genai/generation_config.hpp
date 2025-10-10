@@ -261,7 +261,7 @@ public:
                              std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TagsWithSeparator>>) {
             return g ? g->to_string() : std::string("null");
         } else {
-            return std::string("unsupported_structural_tag");
+            OPENVINO_THROW("Unsupported structural tag, cannot convert to string:" + std::string(typeid(g).name()));
         }
     }
 
@@ -283,7 +283,7 @@ public:
                              std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TagsWithSeparator>>) {
             return g ? g->to_json() : std::string("null");
         } else {
-            return std::string("unsupported_structural_tag");
+            OPENVINO_THROW("Unsupported structural tag, cannot convert to json:" + std::string(typeid(g).name()));
         }
     }
 
@@ -369,9 +369,9 @@ public:
         Tag(const std::string& begin, StructuralTag content, const std::string& end) : begin(begin), content(std::move(content)), end(end) {};
         std::string to_json() const {
             std::ostringstream oss;
-            oss << "{\"type\": \"tag\", \"begin\": \"" << begin << "\", \"content\": " <<
+            oss << "{\"type\": \"tag\", \"begin\": " << format_for_json(begin) << ", \"content\": " <<
                    std::visit([](const auto& g) -> std::string { return structural_tag_to_json(g); }, content) <<
-                   ", \"end\": \"" << end << "\"}";
+                   ", \"end\": " << format_for_json(end) << "}";
             return oss.str();
         };
         std::string to_string() const {
@@ -402,7 +402,7 @@ public:
             std::ostringstream oss;
             oss << "{\"type\": \"triggered_tags\", \"triggers\": [";
             for (size_t i = 0; i < triggers.size(); ++i) {
-                oss << "\"" << triggers[i] << "\"";
+                oss << format_for_json(triggers[i]);
                 if (i != triggers.size() - 1) {
                     oss << ", ";
                 }

@@ -6,6 +6,7 @@ import argparse
 import openvino_genai as ov_genai
 from openvino import get_version
 
+
 def main():
     parser = argparse.ArgumentParser(description="Help command")
     parser.add_argument("-m", "--model", type=str, required=True, help="Path to model and tokenizers base directory")
@@ -15,7 +16,7 @@ def main():
     parser.add_argument("-n", "--num_iter", type=int, default=2, help="Number of iterations")
     parser.add_argument("-mt", "--max_new_tokens", type=int, default=20, help="Maximal number of new tokens")
     parser.add_argument("-d", "--device", type=str, default="CPU", help="Device")
-    
+
     args = parser.parse_args()
 
     if args.prompt is not None and args.prompt_file is not None:
@@ -37,9 +38,10 @@ def main():
     device = args.device
     num_warmup = args.num_warmup
     num_iter = args.num_iter
-    
+
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = args.max_new_tokens
+    config.apply_chat_template = False
 
     if device == "NPU":
         pipe = ov_genai.LLMPipeline(models_path, device)
@@ -55,7 +57,7 @@ def main():
 
     for _ in range(num_warmup):
         pipe.generate(prompt, config)
-    
+
     res = pipe.generate(prompt, config)
     perf_metrics = res.perf_metrics
     for _ in range(num_iter - 1):

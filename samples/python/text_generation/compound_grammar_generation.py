@@ -121,13 +121,9 @@ def main():
     model_input = tokenizer.apply_chat_template(
         chat_history, add_generation_prompt=True
     )
-
-    # the example grammar works the same as SOC.Regex("yes|no")
-    # but the Union grammar is more flexible and can be extended with more options
-    yes_or_no = SOC.Regex("yes") | SOC.Regex(
-        "no"
-    )  # SOC.Union(SOC.Regex("yes"), SOC.Regex("no"))
-    generation_config.structured_output_config = SOC(compound_grammar=yes_or_no)
+    # same as SOC.Union(SOC.ConstString("yes"), SOC.ConstString("no"))
+    yes_or_no_grammar = SOC.ConstString("yes") | SOC.ConstString("no")
+    generation_config.structured_output_config = SOC(structural_tags_config=yes_or_no_grammar)
     print("Assistant: ", end="")
     answer = pipe.generate(model_input, generation_config, streamer=streamer)
     chat_history.append({"role": "assistant", "content": answer})
@@ -143,17 +139,18 @@ def main():
         chat_history, add_generation_prompt=True
     )
 
-    start_tool_call_tag = SOC.Regex(r"functools")
+    start_tool_call_tag = SOC.ConstString(r"functools")
     tools_json = SOC.JSONSchema(
         tools_to_array_schema(booking_flight_tickets, booking_hotels)
     )
-    tool_call = (
+    tool_call_grammar = (
         start_tool_call_tag + tools_json
     )  # SOC.Concat(start_tool_call_tag, tools_json)
-    generation_config.structured_output_config.compound_grammar = tool_call
+    generation_config.structured_output_config.structural_tags_config = tool_call_grammar
 
     print("Assistant: ", end="")
     pipe.generate(model_input, generation_config, streamer=streamer)
+    print()
 
 
 if __name__ == "__main__":

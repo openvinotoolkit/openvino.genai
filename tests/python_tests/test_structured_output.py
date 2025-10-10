@@ -15,24 +15,29 @@ def ov_pipe(request):
     _, _, models_path = download_and_convert_model(request.param)
     return create_ov_pipeline(models_path)
 
+
 class Person(BaseModel):
     name: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
     age: int = Field(ge=0, le=128)
     city: Literal["Dublin", "Dubai", "Munich"]
+
 
 class Transaction(BaseModel):
     id: int = Field(ge=0, le=2**14)
     amount: float = Field(ge=0.0, le=1e6)
     currency: Literal["USD", "EUR", "GBP"]
 
+
 class RESTAPIResponse(BaseModel):
     status: Literal["success", "error"]
     data: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
+
 
 structured_id_models = [
     'TinyLlama/TinyLlama-1.1B-Chat-v1.0',
     'katuni4ka/tiny-random-phi3',
 ]
+
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("ov_pipe", structured_id_models, indirect=True)
@@ -42,12 +47,12 @@ structured_id_models = [
     ("Generate a json about a REST API response.", RESTAPIResponse)
 ])
 @pytest.mark.parametrize("use_compound_grammar", [True, False])
-def test_structured_output_generation(ov_pipe, prompt_and_scheme, use_compound_grammar):
+def test_structured_json(ov_pipe, prompt_and_scheme, use_compound_grammar, capfd):
     prompt, SchemeType = prompt_and_scheme
 
     structured_output_config = ov_genai.StructuredOutputConfig()
     if use_compound_grammar:
-        structured_output_config.compound_grammar = structured_output_config.JSONSchema(
+        structured_output_config.compound_grammar = SOC.JSONSchema(
             json.dumps(SchemeType.model_json_schema())
         )
     else:
@@ -58,9 +63,10 @@ def test_structured_output_generation(ov_pipe, prompt_and_scheme, use_compound_g
     gen_config.structured_output_config = structured_output_config
 
     res_str = ov_pipe.generate(prompt, generation_config=gen_config)
-
-    # If it's invalid it will raise an error.
-    SchemeType.model_validate_json(res_str)
+    try:
+        SchemeType.model_validate_json(res_str)
+    except Exception as e:
+        pytest.fail(f"Output {res_str} is not valid json schema {SchemeType.model_json_schema()}: {e}")
 
 
 @pytest.mark.precommit
@@ -86,9 +92,10 @@ def test_structured_regex(ov_pipe, prompt_and_regex, use_compound_grammar):
     gen_config.max_new_tokens = 100
     gen_config.structured_output_config = structured_output_config
     res_str = ov_pipe.generate(prompt, generation_config=gen_config)
-    
+
     assert re.match(regex_str, res_str), f"Output {res_str} does not match regex {regex_str}"
-   
+
+
 @pytest.mark.precommit
 @pytest.mark.parametrize("ov_pipe", structured_id_models, indirect=True)
 @pytest.mark.parametrize("prompt_and_ebnf", [
