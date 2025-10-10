@@ -647,7 +647,7 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
         if (is_paged_attention_available()) {
             return true;
         } else {
-            OPENVINO_THROW("Speculative decoding on non-NPU devices requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
+            OPENVINO_THROW("Speculative decoding requires PagedAttention operation support on non-NPU devices, which is available on x86_64 or ARM64 platforms only");
         }
     }
 

@@ -1,18 +1,17 @@
-# Copyright (C) 2023-2025 Intel Corporation
+# Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 
 import pytest
-import numpy as np 
-import logging
+import numpy as np
 
 import openvino as ov
 import openvino_genai as ov_genai
 
 from utils.constants import get_default_llm_properties
-from utils.hugging_face import generation_config_to_hf, download_and_convert_model, run_hugging_face
+from utils.hugging_face import download_and_convert_model, run_hugging_face
 from utils.comparation import compare_generation_results
-from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, get_main_pipeline_types, PipelineType, convert_decoded_results_to_generation_result
+from utils.ov_genai_pipelines import convert_decoded_results_to_generation_result
 
 def get_npu_llm_properties_for_test():
     config = get_default_llm_properties()

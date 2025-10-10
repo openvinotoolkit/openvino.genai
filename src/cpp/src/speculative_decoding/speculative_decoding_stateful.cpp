@@ -524,7 +524,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
     config.validate();
 
     OPENVINO_ASSERT(config.is_greedy_decoding(),
-        "Currently only greedy decoding are supported");
+        "Currently only greedy decoding is supported");
 
     OPENVINO_ASSERT(config.num_return_sequences == 1u,
         "Currently only \"num_return_sequences\" equal to 1 is supported!");
@@ -686,8 +686,8 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
         // single infer request: last token from previous main inference + all candidates
         // from the draft stage.
         //
-        // Note on model's return variable: If model isn't sliced to return logit only
-        // for the last element, then it returns logits for all elements of the input
+        // Note on model's return variable: If model isn't sliced to return only
+        // certain logits, then it returns logits for all elements of the input
         // prompt. In that tensor, for each token `t` of the input prompt it contains
         // distribution (over the vocabulary) for the next possible token that is
         // generated based on subsequence [first token,...,`t`] of the input prompt.
