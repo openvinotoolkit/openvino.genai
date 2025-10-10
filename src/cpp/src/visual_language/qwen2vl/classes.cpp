@@ -721,8 +721,9 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vec
         config.max_pixels
     );
 
+    // The default value of temporal_patch_size for original QWen2-VL and QWen2.5-VL is 2.
+    // Only 2 frames are processed at a time, so the following check is required.
     OPENVINO_ASSERT(config.temporal_patch_size == 2u, "temporal_patch_size != 2.");
-
     std::vector<float> same_image_data{images.size() == 2u ? 1.f : 0.f};
     ov::Tensor same_image(ov::element::f32, ov::Shape{1}, same_image_data.data());
     ov::Tensor input_image_1(ov::element::u8, image_shape, images[0].data<uint8_t>());

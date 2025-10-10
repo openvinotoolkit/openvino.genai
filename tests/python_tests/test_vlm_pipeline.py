@@ -157,7 +157,8 @@ def handwritten_tensor(pytestconfig):
     handwritten_url = "https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350"
     return openvino.Tensor(from_cache_or_download(pytestconfig, handwritten_url, "handwritten.png"))
 
-# Return video with shape: [num_frames, height, width, 3]
+# Creates a 5-frame countdown video with white text on black background for testing video preprocessing.
+# Video shape: [num_frames, height, width, 3]
 def create_countdown_frames():
     frames_count = 5
     height = 240
