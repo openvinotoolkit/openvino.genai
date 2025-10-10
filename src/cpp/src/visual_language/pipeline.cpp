@@ -236,9 +236,22 @@ public:
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         if (m_inputs_embedder->has_token_type_ids()) {
-            std::tie(inputs_embeds, token_type_ids) = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(norm_prompt.unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, norm_prompt.images_sequence);
+            std::tie(inputs_embeds, token_type_ids) =
+                m_inputs_embedder->get_inputs_embeds_with_token_type_ids(norm_prompt.unified_prompt,
+                                                                         encoded_images,
+                                                                         encoded_videos,
+                                                                         perf_metrics,
+                                                                         encoded_images.size() > 0 || encoded_videos.size() > 0,
+                                                                         norm_prompt.images_sequence,
+                                                                         norm_prompt.videos_sequence);
         } else {
-            inputs_embeds = m_inputs_embedder->get_inputs_embeds(norm_prompt.unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, norm_prompt.images_sequence);
+            inputs_embeds = m_inputs_embedder->get_inputs_embeds(norm_prompt.unified_prompt,
+                                                                 encoded_images,
+                                                                 encoded_videos,
+                                                                 perf_metrics,
+                                                                 encoded_images.size() > 0 || encoded_videos.size() > 0,
+                                                                 norm_prompt.images_sequence,
+                                                                 norm_prompt.videos_sequence);
         }
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
