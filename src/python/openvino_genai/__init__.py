@@ -52,6 +52,7 @@ from .py_openvino_genai import (
 
 # Tokenizers
 from .py_openvino_genai import (
+    ChatHistory,
     TokenizedInputs,
     Tokenizer
 )
