@@ -75,7 +75,7 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     draft_model_path = kwargs.get("draft_model", '')
     if draft_model_path:
         if not Path(draft_model_path).exists():
-            raise RuntimeError(f'==Failure ==: draft model by path:{draft_model_path} is not exists')
+            raise RuntimeError(f'Error: Draft model path does not exist: {draft_model_path}')
         draft_device = kwargs.get('draft_device', None) or device
         config['draft_model'] = openvino_genai.draft_model(draft_model_path, draft_device.upper())
 

@@ -424,6 +424,7 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
 def genai_gen_text(model, tokenizer, question, gen_config, skip_question):
     return model.generate(question, gen_config)
 
+
 def llamacpp_gen_text(model, tokenizer, question, gen_config, skip_question):
     max_new_tokens = gen_config.max_new_tokens
     use_chat_template = gen_config.apply_chat_template
