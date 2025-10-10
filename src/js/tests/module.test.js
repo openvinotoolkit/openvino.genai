@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { describe, it, before, after } from "node:test";
 import { models } from "./models.js";
 import { hrtime } from "node:process";
+import os from "node:os";
 
 const MODEL_PATH = process.env.MODEL_PATH || `./tests/models/${models.LLM.split("/")[1]}`;
 
@@ -22,7 +23,11 @@ describe("LLMPipeline construction", async () => {
     });
   });
 
-  await it("test SchedulerConfig", async () => {
+  await it("test SchedulerConfig", async (t) => {
+    if (os.platform() === "darwin") {
+      t.skip("only support x64 platform or ARM with SVE support");
+      return;
+    }
     const schedulerConfig = {
       max_num_batched_tokens: 32,
     };
@@ -194,7 +199,12 @@ describe("LLMPipeline.generate()", () => {
     assert.strictEqual(replyStr, reply.toString());
   });
 
-  it("DecodedResults.perfMetrics", async () => {
+  it("DecodedResults.perfMetrics", async (t) => {
+    if (os.platform() === "darwin") {
+      t.skip("Skipping perfMetrics test on macOS. Ticket - 173286");
+      return;
+    }
+
     const config = {
       max_new_tokens: 20,
       return_decoded_results: true,

@@ -5,8 +5,11 @@ import os
 import pytest
 import sys
 
-from conftest import SAMPLES_PY_DIR, convert_model, download_test_content
 from test_utils import run_sample
+from data.models import get_gguf_model_list
+from utils.hugging_face import download_gguf_model
+from conftest import SAMPLES_PY_DIR, convert_model, download_test_content
+from utils.hugging_face import download_and_convert_embeddings_models, download_and_convert_model
 
 convert_draft_model = convert_model
 download_mask_image = download_test_content
@@ -221,10 +224,10 @@ class TestBenchmarkLLM:
     @pytest.mark.samples
     @pytest.mark.parametrize("convert_model", ["bge-small-en-v1.5"], indirect=True)
     @pytest.mark.parametrize("sample_args", [
-        ["-d", "cpu", "-n", "2"], 
-        ["-d", "cpu", "-n", "2", "--embedding_max_length", "128", "--embedding_normalize", "--embedding_pooling", "mean"], 
-        ["-d", "cpu", "-n", "2", "--optimum"], 
-        ["-d", "cpu", "-n", "1", "--embedding_max_length", "128", "--embedding_normalize", "--embedding_pooling", "mean", "--optimum"]
+        ["-d", "cpu", "-n", "2", "--task", "text_embed"],
+        ["-d", "cpu", "-n", "2", "--embedding_max_length", "128", "--embedding_normalize", "--embedding_pooling", "mean", "--task", "text_embed"], 
+        ["-d", "cpu", "-n", "2", "--optimum", "--task", "text_embed"],
+        ["-d", "cpu", "-n", "1", "--embedding_max_length", "128", "--embedding_normalize", "--embedding_pooling", "mean", "--optimum", "--task", "text_embed"],
     ])
     def test_python_tool_llm_benchmark_text_embeddings(self, convert_model, sample_args):
         benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
@@ -234,21 +237,71 @@ class TestBenchmarkLLM:
             "-m", convert_model, 
         ] + sample_args
         run_sample(benchmark_py_command)
-        
-        
+
+
     @pytest.mark.samples
-    @pytest.mark.parametrize("convert_model", ["ms-marco-TinyBERT-L2-v2"], indirect=True)
+    @pytest.mark.parametrize("download_and_convert_embeddings_models", ["Qwen/Qwen3-Embedding-0.6B"], indirect=True)
     @pytest.mark.parametrize("sample_args", [
-        ["-d", "cpu", "-n", "2", "--rerank"], 
-        ["-d", "cpu", "-n", "2", "--reranking_max_length", "10", "--reranking_top_n", "1", "--rerank"],
-        ["-d", "cpu", "-n", "2", "--optimum", "--rerank"], 
-        ["-d", "cpu", "-n", "1", "--reranking_max_length", "10", "--reranking_top_n", "1", "--optimum", "--rerank"]
+        ["-d", "cpu", "-n", "2", "--task", "text_embed", "--embedding_padding_side", "left", "--embedding_pooling", "last_token"],
+        ["-d", "cpu", "-n", "2", "--task", "text_embed", "--embedding_padding_side", "left", "--embedding_pooling", "last_token", "--optimum"],
     ])
-    def test_python_tool_llm_benchmark_text_reranking(self, convert_model, sample_args):
+    def test_python_tool_llm_benchmark_text_embeddings_qwen3(self, download_and_convert_embeddings_models, sample_args):
+        convert_model, hf_tokenizer, models_path = download_and_convert_embeddings_models
         benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
         benchmark_py_command = [
             sys.executable, 
             benchmark_script, 
-            "-m", convert_model, 
+            "-m", models_path,
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+
+    @pytest.mark.samples
+    @pytest.mark.parametrize("convert_model", ["ms-marco-TinyBERT-L2-v2"], indirect=True)
+    @pytest.mark.parametrize("sample_args", [
+        ["-d", "cpu", "-n", "2", "--task", "text_rerank"],
+        ["-d", "cpu", "-n", "2", "--reranking_max_length", "10", "--reranking_top_n", "1", "--task", "text_rerank"],
+        ["-d", "cpu", "-n", "2", "--optimum", "--task", "text_rerank"],
+        ["-d", "cpu", "-n", "1", "--reranking_max_length", "10", "--reranking_top_n", "1", "--optimum", "--task", "text_rerank"]
+    ])
+    def test_python_tool_llm_benchmark_text_reranking(self, convert_model, sample_args):
+        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m", convert_model,
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+
+    @pytest.mark.samples
+    @pytest.mark.parametrize("model_id", ["Qwen/Qwen3-Reranker-0.6B"])
+    @pytest.mark.parametrize("sample_args", [
+        ["-d", "cpu", "-n", "1", "--task", "text_rerank", "--optimum"],
+    ])
+    def test_python_tool_llm_benchmark_text_reranking_qwen3(self, model_id, sample_args):
+        model, hf_tokenizer, models_path = download_and_convert_model(model_id)
+        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        benchmark_py_command = [
+            sys.executable, 
+            benchmark_script, 
+            "-m", models_path,
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
+
+    @pytest.mark.samples
+    @pytest.mark.parametrize("sample_args", [
+        ["-d", "cpu", "-n", "1"],
+        ["-d", "cpu", "-n", "1", "-f", "pt"],
+    ])
+    def test_python_tool_llm_benchmark_gguf_format(self, sample_args):
+        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        gguf_model = get_gguf_model_list()[0]
+        gguf_full_path = download_gguf_model(gguf_model["gguf_model_id"], gguf_model["gguf_filename"])
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m", gguf_full_path,
         ] + sample_args
         run_sample(benchmark_py_command)

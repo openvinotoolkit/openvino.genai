@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 import os
 import json
+import torch
 import scipy
 import datetime
 import logging as log
@@ -17,6 +18,7 @@ from llm_bench_utils.memory_monitor import MemMonitorWrapper
 from pathlib import Path
 from typing import Any
 
+
 FW_UTILS = {"pt": llm_bench_utils.pt_utils, "ov": llm_bench_utils.ov_utils}
 
 
@@ -29,6 +31,36 @@ class TextRerankerOptimum(CommonPipeline):
 
         self.top_n = args.get("rerank_top_n")
         self.max_length = args.get("rerank_max_length")
+        self.use_case = args.get("use_case")
+
+    # according to transformers Qwen3-Embedding-0.6B model card:
+    # https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
+    @execution_time_in_sec
+    def tokenize_qwen(self, input_text):
+        prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the '\
+                 + 'Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
+        suffix = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+        task = "Given a web search query, retrieve relevant passages that answer the query"
+        max_length = self.max_length or 8192
+        pairs = []
+        if self.use_case.is_qwen_causallm_arch(self.model.config):
+            for doc in self.texts:
+                pairs.append(f"<Instruct>: {task}\n<Query>: {input_text}\n<Document>: {doc}")
+
+            prefix_tokens = self.tokenizer.encode(prefix, add_special_tokens=False)
+            suffix_tokens = self.tokenizer.encode(suffix, add_special_tokens=False)
+            inputs = self.tokenizer(
+                pairs, padding=False, truncation="longest_first", return_attention_mask=False,
+                max_length=max_length - len(prefix_tokens) - len(suffix_tokens)
+            )
+            for i, ele in enumerate(inputs["input_ids"]):
+                inputs["input_ids"][i] = prefix_tokens + ele + suffix_tokens
+            inputs = self.tokenizer.pad(inputs, padding=True, return_tensors="pt", max_length=max_length, padding_side='left').to(self.model.device)
+        else:
+            for doc in self.texts:
+                pairs.append(f"{prefix}<Instruct>: {task}\n<Query>: {input_text}\n<Document>: {doc}{suffix}")
+            inputs = self.tokenizer(pairs, padding=True, truncation=True, max_length=max_length, return_tensors="pt", padding_side='left')
+        return inputs
 
     @execution_time_in_sec
     def tokenize(self, input_text: str, **kwargs):
@@ -47,13 +79,27 @@ class TextRerankerOptimum(CommonPipeline):
 
     @execution_time_in_sec
     def generate(self, input_data: Any, **kwargs):
-        outputs = self.model(**input_data).logits
-        if outputs.shape[1] > 1:
-            scores = outputs[:, 1]
-        else:
-            scores = outputs.flatten()
+        with torch.no_grad():
+            outputs = self.model(**input_data).logits
 
-        scores = scipy.special.expit(scores)
+        # according to transformers Qwen3-Embedding-0.6B model card:
+        # https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
+        if self.use_case.is_qwen_causallm_arch(self.model.config):
+            batch_scores = outputs[:, -1, :]
+
+            token_false_id = self.tokenizer.convert_tokens_to_ids("no")
+            token_true_id = self.tokenizer.convert_tokens_to_ids("yes")
+            true_vector = batch_scores[:, token_true_id]
+            false_vector = batch_scores[:, token_false_id]
+            batch_scores = torch.stack([false_vector, true_vector], dim=1)
+            batch_scores = torch.nn.functional.log_softmax(batch_scores, dim=1)
+            scores = batch_scores[:, 1].exp().tolist()
+        else:
+            if outputs.shape[1] > 1:
+                scores = outputs[:, 1]
+            else:
+                scores = outputs.flatten()
+            scores = scipy.special.expit(scores)
         generation_result = []
         for index, (score, _) in enumerate(zip(scores, self.texts)):
             generation_result.append((index, score))
@@ -145,7 +191,10 @@ class TextRerankerOptimum(CommonPipeline):
         return iter_data, []
 
     def run(self, input_text: str, iter_num: int, prompt_index: int, proc_id: int, bench_hook: object | None) -> tuple[dict, list]:
-        tokenized_input, tokenization_time = self.tokenize(input_text)
+        if self.model.config.model_type == "qwen3":
+            tokenized_input, tokenization_time = self.tokenize_qwen(input_text)
+        else:
+            tokenized_input, tokenization_time = self.tokenize(input_text)
         input_tokens = tokenized_input["input_ids"] if "input_ids" in tokenized_input else tokenized_input
         input_token_size = input_tokens[0].numel() * len(self.texts)
         self.print_batch_size_info(iter_num, input_token_size)
@@ -408,6 +457,6 @@ def get_texts_from_file(args: dict) -> list:
             texts_list = [
                 "Intel Core Ultra processors incorporate an AI-optimized architecture that supports "
                 + "new user experiences and the next wave of commercial applications.",
-                "Intel Core Ultra processors are designed to provide enhanced performance and efficiency for a wide range of computing tasks.",
+                "Intel Core Ultra processors are designed to provide enhanced performance and efficiency for a wide range of computing tasks."
             ]
     return texts_list
