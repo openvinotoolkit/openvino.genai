@@ -15,6 +15,7 @@ using VideoGenerationPerfMetrics = ImageGenerationPerfMetrics;
 struct VideoGenerationConfig : public ImageGenerationConfig {
     double guidance_rescale = 0.0;
     size_t num_frames = 161;
+    size_t frame_rate = 25;
 };
 
 // struct LTXVideoTransformer3DModel {
