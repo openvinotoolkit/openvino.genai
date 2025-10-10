@@ -26,7 +26,6 @@ class TextEvaluator(BaseEvaluator):
         test_data: Union[str, list] = None,
         metrics="similarity",
         similarity_model_id: str = "sentence-transformers/all-mpnet-base-v2",
-        max_new_tokens=128,
         crop_question=True,
         num_samples=None,
         language="en",
@@ -34,7 +33,6 @@ class TextEvaluator(BaseEvaluator):
         generation_config=None,
         generation_config_base=None,
         seqs_per_request=None,
-        use_chat_template=None,
         long_prompt=False
     ) -> None:
         assert (
@@ -43,7 +41,6 @@ class TextEvaluator(BaseEvaluator):
 
         self.test_data = test_data
         self.metrics = metrics
-        self.max_new_tokens = max_new_tokens
         self.tokenizer = tokenizer
         self._crop_question = crop_question
         self.num_samples = num_samples
@@ -51,7 +48,6 @@ class TextEvaluator(BaseEvaluator):
         self.generation_config_base = generation_config
         self.seqs_per_request = seqs_per_request
         self.generation_fn = gen_answer_fn
-        self.use_chat_template = use_chat_template
         if self.generation_config is not None:
             assert self.seqs_per_request is not None
 

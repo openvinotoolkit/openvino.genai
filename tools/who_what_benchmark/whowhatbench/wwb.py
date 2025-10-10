@@ -565,7 +565,6 @@ def create_evaluator(base_model, args):
                 gen_answer_fn=gen_answer_fn,
                 generation_config=gen_config,
                 seqs_per_request=1,
-                use_chat_template=use_chat_template,
                 long_prompt=args.long_prompt,
             )
         elif task == "text-to-image":
@@ -772,12 +771,11 @@ def main():
 
     if args.draft_model is not None:
         kwargs["draft_model"] = args.draft_model
-        if args.draft_device is not None:
-            kwargs["draft_device"] = args.draft_device
+        kwargs["draft_device"] = args.draft_device
+        draft_cb_config = None
         if args.draft_cb_config is not None:
-            kwargs["draft_cb_config"] = read_cb_config(args.draft_cb_config)
-        else:
-            kwargs["draft_cb_config"] = None
+            draft_cb_config = read_cb_config(args.draft_cb_config)
+        kwargs["draft_cb_config"] = draft_cb_config
 
     if args.gt_data and os.path.exists(args.gt_data):
         evaluator = create_evaluator(None, args)
