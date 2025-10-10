@@ -6,11 +6,11 @@ import pytest
 import gc
 from pathlib import Path
 from openvino_genai import TextEmbeddingPipeline, TextRerankPipeline
-from utils.hugging_face import download_and_convert_embeddings_models, download_and_convert_rerank_model, download_and_convert_model_fixture
+from utils.hugging_face import download_and_convert_model_class, OVConvertedModelSchema
 from langchain_core.documents.base import Document
 from langchain_community.embeddings import OpenVINOBgeEmbeddings
 from langchain_community.document_compressors.openvino_rerank import OpenVINOReranker
-from typing import Literal, Union
+from typing import Literal, Union, Optional
 import sys
 import platform
 from optimum.intel import OVModelForFeatureExtraction, OVModelForSequenceClassification
@@ -65,11 +65,25 @@ mobile processor offering.2\
 "
 
 
-@pytest.fixture(scope="class", autouse=True)
+@pytest.fixture(scope="module")
+def rerank_model(request) -> OVConvertedModelSchema:
+    model_id = request.param
+    return download_and_convert_model_class(model_id, OVModelForSequenceClassification)
+
+
+
+@pytest.fixture(scope="module")
+def emb_model(request) -> OVConvertedModelSchema:
+    model_id = request.param
+    return download_and_convert_model_class(model_id, OVModelForFeatureExtraction)
+
+
+@pytest.fixture(autouse=True)
 def run_gc_after_test():
     """
-    Fixture to run garbage collection after each test class.
-    This is a workaround to minimize memory consumption during tests and allow the use of less powerful CI runners.
+    Fixture to run garbage collection after each test.
+    This is a workaround to minimize memory consumption 
+    during tests and allow the use of less powerful CI runners.
     """
     yield
     gc.collect()
@@ -83,7 +97,7 @@ def dataset_documents(chunk_size=200):
 def run_text_embedding_genai(
     models_path: Path,
     documents: list[str],
-    config: TextEmbeddingPipeline.Config | None = None,
+    config: Optional[TextEmbeddingPipeline.Config] = None,
     task: Literal["embed_documents", "embed_query"] = "embed_documents",
 ):
     if not config:
@@ -103,7 +117,7 @@ def run_text_embedding_genai(
 def run_text_embedding_langchain(
     models_path: Path,
     documents: list[str],
-    config: TextEmbeddingPipeline.Config | None = None,
+    config: Optional[TextEmbeddingPipeline.Config] = None,
     task: Literal["embed_documents", "embed_query"] = "embed_documents",
 ):
     if not config:
@@ -171,19 +185,24 @@ MAX_EMBEDDING_ERROR = 2e-6 if sys.platform != "darwin" else 0.02  # ARM64 macs h
 
 
 def validate_embedding_results(result_1: EmbeddingResult, result_2: EmbeddingResult):
+    __tracebackhide__ = True
     np_result_1 = np.array(result_1)
     np_result_2 = np.array(result_2)
 
     max_error = np.abs(np_result_1 - np_result_2).max()
-    assert max_error < MAX_EMBEDDING_ERROR, f"Max error: {max_error} is greater than allowed {MAX_EMBEDDING_ERROR}"
+    assert (
+        max_error < MAX_EMBEDDING_ERROR, 
+        f"Max error: {max_error} is greater than allowed {MAX_EMBEDDING_ERROR}"
+    )
 
 
 def run_text_embedding_pipeline_with_ref(
     models_path: Path,
     documents: list[str],
-    config: TextEmbeddingPipeline.Config | None = None,
+    config: Optional[TextEmbeddingPipeline.Config] = None,
     task: Literal["embed_documents", "embed_query"] = "embed_documents",
 ):
+    __tracebackhide__ = True
     genai_result = run_text_embedding_genai(models_path, documents, config, task)
     langchain_result = run_text_embedding_langchain(models_path, documents, config, task)
 
@@ -191,7 +210,8 @@ def run_text_embedding_pipeline_with_ref(
 
 
 def assert_rerank_results(result_1: list[tuple[int, float]], result_2: list[tuple[int, float]]):
-    score_diff_max = 1e-6 if sys.platform != "darwin" else 2e-4  # ARM64 macs have different results
+    __tracebackhide__ = True
+    score_diff_max = 1e-6 if sys.platform != 'darwin' else 2e-4  # ARM64 macs have different results
     assert len(result_1) == len(result_2), f"Results length mismatch: {len(result_1)} != {len(result_2)}"
     for pair_1, pair_2 in zip(result_1, result_2):
         assert pair_1[0] == pair_2[0], f"Document IDs do not match: {pair_1[0]} != {pair_2[0]}"
@@ -202,7 +222,7 @@ def run_text_rerank_langchain(
     models_path: Path,
     query: str,
     documents: list[str],
-    config: TextRerankPipeline.Config | None = None,
+    config: Optional[TextRerankPipeline.Config] = None,
 ):
     if not config:
         config = TextRerankPipeline.Config()
@@ -258,7 +278,7 @@ def run_text_rerank_genai(
     models_path: Path,
     query: str,
     documents: list[str],
-    config: TextRerankPipeline.Config | None = None,
+    config: Optional[TextRerankPipeline.Config] = None,
 ):
     if not config:
         config = TextRerankPipeline.Config()
@@ -281,7 +301,7 @@ def run_text_rerank_pipeline_with_ref(
     models_path: Path,
     query: str,
     documents: list[str],
-    config: TextRerankPipeline.Config | None = None,
+    config: Optional[TextRerankPipeline.Config] = None,
 ):
     genai_result = run_text_rerank_genai(models_path, query, documents, config)
     langchain_result = run_text_rerank_langchain(models_path, query, documents, config)
@@ -289,10 +309,50 @@ def run_text_rerank_pipeline_with_ref(
     assert_rerank_results(genai_result, langchain_result)
 
 
-@pytest.mark.parametrize("download_and_convert_embeddings_models", ["BAAI/bge-small-en-v1.5"], indirect=True)
 @pytest.mark.precommit
-def test_embedding_constructors(download_and_convert_embeddings_models):
-    _, _, models_path = download_and_convert_embeddings_models
+@pytest.mark.parametrize(
+    "emb_model", 
+    ["Qwen/Qwen3-Embedding-0.6B"], 
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "config",
+    [
+        TextEmbeddingPipeline.Config(
+            normalize=False, 
+            pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN, 
+            padding_side="left"
+        ),
+        TextEmbeddingPipeline.Config(
+            normalize=False, 
+            pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN
+        ),
+    ],
+)
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
+def test_qwen3_embedding(emb_model, dataset_documents, config):
+    if sys.platform == "darwin":
+        pytest.xfail("Qwen3-Embedding-0.6B model produces different results on ARM64 macs.")
+        
+    embeddings_opt = run_qwen3_embedding_optimum(
+        emb_model.opt_model, 
+        emb_model.hf_tokenizer, 
+        dataset_documents, 
+        config.padding_side,
+    )
+    embeddings_genai = run_text_embedding_genai(
+        emb_model.models_path, 
+        dataset_documents, 
+        config, 
+        "embed_documents",
+    )
+    validate_embedding_results(embeddings_genai, embeddings_opt.tolist())
+
+
+@pytest.mark.parametrize("emb_model", ["BAAI/bge-small-en-v1.5"], indirect=True)
+@pytest.mark.precommit
+def test_embedding_constructors(emb_model):
+    models_path = emb_model.models_path
 
     TextEmbeddingPipeline(models_path, "CPU")
     TextEmbeddingPipeline(models_path, "CPU", TextEmbeddingPipeline.Config())
@@ -317,24 +377,7 @@ def test_embedding_constructors(download_and_convert_embeddings_models):
     )
 
 
-@pytest.mark.parametrize("download_and_convert_embeddings_models", ["Qwen/Qwen3-Embedding-0.6B"], indirect=True)
-@pytest.mark.parametrize(
-    "config",
-    [
-        TextEmbeddingPipeline.Config(normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN, padding_side="left"),
-        TextEmbeddingPipeline.Config(normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN),
-    ],
-)
-@pytest.mark.precommit
-@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
-def test_qwen3_embedding(download_and_convert_embeddings_models, dataset_documents, config):
-    opt_model, hf_tokenizer, models_path = download_and_convert_embeddings_models
-    embeddings_opt = run_qwen3_embedding_optimum(opt_model, hf_tokenizer, dataset_documents, config.padding_side)
-    embeddings_genai = run_text_embedding_genai(models_path, dataset_documents, config, "embed_documents")
-    validate_embedding_results(embeddings_genai, embeddings_opt.tolist())
-
-
-@pytest.mark.parametrize("download_and_convert_embeddings_models", EMBEDDINGS_TEST_MODELS, indirect=True)
+@pytest.mark.parametrize("emb_model", EMBEDDINGS_TEST_MODELS, indirect=True)
 @pytest.mark.parametrize(
     "config",
     [
@@ -356,19 +399,19 @@ def test_qwen3_embedding(download_and_convert_embeddings_models, dataset_documen
     ],
 )
 @pytest.mark.precommit
-def test_embed_documents(download_and_convert_embeddings_models, dataset_documents, config):
+def test_embed_documents(emb_model, dataset_documents, config):
     if (
         sys.platform == "linux"
-        and "bge-small-en-v1.5" in str(download_and_convert_embeddings_models)
+        and "bge-small-en-v1.5" in str(emb_model)
         and config.normalize
         and config.pooling_type == TextEmbeddingPipeline.PoolingType.CLS
     ):
         pytest.xfail("Random segmentation fault. Ticket 172306")
-    _, _, models_path = download_and_convert_embeddings_models
+    models_path = emb_model.models_path
     run_text_embedding_pipeline_with_ref(models_path, dataset_documents, config, "embed_documents")
 
 
-@pytest.mark.parametrize("download_and_convert_embeddings_models", EMBEDDINGS_TEST_MODELS, indirect=True)
+@pytest.mark.parametrize("emb_model", EMBEDDINGS_TEST_MODELS, indirect=True)
 @pytest.mark.parametrize(
     "config",
     [
@@ -390,18 +433,18 @@ def test_embed_documents(download_and_convert_embeddings_models, dataset_documen
     ],
 )
 @pytest.mark.precommit
-def test_embed_query(download_and_convert_embeddings_models, dataset_documents, config):
-    _, _, models_path = download_and_convert_embeddings_models
+def test_embed_query(emb_model, dataset_documents, config):
+    models_path = emb_model.models_path
     run_text_embedding_pipeline_with_ref(models_path, dataset_documents[:1], config, "embed_query")
 
 
 @pytest.fixture(scope="module")
-def dataset_embeddings_genai_default_config_refs(download_and_convert_embeddings_models, dataset_documents):
-    _, _, models_path = download_and_convert_embeddings_models
+def dataset_embeddings_genai_default_config_refs(emb_model, dataset_documents):
+    models_path = emb_model.models_path
     return run_text_embedding_genai(models_path, dataset_documents, None, "embed_documents")
 
 
-@pytest.mark.parametrize("download_and_convert_embeddings_models", ["mixedbread-ai/mxbai-embed-xsmall-v1"], indirect=True)
+@pytest.mark.parametrize("emb_model", ["mixedbread-ai/mxbai-embed-xsmall-v1"], indirect=True)
 @pytest.mark.parametrize(
     "config",
     [
@@ -415,8 +458,8 @@ def dataset_embeddings_genai_default_config_refs(download_and_convert_embeddings
     ],
 )
 @pytest.mark.precommit
-def test_fixed_shapes_configs(download_and_convert_embeddings_models, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
-    _, _, models_path = download_and_convert_embeddings_models
+def test_fixed_shapes_configs(emb_model, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
+    models_path = emb_model.models_path
 
     docs_to_embed = dataset_documents[: config.batch_size] if config.batch_size else dataset_documents
     result = run_text_embedding_genai(models_path, docs_to_embed, config, "embed_documents")
@@ -425,7 +468,7 @@ def test_fixed_shapes_configs(download_and_convert_embeddings_models, dataset_do
     validate_embedding_results(refs_to_validate, result)
 
 
-@pytest.mark.parametrize("download_and_convert_embeddings_models", ["mixedbread-ai/mxbai-embed-xsmall-v1"], indirect=True)
+@pytest.mark.parametrize("emb_model", ["mixedbread-ai/mxbai-embed-xsmall-v1"], indirect=True)
 @pytest.mark.parametrize(
     "config",
     [
@@ -439,8 +482,8 @@ def test_fixed_shapes_configs(download_and_convert_embeddings_models, dataset_do
 )
 @pytest.mark.xfail()
 @pytest.mark.precommit
-def test_fixed_shapes_configs_xfail(download_and_convert_embeddings_models, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
-    _, _, models_path = download_and_convert_embeddings_models
+def test_fixed_shapes_configs_xfail(emb_model, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
+    models_path = emb_model.models_path
 
     docs_to_embed = dataset_documents[: config.batch_size] if config.batch_size else dataset_documents
     result = run_text_embedding_genai(models_path, docs_to_embed, config, "embed_documents")
@@ -449,7 +492,7 @@ def test_fixed_shapes_configs_xfail(download_and_convert_embeddings_models, data
     validate_embedding_results(refs_to_validate, result)
 
 
-@pytest.mark.parametrize("download_and_convert_embeddings_models", ["mixedbread-ai/mxbai-embed-xsmall-v1"], indirect=True)
+@pytest.mark.parametrize("emb_model", ["mixedbread-ai/mxbai-embed-xsmall-v1"], indirect=True)
 @pytest.mark.parametrize(
     "config",
     [
@@ -462,8 +505,8 @@ def test_fixed_shapes_configs_xfail(download_and_convert_embeddings_models, data
     sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
-def test_npu_fallback(download_and_convert_embeddings_models, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
-    _, _, models_path = download_and_convert_embeddings_models
+def test_npu_fallback(emb_model, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
+    models_path = emb_model.models_path
 
     NPU_FALLBACK_PROPERTIES = {"NPU_USE_NPUW": "YES", "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"}
 
@@ -475,10 +518,10 @@ def test_npu_fallback(download_and_convert_embeddings_models, dataset_documents,
     validate_embedding_results(refs_to_validate, result)
 
 
-@pytest.mark.parametrize("download_and_convert_rerank_model", [RERANK_TEST_MODELS[0]], indirect=True)
+@pytest.mark.parametrize("rerank_model", [RERANK_TEST_MODELS[0]], indirect=True)
 @pytest.mark.precommit
-def test_rerank_constructors(download_and_convert_rerank_model):
-    _, _, models_path = download_and_convert_rerank_model
+def test_rerank_constructors(rerank_model):
+    models_path = rerank_model.models_path
 
     TextRerankPipeline(models_path, "CPU")
     TextRerankPipeline(models_path, "CPU", TextRerankPipeline.Config())
@@ -501,7 +544,7 @@ def test_rerank_constructors(download_and_convert_rerank_model):
     )
 
 
-@pytest.mark.parametrize("download_and_convert_rerank_model", RERANK_TEST_MODELS, indirect=True)
+@pytest.mark.parametrize("rerank_model", RERANK_TEST_MODELS, indirect=True)
 @pytest.mark.parametrize("query", ["What are the main features of Intel Core Ultra processors?"])
 @pytest.mark.parametrize(
     "config",
@@ -515,8 +558,8 @@ def test_rerank_constructors(download_and_convert_rerank_model):
     ],
 )
 @pytest.mark.precommit
-def test_rerank_documents(download_and_convert_rerank_model, dataset_documents, query, config):
-    _, _, models_path = download_and_convert_rerank_model
+def test_rerank_documents(rerank_model, dataset_documents, query, config):
+    models_path = rerank_model.models_path
     run_text_rerank_pipeline_with_ref(models_path, query, dataset_documents, config)
 
 
