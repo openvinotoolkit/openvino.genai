@@ -149,7 +149,7 @@ class UseCaseTextToSpeech(UseCase):
 USE_CASES = {
     'image_gen': [UseCaseImageGen(['stable-diffusion-', 'ssd-', 'tiny-sd', 'small-sd', 'lcm-', 'sdxl', 'dreamlike', "flux"])],
     "visual_text_gen": [UseCaseVLM(["llava", "llava-next", "qwen2-vl", "llava-qwen2", "internvl-chat", "minicpmv", "phi3-v",
-                                    "minicpm-v", "maira2", "qwen2-5-vl"])],
+                                    "minicpm-v", "minicpmo", "maira2", "qwen2-5-vl"])],
     'speech_to_text': [UseCaseSpeech2Text(['whisper'])],
     'image_cls': [UseCaseImageCls(['vit'])],
     'code_gen': [UseCaseCodeGen(["codegen", "codegen2", "stable-code"]),
