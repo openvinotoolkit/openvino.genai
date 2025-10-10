@@ -775,7 +775,9 @@ def main():
         if args.draft_device is not None:
             kwargs["draft_device"] = args.draft_device
         if args.draft_cb_config is not None:
-            kwargs["draft_cb_config"] = args.draft_cb_config
+            kwargs["draft_cb_config"] = read_cb_config(args.draft_cb_config)
+        else:
+            kwargs["draft_cb_config"] = None
 
     if args.gt_data and os.path.exists(args.gt_data):
         evaluator = create_evaluator(None, args)
