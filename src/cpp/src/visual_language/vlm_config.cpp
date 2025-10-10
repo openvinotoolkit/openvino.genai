@@ -15,6 +15,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"minicpmv", VLMModelType::MINICPM},
         {"minicpmo", VLMModelType::MINICPM},
         {"llava", VLMModelType::LLAVA},
+        {"llava-qwen2", VLMModelType::NANOLLAVA},
         {"llava_next", VLMModelType::LLAVA_NEXT},
         {"internvl_chat", VLMModelType::INTERNVL_CHAT},
         {"phi3_v", VLMModelType::PHI3_V},
@@ -52,22 +53,20 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
 
     // Setting llava_next specific config params
     read_json_param(parsed, "image_newline", image_newline);
-    if (parsed.contains("vision_config")) {
-        read_json_param(parsed.at("vision_config"), "patch_size", vision_config_patch_size);
-    }
+    read_json_param(parsed, "vision_config.patch_size", vision_config_patch_size);
+
     // phi3_v and phi4mm
-    if (parsed.contains("sub_GN")) {
+    if (parsed.contains("sub_GN") && parsed.at("sub_GN").is_array()) {
         sub_GN = parsed.at("sub_GN").get<std::vector<std::vector<std::vector<std::vector<float>>>>>().at(0).at(0).at(0);
     }
     assert_size(sub_GN.size(), model_type);
-    if (parsed.contains("glb_GN")) {
+    if (parsed.contains("glb_GN") && parsed.at("glb_GN").is_array()) {
         glb_GN = parsed.at("glb_GN").get<std::vector<std::vector<std::vector<float>>>>().at(0).at(0);
     }
     assert_size(glb_GN.size(), model_type);
+
     // Qwen2.5VL
-    if (parsed.contains("vision_config")) {
-        read_json_param(parsed.at("vision_config"), "window_size", vision_config_window_size);
-    }
+    read_json_param(parsed, "vision_config.window_size", vision_config_window_size);
 }
 
 } // namespace ov::genai
