@@ -48,6 +48,10 @@ def get_chat_templates():
     return [(k, v) for k, v in get_tokenizer_configs().items() if k not in skipped_models]
 
 
+def assert_hf_equals_genai(hf_str: str, genai_str: str):
+    assert hf_str == genai_str, f"HF reference:\n{hf_str}\nGenAI output:\n{genai_str}"
+
+
 prompts = [
     "table is made of",
     "你好！ 你好嗎？",
@@ -145,7 +149,7 @@ def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_h
     ov_tokenizer.set_chat_template(tokenizer_config["chat_template"])
     ov_full_history_str = ov_tokenizer.apply_chat_template(conversation, add_generation_prompt=False)
 
-    assert ov_full_history_str == hf_full_history_str, f"HF reference:\n{hf_full_history_str}\nGenAI output:\n{ov_full_history_str}"
+    assert_hf_equals_genai(hf_full_history_str, ov_full_history_str)
 
 
 @pytest.mark.precommit
@@ -175,7 +179,7 @@ def test_apply_chat_template_nested_content(model_tmp_path, ov_hf_tokenizers, to
         messages, add_generation_prompt=add_generation_prompt
     )
 
-    assert ov_full_history_str == hf_full_history_str, f"HF reference:\n{hf_full_history_str}\nGenAI output:\n{ov_full_history_str}"
+    assert_hf_equals_genai(hf_full_history_str, ov_full_history_str)
 
 
 @pytest.mark.precommit
@@ -213,7 +217,7 @@ def test_apply_chat_template_with_tools_and_extra_context(model_tmp_path, ov_hf_
         conversation, add_generation_prompt=add_generation_prompt, tools=tools, extra_context=extra_context
     )
 
-    assert ov_full_history_str == hf_full_history_str, f"HF reference:\n{hf_full_history_str}\nGenAI output:\n{ov_full_history_str}"
+    assert_hf_equals_genai(hf_full_history_str, ov_full_history_str)
 
 
 @pytest.mark.precommit
@@ -231,7 +235,7 @@ def test_non_string_chat_template(hf_ov_genai_models):
 
     ov_full_history_str = genai_tokenzier.apply_chat_template(conversation, add_generation_prompt=False)
 
-    assert ov_full_history_str == hf_full_history_str, f"HF reference:\n{hf_full_history_str}\nGenAI output:\n{ov_full_history_str}"
+    assert_hf_equals_genai(hf_full_history_str, ov_full_history_str)
 
 
 @pytest.mark.precommit
