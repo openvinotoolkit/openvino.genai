@@ -232,7 +232,7 @@ def convert_models(
     # to store tokenizer config jsons with special tokens
     hf_tokenizer.save_pretrained(models_path)
     # convert tokenizers as well
-    convert_and_save_tokenizer(hf_tokenizer, models_path, **tokenizer_kwargs)
+    convert_and_save_tokenizer(hf_tokenizer, models_path)
 
 def download_and_convert_model(model_id: str, **tokenizer_kwargs) -> OVConvertedModelSchema:
     tokenizer_kwargs = {

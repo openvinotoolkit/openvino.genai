@@ -190,10 +190,8 @@ def validate_embedding_results(result_1: EmbeddingResult, result_2: EmbeddingRes
     np_result_2 = np.array(result_2)
 
     max_error = np.abs(np_result_1 - np_result_2).max()
-    assert (
-        max_error < MAX_EMBEDDING_ERROR, 
-        f"Max error: {max_error} is greater than allowed {MAX_EMBEDDING_ERROR}"
-    )
+    assert max_error < MAX_EMBEDDING_ERROR, f"Max error: {max_error} is greater than allowed {MAX_EMBEDDING_ERROR}"
+    
 
 
 def run_text_embedding_pipeline_with_ref(
@@ -564,7 +562,7 @@ def test_rerank_documents(rerank_model, dataset_documents, query, config):
 
 
 # aligned with https://huggingface.co/tomaarsen/Qwen3-Reranker-0.6B-seq-cls#updated-transformers-usage
-@pytest.mark.parametrize("download_and_convert_rerank_model", [QWEN3_RERANK_SEQ_CLS], indirect=True)
+@pytest.mark.parametrize("rerank_model", [QWEN3_RERANK_SEQ_CLS], indirect=True)
 @pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
 @pytest.mark.parametrize("task", ["Given a web search query, retrieve relevant passages that answer the query"])
 @pytest.mark.parametrize(
@@ -589,19 +587,28 @@ def test_rerank_documents(rerank_model, dataset_documents, query, config):
 )
 @pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
-def test_qwen3_seq_cls_rerank_documents(download_and_convert_rerank_model, query, task, documents, config):
-    opt_model, hf_tokenizer, models_path = download_and_convert_rerank_model
-
+def test_qwen3_seq_cls_rerank_documents(rerank_model: OVConvertedModelSchema, query, task, documents, config):
     formatted_query = qwen3_reranker_format_queries(query, task)
     formatted_documents = [qwen3_reranker_format_document(doc) for doc in documents]
 
-    opt_result = run_qwen3_rerank_optimum(opt_model, hf_tokenizer, formatted_query, formatted_documents, config)
-    genai_result = run_text_rerank_genai(models_path, formatted_query, formatted_documents, config)
+    opt_result = run_qwen3_rerank_optimum(
+        rerank_model.opt_model,
+        rerank_model.hf_tokenizer,
+        formatted_query,
+        formatted_documents,
+        config,
+    )
+    genai_result = run_text_rerank_genai(
+        rerank_model.models_path,
+        formatted_query,
+        formatted_documents,
+        config,
+    )
 
     assert_rerank_results(opt_result, genai_result)
 
 
-@pytest.mark.parametrize("download_and_convert_model_fixture", [QWEN3_RERANK], indirect=True)
+@pytest.mark.parametrize("rerank_model", [QWEN3_RERANK], indirect=True)
 @pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
 @pytest.mark.parametrize("task", ["Given a web search query, retrieve relevant passages that answer the query"])
 @pytest.mark.parametrize(
@@ -626,13 +633,22 @@ def test_qwen3_seq_cls_rerank_documents(download_and_convert_rerank_model, query
 )
 @pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
-def test_qwen3_rerank_documents(download_and_convert_model_fixture, query, task, documents, config):
-    opt_model, hf_tokenizer, models_path = download_and_convert_model_fixture
-
+def test_qwen3_rerank_documents(rerank_model: OVConvertedModelSchema, query, task, documents, config):
     formatted_query = qwen3_reranker_format_queries(query, task)
     formatted_documents = [qwen3_reranker_format_document(doc) for doc in documents]
 
-    opt_result = run_qwen3_rerank_optimum(opt_model, hf_tokenizer, formatted_query, formatted_documents, config)
-    genai_result = run_text_rerank_genai(models_path, formatted_query, formatted_documents, config)
+    opt_result = run_qwen3_rerank_optimum(
+        rerank_model.opt_model,
+        rerank_model.hf_tokenizer,
+        formatted_query,
+        formatted_documents,
+        config,
+    )
+    genai_result = run_text_rerank_genai(
+        rerank_model.models_path,
+        formatted_query,
+        formatted_documents,
+        config,
+    )
 
     assert_rerank_results(opt_result, genai_result)
