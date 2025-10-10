@@ -22,19 +22,6 @@
 
 namespace {
 
-class AutoStartTimer {
-    const decltype(std::chrono::steady_clock::now()) m_start;
-public:
-    AutoStartTimer() :
-        m_start(std::chrono::steady_clock::now()) {
-    }
-
-    double current_in_milli() const {
-        auto m_end = std::chrono::steady_clock::now();
-        return std::chrono::duration<double, std::milli>(m_end - m_start).count();
-    }
-};
-
 struct VLMDataset {
     std::vector<std::string> m_prompts;
     std::vector<std::string> m_image_path;
