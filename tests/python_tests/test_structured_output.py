@@ -1,13 +1,13 @@
-import pytest
 import json
-import openvino_genai as ov_genai
-from openvino_genai import StructuredOutputConfig as SOC
-
-from pydantic import BaseModel, Field
+import re
 from typing import Literal
+
+import openvino_genai as ov_genai
+import pytest
+from openvino_genai import StructuredOutputConfig as SOC
+from pydantic import BaseModel, Field
 from utils.hugging_face import download_and_convert_model
 from utils.ov_genai_pipelines import create_ov_pipeline
-import re
 
 
 @pytest.fixture(scope="module")
@@ -34,27 +34,28 @@ class RESTAPIResponse(BaseModel):
 
 
 structured_id_models = [
-    'TinyLlama/TinyLlama-1.1B-Chat-v1.0',
-    'katuni4ka/tiny-random-phi3',
+    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    "katuni4ka/tiny-random-phi3",
 ]
 
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("ov_pipe", structured_id_models, indirect=True)
-@pytest.mark.parametrize("prompt_and_scheme", [
-    ("Generate a json about a person.", Person), 
-    ("Generate a json about a transaction.", Transaction),
-    ("Generate a json about a REST API response.", RESTAPIResponse)
-])
+@pytest.mark.parametrize(
+    "prompt_and_scheme",
+    [
+        ("Generate a json about a person.", Person),
+        ("Generate a json about a transaction.", Transaction),
+        ("Generate a json about a REST API response.", RESTAPIResponse),
+    ],
+)
 @pytest.mark.parametrize("use_compound_grammar", [True, False])
 def test_structured_json(ov_pipe, prompt_and_scheme, use_compound_grammar, capfd):
     prompt, SchemeType = prompt_and_scheme
 
     structured_output_config = ov_genai.StructuredOutputConfig()
     if use_compound_grammar:
-        structured_output_config.compound_grammar = SOC.JSONSchema(
-            json.dumps(SchemeType.model_json_schema())
-        )
+        structured_output_config.compound_grammar = SOC.JSONSchema(json.dumps(SchemeType.model_json_schema()))
     else:
         structured_output_config.json_schema = json.dumps(SchemeType.model_json_schema())
 
@@ -71,20 +72,21 @@ def test_structured_json(ov_pipe, prompt_and_scheme, use_compound_grammar, capfd
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("ov_pipe", structured_id_models, indirect=True)
-@pytest.mark.parametrize("prompt_and_regex", [
-    ("Generate a json about a person.", r'^\{"city":"(Dublin|Dubai|Munich)"\}$'),
-    # without regex constraint it generates email letter content, but with the regex it generates an email address string
-    ("Generate an email.", r'^[a-zA-Z0-9._%+-]{1,64}@[a-z]{1,64}\.[a-z]{1,10}$'),
-    ("Generate a json about a REST API response.", r'^\{"status":"(success|error)"\}$'),
-])
+@pytest.mark.parametrize(
+    "prompt_and_regex",
+    [
+        ("Generate a json about a person.", r'^\{"city":"(Dublin|Dubai|Munich)"\}$'),
+        # without regex constraint it generates email letter content, but with the regex it generates an email address string
+        ("Generate an email.", r"^[a-zA-Z0-9._%+-]{1,64}@[a-z]{1,64}\.[a-z]{1,10}$"),
+        ("Generate a json about a REST API response.", r'^\{"status":"(success|error)"\}$'),
+    ],
+)
 @pytest.mark.parametrize("use_compound_grammar", [True, False])
 def test_structured_regex(ov_pipe, prompt_and_regex, use_compound_grammar):
     prompt, regex_str = prompt_and_regex
     structured_output_config = ov_genai.StructuredOutputConfig()
     if use_compound_grammar:
-        structured_output_config.compound_grammar = structured_output_config.Regex(
-            regex_str
-        )
+        structured_output_config.compound_grammar = structured_output_config.Regex(regex_str)
     else:
         structured_output_config.regex = regex_str
 
@@ -98,28 +100,29 @@ def test_structured_regex(ov_pipe, prompt_and_regex, use_compound_grammar):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("ov_pipe", structured_id_models, indirect=True)
-@pytest.mark.parametrize("prompt_and_ebnf", [
-    # EBNF grammar for generating a date in the format YYYY-MM-DD
-    (
-        "Generate a date",
-        """
+@pytest.mark.parametrize(
+    "prompt_and_ebnf",
+    [
+        # EBNF grammar for generating a date in the format YYYY-MM-DD
+        (
+            "Generate a date",
+            """
         root ::= date
         date ::= year "-" month "-" day
         year ::= digit digit digit digit
         month ::= digit digit
         day ::= digit digit
         digit ::= "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
-        """
-    ),
-])
+        """,
+        ),
+    ],
+)
 @pytest.mark.parametrize("use_compound_grammar", [True, False])
 def test_structured_ebnf(ov_pipe, prompt_and_ebnf, use_compound_grammar):
     prompt, ebnf_grammar = prompt_and_ebnf
     structured_output_config = ov_genai.StructuredOutputConfig()
     if use_compound_grammar:
-        structured_output_config.compound_grammar = structured_output_config.EBNF(
-            ebnf_grammar
-        )
+        structured_output_config.compound_grammar = structured_output_config.EBNF(ebnf_grammar)
     else:
         structured_output_config.grammar = ebnf_grammar
 
@@ -139,16 +142,17 @@ def test_structured_ebnf(ov_pipe, prompt_and_ebnf, use_compound_grammar):
 @pytest.mark.parametrize(
     "ov_pipe", [model_id for model_id in structured_id_models if "random" not in model_id], indirect=True
 )
-@pytest.mark.parametrize("prompt_and_structural_tag", [
-    (
-        "Repeat the word 'function'",
-        ov_genai.StructuralTagItem(
-            begin="function",
-            schema=json.dumps(RESTAPIResponse.model_json_schema()),
-            end="</function>"
-        )
-    ),
-])
+@pytest.mark.parametrize(
+    "prompt_and_structural_tag",
+    [
+        (
+            "Repeat the word 'function'",
+            ov_genai.StructuralTagItem(
+                begin="function", schema=json.dumps(RESTAPIResponse.model_json_schema()), end="</function>"
+            ),
+        ),
+    ],
+)
 def test_structural_tags_old(ov_pipe, prompt_and_structural_tag):
     prompt, structural_tag = prompt_and_structural_tag
     structured_output_config = ov_genai.StructuredOutputConfig(
@@ -173,100 +177,86 @@ def test_structural_tags_old(ov_pipe, prompt_and_structural_tag):
 @pytest.mark.parametrize(
     "ov_pipe", [model_id for model_id in structured_id_models if "random" not in model_id], indirect=True
 )
-@pytest.mark.parametrize("prompt,tag,validate", [
-    ("raw string", """{
+@pytest.mark.parametrize(
+    "prompt,tag,validate",
+    [
+        (
+            "raw string",
+            """{
         "type": "structural_tag",
         "format": {
             "type": "const_string",
             "value": "abc"
         }
-    }""", lambda x: x == "abc"),
-    ("regex", SOC.Regex("a*"), lambda x: re.match(r"^a*$", x) is not None),
-    ("json", SOC.JSONSchema(json.dumps(RESTAPIResponse.model_json_schema())), RESTAPIResponse.model_validate_json),
-    (
-        "Generate a date with EBNF",
-        SOC.EBNF(
-            ("""
+    }""",
+            lambda x: x == "abc",
+        ),
+        ("regex", SOC.Regex("a*"), lambda x: re.match(r"^a*$", x) is not None),
+        ("json", SOC.JSONSchema(json.dumps(RESTAPIResponse.model_json_schema())), RESTAPIResponse.model_validate_json),
+        (
+            "Generate a date with EBNF",
+            SOC.EBNF((
+                """
             root ::= date
             date ::= year "-" month "-" day
             year ::= digit digit digit digit
             month ::= digit digit
             day ::= digit digit
             digit ::= "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
-            """)
+            """
+            )),
+            lambda x: re.match(r"^\d{4}-\d{2}-\d{2}$", x) is not None,
         ),
-        lambda x: re.match(r"^\d{4}-\d{2}-\d{2}$", x) is not None
-    ),
-    ("constant_string", SOC.ConstString("constant_string"), lambda x: x == "constant_string"),
-    ("AnyText", SOC.AnyText(), lambda x: len(x) > 0),
-    ("Tag", SOC.Tag(
-        begin="function",
-        content=SOC.ConstString("..."),
-        end="</function>"
-    ), lambda x: x == "function...</function>"),
-    ("Concat", SOC.ConstString("a") + SOC.ConstString("b") + SOC.ConstString("c"), lambda x: x == "abc"),
-    ("Union", SOC.ConstString("a") | SOC.ConstString("b") | SOC.ConstString("c"), lambda x: x in ["a", "b", "c"]),
-    (
-        "QwenXMLParametersFormat",
-        SOC.QwenXMLParametersFormat(
-            json.dumps(RESTAPIResponse.model_json_schema())
+        ("constant_string", SOC.ConstString("constant_string"), lambda x: x == "constant_string"),
+        ("AnyText", SOC.AnyText(), lambda x: len(x) > 0),
+        (
+            "Tag",
+            SOC.Tag(begin="function", content=SOC.ConstString("..."), end="</function>"),
+            lambda x: x == "function...</function>",
         ),
-        lambda x: (
-            # enum values are placed in double quotes for some reason
-            re.search(r"<parameter=status>\"(success|error)\"</parameter>", x) is not None and
-            re.search(r"<parameter=data>[A-Z][a-z]{1,20}</parameter>", x) is not None
+        ("Concat", SOC.ConstString("a") + SOC.ConstString("b") + SOC.ConstString("c"), lambda x: x == "abc"),
+        ("Union", SOC.ConstString("a") | SOC.ConstString("b") | SOC.ConstString("c"), lambda x: x in ["a", "b", "c"]),
+        (
+            "QwenXMLParametersFormat",
+            SOC.QwenXMLParametersFormat(json.dumps(RESTAPIResponse.model_json_schema())),
+            lambda x: (
+                # enum values are placed in double quotes for some reason
+                re.search(r"<parameter=status>\"(success|error)\"</parameter>", x) is not None
+                and re.search(r"<parameter=data>[A-Z][a-z]{1,20}</parameter>", x) is not None
+            ),
         ),
-    ),
-    (
-        "TriggeredTags. Repeat word 'function'", 
-        SOC.TriggeredTags(
-            triggers=["function"],
-            tags=[
-                SOC.Tag(
-                    begin="function",
-                    content=SOC.ConstString("A"),
-                    end="</function>"
-                ),
-                SOC.Tag(
-                    begin="function",
-                    content=SOC.ConstString("B"),
-                    end="</function>"
-                )
-            ],
-            at_least_one=True,
-            stop_after_first=True
+        (
+            "TriggeredTags. Repeat word 'function'",
+            SOC.TriggeredTags(
+                triggers=["function"],
+                tags=[
+                    SOC.Tag(begin="function", content=SOC.ConstString("A"), end="</function>"),
+                    SOC.Tag(begin="function", content=SOC.ConstString("B"), end="</function>"),
+                ],
+                at_least_one=True,
+                stop_after_first=True,
+            ),
+            lambda x: re.match(r"(function(A|B)</function>)", x) is not None,
         ),
-        lambda x: re.match(r"(function(A|B)</function>)", x) is not None
-    ),
-    (
-        "TagsWithSeparator", 
-        SOC.TagsWithSeparator(
-            tags=[
-                SOC.Tag(
-                    begin="<f>",
-                    content=SOC.ConstString("A"),
-                    end="</f>"
-                ),
-                SOC.Tag(
-                    begin="<f>",
-                    content=SOC.ConstString("B"),
-                    end="</f>"
-                )
-            ],
-            separator=";",
-            at_least_one=True,
-            stop_after_first=False
+        (
+            "TagsWithSeparator",
+            SOC.TagsWithSeparator(
+                tags=[
+                    SOC.Tag(begin="<f>", content=SOC.ConstString("A"), end="</f>"),
+                    SOC.Tag(begin="<f>", content=SOC.ConstString("B"), end="</f>"),
+                ],
+                separator=";",
+                at_least_one=True,
+                stop_after_first=False,
+            ),
+            lambda x: re.match(r"(<f>(A|B)</f>(;<f>(A|B)</f>))*", x) is not None,
         ),
-        lambda x: re.match(r"(<f>(A|B)</f>(;<f>(A|B)</f>))*", x) is not None
-    ),
-])
+    ],
+)
 def test_structural_tags_new(ov_pipe, prompt, tag, validate):
-
     gen_config = ov_genai.GenerationConfig()
     gen_config.max_new_tokens = 3 if isinstance(tag, SOC.AnyText) else 100
     gen_config.do_sample = False
-    gen_config.structured_output_config = SOC(
-        structural_tags_config=tag
-    )
+    gen_config.structured_output_config = SOC(structural_tags_config=tag)
     res_str = ov_pipe.generate(prompt, generation_config=gen_config)
     assert validate(res_str), f"Output `{res_str}` does not match structural tag {tag}"

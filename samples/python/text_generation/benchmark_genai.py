@@ -1,8 +1,9 @@
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import sys
 import argparse
+import sys
+
 import openvino_genai as ov_genai
 from openvino import get_version
 
@@ -20,19 +21,19 @@ def main():
     args = parser.parse_args()
 
     if args.prompt is not None and args.prompt_file is not None:
-        raise RuntimeError(f'Prompt and prompt file should not exist together!')
+        raise RuntimeError("Prompt and prompt file should not exist together!")
     else:
         if args.prompt_file is not None:
-            with open(args.prompt_file, 'r', encoding='utf-8') as f:
+            with open(args.prompt_file, "r", encoding="utf-8") as f:
                 prompt = [f.read()]
         else:
-            prompt = ['The Sky is blue because'] if args.prompt is None else [args.prompt]
+            prompt = ["The Sky is blue because"] if args.prompt is None else [args.prompt]
     if len(prompt) == 0:
-        raise RuntimeError(f'Prompt is empty!')
+        raise RuntimeError("Prompt is empty!")
 
-    print(f'openvino runtime version: {get_version()}, genai version: {ov_genai.__version__}')
+    print(f"openvino runtime version: {get_version()}, genai version: {ov_genai.__version__}")
 
-    # Perf metrics is stored in DecodedResults. 
+    # Perf metrics is stored in DecodedResults.
     # In order to get DecodedResults instead of a string input should be a list.
     models_path = args.model
     device = args.device
@@ -63,15 +64,22 @@ def main():
     for _ in range(num_iter - 1):
         res = pipe.generate(prompt, config)
         perf_metrics += res.perf_metrics
-    
+
     print(f"Output token size: {res.perf_metrics.get_num_generated_tokens()}")
     print(f"Load time: {perf_metrics.get_load_time():.2f} ms")
-    print(f"Generate time: {perf_metrics.get_generate_duration().mean:.2f} ± {perf_metrics.get_generate_duration().std:.2f} ms")
-    print(f"Tokenization time: {perf_metrics.get_tokenization_duration().mean:.2f} ± {perf_metrics.get_tokenization_duration().std:.2f} ms")
-    print(f"Detokenization time: {perf_metrics.get_detokenization_duration().mean:.2f} ± {perf_metrics.get_detokenization_duration().std:.2f} ms")
+    print(
+        f"Generate time: {perf_metrics.get_generate_duration().mean:.2f} ± {perf_metrics.get_generate_duration().std:.2f} ms"
+    )
+    print(
+        f"Tokenization time: {perf_metrics.get_tokenization_duration().mean:.2f} ± {perf_metrics.get_tokenization_duration().std:.2f} ms"
+    )
+    print(
+        f"Detokenization time: {perf_metrics.get_detokenization_duration().mean:.2f} ± {perf_metrics.get_detokenization_duration().std:.2f} ms"
+    )
     print(f"TTFT: {perf_metrics.get_ttft().mean:.2f} ± {perf_metrics.get_ttft().std:.2f} ms")
     print(f"TPOT: {perf_metrics.get_tpot().mean:.2f} ± {perf_metrics.get_tpot().std:.2f} ms")
     print(f"Throughput : {perf_metrics.get_throughput().mean:.2f} ± {perf_metrics.get_throughput().std:.2f} tokens/s")
+
 
 if __name__ == "__main__":
     main()
