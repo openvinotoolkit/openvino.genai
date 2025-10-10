@@ -52,7 +52,7 @@ struct VLMDataset {
         m_output_lens.reserve(size);
     }
 
-    void push_data(std::string prompt, std::string image_path, ov::genai::GenerationConfig sampling_params) {
+    void push_data(const std::string& prompt, const std::string& image_path, const ov::genai::GenerationConfig& sampling_params) {
         m_prompts.push_back(prompt);
         m_image_path.push_back(image_path);
         m_sampling_params.push_back(sampling_params);
