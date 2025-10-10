@@ -305,6 +305,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             for (size_t idx = 0; idx < encoded_images.size(); idx++) {
                 m_history_image_ids.pop_back();
                 m_history_images.pop_back();
+            }
+            for (size_t idx = 0; idx < encoded_videos.size(); idx++) {
                 m_history_video_ids.pop_back();
                 m_history_videos.pop_back();
             }
@@ -355,7 +357,7 @@ GenerationHandle ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_re
         }
 
         auto norm_prompt = m_inputs_embedder->normalize_prompt(prompt, 0, 0, encoded_images, encoded_videos);
-        inputs = m_inputs_embedder->get_inputs_embeds(norm_prompt.unified_prompt, encoded_images, metrics, true, norm_prompt.images_sequence);
+        inputs = m_inputs_embedder->get_inputs_embeds(norm_prompt.unified_prompt, encoded_images, encoded_videos, metrics, true, norm_prompt.images_sequence, norm_prompt.videos_sequence);
     }
     return add_request(request_id, inputs, sampling_params);
 }
