@@ -173,7 +173,7 @@ public:
         start_time = std::chrono::steady_clock::now();
     }
 
-    std::unordered_map<int64_t, SequenceInfo> get_all_seq_info() {
+    const std::unordered_map<int64_t, SequenceInfo>& get_all_seq_info() const {
         return sequences_info;
     }
 
