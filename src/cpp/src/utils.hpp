@@ -260,6 +260,23 @@ ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov
 
 size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_layers);
 
+/**
+ * @brief Extracts and removes blob import/export related properties from the provided map.
+ */
+std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_properties(const ov::AnyMap& external_properties);
+
+/**
+ * @brief Imports a compiled model from a blob file previously exported using export_model.
+ */
+ov::CompiledModel import_model(const std::filesystem::path& blob_path,
+                               const std::string& device,
+                               const ov::AnyMap& properties);
+
+/**
+ * @brief Exports a compiled model to a blob file for later use with import_model.
+ */
+void export_model(ov::CompiledModel& compiled_model, const std::filesystem::path& blob_path);
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
