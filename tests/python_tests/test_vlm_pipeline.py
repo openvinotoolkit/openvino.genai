@@ -258,7 +258,7 @@ def test_vlm_pipeline_video_input(model_id, backend, cat_tensor, countdown_video
     generation_config.max_new_tokens = 30
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
 
-    for images, videos in [[], [countdown_video]], [[cat_tensor], [countdown_video]]:
+    for images, videos in [([], [countdown_video]), ([cat_tensor], [countdown_video])]:
         result_from_streamer = []
         res = ov_pipe.generate(
             prompts[0],
