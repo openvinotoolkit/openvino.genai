@@ -54,7 +54,7 @@ extract_eagle_mode_from_config(ov::AnyMap& config, const std::filesystem::path& 
 
             nlohmann::json data = nlohmann::json::parse(file);
             using ov::genai::utils::read_json_param;
-            size_t num_decoder_layers = 0;
+            int num_decoder_layers = 0;
             read_json_param(data, "num_hidden_layers", num_decoder_layers);
             OPENVINO_ASSERT(num_decoder_layers > 3, "num_decoder_layers is too small to deduce hidden layers for extraction");
             eagle_rt_info.hidden_layers_list = { 2, num_decoder_layers / 2, num_decoder_layers - 3 };
