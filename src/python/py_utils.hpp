@@ -41,8 +41,10 @@ ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs);
 
 std::filesystem::path ov_tokenizers_module_path();
 
-ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::OptionalGenerationConfig& config, const py::kwargs& kwargs);
+ov::genai::GenerationConfig update_config_from_kwargs(ov::genai::GenerationConfig config, const py::kwargs& kwargs);
 
 ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& py_streamer);
+
+ov::AnyMap py_object_to_any_map(const py::object& py_obj);
 
 }  // namespace ov::genai::pybind::utils
