@@ -272,7 +272,7 @@ operator|(const StructuredOutputConfig::CompoundGrammar& lhs,
  * @param rng_seed initializes random generator.
  *
  * CDPruner configuration:
- * @param pruning_ratio the percentage of visual tokens to prune (0-100). Set to 0 to disable pruning.
+ * @param pruning_ratio the percentage of visual tokens to prune [0-100). Set to 0 to disable pruning.
  * @param relevance_weight the weight of relevance for visual tokens.
  *
  * Assisting generation parameters:

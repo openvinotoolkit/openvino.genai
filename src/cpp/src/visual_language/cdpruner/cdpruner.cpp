@@ -396,11 +396,6 @@ float CDPruner::compute_pruning_ratio() const {
     return m_config.pruning_ratio / 100.0f;
 }
 
-size_t CDPruner::get_default_token_count() const {
-    // LLaVA typical token count (can be made configurable)
-    return 576;  // 24x24 patches for most LLaVA configurations
-}
-
 PruningStatistics CDPruner::get_last_pruning_statistics() const {
     return m_last_statistics;
 }
@@ -494,44 +489,4 @@ std::vector<std::vector<size_t>> CDPruner::create_all_tokens_selection(const ov:
 
     return all_tokens;
 }
-
-void CDPruner::print_selection_statistics(const ov::Tensor& visual_features,
-                                          const std::vector<std::vector<size_t>>& selected_tokens) {
-    const auto& shape = visual_features.get_shape();
-    size_t batch_size = shape[0];
-    size_t total_tokens = shape[1];
-    size_t selected_token_count = static_cast<size_t>(std::round(total_tokens * (1 - m_config.pruning_ratio / 100.0)));
-
-    std::cout << "\n+--- CDPruner Results -----------------------------------+" << std::endl;
-
-    std::cout << "[CDPruner] Summary: " << total_tokens << " -> " << selected_token_count << " tokens (" << std::fixed
-              << std::setprecision(1) << (1.0f - static_cast<float>(selected_token_count) / total_tokens) * 100.0f
-              << "% reduction)" << std::endl;
-
-    if (batch_size > 0 && !selected_tokens.empty()) {
-        for (size_t b = 0; b < batch_size; b++) {
-            std::cout << "[CDPruner] Selected indices (batch " << b << "): [";
-            for (size_t i = 0; i < selected_tokens[b].size() && i < 10; ++i) {
-                if (i > 0)
-                    std::cout << ", ";
-                std::cout << selected_tokens[b][i];
-            }
-            if (selected_tokens[b].size() > 10) {
-                std::cout << ", ..." << (selected_tokens[b].size() - 10) << " more";
-            }
-            std::cout << "]" << std::endl;
-            if (b > 10) {
-                std::cout << "[CDPruner] ... (more batches not shown)" << std::endl;
-            }
-        }
-    }
-
-    std::cout << "+----------------------------------------------------------+" << std::endl;
-
-    m_last_statistics.total_tokens = total_tokens;
-    m_last_statistics.selected_tokens = selected_token_count;
-    m_last_statistics.pruning_ratio = 1.0f - static_cast<float>(selected_token_count) / total_tokens;
-    m_last_statistics.batch_size = batch_size;
-}
-
 }  // namespace ov::genai::cdpruner

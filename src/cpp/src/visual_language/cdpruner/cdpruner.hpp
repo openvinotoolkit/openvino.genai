@@ -106,12 +106,6 @@ public:
     float compute_pruning_ratio() const;
 
     /**
-     * @brief Get default token count for the model
-     * @return Default number of visual tokens (e.g., 576 for LLaVA)
-     */
-    size_t get_default_token_count() const;
-
-    /**
      * @brief Get statistics from the last pruning operation
      * @return Pruning statistics
      */
@@ -139,14 +133,6 @@ private:
      * @return All token indices for each batch
      */
     std::vector<std::vector<size_t>> create_all_tokens_selection(const ov::Tensor& visual_features);
-
-    /**
-     * @brief Print detailed selection statistics (debug mode)
-     * @param visual_features Visual features tensor
-     * @param selected_tokens Selected token indices
-     */
-    void print_selection_statistics(const ov::Tensor& visual_features,
-                                    const std::vector<std::vector<size_t>>& selected_tokens);
 
     Config m_config;                            ///< Configuration
     RelevanceCalculator m_relevance_calc;       ///< Relevance computation module

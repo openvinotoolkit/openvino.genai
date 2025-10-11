@@ -43,7 +43,7 @@ def main():
     parser.add_argument("-mt", "--max_new_tokens", type=int, default=20, help="Maximal number of new tokens")
     parser.add_argument("-d", "--device", type=str, default="CPU", help="Device")
     parser.add_argument("--pruning_ratio", type=int, default=0, help="Percentage of visual tokens to prune (0 to disable)")
-    parser.add_argument("--relevance_weight", type=float, help="Relevance weight for the model")
+    parser.add_argument("--relevance_weight", type=float, default=0.5, help="Relevance weight for the model")
 
     args = parser.parse_args()
 

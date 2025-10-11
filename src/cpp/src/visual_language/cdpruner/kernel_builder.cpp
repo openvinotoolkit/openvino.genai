@@ -85,7 +85,7 @@ ov::Tensor ConditionalKernelBuilder::build_with_ov_model(const ov::Tensor& visua
 
     // Use OV model for building the kernel matrix
     if (text_features.get_shape().size() != 2) {
-        throw std::invalid_argument("Text features must be 3D tensor [N, D]");
+        throw std::invalid_argument("Text features must be 2D tensor [N, D]");
     }
 
     // Check shape consistency
