@@ -52,8 +52,8 @@ protected:
     bool m_is_chat_conversation = false;
     ChatHistory m_history;
     std::vector<ov::genai::EncodedImage> m_history_images;
-    std::vector<std::vector<ov::genai::EncodedImage>> m_history_videos;
     std::vector<size_t> m_history_image_ids;
+    std::vector<ov::genai::EncodedVideo> m_history_videos;
     std::vector<size_t> m_history_video_ids;
     size_t m_image_id = 0;
     size_t m_video_id = 0;
@@ -95,9 +95,13 @@ public:
      */
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
-                                 const std::vector<ov::Tensor>& rgbs,
+                                 const std::vector<ov::Tensor>& images,
                                  GenerationConfig sampling_params);
 
+    /**
+     * Adds request to running queue based on string input and vector of images and videos
+     * This step also performs tokenization's encode
+     */
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
                                  const std::vector<ov::Tensor>& images,

@@ -16,6 +16,7 @@
 #include "visual_language/llava/classes.hpp"
 #include "visual_language/nanollava/classes.hpp"
 #include "visual_language/llava_next/classes.hpp"
+#include "visual_language/llava_next_video/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
 
@@ -93,10 +94,11 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
     m_tokenizer(tokenizer) { }
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
+    bool add_special_tokens = m_add_special_tokens_is_set ? m_add_special_tokens : !(m_is_chat_conversation || m_apply_chat_template);
     if (m_is_chat_conversation) {
         std::string prompt_to_encode = prompt;
         auto start_tokenizer_time = std::chrono::steady_clock::now();
-        ov::Tensor new_chat_tokens = m_tokenizer.encode(prompt_to_encode, ov::genai::add_special_tokens(false)).input_ids;
+        ov::Tensor new_chat_tokens = m_tokenizer.encode(prompt_to_encode, ov::genai::add_special_tokens(add_special_tokens)).input_ids;
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
         return new_chat_tokens;
@@ -109,9 +111,9 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const s
             constexpr bool add_generation_prompt = true;
 
             templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
-            encoded_input_ids = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
+            encoded_input_ids = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(add_special_tokens)).input_ids;
         } else {
-            encoded_input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(true)).input_ids;
+            encoded_input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(add_special_tokens)).input_ids;
         }
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
@@ -177,35 +179,34 @@ std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_ima
 ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
     const std::string& prompt,
     const std::vector<ov::genai::EncodedImage>& images,
-    const std::vector<std::vector<ov::genai::EncodedImage>>& videos,
+    const std::vector<ov::genai::EncodedVideo>& videos,
     ov::genai::VLMPerfMetrics& metrics,
     bool recalculate_merged_embeddings,
     const std::vector<size_t>& images_sequence,
     const std::vector<size_t>& videos_sequence) {
-    if (videos.size() > 0) {
-        OPENVINO_THROW("The model doesn't support 'videos' preprocessing yet. Please use 'images' instead.");
-    } else {
+    if (!videos.size()) {
         return get_inputs_embeds(prompt, images, metrics, recalculate_merged_embeddings, images_sequence);
     }
+    OPENVINO_THROW("Current model doesn't support video preprocess currently. Input images are processed as separate images.");
 }
 
-std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_video(const std::vector<ov::Tensor>& videos) {
-    OPENVINO_THROW("The model doesn't support 'videos' preprocessing yet. Please use 'images' instead.");
-}
-
-NormalizedPrompt InputsEmbedder::IInputsEmbedder::normalize_prompt(
-    const std::string& prompt,
-    size_t base_id,
-    size_t video_base_id,
-    const std::vector<EncodedImage>& images,
-    const std::vector<std::vector<EncodedImage>>& videos) const {
-    if (videos.size() > 0) {
-        OPENVINO_THROW("The model doesn't support 'videos' preprocessing yet. Please use 'images' instead.");
-    } else {
-        NormalizedPrompt norm_prompt;
-        std::tie(norm_prompt.unified_prompt, norm_prompt.images_sequence) = normalize_prompt(prompt, base_id, images);
-        return norm_prompt;
+std::vector<ov::genai::EncodedVideo> InputsEmbedder::IInputsEmbedder::encode_videos(const std::vector<ov::Tensor>& videos) {
+    if (!videos.size()) {
+        return {};
     }
+    OPENVINO_THROW("Current model doesn't support video preprocess currently. Input images are processed as separate images.");
+}
+
+NormlizedPrompt InputsEmbedder::IInputsEmbedder::normalize_prompt(
+    const std::string& prompt,
+    size_t base_image_id,
+    size_t base_video_id,
+    const std::vector<EncodedImage>& images,
+    const std::vector<EncodedVideo>& videos) const {
+    if (!videos.size()) {
+        return normalize_prompt(prompt, base_image_id, images);
+    }
+    OPENVINO_THROW("Current model doesn't support video preprocess currently. Input images are processed as separate images.");
 }
 
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_embeds_with_token_type_ids(
@@ -220,7 +221,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_em
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_embeds_with_token_type_ids(
     const std::string& prompt,
     const std::vector<EncodedImage>& images,
-    const std::vector<std::vector<ov::genai::EncodedImage>>& videos,
+    const std::vector<ov::genai::EncodedVideo>& videos,
     VLMPerfMetrics& metrics,
     bool recalculate_merged_embeddings,
     const std::vector<size_t>& image_sequence,
@@ -249,6 +250,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderNanoLLaVA>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA_NEXT) {
         m_impl = std::make_shared<InputsEmbedderLLaVANext>(vlm_config, model_dir, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::LLAVA_NEXT_VIDEO) {
+        m_impl = std::make_shared<InputsEmbedderLLaVANextVideo>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::INTERNVL_CHAT) {
         m_impl = std::make_shared<InputsEmbedderInternVLChat>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::PHI3_V) {
@@ -281,6 +284,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderNanoLLaVA>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::LLAVA_NEXT) {
         m_impl = std::make_shared<InputsEmbedderLLaVANext>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::LLAVA_NEXT_VIDEO) {
+        m_impl = std::make_shared<InputsEmbedderLLaVANextVideo>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::INTERNVL_CHAT) {
         m_impl = std::make_shared<InputsEmbedderInternVLChat>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::PHI3_V) {
@@ -304,7 +309,7 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const st
 
 ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt,
                                              const std::vector<ov::genai::EncodedImage>& images,
-                                             const std::vector<std::vector<ov::genai::EncodedImage>>& videos,
+                                             const std::vector<ov::genai::EncodedVideo>& videos,
                                              ov::genai::VLMPerfMetrics& metrics,
                                              bool recalculate_merged_embeddings,
                                              const std::vector<size_t>& images_sequence,
@@ -331,7 +336,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::get_inputs_embeds_with_token_t
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::get_inputs_embeds_with_token_type_ids(
     const std::string& prompt,
     const std::vector<EncodedImage>& images,
-    const std::vector<std::vector<ov::genai::EncodedImage>>& videos,
+    const std::vector<ov::genai::EncodedVideo>& videos,
     VLMPerfMetrics& metrics,
     bool recalculate_merged_embeddings,
     const std::vector<size_t>& image_sequence,
@@ -384,7 +389,7 @@ void InputsEmbedder::finish_chat() {
     return m_impl->finish_chat();
 }
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedder::normalize_prompt(
+NormlizedPrompt InputsEmbedder::normalize_prompt(
     const std::string& prompt,
     size_t base_id,
     const std::vector<EncodedImage>& images
@@ -401,6 +406,20 @@ NormalizedPrompt InputsEmbedder::normalize_prompt(
     const std::vector<std::vector<EncodedImage>>& videos
 ) const {
      return m_impl->normalize_prompt(prompt, base_id, video_base_id, images, videos);
+}
+
+
+NormlizedPrompt InputsEmbedder::normalize_prompt(const std::string& prompt,
+    size_t base_image_id,
+    size_t base_video_id,
+    const std::vector<EncodedImage>& images,
+    const std::vector<EncodedVideo>& videos
+) const {
+     return m_impl->normalize_prompt(prompt, base_image_id, base_video_id, images, videos);
+}
+
+std::vector<ov::genai::EncodedVideo> InputsEmbedder::encode_videos(const std::vector<ov::Tensor>& videos) {
+    return m_impl->encode_videos(videos);
 }
 
 void verify_ids(const std::vector<size_t>& image_ids, size_t base_id, size_t n_images) {

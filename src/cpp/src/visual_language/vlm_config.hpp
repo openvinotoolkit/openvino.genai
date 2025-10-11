@@ -14,6 +14,7 @@ enum class VLMModelType {
     LLAVA,
     NANOLLAVA,
     LLAVA_NEXT,
+    LLAVA_NEXT_VIDEO,
     INTERNVL_CHAT,
     PHI3_V,
     PHI4MM,
@@ -89,6 +90,9 @@ public:
     std::string image_soft_token = "<image_soft_token>";
     /// @brief A string token denoting end of vision embeddings for gemma3-4b-it model.
     std::string end_of_image = "<end_of_image>";
+
+    /// @brief A string token denoting start of video embeddings 
+    std::string video_start = "<video>";
 
     /// @brief Default constructor.
     VLMConfig() = default;

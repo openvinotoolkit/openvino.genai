@@ -239,18 +239,11 @@ GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, co
     return m_impl->add_request(request_id, input_ids, sampling_params);
 }
 
-GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id,
-                                                         const std::string& prompt,
-                                                         const std::vector<ov::Tensor>& images,
-                                                         const ov::genai::GenerationConfig& sampling_params) {
+GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const ov::genai::GenerationConfig& sampling_params) {
     return m_impl->add_request(request_id, prompt, images, sampling_params);
 }
 
-GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id,
-                                                         const std::string& prompt,
-                                                         const std::vector<ov::Tensor>& images,
-                                                         const std::vector<ov::Tensor>& videos,
-                                                         const ov::genai::GenerationConfig& sampling_params) {
+GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& videos, const ov::genai::GenerationConfig& sampling_params) {
     return m_impl->add_request(request_id, prompt, images, videos, sampling_params);
 }
 

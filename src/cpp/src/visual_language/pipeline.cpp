@@ -208,14 +208,9 @@ public:
             OPENVINO_ASSERT(generation_config.num_return_sequences == 1u,
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
         }
-
-        auto encoded_images = m_inputs_embedder->encode_images(images);
-        std::vector<std::vector<ov::genai::EncodedImage>> encoded_videos;
-        for (auto& vd : videos) {
-            auto encoded_vd = m_inputs_embedder->encode_video({vd});
-            encoded_videos.push_back(encoded_vd);
-        }
-        auto norm_prompt = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
+        const auto encoded_images = m_inputs_embedder->encode_images(images);
+        const auto encoded_videos = m_inputs_embedder->encode_videos(videos);
+        auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
 
         if (m_is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", norm_prompt.unified_prompt}});
@@ -226,6 +221,9 @@ public:
             }
             for (size_t idx = 0; idx < norm_prompt.videos_sequence.size(); idx++) {
                 norm_prompt.videos_sequence[idx] -= m_video_id;
+            }
+            for (size_t idx = 0; idx < video_sequence.size(); idx++) {
+                video_sequence[idx] -= m_video_id;
             }
         }
         else {
@@ -245,13 +243,7 @@ public:
                                                                          norm_prompt.images_sequence,
                                                                          norm_prompt.videos_sequence);
         } else {
-            inputs_embeds = m_inputs_embedder->get_inputs_embeds(norm_prompt.unified_prompt,
-                                                                 encoded_images,
-                                                                 encoded_videos,
-                                                                 perf_metrics,
-                                                                 encoded_images.size() > 0 || encoded_videos.size() > 0,
-                                                                 norm_prompt.images_sequence,
-                                                                 norm_prompt.videos_sequence);
+            inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, perf_metrics, encoded_images.size() > 0, image_sequence, video_sequence);
         }
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 

@@ -886,12 +886,11 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
         });
 }
 
-NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(
-    const std::string& prompt,
-    size_t base_id,
-    size_t video_base_id,
-    const std::vector<EncodedImage>& images,
-    const std::vector<std::vector<EncodedImage>>& videos) const {
+NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prompt,
+                                                         size_t base_id,
+                                                         size_t video_base_id,
+                                                         const std::vector<EncodedImage>& images,
+                                                         const std::vector<EncodedVideo>& videos) const {
     // Images
     auto [unified_prompt, images_sequence] = normalize(prompt, NATIVE_TAG, NATIVE_TAG, base_id, images.size());
     std::vector<std::array<size_t, 3>> images_grid_thw;
@@ -954,7 +953,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
 
 ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_prompt,
                                                     const std::vector<ov::genai::EncodedImage>& images,
-                                                    const std::vector<std::vector<ov::genai::EncodedImage>>& videos,
+                                                    const std::vector<ov::genai::EncodedVideo>& videos,
                                                     ov::genai::VLMPerfMetrics& metrics,
                                                     bool recalculate_merged_embeddings,
                                                     const std::vector<size_t>& images_sequence,

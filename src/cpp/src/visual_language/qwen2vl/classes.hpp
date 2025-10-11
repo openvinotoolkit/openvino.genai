@@ -45,7 +45,7 @@ public:
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
     ov::Tensor get_inputs_embeds(const std::string& prompt,
                                  const std::vector<ov::genai::EncodedImage>& images,
-                                 const std::vector<std::vector<ov::genai::EncodedImage>>& videos,
+                                 const std::vector<ov::genai::EncodedVideo>& videos,
                                  ov::genai::VLMPerfMetrics& metrics,
                                  bool recalculate_merged_embeddings = true,
                                  const std::vector<size_t>& image_sequence = {},
@@ -59,7 +59,7 @@ public:
 
     void finish_chat() override;
 
-    std::pair<std::string, std::vector<size_t>> normalize_prompt(
+    NormlizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images) const override {

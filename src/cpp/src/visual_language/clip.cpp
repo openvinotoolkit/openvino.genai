@@ -281,6 +281,53 @@ clip_image_f32 clip_image_preprocess(clip_ctx& ctx, const clip_image_u8& img) {
     return res;
 }
 
+clip_image_u8 center_crop(const clip_image_u8& image, size_t crop_height, size_t crop_width) {
+    clip_image_u8 cropped_image;
+    size_t start_x = (image.nx - crop_width) / 2;
+    size_t start_y = (image.ny - crop_height) / 2;
+
+    cropped_image.nx = crop_width;
+    cropped_image.ny = crop_height;
+    cropped_image.buf.resize(3 * crop_width * crop_height);
+
+    for (size_t y = 0; y < crop_height; ++y) {
+        for (size_t x = 0; x < crop_width; ++x) {
+            for (size_t c = 0; c < 3; ++c) {
+                cropped_image.buf[(y * crop_width + x) * 3 + c] =
+                    image.buf[((start_y + y) * image.nx + (start_x + x)) * 3 + c];
+            }
+        }
+    }
+
+    return cropped_image;
+}
+
+clip_image_f32 normalize_and_convert_to_chw(const clip_image_u8& img, const clip_ctx_double& image_mean_std) {
+    const size_t nx = img.nx;
+    const size_t ny = img.ny;
+    const auto& image_mean = image_mean_std.image_mean;
+    const auto& image_std = image_mean_std.image_std; 
+
+    clip_image_f32 res;
+    res.nx = nx;
+    res.ny = ny;
+    res.buf.resize(3 * nx * ny);
+
+    for (size_t y = 0; y < ny; y++) {
+        for (size_t x = 0; x < nx; x++) {
+            for (size_t c = 0; c < 3; c++) {
+                const uint8_t val = img.buf[3 * (y * nx + x) + c];
+                const size_t i = (y * nx + x) + c * nx * ny;
+
+                // perform division in double values, to align with python,
+                // as some models are sensitive to small values deviations, like llava-next-video
+                res.buf[i] = (double(val) - image_mean[c]) / image_std[c];
+            }
+        }
+    }
+    return res;
+}
+
 std::vector<clip_image_u8> get_image_patches(
     const clip_image_u8& image, 
     const std::vector<std::pair<int, int>>& image_grid_pinpoints,

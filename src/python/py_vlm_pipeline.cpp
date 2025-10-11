@@ -34,6 +34,7 @@ auto vlm_generate_docstring = R"(
     InternVL2: <image>\n
     llava-1.5-7b-hf: <image>
     LLaVA-NeXT: <image>
+    LLaVa-NeXT-Video: <image>
     nanoLLaVA: <image>\n
     nanoLLaVA-1.5: <image>\n
     MiniCPM-V-2_6: (<image>./</image>)\n
@@ -42,7 +43,9 @@ auto vlm_generate_docstring = R"(
     Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
     Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
     gemma-3-4b-it: <start_of_image>
-    If the prompt doesn't contain image tags, but images are
+    Model's native video tag can be used to refer to a video:
+    LLaVa-NeXT-Video: <video>
+    If the prompt doesn't contain image or video tags, but images or videos are
     provided, the tags are prepended to the prompt.
 
     :param images: image or list of images
@@ -76,6 +79,7 @@ auto vlm_generate_kwargs_docstring = R"(
     InternVL2: <image>\n
     llava-1.5-7b-hf: <image>
     LLaVA-NeXT: <image>
+    LLaVa-NeXT-Video: <image>
     nanoLLaVA: <image>\n
     nanoLLaVA-1.5: <image>\n
     MiniCPM-V-2_6: (<image>./</image>)\n
@@ -84,7 +88,9 @@ auto vlm_generate_kwargs_docstring = R"(
     Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
     Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
     gemma-3-4b-it: <start_of_image>
-    If the prompt doesn't contain image tags, but images are
+    Model's native video tag can be used to refer to a video:
+    LLaVa-NeXT-Video: <video>
+    If the prompt doesn't contain image or video tags, but images or videos are
     provided, the tags are prepended to the prompt.
 
     :type prompt: str
@@ -226,6 +232,25 @@ void init_vlm_pipeline(py::module_& m) {
         .def("get_tokenizer", &ov::genai::VLMPipeline::get_tokenizer)
         .def("get_generation_config", &ov::genai::VLMPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &ov::genai::VLMPipeline::set_generation_config, py::arg("config"))
+        .def(
+            "generate",
+            [](ov::genai::VLMPipeline& pipe,
+                const std::string& prompt,
+                const std::vector<ov::Tensor>& images,
+                const std::vector<ov::Tensor>& videos,
+                const ov::genai::GenerationConfig& generation_config,
+                const pyutils::PyBindStreamerVariant& streamer,
+                const py::kwargs& kwargs
+            ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
+                return call_vlm_generate(pipe, prompt, images, videos, generation_config, streamer, kwargs);
+            },
+            py::arg("prompt"), "Input string",
+            py::arg("images"), "Input images",
+            py::arg("videos"), "Input videos",
+            py::arg("generation_config"), "generation_config",
+            py::arg("streamer") = std::monostate(), "streamer",
+            (vlm_generate_docstring + std::string(" \n ")).c_str()
+        )
         .def(
             "generate",
             [](ov::genai::VLMPipeline& pipe,
