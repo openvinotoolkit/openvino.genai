@@ -67,7 +67,7 @@ public:
         return {norm_prompt.unified_prompt, norm_prompt.images_sequence};
     }
 
-    NormlizedPrompt normalize_prompt(
+    NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         size_t video_base_id,

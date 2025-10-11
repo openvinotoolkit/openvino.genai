@@ -193,7 +193,7 @@ std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_vid
     OPENVINO_THROW("The model doesn't support 'videos' preprocessing yet. Please use 'images' instead.");
 }
 
-NormlizedPrompt InputsEmbedder::IInputsEmbedder::normalize_prompt(
+NormalizedPrompt InputsEmbedder::IInputsEmbedder::normalize_prompt(
     const std::string& prompt,
     size_t base_id,
     size_t video_base_id,
@@ -202,7 +202,7 @@ NormlizedPrompt InputsEmbedder::IInputsEmbedder::normalize_prompt(
     if (videos.size() > 0) {
         OPENVINO_THROW("The model doesn't support 'videos' preprocessing yet. Please use 'images' instead.");
     } else {
-        NormlizedPrompt norm_prompt;
+        NormalizedPrompt norm_prompt;
         std::tie(norm_prompt.unified_prompt, norm_prompt.images_sequence) = normalize_prompt(prompt, base_id, images);
         return norm_prompt;
     }
