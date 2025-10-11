@@ -442,7 +442,7 @@ def enable_pruning(config, generation_config):
         config.pruning_ratio = 0
 
 
-def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question, generation_config):
+def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question, generation_config=None):
     import openvino_genai
     image_data = ov.Tensor(np.array(image)[None])
     config = openvino_genai.GenerationConfig()
