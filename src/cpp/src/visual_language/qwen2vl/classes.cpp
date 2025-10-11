@@ -132,7 +132,7 @@ std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::op::v0::Result>> patch
 }
 
 std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::op::v0::Result>> patch_preprocess_branch_video(
-    std::shared_ptr<ov::op::v0::Parameter> same_image,
+    std::shared_ptr<ov::op::v0::Parameter> cond_img_vid,
     std::shared_ptr<ov::op::v0::Parameter> raw_images_1,
     std::shared_ptr<ov::op::v0::Parameter> raw_images_2,
     std::shared_ptr<ov::op::v0::Parameter> resize_shape,
@@ -151,9 +151,11 @@ std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::op::v0::Result>> patch
     auto temporal_images = std::make_shared<ov::op::v0::Concat>(inputs_to_concat, concat_axis);
 
     auto result_temperal_images = std::make_shared<ov::op::v0::Result>(temporal_images);
-    auto result_ignore = std::make_shared<ov::op::v0::Result>(same_image);
+
+    // If node's limitation: condition node must be output.
+    auto result_ignore = std::make_shared<ov::op::v0::Result>(cond_img_vid);
     return {std::make_shared<ov::Model>(ov::ResultVector{result_temperal_images, result_ignore},
-                                        ov::ParameterVector{same_image, raw_images_1, raw_images_2, resize_shape},
+                                        ov::ParameterVector{cond_img_vid, raw_images_1, raw_images_2, resize_shape},
                                         "else_body"),
             result_temperal_images};
 }
@@ -161,7 +163,7 @@ std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::op::v0::Result>> patch
 std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model> model_org,
                                                        const ov::op::v0::Constant& image_mean_tensor,
                                                        const ov::op::v0::Constant& image_scale_tensor) {
-    auto same_image = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{1});
+    auto cond_img_vid = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{1});
     auto raw_images_1 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
     auto raw_images_2 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
 
@@ -171,8 +173,8 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
     auto reshape_shape4d = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{4});
     auto reshape_shape2d = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
 
-    same_image->set_friendly_name("same_image");
-    same_image->output(0).get_tensor().set_names({"same_image"});
+    cond_img_vid->set_friendly_name("cond_img_vid");
+    cond_img_vid->output(0).get_tensor().set_names({"cond_img_vid"});
     raw_images_1->set_friendly_name("raw_images_1");
     raw_images_1->output(0).get_tensor().set_names({"raw_images_1"});
     raw_images_2->set_friendly_name("raw_images_2");
@@ -203,11 +205,11 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
                                                     image_scale,
                                                     then_tile_shape);
 
-    auto else_same_image = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{1});
+    auto else_video = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{1});
     auto else_raw_images_1 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
     auto else_raw_images_2 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
     auto else_resize_target_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
-    auto model_else = patch_preprocess_branch_video(else_same_image,
+    auto model_else = patch_preprocess_branch_video(else_video,
                                                     else_raw_images_1,
                                                     else_raw_images_2,
                                                     else_resize_target_shape,
@@ -217,7 +219,7 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
     auto if_op = std::make_shared<ov::op::v8::If>();
     if_op->set_then_body(model_then.first);
     if_op->set_else_body(model_else.first);
-    if_op->set_input(same_image->output(0), nullptr, else_same_image);
+    if_op->set_input(cond_img_vid->output(0), nullptr, else_video);
     
     if_op->set_input(raw_images_1->output(0), nullptr, else_raw_images_1);
     if_op->set_input(raw_images_2->output(0), nullptr, else_raw_images_2);
@@ -243,13 +245,13 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
     auto img_2d = create_flatten_patches(img_4d, reshape_shape2d);
 
     auto params_org = model_org->get_parameters();
-    OPENVINO_ASSERT(params_org.size() == 1);
+    OPENVINO_ASSERT(params_org.size() == 1u);
 
     ov::replace_node(params_org[0], img_2d);
 
     auto results = model_org->get_results();
     return std::make_shared<ov::Model>(results,
-                                       ov::ParameterVector{same_image,
+                                       ov::ParameterVector{cond_img_vid,
                                                            raw_images_1,
                                                            raw_images_2,
                                                            resize_shape,
@@ -640,7 +642,11 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_cpp(const std::ve
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
-    
+
+    // The default value of temporal_patch_size for original QWen2-VL and QWen2.5-VL is 2.
+    // If images.size() == 1: means processing image.
+    // If images.size() == 2: means processing video.
+    // If images.size() == others: undefined behaviour. so the following check is required.
     OPENVINO_ASSERT(config.temporal_patch_size == 2u, "temporal_patch_size != 2.");
     if (images.size() > 1)
         OPENVINO_ASSERT(config.temporal_patch_size == images.size(), "temporal_patch_size != images.size()");
@@ -724,10 +730,12 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vec
     );
 
     // The default value of temporal_patch_size for original QWen2-VL and QWen2.5-VL is 2.
-    // Only 2 frames are processed at a time, so the following check is required.
+    // In this model, Only 2 frames are processed at a time, so the following check is required.
+    // If cond_img_vid = 1: means image branch, just duplicating input_image_1 as input_image_2
+    // If cond_img_vid = 0: means video branch, processing adjacent frames.
     OPENVINO_ASSERT(config.temporal_patch_size == 2u, "temporal_patch_size != 2.");
-    std::vector<float> same_image_data{images.size() == 2u ? 1.f : 0.f};
-    ov::Tensor same_image(ov::element::f32, ov::Shape{1}, same_image_data.data());
+    std::vector<float> cond_img_vid_data{images.size() == 2u ? 0.f : 1.f};
+    ov::Tensor cond_img_vid(ov::element::f32, ov::Shape{1}, cond_img_vid_data.data());
     ov::Tensor input_image_1(ov::element::u8, image_shape, images[0].data<uint8_t>());
     ov::Tensor input_image_2(ov::element::u8,
                              image_shape,
@@ -765,8 +773,7 @@ EncodedImage VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vec
     ov::Tensor reshape_shape4d(ov::element::i64, ov::Shape{4}, a_temp_shape4d);
     ov::Tensor reshape_shape2d(ov::element::i64, ov::Shape{2}, last_output_shape);
 
-    // Same image means just duplicating input_image_1 as input_image_2 or not.
-    encoder.set_tensor("same_image", same_image);
+    encoder.set_tensor("cond_img_vid", cond_img_vid);
     encoder.set_tensor("raw_images_1", input_image_1);
     encoder.set_tensor("raw_images_2", input_image_2);
     encoder.set_tensor("resize_shape", target_shape);
