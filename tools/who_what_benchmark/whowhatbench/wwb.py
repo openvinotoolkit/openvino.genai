@@ -542,7 +542,7 @@ def create_evaluator(base_model, args):
                 processor=processor,
                 crop_question=crop_question,
                 generation_config=gen_config,
-                seqs_per_request=1
+                seqs_per_request=getattr(args, "seqs_per_request", 1)  # Default to 1 if not set; make configurable to avoid magic number
             )
         elif task == "image-to-image":
             return EvaluatorCLS(
