@@ -3,20 +3,20 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
-import re
 import json
+import re
 from datetime import datetime
 from pprint import pprint
+from typing import ClassVar
 
 from openvino_genai import (
-    LLMPipeline,
     GenerationConfig,
-    StructuredOutputConfig,
-    StructuralTagsConfig,
-    StructuralTagItem,
+    LLMPipeline,
     StreamingStatus,
 )
-from typing import ClassVar
+from openvino_genai import (
+    StructuredOutputConfig as SOC,
+)
 from pydantic import BaseModel, Field
 
 
@@ -35,9 +35,7 @@ class WeatherRequest(ToolRequest):
 
     city: str = Field(description="City name")
     country: str = Field(description="Country name")
-    date: str = Field(
-        pattern=r"2\d\d\d-[0-1]\d-[0-3]\d", description="Date in YYYY-MM-DD format"
-    )
+    date: str = Field(pattern=r"2\d\d\d-[0-1]\d-[0-3]\d", description="Date in YYYY-MM-DD format")
 
 
 class CurrencyExchangeRequest(ToolRequest):
@@ -59,8 +57,8 @@ sys_message = (
     "You can use the following tools:\n"
     f"{new_line.join([tool.string_representation() for tool in tools.values()])}\n"
     "Please, only use the following format for tool calling in your responses:\n"
-    "<function=\"function_name\">"
-    "{\"argument1\": \"value1\", ...}"
+    '<function="function_name">'
+    '{"argument1": "value1", ...}'
     "</function>\n"
     "Use the tool name and arguments as defined in the tool schema.\n"
     "If you don't know the answer, just say that you don't know, but try to call the tool if it helps to answer the question.\n"
@@ -77,10 +75,7 @@ def parse_tools_from_response(response: str) -> list[ToolRequest]:
     <function="function_name">{"argument1": "value1", ...}</function>
     """
     matches = re.finditer(function_pattern, response)
-    return [
-        tools.get(match.group(1)).model_validate_json(match.group(2))
-        for match in matches
-    ]
+    return [tools.get(match.group(1)).model_validate_json(match.group(2)) for match in matches]
 
 
 def streamer(subword):
@@ -89,7 +84,9 @@ def streamer(subword):
 
 
 def main():
-    default_prompt = "What is the weather in London today and in Paris yesterday, and how many pounds can I get for 100 euros?"
+    default_prompt = (
+        "What is the weather in London today and in Paris yesterday, and how many pounds can I get for 100 euros?"
+    )
 
     description = (
         "This script demonstrates how to use OpenVINO GenAI with structured tags to generate responses "
@@ -116,26 +113,24 @@ def main():
 
     for use_structural_tags in [False, True]:
         print("=" * 80)
-        print(
-            f"{'Using structural tags' if use_structural_tags else 'Using no structural tags':^80}"
-        )
+        print(f"{'Using structural tags' if use_structural_tags else 'Using no structural tags':^80}")
         print("=" * 80)
         config = GenerationConfig()
         config.max_new_tokens = 300
 
         pipe.start_chat(sys_message)
         if use_structural_tags:
-            config.structured_output_config = StructuredOutputConfig(
-                structural_tags_config=StructuralTagsConfig(
-                    structural_tags=[
-                        StructuralTagItem(
+            config.structured_output_config = SOC(
+                structural_tags_config=SOC.TriggeredTags(
+                    triggers=["<function="],
+                    tags=[
+                        SOC.Tag(
                             begin=f'<function="{name}">',
-                            schema=json.dumps(tool.model_json_schema()),
+                            content=SOC.JSONSchema(json.dumps(tool.model_json_schema())),
                             end="</function>",
                         )
                         for name, tool in tools.items()
                     ],
-                    triggers=["<function="],
                 )
             )
             config.do_sample = True

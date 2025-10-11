@@ -43,7 +43,9 @@ protected:
     std::shared_ptr<DLTensor> m_token_bitmask;
     std::shared_ptr<DLTensor> m_next_token_logits;
     std::vector<int64_t> m_logits_shape;
+    std::vector<int64_t> m_logits_strides = {1};
     std::vector<int64_t> m_bitmask_shape;
+    std::vector<int64_t> m_bitmask_strides = {1};
     int m_vocab_size;
 };
 
@@ -82,7 +84,7 @@ public:
 private:
     std::unique_ptr<xgrammar::GrammarCompiler> m_grammar_compiler;
 
-    static xgrammar::Grammar parse_compound_grammar(const StructuredOutputConfig::CompoundGrammar& compound_grammar);
+    static xgrammar::Grammar parse_structural_tag(const StructuredOutputConfig::CompoundGrammar& compound_grammar);
     xgrammar::Grammar create_grammar(const std::optional<StructuredOutputConfig>& structured_output_config);
 };
 
