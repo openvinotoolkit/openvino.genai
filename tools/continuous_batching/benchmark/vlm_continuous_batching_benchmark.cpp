@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <fstream>
+#include <sstream>
 #include <cstdlib>
 #include <chrono>
 #include <ostream>
@@ -19,12 +20,67 @@
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_handle.hpp"
 #include "load_image.hpp"
+#include "stb_image.h"
 
 namespace {
+
+struct Image_info {
+    int width = 0;
+    int height = 0;
+};
+
+namespace fs = std::filesystem;
+
+// Returns an optional, which cleanly handles cases where image info cannot be read.
+std::optional<Image_info> get_image_dimensions(const fs::path& image_path) {
+    Image_info info;
+    int channels; // This variable is required by stbi_info but we don't need it.
+
+    // Use stbi_info to get dimensions without decoding the entire image.
+    // This is significantly faster and uses less memory.
+    if (stbi_info(image_path.string().c_str(), &info.width, &info.height, &channels)) {
+        return info;
+    }
+
+    // On failure, print a detailed error and return an empty optional.
+    std::cerr << "Failed to read info for image '" << image_path.string()
+              << "': " << stbi_failure_reason() << std::endl;
+    return std::nullopt;
+}
+
+std::vector<Image_info> check_images(const fs::path& input_path) {
+    if (input_path.empty() || !fs::exists(input_path)) {
+        throw std::runtime_error("Input path is empty or does not exist.");
+    }
+
+    std::vector<Image_info> images;
+    if (fs::is_directory(input_path)) {
+        // Using a set sorts the file paths automatically.
+        const std::set<fs::path> sorted_entries(fs::directory_iterator{input_path}, fs::directory_iterator{});
+
+        // Reserve memory in the vector to prevent multiple reallocations.
+        images.reserve(images.size() + sorted_entries.size());
+
+        for (const fs::path& entry_path : sorted_entries) {
+            // Ensure we only attempt to process regular files.
+            if (fs::is_regular_file(entry_path)) {
+                if (auto info = get_image_dimensions(entry_path)) {
+                    images.push_back(*info); // Push back the valid info.
+                }
+            }
+        }
+    } else if (fs::is_regular_file(input_path)) {
+        if (auto info = get_image_dimensions(input_path)) {
+            images.push_back(*info);
+        }
+    }
+    return images;
+}
 
 struct VLMDataset {
     std::vector<std::string> m_prompts;
     std::vector<std::string> m_image_path;
+    std::vector<std::vector<Image_info>> m_image_info;
     std::vector<ov::genai::GenerationConfig> m_sampling_params;
     std::vector<size_t> m_input_lens, m_output_lens;
 
@@ -43,6 +99,9 @@ struct VLMDataset {
         m_prompts.push_back(prompt);
         m_image_path.push_back(image_path);
         m_sampling_params.push_back(sampling_params);
+
+        std::vector<Image_info> image_info = check_images(image_path);
+        m_image_info.push_back(image_info);
     }
 
     void push_lens(size_t input_len, size_t output_len) {
@@ -145,6 +204,7 @@ class GenerationInfo {
         std::chrono::milliseconds mean_tpot = std::chrono::milliseconds::zero();
         size_t num_output_tokens = 0;
         size_t num_input_tokens;
+        std::vector<Image_info> input_images_info;
     };
 
     ov::genai::GenerationHandle generation_handle;
@@ -152,9 +212,11 @@ class GenerationInfo {
     std::unordered_map<int64_t, SequenceInfo> sequences_info;
     bool active = true;
     size_t input_len;
+    std::vector<Image_info> input_img_info;
 
 public:
-    GenerationInfo(ov::genai::GenerationHandle generation_handle, size_t input_len) : input_len(input_len)
+    GenerationInfo(ov::genai::GenerationHandle generation_handle, size_t input_len, std::vector<Image_info>& images_info) 
+        : input_len(input_len), input_img_info(images_info)
     {
         this->generation_handle = std::move(generation_handle);
         start_time = std::chrono::steady_clock::now();
@@ -208,6 +270,7 @@ public:
             generation_metrics.mean_ttft /= sequences_info.size();
             generation_metrics.mean_tpot /= sequences_info.size();
             generation_metrics.num_input_tokens = input_len;
+            generation_metrics.input_images_info = input_img_info;
         }
         return generation_metrics;
     }
@@ -229,7 +292,7 @@ public:
 
         std::vector<ov::Tensor> images = utils::load_images(dataset->m_image_path[request_id]);
         ov::genai::GenerationHandle generation_handle = pipe->add_request(request_id, dataset->m_prompts[request_id], images, sampling_params);
-        generations_info.emplace_back(std::move(generation_handle), dataset->m_input_lens[request_id]);
+        generations_info.emplace_back(std::move(generation_handle), dataset->m_input_lens[request_id], dataset->m_image_info[request_id]);
     }
 
     size_t run() {
@@ -267,16 +330,25 @@ public:
         size_t total_input_len = 0;
         size_t total_output_len = 0;
 
+        std::cout << "Benchmark duration: " << total_duration.count() << " s" << std::endl;
+        size_t gen_idx = 0;
         for (GenerationInfo& generation_info : generations_info) {
             auto generation_metrics = generation_info.get_metrics();
             mean_ttft += generation_metrics.mean_ttft;
             mean_tpot += generation_metrics.mean_tpot;
+            std::cout << "[" << gen_idx << "] Input prompt tokens: " << generation_metrics.num_input_tokens << std::endl;
+            size_t img_idx = 0;
+            for (Image_info& img_info : generation_metrics.input_images_info) {
+                std::cout << "[" << gen_idx << "] Input image[" << img_idx << "]: width:" << img_info.width << ", height:" << img_info.height << std::endl;
+                img_idx++;
+            }
+            std::cout << "[" << gen_idx << "] Number of output tokens: " << generation_metrics.num_output_tokens << std::endl;
             total_input_len += generation_metrics.num_input_tokens;
             total_output_len += generation_metrics.num_output_tokens;
+            gen_idx++;
         }
         mean_ttft /= generations_info.size();
         mean_tpot /= generations_info.size();
-        std::cout << "Benchmark duration: " << total_duration.count() << " s" << std::endl;
         std::cout << "Total number of input prompt tokens: " << total_input_len << std::endl;
         std::cout << "Total number of output tokens: " << total_output_len << std::endl;
 
