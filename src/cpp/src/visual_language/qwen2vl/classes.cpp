@@ -879,7 +879,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
         });
 }
 
-NormlizedPrompt InputsEmbedderQwen2VL::normalize_prompt(
+NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(
     const std::string& prompt,
     size_t base_id,
     size_t video_base_id,
