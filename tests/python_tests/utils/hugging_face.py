@@ -234,10 +234,8 @@ def convert_models(
     # convert tokenizers as well
     convert_and_save_tokenizer(hf_tokenizer, models_path)
 
+
 def download_and_convert_model(model_id: str, **tokenizer_kwargs) -> OVConvertedModelSchema:
-    tokenizer_kwargs = {
-        "padding_side": "left"
-    }
     return download_and_convert_model_class(model_id, OVModelForCausalLM, **tokenizer_kwargs)
 
 

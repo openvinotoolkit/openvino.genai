@@ -6,7 +6,7 @@ import pytest
 import gc
 from pathlib import Path
 from openvino_genai import TextEmbeddingPipeline, TextRerankPipeline
-from utils.hugging_face import download_and_convert_model_class, OVConvertedModelSchema
+from utils.hugging_face import download_and_convert_model, download_and_convert_model_class, OVConvertedModelSchema
 from langchain_core.documents.base import Document
 from langchain_community.embeddings import OpenVINOBgeEmbeddings
 from langchain_community.document_compressors.openvino_rerank import OpenVINOReranker
@@ -76,6 +76,14 @@ def rerank_model(request) -> OVConvertedModelSchema:
 def emb_model(request) -> OVConvertedModelSchema:
     model_id = request.param
     return download_and_convert_model_class(model_id, OVModelForFeatureExtraction)
+
+
+@pytest.fixture(scope="module")
+def llm_model(request: pytest.FixtureRequest) -> OVConvertedModelSchema:
+    tokenizer_kwargs = {
+        "padding_side": "left"
+    }
+    return download_and_convert_model(request.param, **tokenizer_kwargs)
 
 
 @pytest.fixture(autouse=True)
@@ -608,7 +616,7 @@ def test_qwen3_seq_cls_rerank_documents(rerank_model: OVConvertedModelSchema, qu
     assert_rerank_results(opt_result, genai_result)
 
 
-@pytest.mark.parametrize("rerank_model", [QWEN3_RERANK], indirect=True)
+@pytest.mark.parametrize("llm_model", [QWEN3_RERANK], indirect=True)
 @pytest.mark.parametrize("query", ["Which planet is known as the Red Planet?"])
 @pytest.mark.parametrize("task", ["Given a web search query, retrieve relevant passages that answer the query"])
 @pytest.mark.parametrize(
@@ -633,19 +641,19 @@ def test_qwen3_seq_cls_rerank_documents(rerank_model: OVConvertedModelSchema, qu
 )
 @pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
-def test_qwen3_rerank_documents(rerank_model: OVConvertedModelSchema, query, task, documents, config):
+def test_qwen3_rerank_documents(llm_model: OVConvertedModelSchema, query, task, documents, config):
     formatted_query = qwen3_reranker_format_queries(query, task)
     formatted_documents = [qwen3_reranker_format_document(doc) for doc in documents]
 
     opt_result = run_qwen3_rerank_optimum(
-        rerank_model.opt_model,
-        rerank_model.hf_tokenizer,
+        llm_model.opt_model,
+        llm_model.hf_tokenizer,
         formatted_query,
         formatted_documents,
         config,
     )
     genai_result = run_text_rerank_genai(
-        rerank_model.models_path,
+        llm_model.models_path,
         formatted_query,
         formatted_documents,
         config,
