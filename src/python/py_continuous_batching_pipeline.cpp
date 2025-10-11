@@ -497,7 +497,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const ov::genai::GenerationConfig& generation_config,
                const pyutils::PyBindStreamerVariant& streamer)
                 -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
-                std::vector<std::string> prompts = { prompts };
+                std::vector<std::string> prompts = { prompt };
                 std::vector<ov::genai::GenerationConfig> generation_configs = { generation_config };
                 return __call_cb_generate(pipe, prompts, generation_configs, streamer);
             },
