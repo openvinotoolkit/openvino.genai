@@ -107,7 +107,7 @@ public:
     /// its slices.
     virtual EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map = {}) = 0;
 
-    /// @brief Compute embeddings of a or mulitple video given
+    /// @brief Compute embeddings of a or multiple video given
     virtual std::vector<ov::genai::EncodedImage> encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map = {}) {
         OPENVINO_THROW("The current model does not support 'video' input, please use 'images' instead.");
     }
