@@ -431,26 +431,15 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
     return image
 
 
-def enable_pruning(config, generation_config):
-    try:
-        config.pruning_ratio = int(generation_config.get('pruning_ratio'))
-    except (TypeError, ValueError):
-        raise ValueError("pruning_ratio must be number and between 0 to 100")
-    if config.pruning_ratio == 0:
-        print("[CDPruner] CDPruner is disabled.")
-    elif config.pruning_ratio > 0 and config.pruning_ratio < 100:
-        print(f"[CDPruner] Enabling CDPruner with pruning ratio {config.pruning_ratio}% visual tokens")
-    else:
-        print(f"[CDPruner] Invalid pruning ratio({config.pruning_ratio}%). Disabling CDPruner.")
-        config.pruning_ratio = 0
-
-
 def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question, generation_config=None):
     import openvino_genai
     image_data = ov.Tensor(np.array(image)[None])
     config = openvino_genai.GenerationConfig()
     if generation_config is not None and 'pruning_ratio' in generation_config:
-        enable_pruning(config, generation_config)
+        try:
+            config.pruning_ratio = int(generation_config.get('pruning_ratio'))
+        except (TypeError, ValueError):
+            config.pruning_ratio = 0
     out = model.generate(
         prompt,
         **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
