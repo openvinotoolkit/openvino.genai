@@ -124,10 +124,6 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel,
 
 #ifdef ENABLE_OPENCL_DPP
     if (total_tokens < 16) {
-        if (m_config.pruning_debug_mode) {
-            std::cout << "[FastGreedyDPP] Kernel too small for OpenCL DPP (N=" << total_tokens
-                      << "), using CPU implementation" << std::endl;
-        }
         return select_cpu_internal(kernel, num_tokens);
     }
 
@@ -178,19 +174,19 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel_
     }
 #endif
     // Fallback to parallel CPU processing
-    return this->select_parallel_cpu(kernel_matrix_first,
-                                     kernel_matrix_second,
-                                     tokens_first_half,
-                                     tokens_second_half,
-                                     split_point);
+    return this->select_parallel(kernel_matrix_first,
+                                 kernel_matrix_second,
+                                 tokens_first_half,
+                                 tokens_second_half,
+                                 split_point);
 }
 
 // Parallel CPU DPP selection on split matrices
-std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_cpu(const ov::Tensor& kernel_matrix_first,
-                                                                    const ov::Tensor& kernel_matrix_second,
-                                                                    size_t tokens_first_half,
-                                                                    size_t tokens_second_half,
-                                                                    size_t split_point) {
+std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel(const ov::Tensor& kernel_matrix_first,
+                                                                const ov::Tensor& kernel_matrix_second,
+                                                                size_t tokens_first_half,
+                                                                size_t tokens_second_half,
+                                                                size_t split_point) {
     if (m_config.pruning_debug_mode) {
         std::cout << "[FastGreedyDPP] Using parallel CPU DPP processing..." << std::endl;
     }
@@ -268,11 +264,11 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
         if (m_config.pruning_debug_mode) {
             std::cout << "[FastGreedyDPP] OpenCL not available, falling back to CPU parallel processing" << std::endl;
         }
-        return select_parallel_cpu(kernel_matrix_first,
-                                   kernel_matrix_second,
-                                   tokens_first_half,
-                                   tokens_second_half,
-                                   split_point);
+        return select_parallel(kernel_matrix_first,
+                               kernel_matrix_second,
+                               tokens_first_half,
+                               tokens_second_half,
+                               split_point);
     }
 
     // Get tensor shapes: [B, tokens/2, tokens/2]

@@ -147,15 +147,9 @@ def analyze_args(args):
 
     # CDPruner config
     model_args['pruning_ratio'] = args.pruning_ratio if args.pruning_ratio is not None else 0
-    if model_args['pruning_ratio'] == 0:
-        # Disable CDPruner
-        log.info("CDPruner config: Pruning is disabled.")
-    elif model_args['pruning_ratio'] > 0 and model_args['pruning_ratio'] < 100:
-        log.info(f"CDPruner config: Percentage of visual tokens to prune - {model_args['pruning_ratio']}%")
+    if model_args['pruning_ratio'] > 0 and model_args['pruning_ratio'] < 100:
         model_args['relevance_weight'] = args.relevance_weight if args.relevance_weight is not None else 0.5
-        log.info(f"CDPruner config: Relevance weight - {model_args['relevance_weight']}")
     else:
-        log.warning(f"CDPruner config: Invalid pruning ratio({model_args['pruning_ratio']}%). Pruning is disabled.")
         model_args['pruning_ratio'] = 0
 
     optimum = args.optimum

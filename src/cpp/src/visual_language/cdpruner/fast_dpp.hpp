@@ -224,7 +224,7 @@ private:
 #endif
 
     /**
-     * @brief Perform parallel CPU DPP selection on split matrices
+     * @brief Perform parallel DPP selection on split matrices
      * @param kernel_matrix_first First kernel matrix [B, N1, N1]
      * @param kernel_matrix_second Second kernel matrix [B, N2, N2]
      * @param tokens_first_half Number of tokens to select from first half
@@ -232,11 +232,11 @@ private:
      * @param split_point Split point for adjusting second half indices
      * @return Selected token indices for each batch [B, T]
      */
-    std::vector<std::vector<size_t>> select_parallel_cpu(const ov::Tensor& kernel_matrix_first,
-                                                         const ov::Tensor& kernel_matrix_second,
-                                                         size_t tokens_first_half,
-                                                         size_t tokens_second_half,
-                                                         size_t split_point);
+    std::vector<std::vector<size_t>> select_parallel(const ov::Tensor& kernel_matrix_first,
+                                                     const ov::Tensor& kernel_matrix_second,
+                                                     size_t tokens_first_half,
+                                                     size_t tokens_second_half,
+                                                     size_t split_point);
 
 #ifdef ENABLE_OPENCL_DPP
     /**

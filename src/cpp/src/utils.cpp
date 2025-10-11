@@ -3,9 +3,13 @@
 
 #include "utils.hpp"
 
-#include <variant>
+#include <chrono>
 #include <fstream>
+#include <iomanip>
+#include <iostream>
 #include <memory>
+#include <sstream>
+#include <variant>
 
 #include "openvino/op/add.hpp"
 #include "openvino/op/divide.hpp"
@@ -511,6 +515,154 @@ void print_gguf_debug_info(const std::string &debug_info) {
         return;
     }
     std::cout << "[GGUF Reader]: " << debug_info << std::endl;
+}
+
+void print_cdpruner_processing_overview(size_t total_tokens,
+                                        size_t feature_dim,
+                                        size_t text_tokens,
+                                        size_t text_feature_dim,
+                                        size_t num_tokens_to_keep,
+                                        size_t tokens_removed,
+                                        float reduction_percentage,
+                                        size_t pruning_ratio,
+                                        float relevance_weight) {
+    if (!env_setup_for_print_debug_info()) {
+        return;
+    }
+    std::ostringstream reduction_ss;
+    reduction_ss << std::fixed << std::setprecision(1) << reduction_percentage;
+
+    std::cout << "\n+--- CDPruner Processing Overview -------------------------+" << std::endl;
+    std::cout << "[CDPruner] Input:  Vision[" << total_tokens << " tokens x " << feature_dim << "D] + Text["
+              << text_tokens << " tokens x " << text_feature_dim << "D]" << std::endl;
+    std::cout << "[CDPruner] Config: Keep " << pruning_ratio << "% (" << num_tokens_to_keep << "/" << total_tokens
+              << " tokens) | Weight=" << relevance_weight << std::endl;
+    std::cout << "[CDPruner] Result: " << tokens_removed << " tokens removed (" << reduction_ss.str()
+              << "% reduction)" << std::endl;
+    std::cout << "+----------------------------------------------------------+" << std::endl;
+}
+
+void print_cdpruner_processing_overview(size_t frame_count,
+                                        size_t tokens_per_frame,
+                                        size_t feature_dim,
+                                        size_t text_tokens,
+                                        size_t text_feature_dim,
+                                        size_t num_tokens_to_keep_per_frame,
+                                        size_t total_input_tokens,
+                                        size_t total_output_tokens,
+                                        size_t pruning_ratio,
+                                        float relevance_weight) {
+    if (!env_setup_for_print_debug_info()) {
+        return;
+    }
+
+    float reduction_percentage = 0.0f;
+    if (total_input_tokens > 0) {
+        reduction_percentage =
+            (1.0f - static_cast<float>(total_output_tokens) / static_cast<float>(total_input_tokens)) * 100.0f;
+    }
+
+    std::ostringstream reduction_ss;
+    reduction_ss << std::fixed << std::setprecision(1) << reduction_percentage;
+
+    std::cout << "\n+--- CDPruner Multi-Frame Processing Overview -------------+" << std::endl;
+    std::cout << "[CDPruner] Input:  " << frame_count << " frames × Vision[" << tokens_per_frame << " tokens x "
+              << feature_dim << "D] + Text[" << text_tokens << " tokens x " << text_feature_dim << "D]"
+              << std::endl;
+    std::cout << "[CDPruner] Config: Keep " << pruning_ratio << "% (" << num_tokens_to_keep_per_frame << "/"
+              << tokens_per_frame << " tokens per frame) | Weight=" << relevance_weight << std::endl;
+    std::cout << "[CDPruner] Total:  " << total_input_tokens << " → " << total_output_tokens << " tokens ("
+              << reduction_ss.str() << "% reduction)" << std::endl;
+    std::cout << "+----------------------------------------------------------+" << std::endl;
+}
+
+void print_cdpruner_performance_summary(const std::string& computation_mode,
+                                        std::chrono::microseconds total_duration,
+                                        std::chrono::microseconds kernel_duration,
+                                        std::chrono::microseconds dpp_duration,
+                                        size_t total_input_tokens,
+                                        size_t total_output_tokens) {
+    if (!env_setup_for_print_debug_info()) {
+        return;
+    }
+    std::cout << "\n+--- CDPruner Performance Summary -------------------------+" << std::endl;
+    std::cout << "[CDPruner] Computation mode: " << computation_mode << std::endl;
+    std::cout << "[CDPruner] Total processing time: " << total_duration.count() << " us ("
+              << (total_duration.count() / 1000.0) << " ms)" << std::endl;
+
+    std::cout << "[CDPruner] Performance Metrics:" << std::endl;
+    std::cout << "[CDPruner]   Kernel computation time: " << kernel_duration.count() << " us ("
+              << (kernel_duration.count() / 1000.0) << " ms)" << std::endl;
+    std::cout << "[CDPruner]   DPP selection time: " << dpp_duration.count() << " us ("
+              << (dpp_duration.count() / 1000.0) << " ms)" << std::endl;
+    if (total_duration.count() > 0) {
+        const double total_time_sec = static_cast<double>(total_duration.count()) / 1'000'000.0;
+        std::cout << "[CDPruner]   Overall throughput: " << (static_cast<double>(total_input_tokens) / total_time_sec)
+                  << " input tokens/sec" << std::endl;
+        std::cout << "[CDPruner]   Pruning efficiency: " << (static_cast<double>(total_output_tokens) / total_time_sec)
+                  << " output tokens/sec" << std::endl;
+    } else {
+        std::cout << "[CDPruner]   Overall throughput: N/A" << std::endl;
+        std::cout << "[CDPruner]   Pruning efficiency: N/A" << std::endl;
+    }
+    if (total_input_tokens > 0) {
+        std::cout << "[CDPruner]   Pruning ratio: "
+                  << (1.0 - static_cast<double>(total_output_tokens) / total_input_tokens) * 100 << "%" << std::endl;
+    } else {
+        std::cout << "[CDPruner]   Pruning ratio: N/A" << std::endl;
+    }
+    std::cout << "+----------------------------------------------------------+" << std::endl;
+}
+
+void print_cdpruner_performance_summary(const std::string& computation_mode,
+                                        std::chrono::microseconds total_duration,
+                                        size_t frame_count,
+                                        size_t total_input_tokens,
+                                        size_t actual_total_tokens,
+                                        size_t actual_batch_size,
+                                        size_t actual_hidden_dim) {
+    if (!env_setup_for_print_debug_info()) {
+        return;
+    }
+
+    std::cout << "\n+--- CDPruner Multi-Frame Processing Performance Summary ----------------+" << std::endl;
+    std::cout << "[CDPruner] Computation mode: " << computation_mode << std::endl;
+    std::cout << "[CDPruner] Total processing time: " << total_duration.count() << " us ("
+              << (total_duration.count() / 1000.0) << " ms)" << std::endl;
+    std::cout << "[CDPruner] Performance Metrics:" << std::endl;
+
+    if (frame_count > 0) {
+        std::cout << "[CDPruner]   Frames processed: " << frame_count << std::endl;
+        std::cout << "[CDPruner]   Average time per frame: " << (total_duration.count() / frame_count)
+                  << " us (" << (total_duration.count() / frame_count / 1000.0) << " ms)" << std::endl;
+    } else {
+        std::cout << "[CDPruner]   Frames processed: 0" << std::endl;
+        std::cout << "[CDPruner]   Average time per frame: N/A" << std::endl;
+    }
+
+    if (total_duration.count() > 0) {
+        const double duration_us = static_cast<double>(total_duration.count());
+        std::cout << "[CDPruner]   Overall throughput: "
+                  << (static_cast<double>(total_input_tokens) / duration_us * 1'000'000)
+                  << " input tokens/sec" << std::endl;
+        std::cout << "[CDPruner]   Pruning efficiency: "
+                  << (static_cast<double>(actual_total_tokens) / duration_us * 1'000'000)
+                  << " output tokens/sec" << std::endl;
+    } else {
+        std::cout << "[CDPruner]   Overall throughput: N/A" << std::endl;
+        std::cout << "[CDPruner]   Pruning efficiency: N/A" << std::endl;
+    }
+
+    if (total_input_tokens > 0) {
+        std::cout << "[CDPruner]   Combined pruning ratio: "
+                  << (1.0 - static_cast<double>(actual_total_tokens) / total_input_tokens) * 100 << "%" << std::endl;
+    } else {
+        std::cout << "[CDPruner]   Combined pruning ratio: N/A" << std::endl;
+    }
+
+    std::cout << "[CDPruner] Final result: [" << actual_batch_size << ", " << actual_total_tokens << ", "
+              << actual_hidden_dim << "] from " << frame_count << " frames" << std::endl;
+    std::cout << "+----------------------------------------------------------+" << std::endl;
 }
 
 std::pair<ov::CompiledModel, KVDesc>
