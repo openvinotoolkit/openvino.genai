@@ -366,6 +366,51 @@ std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::SpeculativeDecodingI
     return main_awaiting_requests;
 }
 
+void share_embedding_weights(std::shared_ptr<ov::Model>& main_model, std::shared_ptr<ov::Model>& draft_model) {
+    // extract embedding weight from main model
+    auto find_embedding_gather = [](const std::shared_ptr<ov::Model>& model)
+        -> std::shared_ptr<ov::Node> {
+        for (const auto& node : model->get_ordered_ops()) {
+            auto gather = std::dynamic_pointer_cast<ov::op::util::GatherBase>(node);
+            if (!gather) continue;
+            // [vocab, hidden_size] * [batch, seq_len] -> [batch, seq_len, hidden_size]
+            auto data_node = gather->input_value(0).get_node_shared_ptr();
+            auto indices_node = gather->input_value(1).get_node_shared_ptr();
+            if (!data_node || !indices_node) continue;
+            // indices_node should be on parameter path, maybe this is better rule
+            ov::PartialShape ps = data_node->get_output_partial_shape(0);
+            if (ps.rank().is_static() && ps.rank().get_length() >= 2) {
+                if (ps[0].is_static() && ps[0].get_length() > 1000) { // Heuristic: vocab size > 1000
+                    return gather;
+                }
+            }
+            std::string fname = data_node->get_friendly_name();
+            if (fname.find("embed_tokens") != std::string::npos ||
+                fname.find("embedding") != std::string::npos) {
+                return gather;
+            }
+        }
+        return nullptr;
+    };
+    auto main_gather  = find_embedding_gather(main_model);
+    auto draft_gather = find_embedding_gather(draft_model);
+    if (!main_gather || !draft_gather) {
+        return;
+    }
+    auto main_weight_node = main_gather->input_value(0).get_node_shared_ptr();
+    auto draft_weight_node = draft_gather->input_value(0).get_node_shared_ptr();
+
+    if (main_weight_node.get() == draft_weight_node.get()) {
+        return;
+    }
+
+    try {
+        draft_weight_node->output(0).replace(main_weight_node->output(0));
+    } catch (...) {
+        std::cout << "fail to import embedding weights from main model to draft model" << std::endl;
+    }
+}
+
 void extract_hidden_state_generic(std::shared_ptr<ov::Model>& model,
                                   const std::vector<int>& hidden_layers_to_abstract) {
     ov::pass::Manager pm;
@@ -377,28 +422,20 @@ EagleModelTransform::EagleModelTransform(const std::vector<int>& layers) : m_lay
 }
 
 bool EagleModelTransform::run_on_model(const std::shared_ptr<ov::Model>& model) {
+    // share the embedding weights from main model to draft model
     m_new_parameters.clear();
     m_new_results.clear();
     if (m_layer_ids.size() == 1 && m_layer_ids[0] == -1) {
         ov::pass::Manager manager;
         manager.set_per_pass_validation(false);
-        manager.register_pass<EagleBaseTransform>(m_new_parameters, m_new_results);
-        manager.run_passes(model);
-        
-        if (!m_new_results.empty()) {
-            model->add_results(m_new_results);
-        }
+        manager.register_pass<EagleBaseTransform>(m_new_results);
         // input transform for draft
         // here we apply a trick for the fc layer in draft model
-        {
-            ov::pass::Manager manager;
-            manager.set_per_pass_validation(false);
-            m_new_parameters = model->get_parameters();
-            manager.register_pass<EagleInputTransform>(m_new_parameters);
-            manager.run_passes(model);
+        manager.register_pass<EagleInputTransform>(m_new_parameters);
+        manager.run_passes(model);
 
-            model->add_parameters({m_new_parameters.back()});
-        }
+        model->add_parameters(m_new_parameters);
+        model->add_results(m_new_results);
         return true;
     } else {
         ov::pass::Manager manager;
@@ -442,7 +479,7 @@ EagleInputTransform::EagleInputTransform(std::vector<std::shared_ptr<v0::Paramet
 bool EagleInputTransform::apply(NodePtr node, std::vector<std::shared_ptr<v0::Parameter>>& params) {
     if (ov::is_type<v0::MatMul>(node)) {
         auto matmul_node = ov::as_type_ptr<v0::MatMul>(node);
-        // check the input of matmul node, if it is a node with name "target_hidden_state_input", then it's the node we want
+        // check the input of matmul node, if it is a node with name "hidden_states", then it's the node we want
         auto input_node = matmul_node->get_input_node_shared_ptr(0);
         if (!ov::as_type_ptr<v0::Parameter>(input_node)) {
             return false;
@@ -450,8 +487,8 @@ bool EagleInputTransform::apply(NodePtr node, std::vector<std::shared_ptr<v0::Pa
 
         auto shape = node->get_output_partial_shape(0);
         auto internal_hidden_state = std::make_shared<v0::Parameter>(node->get_element_type(), node->get_output_partial_shape(0));
-        internal_hidden_state->output(0).set_names({"internal_hidden_state_input"});
-        internal_hidden_state->set_friendly_name("internal_hidden_state_input");
+        internal_hidden_state->output(0).set_names({"internal_hidden_states"});
+        internal_hidden_state->set_friendly_name("internal_hidden_states");
         // create new eltwise node to add output of MatMul node and internal hidden state input from last cycle of itself
         auto new_eltwise = std::make_shared<v1::Add>(internal_hidden_state, matmul_node->output(0));
         ov::replace_node(matmul_node, new_eltwise);
@@ -460,13 +497,13 @@ bool EagleInputTransform::apply(NodePtr node, std::vector<std::shared_ptr<v0::Pa
     }
 }
 
-EagleBaseTransform::EagleBaseTransform(std::vector<std::shared_ptr<v0::Parameter>>& params, std::vector<std::shared_ptr<v0::Result>>& results) {
+EagleBaseTransform::EagleBaseTransform(std::vector<std::shared_ptr<v0::Result>>& results) {
     register_matcher(
         std::make_shared<ov::pass::pattern::Matcher>(ov::pass::pattern::wrap_type<v0::Result>(), this->get_type_info().name),
-        ([&params, &results, this](ov::pass::pattern::Matcher& m) {
+        ([&results, this](ov::pass::pattern::Matcher& m) {
             auto node = m.get_match_root();
             try {
-                if (apply(node, params, results)) {
+                if (apply(node, results)) {
                     ++applied;
                     return true;
                 }
@@ -514,7 +551,7 @@ std::shared_ptr<ov::Node> EagleBaseTransform::find_last_residual_node(const std:
     return find_last_residual_node(start_node, visited_nodes);
 }
 
-bool EagleBaseTransform::apply(NodePtr node, std::vector<std::shared_ptr<v0::Parameter>>& params, std::vector<std::shared_ptr<v0::Result>>& results) {
+bool EagleBaseTransform::apply(NodePtr node, std::vector<std::shared_ptr<v0::Result>>& results) {
     {
         // 1. without normalization layer 2. add extra input
         if (ov::is_type<v0::Result>(node)) {
@@ -574,29 +611,13 @@ Eagle3Transform::Eagle3Transform(const std::vector<int>& layers, std::vector<Out
     register_matcher(std::make_shared<ov::pass::pattern::Matcher>(hidden_layer, "Eagle3Transform::hidden_extraction"),
         [&hidden_state_outputs, this](ov::pass::pattern::Matcher& m) {
             auto node = m.get_match_root();
-            try {
-                if (apply(node, hidden_state_outputs)) {
-                    ++applied; // FIXME: For debugging purposes only
-                    return true;
-                }
-            } catch (...) {
-                OPENVINO_ASSERT(false, "Eagle3Transform failed to apply");
+            if (ov::is_type<v1::Add>(node)) {
+                hidden_state_outputs.push_back(node->output(0));
+                return true;
             }
             return false;
         }
     );
-}
-
-bool Eagle3Transform::apply(NodePtr node, std::vector<Output<Node>>& hidden_state_outputs) {
-    if (ov::is_type<v1::Add>(node)) {
-        auto add_node = std::dynamic_pointer_cast<v1::Add>(node);
-        if (!add_node) {
-            return false;
-        }
-        hidden_state_outputs.push_back(add_node->output(0));
-        return true;
-    }
-    return false;
 }
 
 ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai::ModelDesc& main_model_desc,
@@ -622,6 +643,7 @@ ContinuousBatchingPipeline::EagleDecodingImpl::EagleDecodingImpl(const ov::genai
     // apply transformations needed to run eagle model
     // target model: hidden state extraction, draft model: hidden state import , hidden state extraction
     // eagle3 specific : dt importing
+    share_embedding_weights(main_model, draft_model);
     extract_hidden_state_generic(main_model, hidden_layers);
     extract_hidden_state_generic(draft_model, { -1 });
 

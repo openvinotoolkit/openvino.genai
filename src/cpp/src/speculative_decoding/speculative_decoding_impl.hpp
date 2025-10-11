@@ -123,12 +123,12 @@ class EagleBaseTransform : public ov::pass::MatcherPass {
 public:
     using NodePtr = std::shared_ptr<ov::Node>;
     OPENVINO_MATCHER_PASS_RTTI("EagleBaseTransform");
-    EagleBaseTransform(std::vector<std::shared_ptr<ov::op::v0::Parameter>>& params, std::vector<std::shared_ptr<ov::op::v0::Result>>& results);
+    EagleBaseTransform(std::vector<std::shared_ptr<ov::op::v0::Result>>& results);
 
     ~EagleBaseTransform() = default;
 
 private:
-    bool apply(NodePtr node, std::vector<std::shared_ptr<ov::op::v0::Parameter>>& params, std::vector<std::shared_ptr<ov::op::v0::Result>>& results);
+    bool apply(NodePtr node, std::vector<std::shared_ptr<ov::op::v0::Result>>& results);
     size_t applied = 0;
     std::shared_ptr<ov::Node> find_last_residual_node(const std::shared_ptr<ov::Node>& start_node);
     std::shared_ptr<ov::Node> find_last_residual_node(const std::shared_ptr<ov::Node>& start_node, 
@@ -155,8 +155,6 @@ public:
     ~Eagle3Transform() = default;
 
 private:
-    bool apply(NodePtr node, std::vector<Output<Node>>& hidden_state_outputs);
-    size_t applied = 0;
     std::vector<int> m_layers; // layers to be abstracted
 };
 

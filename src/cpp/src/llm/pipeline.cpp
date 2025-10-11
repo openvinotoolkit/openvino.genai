@@ -38,8 +38,8 @@ inline void apply_eagle_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& p
     if (model->has_rt_info("eagle3_mode") && model->get_rt_info<bool>("eagle3_mode")) {
         std::cout << "Eagle3 model is detected from rt_info. Applying eagle3_mode property." << std::endl;
         properties["eagle3_mode"] = true;
-        OPENVINO_ASSERT(model->has_rt_info("hidden_layers_list"), "hidden layers list is not found in eagle3 model rt_info");
-        properties["hidden_layers_list"] = model->get_rt_info<std::vector<int>>("hidden_layers_list");
+        if (model->has_rt_info("hidden_layers_list"))
+            properties["hidden_layers_list"] = model->get_rt_info<std::vector<int>>("hidden_layers_list");
         if (!mapping_path.empty()) {
             properties["dt_mapping_path"] = mapping_path; // d2t mapping path
         }
