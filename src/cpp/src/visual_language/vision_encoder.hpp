@@ -58,7 +58,7 @@ struct EncodedImage {
     ResampledImage resampled_image;
 };
 
-struct NormlizedPrompt {
+struct NormalizedPrompt {
     std::string unified_prompt;
     std::vector<size_t> images_sequence;
     std::vector<size_t> videos_sequence;
