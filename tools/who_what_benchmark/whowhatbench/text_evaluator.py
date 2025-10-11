@@ -137,7 +137,7 @@ class TextEvaluator(BaseEvaluator):
         return res
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
-        def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question, use_chat_template=False, num_assistant_tokens=0, 
+        def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question, use_chat_template=False, num_assistant_tokens=0,
                                assistant_confidence_threshold=0.0):
             is_awq = getattr(model, "is_awq", None) is not None
             device = "cpu"
