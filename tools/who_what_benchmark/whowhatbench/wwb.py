@@ -536,7 +536,6 @@ def create_evaluator(base_model, args):
             use_chat_template = (
                 tokenizer is not None and tokenizer.chat_template is not None and not args.omit_chat_template
             )
-
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -747,7 +746,6 @@ def main():
             kwargs["alphas"] = args.alphas
         else:
             kwargs["alphas"] = [1.0] * len(args.adapters)
-
     kwargs["empty_adapters"] = args.empty_adapters
     kwargs["embeds_pooling"] = args.embeds_pooling_type
     kwargs["embeds_normalize"] = args.embeds_normalize

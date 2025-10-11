@@ -52,8 +52,8 @@ class TextEvaluator(BaseEvaluator):
         self.generation_config = generation_config
         self.generation_config_base = generation_config
         self.seqs_per_request = seqs_per_request
-        self.use_chat_template = use_chat_template
         self.generation_fn = gen_answer_fn
+        self.use_chat_template = use_chat_template
         self.num_assistant_tokens = num_assistant_tokens
         self.assistant_confidence_threshold = assistant_confidence_threshold
         if self.generation_config is not None:
