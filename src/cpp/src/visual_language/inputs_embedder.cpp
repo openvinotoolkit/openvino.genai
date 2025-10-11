@@ -393,7 +393,7 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedder::normalize_prompt(
     return {norm_prompt.unified_prompt, norm_prompt.images_sequence};
 }
 
-NormlizedPrompt InputsEmbedder::normalize_prompt(
+NormalizedPrompt InputsEmbedder::normalize_prompt(
     const std::string& prompt,
     size_t base_id,
     size_t video_base_id,
