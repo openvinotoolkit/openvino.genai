@@ -182,7 +182,7 @@ private:
             const std::vector<EncodedImage>& images
         ) const = 0;
 
-        virtual NormlizedPrompt normalize_prompt(
+        virtual NormalizedPrompt normalize_prompt(
             const std::string& prompt,
             size_t base_id,
             size_t video_base_id,
