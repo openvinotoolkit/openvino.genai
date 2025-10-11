@@ -416,13 +416,11 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
     return "".join(output)
 
 
-def genai_gen_text(model, tokenizer, question, gen_config, skip_question):
-    return model.generate(question, gen_config)
+def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, num_assistant_tokens=0, assistant_confidence_threshold=0.0):
+    return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens, apply_chat_template=use_chat_template, num_assistant_tokens=num_assistant_tokens, assistant_confidence_threshold=assistant_confidence_threshold)
 
 
-def llamacpp_gen_text(model, tokenizer, question, gen_config, skip_question):
-    max_new_tokens = gen_config.max_new_tokens
-    use_chat_template = gen_config.apply_chat_template
+def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, num_assistant_tokens=0, assistant_confidence_threshold=0.0):
     if use_chat_template:
         output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
         text = output["choices"][0]["message"]["content"]
@@ -522,7 +520,6 @@ def create_evaluator(base_model, args):
     task = args.model_type
 
     try:
-        import openvino_genai
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
         prompts = load_prompts(args)
 
@@ -540,20 +537,6 @@ def create_evaluator(base_model, args):
                 tokenizer is not None and tokenizer.chat_template is not None and not args.omit_chat_template
             )
 
-            gen_config = openvino_genai.GenerationConfig()
-            gen_config.max_new_tokens = 128
-            gen_config.apply_chat_template = use_chat_template
-            gen_config.do_sample = False
-            if args.draft_model is not None:
-                config_info = "Speculative decoding config: "
-                if args.num_assistant_tokens is not None:
-                    gen_config.num_assistant_tokens = int(args.num_assistant_tokens)
-                    config_info += f" num_assistant_tokens {gen_config.num_assistant_tokens}"
-                if args.assistant_confidence_threshold is not None:
-                    gen_config.assistant_confidence_threshold = float(args.assistant_confidence_threshold)
-                    config_info += f" assistant_confidence_threshold {gen_config.assistant_confidence_threshold}"
-                logger.info(config_info)
-
             return EvaluatorCLS(
                 base_model=base_model,
                 gt_data=args.gt_data,
@@ -563,9 +546,10 @@ def create_evaluator(base_model, args):
                 num_samples=args.num_samples,
                 language=args.language,
                 gen_answer_fn=gen_answer_fn,
-                generation_config=gen_config,
-                seqs_per_request=1,
+                use_chat_template=use_chat_template,
                 long_prompt=args.long_prompt,
+                num_assistant_tokens=int(args.num_assistant_tokens) if args.num_assistant_tokens is not None else 0,
+                assistant_confidence_threshold=float(args.assistant_confidence_threshold) if args.assistant_confidence_threshold is not None else 0.0
             )
         elif task == "text-to-image":
             return EvaluatorCLS(
