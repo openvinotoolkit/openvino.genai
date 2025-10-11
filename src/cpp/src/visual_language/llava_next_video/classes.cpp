@@ -158,7 +158,7 @@ EncodedImage VisionEncoderLLaVANextVideo::encode(const ov::Tensor& image, const 
 }
 
 
-NormlizedPrompt InputsEmbedderLLaVANextVideo::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormalizedPrompt InputsEmbedderLLaVANextVideo::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     std::string image_token = m_vlm_config.im_start;
     auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size());
     size_t searched_pos = 0;
@@ -324,7 +324,7 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderLLaVANextVideo::encode_videos
     return encoded_videos;
 }
 
-NormlizedPrompt InputsEmbedderLLaVANextVideo::normalize_prompt(const std::string& prompt,
+NormalizedPrompt InputsEmbedderLLaVANextVideo::normalize_prompt(const std::string& prompt,
     size_t base_image_id,
     size_t base_video_id,
     const std::vector<EncodedImage>& images,

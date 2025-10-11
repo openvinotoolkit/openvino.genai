@@ -38,7 +38,7 @@ protected:
     ov::Tensor run_image_embeddings_merger(
         const std::vector<EncodedImage>& images, 
         const std::vector<size_t>& images_sequence,
-        const std::vector<std::vector<EncodedImage>>& videos,
+        const std::vector<EncodedVideo>& videos,
         const std::vector<size_t>& videos_sequence) override;
 };
 

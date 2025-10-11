@@ -69,7 +69,7 @@ public:
 
     std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos) override;
 
-    NormlizedPrompt normalize_prompt(
+    NormalizedPrompt normalize_prompt(
         const std::string& prompt,
             size_t base_image_id,
             size_t base_video_id,
@@ -77,7 +77,7 @@ public:
             const std::vector<EncodedVideo>& videos) const override;
 
 
-    NormlizedPrompt normalize_prompt(
+    NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images) const override;

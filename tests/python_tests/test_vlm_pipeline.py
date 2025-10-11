@@ -287,7 +287,7 @@ def test_vlm_pipeline(model_id, backend, cat_tensor, handwritten_tensor, car_ten
     gc.collect()
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("model_id", model_video_ids)
+@pytest.mark.parametrize("model_id", video_model_ids)
 @pytest.mark.parametrize("backend", attention_backend)
 def test_vlm_pipeline_video_input(model_id, backend, cat_tensor, countdown_video):
     def streamer(word: str) -> bool:

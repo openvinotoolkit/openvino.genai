@@ -18,7 +18,7 @@ public:
     explicit VisionEncoderQwen2VL(const ModelsMap& models_map, const std::filesystem::path& config_dir_path, const std::string& device, const ov::AnyMap properties);
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
-    std::vector<EncodedImage> encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) override;
+    EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) override;
 
 private:
     EncodedImage encode_with_imagepreprocess_cpp(const std::vector<ov::Tensor>& image, const ov::AnyMap& config_map);
@@ -51,7 +51,7 @@ public:
                                  const std::vector<size_t>& image_sequence = {},
                                  const std::vector<size_t>& videos_sequence = {}) override;
 
-    std::vector<ov::genai::EncodedImage> encode_video(const std::vector<ov::Tensor>& videos) override;
+    std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos) override;
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) override;
 
@@ -59,7 +59,7 @@ public:
 
     void finish_chat() override;
 
-    NormlizedPrompt normalize_prompt(
+    NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images) const override {
@@ -69,10 +69,10 @@ public:
 
     NormalizedPrompt normalize_prompt(
         const std::string& prompt,
-        size_t base_id,
+        size_t image_base_id,
         size_t video_base_id,
         const std::vector<EncodedImage>& images,
-        const std::vector<std::vector<EncodedImage>>& videos) const override;
+        const std::vector<EncodedVideo>& videos) const override;
 
 protected:
     // A model for merging image embeddings (hidden states), rotary_pos_emb and attension_mask.
@@ -92,7 +92,7 @@ protected:
     virtual ov::Tensor run_image_embeddings_merger(
         const std::vector<EncodedImage>& images, 
         const std::vector<size_t>& images_sequence,
-        const std::vector<std::vector<EncodedImage>>& videos,
+        const std::vector<EncodedVideo>& videos,
         const std::vector<size_t>& videos_sequence);
 
     ov::Tensor get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw);
@@ -114,7 +114,7 @@ namespace qwen2_vl_utils {
 std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_image_video_embeds_and_grid_thw(
     const std::vector<EncodedImage>& encoded_images,
     const std::vector<size_t>& images_sequence,
-    const std::vector<std::vector<EncodedImage>>& videos,
+    const std::vector<EncodedVideo>& videos,
     const std::vector<size_t>& videos_sequence
 );
 

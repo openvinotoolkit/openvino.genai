@@ -22,7 +22,7 @@ namespace ov::genai {
 struct VLMPerfMetrics;
 const static std::regex UNIVERSAL_PATTERN{R"(<ov_genai_image_(\d+)>)"};
 
-struct NormlizedPrompt {
+struct NormalizedPrompt {
     std::string unified_prompt;
     std::vector<size_t> images_sequence;
     std::vector<size_t> videos_sequence;
@@ -93,13 +93,13 @@ public:
     // finishes chat and clears a chat history 
     void finish_chat();
 
-    virtual NormlizedPrompt normalize_prompt(
+    virtual NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images
     ) const;
 
-    virtual NormlizedPrompt normalize_prompt(
+    virtual NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_image_id,
         size_t base_video_id,
@@ -193,13 +193,13 @@ private:
     
         virtual void finish_chat();
 
-        virtual NormlizedPrompt normalize_prompt(
+        virtual NormalizedPrompt normalize_prompt(
             const std::string& prompt,
             size_t base_id,
             const std::vector<EncodedImage>& images
         ) const = 0;
     
-        virtual NormlizedPrompt normalize_prompt(
+        virtual NormalizedPrompt normalize_prompt(
             const std::string& prompt,
             size_t base_image_id,
             size_t base_video_id,

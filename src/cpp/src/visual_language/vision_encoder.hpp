@@ -68,12 +68,9 @@ struct EncodedVideo {
 
     /// @brief Number of video tokens required to append to a normalized prompt
     size_t num_video_tokens;
-};
 
-struct NormalizedPrompt {
-    std::string unified_prompt;
-    std::vector<size_t> images_sequence;
-    std::vector<size_t> videos_sequence;
+    /// @brief Some models'video processing is similiar. Reuse EncodedImage for model: QWen2-VL, QWen2.5-VL.
+    std::vector<EncodedImage> video_frames_features;
 };
 
 /// @brief A class used to infer embeddings of an image using
@@ -120,7 +117,7 @@ public:
     virtual EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map = {}) = 0;
 
     /// @brief Compute embeddings of a or multiple video given
-    virtual std::vector<ov::genai::EncodedImage> encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map = {}) {
+    virtual EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map = {}) {
         OPENVINO_THROW("The current model does not support 'video' input, please use 'images' instead.");
     }
 

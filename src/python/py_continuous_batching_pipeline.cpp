@@ -379,23 +379,12 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def_readonly("avg_cache_usage", &PipelineMetrics::avg_cache_usage)
             .def_readonly("max_cache_usage", &PipelineMetrics::max_cache_usage);
 
-    py::class_<ContinuousBatchingPipeline>(m,
-                                           "ContinuousBatchingPipeline",
-                                           "This class is used for generation with LLMs with continuous batchig")
-        .def(py::init([](const std::filesystem::path& models_path,
-                         const SchedulerConfig& scheduler_config,
-                         const std::string& device,
-                         const std::map<std::string, py::object>& llm_plugin_config,
-                         const std::map<std::string, py::object>& tokenizer_plugin_config,
-                         const std::map<std::string, py::object>& inputs_embedder_plugin_config) {
+    py::class_<ContinuousBatchingPipeline>(m, "ContinuousBatchingPipeline", "This class is used for generation with LLMs with continuous batchig")
+        .def(py::init([](const std::filesystem::path& models_path, const SchedulerConfig& scheduler_config, const std::string& device, const std::map<std::string, py::object>& llm_plugin_config,
+                         const std::map<std::string, py::object>& tokenizer_plugin_config, const std::map<std::string, py::object>& inputs_embedder_plugin_config) {
                  ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-                 return std::make_unique<ContinuousBatchingPipeline>(
-                     models_path,
-                     scheduler_config,
-                     device,
-                     pyutils::properties_to_any_map(llm_plugin_config),
-                     pyutils::properties_to_any_map(tokenizer_plugin_config),
-                     pyutils::properties_to_any_map(inputs_embedder_plugin_config));
+                 return std::make_unique<ContinuousBatchingPipeline>(models_path, scheduler_config, device, pyutils::properties_to_any_map(llm_plugin_config),
+                     pyutils::properties_to_any_map(tokenizer_plugin_config), pyutils::properties_to_any_map(inputs_embedder_plugin_config));
              }),
              py::arg("models_path"),
              py::arg("scheduler_config"),
@@ -404,17 +393,9 @@ void init_continuous_batching_pipeline(py::module_& m) {
              py::arg("tokenizer_properties") = ov::AnyMap({}),
              py::arg("vision_encoder_properties") = ov::AnyMap({}))
 
-        .def(py::init([](const std::filesystem::path& models_path,
-                         const ov::genai::Tokenizer& tokenizer,
-                         const SchedulerConfig& scheduler_config,
-                         const std::string& device,
-                         const py::kwargs& kwargs) {
+        .def(py::init([](const std::filesystem::path& models_path, const ov::genai::Tokenizer& tokenizer, const SchedulerConfig& scheduler_config, const std::string& device, const py::kwargs& kwargs) {
                  ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
-                 return std::make_unique<ContinuousBatchingPipeline>(models_path,
-                                                                     tokenizer,
-                                                                     scheduler_config,
-                                                                     device,
-                                                                     pyutils::kwargs_to_any_map(kwargs));
+                 return std::make_unique<ContinuousBatchingPipeline>(models_path, tokenizer, scheduler_config, device, pyutils::kwargs_to_any_map(kwargs));
              }),
              py::arg("models_path"),
              py::arg("tokenizer"),
@@ -439,34 +420,36 @@ void init_continuous_batching_pipeline(py::module_& m) {
             [](ContinuousBatchingPipeline& pipe,
                const std::vector<ov::Tensor>& input_ids,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
-               const pyutils::PyBindStreamerVariant& streamer)
-                -> py::typing::Union<std::vector<ov::genai::EncodedGenerationResult>> {
+               const pyutils::PyBindStreamerVariant& streamer
+            ) -> py::typing::Union<std::vector<ov::genai::EncodedGenerationResult>> {
                 return __call_cb_generate(pipe, input_ids, generation_config, streamer);
             },
             py::arg("input_ids"),
             py::arg("generation_config"),
-            py::arg("streamer") = std::monostate{})
+            py::arg("streamer") = std::monostate{}
+        )
 
         .def(
             "generate",
             [](ContinuousBatchingPipeline& pipe,
                const std::vector<std::string>& prompts,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
-               const pyutils::PyBindStreamerVariant& streamer)
-                -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
+               const pyutils::PyBindStreamerVariant& streamer
+            ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
                 return __call_cb_generate(pipe, prompts, generation_config, streamer);
             },
             py::arg("prompts"),
             py::arg("generation_config"),
-            py::arg("streamer") = std::monostate{})
+            py::arg("streamer") = std::monostate{}
+        )
 
         .def(
             "generate",
             [](ContinuousBatchingPipeline& pipe,
                const std::string& prompt,
                const ov::genai::GenerationConfig& generation_config,
-               const pyutils::PyBindStreamerVariant& streamer)
-                -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
+               const pyutils::PyBindStreamerVariant& streamer
+            ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
                 std::vector<std::string> prompts = { prompt };
                 std::vector<ov::genai::GenerationConfig> generation_configs = { generation_config };
                 return __call_cb_generate(pipe, prompts, generation_configs, streamer);
@@ -504,8 +487,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
                const std::vector<std::string>& prompts,
                const std::vector<std::vector<ov::Tensor>>& images,
                const std::vector<ov::genai::GenerationConfig>& generation_config,
-               const pyutils::PyBindStreamerVariant& py_streamer)
-                -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
+               const pyutils::PyBindStreamerVariant& py_streamer
+            ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
                 ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
                 std::vector<ov::genai::VLMDecodedResults> generated_results;
                 {
