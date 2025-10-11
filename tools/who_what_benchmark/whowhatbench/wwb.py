@@ -432,7 +432,10 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
 
 
 def enable_pruning(config, generation_config):
-    config.pruning_ratio = int(generation_config.get('pruning_ratio'))
+    try:
+        config.pruning_ratio = int(generation_config.get('pruning_ratio'))
+    except (TypeError, ValueError):
+        raise ValueError("pruning_ratio must be number and between 0 to 100")
     if config.pruning_ratio == 0:
         print("[CDPruner] CDPruner is disabled.")
     elif config.pruning_ratio > 0 and config.pruning_ratio < 100:
