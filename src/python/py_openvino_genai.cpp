@@ -31,6 +31,7 @@ using ov::genai::get_version;
 
 void init_lora_adapter(py::module_& m);
 void init_perf_metrics(py::module_& m);
+void init_chat_history(py::module_& m);
 void init_tokenizer(py::module_& m);
 void init_streamers(py::module_& m);
 void init_generation_config(py::module_& m);
@@ -115,6 +116,7 @@ PYBIND11_MODULE(py_openvino_genai, m) {
 
     init_lora_adapter(m);
     init_generation_config(m);
+    init_chat_history(m);
     init_tokenizer(m);
     init_streamers(m);
 

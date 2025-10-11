@@ -50,6 +50,11 @@ from .py_openvino_genai import (
     StopCriteria
 )
 
+# Chat history
+from .py_openvino_genai import (
+    ChatHistory
+)
+
 # Tokenizers
 from .py_openvino_genai import (
     TokenizedInputs,
