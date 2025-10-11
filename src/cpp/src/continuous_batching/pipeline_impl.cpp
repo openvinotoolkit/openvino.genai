@@ -88,7 +88,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const ov::genai::GenerationConfig& generation_config,
     bool is_validation_mode_enabled) : ContinuousBatchingImpl(model, tokenizer, scheduler_config, device, properties, generation_config, is_validation_mode_enabled){
     m_inputs_embedder = inputs_embedder;
-    m_model_runner->set_embedding_model(inputs_embedder->get_embedding_model());
+    m_model_runner->set_inputs_embedder(inputs_embedder);
     m_model_input_type = ModelInputType::EMBEDDINGS;
 }
 
@@ -266,7 +266,21 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
     }
     OPENVINO_ASSERT(sampling_params.max_length > prompt_len, "'max_length' must be greater than the number of prompt tokens");
 
-    auto sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size, token_type_ids);
+    std::shared_ptr<SequenceGroup> sequence_group;
+    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        auto position_ids_rope_delta = m_inputs_embedder->get_position_ids(input_ids.get_shape()[1], 0);
+        sequence_group = std::make_shared<SequenceGroup>(request_id, 
+                                                         input_ids, 
+                                                         sampling_params, 
+                                                         m_block_size, 
+                                                         token_type_ids, 
+                                                         position_ids_rope_delta.first, 
+                                                         position_ids_rope_delta.second);
+    }
+    else {
+        sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size, token_type_ids);
+    }
+
 
     if (m_scheduler->get_config().enable_prefix_caching) {
         m_scheduler->restore_cached_blocks(sequence_group);
@@ -440,7 +454,8 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                              const std::vector<GenerationConfig>& sampling_params,
                                                              const StreamerVariant& streamer,
-                                                             const std::optional<std::vector<ov::Tensor>> token_type_ids) {
+                                                             const std::optional<std::vector<ov::Tensor>> token_type_ids,
+                                                             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>> position_ids) {
 
     _reset_cache_usage_statistics();
     ManualTimer generate_timer("generate()");
@@ -448,6 +463,10 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
 
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
+
+    if (position_ids.has_value()) {
+        OPENVINO_ASSERT((*position_ids).size() == input_ids.size());
+    }
 
     auto start_time =  std::chrono::steady_clock::now();
     PerfMetrics perf_metrics;
@@ -470,6 +489,13 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     std::vector<GenerationHandle> generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
+        if (position_ids.has_value()) {
+            const auto pos = (*position_ids)[request_id];
+            m_inputs_embedder->set_position_ids(pos.first);
+            if (pos.second.has_value()) {
+                m_inputs_embedder->set_rope_delta(*pos.second);
+            }
+        }
         bool has_valid_token = token_type_ids.has_value() && request_id < token_type_ids->size();
         generations.push_back(
             add_request(request_id, input_ids[request_id], sampling_params[request_id], has_valid_token ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt)
