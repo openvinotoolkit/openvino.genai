@@ -892,6 +892,39 @@ size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_la
     return std::min(total_device_memory - used_device_mem, max_allocatable_kv_cache);
 }
 
+std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_properties(const ov::AnyMap& external_properties) {
+    ov::AnyMap properties = external_properties;
+    std::optional<std::filesystem::path> blob_path;
+
+    auto blob_path_it = properties.find(ov::genai::blob_path.name());
+    if (blob_path_it != properties.end()) {
+        blob_path = blob_path_it->second.as<std::filesystem::path>();
+        OPENVINO_ASSERT(!blob_path->empty(), ov::genai::blob_path.name(), " property is empty");
+        properties.erase(blob_path_it);
+    }
+
+    return {properties, blob_path};
+}
+
+ov::CompiledModel import_model(const std::filesystem::path& blob_path,
+                               const std::string& device,
+                               const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(!blob_path.empty(), "blob path is empty");
+    ov::Tensor blob_tensor = ov::read_tensor_data(blob_path);
+    return ov::genai::utils::singleton_core().import_model(blob_tensor, device, properties);
+}
+
+void export_model(ov::CompiledModel& compiled_model, const std::filesystem::path& blob_path) {
+    OPENVINO_ASSERT(!blob_path.empty(), "blob path is empty");
+
+    std::filesystem::create_directories(blob_path.parent_path());
+
+    std::ofstream out(blob_path, std::ios::out | std::ios::binary);
+    OPENVINO_ASSERT(out.is_open(), "Cannot open file to write: " + blob_path.string());
+    compiled_model.export_model(out);
+    out.close();
+}
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

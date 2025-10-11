@@ -241,6 +241,13 @@ class AutoencoderKL:
         ...
     def encode(self, image: openvino._pyopenvino.Tensor, generator: Generator) -> openvino._pyopenvino.Tensor:
         ...
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
+        """
+                        Exports compiled models to a specified directory. Can significantly reduce model load time, especially for large models.
+                        export_path (os.PathLike): A path to a directory to export compiled models to.
+        
+                        Use `blob_path` property to load previously exported models.
+        """
     def get_config(self) -> AutoencoderKL.Config:
         ...
     def get_vae_scale_factor(self) -> int:
@@ -295,6 +302,13 @@ class CLIPTextModel:
                         Compiles the model.
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
+        """
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
+        """
+                        Exports compiled model to a specified directory. Can significantly reduce model load time, especially for large models.
+                        export_path (os.PathLike): A path to a directory to export compiled model to.
+        
+                        Use `blob_path` property to load previously exported models.
         """
     def get_config(self) -> CLIPTextModel.Config:
         ...
@@ -412,6 +426,9 @@ class ContinuousBatchingPipeline:
     def add_request(self, request_id: typing.SupportsInt, prompt: str, generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
+    def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig) -> GenerationHandle:
+        ...
+    @typing.overload
     def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig) -> GenerationHandle:
         ...
     def finish_chat(self) -> None:
@@ -424,6 +441,9 @@ class ContinuousBatchingPipeline:
         ...
     @typing.overload
     def generate(self, prompt: str, generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
+        ...
+    @typing.overload
+    def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
     @typing.overload
     def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
@@ -2850,6 +2870,13 @@ class Text2ImagePipeline:
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
+        """
+                        Exports compiled models to a specified directory. Can significantly reduce model load time, especially for large models.
+                        export_path (os.PathLike): A path to a directory to export compiled models to.
+        
+                        Use `blob_path` property to load previously exported models.
+        """
     def generate(self, prompt: str, **kwargs) -> openvino._pyopenvino.Tensor:
         """
             Generates images for text-to-image models.
@@ -3382,6 +3409,13 @@ class UNet2DConditionModel:
         """
     def do_classifier_free_guidance(self, guidance_scale: typing.SupportsFloat) -> bool:
         ...
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
+        """
+                        Exports compiled model to a specified directory. Can significantly reduce model load time, especially for large models.
+                        export_path (os.PathLike): A path to a directory to export compiled model to.
+        
+                        Use `blob_path` property to load previously exported models.
+        """
     def get_config(self) -> UNet2DConditionModel.Config:
         ...
     def infer(self, sample: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
@@ -3460,6 +3494,50 @@ class VLMPipeline:
     def finish_chat(self) -> None:
         ...
     @typing.overload
+    def generate(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
+        """
+            Generates sequences for VLMs.
+        
+            :param prompt: input prompt
+            :type prompt: str
+            The prompt can contain <ov_genai_image_i> with i replaced with
+            an actual zero based index to refer to an image. Reference to
+            images used in previous prompts isn't implemented.
+            A model's native image tag can be used instead of
+            <ov_genai_image_i>. These tags are:
+            InternVL2: <image>\\n
+            llava-1.5-7b-hf: <image>
+            LLaVA-NeXT: <image>
+            LLaVa-NeXT-Video: <image>
+            nanoLLaVA: <image>\\n
+            nanoLLaVA-1.5: <image>\\n
+            MiniCPM-V-2_6: (<image>./</image>)\\n
+            Phi-3-vision: <|image_i|>\\n - the index starts with one
+            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
+            Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
+            gemma-3-4b-it: <start_of_image>
+            Model's native video tag can be used to refer to a video:
+            LLaVa-NeXT-Video: <video>
+            If the prompt doesn't contain image or video tags, but images or videos are
+            provided, the tags are prepended to the prompt.
+        
+            :param images: image or list of images
+            :type images: list[ov.Tensor] or ov.Tensor
+        
+            :param generation_config: generation_config
+            :type generation_config: GenerationConfig or a dict
+        
+            :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
+            :type : Callable[[str], bool], ov.genai.StreamerBase
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
+            :type : dict
+        
+            :return: return results in decoded form
+            :rtype: VLMDecodedResults
+        """
+    @typing.overload
     def generate(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
@@ -3474,6 +3552,7 @@ class VLMPipeline:
             InternVL2: <image>\\n
             llava-1.5-7b-hf: <image>
             LLaVA-NeXT: <image>
+            LLaVa-NeXT-Video: <image>
             nanoLLaVA: <image>\\n
             nanoLLaVA-1.5: <image>\\n
             MiniCPM-V-2_6: (<image>./</image>)\\n
@@ -3482,7 +3561,9 @@ class VLMPipeline:
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             gemma-3-4b-it: <start_of_image>
-            If the prompt doesn't contain image tags, but images are
+            Model's native video tag can be used to refer to a video:
+            LLaVa-NeXT-Video: <video>
+            If the prompt doesn't contain image or video tags, but images or videos are
             provided, the tags are prepended to the prompt.
         
             :param images: image or list of images
@@ -3515,6 +3596,7 @@ class VLMPipeline:
             InternVL2: <image>\\n
             llava-1.5-7b-hf: <image>
             LLaVA-NeXT: <image>
+            LLaVa-NeXT-Video: <image>
             nanoLLaVA: <image>\\n
             nanoLLaVA-1.5: <image>\\n
             MiniCPM-V-2_6: (<image>./</image>)\\n
@@ -3523,7 +3605,9 @@ class VLMPipeline:
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             gemma-3-4b-it: <start_of_image>
-            If the prompt doesn't contain image tags, but images are
+            Model's native video tag can be used to refer to a video:
+            LLaVa-NeXT-Video: <video>
+            If the prompt doesn't contain image or video tags, but images or videos are
             provided, the tags are prepended to the prompt.
         
             :param images: image or list of images
@@ -3555,6 +3639,7 @@ class VLMPipeline:
             InternVL2: <image>\\n
             llava-1.5-7b-hf: <image>
             LLaVA-NeXT: <image>
+            LLaVa-NeXT-Video: <image>
             nanoLLaVA: <image>\\n
             nanoLLaVA-1.5: <image>\\n
             MiniCPM-V-2_6: (<image>./</image>)\\n
@@ -3563,7 +3648,9 @@ class VLMPipeline:
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             gemma-3-4b-it: <start_of_image>
-            If the prompt doesn't contain image tags, but images are
+            Model's native video tag can be used to refer to a video:
+            LLaVa-NeXT-Video: <video>
+            If the prompt doesn't contain image or video tags, but images or videos are
             provided, the tags are prepended to the prompt.
         
             :type prompt: str

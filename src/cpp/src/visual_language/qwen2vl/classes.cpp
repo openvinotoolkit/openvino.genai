@@ -724,7 +724,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
         });
 }
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedderQwen2VL::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormlizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     auto [unified_prompt, images_sequence] = normalize(prompt, NATIVE_TAG, NATIVE_TAG, base_id, images.size());
         std::vector<std::array<size_t, 3>> images_grid_thw;
     images_grid_thw.reserve(images.size());
