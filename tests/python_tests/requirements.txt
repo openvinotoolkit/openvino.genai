@@ -13,7 +13,7 @@ opencv-python
 
 # rag requirements
 langchain_community==0.3.29
-langchain-core==0.3.76
+langchain-core==0.3.78
 
 # requirements for specific models
 # - Qwen/Qwen-7B
