@@ -364,8 +364,9 @@ def test_vlm_continuous_batching_generate_vs_add_request_video_input(config, bac
     )
     tokenizer = cb_pipe.get_tokenizer()
 
+    empty_images = []
     for idx, videos in enumerate(video_links_list):
-        handle = cb_pipe.add_request(idx, prompts[0], [], videos, generation_config)
+        handle = cb_pipe.add_request(idx, prompts[0], empty_images, videos, generation_config)
 
         while handle.get_status() != GenerationStatus.FINISHED:
             cb_pipe.step()
