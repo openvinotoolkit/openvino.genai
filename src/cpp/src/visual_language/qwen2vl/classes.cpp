@@ -560,10 +560,12 @@ ov::Tensor merge_text_and_image_embeddings(
     const float* vision_embeds_data = processed_vision_embeds.data<const float>();
 
     size_t vision_embed_idx = 0;
+    const int64_t img_token = image_pad_token_id;
+    const int64_t vid_token = video_pad_token_id;
     for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
         for (size_t seq_idx = 0; seq_idx < seq_length; ++seq_idx) {
             size_t flat_idx = batch_idx * seq_length + seq_idx;
-            if (input_ids_data[flat_idx] == image_pad_token_id || input_ids_data[flat_idx] == video_pad_token_id) {
+            if (input_ids_data[flat_idx] == img_token || input_ids_data[flat_idx] == vid_token) {
                 std::copy_n(
                     vision_embeds_data + vision_embed_idx * hidden_size,
                     hidden_size,
@@ -976,13 +978,14 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
 
     auto start_tokenizer_time = std::chrono::steady_clock::now();
     ov::Tensor encoded_vision_start_token = m_tokenizer.encode(m_vlm_config.vision_start_token, ov::genai::add_special_tokens(false)).input_ids;
-    ov::Tensor encoded_image_pad_token = m_tokenizer.encode(m_vlm_config.image_pad_token + m_vlm_config.video_pad_token, ov::genai::add_special_tokens(false)).input_ids;
+    ov::Tensor encoded_image_pad_token = m_tokenizer.encode(m_vlm_config.image_pad_token, ov::genai::add_special_tokens(false)).input_ids;
+    ov::Tensor encoded_video_pad_token = m_tokenizer.encode(m_vlm_config.video_pad_token, ov::genai::add_special_tokens(false)).input_ids;
     auto end_tokenizer_time = std::chrono::steady_clock::now();
     OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
     metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     int64_t vision_start_token_id = encoded_vision_start_token.data<int64_t>()[encoded_vision_start_token.get_size() - 1];
-    int64_t image_pad_token_id = encoded_image_pad_token.data<int64_t>()[encoded_image_pad_token.get_size() - 2];
-    int64_t video_pad_token_id = encoded_image_pad_token.data<int64_t>()[encoded_image_pad_token.get_size() - 1];
+    int64_t image_pad_token_id = encoded_image_pad_token.data<int64_t>()[encoded_image_pad_token.get_size() - 1];
+    int64_t video_pad_token_id = encoded_video_pad_token.data<int64_t>()[encoded_video_pad_token.get_size() - 1];
 
     m_position_ids = create_position_ids(input_ids, images_grid_thw, images_sequence, 0, video_grid_thw, videos_sequence, 0, vision_start_token_id);
 
