@@ -153,6 +153,13 @@ def parse_args():
         "of OpenVINO GenAI API.",
     )
     parser.add_argument(
+        "--generate-config",
+        type=str,
+        default=None,
+        help="Path to the JSON file that contains GenerateConfig for generating"
+        "of OpenVINO GenAI API.",
+    )
+    parser.add_argument(
         "--llamacpp",
         action="store_true",
         help="Use llama-cpp-python to instantiate the model.",
@@ -459,14 +466,25 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
     return image
 
 
-def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question):
+def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question, generation_config=None):
+    import openvino_genai
     image_data = ov.Tensor(np.array(image)[None])
+    config = openvino_genai.GenerationConfig()
+    if generation_config is not None and 'pruning_ratio' in generation_config:
+        try:
+            config.pruning_ratio = int(generation_config.get('pruning_ratio'))
+        except (TypeError, ValueError):
+            print(f"[CDPruner] Disable CDPruner as invalid pruning ratio {config.pruning_ratio}%.")
+            config.pruning_ratio = 0
+        config.pruning_ratio = 0 if config.pruning_ratio <= 0 or config.pruning_ratio >= 100 else config.pruning_ratio
+        print(f'[CDPruner] Enable CDPruner with {config.pruning_ratio}% visual token pruning')
     out = model.generate(
         prompt,
         **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
         image=image_data,
         do_sample=False,
-        max_new_tokens=max_new_tokens
+        max_new_tokens=max_new_tokens,
+        generation_config=config
     )
     return out.texts[0]
 
@@ -489,6 +507,10 @@ def create_evaluator(base_model, args):
     # task = TasksManager.infer_task_from_model(config._name_or_path)
     # TODO: Add logic to auto detect task based on model_id (TaskManager does not work for locally saved models)
     task = args.model_type
+
+    gen_config = None
+    if args.generate_config is not None:
+        gen_config = read_json_config(args.generate_config)
 
     try:
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
@@ -549,6 +571,8 @@ def create_evaluator(base_model, args):
                 gen_answer_fn=genai_gen_visual_text if args.genai else None,
                 processor=processor,
                 crop_question=crop_question,
+                generation_config=gen_config,
+                seqs_per_request=getattr(args, "seqs_per_request", 1)  # Default to 1 if not set; make configurable to avoid magic number
             )
         elif task == "image-to-image":
             return EvaluatorCLS(
@@ -656,7 +680,7 @@ def print_embeds_results(evaluator):
         logger.info("## Similarity:\n%s\n", e["similarity"])
 
 
-def read_cb_config(path):
+def read_json_config(path):
     import json
 
     try:
@@ -703,7 +727,7 @@ def main():
 
     kwargs = {}
     if args.cb_config:
-        kwargs["cb_config"] = read_cb_config(args.cb_config)
+        kwargs["cb_config"] = read_json_config(args.cb_config)
     if args.from_onnx:
         kwargs["from_onnx"] = args.from_onnx
         kwargs["use_cache"] = False
