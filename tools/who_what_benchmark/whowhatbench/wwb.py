@@ -550,8 +550,14 @@ def create_evaluator(base_model, args):
                 gen_answer_fn=gen_answer_fn,
                 use_chat_template=use_chat_template,
                 long_prompt=args.long_prompt,
-                num_assistant_tokens=int(args.num_assistant_tokens) if args.num_assistant_tokens is not None else 0,
-                assistant_confidence_threshold=float(args.assistant_confidence_threshold) if args.assistant_confidence_threshold is not None else 0.0
+                num_assistant_tokens=(
+                    int(args.num_assistant_tokens)
+                    if args.num_assistant_tokens is not None else 0
+                ),
+                assistant_confidence_threshold=(
+                    float(args.assistant_confidence_threshold)
+                    if args.assistant_confidence_threshold is not None else 0.0
+                ),
             )
         elif task == "text-to-image":
             return EvaluatorCLS(
