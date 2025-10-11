@@ -298,7 +298,7 @@ def get_model_name(model_name_or_path, task=None):
         for use_case in possible_use_cases:
             for m_type in use_case.model_types:
                 if model_name.lower().startswith(m_type):
-                    return use_case, m_type
+                    return use_case, model_name
 
     return None, None
 
