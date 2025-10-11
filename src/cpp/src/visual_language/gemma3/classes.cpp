@@ -85,7 +85,7 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderGemma3::encode_images(const s
     return embeds;
 }
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedderGemma3::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormlizedPrompt InputsEmbedderGemma3::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     std::string start_of_image = m_vlm_config.start_of_image;
     std::string image_token = m_vlm_config.image_soft_token;
     std::string end_of_image = m_vlm_config.end_of_image;
@@ -108,7 +108,7 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderGemma3::normalize_prom
 
         unified_prompt.replace(unified_prompt.find(start_of_image), start_of_image.length(), expanded_tag);
     }
-    return {std::move(unified_prompt), std::move(images_sequence)};
+    return {std::move(unified_prompt), std::move(images_sequence), {}};
 }
 
 ov::Tensor InputsEmbedderGemma3::get_inputs_embeds(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
