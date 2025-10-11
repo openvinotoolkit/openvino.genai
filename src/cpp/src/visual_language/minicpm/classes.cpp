@@ -591,7 +591,7 @@ void adjust_pos_cache(
 
 } // namespace
 
-NormlizedPrompt InputsEmbedderMiniCPM::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormalizedPrompt InputsEmbedderMiniCPM::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     
     auto [unified_prompt, image_sequence] = normalize(
         prompt,

@@ -86,7 +86,7 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const st
     return embeds;
 }
 
-NormlizedPrompt InputsEmbedderLLaVA::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormalizedPrompt InputsEmbedderLLaVA::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     std::string image_token = m_vlm_config.im_start;
     auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size());
 
