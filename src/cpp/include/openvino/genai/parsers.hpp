@@ -1,0 +1,114 @@
+// Copyright (C) 2023-2025 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#pragma once
+#include <string>
+#include <memory>
+#include <variant>
+#include <map>
+#include <functional>
+#include <optional>
+#include <vector>
+
+namespace ov {
+namespace genai {
+
+
+using ParsedMessage = std::map<std::string, std::string>;
+
+class IncrementalParserBase {
+public:
+    IncrementalParserBase() = default;
+
+    // We return string which with filtered text to be added to content.
+    virtual std::string parse(
+        ParsedMessage& msg,
+        const std::string& previous_text, 
+        std::string& delta_text, 
+        const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt, 
+        const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
+    ) = 0;
+
+    virtual bool is_active() const = 0;
+    static std::shared_ptr<IncrementalParserBase> get_parser(std::string name);
+};
+
+class ReasoningParser : public IncrementalParserBase {
+private:
+    bool m_starts_with_thinking = true;
+    bool m_keep_original_content = true;
+    bool m_think_tag_opened = false;
+    bool m_deactivated = false;
+    std::string m_open_tag = "<think>";
+    std::string m_close_tag = "</think>";
+public:
+    ReasoningParser(bool starts_with_thinking = true,
+                    bool keep_original_content = true)
+        : m_starts_with_thinking(starts_with_thinking),
+          m_keep_original_content(keep_original_content) {}
+    std::map<std::string, std::string> accumulated_parsed;
+
+    std::string parse(
+        ParsedMessage& msg,
+        const std::string& previous_text, 
+        std::string& delta_text,
+        const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt, 
+        const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
+    ) override;
+    bool is_active() const override;
+};
+
+class DeepSeekR1ReasoningParser : public ReasoningParser {
+public:
+    DeepSeekR1ReasoningParser(bool starts_with_thinking = true) : ReasoningParser(starts_with_thinking) {};
+    static std::string name() { return "DeepSeekR1ReasoningParser"; }
+};
+
+class Phi4ReasoningParser : public ReasoningParser {
+public:
+    Phi4ReasoningParser(bool starts_with_thinking = false) : ReasoningParser(starts_with_thinking) {};
+    static std::string name() { return "Phi4ReasoningParser"; }
+};
+
+class ParserBase {
+public:
+    ParserBase() = default;
+
+    virtual ParsedMessage parse(ParsedMessage& text) = 0;
+    static std::shared_ptr<ParserBase> get_parser(std::string name);
+};
+
+using ParserVariant = std::variant<std::shared_ptr<IncrementalParserBase>, std::string>;
+
+class Llama32PythonicToolParser : public ParserBase {
+// Does not modify original content, only extracts and adds tool calls
+public:
+    // TODO: Check that vLLM has the same default.
+    Llama32PythonicToolParser(bool keep_original_content = true) : m_keep_original_content(keep_original_content) {}
+
+    ParsedMessage parse(ParsedMessage& input) override;
+    static std::string name() { return "Llama32PythonicToolParser"; }
+private:
+    bool m_keep_original_content = true;
+};
+
+class BaseReasoningParser : public ParserBase{
+public:
+    BaseReasoningParser(bool expect_open_tag = true, bool keep_original_content = true, std::string open_tag = "<think>", std::string close_tag = "</think>") :
+    m_expect_open_tag(expect_open_tag), 
+    m_keep_original_content(keep_original_content),
+    m_open_tag(open_tag), 
+    m_close_tag(close_tag) {}
+
+    ParsedMessage parse(ParsedMessage& input) override;
+
+private:
+    bool m_expect_open_tag = true;
+    bool m_keep_original_content = true;
+    std::string m_open_tag = "<think>";
+    std::string m_close_tag = "</think>";
+};
+
+
+}  // namespace genai
+}  // namespace ov
