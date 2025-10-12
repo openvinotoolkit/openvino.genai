@@ -260,7 +260,7 @@ def get_use_case(model_name_or_path: str | Path, task: str | None = None):
     if model_id is not None:
         case, model_id = get_use_case_by_model_id(model_id, task)
         if case:
-            log.info(f'==SUCCESS FOUND==: use_case: {case.task}, model_name: {model_id}')
+            log.info(f'==SUCCESS FOUND==: use_case: {case.task}, model_type: {model_id}')
             return case, model_id
 
     case, model_name = get_model_name(model_name_or_path)
@@ -298,7 +298,7 @@ def get_model_name(model_name_or_path, task=None):
         for use_case in possible_use_cases:
             for m_type in use_case.model_types:
                 if model_name.lower().startswith(m_type):
-                    return use_case, m_type
+                    return use_case, model_name
 
     return None, None
 
