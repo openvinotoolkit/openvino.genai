@@ -249,6 +249,8 @@ def download_and_convert_model_class(
     **tokenizer_kwargs,
 ) -> OVConvertedModelSchema:
     dir_name = sanitize_model_id(model_id)
+    if model_class.__name__ not in ["OVModelForCausalLM"]:
+        dir_name = f"{dir_name}_{model_class.__name__}"
     ov_cache_models_dir = get_ov_cache_models_dir()
     models_path = ov_cache_models_dir / dir_name
 
@@ -257,13 +259,12 @@ def download_and_convert_model_class(
     else:
         opt_model, hf_tokenizer = get_huggingface_models(model_id, model_class, local_files_only=False)
         if "padding_side" in tokenizer_kwargs:
-            hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
+            hf_tokenizer.padding_side = tokenizer_kwargs["padding_side"]
         # ov tokenizer padding side alignes with hf tokenizer during conversion
         convert_models(opt_model, hf_tokenizer, models_path)
 
-    # TODO: why kwargs are passed here if we're only using padding_side?
     if "padding_side" in tokenizer_kwargs:
-        hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
+        hf_tokenizer.padding_side = tokenizer_kwargs["padding_side"]
 
     return OVConvertedModelSchema(
         model_id, 
