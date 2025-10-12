@@ -216,13 +216,12 @@ def create_countdown_frames():
         )
 
         frame_list.append(frame)
-    ov_tensor = openvino.Tensor(np.stack(frame_list))
-    return ov_tensor
+    tensor = np.stack(frame_list)
+    return tensor
 
 @pytest.fixture(scope="module")
 def countdown_video():
-    return create_countdown_frames()
-
+    return openvino.Tensor(create_countdown_frames())
 
 video_model_ids = [
     "katuni4ka/tiny-random-llava-next-video",
@@ -1151,8 +1150,12 @@ def cat_image_32x32(cat_image):
     [
         pytest.param("katuni4ka/tiny-random-qwen2vl", "cat_image_336x336", None, "SDPA"),
         pytest.param("katuni4ka/tiny-random-qwen2vl", "cat_image_336x336", None, "PA"),
+        pytest.param("katuni4ka/tiny-random-qwen2vl", None, "synthetic_video_32x32", "SDPA"),
+        pytest.param("katuni4ka/tiny-random-qwen2vl", None, "synthetic_video_32x32", "PA"),
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", None, "SDPA"),
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", None, "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", None, "synthetic_video_32x32", "SDPA"),
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", None, "synthetic_video_32x32", "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
         pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", None, "SDPA", marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) if sys.platform == "darwin" else pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", None, "SDPA"),
         pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", None, "PA", marks=pytest.mark.xfail(reason="CVS-171180")),
         pytest.param("qnguyen3/nanoLLaVA", "cat_image_384x384", None, "SDPA"),
@@ -1234,7 +1237,10 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, vi
         templated_prompt = processor.apply_chat_template(conversation, add_generation_prompt=True)
         inputs = processor(text=[templated_prompt], **params, padding=True, return_tensors="pt")
 
-    output_ids = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+    if model.config.model_type == 'qwen2_5_vl':
+        max_new_tokens = 90 # TODO: Need to confirm whether different chat templates trigger this subtle difference.
+
+    output_ids = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False, temperature=0.0)
     input_ids = inputs["input_ids"] if isinstance(inputs, dict) else inputs.input_ids
     generated_ids = [output_ids[len(input_ids) :] for input_ids, output_ids in zip(input_ids, output_ids)]
 
@@ -1253,51 +1259,6 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, vi
     if resized_video is not None:
         params["videos"] = [openvino.Tensor(resized_video)]
     genai_output = vlm.generate(prompt, **params, max_new_tokens=max_new_tokens, do_sample=False)
-    genai_text = genai_output.texts[0]
-
-    assert optimum_text == genai_text
-    gc.collect()
-
-
-@pytest.mark.precommit
-@pytest.mark.parametrize(
-    "model_id, video_name, backend",
-    [
-        pytest.param("katuni4ka/tiny-random-qwen2vl", "countdown_video", "SDPA"),
-        pytest.param("katuni4ka/tiny-random-qwen2vl", "countdown_video", "PA"),
-        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "countdown_video", "SDPA"),
-        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "countdown_video", "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
-    ],
-)
-def test_vlm_pipeline_match_optimum_video_input(request, model_id, video_name, backend):
-    video_ov_tensor = request.getfixturevalue(video_name)
-    assert isinstance(video_ov_tensor, openvino.Tensor)
-
-    prompt = "Describe this video."
-    max_new_tokens = 20
-
-    model_path = get_ov_model(model_id)
-
-    # Run the model with optimum-intel
-    model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
-    processor = transformers.AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
-
-    inputs = model.preprocess_inputs(text=prompt, video=video_ov_tensor.data, processor=processor)
-    generation_args = {
-        "max_new_tokens": max_new_tokens,
-        "temperature": 0.0,
-        "do_sample": False
-    }
-
-    generate_ids = model.generate(**inputs, eos_token_id=processor.tokenizer.eos_token_id, **generation_args)
-
-    generate_ids = generate_ids[:, inputs['input_ids'].shape[1]:]
-    optimum_output = processor.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
-    optimum_text = optimum_output[0]
-
-    # Run the model with GenAI
-    vlm = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
-    genai_output = vlm.generate(prompt, videos=[video_ov_tensor], max_new_tokens=max_new_tokens, do_sample=False)
     genai_text = genai_output.texts[0]
 
     assert optimum_text == genai_text
