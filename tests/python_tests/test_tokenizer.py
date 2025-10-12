@@ -788,8 +788,6 @@ def test_template_priorities(tmp_path, chat_templates):
 
 @pytest.mark.precommit
 def test_chat_template_with_empty_output(tmp_path):
-    if sys.platform == "win32":
-        pytest.skip("Fails on Windows, needs investigation, possible MMAP issue")
     tokenizer = generate_tokenizer(
         tmp_path, 
         ChatTemplates(None, None, None, None, None)
