@@ -431,9 +431,6 @@ class ContinuousBatchingPipeline:
     @typing.overload
     def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig) -> GenerationHandle:
         ...
-    @typing.overload
-    def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig) -> GenerationHandle:
-        ...
     def finish_chat(self) -> None:
         ...
     @typing.overload
@@ -3519,6 +3516,9 @@ class VLMPipeline:
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
         
+            :param videos: list of frames
+            :type videos: list[ov.Tensor]
+        
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
         
@@ -3593,6 +3593,7 @@ class VLMPipeline:
             InternVL2: <image>\\n
             llava-1.5-7b-hf: <image>
             LLaVA-NeXT: <image>
+            LLaVa-NeXT-Video: <image>
             nanoLLaVA: <image>\\n
             nanoLLaVA-1.5: <image>\\n
             MiniCPM-V-2_6: (<image>./</image>)\\n
@@ -3601,7 +3602,9 @@ class VLMPipeline:
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             gemma-3-4b-it: <start_of_image>
-            If the prompt doesn't contain image tags, but images are
+            Model's native video tag can be used to refer to a video:
+            LLaVa-NeXT-Video: <video>
+            If the prompt doesn't contain image or video tags, but images or videos are
             provided, the tags are prepended to the prompt.
         
             :param images: image or list of images
