@@ -35,16 +35,19 @@ def setup_module():
         tokenizer = AutoTokenizer.from_pretrained(model_id)
         base_model = OVModelForCausalLM.from_pretrained(model_id)
         base_model.save_pretrained(base_model_path)
-        # tokenizer.save_pretrained(base_model_path / "tokenizer")
-        export_tokenizer(tokenizer, base_model_path)
+        tokenizer.save_pretrained(base_model_path)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(base_model_path)
+    export_tokenizer(tokenizer, base_model_path)
 
     if not os.path.exists(target_model_path):
         target_model = OVModelForCausalLM.from_pretrained(
             model_id, quantization_config=OVWeightQuantizationConfig(bits=8)
         )
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
         target_model.save_pretrained(target_model_path)
-        # tokenizer.save_pretrained(target_model_path / "tokenizer")
-        export_tokenizer(tokenizer, target_model_path)
+        tokenizer.save_pretrained(target_model_path)
+    export_tokenizer(tokenizer, target_model_path)
 
 
 def teardown_module():
