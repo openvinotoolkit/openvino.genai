@@ -539,7 +539,9 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 90
           - name: 'WWB tests (nanollava)'
-            cmd: 'python -m pip install transformers==4.48.0 && python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava'
+            cmd: |
+              python -m pip install transformers==4.48.0
+              python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 90
     defaults:
