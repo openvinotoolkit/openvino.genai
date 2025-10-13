@@ -29,13 +29,13 @@ awq_model_id = "TitanML/tiny-mixtral-AWQ-4bit"
 
 def setup_module():
     from optimum.exporters.openvino.convert import export_tokenizer
-    
+
     if not os.path.exists(base_model_path):
         logger.info("Create models")
         tokenizer = AutoTokenizer.from_pretrained(model_id)
         base_model = OVModelForCausalLM.from_pretrained(model_id)
         base_model.save_pretrained(base_model_path)
-        tokenizer.save_pretrained(base_model_path / "tokenizer")
+        # tokenizer.save_pretrained(base_model_path / "tokenizer")
         export_tokenizer(tokenizer, base_model_path)
 
     if not os.path.exists(target_model_path):
@@ -43,7 +43,7 @@ def setup_module():
             model_id, quantization_config=OVWeightQuantizationConfig(bits=8)
         )
         target_model.save_pretrained(target_model_path)
-        tokenizer.save_pretrained(target_model_path / "tokenizer")
+        # tokenizer.save_pretrained(target_model_path / "tokenizer")
         export_tokenizer(tokenizer, target_model_path)
 
 
