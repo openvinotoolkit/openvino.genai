@@ -118,6 +118,11 @@ export interface PerfMetrics {
   getGrammarCompileTime(): SummaryStats;
   /** A structure of RawPerfMetrics type that holds raw metrics. */
   rawMetrics: RawMetrics;
+
+  /** Adds the metrics from another PerfMetrics object to this one.
+   * @returns The current PerfMetrics instance.
+   */
+  add(other: PerfMetrics): this;
 }
 
 export class DecodedResults {

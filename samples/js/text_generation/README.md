@@ -29,9 +29,16 @@ and architectures, we still recommend converting the model to the IR format usin
 ## Sample Descriptions
 ### Common information
 
-Compile GenAI JavaScript bindings archive first using the instructions in [../../../src/js/README.md](../../../src/js/README.md#build-bindings).
+When you use the [openvino.genai](https://github.com/openvinotoolkit/openvino.genai) **release branch**, install dependencies before running samples.
+In the current directory, run:
+```bash
+npm install
+```
 
-Run `npm install` and the examples will be ready to run.
+If you use the master branch, you may have to follow 
+[this instruction](../../../src/js/README.md#build-bindings) 
+to build the latest version of `openvino-genai-node` from source first, then install dependencies.
+
 
 Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM. For example, the model meta-llama/Llama-2-13b-chat-hf can benefit from being run on a dGPU. Modify the source code to change the device for inference to the GPU.
 
@@ -91,6 +98,26 @@ Recommended models: Qwen/Qwen2.5-3B-Instruct, Qwen/Qwen2.5-7B-Instruct
   ```bash
   node react_sample.js model_dir
   ```
+
+### 6. LLMs benchmarking sample (`benchmark_genai`)
+- **Description:** 
+  This sample script demonstrates how to benchmark LLMs in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text, and calculating various performance metrics.
+
+  For more information on how performance metrics are calculated, please follow the [performance-metrics tutorial](../../../src/README.md#performance-metrics).
+- **Main Feature:** Benchmark model via GenAI
+- **Run Command:**
+  ```bash
+  node benchmark_genai.js [-m MODEL] [-p PROMPT] [--nw NUM_WARMUP] [-n NUM_ITER] [--mt MAX_NEW_TOKENS] [-d DEVICE]
+  ```
+
+#### Options
+- `-m`, `--model`: Path to model and tokenizers base directory. [string] [required]
+- `-p`, `--prompt`: The prompt to generate text. If without `-p` and `--pf`, the default prompt is `The Sky is blue because`. [string]
+- `--prompt_file`, `--pf`: Read prompt from file. [string]
+- `--num_warmup`, `--nw`: Number of warmup iterations. [number] [default: 1]
+- `-n`, `--num_iter`: Number of iterations. [number] [default: 2]
+- `--max_new_tokens`, `--mt`: Maximal number of new tokens. [number] [default: 20]
+- `-d`, `--device`: Device to run the model on. [string] [default: "CPU"]
 
 ### Troubleshooting
 
