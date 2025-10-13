@@ -75,10 +75,8 @@ public:
         }
 
         bool has_xattention = false;
-        if ((m_key_shapes[0][2].get_length() == m_value_shapes[0][2].get_length()) &&
-            (m_key_shapes[0][3].get_length() == m_value_shapes[0][3].get_length()) &&
-            (m_key_shapes[0][2].get_length() == gpu_block_size_xattn)) {
-            has_xattention = true;        
+        if (m_value_shapes[0][2].get_length() == gpu_block_size_xattn) {
+            has_xattention = true;
         }
         m_block_size = all_gpu_device ? ( has_xattention ? gpu_block_size_xattn : gpu_block_size ) : cpu_block_size;
         m_num_decoder_layers = m_value_precisions.size();
