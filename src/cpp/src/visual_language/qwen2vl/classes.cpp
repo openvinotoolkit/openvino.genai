@@ -1024,6 +1024,51 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderQwen2VL::encode_videos(const 
     return embeds;
 }
 
+std::vector<ov::genai::EncodedImage> InputsEmbedderQwen2VL::encode_images(const std::vector<ov::Tensor>& images) {
+    std::vector<EncodedImage> embeds;
+    std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
+    for (ov::Tensor& image : single_images) {
+        cvt_to_3_chn_image(image);
+        embeds.emplace_back(m_vision_encoder->encode(image));
+    }
+    return embeds;
+}
+
+void InputsEmbedderQwen2VL::cvt_to_3_chn_image(ov::Tensor& image) {
+    auto shape = image.get_shape();
+    OPENVINO_ASSERT(shape.size() == 4);
+    OPENVINO_ASSERT(image.get_element_type() == ov::element::u8);
+    auto channels = image.get_shape().at(3);
+    if (channels == 3) {
+        return;
+    } else if (channels == 1) {
+        shape[3] = 3;
+        auto new_img = ov::Tensor(image.get_element_type(), shape);
+
+        const uint8_t* in_data = image.data<const uint8_t>();
+        uint8_t* out_data = new_img.data<uint8_t>();
+
+        for (size_t i = 0; i < shape[0] * shape[1] * shape[2]; ++i) {
+            float gray_val = *(in_data + i);
+            *(out_data + i * 3 + 0) = gray_val;
+            *(out_data + i * 3 + 1) = gray_val;
+            *(out_data + i * 3 + 2) = gray_val;
+        }
+        image = new_img;
+    } else if (channels == 4) {
+        shape[3] = 3;
+        auto new_img = ov::Tensor(image.get_element_type(), shape);
+
+        const uint8_t* in_data = image.data<const uint8_t>();
+        uint8_t* out_data = new_img.data<uint8_t>();
+
+        for (size_t i = 0; i < shape[0] * shape[1] * shape[2]; ++i) {
+            std::memcpy(out_data + i * 3, in_data + i * 4, 3 * sizeof(uint8_t));
+        }
+        image = new_img;
+    }
+}
+
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderQwen2VL::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
     if (history_size != 0) {
         ov::Tensor position_ids{ov::element::i64, {3, 1, inputs_embeds_size}};

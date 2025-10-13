@@ -51,6 +51,8 @@ public:
                                  const std::vector<size_t>& image_sequence = {},
                                  const std::vector<size_t>& videos_sequence = {}) override;
 
+    std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
+
     std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos) override;
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) override;
@@ -107,6 +109,8 @@ protected:
         const size_t video_id,
         const int64_t vision_start_token_id
     );
+
+    void cvt_to_3_chn_image(ov::Tensor& image);
 };
 
 namespace qwen2_vl_utils {
