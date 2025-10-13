@@ -294,7 +294,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
             "Enabled input prompt permutations. It means that generated results may vary on different steps. "
             "If it is not expected, please specify --disable_prompt_permutation in your benchmarking command to disable this behavior"
         )
-        from openvino_genai import TokenizedInputs, GenerationConfig
+        from openvino_genai import TokenizedInputs
         import openvino as ov
 
         input_ids = input_data.input_ids.data
