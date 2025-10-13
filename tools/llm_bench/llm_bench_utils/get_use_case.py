@@ -2,7 +2,7 @@ import os
 import json
 import logging as log
 from pathlib import Path
-from typing import Optional, Tuple # Using typing for older Python compatibility
+from typing import Optional, Tuple
 import llm_bench_utils.model_utils as model_utils
 from llm_bench_utils.config_class import (
     USE_CASES,
