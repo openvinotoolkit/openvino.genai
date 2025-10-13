@@ -182,10 +182,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         const auto& prompt = prompts[0];
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
 
-        encoded_images = m_inputs_embedder->encode_images(images_vector[0]);
+        encoded_images = m_inputs_embedder->encode_images(images_vector.size() > 0 ? images_vector[0] : std::vector<ov::Tensor>{});
         m_history_images.insert(m_history_images.end(), encoded_images.begin(), encoded_images.end());
 
-        encoded_videos = m_inputs_embedder->encode_videos(videos_vector[0]);
+        encoded_videos = m_inputs_embedder->encode_videos(videos_vector.size() > 0 ? videos_vector[0] : std::vector<ov::Tensor>{});
         m_history_videos.insert(m_history_videos.end(), encoded_videos.begin(), encoded_videos.end());
 
         auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
