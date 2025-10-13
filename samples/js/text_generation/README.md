@@ -35,7 +35,7 @@ In the current directory, run:
 npm install
 ```
 
-If you use the master branch, you may have to follow 
+If you use the master branch, you may need to follow 
 [this instruction](../../../src/js/README.md#build-bindings) 
 to build the latest version of `openvino-genai-node` from source first, then install dependencies.
 
