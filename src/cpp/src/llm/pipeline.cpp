@@ -123,9 +123,11 @@ ov::genai::LLMPipeline::LLMPipeline(
     const ov::AnyMap& user_properties) :
     m_device(device) {
     auto start_time = std::chrono::steady_clock::now();
-    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
 
-    if (ov::genai::utils::is_npu_requested(device, properties)) {
+    bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
+    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
+
+    if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(models_path, tokenizer, device, properties);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
@@ -160,9 +162,10 @@ ov::genai::LLMPipeline::LLMPipeline(
     m_device(device) {
     auto start_time = std::chrono::steady_clock::now();
 
-    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+    bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
+    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
 
-    if (ov::genai::utils::is_npu_requested(device, properties)) {
+    if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(models_path, device, properties);
     } else if (utils::explicitly_requires_paged_attention(user_properties)) {
         // If CB is invoked explicitly, create CB adapter as is and re-throw in case if internal issues
@@ -200,9 +203,10 @@ ov::genai::LLMPipeline::LLMPipeline(
     m_device(device) {
     auto start_time = std::chrono::steady_clock::now();
 
-    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+    bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
+    auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
 
-    if (ov::genai::utils::is_npu_requested(device, properties)) {
+    if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(
             utils::singleton_core().read_model(model_str, weights_tensor),
             tokenizer,

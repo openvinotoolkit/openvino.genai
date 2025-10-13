@@ -631,7 +631,7 @@ SchedulerConfig get_latency_oriented_scheduler_config() {
     return default_config;
 }
 
-bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
+bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_npu_requested) {
     auto attention_backend_it = properties.find("ATTENTION_BACKEND");
 
     if (properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
@@ -643,7 +643,7 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
         }
     }
 
-    if (properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end()) {
+    if (properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() && !is_npu_requested) {
         if (is_paged_attention_available()) {
             return true;
         } else {
@@ -662,7 +662,8 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
     return false;
 }
 
-std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties) {
+std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties,
+                                                             bool is_npu_requested) {
     std::string attention_backend = PA_BACKEND;
     ov::AnyMap properties = external_properties;
 
@@ -674,7 +675,7 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
         properties.erase(it);
     }
 
-    if (explicitly_requires_paged_attention(external_properties)) {
+    if (explicitly_requires_paged_attention(external_properties, is_npu_requested)) {
         OPENVINO_ASSERT(attention_backend == PA_BACKEND,
             "User properties are conflicting: some of them requires PagedAttention backend, while 'ATTENTION_BACKEND' is set to 'SDPA'");
     }
