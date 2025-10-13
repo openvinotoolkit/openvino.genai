@@ -220,8 +220,6 @@ def analyze_args(args):
     model_args['vocoder_path'] = args.vocoder_path
     if model_args['vocoder_path'] and not Path(model_args['vocoder_path']).exists():
         raise RuntimeError(f'==Failure FOUND==: Incorrect vocoder path:{model_args["vocoder_path"]}')
-
-
     return model_path, model_framework, model_args
 
 

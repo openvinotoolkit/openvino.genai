@@ -8,7 +8,6 @@ import logging as log
 from openvino import get_version
 import torch
 import traceback
-from pathlib import Path
 from llm_bench_utils.memory_monitor import MemMonitorWrapper, MemoryDataSummarizer
 import llm_bench_utils.output_csv
 import llm_bench_utils.output_json

@@ -2,7 +2,7 @@ import os
 import json
 import logging as log
 from pathlib import Path
-from typing import Optional, Union, Tuple # Using typing for older Python compatibility
+from typing import Optional, Tuple # Using typing for older Python compatibility
 import llm_bench_utils.model_utils as model_utils
 from llm_bench_utils.config_class import (
     USE_CASES,
@@ -149,7 +149,7 @@ def get_use_case(model_path: Path, task: Optional[str] = None):
         # Fallback to simple 'model_type' key
         if model_type_val := config.get("model_type"):
             model_id = str(model_type_val).lower().replace('_', '-')
-            
+
     elif model_path.suffix == '.gguf' and model_path.is_file():
         # --- 4. Robustness: Handle missing dependency and parsing errors ---
         try:
