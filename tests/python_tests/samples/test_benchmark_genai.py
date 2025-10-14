@@ -66,6 +66,8 @@ class TestBenchmarkGenAI:
         indirect=["convert_model"],
     )
     def test_js_sample_benchmark_genai(self, convert_model, prompt, sample_args):
+        if sys.platform == 'darwin':
+            pytest.xfail("Ticket 173586")
         # Test JS sample
         js_sample = os.path.join(SAMPLES_JS_DIR, "text_generation/benchmark_genai.js")
         js_command =['node', js_sample, '-m', convert_model, '-p', f'"{prompt}"'] + sample_args
