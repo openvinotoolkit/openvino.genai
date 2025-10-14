@@ -68,6 +68,22 @@ ov_add_sample(
         DEPENDENCIES indicators::indicators openvino::genai
         INCLUDE_DIRECTORIES ${CMAKE_BINARY_DIR})
 
+# create stable_diffusion_export_import sample executable
+
+add_executable(stable_diffusion_export_import stable_diffusion_export_import.cpp load_image.cpp imwrite.cpp)
+
+target_include_directories(stable_diffusion_export_import PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(stable_diffusion_export_import PRIVATE openvino::genai indicators::indicators)
+
+set_target_properties(stable_diffusion_export_import PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS stable_diffusion_export_import
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
 # create inpainting executable
 
 ov_add_sample(

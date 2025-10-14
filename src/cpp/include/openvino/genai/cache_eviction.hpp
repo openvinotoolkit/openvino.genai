@@ -85,10 +85,10 @@ public:
         : aggregation_mode(aggregation_mode_),
           apply_rotation(apply_rotation_),
           snapkv_window_size(snapkv_window_size_),
+          kvcrush_config(kvcrush_config_),
           m_start_size(start_size),
           m_recent_size(recent_size),
-          m_max_cache_size(max_cache_size),
-          kvcrush_config(kvcrush_config_) {
+          m_max_cache_size(max_cache_size) {
         OPENVINO_ASSERT(start_size, "CacheEvictionConfig.start_size must be non-zero");
         OPENVINO_ASSERT(recent_size, "CacheEvictionConfig.recent_size must be non-zero");
         OPENVINO_ASSERT(max_cache_size, "CacheEvictionConfig.max_cache_size must be non-zero");

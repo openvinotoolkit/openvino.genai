@@ -553,6 +553,8 @@ export const LLM_MODELS: LLMModelType[] = [
           'https://huggingface.co/openbmb/MiniCPM-2B-dpo-fp32',
           'https://huggingface.co/openbmb/MiniCPM-2B-sft-bf16',
           'https://huggingface.co/openbmb/MiniCPM-2B-dpo-bf16',
+          'https://huggingface.co/openbmb/MiniCPM4-0.5B',
+          'https://huggingface.co/openbmb/MiniCPM4-8B',
         ],
       },
     ],
