@@ -75,7 +75,7 @@ public:
     using TextParserStreamer::TextParserStreamer;  // inherit base constructors
 
     StreamingStatus write(ParsedMessage& message) override {
-        PYBIND11_OVERRIDE(
+        PYBIND11_OVERRIDE_PURE(
             StreamingStatus,  // Return type
             TextParserStreamer,  // Parent class
             write,  // Name of function in C++ (must match Python name)
@@ -142,10 +142,10 @@ void init_streamers(py::module_& m) {
              py::overload_cast<ParsedMessage&>(&TextParserStreamer::write),
              py::arg("message"),
              "Write is called with a ParsedMessage. Returns StreamingStatus.")
-        .def("write",
+        .def("_write",
              py::overload_cast<std::string>(&TextParserStreamer::write),
              py::arg("message"),
-             "Write is called with a string message. Returns CallbackTypeVariant.")
+             "Write is called with a string message. Returns CallbackTypeVariant. This is a private method.")
         
         .def("get_parsed_message", &TextParserStreamer::get_parsed_message, "Get the current parsed message")
 

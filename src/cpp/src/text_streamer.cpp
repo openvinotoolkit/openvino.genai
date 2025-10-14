@@ -148,8 +148,8 @@ CallbackTypeVariant TextParserStreamer::write(std::string message) {
             message = parser->parse(m_parsed_message, m_text_buffer, message);
         }
         // Message can be modified inside parser, if parser for example extracted tool calling from message content
-        // but parser 
-        m_parsed_message["content"] += message;
+        // but parser
+        m_parsed_message["content"] = m_parsed_message["content"].get_string() + message;
     }
 
     m_text_buffer = message;

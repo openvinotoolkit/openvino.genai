@@ -29,7 +29,7 @@ Sub PrintFiles()
     Set folder = Application.GetNamespace("Microsoft Office").PackagedInstance.GetFolder("Folder Name")
 'Get all files in the folder
     folder.Files.Clear
-"""
+""" 
 eng_prompts = [
     'What is the previous answer?',
     'Why is the Sun yellow?',

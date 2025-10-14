@@ -9,22 +9,10 @@
 
 using namespace ov::genai;
 
-nlohmann::json convert_to_json(const ParsedMessage& msg) {
-    nlohmann::json j;
-    for (const auto& [key, value] : msg) {
-        if (key == "tool_calls") {
-            j[key] = nlohmann::json::parse(value);
-            continue;
-        }
-        j[key] = value;
-    }
-    return j;
-}
-
-nlohmann::json run_parser_test(std::shared_ptr<ParserBase> parser, const std::string& prompt, const nlohmann::json& expected) {
+nlohmann::json run_parser_test(std::shared_ptr<ParserBase> parser, const std::string& prompt) {
     ParsedMessage input;
     input["content"] = prompt;
-    return convert_to_json(parser->parse(input));
+    return (parser->parse(input)).to_json();
 }
 
 
@@ -46,7 +34,7 @@ TEST(ParserTest, test_llama32_parser_1) {
     });
     std::shared_ptr<Llama32PythonicToolParser> parser = std::make_shared<Llama32PythonicToolParser>();
     
-    nlohmann::json res = run_parser_test(parser, prompt, expected);
+    nlohmann::json res = run_parser_test(parser, prompt);
     
     ASSERT_EQ(res, expected);
 }
@@ -69,7 +57,7 @@ TEST(ParserTest, test_llama32_parser_2) {
     });
     auto parser = std::make_shared<Llama32PythonicToolParser>(/*keep_original_content*/ false);
 
-    nlohmann::json res = run_parser_test(parser, prompt, expected);
+    nlohmann::json res = run_parser_test(parser, prompt);
 
     ASSERT_EQ(res, expected);
 }
@@ -87,7 +75,7 @@ TEST(ParserTest, test_reasoning_parser_1) {
         /*keep_original_content*/ false
     );
 
-    nlohmann::json res = run_parser_test(parser, prompt, expected);
+    nlohmann::json res = run_parser_test(parser, prompt);
 
     ASSERT_EQ(res, expected);
 }
@@ -105,7 +93,7 @@ TEST(ParserTest, test_reasoning_parser_2) {
         /*keep_original_content*/ true
     );
 
-    nlohmann::json res = run_parser_test(parser, prompt, expected);
+    nlohmann::json res = run_parser_test(parser, prompt);
 
     ASSERT_EQ(res, expected);
 }

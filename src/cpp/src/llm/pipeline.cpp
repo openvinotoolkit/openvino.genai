@@ -241,14 +241,13 @@ DecodedResults LLMPipeline::generate(
     // Apply Base parsers sequentially even if IncrementalParser has run.
     if (!parsers.empty()) {
         for (size_t i = 0; i < res.texts.size(); ++i) {
-            auto& message = res.texts[i];
-            ParsedMessage& msg = res.parsed[i];
+            ParsedMessage msg;
+            msg["content"] = res.texts[i];
             for (auto& parser: parsers) {
                 // TODO: check if is_active() is needed here
                 // TODO: Check the state of incremental parser and reset if necessary
                 msg = parser->parse(msg);
             }
-            res.parsed[i] = msg;
         }
     }
 

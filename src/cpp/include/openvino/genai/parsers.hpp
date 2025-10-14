@@ -9,12 +9,14 @@
 #include <functional>
 #include <optional>
 #include <vector>
+#include "openvino/genai/json_container.hpp"
 
 namespace ov {
 namespace genai {
 
-
-using ParsedMessage = std::map<std::string, std::string>;
+// TODO: will be converted to JSONLike object
+// using ParsedMessage = std::map<std::string, std::string>;
+using ParsedMessage = JsonContainer;
 
 class IncrementalParserBase {
 public:
@@ -33,20 +35,15 @@ public:
     static std::shared_ptr<IncrementalParserBase> get_parser(std::string name);
 };
 
+// Forward declaration
+class ReasoningParserImpl;
+
 class ReasoningParser : public IncrementalParserBase {
 private:
-    bool m_starts_with_thinking = true;
-    bool m_keep_original_content = true;
-    bool m_think_tag_opened = false;
-    bool m_deactivated = false;
-    std::string m_open_tag = "<think>";
-    std::string m_close_tag = "</think>";
+    std::shared_ptr<ReasoningParserImpl> m_impl;
 public:
     ReasoningParser(bool starts_with_thinking = true,
-                    bool keep_original_content = true)
-        : m_starts_with_thinking(starts_with_thinking),
-          m_keep_original_content(keep_original_content) {}
-    std::map<std::string, std::string> accumulated_parsed;
+                    bool keep_original_content = true);
 
     std::string parse(
         ParsedMessage& msg,

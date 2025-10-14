@@ -15,6 +15,7 @@
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/scheduler_config.hpp"
 #include "openvino/genai/common_types.hpp"
+#include "openvino/genai/json_container.hpp"
 
 namespace ov {
 namespace genai {
@@ -68,7 +69,8 @@ public:
     std::vector<float> scores;
     PerfMetrics perf_metrics;
     std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
-    std::vector<ParsedMessage> parsed;
+    // std::vector<ParsedMessage> parsed;
+    std::vector<JsonContainer> parsed;
 
     // @brief Convert DecodedResults to a string.
     operator std::string() const {

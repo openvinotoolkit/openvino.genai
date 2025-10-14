@@ -93,6 +93,7 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def(py::init<>())
         .def_property_readonly("texts", [](const DecodedResults &dr) -> py::typing::List<py::str> { return pyutils::handle_utf8((std::vector<std::string>)dr); })
         .def_readonly("scores", &DecodedResults::scores)
+        .def_readonly("parsed", &DecodedResults::parsed)
         .def_readonly("perf_metrics", &DecodedResults::perf_metrics)
         .def_readonly("extended_perf_metrics", &DecodedResults::extended_perf_metrics)
         .def("__str__", [](const DecodedResults &dr) -> py::str {
@@ -115,10 +116,10 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def_readonly("extended_perf_metrics", &EncodedResults::extended_perf_metrics);
 
     init_lora_adapter(m);
+    init_parsers(m);
     init_generation_config(m);
     init_tokenizer(m);
     init_streamers(m);
-    init_parsers(m);
 
     init_llm_pipeline(m);
     init_continuous_batching_pipeline(m);

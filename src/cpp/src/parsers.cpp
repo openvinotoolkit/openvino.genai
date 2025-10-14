@@ -13,8 +13,72 @@ using json = nlohmann::json;
 
 namespace ov::genai {
 
-bool ReasoningParser::is_active() const {
-    return !m_deactivated;
+class ReasoningParserImpl {
+private:
+    bool m_starts_with_thinking = true;
+    bool m_keep_original_content = true;
+    bool m_think_tag_opened = false;
+    std::string m_open_tag = "<think>";
+    std::string m_close_tag = "</think>";
+    std::map<std::string, std::string> accumulated_parsed;
+public:
+    bool m_deactivated = false;
+    ReasoningParserImpl() = default;
+    ReasoningParserImpl(bool starts_with_thinking = true,
+                    bool keep_original_content = true)
+        : m_starts_with_thinking(starts_with_thinking),
+          m_keep_original_content(keep_original_content) {}
+
+    std::string parse(
+        ParsedMessage&  msg,
+        const std::string& previous_text, 
+        std::string& delta_text,
+        const std::optional<std::vector<int64_t>>& previous_tokens, 
+        const std::optional<std::vector<int64_t>>& delta_tokens
+    ) {
+        if (msg["reasoning_content"].is_null()) {
+            msg["reasoning_content"] = "";
+        }
+        if (msg["content"].is_null()) {
+            msg["content"] = "";
+        }
+        
+        bool think_tag_closed = delta_text.find(m_close_tag) != std::string::npos;
+        if (m_starts_with_thinking) {
+            m_think_tag_opened = true;
+        }
+        
+        if (!m_think_tag_opened && delta_text.find(m_open_tag) != std::string::npos && !m_starts_with_thinking) {
+            // Thinking has started
+            auto think_idx = delta_text.find(m_open_tag);
+            auto lvalue = msg["reasoning_content"].get_string();
+            msg["reasoning_content"] = lvalue + delta_text.substr(think_idx + std::string(m_open_tag).size(), delta_text.size() - (think_idx + std::string(m_open_tag).size()));
+            m_think_tag_opened = true;
+            if (!m_keep_original_content) {
+                delta_text = "";
+            }
+        } else if (m_think_tag_opened && delta_text.find(m_close_tag) != std::string::npos) {
+            auto think_idx = delta_text.find(m_close_tag);
+            msg["reasoning_content"] = msg["reasoning_content"].get_string() + delta_text.substr(0, think_idx);
+            msg["content"] = msg["content"].get_string() + delta_text.substr(think_idx + std::string(m_close_tag).size(), delta_text.size() - (think_idx + std::string(m_close_tag).size()));
+            m_think_tag_opened = false;
+            m_deactivated = true;
+            if (!m_keep_original_content) {
+                delta_text = delta_text.substr(think_idx + std::string(m_close_tag).size(), delta_text.size() - (think_idx + std::string(m_close_tag).size()));
+            }
+        } else if (m_think_tag_opened) {
+            msg["reasoning_content"] = msg["reasoning_content"].get_string() + delta_text;
+            if (!m_keep_original_content) {
+                delta_text = "";
+            }
+        } // TODO: add case when <think> and </think> are in the same delta_text
+        
+        return delta_text;
+    }
+};
+
+ReasoningParser::ReasoningParser(bool starts_with_thinking, bool keep_original_content) {
+    m_impl = std::make_shared<ReasoningParserImpl>(starts_with_thinking, keep_original_content);
 }
 
 std::string ReasoningParser::parse(
@@ -24,42 +88,12 @@ std::string ReasoningParser::parse(
     const std::optional<std::vector<int64_t>>& previous_tokens, 
     const std::optional<std::vector<int64_t>>& delta_tokens
 ) {
-    if (msg.find("reasoning_content") == msg.end()) {
-        msg["reasoning_content"] = "";
-    }
-    if (msg.find("content") == msg.end()) {
-        msg["content"] = "";
-    }
-    
-    bool think_tag_closed = delta_text.find(m_close_tag) != std::string::npos;
-
-    if (!m_think_tag_opened && delta_text.find(m_open_tag) != std::string::npos && !m_starts_with_thinking) {
-        // Thinking has started
-        auto think_idx = delta_text.find(m_open_tag);
-        msg["reasoning_content"] += delta_text.substr(think_idx + std::string(m_open_tag).size(), delta_text.size() - (think_idx + std::string(m_open_tag).size()));
-        m_think_tag_opened = true;
-        if (!m_keep_original_content) {
-            delta_text = "";
-        }
-    } else if ((m_think_tag_opened || m_starts_with_thinking) && delta_text.find(m_close_tag) != std::string::npos) {
-        auto think_idx = delta_text.find(m_close_tag);
-        msg["reasoning_content"] += delta_text.substr(0, think_idx);
-        msg["content"] += delta_text.substr(think_idx + std::string(m_close_tag).size(), delta_text.size() - (think_idx + std::string(m_close_tag).size()));
-        m_think_tag_opened = false;
-        m_deactivated = true;
-        if (!m_keep_original_content) {
-            delta_text = delta_text.substr(think_idx + std::string(m_close_tag).size(), delta_text.size() - (think_idx + std::string(m_close_tag).size()));
-        }
-    } else if (m_think_tag_opened) {
-        msg["reasoning_content"] += delta_text;
-        if (!m_keep_original_content) {
-            delta_text = "";
-        }
-    } // TODO: add case when <think> and </think> are in the same delta_text
-    
-    return delta_text;
+    return m_impl->parse(msg, previous_text, delta_text, previous_tokens, delta_tokens);
 }
 
+bool ReasoningParser::is_active() const {
+    return !m_impl->m_deactivated;
+}
 
 ParsedMessage Llama32PythonicToolParser::parse(ParsedMessage& input) {
     // Input example
@@ -67,7 +101,7 @@ ParsedMessage Llama32PythonicToolParser::parse(ParsedMessage& input) {
 
     // Regex to capture the [...] part
     smatch m;
-    const std::string& text = input.at("content");
+    const std::string& text = input["content"].get_string();
     regex r(R"(\[.*?\])");
     if (regex_search(text, m, r)) {
         // Strip outer [ ]
@@ -92,7 +126,8 @@ ParsedMessage Llama32PythonicToolParser::parse(ParsedMessage& input) {
         if (!m_keep_original_content) {
             input["content"] = regex_replace(text, r, "");
         }
-        input["tool_calls"] = j.dump();
+        std::cout << j.dump() << std::endl;
+        input["tool_calls"] = ParsedMessage::from_json_string(j.dump());
         return input;
     }
     return ParsedMessage{};
@@ -101,7 +136,8 @@ ParsedMessage Llama32PythonicToolParser::parse(ParsedMessage& input) {
 ParsedMessage BaseReasoningParser::parse(ParsedMessage& input) {
     ParsedMessage res;
     std::string reasoning_content;
-    const std::string& content = input.at("content");
+    // auto content = input["content"];
+    std::string content = input["content"].get_string();
     res["content"] = content;
 
     size_t start = content.find(m_open_tag);
@@ -170,5 +206,7 @@ static std::vector<std::string> get_parsers_names() {
     }
     return names;
 }
+
+
 
 } // namespace ov::genai
