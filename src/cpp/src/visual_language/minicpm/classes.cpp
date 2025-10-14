@@ -591,7 +591,7 @@ void adjust_pos_cache(
 
 } // namespace
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedderMiniCPM::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormlizedPrompt InputsEmbedderMiniCPM::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     
     auto [unified_prompt, image_sequence] = normalize(
         prompt,
@@ -625,7 +625,7 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderMiniCPM::normalize_pro
         unified_prompt.replace(unified_prompt.find(NATIVE_TAG), NATIVE_TAG.length(), expanded_tag);
     }
 
-    return {std::move(unified_prompt), std::move(image_sequence)};
+    return {std::move(unified_prompt), std::move(image_sequence), {}};
 }
 
 ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
