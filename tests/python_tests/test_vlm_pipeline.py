@@ -37,7 +37,6 @@ import sys
 import os
 import numpy as np
 import transformers
-import numpy as np
 import cv2
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import (
