@@ -31,6 +31,9 @@ target_include_directories(vlm_pipeline_c PRIVATE
 )
 
 target_link_libraries(vlm_pipeline_c PRIVATE openvino::genai::c stb_image)
+if(UNIX AND NOT APPLE)
+    target_link_libraries(vlm_pipeline_c PRIVATE m)
+endif()
 
 set_target_properties(vlm_pipeline_c PROPERTIES
     # Ensure out-of-box LC_RPATH on macOS with SIP
