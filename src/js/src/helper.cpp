@@ -127,41 +127,24 @@ ov::genai::StringInputs js_to_cpp<ov::genai::StringInputs>(const Napi::Env& env,
 
 template <>
 ov::genai::ChatHistory js_to_cpp<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value) {
-    // TODO Update for new ChatHistory type: Record<string, any>[]
-    auto incorrect_argument_message = "Chat history must be { role: string, content: string }[]";
-    if (value.IsArray()) {
-        auto array = value.As<Napi::Array>();
-        size_t arrayLength = array.Length();
-
-        std::vector<ov::AnyMap> nativeArray;
-        for (uint32_t i = 0; i < arrayLength; ++i) {
-            Napi::Value arrayItem = array[i];
-            if (!arrayItem.IsObject()) {
-                OPENVINO_THROW(incorrect_argument_message);
-            }
-            auto obj = arrayItem.As<Napi::Object>();
-            if (obj.Get("role").IsUndefined() || obj.Get("content").IsUndefined()) {
-                OPENVINO_THROW(incorrect_argument_message);
-            }
-            ov::AnyMap result;
-            Napi::Array keys = obj.GetPropertyNames();
-
-            for (uint32_t i = 0; i < keys.Length(); ++i) {
-                Napi::Value key = keys[i];
-                Napi::Value value = obj.Get(key);
-
-                std::string keyStr = key.ToString().Utf8Value();
-                std::string valueStr = value.ToString().Utf8Value();
-
-                result[keyStr] = valueStr;
-            }
-            nativeArray.push_back(result);
-        }
-        return nativeArray;
-
-    } else {
+    auto incorrect_argument_message = "Chat history must be an array of JS objects";
+    if (!value.IsArray()) {
         OPENVINO_THROW(incorrect_argument_message);
     }
+
+    auto array = value.As<Napi::Array>();
+    size_t arrayLength = array.Length();
+
+    for (uint32_t i = 0; i < arrayLength; ++i) {
+        Napi::Value arrayItem = array[i];
+        if (!arrayItem.IsObject()) {
+            OPENVINO_THROW(incorrect_argument_message);
+        }
+    }
+
+    auto messages = ov::genai::JsonContainer::from_json_string(json_stringify(env, value));
+    return ov::genai::ChatHistory(messages);
+
 }
 
 template <>
@@ -269,4 +252,15 @@ Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env, co
 
 bool is_napi_value_int(const Napi::Env& env, const Napi::Value& num) {
     return env.Global().Get("Number").ToObject().Get("isInteger").As<Napi::Function>().Call({num}).ToBoolean().Value();
+}
+
+std::string json_stringify(const Napi::Env& env, const Napi::Value& value) {
+    return env.Global()
+        .Get("JSON")
+        .ToObject()
+        .Get("stringify")
+        .As<Napi::Function>()
+        .Call({ value })
+        .ToString()
+        .Utf8Value();
 }
