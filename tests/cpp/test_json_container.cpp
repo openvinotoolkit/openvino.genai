@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include "openvino/genai/json_container.hpp"
+#include "json_utils.hpp"
 
 using namespace ov::genai;
 
@@ -183,7 +184,6 @@ TEST(JsonContainerTest, primitive_values) {
     EXPECT_TRUE(bool_json.as_bool().has_value());
     EXPECT_EQ(bool_json.as_bool().value(), BOOL_VALUE);
     EXPECT_EQ(bool_json.get_bool(), BOOL_VALUE);
-    EXPECT_EQ(bool_json.to_json(), BOOL_VALUE);
 
     EXPECT_TRUE(int_json.is_number());
     EXPECT_TRUE(int_json.is_number_integer());
@@ -192,7 +192,6 @@ TEST(JsonContainerTest, primitive_values) {
     EXPECT_TRUE(int_json.as_int().has_value());
     EXPECT_EQ(int_json.as_int().value(), INT_VALUE);
     EXPECT_EQ(int_json.get_int(), INT_VALUE);
-    EXPECT_EQ(int_json.to_json(), INT_VALUE);
 
     EXPECT_TRUE(int64_json.is_number());
     EXPECT_TRUE(int64_json.is_number_integer());
@@ -201,7 +200,6 @@ TEST(JsonContainerTest, primitive_values) {
     EXPECT_TRUE(int64_json.as_int().has_value());
     EXPECT_EQ(int64_json.as_int().value(), INT64_VALUE);
     EXPECT_EQ(int64_json.get_int(), INT64_VALUE);
-    EXPECT_EQ(int64_json.to_json(), INT64_VALUE);
 
     EXPECT_TRUE(double_json.is_number());
     EXPECT_TRUE(double_json.is_number_float());
@@ -210,7 +208,6 @@ TEST(JsonContainerTest, primitive_values) {
     EXPECT_TRUE(double_json.as_double().has_value());
     EXPECT_DOUBLE_EQ(double_json.as_double().value(), DOUBLE_VALUE);
     EXPECT_DOUBLE_EQ(double_json.get_double(), DOUBLE_VALUE);
-    EXPECT_DOUBLE_EQ(double_json.to_json(), DOUBLE_VALUE);
 
     EXPECT_TRUE(float_json.is_number());
     EXPECT_TRUE(float_json.is_number_float());
@@ -219,27 +216,23 @@ TEST(JsonContainerTest, primitive_values) {
     EXPECT_TRUE(float_json.as_double().has_value());
     EXPECT_FLOAT_EQ(static_cast<float>(float_json.as_double().value()), FLOAT_VALUE);
     EXPECT_FLOAT_EQ(static_cast<float>(float_json.get_double()), FLOAT_VALUE);
-    EXPECT_FLOAT_EQ(static_cast<float>(float_json.to_json()), FLOAT_VALUE);
 
     EXPECT_TRUE(string_json.is_string());
     EXPECT_EQ(string_json.type_name(), "string");
     EXPECT_TRUE(string_json.as_string().has_value());
     EXPECT_EQ(string_json.as_string().value(), TEST_STRING);
     EXPECT_EQ(string_json.get_string(), TEST_STRING);
-    EXPECT_EQ(string_json.to_json(), TEST_STRING);
 
     EXPECT_TRUE(c_string_json.is_string());
     EXPECT_EQ(c_string_json.type_name(), "string");
     EXPECT_TRUE(c_string_json.as_string().has_value());
     EXPECT_EQ(c_string_json.as_string().value(), C_STRING_VALUE);
     EXPECT_EQ(c_string_json.get_string(), C_STRING_VALUE);
-    EXPECT_EQ(c_string_json.to_json(), C_STRING_VALUE);
 
     EXPECT_TRUE(null_json.is_null());
     EXPECT_EQ(null_json.type_name(), "null");
     EXPECT_EQ(null_json.size(), 0);
     EXPECT_EQ(null_json.empty(), true);
-    EXPECT_EQ(null_json.to_json(), nullptr);
     null_json = "not null";
     EXPECT_EQ(null_json.get_string(), "not null");
     null_json = nullptr;
@@ -307,7 +300,7 @@ TEST(JsonContainerTest, array_operations) {
     EXPECT_THROW(jc[0].erase(0), ov::Exception); // test erase by index for primitives
 
     // Test out-of-bounds access
-    EXPECT_THROW(jc[100].to_json(), ov::Exception);
+    EXPECT_THROW(jc[100].as_string(), ov::Exception);
 
     // Test out-of-bounds assignment expands array with nulls
     jc.to_empty_array();
@@ -479,4 +472,22 @@ TEST(JsonContainerTest, subcontainers_modifications) {
     messages.erase(1);
     messages.erase(1);
     EXPECT_THROW(middle["content"].get_string(), ov::Exception);
+}
+
+TEST(JsonContainerTest, json_serialization) {
+    JsonContainer root = JsonContainer::object();
+    root["user"]["name"] = "Alice";
+    root["user"]["age"] = 30;
+    root["system"]["version"] = "1.0";
+    
+    JsonContainer user = root["user"];
+    
+    nlohmann::ordered_json json = user;
+    
+    EXPECT_TRUE(json.contains("name"));
+    EXPECT_TRUE(json.contains("age"));
+    EXPECT_FALSE(json.contains("system"));
+
+    EXPECT_EQ(json["name"].get<std::string>(), "Alice");
+    EXPECT_EQ(json["age"].get<int>(), 30);
 }

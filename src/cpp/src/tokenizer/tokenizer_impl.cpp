@@ -746,9 +746,9 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     minja::chat_template minja_template(chat_tpl, m_bos_token, m_eos_token);
     
     minja::chat_template_inputs minja_inputs;
-    minja_inputs.messages = history.get_messages().to_json();
+    minja_inputs.messages = history.get_messages();
     if (!tools.empty()) {
-        minja_inputs.tools = tools.to_json();
+        minja_inputs.tools = tools;
     }
     minja_inputs.add_generation_prompt = add_generation_prompt;
     minja_inputs.extra_context = nlohmann::ordered_json::object();
@@ -756,7 +756,7 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     minja_inputs.extra_context["eos_token"] = m_eos_token;
     minja_inputs.extra_context["pad_token"] = m_pad_token;
     if (!extra_context.empty()) {
-        minja_inputs.extra_context.update(extra_context.to_json());
+        minja_inputs.extra_context.update(extra_context);
     }
     
     std::string result;
