@@ -22,7 +22,7 @@ using PyBindStreamerVariant = std::variant<
     std::shared_ptr<StreamerBase>,
     std::monostate>;
 
-ov::genai::StructuredOutputConfig::CompoundGrammar py_obj_to_compound_grammar(const py::object& py_obj);
+ov::genai::StructuredOutputConfig::CompoundGrammar py_obj_to_structural_tag(const py::object& py_obj);
 
 template <class... Ts>
 struct overloaded : Ts... {

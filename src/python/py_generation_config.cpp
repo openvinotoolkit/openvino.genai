@@ -132,10 +132,10 @@ template <typename PyClass>
 void add_grammar_operators(PyClass& py_cls) {
     py_cls
         .def("__add__", [](py::object self, py::object other) {
-            return pyutils::py_obj_to_compound_grammar(self) + pyutils::py_obj_to_compound_grammar(other);
+            return pyutils::py_obj_to_structural_tag(self) + pyutils::py_obj_to_structural_tag(other);
         })
         .def("__or__", [](py::object self, py::object other) {
-            return pyutils::py_obj_to_compound_grammar(self) | pyutils::py_obj_to_compound_grammar(other);
+            return pyutils::py_obj_to_structural_tag(self) | pyutils::py_obj_to_structural_tag(other);
         });
 };
 
@@ -143,7 +143,7 @@ std::vector<StructuredOutputConfig::StructuralTag> collect_structural_tags(py::i
                                                                            const char* context) {
     std::vector<StructuredOutputConfig::StructuralTag> tags;
     for (py::handle element : elements) {
-        tags.emplace_back(pyutils::py_obj_to_compound_grammar(
+        tags.emplace_back(pyutils::py_obj_to_structural_tag(
             py::reinterpret_borrow<py::object>(element)));
     }
     if (tags.size() < 2) {
@@ -336,7 +336,7 @@ void init_generation_config(py::module_& m) {
                            || py::isinstance<StructuredOutputConfig::Tag>(value)
                            || py::isinstance<StructuredOutputConfig::TriggeredTags>(value)
                            || py::isinstance<StructuredOutputConfig::TagsWithSeparator>(value)) {
-                    self.structural_tags_config = pyutils::py_obj_to_compound_grammar(value);
+                    self.structural_tags_config = pyutils::py_obj_to_structural_tag(value);
                 } else {
                     throw py::type_error("structural_tags_config must be either StructuralTagsConfig or a StructuralTag (Regex, JSONSchema, EBNF, ConstString, AnyText, QwenXMLParametersFormat, Union, Concat, Tag, TriggeredTags, TagsWithSeparator or plain str)");
                 }

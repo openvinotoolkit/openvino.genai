@@ -336,10 +336,10 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
         // For structural_tags_config property, wrap in variant
         if (property_name == "structural_tags_config") {
             std::variant<ov::genai::StructuralTagsConfig, ov::genai::StructuredOutputConfig::StructuralTag> variant_value = 
-                py_obj_to_compound_grammar(py_obj);
+                py_obj_to_structural_tag(py_obj);
             return variant_value;
         }
-        return py_obj_to_compound_grammar(py_obj);
+        return py_obj_to_structural_tag(py_obj);
     } else if (py::isinstance<ov::genai::GenerationConfig>(py_obj)) {
         return py::cast<ov::genai::GenerationConfig>(py_obj);
     } else if (py::isinstance<ov::genai::ImageGenerationConfig>(py_obj)) {
@@ -444,7 +444,7 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
     return streamer;
 }
 
-StructuredOutputConfig::StructuralTag py_obj_to_compound_grammar(const py::object& py_obj) {
+StructuredOutputConfig::StructuralTag py_obj_to_structural_tag(const py::object& py_obj) {
     if (py::isinstance<ov::genai::StructuredOutputConfig::Regex>(py_obj)) {
         return py::cast<ov::genai::StructuredOutputConfig::Regex>(py_obj);
     } else if (py::isinstance<ov::genai::StructuredOutputConfig::JSONSchema>(py_obj)) {
