@@ -88,6 +88,7 @@ protected:
     ov::Tensor m_position_ids;
     int64_t m_rope_delta = 0;
     ov::Tensor m_merged_image_embeddings;
+    std::map<std::string, int64_t> m_vision_tokens;
 
     bool m_with_cu_seqlens_input = false;
 
@@ -109,6 +110,8 @@ protected:
         const size_t video_id,
         const int64_t vision_start_token_id
     );
+
+    void encode_vision_placeholder_token();
 
     void cvt_to_3_chn_image(ov::Tensor& image);
 };
