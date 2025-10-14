@@ -144,13 +144,13 @@ MODELS = {
         "name": "hf-internal-testing/tiny-random-SpeechT5ForTextToSpeech",
         "convert_args": ["--model-kwargs",  json.dumps({"vocoder": "fxmarty/speecht5-hifigan-tiny"})]
     },
-    "EAGLE-LLaMA3.1-Instruct-8B": {
-        "name": "yuhuili/EAGLE-LLaMA3.1-Instruct-8B",
-        "convert_args": ['--trust-remote-code', "--eagle3"]
+    "Qwen3-1.7B": {
+        "name": "Qwen/Qwen3-1.7B",
+        "convert_args": ["--task", "text-generation-with-past", '--trust-remote-code']
     },
-    "qwen3_8b_eagle3": {
-        "name": "Tengyunw/qwen3_8b_eagle3",
-        "convert_args": ['--trust-remote-code', "--eagle3"]
+    "qwen3_1.7b_eagle3": {
+        "name": "AngelSlim/Qwen3-1.7B_eagle3",
+        "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code", "--eagle3"]
     }
 }
 
