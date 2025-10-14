@@ -1275,12 +1275,12 @@ ov::Tensor InputsEmbedderQwen2VL::create_position_ids(
             size_t llm_grid_t = grid.at(0);
             size_t llm_grid_h = grid.at(1) / spatial_merge_size;
             size_t llm_grid_w = grid.at(2) / spatial_merge_size;
-            size_t ed_image = ed + llm_grid_t * llm_grid_h * llm_grid_w;
+            size_t llm_grid_sz = llm_grid_h * llm_grid_w;
+            size_t ed_image = ed + llm_grid_t * llm_grid_sz;
 
             // Fill temporal dimension
-            size_t llm_grid_sz = llm_grid_h * llm_grid_w;
             for (size_t t = 0; t < llm_grid_t; t++) {
-                std::fill_n(pos_data + ed + t * llm_grid_sz, llm_grid_h * llm_grid_w, next_pos + t * tokens_per_second);
+                std::fill_n(pos_data + ed + t * llm_grid_sz, llm_grid_sz, next_pos + t * tokens_per_second);
             }
 
             // Fill height and width dimensions
