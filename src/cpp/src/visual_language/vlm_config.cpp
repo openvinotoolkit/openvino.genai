@@ -17,6 +17,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"llava", VLMModelType::LLAVA},
         {"llava-qwen2", VLMModelType::NANOLLAVA},
         {"llava_next", VLMModelType::LLAVA_NEXT},
+        {"llava_next_video", VLMModelType::LLAVA_NEXT_VIDEO},
         {"internvl_chat", VLMModelType::INTERNVL_CHAT},
         {"phi3_v", VLMModelType::PHI3_V},
         {"phi4mm", VLMModelType::PHI4MM},
