@@ -119,7 +119,7 @@ public:
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, embedder_properties);
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
-        // NPU is not supported history, so in chat scenarios let's use full chat history on each iteration
+        // NPU is not supporting history, so in chat scenarios let's use full chat history on each iteration
         m_inputs_embedder->set_use_full_chat_history_mode(m_is_npu);
 
         utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();

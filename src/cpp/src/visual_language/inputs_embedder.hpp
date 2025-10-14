@@ -81,7 +81,7 @@ public:
     // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
     void set_apply_chat_template_status(bool apply_chat_template);
 
-    //set the m_use_full_chat_history flag, which deterins where full chat history or only curent prompt will be used on each iteration in chat mode
+    //set the m_use_full_chat_history flag, which determines whether full chat history or only curent prompt will be used on each iteration in chat mode
     void set_use_full_chat_history_mode(bool use_full_chat_history);
 
     // get the m_use_full_chat_history flag
