@@ -49,7 +49,8 @@ public:
                                  ov::genai::VLMPerfMetrics& metrics,
                                  bool recalculate_merged_embeddings = true,
                                  const std::vector<size_t>& image_sequence = {},
-                                 const std::vector<size_t>& videos_sequence = {});
+                                 const std::vector<size_t>& videos_sequence = {},
+                                 const std::vector<std::pair<std::size_t, std::size_t>> history_vision_count = {});
 
     // compute input embedding and token_type_ids
     std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
@@ -61,7 +62,8 @@ public:
         ov::genai::VLMPerfMetrics& metrics,
         bool recalculate_merged_embeddings = true,
         const std::vector<size_t>& image_sequence = {},
-        const std::vector<size_t>& videos_sequence = {});
+        const std::vector<size_t>& videos_sequence = {},
+        const std::vector<std::pair<std::size_t, std::size_t>> history_vision_count = {});
 
     bool has_token_type_ids() const;
     
@@ -146,7 +148,8 @@ private:
                                              ov::genai::VLMPerfMetrics& metrics,
                                              bool recalculate_merged_embeddings = true,
                                              const std::vector<size_t>& image_sequence = {},
-                                             const std::vector<size_t>& videos_sequence = {});
+                                             const std::vector<size_t>& videos_sequence = {},
+                                             const std::vector<std::pair<std::size_t, std::size_t>> history_vision_count = {});
 
         virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
         virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(
@@ -156,7 +159,8 @@ private:
             ov::genai::VLMPerfMetrics& metrics,
             bool recalculate_merged_embeddings = true,
             const std::vector<size_t>& image_sequence = {},
-            const std::vector<size_t>& videos_sequence = {});
+            const std::vector<size_t>& videos_sequence = {},
+            const std::vector<std::pair<std::size_t, std::size_t>> history_vision_count = {});
 
         virtual bool has_token_type_ids() const;
 

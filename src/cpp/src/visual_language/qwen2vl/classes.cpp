@@ -979,7 +979,8 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
                                                     ov::genai::VLMPerfMetrics& metrics,
                                                     bool recalculate_merged_embeddings,
                                                     const std::vector<size_t>& images_sequence,
-                                                    const std::vector<size_t>& videos_sequence) {
+                                                    const std::vector<size_t>& videos_sequence,
+                                                    const std::vector<std::pair<std::size_t, std::size_t>> history_vision_count) {
     std::vector<std::array<size_t, 3>> images_grid_thw;
     images_grid_thw.reserve(images.size());
     for (const auto& encoded_image : images) {
@@ -1008,7 +1009,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     int64_t image_pad_token_id = m_vision_tokens["image_pad_token"];
     int64_t video_pad_token_id = m_vision_tokens["video_pad_token"];
 
-    m_position_ids = create_position_ids(input_ids, images_grid_thw, images_sequence, 0, video_grid_thw, videos_sequence, 0, vision_start_token_id);
+    m_position_ids = create_position_ids(input_ids, images_grid_thw, images_sequence, 0, video_grid_thw, videos_sequence, 0, vision_start_token_id, history_vision_count);
 
     int64_t position_ids_max_element = *std::max_element(m_position_ids.data<int64_t>(), m_position_ids.data<int64_t>() + m_position_ids.get_size());
     m_rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(input_ids.get_shape().at(1));
@@ -1219,18 +1220,34 @@ ov::Tensor InputsEmbedderQwen2VL::create_position_ids(
     const std::vector<std::array<size_t, 3>>& videos_grid_thw,
     const std::vector<size_t>& videos_sequence,
     const size_t video_id,
-    const int64_t vision_start_token_id) {
+    const int64_t vision_start_token_id,
+    const std::vector<std::pair<std::size_t, std::size_t>> history_vision_count) {
     const size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
     const size_t tokens_per_second = m_vision_encoder->get_processor_config().tokens_per_second;
-
     std::vector<std::array<size_t, 3>> reordered_images_grid_thw;
-    for (size_t new_frame_id : videos_sequence) {
-        reordered_images_grid_thw.push_back(videos_grid_thw.at(new_frame_id - video_id));
+
+    if (history_vision_count.size() > 0) {
+        size_t vid_idx = 0;
+        size_t img_idx = 0;
+        for (size_t i = 0; i < history_vision_count.size(); i++) {
+            size_t ed = vid_idx + history_vision_count[i].first;
+            for (; vid_idx < ed; vid_idx++) {
+                reordered_images_grid_thw.push_back(videos_grid_thw.at(vid_idx - video_id));
+            }
+            ed = img_idx + history_vision_count[i].second;
+            for (; img_idx < ed; img_idx++) {
+                reordered_images_grid_thw.push_back(images_grid_thw.at(img_idx - image_id));
+            }
+        }
+    } else {
+        for (size_t new_frame_id : videos_sequence) {
+            reordered_images_grid_thw.push_back(videos_grid_thw.at(new_frame_id - video_id));
+        }
+        for (size_t new_image_id : images_sequence) {
+            reordered_images_grid_thw.push_back(images_grid_thw.at(new_image_id - image_id));
+        }
     }
-    for (size_t new_image_id : images_sequence) {
-        reordered_images_grid_thw.push_back(images_grid_thw.at(new_image_id - image_id));
-    }
-    
+
     const int64_t* input_ids = input_ids_tensor.data<int64_t>();
     size_t batch_size = input_ids_tensor.get_shape().at(0);
     size_t seq_len = input_ids_tensor.get_shape().at(1);

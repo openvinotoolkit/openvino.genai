@@ -49,7 +49,8 @@ public:
                                  ov::genai::VLMPerfMetrics& metrics,
                                  bool recalculate_merged_embeddings = true,
                                  const std::vector<size_t>& image_sequence = {},
-                                 const std::vector<size_t>& videos_sequence = {}) override;
+                                 const std::vector<size_t>& videos_sequence = {},
+                                 const std::vector<std::pair<std::size_t, std::size_t>> history_vision_count = {}) override;
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
 
@@ -108,7 +109,8 @@ protected:
         const std::vector<std::array<size_t, 3>>& videos_grid_thw,
         const std::vector<size_t>& videos_sequence,
         const size_t video_id,
-        const int64_t vision_start_token_id
+        const int64_t vision_start_token_id,
+        const std::vector<std::pair<std::size_t, std::size_t>> history_vision_count
     );
 
     void encode_vision_placeholder_token();

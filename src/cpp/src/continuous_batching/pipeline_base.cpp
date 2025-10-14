@@ -38,6 +38,7 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::finish_chat() {
     m_history_videos.clear();
     m_history_image_ids.clear();
     m_history_video_ids.clear();
+    m_history_vision_count.clear();
     if (m_inputs_embedder) {
         m_inputs_embedder->finish_chat();
     }
@@ -193,6 +194,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
         m_history_image_ids.insert(m_history_image_ids.end(), image_sequence.begin(), image_sequence.end());
         m_history_video_ids.insert(m_history_video_ids.end(), video_sequence.begin(), video_sequence.end());
+        m_history_vision_count.emplace_back(std::make_pair(video_sequence.size(), image_sequence.size()));
 
         std::string templated_history = m_tokenizer.apply_chat_template(m_history, true);
 
@@ -204,7 +206,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                                                                                              vlm_perf_metrics[0],
                                                                                              true,
                                                                                              m_history_image_ids,
-                                                                                             m_history_video_ids);
+                                                                                             m_history_video_ids,
+                                                                                             m_history_vision_count);
             input_embeds_list.push_back(std::move(embeds));
             token_type_ids_list.push_back(std::move(tt_ids));
         } else {
@@ -214,7 +217,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                                                                                 vlm_perf_metrics[0],
                                                                                 true,
                                                                                 m_history_image_ids,
-                                                                                m_history_video_ids));
+                                                                                m_history_video_ids,
+                                                                                m_history_vision_count));
         }
 
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
@@ -293,6 +297,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                 m_history_video_ids.pop_back();
                 m_history_videos.pop_back();
             }
+            m_history_vision_count.pop_back();
         }
     }
     return results;
