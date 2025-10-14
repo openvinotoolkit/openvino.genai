@@ -119,8 +119,7 @@ public:
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
         // NPU is not supported history, so in chat scenarios let's use full chat history on each iteration
-        m_inputs_embedder->set_use_full_chat_history_mode(true);
-        // m_inputs_embedder->set_use_full_chat_history_mode(m_is_npu);
+        m_inputs_embedder->set_use_full_chat_history_mode(m_is_npu);
 
         utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
         kv_cache_state.seq_length_axis = kv_pos.seq_len;
@@ -203,10 +202,8 @@ public:
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
         }
 
-        const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
+        auto encoded_images = m_inputs_embedder->encode_images(rgbs);
         auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
-        for (auto encoded_image : encoded_images)
-            m_encoded_images.push_back(encoded_image);
 
         bool use_full_chat_history = m_inputs_embedder->is_use_full_chat_history();
         if (m_is_chat_conversation) {
@@ -214,10 +211,11 @@ public:
             unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
 
             if (use_full_chat_history) {
-                for (auto encoded_image : encoded_images)
+                for (auto&& encoded_image : encoded_images)
                     m_encoded_images.push_back(encoded_image);
                 image_sequence.resize(m_encoded_images.size());
                 std::iota(image_sequence.begin(), image_sequence.end(), 0);
+                encoded_images = m_encoded_images;
             } else {
                 for (size_t idx = 0; idx < image_sequence.size(); idx++) {
                    image_sequence[idx] -= m_image_id;
