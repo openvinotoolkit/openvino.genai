@@ -61,7 +61,9 @@ describe("tokenizer", async () => {
   it("applyChatTemplate with incorrect type of history", async () => {
     assert.throws(() => tokenizer.applyChatTemplate("prompt", false));
     assert.throws(() => tokenizer.applyChatTemplate(["prompt"], false));
-    assert.throws(() => tokenizer.applyChatTemplate([{ role: "user", content: "prompt" }, "not an object"], false));
+    assert.throws(() =>
+      tokenizer.applyChatTemplate([{ role: "user", content: "prompt" }, "not an object"], false),
+    );
   });
 
   it("applyChatTemplate with unknown property", async () => {
