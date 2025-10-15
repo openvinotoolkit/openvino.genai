@@ -42,7 +42,6 @@ class GenAIModelWrapper:
             return getattr(self.model, attr)
 
 
-
 def get_scheduler_config_genai(cb_config):
     import openvino_genai
     default_cb_config = {"cache_size": 1}
