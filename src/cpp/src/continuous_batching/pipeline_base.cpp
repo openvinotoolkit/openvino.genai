@@ -170,6 +170,10 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS);
 
     OPENVINO_ASSERT(prompts.size() == sampling_params.size(), "Number of prompts should be equal to the number of generation configs.");
+    if (images_vector.size() > 0)
+        OPENVINO_ASSERT(prompts.size() == images_vector.size(), "Number of prompts should be equal to the number of images vectors.");
+    if (videos_vector.size() > 0)
+        OPENVINO_ASSERT(prompts.size() == videos_vector.size(), "Number of prompts should be equal to the number of videos vectors.");
 
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<ov::Tensor> token_type_ids_list;
@@ -177,6 +181,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     std::vector<VLMPerfMetrics> vlm_perf_metrics(prompts.size());
     std::vector<EncodedImage> encoded_images = {};
     std::vector<EncodedVideo> encoded_videos = {};
+    bool recalculate_merged_embeddings = images_vector.size() > 0 || videos_vector.size() > 0;
 
     if (m_is_chat_conversation) {
         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
@@ -204,7 +209,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                                                                                              m_history_images,
                                                                                              m_history_videos,
                                                                                              vlm_perf_metrics[0],
-                                                                                             true,
+                                                                                             recalculate_merged_embeddings,
                                                                                              m_history_image_ids,
                                                                                              m_history_video_ids,
                                                                                              m_history_vision_count);
@@ -215,7 +220,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                                                                                 m_history_images,
                                                                                 m_history_videos,
                                                                                 vlm_perf_metrics[0],
-                                                                                true,
+                                                                                recalculate_merged_embeddings,
                                                                                 m_history_image_ids,
                                                                                 m_history_video_ids,
                                                                                 m_history_vision_count));
@@ -243,13 +248,13 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                                                                                                  encoded_images,
                                                                                                  encoded_videos,
                                                                                                  vlm_perf_metrics[i],
-                                                                                                 true,
+                                                                                                 recalculate_merged_embeddings,
                                                                                                  image_sequence,
                                                                                                  video_sequence);
                 input_embeds_list.push_back(std::move(embeds));
                 token_type_ids_list.push_back(std::move(tt_ids));
             } else {
-                input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, vlm_perf_metrics[i], true, image_sequence, video_sequence));
+                input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, vlm_perf_metrics[i], recalculate_merged_embeddings, image_sequence, video_sequence));
             }
         
             auto end_get_inputs_embeds = std::chrono::steady_clock::now();

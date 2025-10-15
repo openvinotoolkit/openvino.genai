@@ -858,7 +858,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
             return compiled_model.create_infer_request();
         });
 
-    encode_vision_placeholder_token();
+    encode_vision_placeholder_tokens();
 }
 
 InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
@@ -890,16 +890,16 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
             return compiled_model.create_infer_request();
         });
 
-    encode_vision_placeholder_token();
+    encode_vision_placeholder_tokens();
 }
 
-void InputsEmbedderQwen2VL::encode_vision_placeholder_token() {
+void InputsEmbedderQwen2VL::encode_vision_placeholder_tokens() {
     auto encoded_vision_tokens = m_tokenizer.encode(
         m_vlm_config.vision_start_token + m_vlm_config.image_pad_token + m_vlm_config.video_pad_token,
         ov::genai::add_special_tokens(false));
-    m_vision_tokens["vision_start_token"] = encoded_vision_tokens.input_ids.data<int64_t>()[0];
-    m_vision_tokens["image_pad_token"] = encoded_vision_tokens.input_ids.data<int64_t>()[1];
-    m_vision_tokens["video_pad_token"] = encoded_vision_tokens.input_ids.data<int64_t>()[2];
+    m_vision_token_ids["vision_start"] = encoded_vision_tokens.input_ids.data<int64_t>()[0];
+    m_vision_token_ids["image_pad"] = encoded_vision_tokens.input_ids.data<int64_t>()[1];
+    m_vision_token_ids["video_pad"] = encoded_vision_tokens.input_ids.data<int64_t>()[2];
 }
 
 NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prompt,
@@ -1005,9 +1005,9 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     EmbeddingsRequest& req = embeddings_request_guard.get();
     ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
 
-    int64_t vision_start_token_id = m_vision_tokens["vision_start_token"];
-    int64_t image_pad_token_id = m_vision_tokens["image_pad_token"];
-    int64_t video_pad_token_id = m_vision_tokens["video_pad_token"];
+    int64_t vision_start_token_id = m_vision_token_ids["vision_start"];
+    int64_t image_pad_token_id = m_vision_token_ids["image_pad"];
+    int64_t video_pad_token_id = m_vision_token_ids["video_pad"];
 
     m_position_ids = create_position_ids(input_ids, images_grid_thw, images_sequence, 0, video_grid_thw, videos_sequence, 0, vision_start_token_id, history_vision_count);
 
