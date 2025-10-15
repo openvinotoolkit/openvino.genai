@@ -99,6 +99,49 @@ describe("tokenizer", async () => {
     assert.strictEqual(template, `${prompt}\n`);
   });
 
+  it("applyChatTemplate use tools", async () => {
+    const prompt = "question";
+    const chatHistory = [
+      {
+        role: "user",
+        content: prompt,
+      },
+    ];
+    const chatTemplate = `{% for message in messages %}
+{{ message['content'] }}
+{% for tool in tools %}{{ tool | tojson }}{% endfor %}
+{% endfor %}`;
+    const tools = [{ type: "function", function: { name: "test" } }];
+    const templatedHistory = tokenizer.applyChatTemplate(chatHistory, false, chatTemplate, tools);
+    const expected = `${prompt}\n${JSON.stringify(tools[0])}\n`;
+    assert.strictEqual(templatedHistory, expected);
+  });
+
+  it("applyChatTemplate use extra_context", async () => {
+    const prompt = "question";
+    const chatHistory = [
+      {
+        role: "user",
+        content: prompt,
+      },
+    ];
+    const chatTemplate = `{% for message in messages %}
+{{ message['content'] }}
+{% if enable_thinking is defined and enable_thinking is false %}No thinking{% endif %}
+{% endfor %}`;
+    const tools = [];
+    const extraContext = { enable_thinking: false }; // eslint-disable-line camelcase
+    const templatedHistory = tokenizer.applyChatTemplate(
+      chatHistory,
+      false,
+      chatTemplate,
+      tools,
+      extraContext,
+    );
+    const expected = `${prompt}\nNo thinking\n`;
+    assert.strictEqual(templatedHistory, expected);
+  });
+
   it("getBosToken return string", async () => {
     const token = tokenizer.getBosToken();
     assert.strictEqual(typeof token, "string");
