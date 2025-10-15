@@ -229,6 +229,23 @@ def test_apply_chat_template_with_tools_and_extra_context(model_tmp_path, ov_hf_
 
     assert_hf_equals_genai(hf_full_history_str, ov_full_history_str)
 
+    # Test tools and extra context set via chat history state
+    chat_history = ChatHistory(conversation)
+    chat_history.set_tools(tools)
+    chat_history.set_extra_context(extra_context)
+    genai_templated_chat_history = genai_tokenizer.apply_chat_template(
+        chat_history, add_generation_prompt=add_generation_prompt
+    )
+    assert_hf_equals_genai(genai_templated_chat_history, ov_full_history_str)
+
+    # Test apply_chat_template tools and extra_context arguments prioritized over chat history state
+    chat_history.set_tools([])
+    chat_history.set_extra_context({})
+    genai_templated_chat_history = genai_tokenizer.apply_chat_template(
+        chat_history, add_generation_prompt=add_generation_prompt, tools=tools, extra_context=extra_context
+    )
+    assert_hf_equals_genai(genai_templated_chat_history, ov_full_history_str)
+
 
 @pytest.mark.precommit
 @pytest.mark.parametrize(
