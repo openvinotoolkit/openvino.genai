@@ -102,6 +102,7 @@ OPTIMAL_KVCRUSH_CONFIGS = {
     ], ids=lambda x: x.test_id)
 @pytest.mark.parametrize("apply_rotation", [True, False], ids=["with_rotation", "no_rotation"])         # rotation should improve similarity
 @pytest.mark.parametrize("use_sparse_attention", [True, False], ids=["with_sparse_attn", "no_sparse_attn"]) # sparse attn should not degrade similarity too much
+@pytest.mark.cache_eviction_part1
 def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply_rotation, use_sparse_attention):
     import whowhatbench
 
@@ -189,6 +190,7 @@ scheduler_params_list = [
                          ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "use_cache_eviction": True, "cache_eviction_config": SHORT_CACHE_EVICTION_CONFIG}, get_greedy_seq_len_300())]
 @pytest.mark.parametrize("params", scheduler_params_list)
 @pytest.mark.precommit
+@pytest.mark.cache_eviction_part1
 def test_dynamic_memory_allocation(params):
     prompts, _ = get_test_dataset()
     generate_and_compare(prompts=prompts,
@@ -211,6 +213,7 @@ class LongBenchTestData:
     LongBenchTestData("samsum", 4, 1.6, 2.5),
     LongBenchTestData("trec", 3.2, 2.0, 3.3),
 ], ids=["samsum", "trec"])
+@pytest.mark.cache_eviction_part2
 def test_optimized_generation_longbench(test_struct):
     seqs_per_request = 32
     device = "CPU"
@@ -286,6 +289,7 @@ def test_optimized_generation_longbench(test_struct):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("subset", ["samsum", "trec", "qasper"])
+@pytest.mark.cache_eviction_part2
 def test_kvcrush_vs_snapkv_baseline(subset):
     """Test that KVCrush performs equal or better than SnapKV baseline on LongBench datasets."""
     device = "CPU"
