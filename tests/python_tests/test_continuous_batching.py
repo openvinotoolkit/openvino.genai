@@ -534,13 +534,13 @@ def test_speculative_decoding_extended_perf_metrics(pipeline_type):
 
 @pytest.mark.parametrize("pipeline_type", [PipelineType.SPECULATIVE_DECODING])
 @pytest.mark.precommit
-@pytest.mark.skip(reason="CVS-171943 enable model conversion for eagle3 and enable the test")
+@pytest.mark.skip(reason="CVS-174959 enable model conversion for eagle3 and enable the test")
 def test_eagle3_decoding_extended_perf_metrics(pipeline_type):
     import time
     extended_perf_metrics = None
     start_time = time.perf_counter()
-    model_id : str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-    draft_model_id : str = "yuhuili/EAGLE3-LLaMA3.1-Instruct-8B"
+    model_id : str = "Qwen/Qwen3-1.7B"
+    draft_model_id : str = "AngelSlim/Qwen3-1.7B_eagle3"
     generation_config = GenerationConfig(do_sample=False, max_new_tokens=20, ignore_eos=True, num_assistant_tokens=5)
     extended_perf_metrics = run_extended_perf_metrics_collection(model_id, draft_model_id, generation_config, "Why is the Sun yellow?", pipeline_type)
     total_time = (time.perf_counter() - start_time) * 1000
