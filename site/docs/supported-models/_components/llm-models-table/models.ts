@@ -386,6 +386,17 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: 'GptOssForCausalLM',
+    models: [
+      {
+        name: 'GPT-OSS',
+        links: [
+          'https://huggingface.co/openai/gpt-oss-20b',
+        ],
+      },
+    ],
+  },
+  {
     architecture: 'GraniteForCausalLM',
     models: [
       {
