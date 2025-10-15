@@ -7,7 +7,7 @@
 #include <list>
 
 #include "openvino/runtime/tensor.hpp"
-
+#include "utils.hpp"
 namespace ov::genai {
 
 class CacheManager {
