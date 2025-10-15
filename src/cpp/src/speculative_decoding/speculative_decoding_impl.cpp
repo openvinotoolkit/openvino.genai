@@ -788,11 +788,18 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::EagleDecodingIm
         auto new_input_ids = input_ids[request_id];
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
         auto main_sampling_params = sampling_params[request_id];
-
+        OPENVINO_ASSERT(
+            main_sampling_params.assistant_confidence_threshold == 0.f,
+            "Eagle3 Speculative Decoding pipeline only supports `num_assistant_tokens` "
+            "as parameter in GenerationConfig and doesn't work with `assistant_confidence_threshold`.\nPlease "
+            "remove its specification or set it to 0.f.");
+        if (main_sampling_params.num_assistant_tokens == 0) {
+            main_sampling_params.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
+        }
         main_generations.push_back(
             m_main_pipeline->add_request(request_id, new_input_ids, main_sampling_params));
 
-        auto draft_sampling_params = sampling_params[request_id];
+        auto draft_sampling_params = main_sampling_params;
         // set the parameters do not stop draft generation without stopping of the same request for main pipeline
         draft_sampling_params.ignore_eos = true;
         draft_sampling_params.stop_strings = {};
