@@ -75,8 +75,16 @@ public:
         }
 
         bool has_xattention = false;
-        if (m_value_shapes[0][2].get_length() == gpu_block_size_xattn) {
-            has_xattention = true;
+        if (all_gpu_device) {
+            if (m_value_shapes[0][2].get_length() == gpu_block_size_xattn) {
+                has_xattention = true;
+            }
+            if (utils::env_setup_for_print_debug_info()) {
+                if (has_xattention)
+                    std::cout << "[XAttention]: ENABLED on GPU device." << std::endl;
+                else
+                    std::cout << "[XAttention]: DISABLED on GPU device." << std::endl;
+            }
         }
         m_block_size = all_gpu_device ? ( has_xattention ? gpu_block_size_xattn : gpu_block_size ) : cpu_block_size;
         m_num_decoder_layers = m_value_precisions.size();
