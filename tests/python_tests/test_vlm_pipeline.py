@@ -1179,9 +1179,6 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, vi
         templated_prompt = processor.apply_chat_template(conversation, add_generation_prompt=True)
         inputs = processor(text=[templated_prompt], **params, padding=True, return_tensors="pt")
 
-    if model.config.model_type == 'qwen2_5_vl':
-        max_new_tokens = 90 # TODO: Need to confirm whether different chat templates trigger this subtle difference.
-
     output_ids = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False, temperature=0.0)
     input_ids = inputs["input_ids"] if isinstance(inputs, dict) else inputs.input_ids
     generated_ids = [output_ids[len(input_ids) :] for input_ids, output_ids in zip(input_ids, output_ids)]
