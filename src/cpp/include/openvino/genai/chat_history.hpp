@@ -9,6 +9,14 @@
 namespace ov {
 namespace genai {
 
+/**
+ * @brief ChatHistory stores conversation messages and optional metadata for chat templates.
+ *
+ * Manages:
+ * - Message history (array of message objects)
+ * - Optional tools definitions array (for function calling)
+ * - Optional extra context object (for custom template variables)
+ */
 class OPENVINO_GENAI_EXPORTS ChatHistory {
 public:
     ChatHistory();
@@ -50,8 +58,16 @@ public:
     size_t size() const;
     bool empty() const;
 
+    ChatHistory& set_tools(const JsonContainer& tools);
+    const JsonContainer& get_tools() const;
+
+    ChatHistory& set_extra_context(const JsonContainer& extra_context);
+    const JsonContainer& get_extra_context() const;
+
 private:
-    JsonContainer m_messages;
+    JsonContainer m_messages = JsonContainer::array();
+    JsonContainer m_tools = JsonContainer::array();
+    JsonContainer m_extra_context = JsonContainer::object();
 };
 
 } // namespace genai

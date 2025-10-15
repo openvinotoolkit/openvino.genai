@@ -6,7 +6,7 @@
 namespace ov {
 namespace genai {
 
-ChatHistory::ChatHistory() : m_messages(JsonContainer::array()) {}
+ChatHistory::ChatHistory() = default;
 
 ChatHistory::ChatHistory(const JsonContainer& messages) : m_messages(messages) {
     if (!m_messages.is_array()) {
@@ -94,6 +94,30 @@ size_t ChatHistory::size() const {
 
 bool ChatHistory::empty() const {
     return m_messages.empty();
+}
+
+ChatHistory& ChatHistory::set_tools(const JsonContainer& tools) {
+    if (!tools.is_array()) {
+        OPENVINO_THROW("Tools must be an array-like JsonContainer.");
+    }
+    m_tools = tools;
+    return *this;
+}
+
+const JsonContainer& ChatHistory::get_tools() const {
+    return m_tools;
+}
+
+ChatHistory& ChatHistory::set_extra_context(const JsonContainer& extra_context) {
+    if (!extra_context.is_object()) {
+        OPENVINO_THROW("Extra context must be an object-like JsonContainer.");
+    }
+    m_extra_context = extra_context;
+    return *this;
+}
+
+const JsonContainer& ChatHistory::get_extra_context() const {
+    return m_extra_context;
 }
 
 } // namespace genai
