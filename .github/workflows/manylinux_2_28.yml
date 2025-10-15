@@ -452,11 +452,11 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
             timeout: 120
           - name: 'Cacheopt E2E (Part 1)'
-            cmd: 'python -m pytest -v -m cache_eviction_part1 ./tests/python_tests/test_kv_cache_eviction.py'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
             timeout: 180
           - name: 'Cacheopt E2E (Part 2)'
-            cmd: 'python -m pytest -v -m cache_eviction_part2 ./tests/python_tests/test_kv_cache_eviction.py'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_2.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
             timeout: 180
           - name: 'LLM & VLM'
