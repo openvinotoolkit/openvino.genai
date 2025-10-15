@@ -20,32 +20,9 @@
 #include "openvino/pass/pattern/op/wrap_type.hpp"
 #include "openvino/pass/graph_rewrite.hpp"
 #include "openvino/pass/manager.hpp"
+#include "utils.hpp"
 
 namespace ov::genai {
-
-struct ModelDesc {
-    std::string device;
-    ov::genai::SchedulerConfig scheduler_config;
-    ov::AnyMap properties;
-    ov::genai::GenerationConfig generation_config;
-    std::shared_ptr<ov::Model> model = nullptr;
-    ov::genai::Tokenizer tokenizer;
-
-    ModelDesc(const std::shared_ptr<ov::Model>& model,
-              const ov::genai::Tokenizer& tokenizer,
-              const std::string& device = {},
-              const ov::AnyMap& properties = {},
-              const ov::genai::SchedulerConfig& scheduler_config = {},
-              const ov::genai::GenerationConfig& generation_config = {}) :
-        model(model),
-        tokenizer(tokenizer),
-        device(device),
-        properties(properties),
-        scheduler_config(scheduler_config),
-        generation_config(generation_config) {}
-    
-    ModelDesc() = default;
-};
 
 class ContinuousBatchingPipeline::SpeculativeDecodingImpl : public ContinuousBatchingPipeline::IContinuousBatchingPipeline {
 protected:

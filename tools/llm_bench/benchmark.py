@@ -5,7 +5,6 @@ import os
 import sys
 import argparse
 import logging as log
-import llm_bench_utils.model_utils
 from openvino import get_version
 import torch
 import traceback
@@ -20,6 +19,11 @@ import task.speech_to_text_generation as bench_speech
 import task.text_embeddings as bench_text_embed
 import task.text_to_speech_generation as bench_text_to_speech
 import task.text_reranker as bench_text_rerank
+from llm_bench_utils.model_utils import (
+    analyze_args,
+    get_ir_conversion_frontend,
+    get_model_precision
+)
 
 DEFAULT_TORCH_THREAD_NUMS = 16
 
@@ -253,8 +257,8 @@ def main():
     if args.streaming and args.tokens_len is None:
         log.error("--streaming requires --tokens_len to be set.")
         exit(1)
-    model_path, framework, model_args, model_name_or_id = (
-        llm_bench_utils.model_utils.analyze_args(args)
+    model_path, framework, model_args = (
+        analyze_args(args)
     )
     # Set the device for running OpenVINO backend for torch.compile()
     if model_args['torch_compile_backend']:
@@ -311,17 +315,14 @@ def main():
         if args.report is not None or args.report_json is not None:
             model_precision = ''
             if framework == 'ov':
-                ir_conversion_frontend = llm_bench_utils.model_utils.get_ir_conversion_frontend(model_name_or_id, model_path.parts)
+                ir_conversion_frontend = get_ir_conversion_frontend(model_args['model_name'], model_path.parts)
                 if ir_conversion_frontend != '':
                     framework = framework + '(' + ir_conversion_frontend + ')'
-                model_precision = llm_bench_utils.model_utils.get_model_precision(model_path.parts)
-            case, model_name = llm_bench_utils.model_utils.get_model_name(args.model, args.task)
-            if model_name is None:
-                model_name = llm_bench_utils.model_utils.get_model_name_with_path_part(args.model)
+                model_precision = get_model_precision(model_path.parts)
             if args.report is not None:
                 llm_bench_utils.output_csv.write_result(
                     args.report,
-                    model_name,
+                    model_args['model_name'],
                     framework,
                     args.device,
                     model_args,
@@ -334,7 +335,7 @@ def main():
             if args.report_json is not None:
                 llm_bench_utils.output_json.write_result(
                     args.report_json,
-                    model_name,
+                    model_args['model_name'],
                     framework,
                     args.device,
                     model_args,

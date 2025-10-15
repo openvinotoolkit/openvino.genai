@@ -55,6 +55,18 @@ struct EncodedImage {
   
     /// @brief Resampled image, used only by MiniCPM.
     ResampledImage resampled_image;
+
+    /// @brief Number of image tokens required to append to a normalized prompt
+    size_t num_image_tokens;
+};
+
+/// @brief Embeddings of a given video. 
+struct EncodedVideo {
+    /// @brief Embeddings of a given video obtained by appling preprocessing to frames and feature extracting models (resampler, mm_projector, etc.)
+    ov::Tensor video_feautures;
+
+    /// @brief Number of video tokens required to append to a normalized prompt
+    size_t num_video_tokens;
 };
 
 /// @brief A class used to infer embeddings of an image using
