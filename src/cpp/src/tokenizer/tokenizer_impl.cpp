@@ -730,33 +730,37 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     const ChatHistory& history,
     bool add_generation_prompt,
     const std::string& chat_template,
-    const JsonContainer& tools,
-    const JsonContainer& extra_context
+    const std::optional<JsonContainer>& tools,
+    const std::optional<JsonContainer>& extra_context
 ) const {
     std::string chat_tpl = chat_template.empty() ? m_chat_template : remap_template(chat_template);
     OPENVINO_ASSERT(!chat_tpl.empty(),
                     "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
                     " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario."
                     " For more information see the section Troubleshooting in README.md");
-    OPENVINO_ASSERT(tools.is_array(),
-                    "Tools should be an array-like JsonContainer, got: ", tools.type_name());
-    OPENVINO_ASSERT(extra_context.is_object(),
-                    "Extra context should be an object-like JsonContainer, got: ", extra_context.type_name());
+
+    auto resolved_tools = tools.value_or(history.get_tools());
+    auto resolved_extra_context = extra_context.value_or(history.get_extra_context());
+
+    OPENVINO_ASSERT(resolved_tools.is_array(),
+                    "Tools should be an array-like JsonContainer, got: ", resolved_tools.type_name());
+    OPENVINO_ASSERT(resolved_extra_context.is_object(),
+                    "Extra context should be an object-like JsonContainer, got: ", resolved_extra_context.type_name());
 
     minja::chat_template minja_template(chat_tpl, m_bos_token, m_eos_token);
     
     minja::chat_template_inputs minja_inputs;
     minja_inputs.messages = history.get_messages();
-    if (!tools.empty()) {
-        minja_inputs.tools = tools;
+    if (!resolved_tools.empty()) {
+        minja_inputs.tools = resolved_tools;
     }
     minja_inputs.add_generation_prompt = add_generation_prompt;
     minja_inputs.extra_context = nlohmann::ordered_json::object();
     minja_inputs.extra_context["bos_token"] = m_bos_token;
     minja_inputs.extra_context["eos_token"] = m_eos_token;
     minja_inputs.extra_context["pad_token"] = m_pad_token;
-    if (!extra_context.empty()) {
-        minja_inputs.extra_context.update(extra_context);
+    if (!resolved_extra_context.empty()) {
+        minja_inputs.extra_context.update(resolved_extra_context);
     }
     
     std::string result;

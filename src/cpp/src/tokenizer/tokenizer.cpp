@@ -134,8 +134,8 @@ std::string Tokenizer::get_eos_token() const {
 std::string Tokenizer::apply_chat_template(const ChatHistory& history,
                                            bool add_generation_prompt,
                                            const std::string& chat_template,
-                                           const JsonContainer& tools,
-                                           const JsonContainer& extra_context) const {
+                                           const std::optional<JsonContainer>& tools,
+                                           const std::optional<JsonContainer>& extra_context) const {
     return m_pimpl->apply_chat_template(history, add_generation_prompt, chat_template, tools, extra_context);
 }
 

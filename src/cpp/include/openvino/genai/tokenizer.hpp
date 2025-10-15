@@ -250,11 +250,11 @@ public:
      * For example, for Qwen family models, the prompt "1+1=" would be transformed into
      * <|im_start|>user\n1+1=<|im_end|>\n<|im_start|>assistant\n.
      *
-     * @param history Chat history containing the conversation messages, where each message is a JSON-like object, e.g. [{"role": "user", "content": "prompt"}, ...].
+     * @param history Chat history containing the conversation messages and optional tools/extra_context. Each message is a JSON-like object, e.g. [{"role": "user", "content": "prompt"}, ...].
      * @param add_generation_prompt Whether to add an ending that indicates the start of generation.
      * @param chat_template An optional custom chat template string, if not specified will be taken from the tokenizer.
-     * @param tools An optional JSON-like array of tool definitions to be used in the chat template.
-     * @param extra_context An optional JSON-like object with additional variables to be used in the chat template.
+     * @param tools An optional JSON-like array of tool definitions to be used in the chat template. If provided, overrides tools from chat history.
+     * @param extra_context An optional JSON-like object with additional variables to be used in the chat template. If provided, overrides extra_context from chat history.
      * @return A string with the formatted and concatenated prompts from the chat history.
      * @throws Exception if the chat template was unable to parse the input history.
      */
@@ -262,8 +262,8 @@ public:
         const ChatHistory& history,
         bool add_generation_prompt,
         const std::string& chat_template = {},
-        const JsonContainer& tools = JsonContainer::array(),
-        const JsonContainer& extra_context = JsonContainer::object()
+        const std::optional<JsonContainer>& tools = std::nullopt,
+        const std::optional<JsonContainer>& extra_context = std::nullopt
     ) const;
 
     /// @brief Override a chat_template read from tokenizer_config.json.

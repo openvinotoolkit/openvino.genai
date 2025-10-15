@@ -75,8 +75,8 @@ public:
     std::string apply_chat_template(const ChatHistory& history,
                                     bool add_generation_prompt,
                                     const std::string& chat_template,
-                                    const JsonContainer& tools,
-                                    const JsonContainer& extra_context) const;
+                                    const std::optional<JsonContainer>& tools,
+                                    const std::optional<JsonContainer>& extra_context) const;
 
     void set_chat_template(const std::string& chat_template);
     std::string get_chat_template();
