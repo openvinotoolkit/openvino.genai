@@ -113,7 +113,7 @@ describe("tokenizer", async () => {
 {% endfor %}`;
     const tools = [{ type: "function", function: { name: "test" } }];
     const templatedHistory = tokenizer.applyChatTemplate(chatHistory, false, chatTemplate, tools);
-    const expected = `${prompt}\n${JSON.stringify(tools[0])}\n`;
+    const expected = `${prompt}\n{"type": "function", "function": {"name": "test"}}`;
     assert.strictEqual(templatedHistory, expected);
   });
 
@@ -138,7 +138,7 @@ describe("tokenizer", async () => {
       tools,
       extraContext,
     );
-    const expected = `${prompt}\nNo thinking\n`;
+    const expected = `${prompt}\nNo thinking`;
     assert.strictEqual(templatedHistory, expected);
   });
 
