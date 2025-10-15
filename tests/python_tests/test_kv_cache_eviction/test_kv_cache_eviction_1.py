@@ -20,7 +20,7 @@ from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_pr
 
 
 def load_prompts_dataset(file_name : str) -> dict[str, list[str]]:
-    TESTS_ROOT = Path(__file__).parent
+    TESTS_ROOT = Path(__file__).parent.parent
     file_path = TESTS_ROOT / 'data' / file_name
     with open(file_path, 'r', encoding="utf-8") as f:
         return {"prompts": [s for s in f]}
