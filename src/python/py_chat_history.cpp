@@ -10,7 +10,12 @@
 namespace {
 
 constexpr char class_docstring[] = R"(
-    Chat history container for conversation messages.
+    ChatHistory stores conversation messages and optional metadata for chat templates.
+
+    Manages:
+    - Message history (array of message objects)
+    - Optional tools definitions array (for function calling)
+    - Optional extra context object (for custom template variables)
 
     Messages are stored as JSON-like structures but accessed as Python dicts.
     Use get_messages() to retrieve the list of all messages, modify them,
@@ -77,5 +82,25 @@ void init_chat_history(py::module_& m) {
         
         .def("__bool__", [](const ChatHistory& self) {
             return !self.empty();
-        });
+        })
+
+        .def("set_tools", [](ChatHistory& self, const py::list& tools) {
+            self.set_tools(pyutils::py_object_to_json_container(tools));
+        }, py::arg("tools"), R"(Set the tools definitions array.)")
+
+        .def("get_tools", [](const ChatHistory& self) -> py::list {
+            std::string json_string = self.get_tools().to_json_string();
+            py::module_ json_module = py::module_::import("json");
+            return json_module.attr("loads")(json_string);
+        }, R"(Get the tools definitions array.)")
+
+        .def("set_extra_context", [](ChatHistory& self, const py::dict& extra_context) {
+            self.set_extra_context(pyutils::py_object_to_json_container(extra_context));
+        }, py::arg("extra_context"), R"(Set the extra context object.)")
+
+        .def("get_extra_context", [](const ChatHistory& self) -> py::dict {
+            std::string json_string = self.get_extra_context().to_json_string();
+            py::module_ json_module = py::module_::import("json");
+            return json_module.attr("loads")(json_string);
+        }, R"(Get the extra context object.)");
 }

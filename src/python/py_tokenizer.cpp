@@ -254,8 +254,8 @@ void init_tokenizer(py::module_& m) {
                                         const std::variant<ChatHistory, std::vector<py::dict>>& history,
                                         bool add_generation_prompt,
                                         const std::string& chat_template,
-                                        const std::vector<py::dict>& tools,
-                                        const py::dict& extra_context) {
+                                        const std::optional<std::vector<py::dict>>& tools,
+                                        const std::optional<py::dict>& extra_context) {
             ChatHistory chat_history;
             std::visit(pyutils::overloaded {
                 [&](ChatHistory chat_history_obj) {
@@ -265,15 +265,24 @@ void init_tokenizer(py::module_& m) {
                     chat_history = ChatHistory(pyutils::py_object_to_json_container(py::cast(list_of_dicts)));
                 }
             }, history);
-            JsonContainer tools_jc = pyutils::py_object_to_json_container(py::cast(tools));
-            JsonContainer extra_context_jc = pyutils::py_object_to_json_container(extra_context);
+
+            std::optional<JsonContainer> tools_jc;
+            if (tools.has_value()) {
+                tools_jc = pyutils::py_object_to_json_container(py::cast(tools.value()));
+            }
+
+            std::optional<JsonContainer> extra_context_jc;
+            if (extra_context.has_value()) {
+                extra_context_jc = pyutils::py_object_to_json_container(extra_context.value());
+            }
+
             return tok.apply_chat_template(chat_history, add_generation_prompt, chat_template, tools_jc, extra_context_jc);
         },
             py::arg("history"),
             py::arg("add_generation_prompt"),
             py::arg("chat_template") = "",
-            py::arg("tools") = py::list(),
-            py::arg("extra_context") = py::dict(),
+            py::arg("tools") = py::none(),
+            py::arg("extra_context") = py::none(),
             R"(Applies a chat template to format chat history into a prompt string.)")
 
         .def(

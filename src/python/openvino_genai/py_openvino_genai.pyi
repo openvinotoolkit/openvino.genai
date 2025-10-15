@@ -393,7 +393,12 @@ class CacheEvictionConfig:
 class ChatHistory:
     """
     
-        Chat history container for conversation messages.
+        ChatHistory stores conversation messages and optional metadata for chat templates.
+    
+        Manages:
+        - Message history (array of message objects)
+        - Optional tools definitions array (for function calling)
+        - Optional extra context object (for custom template variables)
     
         Messages are stored as JSON-like structures but accessed as Python dicts.
         Use get_messages() to retrieve the list of all messages, modify them,
@@ -430,17 +435,33 @@ class ChatHistory:
         """
     def clear(self) -> None:
         ...
+    def get_extra_context(self) -> dict:
+        """
+        Get the extra context object.
+        """
     def get_messages(self) -> list:
         """
         Get all messages as a list of dicts (deep copy).
+        """
+    def get_tools(self) -> list:
+        """
+        Get the tools definitions array.
         """
     def pop(self) -> dict:
         """
         Remove and return the last message.
         """
+    def set_extra_context(self, extra_context: dict) -> None:
+        """
+        Set the extra context object.
+        """
     def set_messages(self, messages: list) -> None:
         """
         Replace all messages with a new list.
+        """
+    def set_tools(self, tools: list) -> None:
+        """
+        Set the tools definitions array.
         """
 class ChunkStreamerBase(StreamerBase):
     """
@@ -3278,7 +3299,7 @@ class Tokenizer:
     @typing.overload
     def __init__(self, tokenizer_model: str, tokenizer_weights: openvino._pyopenvino.Tensor, detokenizer_model: str, detokenizer_weights: openvino._pyopenvino.Tensor, **kwargs) -> None:
         ...
-    def apply_chat_template(self, history: openvino_genai.py_openvino_genai.ChatHistory | collections.abc.Sequence[dict], add_generation_prompt: bool, chat_template: str = '', tools: collections.abc.Sequence[dict] = [], extra_context: dict = {}) -> str:
+    def apply_chat_template(self, history: openvino_genai.py_openvino_genai.ChatHistory | collections.abc.Sequence[dict], add_generation_prompt: bool, chat_template: str = '', tools: collections.abc.Sequence[dict] | None = None, extra_context: dict | None = None) -> str:
         """
         Applies a chat template to format chat history into a prompt string.
         """
