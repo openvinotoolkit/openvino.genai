@@ -42,14 +42,24 @@ class GenAIModelWrapper:
             return getattr(self.model, attr)
 
 
+
 def get_scheduler_config_genai(cb_config):
     import openvino_genai
-
     default_cb_config = {"cache_size": 1}
     scheduler_config = openvino_genai.SchedulerConfig()
     scheduler_params = cb_config or default_cb_config
     if scheduler_params:
         logger.info(f"Scheduler parameters for:\n{scheduler_params}")
+        if 'sparse_attention_config' in scheduler_params.keys():
+            sparse_attention_kwargs = scheduler_params.pop('sparse_attention_config')
+            if "mode" in sparse_attention_kwargs.keys():
+                sparse_attention_kwargs["mode"] = getattr(openvino_genai.SparseAttentionMode, sparse_attention_kwargs["mode"])
+            if scheduler_params.pop('use_sparse_attention', True):
+                scheduler_config.use_sparse_attention = True
+                scheduler_config.sparse_attention_config = openvino_genai.SparseAttentionConfig(**sparse_attention_kwargs)
+                logger.info("Sparse Attention mode ON")
+        else:
+            raise RuntimeError("==Failure ==: sparse_attention_config value can't be used with use_sparse_attention=False")  
         for param, value in scheduler_params.items():
             if param == "cache_eviction_config":
                 value = openvino_genai.CacheEvictionConfig(aggregation_mode=openvino_genai.AggregationMode.NORM_SUM, **value)
