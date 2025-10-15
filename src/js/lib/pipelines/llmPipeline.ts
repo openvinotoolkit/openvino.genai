@@ -10,18 +10,13 @@ export type Options = {
 
 interface Tokenizer {
   /** Applies a chat template to format chat history into a prompt string. */
-  // TODO Update bindings for new ChatHistory type, tools and extra context
-  // applyChatTemplate(
-  //   chatHistory: Record<string, any>[],
-  //   addGenerationPrompt: boolean,
-  //   chatTemplate?: string,
-  //   tools?: Record<string, any>[],
-  //   extraContext?: Record<string, any>,
-  // ): string;
+  // TODO Consider adding bindings for ChatHistory and JsonContainer classes
   applyChatTemplate(
-    chatHistory: { role: string; content: string }[],
+    chatHistory: Record<string, any>[],
     addGenerationPrompt: boolean,
     chatTemplate?: string,
+    tools?: Record<string, any>[],
+    extraContext?: Record<string, any>,
   ): string;
   getBosToken(): string;
   getBosTokenId(): number;
