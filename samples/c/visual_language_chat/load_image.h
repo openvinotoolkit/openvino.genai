@@ -12,7 +12,7 @@ typedef struct ov_tensor ov_tensor_t;
 
 ov_tensor_t* load_image(const char* image_path);
 
-ov_tensor_t** load_images(const char* image_path, size_t* tensor_count);
+const ov_tensor_t** load_images(const char* image_path, size_t* tensor_count);
 
 void free_tensor(ov_tensor_t* tensor);
 

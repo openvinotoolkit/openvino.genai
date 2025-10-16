@@ -124,7 +124,7 @@ ov_tensor_t* load_image(const char* image_path) {
     return tensor;
 }
 
-ov_tensor_t** load_images(const char* image_path, size_t* tensor_count) {
+const ov_tensor_t** load_images(const char* image_path, size_t* tensor_count) {
     if (!image_path || !tensor_count) {
         fprintf(stderr, "Error: image_path or tensor_count is NULL\n");
         return NULL;
