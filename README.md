@@ -53,7 +53,7 @@ Continuous batching functionality is used within OpenVINO Model Server (OVMS) to
 ```sh
     # Installing OpenVINO GenAI via pip
     # export-requirements are not required to run models, only to convert and compress
-    pip install openvino-genai --requirement ./samples/export-requirements.txt --requirement samples/deployment-requirements.txt
+    pip install openvino-genai --requirement ./samples/export-requirements.txt --requirement ./samples/deployment-requirements.txt
 
     # (Optional) Install (TBD) to be able to download models from Model Scope
 ```
