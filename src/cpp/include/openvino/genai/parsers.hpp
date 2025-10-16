@@ -89,6 +89,18 @@ private:
     bool m_keep_original_content = true;
 };
 
+class Llama32JsonToolParser : public ParserBase {
+// Does not modify original content, only extracts and adds tool calls
+public:
+    // TODO: Check that vLLM has the same default.
+    Llama32JsonToolParser(bool keep_original_content = true) : m_keep_original_content(keep_original_content) {}
+
+    ParsedMessage parse(ParsedMessage& input) override;
+    static std::string name() { return "Llama32JsonToolParser"; }
+private:
+    bool m_keep_original_content = true;
+};
+
 class BaseReasoningParser : public ParserBase{
 public:
     BaseReasoningParser(bool expect_open_tag = true, bool keep_original_content = true, std::string open_tag = "<think>", std::string close_tag = "</think>") :

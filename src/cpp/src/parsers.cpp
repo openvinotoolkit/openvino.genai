@@ -5,10 +5,8 @@
 #include <vector>
 #include <cctype>
 #include <stdexcept>
-#include <bits/stdc++.h>
 #include <nlohmann/json.hpp>
 
-using namespace std;
 using json = nlohmann::json;
 
 namespace ov::genai {
@@ -99,15 +97,19 @@ public:
             m_deactivated = true;
         } else if (m_think_tag_opened) {
             // Thinking tag was already opened and not closed yet
-            // reason_str += m_text_cache
             
-            // "sdf</th", "i", "nk>"
-            // "sd<", " 2"
-            
-            // m_text_cache = "<"
-            // delta_text = " 2"
+            // If we have subsequently "sdf</th", "i", "nk> The"
+            // Then we put "sdf" to reason_str and "</th" to m_text_cache since it's a substring of close tag "</think>"
+            // then we put "i" to m_text_cache since m_text_cache + delta_text = "</thi" is a substring of "</think>"
+            // then (in the closing tag IF-block) we leave only " The" in delta_text.
 
-            size_t num_chars_to_keep = 0; // number of characters from the end of txt_chunk which can be part of the closing tag
+            // If we have "ing. <", " 20 ", "40>"
+            // Then we put "ing. " to reason_str and "<" to m_text_cache since it's a substring of close tag "</think>"
+            // but since continuation " 20 " is not a substring of "</think>", we will end up in this IF-block again
+            // and put " 20 " to reason_str and clear m_text_cache.
+
+            // number of characters from the end of txt_chunk which can be part of the closing tag
+            size_t num_chars_to_keep = 0; 
             // We must be sure that no chunks with the closing tag are included to reason_str.
             for (size_t i = txt_chunk.size(); i >= 1; --i) {
                 // Get the substring of the i last characters of txt_chunk
@@ -164,37 +166,59 @@ ParsedMessage Llama32PythonicToolParser::parse(ParsedMessage& input) {
     // string input = "[get_weather(location='New York, NY', unit='celsius')]<|eom_id|>";
 
     // Regex to capture the [...] part
-    smatch m;
+    std::smatch m;
     const std::string& text = input["content"].get_string();
-    regex r(R"(\[.*?\])");
-    if (regex_search(text, m, r)) {
-        // Strip outer [ ]
-        string call = m.str().substr(1, m.str().size() - 2);
-
-        // Split function name and arguments
-        size_t pos = call.find('(');
-        string name = call.substr(0, pos);
-        string args = call.substr(pos + 1, call.size() - pos - 2); // inside (...)
-
-        // Parse arguments of the form key='value'
-        map<string, string> kv;
-        regex arg_re(R"((\w+)\s*=\s*'([^']*)')");
-        auto it = sregex_iterator(args.begin(), args.end(), arg_re);
-        for (; it != sregex_iterator(); ++it) {
-            kv[(*it)[1]] = (*it)[2];
-        }
-        json j = json::array({{
-            {"name", name},
-            {"arguments", kv}
-        }});
-        if (!m_keep_original_content) {
-            input["content"] = regex_replace(text, r, "");
-        }
-        std::cout << j.dump() << std::endl;
-        input["tool_calls"] = ParsedMessage::from_json_string(j.dump());
+    std::regex r(R"(\[.*?\])");
+    if (!std::regex_search(text, m, r)) {
         return input;
     }
+
+    // Strip outer [ ]
+    std::string call = m.str().substr(1, m.str().size() - 2);
+
+    // Split function name and arguments
+    input["tool_calls"] = ParsedMessage::array();
+    
+    size_t pos = call.find('(');
+    std::string name = call.substr(0, pos);
+    std::string args = call.substr(pos + 1, call.size() - pos - 2); // inside (...)
+
+    // Parse arguments of the form key='value'
+    JsonContainer kv = JsonContainer::array();
+
+    std::regex arg_re(R"((\w+)\s*=\s*\"([^"]*)\")");
+    auto it = std::sregex_iterator(args.begin(), args.end(), arg_re);
+    for (; it != std::sregex_iterator(); ++it) {
+        kv.push_back(ParsedMessage(ov::AnyMap{{"key", std::string((*it)[1])}, {"value", std::string((*it)[2])}}));
+    }
+    
+    input["tool_calls"] = ParsedMessage::array();
+    input["tool_calls"].push_back(ParsedMessage({{"name", name}, {"arguments", kv}}));
+    
+    if (!m_keep_original_content) {
+        input["content"] = regex_replace(text, r, "");
+    }
+
     return ParsedMessage{};
+}
+
+ParsedMessage Llama32JsonToolParser::parse(ParsedMessage& message) {
+    // Find JSON in the message
+    std::string msg_content = message["content"].get_string();
+
+    size_t json_start = msg_content.find('{');
+    size_t json_end = msg_content.rfind('}');
+    if (json_start == std::string::npos || json_end == std::string::npos || json_end <= json_start) {
+        return message;
+    }
+    auto res = JsonContainer::array();
+    res.push_back(JsonContainer::from_json_string(msg_content.substr(json_start, json_end - json_start + 1)));
+    message["tool_calls"] = res;
+    
+    if (!m_keep_original_content) {
+        message["content"] = msg_content.substr(0, json_start) + msg_content.substr(json_end + 1);
+    }
+    return message;
 }
 
 ParsedMessage BaseReasoningParser::parse(ParsedMessage& input) {
