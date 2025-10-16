@@ -14,9 +14,9 @@ namespace ov::genai {
 /// @brief A pair describing image size.
 struct ImageSize {
     /// @brief Height of a corresponding image.
-    size_t height;
+    size_t height = 0;
     /// @brief Width of a corresponding image.
-    size_t width;
+    size_t width = 0;
 };
 
 
@@ -35,7 +35,7 @@ struct EncodedImage {
     ov::Tensor resized_source;
     /// @brief A size of an image used to compute embeddings for
     /// divided by ProcessorConfig's patch_size.
-    ImageSize resized_source_size;
+    ImageSize resized_source_size = {};
 
     /// @brief Shape of embeddings of images obtained from a source image by slicing 
     /// at no more than max_slice_nums pieces and resizing,
@@ -48,7 +48,7 @@ struct EncodedImage {
     std::pair<int, int> patches_grid;
     
     /// @brief Original size of the image
-    ImageSize original_image_size;
+    ImageSize original_image_size = {};
 
     /// @brief Images features projection, used only by Phi3 and phi4mm.
     ov::Tensor images_features_projection;
