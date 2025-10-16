@@ -231,7 +231,7 @@ std::vector<int64_t> prepare_init_tokens(ov::Tensor& encoder_hidden_state,
         }
     }
 
-    int64_t language_token_id;
+    int64_t language_token_id = 0;
     if (config.language.has_value()) {
         std::string language = *config.language;
         if (config.lang_to_id.count(language)) {
