@@ -233,7 +233,7 @@ def test_structural_tags_old(ov_pipe, prompt_and_structural_tag):
             id="Union",
         ),
         pytest.param(
-            "QwenXMLParametersFormat",
+            "",
             SOC.QwenXMLParametersFormat(json.dumps(RESTAPIResponse.model_json_schema())),
             lambda x: (
                 # enum values are placed in double quotes for some reason
@@ -257,7 +257,7 @@ def test_structural_tags_old(ov_pipe, prompt_and_structural_tag):
             id="TriggeredTags",
         ),
         pytest.param(
-            "TagsWithSeparator",
+            "",
             SOC.TagsWithSeparator(
                 tags=[
                     SOC.Tag(begin="<f>", content=SOC.ConstString("A"), end="</f>"),
