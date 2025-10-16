@@ -27,6 +27,13 @@ public:
          * @brief The average of all token embeddings
          */
         MEAN = 1,
+
+        /**
+         * @brief Last token embeddings
+         * 
+         * @note Specifying `ov::genai::padding_side = "left"` can optimize performance for this pooling type.
+         */
+        LAST_TOKEN = 2,
     };
 
     struct OPENVINO_GENAI_EXPORTS Config {
@@ -34,6 +41,24 @@ public:
          * @brief Maximum length of tokens passed to the embedding model
          */
         std::optional<size_t> max_length;
+
+        /**
+         * @brief If 'true', model input tensors are padded to the maximum length
+         */
+        std::optional<bool> pad_to_max_length;
+
+        /**
+         * @brief Side to use for padding "left" or "right"
+         */
+        std::optional<std::string> padding_side;
+
+        /**
+         * @brief Batch size of embedding model.
+         * Useful for database population. If set, the pipeline will fix model shape for inference optimization. 
+         * Number of documents passed to pipeline should be equal to batch_size.
+         * For query embeddings, batch_size should be set to 1 or not set.
+         */
+        std::optional<size_t> batch_size;
 
         /**
          * @brief Pooling strategy applied to model output tensor
@@ -71,6 +96,12 @@ public:
          * ov::genai::TextEmbeddingPipeline::Config config({{"normalize", false}});
          */
         explicit Config(const ov::AnyMap& properties);
+
+        /**
+         * @brief checks that are no conflicting parameters
+         * @throws Exception if config is invalid.
+         */
+        void validate() const;
     };
 
     /**
@@ -167,6 +198,13 @@ static constexpr ov::Property<std::string> query_instruction{"query_instruction"
  * @brief Instruction to use for embedding document
  */
 static constexpr ov::Property<std::string> embed_instruction{"embed_instruction"};
+
+/**
+ * @brief Batch size for embedding model.
+ * If batch_size, max_length and pad_to_max_length are set, the pipeline will fix model shape
+ * for inference optimization. Number of documents passed to pipeline should be equal to batch_size.
+ */
+static constexpr ov::Property<size_t> batch_size{"batch_size"};
 
 }  // namespace genai
 }  // namespace ov

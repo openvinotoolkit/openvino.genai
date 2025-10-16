@@ -11,6 +11,7 @@
 #include "openvino/openvino.hpp"
 #include "continuous_batching/attention_output.hpp"
 #include "openvino/genai/cache_eviction.hpp"
+#include "continuous_batching/kvcrush.hpp"
 
 namespace ov::genai {
 
@@ -215,6 +216,7 @@ private:
     void remove_scores_of_evicted_blocks(const std::vector<std::size_t>& evicted_block_indices, size_t decoder_layer_idx);
 
     CacheEvictionConfig m_eviction_config;
+    KVCrushAlgorithm m_kvcrush_algo;
     std::size_t m_block_size;
     std::size_t m_num_evicted_tokens = 0;
     std::size_t m_num_decoder_layers;

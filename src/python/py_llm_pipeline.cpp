@@ -53,7 +53,7 @@ py::object call_common_generate(
     const pyutils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs
 ) {
-    ov::genai::GenerationConfig default_config = config.has_value() ? *config : pipe.get_generation_config();
+    const ov::genai::GenerationConfig& default_config = config.has_value() ? *config : pipe.get_generation_config();
     auto updated_config = pyutils::update_config_from_kwargs(default_config, kwargs);
 
     py::object results;
@@ -84,7 +84,7 @@ py::object call_common_generate(
             res = pipe.generate(string_input, updated_config, streamer);
         }
         // If input was a string return a single string otherwise return DecodedResults.
-        if (updated_config.has_value() && (*updated_config).num_return_sequences == 1) {
+        if (updated_config.num_return_sequences == 1) {
             results = py::cast<py::object>(pyutils::handle_utf8(res.texts[0]));
         } else {
             results = py::cast(res);

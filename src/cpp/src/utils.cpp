@@ -205,6 +205,36 @@ ProcessorConfig from_any_map(
     return extracted_config;
 }
 
+ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config) {
+    ov::genai::ModelDesc draft_model;
+    if (config.find(utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
+        draft_model = config.at(utils::DRAFT_MODEL_ARG_NAME).as<ov::genai::ModelDesc>();
+    }
+    return draft_model;
+}
+
+ov::genai::ModelDesc extract_draft_model_from_config(ov::AnyMap& config) {
+    ov::genai::ModelDesc draft_model;
+    if (config.find(ov::genai::utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
+        draft_model = config.at(ov::genai::utils::DRAFT_MODEL_ARG_NAME).as<ov::genai::ModelDesc>();
+        config.erase(ov::genai::utils::DRAFT_MODEL_ARG_NAME);
+    }
+    return draft_model;
+}
+
+bool is_npu_requested(const std::string& device, const ov::AnyMap& properties) {
+    if (device == "NPU") {
+        return true;
+    }
+
+    auto draft_model_descr = get_draft_model_from_config(properties);
+    if (draft_model_descr.model != nullptr) {
+        return draft_model_descr.device == "NPU";
+    }
+
+    return false;
+}
+
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
     auto minuend_size = minuend.input_ids.get_size();
     auto subtrahend_size = subtrahend.input_ids.get_size();
@@ -295,7 +325,7 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
     }
 }
 
-ov::Core singleton_core() {
+ov::Core& singleton_core() {
     static ov::Core core;
     return core;
 }
@@ -473,7 +503,12 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
     for (const auto& cfg : supported_properties) {
         if (cfg == ov::supported_properties)
             continue;
-        auto prop = compiled_Model.get_property(cfg);
+        ov::Any prop;
+        try {
+            prop = compiled_Model.get_property(cfg);
+        } catch (const ov::Exception&) {
+            continue;  // NPU: Unsupported configuration key: EXECUTION_MODE_HINT. Ticket 172485
+        }
         if (cfg == ov::device::properties) {
             auto devices_properties = prop.as<ov::AnyMap>();
             for (auto& item : devices_properties) {
@@ -487,12 +522,17 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
         }
     }
 
-    ov::Core core;
     std::vector<std::string> exeTargets;
     exeTargets = compiled_Model.get_property(ov::execution_devices);
     std::cout << "EXECUTION_DEVICES:" << std::endl;
     for (const auto& device : exeTargets) {
-        std::cout << " " << device << ": " << core.get_property(device, ov::device::full_name) << std::endl;
+        std::string full_name;
+        try {
+            full_name = singleton_core().get_property(device, ov::device::full_name);
+        } catch (const ov::Exception&) {
+            continue;  // NPU: No available devices. Ticket 172485
+        }
+        std::cout << " " << device << ": " << full_name << std::endl;
     }
 }
 
@@ -591,7 +631,7 @@ SchedulerConfig get_latency_oriented_scheduler_config() {
     return default_config;
 }
 
-bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
+bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_npu_requested) {
     auto attention_backend_it = properties.find("ATTENTION_BACKEND");
 
     if (properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
@@ -602,11 +642,12 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
             OPENVINO_THROW("Continuous batching backend requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
         }
     }
-    if (properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end()) {
+
+    if (properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() && !is_npu_requested) {
         if (is_paged_attention_available()) {
             return true;
         } else {
-            OPENVINO_THROW("Speculative decoding requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
+            OPENVINO_THROW("Speculative decoding requires PagedAttention operation support on non-NPU devices, which is available on x86_64 or ARM64 platforms only");
         }
     }
 
@@ -621,7 +662,8 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
     return false;
 }
 
-std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties) {
+std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties,
+                                                             bool is_npu_requested) {
     std::string attention_backend = PA_BACKEND;
     ov::AnyMap properties = external_properties;
 
@@ -633,7 +675,7 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
         properties.erase(it);
     }
 
-    if (explicitly_requires_paged_attention(external_properties)) {
+    if (explicitly_requires_paged_attention(external_properties, is_npu_requested)) {
         OPENVINO_ASSERT(attention_backend == PA_BACKEND,
             "User properties are conflicting: some of them requires PagedAttention backend, while 'ATTENTION_BACKEND' is set to 'SDPA'");
     }
@@ -692,6 +734,75 @@ ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov
     ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
     std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
     return inputs_embeds;
+}
+
+size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_layers) {
+    OPENVINO_ASSERT(device.find("GPU") != std::string::npos, "get_available_gpu_memory() is applicable for GPU only.");
+
+    ov::Core core = utils::singleton_core();
+    auto memory_statistics = core.get_property(device, ov::intel_gpu::memory_statistics);
+    auto device_type = core.get_property(device, ov::device::type);
+
+    // sum up all used device memory
+    std::vector<std::string> device_memory_types = {"cl_mem", "usm_device"};
+    size_t used_device_mem = 0;
+    for (auto mem_type: device_memory_types) {
+        used_device_mem += memory_statistics[mem_type];
+    }
+
+    if (device_type == ov::device::Type::INTEGRATED) {
+        used_device_mem += memory_statistics["usm_host"];
+    }
+
+    // there could be unaccounted extra memory reserved by kernels, kept
+    // in memory pools, etc
+    // therefore, add a threshold to account for this
+    float used_memory_threshold = 1.1;
+    used_device_mem *= used_memory_threshold;
+
+    // total device memory in bytes
+    auto total_device_memory = core.get_property(device, ov::intel_gpu::device_total_mem_size);
+
+    // max allocatable memory size on GPU
+    auto max_alloc_memory_size = core.get_property(device, ov::intel_gpu::device_max_alloc_mem_size);
+
+    // Total KV-cache size if a single tensor is limited by 'device_max_alloc_mem_size' property
+    auto max_allocatable_kv_cache = max_alloc_memory_size * num_decoder_layers * 2;
+
+    return std::min(total_device_memory - used_device_mem, max_allocatable_kv_cache);
+}
+
+std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_properties(const ov::AnyMap& external_properties) {
+    ov::AnyMap properties = external_properties;
+    std::optional<std::filesystem::path> blob_path;
+
+    auto blob_path_it = properties.find(ov::genai::blob_path.name());
+    if (blob_path_it != properties.end()) {
+        blob_path = blob_path_it->second.as<std::filesystem::path>();
+        OPENVINO_ASSERT(!blob_path->empty(), ov::genai::blob_path.name(), " property is empty");
+        properties.erase(blob_path_it);
+    }
+
+    return {properties, blob_path};
+}
+
+ov::CompiledModel import_model(const std::filesystem::path& blob_path,
+                               const std::string& device,
+                               const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(!blob_path.empty(), "blob path is empty");
+    ov::Tensor blob_tensor = ov::read_tensor_data(blob_path);
+    return ov::genai::utils::singleton_core().import_model(blob_tensor, device, properties);
+}
+
+void export_model(ov::CompiledModel& compiled_model, const std::filesystem::path& blob_path) {
+    OPENVINO_ASSERT(!blob_path.empty(), "blob path is empty");
+
+    std::filesystem::create_directories(blob_path.parent_path());
+
+    std::ofstream out(blob_path, std::ios::out | std::ios::binary);
+    OPENVINO_ASSERT(out.is_open(), "Cannot open file to write: " + blob_path.string());
+    compiled_model.export_model(out);
+    out.close();
 }
 
 }  // namespace utils

@@ -2,36 +2,29 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import sys
-import datasets
 import pytest
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+import datasets
 from tqdm import tqdm
 
-from openvino_genai import ContinuousBatchingPipeline, SchedulerConfig, GenerationConfig, CacheEvictionConfig, AggregationMode, SparseAttentionMode
+from openvino_genai import ContinuousBatchingPipeline, GenerationConfig, CacheEvictionConfig, AggregationMode
 
 from utils.ov_genai_pipelines import PipelineType, generate_and_compare
-from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
 from utils.constants import get_default_llm_properties
 from utils.hugging_face import download_and_convert_model
 from data.test_dataset import get_test_dataset
+from kv_cache_eviction_utils import get_scheduler_config
+from utils.longbench import dataset2maxlen, evaluate, preprocess_prompt, post_process_pred
 
 
 def load_prompts_dataset(file_name : str) -> dict[str, list[str]]:
-    TESTS_ROOT = Path(__file__).parent
+    TESTS_ROOT = Path(__file__).parent.parent
     file_path = TESTS_ROOT / 'data' / file_name
     with open(file_path, 'r', encoding="utf-8") as f:
         return {"prompts": [s for s in f]}
 
-def get_scheduler_config(num_kv_blocks: int) -> SchedulerConfig:
-    scheduler_config = SchedulerConfig()
-    scheduler_config.num_kv_blocks = num_kv_blocks
-    scheduler_config.dynamic_split_fuse = True
-    scheduler_config.max_num_batched_tokens = 256
-    scheduler_config.max_num_seqs = 256
-    scheduler_config.use_cache_eviction = False
-    return scheduler_config
 
 @dataclass
 class CacheOptTestStruct:
@@ -48,7 +41,6 @@ class CacheOptTestStruct:
 
 SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32, max_cache_size=96, aggregation_mode=AggregationMode.NORM_SUM)
 LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=128, max_cache_size=672, aggregation_mode=AggregationMode.NORM_SUM)
-
 
 @pytest.mark.precommit
 @pytest.mark.skipif(
@@ -266,3 +258,4 @@ def test_optimized_generation_longbench(test_struct):
     assert ref_score - score <= test_struct.threshold
     assert max_optimization_ratio >= test_struct.max_cache_usage_optimization_ratio
     assert avg_optimization_ratio >= test_struct.avg_cache_usage_optimization_ratio
+

@@ -8,6 +8,7 @@ from importlib.resources import files
 from .registry import register_evaluator, BaseEvaluator
 from .whowhat_metrics import TextDivergency, TextSimilarity
 from .utils import patch_awq_for_inference, get_ignore_parameters_flag
+import inspect
 
 PROMPTS_FILE = 'text_prompts.yaml'
 LONG_PROMPTS_FILE = 'text_long_prompts.yaml'
@@ -69,6 +70,9 @@ class TextEvaluator(BaseEvaluator):
         # Take language ground truth if no base model provided
         if self.language is None and "language" in self.gt_data.columns:
             self.language = self.gt_data["language"].values[0]
+
+        if "prompt_length_type" in self.gt_data.columns:
+            self.long_prompt = self.gt_data["prompt_length_type"].values[0] == 'long'
 
         self.similarity = None
         self.divergency = None
@@ -141,6 +145,9 @@ class TextEvaluator(BaseEvaluator):
             else:
                 inputs = self.tokenizer(prompt, return_tensors="pt").to(device)
 
+            if 'token_type_ids' in inputs and 'token_type_ids' not in list(inspect.signature(model.forward).parameters.keys()):
+                inputs.pop('token_type_ids')
+
             if is_awq:
                 with patch_awq_for_inference(is_awq):
                     tokens = model.generate(**inputs, do_sample=False, max_new_tokens=max_new_tokens, **get_ignore_parameters_flag())
@@ -210,5 +217,6 @@ class TextEvaluator(BaseEvaluator):
         res_data = {"prompts": list(prompts), "answers": answers}
         df = pd.DataFrame(res_data)
         df["language"] = self.language
+        df["prompt_length_type"] = 'long' if self.long_prompt else 'short'
 
         return df

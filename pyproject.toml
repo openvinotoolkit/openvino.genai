@@ -1,6 +1,6 @@
 [project]
 name = "openvino-genai"
-version = "2025.3.0.0"
+version = "2025.4.0.0"
 description = "Library of the most popular Generative AI model pipelines, optimized execution methods, and samples"
 requires-python = ">=3.9"
 readme = { file = "src/README.md", content-type="text/markdown" }
@@ -30,7 +30,7 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython"
 ]
 dependencies = [
-    "openvino_tokenizers~=2025.3.0.0.dev"
+    "openvino_tokenizers~=2025.4.0.0.dev"
 ]
 [project.optional-dependencies]
 testing = ["pytest>=6.0"]
@@ -53,8 +53,8 @@ options = {"ENABLE_PYTHON" = "ON", "BUILD_TOKENIZERS" = "OFF", "ENABLE_SAMPLES" 
 
 [build-system]
 requires = [
-    "py-build-cmake==0.4.3",
-    "openvino~=2025.3.0.0.dev",
+    "py-build-cmake==0.5.0",
+    "openvino~=2025.4.0.0.dev",
     "pybind11-stubgen==2.5.5",
     "cmake~=3.23.0; platform_system != 'Darwin' or platform_machine == 'x86_64'",
     "cmake~=3.24.0; platform_system == 'Darwin' and platform_machine == 'arm64'",

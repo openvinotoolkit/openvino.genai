@@ -483,7 +483,9 @@ std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& 
         {0, 1}  // Every match emits two values: whole match and submatch
     }; iter != std::sregex_token_iterator{}; ++iter) {
         if (is_submatch) {
-            tokenized.push_back(std::stoul(iter->str()) - 1);
+            size_t idx = std::stoul(iter->str());
+            OPENVINO_ASSERT(idx != 0);
+            tokenized.push_back(idx - 1);
         } else {
             std::string regular_text{prefix_begin, iter->first};
             if (!regular_text.empty()) {
@@ -666,7 +668,7 @@ InputsEmbedderPhi3V::InputsEmbedderPhi3V(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedderPhi3V::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormlizedPrompt InputsEmbedderPhi3V::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     return {phi_utils::normalize_prompt(prompt, base_id, images.size(), NATIVE_PATTERN, write_native), {}};
 }
 

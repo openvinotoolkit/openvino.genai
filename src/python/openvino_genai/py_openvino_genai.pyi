@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__: list[str] = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -241,6 +241,13 @@ class AutoencoderKL:
         ...
     def encode(self, image: openvino._pyopenvino.Tensor, generator: Generator) -> openvino._pyopenvino.Tensor:
         ...
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
+        """
+                        Exports compiled models to a specified directory. Can significantly reduce model load time, especially for large models.
+                        export_path (os.PathLike): A path to a directory to export compiled models to.
+        
+                        Use `blob_path` property to load previously exported models.
+        """
     def get_config(self) -> AutoencoderKL.Config:
         ...
     def get_vae_scale_factor(self) -> int:
@@ -295,6 +302,13 @@ class CLIPTextModel:
                         Compiles the model.
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
+        """
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
+        """
+                        Exports compiled model to a specified directory. Can significantly reduce model load time, especially for large models.
+                        export_path (os.PathLike): A path to a directory to export compiled model to.
+        
+                        Use `blob_path` property to load previously exported models.
         """
     def get_config(self) -> CLIPTextModel.Config:
         ...
@@ -359,7 +373,8 @@ class CacheEvictionConfig:
     """
     aggregation_mode: AggregationMode
     apply_rotation: bool
-    def __init__(self, start_size: typing.SupportsInt, recent_size: typing.SupportsInt, max_cache_size: typing.SupportsInt, aggregation_mode: AggregationMode, apply_rotation: bool = False, snapkv_window_size: typing.SupportsInt = 8) -> None:
+    kvcrush_config: KVCrushConfig
+    def __init__(self, start_size: typing.SupportsInt, recent_size: typing.SupportsInt, max_cache_size: typing.SupportsInt, aggregation_mode: AggregationMode, apply_rotation: bool = False, snapkv_window_size: typing.SupportsInt = 8, kvcrush_config: typing.Any = None) -> None:
         ...
     def get_evictable_size(self) -> int:
         ...
@@ -411,6 +426,9 @@ class ContinuousBatchingPipeline:
     def add_request(self, request_id: typing.SupportsInt, prompt: str, generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
+    def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig) -> GenerationHandle:
+        ...
+    @typing.overload
     def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig) -> GenerationHandle:
         ...
     def finish_chat(self) -> None:
@@ -423,6 +441,9 @@ class ContinuousBatchingPipeline:
         ...
     @typing.overload
     def generate(self, prompt: str, generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
+        ...
+    @typing.overload
+    def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
     @typing.overload
     def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
@@ -557,20 +578,24 @@ class ExtendedPerfMetrics:
     
         Holds performance metrics for each generate call.
     
-        PerfMetrics holds fields with mean and standard deviations for the following metrics:
+        PerfMetrics holds the following metrics with mean and standard deviations:
         - Time To the First Token (TTFT), ms
         - Time per Output Token (TPOT), ms/token
+        - Inference time per Output Token (IPOT), ms/token
         - Generate total duration, ms
+        - Inference duration, ms
         - Tokenization duration, ms
         - Detokenization duration, ms
         - Throughput, tokens/s
     
-        Additional fields include:
+        Additional metrics include:
         - Load time, ms
         - Number of generated tokens
         - Number of tokens in the input prompt
+        - Time to initialize grammar compiler for each backend, ms
+        - Time to compile grammar, ms
     
-        Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+        Preferable way to access metrics is via getter methods. Getter methods calculate mean and std values from raw_metrics and return pairs.
         If mean and std were already calculated, getters return cached values.
     
         :param get_load_time: Returns the load time in milliseconds.
@@ -588,8 +613,14 @@ class ExtendedPerfMetrics:
         :param get_tpot: Returns the mean and standard deviation of TPOT in milliseconds.
         :type get_tpot: MeanStdPair
     
+        :param get_ipot: Returns the mean and standard deviation of IPOT in milliseconds.
+        :type get_ipot: MeanStdPair
+    
         :param get_throughput: Returns the mean and standard deviation of throughput in tokens per second.
         :type get_throughput: MeanStdPair
+    
+        :param get_inference_duration: Returns the mean and standard deviation of the time spent on model inference during generate call in milliseconds.
+        :type get_inference_duration: MeanStdPair
     
         :param get_generate_duration: Returns the mean and standard deviation of generate durations in milliseconds.
         :type get_generate_duration: MeanStdPair
@@ -1445,6 +1476,86 @@ class InpaintingPipeline:
         ...
     def set_scheduler(self, scheduler: Scheduler) -> None:
         ...
+class KVCrushAnchorPointMode:
+    """
+    Represents the anchor point types for KVCrush cache eviction
+                      :param KVCrushAnchorPointMode.RANDOM: Random binary vector will be used as anchor point
+                      :param KVCrushAnchorPointMode.ZEROS: Vector of all zeros will be used as anchor point
+                      :param KVCrushAnchorPointMode.ONES: Vector of all ones will be used as anchor point
+                      :param KVCrushAnchorPointMode.MEAN: Mean of indicator feature vector to be used as anchor point
+                      :param KVCrushAnchorPointMode.ALTERNATE: Alternating 0s and 1s will be used as anchor point
+    
+    Members:
+    
+      RANDOM
+    
+      ZEROS
+    
+      ONES
+    
+      MEAN
+    
+      ALTERNATE
+    """
+    ALTERNATE: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ALTERNATE: 4>
+    MEAN: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.MEAN: 3>
+    ONES: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ONES: 2>
+    RANDOM: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.RANDOM: 0>
+    ZEROS: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ZEROS: 1>
+    __members__: typing.ClassVar[dict[str, KVCrushAnchorPointMode]]  # value = {'RANDOM': <KVCrushAnchorPointMode.RANDOM: 0>, 'ZEROS': <KVCrushAnchorPointMode.ZEROS: 1>, 'ONES': <KVCrushAnchorPointMode.ONES: 2>, 'MEAN': <KVCrushAnchorPointMode.MEAN: 3>, 'ALTERNATE': <KVCrushAnchorPointMode.ALTERNATE: 4>}
+    def __eq__(self, other: typing.Any) -> bool:
+        ...
+    def __getstate__(self) -> int:
+        ...
+    def __hash__(self) -> int:
+        ...
+    def __index__(self) -> int:
+        ...
+    def __init__(self, value: typing.SupportsInt) -> None:
+        ...
+    def __int__(self) -> int:
+        ...
+    def __ne__(self, other: typing.Any) -> bool:
+        ...
+    def __repr__(self) -> str:
+        ...
+    def __setstate__(self, state: typing.SupportsInt) -> None:
+        ...
+    def __str__(self) -> str:
+        ...
+    @property
+    def name(self) -> str:
+        ...
+    @property
+    def value(self) -> int:
+        ...
+class KVCrushConfig:
+    """
+    Configuration for KVCrush cache eviction algorithm
+    """
+    anchor_point_mode: KVCrushAnchorPointMode
+    @typing.overload
+    def __init__(self) -> None:
+        """
+        Default constructor
+        """
+    @typing.overload
+    def __init__(self, budget: typing.SupportsInt, anchor_point_mode: KVCrushAnchorPointMode = ..., rng_seed: typing.SupportsInt = 0) -> None:
+        """
+        Constructor with budget, anchor point mode, and RNG seed
+        """
+    @property
+    def budget(self) -> int:
+        ...
+    @budget.setter
+    def budget(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def rng_seed(self) -> int:
+        ...
+    @rng_seed.setter
+    def rng_seed(self, arg0: typing.SupportsInt) -> None:
+        ...
 class LLMPipeline:
     """
     This class is used for generation with LLMs
@@ -1635,20 +1746,24 @@ class PerfMetrics:
     
         Holds performance metrics for each generate call.
     
-        PerfMetrics holds fields with mean and standard deviations for the following metrics:
+        PerfMetrics holds the following metrics with mean and standard deviations:
         - Time To the First Token (TTFT), ms
         - Time per Output Token (TPOT), ms/token
+        - Inference time per Output Token (IPOT), ms/token
         - Generate total duration, ms
+        - Inference duration, ms
         - Tokenization duration, ms
         - Detokenization duration, ms
         - Throughput, tokens/s
     
-        Additional fields include:
+        Additional metrics include:
         - Load time, ms
         - Number of generated tokens
         - Number of tokens in the input prompt
+        - Time to initialize grammar compiler for each backend, ms
+        - Time to compile grammar, ms
     
-        Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
+        Preferable way to access metrics is via getter methods. Getter methods calculate mean and std values from raw_metrics and return pairs.
         If mean and std were already calculated, getters return cached values.
     
         :param get_load_time: Returns the load time in milliseconds.
@@ -1666,8 +1781,14 @@ class PerfMetrics:
         :param get_tpot: Returns the mean and standard deviation of TPOT in milliseconds.
         :type get_tpot: MeanStdPair
     
+        :param get_ipot: Returns the mean and standard deviation of IPOT in milliseconds.
+        :type get_ipot: MeanStdPair
+    
         :param get_throughput: Returns the mean and standard deviation of throughput in tokens per second.
         :type get_throughput: MeanStdPair
+    
+        :param get_inference_duration: Returns the mean and standard deviation of the time spent on model inference during generate call in milliseconds.
+        :type get_inference_duration: MeanStdPair
     
         :param get_generate_duration: Returns the mean and standard deviation of generate durations in milliseconds.
         :type get_generate_duration: MeanStdPair
@@ -2497,10 +2618,78 @@ class StructuredOutputConfig:
         Structured output parameters:
         json_schema:           if set, the output will be a JSON string constraint by the specified json-schema.
         regex:          if set, the output will be constraint by specified regex.
-        grammar:        if set, the output will be constraint by specified grammar.
+        grammar:        if set, the output will be constraint by specified EBNF grammar.
         structural_tags_config: if set, the output will be constraint by specified structural tags configuration.
-    
+        compound_grammar:
+            if set, the output will be constraint by specified compound grammar.
+            Compound grammar is a combination of multiple grammars that can be used to generate structured outputs.
+            It allows for more complex and flexible structured output generation.
+            The compound grammar a Union or Concat of several grammars, where each grammar can be a JSON schema, regex, EBNF, Union or Concat.
     """
+    class Concat:
+        left: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
+        right: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
+        @staticmethod
+        def __new__(arg0: typing.Any, arg1: typing.Any, arg2: typing.Any) -> StructuredOutputConfig.Concat:
+            """
+            Concat combines two grammars sequentially, e.g. "A B" means A followed by B
+            """
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+    class EBNF:
+        value: str
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self, arg0: str) -> None:
+            """
+            EBNF grammar building block for compound grammar configuration.
+            """
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+    class JSONSchema:
+        value: str
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self, arg0: str) -> None:
+            """
+            JSON schema building block for compound grammar configuration.
+            """
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+    class Regex:
+        value: str
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self, arg0: str) -> None:
+            """
+            Regex building block for compound grammar configuration.
+            """
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+    class Union:
+        left: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
+        right: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
+        @staticmethod
+        def __new__(arg0: typing.Any, arg1: typing.Any, arg2: typing.Any) -> StructuredOutputConfig.Union:
+            """
+            Union combines two grammars in parallel, e.g. "A | B" means either A or B
+            """
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
     @typing.overload
     def __init__(self) -> None:
         """
@@ -2512,6 +2701,14 @@ class StructuredOutputConfig:
         Constructor that initializes the structured output configuration with kwargs.
         """
     def __repr__(self) -> str:
+        ...
+    @property
+    def compound_grammar(self) -> openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | None:
+        """
+        Compound grammar for structured output generation
+        """
+    @compound_grammar.setter
+    def compound_grammar(self, arg0: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | None) -> None:
         ...
     @property
     def grammar(self) -> str | None:
@@ -2661,6 +2858,13 @@ class Text2ImagePipeline:
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
+        """
+                        Exports compiled models to a specified directory. Can significantly reduce model load time, especially for large models.
+                        export_path (os.PathLike): A path to a directory to export compiled models to.
+        
+                        Use `blob_path` property to load previously exported models.
+        """
     def generate(self, prompt: str, **kwargs) -> openvino._pyopenvino.Tensor:
         """
             Generates images for text-to-image models.
@@ -2811,6 +3015,13 @@ class TextEmbeddingPipeline:
         Attributes:
             max_length (int, optional):
                 Maximum length of tokens passed to the embedding model.
+            pad_to_max_length (bool, optional):
+                If 'True', model input tensors are padded to the maximum length.
+            batch_size (int, optional):
+                Batch size for the embedding model.
+                Useful for database population. If set, the pipeline will fix model shape for inference optimization.
+                Number of documents passed to pipeline should be equal to batch_size.
+                For query embeddings, batch_size should be set to 1 or not set.
             pooling_type (TextEmbeddingPipeline.PoolingType, optional):
                 Pooling strategy applied to the model output tensor. Defaults to PoolingType.CLS.
             normalize (bool, optional):
@@ -2819,9 +3030,13 @@ class TextEmbeddingPipeline:
                 Instruction to use for embedding a query.
             embed_instruction (str, optional):
                 Instruction to use for embedding a document.
+            padding_side (str, optional):
+                Side to use for padding "left" or "right"
         """
         embed_instruction: str | None
         normalize: bool
+        pad_to_max_length: bool | None
+        padding_side: str | None
         pooling_type: TextEmbeddingPipeline.PoolingType
         query_instruction: str | None
         @typing.overload
@@ -2829,6 +3044,16 @@ class TextEmbeddingPipeline:
             ...
         @typing.overload
         def __init__(self, **kwargs) -> None:
+            ...
+        def validate(self) -> None:
+            """
+            Checks that are no conflicting parameters. Raises exception if config is invalid.
+            """
+        @property
+        def batch_size(self) -> int | None:
+            ...
+        @batch_size.setter
+        def batch_size(self, arg0: typing.SupportsInt | None) -> None:
             ...
         @property
         def max_length(self) -> int | None:
@@ -2843,10 +3068,13 @@ class TextEmbeddingPipeline:
           CLS : First token embeddings
         
           MEAN : The average of all token embeddings
+        
+          LAST_TOKEN : Last token embeddings
         """
         CLS: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.CLS: 0>
+        LAST_TOKEN: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.LAST_TOKEN: 2>
         MEAN: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.MEAN: 1>
-        __members__: typing.ClassVar[dict[str, TextEmbeddingPipeline.PoolingType]]  # value = {'CLS': <PoolingType.CLS: 0>, 'MEAN': <PoolingType.MEAN: 1>}
+        __members__: typing.ClassVar[dict[str, TextEmbeddingPipeline.PoolingType]]  # value = {'CLS': <PoolingType.CLS: 0>, 'MEAN': <PoolingType.MEAN: 1>, 'LAST_TOKEN': <PoolingType.LAST_TOKEN: 2>}
         def __eq__(self, other: typing.Any) -> bool:
             ...
         def __getstate__(self) -> int:
@@ -2964,9 +3192,9 @@ class TextStreamer(StreamerBase):
     
     tokenizer: Tokenizer object to decode tokens into text.
     callback: User-defined callback function to process the decoded text, callback should return either boolean flag or StreamingStatus.
-    
+    detokenization_params: AnyMap with detokenization parameters, e.g. ov::genai::skip_special_tokens(...)
     """
-    def __init__(self, tokenizer: Tokenizer, callback: collections.abc.Callable[[str], bool | openvino_genai.py_openvino_genai.StreamingStatus]) -> None:
+    def __init__(self, tokenizer: Tokenizer, callback: collections.abc.Callable[[str], bool | openvino_genai.py_openvino_genai.StreamingStatus], detokenization_params: collections.abc.Mapping[str, typing.Any] = {}) -> None:
         ...
     def end(self) -> None:
         ...
@@ -2998,9 +3226,9 @@ class Tokenizer:
     @typing.overload
     def __init__(self, tokenizer_model: str, tokenizer_weights: openvino._pyopenvino.Tensor, detokenizer_model: str, detokenizer_weights: openvino._pyopenvino.Tensor, **kwargs) -> None:
         ...
-    def apply_chat_template(self, history: collections.abc.Sequence[collections.abc.Mapping[str, str]], add_generation_prompt: bool, chat_template: str = '') -> str:
+    def apply_chat_template(self, history: collections.abc.Sequence[typing.Any], add_generation_prompt: bool, chat_template: str = '', tools: collections.abc.Sequence[typing.Any] = [], extra_context: typing.Any = {}) -> str:
         """
-        Embeds input prompts with special tags for a chat scenario.
+        Applies a chat template to format chat history into a prompt string.
         """
     @typing.overload
     def decode(self, tokens: collections.abc.Sequence[typing.SupportsInt], skip_special_tokens: bool = True) -> str:
@@ -3169,6 +3397,13 @@ class UNet2DConditionModel:
         """
     def do_classifier_free_guidance(self, guidance_scale: typing.SupportsFloat) -> bool:
         ...
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
+        """
+                        Exports compiled model to a specified directory. Can significantly reduce model load time, especially for large models.
+                        export_path (os.PathLike): A path to a directory to export compiled model to.
+        
+                        Use `blob_path` property to load previously exported models.
+        """
     def get_config(self) -> UNet2DConditionModel.Config:
         ...
     def infer(self, sample: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
@@ -3247,6 +3482,50 @@ class VLMPipeline:
     def finish_chat(self) -> None:
         ...
     @typing.overload
+    def generate(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
+        """
+            Generates sequences for VLMs.
+        
+            :param prompt: input prompt
+            :type prompt: str
+            The prompt can contain <ov_genai_image_i> with i replaced with
+            an actual zero based index to refer to an image. Reference to
+            images used in previous prompts isn't implemented.
+            A model's native image tag can be used instead of
+            <ov_genai_image_i>. These tags are:
+            InternVL2: <image>\\n
+            llava-1.5-7b-hf: <image>
+            LLaVA-NeXT: <image>
+            LLaVa-NeXT-Video: <image>
+            nanoLLaVA: <image>\\n
+            nanoLLaVA-1.5: <image>\\n
+            MiniCPM-V-2_6: (<image>./</image>)\\n
+            Phi-3-vision: <|image_i|>\\n - the index starts with one
+            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
+            Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
+            gemma-3-4b-it: <start_of_image>
+            Model's native video tag can be used to refer to a video:
+            LLaVa-NeXT-Video: <video>
+            If the prompt doesn't contain image or video tags, but images or videos are
+            provided, the tags are prepended to the prompt.
+        
+            :param images: image or list of images
+            :type images: list[ov.Tensor] or ov.Tensor
+        
+            :param generation_config: generation_config
+            :type generation_config: GenerationConfig or a dict
+        
+            :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
+            :type : Callable[[str], bool], ov.genai.StreamerBase
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
+            :type : dict
+        
+            :return: return results in decoded form
+            :rtype: VLMDecodedResults
+        """
+    @typing.overload
     def generate(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
@@ -3261,13 +3540,18 @@ class VLMPipeline:
             InternVL2: <image>\\n
             llava-1.5-7b-hf: <image>
             LLaVA-NeXT: <image>
+            LLaVa-NeXT-Video: <image>
+            nanoLLaVA: <image>\\n
+            nanoLLaVA-1.5: <image>\\n
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             gemma-3-4b-it: <start_of_image>
-            If the prompt doesn't contain image tags, but images are
+            Model's native video tag can be used to refer to a video:
+            LLaVa-NeXT-Video: <video>
+            If the prompt doesn't contain image or video tags, but images or videos are
             provided, the tags are prepended to the prompt.
         
             :param images: image or list of images
@@ -3300,13 +3584,18 @@ class VLMPipeline:
             InternVL2: <image>\\n
             llava-1.5-7b-hf: <image>
             LLaVA-NeXT: <image>
+            LLaVa-NeXT-Video: <image>
+            nanoLLaVA: <image>\\n
+            nanoLLaVA-1.5: <image>\\n
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             gemma-3-4b-it: <start_of_image>
-            If the prompt doesn't contain image tags, but images are
+            Model's native video tag can be used to refer to a video:
+            LLaVa-NeXT-Video: <video>
+            If the prompt doesn't contain image or video tags, but images or videos are
             provided, the tags are prepended to the prompt.
         
             :param images: image or list of images
@@ -3338,13 +3627,18 @@ class VLMPipeline:
             InternVL2: <image>\\n
             llava-1.5-7b-hf: <image>
             LLaVA-NeXT: <image>
+            LLaVa-NeXT-Video: <image>
+            nanoLLaVA: <image>\\n
+            nanoLLaVA-1.5: <image>\\n
             MiniCPM-V-2_6: (<image>./</image>)\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             gemma-3-4b-it: <start_of_image>
-            If the prompt doesn't contain image tags, but images are
+            Model's native video tag can be used to refer to a video:
+            LLaVa-NeXT-Video: <video>
+            If the prompt doesn't contain image or video tags, but images or videos are
             provided, the tags are prepended to the prompt.
         
             :type prompt: str

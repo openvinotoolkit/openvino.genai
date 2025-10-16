@@ -386,6 +386,17 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: 'GptOssForCausalLM',
+    models: [
+      {
+        name: 'GPT-OSS',
+        links: [
+          'https://huggingface.co/openai/gpt-oss-20b',
+        ],
+      },
+    ],
+  },
+  {
     architecture: 'GraniteForCausalLM',
     models: [
       {
@@ -553,6 +564,8 @@ export const LLM_MODELS: LLMModelType[] = [
           'https://huggingface.co/openbmb/MiniCPM-2B-dpo-fp32',
           'https://huggingface.co/openbmb/MiniCPM-2B-sft-bf16',
           'https://huggingface.co/openbmb/MiniCPM-2B-dpo-bf16',
+          'https://huggingface.co/openbmb/MiniCPM4-0.5B',
+          'https://huggingface.co/openbmb/MiniCPM4-8B',
         ],
       },
     ],

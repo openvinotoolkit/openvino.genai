@@ -9,6 +9,7 @@ import openvino
 import openvino.properties.hint as hints
 import pytest
 from data.models import get_models_list
+from data.tokenizer_configs import get_tokenizer_configs
 from openvino_genai import Tokenizer
 from openvino_tokenizers import convert_tokenizer
 from transformers import AutoTokenizer
@@ -42,10 +43,7 @@ def get_chat_templates():
         "alexsobolev/IcaroLM",  # jinja2.exceptions.UndefinedError: 'dict object' has no attribute 'value'
         "AliAbdelrasheed/maqa_llama_4bit",  # jinja2.exceptions.UndefinedError: 'dict object' has no attribute 'from'
         "stephenlzc/Mistral-7B-v0.3-Chinese-Chat-uncensored",  # jinja2.exceptions.UndefinedError: 'system_message' is undefined
-        # TODO: Need to support chat templates in more models: CVS-145963
     }
-
-    from data.tokenizer_configs import get_tokenizer_configs
 
     return [(k, v) for k, v in get_tokenizer_configs().items() if k not in skipped_models]
 
@@ -136,6 +134,9 @@ def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_h
     # load hf_tokenizer only to apply chat template to ov_tokenizer later
     _, hf_tokenizer = ov_hf_tokenizers
 
+    if isinstance(tokenizer_config["chat_template"], dict):
+        tokenizer_config["chat_template"] = tokenizer_config["chat_template"]["default"]
+
     hf_full_history_str = hf_tokenizer.apply_chat_template(
         conversation, add_generation_prompt=False, tokenize=False, **tokenizer_config
     )
@@ -144,10 +145,77 @@ def test_apply_chat_template(model_tmp_path, chat_config: tuple[str, dict], ov_h
     ov_tokenizer.set_chat_template(tokenizer_config["chat_template"])
     ov_full_history_str = ov_tokenizer.apply_chat_template(conversation, add_generation_prompt=False)
 
-    if ov_full_history_str != hf_full_history_str:
-        print(f"hf reference: {hf_full_history_str}")
-        print(f"ov_genai out: {ov_full_history_str}")
-    assert ov_full_history_str == hf_full_history_str
+    assert ov_full_history_str == hf_full_history_str, f"HF reference:\n{hf_full_history_str}\nGenAI output:\n{ov_full_history_str}"
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
+@pytest.mark.parametrize("tokenizer_config_model_id", ["google/gemma-3-1b-it"])
+def test_apply_chat_template_nested_content(model_tmp_path, ov_hf_tokenizers, tokenizer_config_model_id):
+    _, hf_tokenizer = ov_hf_tokenizers
+    tokenizer_config = get_tokenizer_configs()[tokenizer_config_model_id] # Model from gated repo, use saved tokenizer config
+
+    messages = [{
+        "role": "user",
+        "content": [
+            { "type": "text", "text": "sample text"},
+            { "type": "image" }
+        ]
+    }]
+
+    add_generation_prompt = True
+    
+    hf_full_history_str = hf_tokenizer.apply_chat_template(
+        messages, add_generation_prompt=add_generation_prompt, tokenize=False, **tokenizer_config
+    )
+
+    genai_tokenizer = load_genai_tokenizer_with_configs([(tokenizer_config, "tokenizer_config.json")], model_tmp_path[1])
+
+    ov_full_history_str = genai_tokenizer.apply_chat_template(
+        messages, add_generation_prompt=add_generation_prompt
+    )
+
+    assert ov_full_history_str == hf_full_history_str, f"HF reference:\n{hf_full_history_str}\nGenAI output:\n{ov_full_history_str}"
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("ov_hf_tokenizers", get_models_list(), indirect=True)
+@pytest.mark.parametrize("tokenizer_config_model_id", ["Qwen/Qwen3-8B-Base"])
+def test_apply_chat_template_with_tools_and_extra_context(model_tmp_path, ov_hf_tokenizers, tokenizer_config_model_id):
+    _, hf_tokenizer = ov_hf_tokenizers
+    tokenizer_config = get_tokenizer_configs()[tokenizer_config_model_id] # Use saved tokenizer config
+
+    tools = [{
+        "type": "function",
+        "function": {
+            "name": "test",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "arg": { "type": "string" }
+                },
+                "required": ["arg"]
+            }
+        }
+    }]
+    # In GenAI order of dict keys is not preserved (sorted alphabetically, due to conversion to AnyMap)
+    tools = [json.loads(json.dumps(tool, sort_keys=True)) for tool in tools]
+
+    add_generation_prompt = True
+
+    extra_context = { "enable_thinking": False }
+    
+    hf_full_history_str = hf_tokenizer.apply_chat_template(
+        conversation, add_generation_prompt=add_generation_prompt, tokenize=False, tools=tools, **extra_context, **tokenizer_config
+    )
+
+    genai_tokenizer = load_genai_tokenizer_with_configs([(tokenizer_config, "tokenizer_config.json")], model_tmp_path[1])
+
+    ov_full_history_str = genai_tokenizer.apply_chat_template(
+        conversation, add_generation_prompt=add_generation_prompt, tools=tools, extra_context=extra_context
+    )
+
+    assert ov_full_history_str == hf_full_history_str, f"HF reference:\n{hf_full_history_str}\nGenAI output:\n{ov_full_history_str}"
 
 
 @pytest.mark.precommit
@@ -165,10 +233,7 @@ def test_non_string_chat_template(hf_ov_genai_models):
 
     ov_full_history_str = genai_tokenzier.apply_chat_template(conversation, add_generation_prompt=False)
 
-    if ov_full_history_str != hf_full_history_str:
-        print(f"hf reference: {hf_full_history_str}")
-        print(f"ov_genai out: {ov_full_history_str}")
-    assert ov_full_history_str == hf_full_history_str
+    assert ov_full_history_str == hf_full_history_str, f"HF reference:\n{hf_full_history_str}\nGenAI output:\n{ov_full_history_str}"
 
 
 @pytest.mark.precommit

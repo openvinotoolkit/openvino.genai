@@ -8,12 +8,8 @@ import numpy as np
 import logging as log
 from pathlib import Path
 from llm_bench_utils.config_class import (
-    DEFAULT_MODEL_CLASSES,
-    USE_CASES,
-    OV_MODEL_CLASSES_MAPPING,
-    PT_MODEL_CLASSES_MAPPING,
     PA_ATTENTION_BACKEND,
-    SDPA_ATTENTION_BACKEND
+    SDPA_ATTENTION_BACKEND,
 )
 import librosa
 
@@ -28,23 +24,19 @@ KNOWN_PRECISIONS = [
     'OV_FP32-4BIT_DEFAULT', 'OV_FP16-4BIT_DEFAULT', 'OV_FP32-4BIT_MAXIMUM', 'OV_FP16-4BIT_MAXIMUM']
 
 
-KNOWN_FRAMEWORKS = ['pytorch', 'ov', 'dldt']
-
-
-OTHER_IGNORE_MODEL_PATH_PARTS = ['compressed_weights']
-
-
 def get_param_from_file(args, input_key):
     is_json_data = False
     data_list = []
     if args['prompt_file'] is None:
         if not isinstance(input_key, (list, tuple)):
             if args[input_key] is None:
-                if args['use_case'] in ['text_gen', 'text_embed', 'text2speech']:
+                if args['use_case'].task in ['text_gen', 'text_embed', 'text2speech']:
                     data_list.append('What is OpenVINO?')
-                elif args['use_case'] == 'code_gen':
+                elif args['use_case'].task in ['text_rerank']:
+                    data_list.append("What are the main features of Intel Core Ultra processors?")
+                elif args['use_case'].task == 'code_gen':
                     data_list.append('def print_hello_world():')
-                elif args['use_case'] == 'image_gen':
+                elif args['use_case'].task == 'image_gen':
                     data_list.append('sailing ship in storm by Leonardo da Vinci')
                 else:
                     raise RuntimeError(f'== {input_key} and prompt file is empty ==')
@@ -58,21 +50,21 @@ def get_param_from_file(args, input_key):
                     else:
                         raise RuntimeError(f'== {input_key} path should not be empty string ==')
         else:
-            if args["use_case"] != "vlm" and args["use_case"] != "image_gen":
+            if args["use_case"].task != "visual_text_gen" and args["use_case"].task != "image_gen":
                 raise RuntimeError("Multiple sources for benchmarking supported for Visual Language Models / Image To Image Models / Inpainting Models")
             data_dict = {}
             if "media" in input_key:
                 if args["media"] is None and args["images"] is None:
-                    if args["use_case"] == "vlm":
+                    if args["use_case"].task == "visual_text_gen":
                         log.warn("Input image is not provided. Only text generation part will be evaluated")
-                    elif args["use_case"] != "image_gen":
+                    elif args["use_case"].task != "image_gen":
                         raise RuntimeError("No input image. ImageToImage/Inpainting Models cannot start generation without one. Please, provide an image.")
                 else:
                     data_dict["media"] = args["media"] if args["media"] is not None else args["images"]
             if args["prompt"] is None:
-                if args["use_case"] == "vlm":
+                if args["use_case"].task == "visual_text_gen":
                     data_dict["prompt"] = "What is OpenVINO?" if data_dict.get("media") is None else "Describe image"
-                elif args['use_case'] == 'image_gen':
+                elif args['use_case'].task == 'image_gen':
                     data_dict["prompt"] = 'sailing ship in storm by Leonardo da Vinci'
             else:
                 data_dict["prompt"] = args["prompt"]
@@ -137,6 +129,11 @@ def analyze_args(args):
     model_args['emb_pooling_type'] = args.embedding_pooling
     model_args['emb_normalize'] = args.embedding_normalize
     model_args["emb_max_length"] = args.embedding_max_length
+    model_args["emb_padding_side"] = args.embedding_padding_side
+    model_args['rerank_max_length'] = args.reranking_max_length
+    model_args["rerank_top_n"] = args.reranking_top_n
+    model_args["rerank_texts"] = args.texts
+    model_args["rerank_texts_file"] = args.texts_file
     model_args["apply_chat_template"] = args.apply_chat_template
 
     optimum = args.optimum
@@ -175,10 +172,13 @@ def analyze_args(args):
         model_framework = 'pt'
     if not model_path.exists():
         raise RuntimeError(f'==Failure FOUND==: Incorrect model path:{model_path}')
+    use_case = None
+    model_name = None
     if model_framework in ('ov', 'pt'):
-        use_case, model_name = get_use_case(args.model)
+        from llm_bench_utils.get_use_case import get_use_case
+        use_case, model_type, model_name = get_use_case(Path(args.model), args.task)
     model_args['use_case'] = use_case
-    if use_case == 'code_gen' and not model_args['prompt'] and not model_args['prompt_file']:
+    if use_case.task == 'code_gen' and not model_args['prompt'] and not model_args['prompt_file']:
         model_args['prompt'] = 'def print_hello_world():'
     model_args['config'] = {}
     if args.load_config is not None:
@@ -188,23 +188,23 @@ def analyze_args(args):
     if model_framework == 'ov':
         set_default_param_for_ov_config(model_args['config'])
         if 'ATTENTION_BACKEND' not in model_args['config'] and not optimum and args.device != "NPU":
-            if use_case in ['text_gen']:
+            if use_case.task in ['text_gen']:
                 model_args['config']['ATTENTION_BACKEND'] = PA_ATTENTION_BACKEND
-            elif use_case in ['vlm']:
+            elif use_case.task in ['visual_text_gen']:
                 model_args['config']['ATTENTION_BACKEND'] = SDPA_ATTENTION_BACKEND
         log.info(f"OV Config={model_args['config']}")
     elif model_framework == 'pt':
         log.info(f"PT Config={model_args['config']}")
-    model_args['model_type'] = get_model_type(model_name, use_case, model_framework)
     model_args['model_name'] = model_name
 
     cb_config = None
     if args.cb_config:
         cb_config = get_config(args.cb_config)
     model_args["cb_config"] = cb_config
-    if args.draft_model and (args.device == "NPU" or model_args['config']['ATTENTION_BACKEND'] != PA_ATTENTION_BACKEND):
-        log.warning("Speculative Decoding is supported only with Page Attention Backend and not supported for NPU device")
-        args.draft_model = None
+    if args.draft_model:
+        if (args.draft_device != "NPU" and args.device != "NPU" and model_args['config']['ATTENTION_BACKEND'] != PA_ATTENTION_BACKEND):
+            log.warning("Speculative Decoding is supported only with Paged Attention Backend for non-NPU devices")
+            args.draft_model = None
     model_args['draft_model'] = args.draft_model
     model_args['draft_device'] = args.draft_device
     draft_cb_config = None
@@ -221,75 +221,7 @@ def analyze_args(args):
     model_args['vocoder_path'] = args.vocoder_path
     if model_args['vocoder_path'] and not Path(model_args['vocoder_path']).exists():
         raise RuntimeError(f'==Failure FOUND==: Incorrect vocoder path:{model_args["vocoder_path"]}')
-
-    return model_path, model_framework, model_args, model_name
-
-
-def get_use_case(model_name_or_path):
-    config_file = Path(model_name_or_path) / "config.json"
-    config = None
-    if config_file.exists():
-        config = json.loads(config_file.read_text())
-    if (Path(model_name_or_path) / "model_index.json").exists():
-        diffusers_config = json.loads((Path(model_name_or_path) / "model_index.json").read_text())
-        pipe_type = diffusers_config.get("_class_name")
-        if pipe_type in ["StableDiffusionPipeline", "StableDiffusionXLPipeline", "StableDiffusion3Pipeline", "StableDiffusionInpaintPipeline",
-                         "StableDiffusionXLInpaintPipeline", "FluxPipeline", "LatentConsistencyModelPipeline"]:
-            return "image_gen", pipe_type.replace("Pipeline", "")
-
-    if config is not None:
-        case, model_name = resolve_complex_model_types(config)
-        if case is not None:
-            log.info(f'==SUCCESS FOUND==: use_case: {case}, model_type: {model_name}')
-            return case, model_name
-        for case, model_ids in USE_CASES.items():
-            for idx, model_id in enumerate(normalize_model_ids(model_ids)):
-                if config.get("model_type").lower().replace('_', '-').startswith(model_id):
-                    log.info(f'==SUCCESS FOUND==: use_case: {case}, model_type: {model_id}')
-                    return case, model_ids[idx]
-
-    case, model_name = get_model_name(model_name_or_path)
-    if case is None:
-        raise RuntimeError('==Failure FOUND==: no use_case found')
-    else:
-        log.info(f'==SUCCESS FOUND==: use_case: {case}, model_Name: {model_name}')
-    return case, model_name
-
-
-def resolve_complex_model_types(config):
-    model_type = config.get("model_type").lower().replace('_', '-')
-    if model_type == "gemma3":
-        return "vlm", model_type
-    if model_type == "gemma3-text":
-        return "text_gen", model_type
-    if model_type in ["phi4mm", "phi4-multimodal"]:
-        return "vlm", model_type
-    if model_type == "llama4":
-        return "vlm", model_type
-    return None, None
-
-
-def get_model_name(model_name_or_path):
-    # try to get use_case from model name
-    path = os.path.abspath(model_name_or_path)
-    model_names = path.split(os.sep)
-    for model_name in reversed(model_names):
-        for case, model_ids in USE_CASES.items():
-            for model_id in model_ids:
-                if model_name.lower().startswith(model_id):
-                    return case, model_name
-    return None, None
-
-
-def get_model_name_with_path_part(model_name_or_path):
-    IGNORE_MODEL_PATH_PARTS = [x.lower() for x in (KNOWN_FRAMEWORKS + KNOWN_PRECISIONS + OTHER_IGNORE_MODEL_PATH_PARTS)]
-    model_path = Path(model_name_or_path)
-    model_name = None
-    for path_part in reversed(model_path.parts):
-        if not path_part.lower() in IGNORE_MODEL_PATH_PARTS:
-            model_name = path_part
-            break
-    return model_name
+    return model_path, model_framework, model_args
 
 
 def get_config(config):
@@ -305,23 +237,6 @@ def get_config(config):
         except Exception:
             raise RuntimeError(f'==Parse config:{config} failure, json format is incorrect ==')
     return ov_config
-
-
-def get_model_type(model_name, use_case, model_framework):
-    default_model_type = DEFAULT_MODEL_CLASSES.get(use_case)
-    if model_framework == 'ov':
-        for cls in OV_MODEL_CLASSES_MAPPING:
-            if cls in model_name.lower():
-                return cls
-    elif model_framework == 'pt':
-        for cls in PT_MODEL_CLASSES_MAPPING:
-            if cls in model_name.lower():
-                return cls
-    return default_model_type
-
-
-def normalize_model_ids(model_ids_list):
-    return [m_id[:-1] if m_id.endswith('_') else m_id for m_id in model_ids_list]
 
 
 def get_ir_conversion_frontend(cur_model_name, model_name_list):

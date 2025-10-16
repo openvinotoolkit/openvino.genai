@@ -14,9 +14,13 @@ namespace ov::genai {
 
 class VisionEncoderQwen2VL : public VisionEncoder {
 public:
-    using VisionEncoder::VisionEncoder;
+    explicit VisionEncoderQwen2VL(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties);
+    explicit VisionEncoderQwen2VL(const ModelsMap& models_map, const std::filesystem::path& config_dir_path, const std::string& device, const ov::AnyMap properties);
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
+    EncodedImage encode_with_imagepreprocess_cpp(const ov::Tensor& image, const ov::AnyMap& config_map);
+    EncodedImage encode_with_imagepreprocess_ov(const ov::Tensor& image, const ov::AnyMap& config_map);
+    bool use_ov_image_preprocess = true; // default use ov image preprocess, control by env IMAGE_PREPROCESS=CPP to use cpp image preprocess
 };
 
 class InputsEmbedderQwen2VL : public InputsEmbedder::IInputsEmbedder {
@@ -43,7 +47,7 @@ public:
 
     void finish_chat() override;
 
-    std::pair<std::string, std::vector<size_t>> normalize_prompt(
+    NormlizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images

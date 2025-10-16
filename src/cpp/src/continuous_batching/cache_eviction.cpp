@@ -220,7 +220,7 @@ namespace ov::genai {
     CacheEvictionAlgorithm::CacheEvictionAlgorithm(const CacheEvictionConfig &eviction_config, size_t block_size,
                                                    size_t num_decoder_layers, size_t max_pool_window_size) :
             m_eviction_config(eviction_config), m_block_size(block_size), m_num_decoder_layers(num_decoder_layers),
-            m_score_manager(block_size, num_decoder_layers, max_pool_window_size, eviction_config.aggregation_mode, eviction_config.get_start_size() / block_size, eviction_config.snapkv_window_size)
+            m_score_manager(block_size, num_decoder_layers, max_pool_window_size, eviction_config.aggregation_mode, eviction_config.get_start_size() / block_size, eviction_config.snapkv_window_size), m_kvcrush_algo(eviction_config.kvcrush_config, block_size)
     {
             OPENVINO_ASSERT(!(m_eviction_config.get_start_size() % m_block_size),
                             "CacheEvictionConfig.start_size in tokens must be a multiple of block size ", m_block_size);
@@ -264,6 +264,38 @@ namespace ov::genai {
             auto scores_for_all_evictable_blocks = get_scores_for_all_evictable_blocks(decoder_layer_idx);
             size_t num_blocks_to_evict = get_num_blocks_to_evict(decoder_layer_idx);
             auto evicted_block_indices = get_indices_of_blocks_to_evict(scores_for_all_evictable_blocks, num_blocks_to_evict);
+
+            // KVCrush: start
+            bool should_apply_kvcrush = (m_eviction_config.kvcrush_config.budget > 0) &&
+                                        (evicted_block_indices.size() >= m_eviction_config.kvcrush_config.budget);
+            if (should_apply_kvcrush) {
+                size_t num_tokens_in_evictable_blocks = scores_for_all_evictable_blocks.size() * m_block_size;
+
+                auto kvcrush_retained_block_indices = m_kvcrush_algo.get_indices_of_blocks_to_retain_using_kvcrush(
+                    num_tokens_in_evictable_blocks,
+                    evicted_block_indices,
+                    m_score_manager.get_scores()[decoder_layer_idx]);
+
+                // Remove the indices in kvcrush_retained_block_indices from evicted_block_indices
+                if (!kvcrush_retained_block_indices.empty()) {
+                    // Convert both vectors to sets for efficient operations
+                    std::unordered_set<std::size_t> retained_set(kvcrush_retained_block_indices.begin(),
+                                                                 kvcrush_retained_block_indices.end());
+
+                    // Create a new vector containing only elements not in retained_set
+                    std::vector<std::size_t> filtered_evicted_indices;
+                    filtered_evicted_indices.reserve(evicted_block_indices.size());
+
+                    for (const auto& idx : evicted_block_indices) {
+                        if (retained_set.find(idx) == retained_set.end()) {
+                            filtered_evicted_indices.push_back(idx);
+                        }
+                    }
+                    // Replace the original vector with the filtered one
+                    evicted_block_indices = std::move(filtered_evicted_indices);
+                }
+            }
+            // KVCrush: end
 
             m_num_evicted_tokens += evicted_block_indices.size() * m_block_size;
 

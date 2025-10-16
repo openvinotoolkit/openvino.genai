@@ -30,7 +30,7 @@ if(UNIX AND NOT (APPLE OR ANDROID OR CYGWIN))
 endif()
 
 project(OpenVINOGenAI
-        VERSION 2025.3.0.0
+        VERSION 2025.4.0.0
         DESCRIPTION "OpenVINO GenAI"
         HOMEPAGE_URL "https://github.com/openvinotoolkit/openvino.genai"
         LANGUAGES CXX C)
@@ -92,7 +92,7 @@ endif()
 
 add_subdirectory(thirdparty)
 add_subdirectory(src)
-if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/samples" AND ENABLE_SAMPLES)
+if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/samples")
     add_subdirectory(samples)
 endif()
 if(EXISTS "${OpenVINOGenAI_SOURCE_DIR}/tools/continuous_batching" AND ENABLE_TOOLS)
