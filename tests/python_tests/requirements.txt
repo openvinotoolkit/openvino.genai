@@ -8,9 +8,6 @@ transformers==4.53.3
 hf_transfer==0.1.9
 gguf==0.17.1
 
-# VLM requirements
-opencv-python
-
 # rag requirements
 langchain_community==0.3.29
 langchain-core==0.3.79

@@ -36,7 +36,6 @@ import sys
 import os
 import numpy as np
 import transformers
-import cv2
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from openvino_genai import (
     VLMPipeline,
@@ -1094,10 +1093,14 @@ def cat_image_32x32(cat_image):
         pytest.param("katuni4ka/tiny-random-qwen2vl", "cat_image_336x336", None, "PA"),
         pytest.param("katuni4ka/tiny-random-qwen2vl", None, "synthetic_video_32x32", "SDPA"),
         pytest.param("katuni4ka/tiny-random-qwen2vl", None, "synthetic_video_32x32", "PA"),
+        pytest.param("katuni4ka/tiny-random-qwen2vl", "cat_image_336x336", "synthetic_video_32x32", "SDPA"),
+        pytest.param("katuni4ka/tiny-random-qwen2vl", "cat_image_336x336", "synthetic_video_32x32", "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", None, "SDPA"),
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", None, "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", None, "synthetic_video_32x32", "SDPA"),
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", None, "synthetic_video_32x32", "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", "synthetic_video_32x32", "SDPA"),
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", "synthetic_video_32x32", "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
         pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", None, "SDPA", marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) if sys.platform == "darwin" else pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", None, "SDPA"),
         pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", None, "PA", marks=pytest.mark.xfail(reason="CVS-171180")),
         pytest.param("qnguyen3/nanoLLaVA", "cat_image_384x384", None, "SDPA"),
