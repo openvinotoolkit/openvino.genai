@@ -229,10 +229,10 @@ void init_generation_config(py::module_& m) {
 
 
     py::class_<StructuralTagItem>(m, "StructuralTagItem", structured_tags_item_docstring)
-        .def(py::init<>(), "Default constructor for StructuralTagItem")
+        .def(py::init<>())
         .def(py::init([](py::kwargs kwargs) {
             return StructuralTagItem(pyutils::kwargs_to_any_map(kwargs));
-        }), "Constructor that initializes the structured tags configuration with kwargs.")
+        }))
         .def_readwrite("begin", &StructuralTagItem::begin, "Begin string for Structural Tag Item")
         .def_readwrite("schema", &StructuralTagItem::schema, "Json schema for Structural Tag Item")
         .def_readwrite("end", &StructuralTagItem::end, "End string for Structural Tag Item")
@@ -246,10 +246,10 @@ void init_generation_config(py::module_& m) {
 
 
     py::class_<StructuralTagsConfig>(m, "StructuralTagsConfig", structured_tags_config_docstring)
-        .def(py::init<>(), "Default constructor for StructuralTagsConfig")
+        .def(py::init<>())
         .def(py::init([](py::kwargs kwargs) {
             return StructuralTagsConfig(pyutils::kwargs_to_any_map(kwargs));
-        }), "Constructor that initializes the structured tags configuration with kwargs.")
+        }))
         .def_readwrite("structural_tags", &StructuralTagsConfig::structural_tags, "List of structural tag items for structured output generation")
         .def_readwrite("triggers", &StructuralTagsConfig::triggers, "List of strings that will trigger generation of structured output")
         .def("__repr__",
@@ -270,36 +270,36 @@ void init_generation_config(py::module_& m) {
     auto tags_with_separator = py::class_<StructuredOutputConfig::TagsWithSeparator, std::shared_ptr<StructuredOutputConfig::TagsWithSeparator>>(structured_output_config, "TagsWithSeparator", tags_with_separator_docstring);
 
     auto regex = py::class_<StructuredOutputConfig::Regex>(structured_output_config, "Regex", regex_docstring)
-        .def(py::init<const std::string&>(), "Regex building block for compound grammar configuration.")
+        .def(py::init<const std::string&>())
         .def_readwrite("value", &StructuredOutputConfig::Regex::value)
         .def("__repr__", [](const StructuredOutputConfig::Regex& self) { return self.to_string(); });
     add_grammar_operators(regex);
 
     auto json_schema = py::class_<StructuredOutputConfig::JSONSchema>(structured_output_config, "JSONSchema", jsonschema_docstring)
-        .def(py::init<const std::string&>(), "JSON schema building block for compound grammar configuration.")
+        .def(py::init<const std::string&>())
         .def_readwrite("value", &StructuredOutputConfig::JSONSchema::value)
         .def("__repr__", [](const StructuredOutputConfig::JSONSchema& self) { return self.to_string(); });
     add_grammar_operators(json_schema);
 
     auto ebnf = py::class_<StructuredOutputConfig::EBNF>(structured_output_config, "EBNF", ebnf_docstring)
-        .def(py::init<const std::string&>(), "EBNF grammar building block for compound grammar configuration.")
+        .def(py::init<const std::string&>())
         .def_readwrite("value", &StructuredOutputConfig::EBNF::value)
         .def("__repr__", [](const StructuredOutputConfig::EBNF& self) { return self.to_string(); });
     add_grammar_operators(ebnf);
 
     auto const_string = py::class_<StructuredOutputConfig::ConstString>(structured_output_config, "ConstString", conststring_docstring)
-        .def(py::init<const std::string&>(), "Constant string building block for compound grammar configuration.")
+        .def(py::init<const std::string&>())
         .def_readwrite("value", &StructuredOutputConfig::ConstString::value)
         .def("__repr__", [](const StructuredOutputConfig::ConstString& self) { return self.to_string(); });
     add_grammar_operators(const_string);
 
     auto any_text = py::class_<StructuredOutputConfig::AnyText>(structured_output_config, "AnyText", anytext_docstring)
-        .def(py::init<>(), "Any text building block for compound grammar configuration.")
+        .def(py::init<>())
         .def("__repr__", [](const StructuredOutputConfig::AnyText& self) { return self.to_string(); });
     add_grammar_operators(any_text);
 
     auto qwen_xml = py::class_<StructuredOutputConfig::QwenXMLParametersFormat>(structured_output_config, "QwenXMLParametersFormat", qwenxml_docstring)
-        .def(py::init<const std::string&>(), "Qwen XML parameters format building block for compound grammar configuration.")
+        .def(py::init<const std::string&>())
         .def_readwrite("json_schema", &StructuredOutputConfig::QwenXMLParametersFormat::json_schema)
         .def("__repr__", [](const StructuredOutputConfig::QwenXMLParametersFormat& self) { return self.to_string(); });
     add_grammar_operators(qwen_xml);
@@ -308,14 +308,12 @@ void init_generation_config(py::module_& m) {
         .def(py::init([](py::iterable elements) {
             return std::make_shared<StructuredOutputConfig::Concat>(
                 collect_structural_tags(elements, "StructuredOutputConfig.Concat"));
-        }), py::arg("elements"),
-        "Concat combines grammar elements from an iterable sequentially, e.g. [A, B, C] means A followed by B followed by C.")
+        }), py::arg("elements"))
         .def(py::init([](py::args args) {
             return std::make_shared<StructuredOutputConfig::Concat>(
                 collect_structural_tags(py::reinterpret_borrow<py::iterable>(args),
                                         "StructuredOutputConfig.Concat"));
-        }),
-        "Concat combines positional grammar elements sequentially, e.g. Concat(A, B, C).")
+        }))
         .def_readwrite("elements", &StructuredOutputConfig::Concat::elements)
         .def("__repr__", [](const StructuredOutputConfig::Concat& self) { return self.to_string(); });
     add_grammar_operators(concat);
@@ -324,22 +322,19 @@ void init_generation_config(py::module_& m) {
         .def(py::init([](py::iterable elements) {
             return std::make_shared<StructuredOutputConfig::Union>(
                 collect_structural_tags(elements, "StructuredOutputConfig.Union"));
-        }), py::arg("elements"),
-        "Union combines grammar elements from an iterable in parallel, e.g. [A, B, C] means A or B or C.")
+        }), py::arg("elements"))
         .def(py::init([](py::args args) {
             return std::make_shared<StructuredOutputConfig::Union>(
                 collect_structural_tags(py::reinterpret_borrow<py::iterable>(args),
                                         "StructuredOutputConfig.Union"));
-        }),
-        "Union combines positional grammar elements in parallel, e.g. Union(A, B, C).")
+        }))
         .def_readwrite("elements", &StructuredOutputConfig::Union::elements)
         .def("__repr__", [](const StructuredOutputConfig::Union& self) { return self.to_string(); });
     add_grammar_operators(union_);
 
     tag
         .def(py::init<const std::string&, StructuredOutputConfig::StructuralTag, const std::string&>(),
-             py::arg("begin"), py::arg("content"), py::arg("end"),
-             "Tag wraps content with begin and end strings")
+             py::arg("begin"), py::arg("content"), py::arg("end"))
         .def_readwrite("begin", &StructuredOutputConfig::Tag::begin)
         .def_readwrite("content", &StructuredOutputConfig::Tag::content)
         .def_readwrite("end", &StructuredOutputConfig::Tag::end)
@@ -348,8 +343,7 @@ void init_generation_config(py::module_& m) {
 
     triggered_tags
         .def(py::init<const std::vector<std::string>&, const std::vector<StructuredOutputConfig::Tag>&, bool, bool>(),
-             py::arg("triggers"), py::arg("tags"), py::arg("at_least_one") = false, py::arg("stop_after_first") = false,
-             "TriggeredTags generates structured tags when trigger strings are encountered")
+             py::arg("triggers"), py::arg("tags"), py::arg("at_least_one") = false, py::arg("stop_after_first") = false)
         .def_readwrite("triggers", &StructuredOutputConfig::TriggeredTags::triggers)
         .def_readwrite("tags", &StructuredOutputConfig::TriggeredTags::tags)
         .def_readwrite("at_least_one", &StructuredOutputConfig::TriggeredTags::at_least_one)
@@ -359,8 +353,7 @@ void init_generation_config(py::module_& m) {
 
     tags_with_separator
         .def(py::init<const std::vector<StructuredOutputConfig::Tag>&, const std::string&, bool, bool>(),
-             py::arg("tags"), py::arg("separator"), py::arg("at_least_one") = false, py::arg("stop_after_first") = false,
-             "TagsWithSeparator generates multiple tags separated by a separator string")
+             py::arg("tags"), py::arg("separator"), py::arg("at_least_one") = false, py::arg("stop_after_first") = false)
         .def_readwrite("tags", &StructuredOutputConfig::TagsWithSeparator::tags)
         .def_readwrite("separator", &StructuredOutputConfig::TagsWithSeparator::separator)
         .def_readwrite("at_least_one", &StructuredOutputConfig::TagsWithSeparator::at_least_one)
@@ -369,10 +362,10 @@ void init_generation_config(py::module_& m) {
     add_grammar_operators(tags_with_separator);
 
     structured_output_config
-        .def(py::init<>(), "Default constructor for StructuredOutputConfig")
+        .def(py::init<>())
         .def(py::init([](py::kwargs kwargs) {
             return StructuredOutputConfig(pyutils::kwargs_to_any_map(kwargs));
-        }), "Constructor that initializes the structured output configuration with kwargs.")
+        }))
         .def_readwrite("json_schema", &StructuredOutputConfig::json_schema, "JSON schema for structured output generation")
         .def_readwrite("regex", &StructuredOutputConfig::regex, "Regular expression for structured output generation")
         .def_readwrite("grammar", &StructuredOutputConfig::grammar, "Grammar for structured output generation")
