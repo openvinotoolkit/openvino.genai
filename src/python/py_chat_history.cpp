@@ -51,9 +51,7 @@ void init_chat_history(py::module_& m) {
         }), py::arg("messages"), R"(Create chat history from a list of message dicts.)")
 
         .def("get_messages", [](const ChatHistory& self) -> py::list {
-            std::string json_string = self.get_messages().to_json_string();
-            py::module_ json_module = py::module_::import("json");
-            return json_module.attr("loads")(json_string);
+            return pyutils::json_container_to_py_object(self.get_messages());
         }, R"(Get all messages as a list of dicts (deep copy).)")
 
         .def("set_messages", [](ChatHistory& self, const py::list& messages) {
@@ -71,9 +69,7 @@ void init_chat_history(py::module_& m) {
             }
             JsonContainer last = self.last().copy();
             self.pop_back();
-            std::string json_string = last.to_json_string();
-            py::module_ json_module = py::module_::import("json");
-            return json_module.attr("loads")(json_string);
+            return pyutils::json_container_to_py_object(last);
         }, R"(Remove and return the last message.)")
 
         .def("clear", &ChatHistory::clear)
@@ -89,9 +85,7 @@ void init_chat_history(py::module_& m) {
         }, py::arg("tools"), R"(Set the tools definitions array.)")
 
         .def("get_tools", [](const ChatHistory& self) -> py::list {
-            std::string json_string = self.get_tools().to_json_string();
-            py::module_ json_module = py::module_::import("json");
-            return json_module.attr("loads")(json_string);
+            return pyutils::json_container_to_py_object(self.get_tools());
         }, R"(Get the tools definitions array.)")
 
         .def("set_extra_context", [](ChatHistory& self, const py::dict& extra_context) {
@@ -99,8 +93,6 @@ void init_chat_history(py::module_& m) {
         }, py::arg("extra_context"), R"(Set the extra context object.)")
 
         .def("get_extra_context", [](const ChatHistory& self) -> py::dict {
-            std::string json_string = self.get_extra_context().to_json_string();
-            py::module_ json_module = py::module_::import("json");
-            return json_module.attr("loads")(json_string);
+            return pyutils::json_container_to_py_object(self.get_extra_context());
         }, R"(Get the extra context object.)");
 }
