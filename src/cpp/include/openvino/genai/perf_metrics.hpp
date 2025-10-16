@@ -126,7 +126,7 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
 
     // Time to initialize grammar compiler for each backend in ms.
     std::map<std::string, float> grammar_compiler_init_times;     
-    SummaryStats grammar_compile_time = {};    // Time to compile grammar in ms.
+    SummaryStats grammar_compile_time;    // Time to compile grammar in ms.
 
     MeanStdPair generate_duration = {0, 0};
     MeanStdPair inference_duration = {0, 0};

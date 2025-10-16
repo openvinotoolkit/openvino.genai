@@ -41,7 +41,7 @@ struct SchedulerConfig {
      * Configuration struct for the cache eviction algorithm. Setting this has effect only if `use_cache_eviction` is
      * set to `true`.
      */
-    CacheEvictionConfig cache_eviction_config = {};
+    CacheEvictionConfig cache_eviction_config;
 
     //
     // vLLM-like settings
@@ -65,7 +65,7 @@ struct SchedulerConfig {
     bool use_sparse_attention = false;
     /** Configuration struct for the sparse attention prefill functionality.
      */
-    SparseAttentionConfig sparse_attention_config = {};
+    SparseAttentionConfig sparse_attention_config;
 
     bool operator==(const SchedulerConfig& other) const {
         return max_num_batched_tokens == other.max_num_batched_tokens && num_kv_blocks == other.num_kv_blocks &&

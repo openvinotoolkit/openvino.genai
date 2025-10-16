@@ -26,9 +26,9 @@ extern const std::string SDPA_BACKEND;
 
 struct ModelDesc {
     std::string device;
-    ov::genai::SchedulerConfig scheduler_config{};
+    ov::genai::SchedulerConfig scheduler_config;
     ov::AnyMap properties;
-    ov::genai::GenerationConfig generation_config{};
+    ov::genai::GenerationConfig generation_config;
     std::shared_ptr<ov::Model> model = nullptr;
     ov::genai::Tokenizer tokenizer;
 
