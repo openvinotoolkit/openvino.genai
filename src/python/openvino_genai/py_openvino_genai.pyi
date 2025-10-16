@@ -2525,14 +2525,10 @@ class StructuralTagItem:
     """
     @typing.overload
     def __init__(self) -> None:
-        """
-        Default constructor for StructuralTagItem
-        """
+        ...
     @typing.overload
     def __init__(self, **kwargs) -> None:
-        """
-        Constructor that initializes the structured tags configuration with kwargs.
-        """
+        ...
     def __repr__(self) -> str:
         ...
     @property
@@ -2582,14 +2578,10 @@ class StructuralTagsConfig:
     """
     @typing.overload
     def __init__(self) -> None:
-        """
-        Default constructor for StructuralTagsConfig
-        """
+        ...
     @typing.overload
     def __init__(self, **kwargs) -> None:
-        """
-        Constructor that initializes the structured tags configuration with kwargs.
-        """
+        ...
     def __repr__(self) -> str:
         ...
     @property
@@ -2626,89 +2618,239 @@ class StructuredOutputConfig:
             It allows for more complex and flexible structured output generation.
             The compound grammar a Union or Concat of several grammars, where each grammar can be a JSON schema, regex, EBNF, Union or Concat.
     """
-    class Concat:
-        left: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
-        right: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
-        @staticmethod
-        def __new__(arg0: typing.Any, arg1: typing.Any, arg2: typing.Any) -> StructuredOutputConfig.Concat:
-            """
-            Concat combines two grammars sequentially, e.g. "A B" means A followed by B
-            """
+    class AnyText:
+        """
+        
+            AnyText structural tag allows any text for the portion of output
+            covered by this tag.
+        """
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self) -> None:
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+    class Concat:
+        """
+        
+            Concat composes multiple structural tags in sequence. Each element
+            must be produced in the given order. Can be used indirectly with + operator.
+        
+            Example: Concat(ConstString("a"), ConstString("b")) produces "ab".
+            ConstString("a") + ConstString("b") is equivalent.
+        """
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        @typing.overload
+        def __init__(self, elements: collections.abc.Iterable) -> None:
+            ...
+        @typing.overload
+        def __init__(self, *args) -> None:
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+        @property
+        def elements(self) -> list[str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator]:
+            ...
+        @elements.setter
+        def elements(self, arg0: collections.abc.Sequence[str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator]) -> None:
+            ...
+    class ConstString:
+        """
+        
+            ConstString structural tag forces the generator to produce exactly
+            the provided constant string value.
+        """
+        value: str
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self, arg0: str) -> None:
             ...
         def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
             ...
     class EBNF:
+        """
+        
+            EBNF structural tag constrains output using an EBNF grammar.
+        """
         value: str
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
         def __init__(self, arg0: str) -> None:
-            """
-            EBNF grammar building block for compound grammar configuration.
-            """
+            ...
         def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
             ...
     class JSONSchema:
+        """
+        
+            JSONSchema structural tag constrains output to a JSON document that
+            must conform to the provided JSON Schema string.
+        """
         value: str
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
         def __init__(self, arg0: str) -> None:
-            """
-            JSON schema building block for compound grammar configuration.
-            """
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+    class QwenXMLParametersFormat:
+        """
+        
+            QwenXMLParametersFormat instructs the generator to output an XML
+            parameters block derived from the provided JSON schema. This is a
+            specialized helper for Qwen-style XML parameter formatting.
+        """
+        json_schema: str
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self, arg0: str) -> None:
+            ...
         def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
             ...
     class Regex:
+        """
+        
+            Regex structural tag constrains output using a regular expression.
+        """
         value: str
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
         def __init__(self, arg0: str) -> None:
-            """
-            Regex building block for compound grammar configuration.
-            """
+            ...
         def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
             ...
-    class Union:
-        left: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
-        right: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
-        @staticmethod
-        def __new__(arg0: typing.Any, arg1: typing.Any, arg2: typing.Any) -> StructuredOutputConfig.Union:
-            """
-            Union combines two grammars in parallel, e.g. "A | B" means either A or B
-            """
+    class Tag:
+        """
+        
+            Tag defines a begin/end wrapper with constrained inner content.
+        
+            The generator will output `begin`, then the `content` (a StructuralTag),
+            and finally `end`.
+        
+            Example: Tag("<think>", AnyText(), "</think>") represents thinking portion of the model output.
+        """
+        begin: str
+        content: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator
+        end: str
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
+        def __init__(self, begin: str, content: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator, end: str) -> None:
+            ...
         def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
+            ...
+    class TagsWithSeparator:
+        """
+        
+            TagsWithSeparator configures generation of a sequence of tags
+            separated by a fixed separator string.
+        
+            Can be used to produce repeated tagged elements like "<f>A</f>;<f>B</f>"
+            where `separator`=";".
+        """
+        at_least_one: bool
+        separator: str
+        stop_after_first: bool
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self, tags: collections.abc.Sequence[StructuredOutputConfig.Tag], separator: str, at_least_one: bool = False, stop_after_first: bool = False) -> None:
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+        @property
+        def tags(self) -> list[StructuredOutputConfig.Tag]:
+            ...
+        @tags.setter
+        def tags(self, arg0: collections.abc.Sequence[StructuredOutputConfig.Tag]) -> None:
+            ...
+    class TriggeredTags:
+        """
+        
+            TriggeredTags associates a set of `triggers` with multiple `tags`.
+        
+            When the model generates any of the trigger strings the structured
+            generation activates to produce configured tags. Flags allow requiring
+            at least one tag and stopping structured generation after the first tag.
+        """
+        at_least_one: bool
+        stop_after_first: bool
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self, triggers: collections.abc.Sequence[str], tags: collections.abc.Sequence[StructuredOutputConfig.Tag], at_least_one: bool = False, stop_after_first: bool = False) -> None:
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+        @property
+        def tags(self) -> list[StructuredOutputConfig.Tag]:
+            ...
+        @tags.setter
+        def tags(self, arg0: collections.abc.Sequence[StructuredOutputConfig.Tag]) -> None:
+            ...
+        @property
+        def triggers(self) -> list[str]:
+            ...
+        @triggers.setter
+        def triggers(self, arg0: collections.abc.Sequence[str]) -> None:
+            ...
+    class Union:
+        """
+        
+            Union composes multiple structural tags as alternatives. The
+            model may produce any one of the provided elements. Can be used indirectly
+            with | operator.
+        """
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        @typing.overload
+        def __init__(self, elements: collections.abc.Iterable) -> None:
+            ...
+        @typing.overload
+        def __init__(self, *args) -> None:
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+        @property
+        def elements(self) -> list[str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator]:
+            ...
+        @elements.setter
+        def elements(self, arg0: collections.abc.Sequence[str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator]) -> None:
             ...
     @typing.overload
     def __init__(self) -> None:
-        """
-        Default constructor for StructuredOutputConfig
-        """
+        ...
     @typing.overload
     def __init__(self, **kwargs) -> None:
-        """
-        Constructor that initializes the structured output configuration with kwargs.
-        """
+        ...
     def __repr__(self) -> str:
         ...
     @property
-    def compound_grammar(self) -> openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | None:
+    def compound_grammar(self) -> str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | None:
         """
         Compound grammar for structured output generation
         """
     @compound_grammar.setter
-    def compound_grammar(self, arg0: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | None) -> None:
+    def compound_grammar(self, arg0: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | None) -> None:
         ...
     @property
     def grammar(self) -> str | None:
@@ -2735,12 +2877,12 @@ class StructuredOutputConfig:
     def regex(self, arg0: str | None) -> None:
         ...
     @property
-    def structural_tags_config(self) -> openvino_genai.py_openvino_genai.StructuralTagsConfig | None:
+    def structural_tags_config(self) -> typing.Any:
         """
-        Configuration for structural tags in structured output generation
+        Configuration for structural tags in structured output generation (can be StructuralTagsConfig or StructuralTag)
         """
     @structural_tags_config.setter
-    def structural_tags_config(self, arg0: openvino_genai.py_openvino_genai.StructuralTagsConfig | None) -> None:
+    def structural_tags_config(self, arg1: typing.Any) -> None:
         ...
 class SummaryStats:
     def __init__(self) -> None:
