@@ -12,10 +12,10 @@
 #include "load_image.h"
 
 // Callback function for streaming results
-ov_genai_streamming_status_e stream_callback(const char* str, void* args) {
+ov_genai_streaming_status_e stream_callback(const char* str, void* args) {
     printf("%s", str);
     fflush(stdout);
-    return OV_GENAI_STREAMMING_STATUS_RUNNING;
+    return OV_GENAI_STREAMING_STATUS_RUNNING;
 }
 
 int main(int argc, char* argv[]) {
