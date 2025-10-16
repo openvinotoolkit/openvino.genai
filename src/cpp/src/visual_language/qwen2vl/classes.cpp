@@ -1314,7 +1314,7 @@ ov::Tensor InputsEmbedderQwen2VL::create_position_ids(
                 }
             }
 
-            next_pos += std::max(llm_grid_h, llm_grid_w);
+            next_pos += std::max(((llm_grid_t - 1) * tokens_per_second + 1), std::max(llm_grid_h, llm_grid_w));
             st = ed_image;
             grid_idx++;
         }
