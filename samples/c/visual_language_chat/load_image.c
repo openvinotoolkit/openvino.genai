@@ -140,7 +140,7 @@ const ov_tensor_t** load_images(const char* image_path, size_t* tensor_count) {
         return NULL;
     }
     
-    ov_tensor_t** tensors = (ov_tensor_t**)malloc(sizeof(ov_tensor_t*));
+    const ov_tensor_t** tensors = (ov_tensor_t**)malloc(sizeof(ov_tensor_t*));
     if (!tensors) {
         fprintf(stderr, "Error: Failed to allocate memory for single tensor\n");
         free_tensor(tensor);
