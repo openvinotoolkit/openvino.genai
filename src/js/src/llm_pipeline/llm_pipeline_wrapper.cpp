@@ -125,7 +125,7 @@ Napi::Value LLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
 
     try {
         ov::genai::StringInputs prompt = js_to_cpp<ov::genai::StringInputs>(env, info[0]);
-        auto generation_config = to_anyMap(info.Env(), info[2]);
+        auto generation_config = js_to_cpp<ov::AnyMap>(info.Env(), info[2]);
         ov::AnyMap options;
         if (info.Length() == 4) {
             options = to_anyMap(info.Env(), info[3]);
@@ -167,9 +167,13 @@ Napi::Value LLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
 
 Napi::Value LLMPipelineWrapper::start_chat(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
-    Napi::Function callback = info[0].As<Napi::Function>();
+    std::string system_message = "";
+    if (info[0].IsString()) {
+        system_message = info[0].As<Napi::String>().Utf8Value();
+    }
+    Napi::Function callback = info[1].As<Napi::Function>();
 
-    StartChatWorker* asyncWorker = new StartChatWorker(callback, this->pipe);
+    StartChatWorker* asyncWorker = new StartChatWorker(callback, this->pipe, system_message);
     asyncWorker->Queue();
 
     return info.Env().Undefined();

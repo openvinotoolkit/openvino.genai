@@ -31,6 +31,7 @@ module.exports = defineConfig([
     rules: {
       "@typescript-eslint/no-require-imports": 0,
       "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-namespace": ["error", { allowDeclarations: true }],
     },
   },
   {
@@ -49,6 +50,11 @@ module.exports = defineConfig([
             "cache_size",
             "dynamic_split_fuse",
             "pooling_type",
+            "json_schema",
+            "compound_grammar",
+            "structured_output_config",
+            "structural_tags_config",
+            "structural_tags",
           ],
         },
       ],

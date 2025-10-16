@@ -4,6 +4,10 @@ namespace {
 constexpr const char* JS_SCHEDULER_CONFIG_KEY = "schedulerConfig";
 constexpr const char* CPP_SCHEDULER_CONFIG_KEY = "scheduler_config";
 constexpr const char* POOLING_TYPE_KEY = "pooling_type";
+constexpr const char* STRUCTURED_OUTPUT_CONFIG_KEY = "structured_output_config";
+constexpr const char* STRUCTURAL_TAGS_CONFIG_KEY = "structural_tags_config";
+constexpr const char* STRUCTURAL_TAGS_KEY = "structural_tags";
+constexpr const char* COMPOUND_GRAMMAR_KEY = "compound_grammar";
 }  // namespace
 
 ov::AnyMap to_anyMap(const Napi::Env& env, const Napi::Value& val) {
@@ -71,30 +75,59 @@ ov::Any js_to_cpp<ov::Any>(const Napi::Env& env, const Napi::Value& value) {
             } catch (std::exception& e) {
                 std::cerr << "Cannot convert to set: " << e.what() << std::endl;
             }
+        } else {
+            return js_to_cpp<ov::AnyMap>(env, value);
         }
     }
-    OPENVINO_THROW("Cannot convert to ov::Any");
+    OPENVINO_THROW("Cannot convert " + value.ToString().Utf8Value() + " to ov::Any");
 }
 
 template <>
 ov::AnyMap js_to_cpp<ov::AnyMap>(const Napi::Env& env, const Napi::Value& value) {
     std::map<std::string, ov::Any> result_map;
+    if(value.IsUndefined() || value.IsNull()) {
+        return result_map;
+    }
+    if (!value.IsObject()) {
+        OPENVINO_THROW("Passed Napi::Value must be an object.");
+    }
     const auto& object = value.ToObject();
     const auto& keys = object.GetPropertyNames();
 
     for (uint32_t i = 0; i < keys.Length(); ++i) {
         const std::string& key_name = keys.Get(i).ToString();
+        auto value_by_key = object.Get(key_name);
+        if (value_by_key.IsUndefined() || value_by_key.IsNull()) {
+            continue;
+        }
         if (key_name == JS_SCHEDULER_CONFIG_KEY) {
-            result_map[CPP_SCHEDULER_CONFIG_KEY] = js_to_cpp<ov::genai::SchedulerConfig>(env, object.Get(key_name));
+            result_map[CPP_SCHEDULER_CONFIG_KEY] = js_to_cpp<ov::genai::SchedulerConfig>(env, value_by_key);
         } else if (key_name == POOLING_TYPE_KEY) {
             result_map[key_name] =
-                ov::genai::TextEmbeddingPipeline::PoolingType(object.Get(key_name).ToNumber().Int32Value());
+                ov::genai::TextEmbeddingPipeline::PoolingType(value_by_key.ToNumber().Int32Value());
+        } else if (key_name == STRUCTURED_OUTPUT_CONFIG_KEY) {
+            result_map[key_name] = ov::genai::StructuredOutputConfig(js_to_cpp<ov::AnyMap>(env, value_by_key));
+        } else if (key_name == STRUCTURAL_TAGS_CONFIG_KEY) {
+            result_map[key_name] = ov::genai::StructuralTagsConfig(js_to_cpp<ov::AnyMap>(env, value_by_key));
+        } else if (key_name == STRUCTURAL_TAGS_KEY) {
+            result_map[key_name] = js_to_cpp<std::vector<ov::genai::StructuralTagItem>>(env, value_by_key);
+        } else if (key_name == COMPOUND_GRAMMAR_KEY) {
+            result_map[key_name] = js_to_cpp<ov::genai::StructuredOutputConfig::CompoundGrammar>(env, value_by_key);
         } else {
-            result_map[key_name] = js_to_cpp<ov::Any>(env, object.Get(key_name));
+            result_map[key_name] = js_to_cpp<ov::Any>(env, value_by_key);
         }
     }
 
     return result_map;
+}
+
+template <>
+std::string js_to_cpp<std::string>(const Napi::Env& env, const Napi::Value& value) {
+    if (value.IsString()) {
+        return value.As<Napi::String>().Utf8Value();
+    } else {
+        OPENVINO_THROW("Passed argument must be of type String.");
+    }
 }
 
 template <>
@@ -116,6 +149,63 @@ std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& en
     } else {
         OPENVINO_THROW("Passed argument must be of type Array or TypedArray.");
     }
+}
+
+template <>
+std::vector<ov::genai::StructuralTagItem> js_to_cpp<std::vector<ov::genai::StructuralTagItem>>(const Napi::Env& env, const Napi::Value& value) {
+    if (value.IsArray()) {
+        auto array = value.As<Napi::Array>();
+        size_t arrayLength = array.Length();
+
+        std::vector<ov::genai::StructuralTagItem> nativeArray;
+        for (uint32_t i = 0; i < arrayLength; ++i) {
+            Napi::Value arrayItem = array[i];
+            if (!arrayItem.IsObject()) {
+                OPENVINO_THROW(std::string("Passed array must contain only objects."));
+            }
+            nativeArray.push_back(ov::genai::StructuralTagItem(js_to_cpp<ov::AnyMap>(env, arrayItem)));
+        }
+        return nativeArray;
+
+    } else {
+        OPENVINO_THROW("Passed argument must be of type Array or TypedArray.");
+    }
+}
+
+template <>
+ov::genai::StructuredOutputConfig::CompoundGrammar js_to_cpp<ov::genai::StructuredOutputConfig::CompoundGrammar>(const Napi::Env& env, const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsObject(), "CompoundGrammar must be a JS object");
+    auto obj = value.As<Napi::Object>();
+
+    if (obj.Has("json_schema")) {
+        return ov::genai::StructuredOutputConfig::JSONSchema(
+            js_to_cpp<std::string>(env, obj.Get("json_schema"))
+        );
+    }
+    if (obj.Has("regex")) {
+        return ov::genai::StructuredOutputConfig::Regex(
+            js_to_cpp<std::string>(env, obj.Get("regex"))
+        );
+    }
+    if (obj.Has("grammar")) {
+        return ov::genai::StructuredOutputConfig::EBNF(
+            js_to_cpp<std::string>(env, obj.Get("grammar"))
+        );
+    }
+    if (obj.Has("compoundType") && obj.Has("left") && obj.Has("right")) {
+        auto left = js_to_cpp<ov::genai::StructuredOutputConfig::CompoundGrammar>(env, obj.Get("left"));
+        auto right = js_to_cpp<ov::genai::StructuredOutputConfig::CompoundGrammar>(env, obj.Get("right"));
+        auto compound_type = obj.Get("compoundType").ToString().Utf8Value();
+        if (compound_type == "Concat") {
+            return std::make_shared<ov::genai::StructuredOutputConfig::Concat>(left, right);
+        } else if (compound_type == "Union") {
+            return std::make_shared<ov::genai::StructuredOutputConfig::Union>(left, right);
+        } else {
+            OPENVINO_THROW("compoundType must be either 'Concat' or 'Union'");
+        }
+        
+    }
+    OPENVINO_THROW("CompoundGrammar must be either JSONSchema, Regex, EBNF, Concat or Union");
 }
 
 template <>

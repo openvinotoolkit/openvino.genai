@@ -1,4 +1,4 @@
-import { LLMPipeline } from "../dist/index.js";
+import { LLMPipeline, StructuredOutputConfig } from "../dist/index.js";
 
 import assert from "node:assert/strict";
 import { describe, it, before, after } from "node:test";
@@ -7,6 +7,8 @@ import { hrtime } from "node:process";
 import os from "node:os";
 
 const MODEL_PATH = process.env.MODEL_PATH || `./tests/models/${models.LLM.split("/")[1]}`;
+const INSTRUCT_MODEL_PATH =
+  process.env.INSTRUCT_MODEL_PATH || `./tests/models/${models.InstructLLM.split("/")[1]}`;
 
 describe("LLMPipeline construction", async () => {
   await it("test LLMPipeline(modelPath)", async () => {
@@ -288,6 +290,314 @@ describe("LLMPipeline.generate()", () => {
     assert.ok(perfMetrics.rawMetrics.durations.length > 0);
     assert.ok(perfMetrics.rawMetrics.inferenceDurations.length > 0);
     assert.ok(perfMetrics.rawMetrics.grammarCompileTimes.length === 0);
+  });
+});
+
+describe("LLMPipeline.generate() with generation config", () => {
+  let pipeline = null;
+
+  before(async () => {
+    pipeline = await LLMPipeline(INSTRUCT_MODEL_PATH, "CPU");
+  });
+
+  it("generate with json schema in structured_output_config", async () => {
+    const generationConfig = {
+      max_new_tokens: 50,
+      structured_output_config: {
+        json_schema: JSON.stringify({
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            age: { type: "number" },
+            city: { type: "string" },
+          },
+          required: ["name", "age", "city"],
+        }),
+      },
+      return_decoded_results: true,
+    };
+    const prompt = `Generate a JSON object with the following properties:
+    - name: a random name
+    - age: a random age between 1 and 100
+    - city: a random city
+    The JSON object should be in the following format:
+    {
+      "name": "John Doe",
+      "age": 30,
+      "city": "New York"
+    }
+    `;
+    const res = await pipeline.generate(prompt, generationConfig);
+    const text = res.texts[0];
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      assert.fail(`Failed to parse JSON: ${text}`);
+    }
+    assert.ok(typeof parsed === "object");
+    assert.ok(typeof parsed.name === "string");
+    assert.ok(typeof parsed.age === "number");
+    assert.ok(typeof parsed.city === "string");
+  });
+
+  it("generate with StructuredOutputConfig.JSONSchema in structured_output_config", async () => {
+    const generationConfig = {
+      max_new_tokens: 50,
+      structured_output_config: {
+        compound_grammar: StructuredOutputConfig.JSONSchema(
+          JSON.stringify({
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              age: { type: "number" },
+              city: { type: "string" },
+            },
+            required: ["name", "age", "city"],
+          }),
+        ),
+      },
+      return_decoded_results: true,
+    };
+    const prompt = `Generate a JSON object with the following properties:
+    - name: a random name
+    - age: a random age between 1 and 100
+    - city: a random city
+    The JSON object should be in the following format:
+    {
+      "name": "John Doe",
+      "age": 30,
+      "city": "New York"
+    }
+    `;
+    const res = await pipeline.generate(prompt, generationConfig);
+    const text = res.texts[0];
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      assert.fail(`Failed to parse JSON: ${text}`);
+    }
+    assert.ok(typeof parsed === "object");
+    assert.ok(typeof parsed.name === "string");
+    assert.ok(typeof parsed.age === "number");
+    assert.ok(typeof parsed.city === "string");
+  });
+
+  it("generate with regex in structured_output_config", async () => {
+    const generationConfig = {
+      max_new_tokens: 10,
+      structured_output_config: {
+        regex: "yes|no",
+      },
+      return_decoded_results: true,
+    };
+    const prompt = `Answer the question with "yes" or "no": Is the sky blue?`;
+    const res = await pipeline.generate(prompt, generationConfig);
+    const text = res.texts[0].trim().toLowerCase();
+    assert.ok(text === "yes" || text === "no", `Unexpected answer: ${text}`);
+  });
+
+  it("generate with StructuredOutputConfig.Regex in structured_output_config", async () => {
+    const generationConfig = {
+      max_new_tokens: 10,
+      structured_output_config: {
+        compound_grammar: StructuredOutputConfig.Regex("yes|no"),
+      },
+      return_decoded_results: true,
+    };
+    const prompt = `Answer the question with "yes" or "no": Is the sky blue?`;
+    const res = await pipeline.generate(prompt, generationConfig);
+    const text = res.texts[0].trim().toLowerCase();
+    assert.ok(text === "yes" || text === "no", `Unexpected answer: ${text}`);
+  });
+
+  it("generate with StructuredOutputConfig.Union in structured_output_config", async () => {
+    const generationConfig = {
+      max_new_tokens: 10,
+      structured_output_config: {
+        compound_grammar: StructuredOutputConfig.Union(
+          StructuredOutputConfig.Regex("yes"),
+          StructuredOutputConfig.Regex("no"),
+        ),
+      },
+      return_decoded_results: true,
+    };
+    const prompt = `Answer the question with "yes" or "no": Is the sky blue?`;
+    const res = await pipeline.generate(prompt, generationConfig);
+    const text = res.texts[0].trim().toLowerCase();
+    assert.ok(text === "yes" || text === "no", `Unexpected answer: ${text}`);
+  });
+
+  it("generate with grammar in structured_output_config", async () => {
+    const generationConfig = {
+      max_new_tokens: 50,
+      structured_output_config: {
+        grammar: `root::= "SELECT " column (", " column)? " from " table ";"
+column::= "name" | "username" | "email" | "postcode" | "*"
+table::= "users" | "orders" | "products"`,
+      },
+      return_decoded_results: true,
+    };
+    const prompt = `"Respond with a SQL query using the grammar. Generate an SQL query to show the 'username' and 'email' from the 'users' table."`;
+    const res = await pipeline.generate(prompt, generationConfig);
+    const text = res.texts[0].trim();
+    assert.equal(text, "SELECT username, email from users;", `Unexpected format: ${text}`);
+  });
+
+  it("generate with StructuredOutputConfig.EBNF in structured_output_config", async () => {
+    const generationConfig = {
+      max_new_tokens: 50,
+      structured_output_config: {
+        compound_grammar:
+          StructuredOutputConfig.EBNF(`root::= "SELECT " column (", " column)? " from " table ";"
+column::= "name" | "username" | "email" | "postcode" | "*"
+table::= "users" | "orders" | "products"`),
+      },
+      return_decoded_results: true,
+    };
+    const prompt = `"Respond with a SQL query using the grammar. Generate an SQL query to show the 'username' and 'email' from the 'users' table."`;
+    const res = await pipeline.generate(prompt, generationConfig);
+    const text = res.texts[0].trim();
+    assert.equal(text, "SELECT username, email from users;", `Unexpected format: ${text}`);
+  });
+
+  it("generate with StructuredOutputConfig.Concat in structured_output_config", async () => {
+    const generationConfig = {
+      max_new_tokens: 50,
+      structured_output_config: {
+        compound_grammar: StructuredOutputConfig.Concat(
+          StructuredOutputConfig.JSONSchema(
+            JSON.stringify({
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                age: { type: "number" },
+                city: { type: "string" },
+              },
+              required: ["name", "age", "city"],
+            }),
+          ),
+          StructuredOutputConfig.Union(
+            StructuredOutputConfig.Regex("A"),
+            StructuredOutputConfig.Regex("B"),
+          ),
+        ),
+      },
+      return_decoded_results: true,
+    };
+    const prompt = `Generate a JSON object with the following properties:
+    - name: a random name
+    - age: a random age between 1 and 100
+    - city: a random city
+    The JSON object should be in the following format:
+    {
+      "name": "John Doe",
+      "age": 30,
+      "city": "New York"
+    }
+    `;
+    const res = await pipeline.generate(prompt, generationConfig);
+    const text = res.texts[0].trim();
+
+    const postfix = text[text.length - 1];
+    assert.ok(postfix === "A" || postfix === "B", `Unexpected postfix: ${postfix}`);
+
+    const jsonPart = text.substring(0, text.length - 1);
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonPart);
+    } catch {
+      assert.fail(`Failed to parse JSON: ${text}`);
+    }
+    assert.ok(typeof parsed === "object");
+    assert.ok(typeof parsed.name === "string");
+    assert.ok(typeof parsed.age === "number");
+    assert.ok(typeof parsed.city === "string");
+  });
+
+  it("generate with structural_tags_config in structured_output_config", async () => {
+    const tools = [
+      {
+        name: "get_weather",
+        schema: {
+          type: "object",
+          properties: {
+            location: { type: "string" },
+            unit: { type: "string", enum: ["metric", "imperial"] },
+          },
+          required: ["location", "unit"],
+        },
+      },
+      {
+        name: "get_currency_exchange",
+        schema: {
+          type: "object",
+          properties: {
+            fromCurrency: { type: "string" },
+            toCurrency: { type: "string" },
+            amount: { type: "number" },
+          },
+          required: ["fromCurrency", "toCurrency", "amount"],
+        },
+      },
+    ];
+    const generationConfig = {
+      max_new_tokens: 200,
+      structured_output_config: {
+        structural_tags_config: {
+          structural_tags: tools.map((tool) => ({
+            begin: `<function="${tool.name}">`,
+            schema: JSON.stringify(tool.schema),
+            end: "</function>",
+          })),
+          triggers: ["<function="],
+        },
+      },
+      return_decoded_results: true,
+    };
+    const sysMessage =
+      "You are a helpful assistant that can provide weather information and currency exchange rates. " +
+      `Today is ${new Date().toISOString().split("T")[0]}. ` +
+      "You can respond in natural language, always start your answer with appropriate greeting, " +
+      "If you need additional information to respond you can request it by calling particular tool with structured JSON. " +
+      `You can use the following tools:
+${tools.map((tool) => `<function_name="${tool.name}">, arguments=${JSON.stringify(tool.schema.required)}`).join("\n")}
+Please, only use the following format for tool calling in your responses:
+<function="function_name">{"argument1": "value1", ...}</function>
+Use the tool name and arguments as defined in the tool schema.
+If you don't know the answer, just say that you don't know, but try to call the tool if it helps to answer the question.`;
+
+    const prompt =
+      "What is the weather in London today and in Paris yesterday, and how many pounds can I get for 100 euros?";
+    await pipeline.startChat(sysMessage);
+    try {
+      const res = await pipeline.generate(prompt, generationConfig);
+      const text = res.texts[0].trim();
+      const matches = [...text.matchAll(/<function="([^"]+)">(.*?)<\/function>/gs)];
+      assert.equal(matches.length, 3, `Expected 3 function calls, got ${matches.length}`);
+      assert.ok(
+        matches[0][1] === "get_weather" || matches[0][1] === "get_currency_exchange",
+        `Unexpected function name: ${matches[0][1]}`,
+      );
+      const args = JSON.parse(matches[0][2]);
+      if (matches[0][1] === "get_weather") {
+        assert.ok(typeof args.location === "string", `Unexpected location: ${args.location}`);
+        assert.ok(
+          args.unit === "metric" || args.unit === "imperial",
+          `Unexpected unit: ${args.unit}`,
+        );
+      } else if (matches[0][1] === "get_currency_exchange") {
+        assert.ok(
+          typeof args.fromCurrency === "string",
+          `Unexpected fromCurrency: ${args.fromCurrency}`,
+        );
+        assert.ok(typeof args.toCurrency === "string", `Unexpected toCurrency: ${args.toCurrency}`);
+        assert.ok(typeof args.amount === "number", `Unexpected amount: ${args.amount}`);
+      }
+    } finally {
+      await pipeline.finishChat();
+    }
   });
 });
 

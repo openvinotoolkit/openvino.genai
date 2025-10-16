@@ -34,6 +34,9 @@ ov::Any js_to_cpp<ov::Any>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType ov::AnyMap */
 template <>
 ov::AnyMap js_to_cpp<ov::AnyMap>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType std::string */
+template <>
+std::string js_to_cpp<std::string>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType std::vector<std::string> */
 template <>
 std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& env, const Napi::Value& value);
@@ -46,7 +49,15 @@ ov::genai::ChatHistory js_to_cpp<ov::genai::ChatHistory>(const Napi::Env& env, c
 /** @brief  A template specialization for TargetType ov::genai::SchedulerConfig */
 template <>
 ov::genai::SchedulerConfig js_to_cpp<ov::genai::SchedulerConfig>(const Napi::Env& env, const Napi::Value& value);
-
+/** @brief  A template specialization for TargetType ov::genai::StructuredOutputConfig */
+template <>
+ov::genai::StructuredOutputConfig js_to_cpp<ov::genai::StructuredOutputConfig>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType std::vector<ov::genai::StructuralTagItem> */
+template <>
+std::vector<ov::genai::StructuralTagItem> js_to_cpp<std::vector<ov::genai::StructuralTagItem>>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType ov::genai::StructuredOutputConfig::CompoundGrammar */
+template <>
+ov::genai::StructuredOutputConfig::CompoundGrammar js_to_cpp<ov::genai::StructuredOutputConfig::CompoundGrammar>(const Napi::Env& env, const Napi::Value& value);
 /**
  * @brief  Template function to convert C++ data types into Javascript data types
  * @tparam TargetType Destinated Javascript data type.

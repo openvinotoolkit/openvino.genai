@@ -18,6 +18,121 @@ export enum StopCriteria {
   NEVER,
 }
 
+export declare namespace StructuredOutputConfig {
+  export type CompoundGrammar = Regex | JSONSchema | EBNF | Concat | Union;
+  export type Regex = {
+    regex: string;
+  };
+  export type JSONSchema = {
+    json_schema: string;
+  };
+  export type EBNF = {
+    grammar?: string;
+  };
+  export type Concat = {
+    compoundType: "Concat";
+    left: CompoundGrammar;
+    right: CompoundGrammar;
+  };
+  export type Union = {
+    compoundType: "Union";
+    left: CompoundGrammar;
+    right: CompoundGrammar;
+  };
+}
+
+/** Structure to keep generation config parameters for structural tags in structured output generation.
+ * It is used to store the configuration for a single structural tag item, which includes the begin string,
+ * schema, and end string. */
+export type StructuralTagItem = {
+  /** the string that marks the beginning of the structural tag. */
+  begin: string;
+  /** the JSON schema that defines the structure of the tag. */
+  schema: string;
+  /** the string that marks the end of the structural tag. */
+  end: string;
+};
+
+/** Configures structured output generation by combining regular sampling with structural tags.
+ *
+ * When the model generates a trigger string, it switches to structured output mode and produces output
+ * based on the defined structural tags. Afterward, regular sampling resumes.
+ *
+ * Example:
+ *   - Trigger "<func=" activates tags with begin "<func=sum>" or "<func=multiply>".
+ *
+ * Note:
+ *   - Simple triggers like "<" may activate structured output unexpectedly if present in regular text.
+ *   - Very specific or long triggers may be difficult for the model to generate,
+ *     so structured output may not be triggered. */
+export type StructuralTagsConfig = {
+  /** List of StructuralTagItem objects defining structural tags. */
+  structural_tags: StructuralTagItem[];
+  /** List of strings that trigger structured output generation.
+   * Triggers may match the beginning or part of a tag's begin string. */
+  triggers: string[];
+};
+
+/** This object is used to store the configuration for structured generation, which includes
+ * the JSON schema and other related parameters. */
+export class StructuredOutputConfig {
+  /** if set, the output will be a JSON string constraint by the specified json-schema. */
+  json_schema?: string;
+  /** if set, the output will be constraint by specified regex.*/
+  regex?: string;
+  /** if set, the output will be constraint by specified EBNF grammar. */
+  grammar?: string;
+  /** if set, the output will be constraint by specified structural tags configuration. */
+  structural_tags_config?: StructuralTagsConfig;
+  /** if set, the output will be constraint by specified compound grammar.
+   * Compound grammar is a combination of multiple grammars that can be used to generate structured outputs.
+   * It allows for more complex and flexible structured output generation.
+   * The compound grammar a Union or Concat of several grammars, where each grammar can be a JSON schema, regex, EBNF, Union or Concat. */
+  compound_grammar?: StructuredOutputConfig.CompoundGrammar;
+
+  constructor(params: {
+    json_schema?: string;
+    regex?: string;
+    grammar?: string;
+    structural_tags_config?: StructuralTagsConfig;
+    compound_grammar?: StructuredOutputConfig.CompoundGrammar;
+  }) {
+    const { json_schema, regex, grammar, structural_tags_config, compound_grammar } = params;
+    this.json_schema = json_schema;
+    this.regex = regex;
+    this.grammar = grammar;
+    this.structural_tags_config = structural_tags_config;
+    this.compound_grammar = compound_grammar;
+  }
+
+  /** JSON schema building block for compound grammar configuration. */
+  static JSONSchema(json_schema: string): StructuredOutputConfig.JSONSchema {
+    return { json_schema };
+  }
+  /** Regex building block for compound grammar configuration. */
+  static Regex(regex: string): StructuredOutputConfig.Regex {
+    return { regex: regex };
+  }
+  /** EBNF grammar building block for compound grammar configuration. */
+  static EBNF(grammar?: string): StructuredOutputConfig.EBNF {
+    return { grammar: grammar };
+  }
+  /** Concat combines two grammars sequentially, e.g. "A B" means A followed by B */
+  static Concat(
+    left: StructuredOutputConfig.CompoundGrammar,
+    right: StructuredOutputConfig.CompoundGrammar,
+  ): StructuredOutputConfig.Concat {
+    return { compoundType: "Concat", left, right };
+  }
+  /** Union combines two grammars in parallel, e.g. "A | B" means either A or B */
+  static Union(
+    left: StructuredOutputConfig.CompoundGrammar,
+    right: StructuredOutputConfig.CompoundGrammar,
+  ): StructuredOutputConfig.Union {
+    return { compoundType: "Union", left, right };
+  }
+}
+
 export type BeamSearchGenerationConfig = {
   /** number of beams for beam search. 1 disables beam search. */
   num_beams?: number;
@@ -102,6 +217,12 @@ export type GenericGenerationConfig = {
   stop_token_ids?: Set<number>;
 };
 
+export type StructuredOutputGenerationConfig = {
+  /** This object is used to store the configuration for structured generation, which includes
+   * the JSON schema and other related parameters. */
+  structured_output_config?: StructuredOutputConfig;
+};
+
 export type DecodedResultsConfig = {
   /** a helper option to get DecodedResult from LLMPipeline and keep backward compability.
    * If set to true, LLMPipeline.generate() will return DecodedResults object instead of string.
@@ -118,6 +239,7 @@ export type GenerationConfig = GenericGenerationConfig &
   BeamSearchGenerationConfig &
   RandomSamplingsGenerationConfig &
   AssistingGenerationConfig &
+  StructuredOutputGenerationConfig &
   DecodedResultsConfig;
 
 export type SchedulerConfig = {
