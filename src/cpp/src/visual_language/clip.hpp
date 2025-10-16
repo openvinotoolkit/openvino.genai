@@ -9,10 +9,16 @@
 
 #include "openvino/runtime/tensor.hpp"
 
+// TODO: switch image normalization to double: CVS-174746
 struct clip_ctx {
     float image_mean[3] = {0.0f, 0.0f, 0.0f};
     float image_std[3] = {1.0f, 1.0f, 1.0f};
     size_t image_size = 0;
+};
+
+struct clip_ctx_double {
+    double image_mean[3] = {0.0, 0.0, 0.0};
+    double image_std[3] = {1.0, 1.0, 1.0};
 };
 
 // RGB uint8 image
@@ -62,3 +68,9 @@ std::vector<clip_image_u8> get_image_patches(
 );
 
 std::pair<int, int> select_best_resolution(const std::pair<int, int> & original_size, const std::vector<std::pair<int, int>> & possible_resolutions);
+
+clip_image_u8 resize_and_pad_image(const clip_image_u8& image, const std::pair<int, int>& target_resolution, uint8_t pad_value = 0);
+
+clip_image_u8 center_crop(const clip_image_u8& image, size_t crop_height, size_t crop_width);
+
+clip_image_f32 normalize_and_convert_to_chw(const clip_image_u8& img, const clip_ctx_double& image_mean_std);
