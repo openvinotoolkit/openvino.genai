@@ -50,4 +50,6 @@ ov::AnyMap py_object_to_any_map(const py::object& py_obj);
 
 ov::genai::JsonContainer py_object_to_json_container(const py::object& obj);
 
+py::object json_container_to_py_object(const ov::genai::JsonContainer& container);
+
 }  // namespace ov::genai::pybind::utils
