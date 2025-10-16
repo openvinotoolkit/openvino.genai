@@ -1185,7 +1185,11 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, vi
             prompt = "Describe this image and video."
         else:
             prompt = "Describe this image."
-        conversation[0]["content"] = [{"type": "image"}] + conversation[0]["content"]
+
+        if model_id in ["katuni4ka/tiny-random-qwen2.5-vl"]:
+            conversation[0]["content"] = conversation[0]["content"] + [{"type": "image"}]
+        else:
+            conversation[0]["content"] = [{"type": "image"}] + conversation[0]["content"]
 
     conversation[0]["content"][-1]["text"] = prompt
 
