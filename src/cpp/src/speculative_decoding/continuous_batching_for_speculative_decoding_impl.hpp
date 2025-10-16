@@ -70,19 +70,19 @@ public:
     }
     void set_hidden_state_export_needed(bool is_needed) {
         if (m_model_runner) {
-            m_model_runner->set_hidden_state_export_needed(is_needed);
+            m_model_runner->enable_hidden_state_export(is_needed);
         }
     }
 
     void set_hidden_state_import_needed(bool is_needed) {
         if (m_model_runner) {
-            m_model_runner->set_hidden_state_import_needed(is_needed);
+            m_model_runner->enable_hidden_state_import(is_needed);
         }
     }
 
     void set_hidden_state_internal_needed(bool is_needed) {
         if (m_model_runner) {
-            m_model_runner->set_hidden_state_internal_needed(is_needed);
+            m_model_runner->enable_hidden_state_internal(is_needed);
         }
     }
 

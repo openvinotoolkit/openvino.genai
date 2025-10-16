@@ -386,7 +386,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
         }
 
         if (eagle_mode_enabled)
-            m_model_runner->set_hidden_state_import_needed(false);
+            m_model_runner->enable_hidden_state_import(false);
         to_generate = false;
         for (auto& request : m_requests) {
             const auto& sampling_params = request->get_sampling_parameters();
@@ -411,6 +411,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
         }
     }
     if (eagle_mode_enabled)
-        m_model_runner->set_hidden_state_import_needed(true);
+        m_model_runner->enable_hidden_state_import(true);
 }
 }

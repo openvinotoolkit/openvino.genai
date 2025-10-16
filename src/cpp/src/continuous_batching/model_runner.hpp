@@ -24,6 +24,13 @@ inline std::string get_paged_attention_score_output_for_decoder_layer(size_t dec
     return ss.str();
 }
 
+enum HiddenStateFlags : uint8_t {
+    HS_NONE      = 0,
+    HS_EXPORT    = 1 << 0,
+    HS_IMPORT    = 1 << 1,
+    HS_INTERNAL  = 1 << 2
+};
+
 /**
  * @brief Runs the LLM infer request, parsing the continuous batching scheduler output into proper inputs in terms of OV API (e.g. token input IDs,
  * KV cache block indices etc.) and returning the logit scores for the next token to be generated for each of the currently scheduled sequences.
@@ -48,10 +55,7 @@ class ModelRunner {
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
-
-    bool m_is_hidden_state_export_needed = false; // need to export hidden state after inference
-    bool m_is_hidden_state_import_needed = false; // need to import hidden state from another model runner
-    bool m_is_hidden_state_internal_needed = false; // need to use internal hidden state, e.g, eagle SD
+    uint8_t m_hidden_state_flags = HS_NONE;
     std::map<std::pair<size_t, size_t>, std::pair<size_t, size_t>> m_sequence_hidden_state_mapping; // pre-requisite: main/draft have same seq group and running seq grouped id
     // a container which use sequence group id and request id as key to store hidden states
     std::map<size_t, ov::Tensor> m_initial_hidden_states; // shape: [N, seq_len, hidden_size]
@@ -112,17 +116,9 @@ public:
         return m_request;
     }
 
-    void set_hidden_state_export_needed(bool is_needed) {
-        m_is_hidden_state_export_needed = is_needed;
-    }
-
-    void set_hidden_state_import_needed(bool is_needed) {
-        m_is_hidden_state_import_needed = is_needed;
-    }
-
-    void set_hidden_state_internal_needed(bool is_needed) {
-        m_is_hidden_state_internal_needed = is_needed;
-    }
+    void enable_hidden_state_export(bool on)   { on ? m_hidden_state_flags |= HS_EXPORT   : m_hidden_state_flags &= ~HS_EXPORT; }
+    void enable_hidden_state_import(bool on)   { on ? m_hidden_state_flags |= HS_IMPORT   : m_hidden_state_flags &= ~HS_IMPORT; }
+    void enable_hidden_state_internal(bool on) { on ? m_hidden_state_flags |= HS_INTERNAL : m_hidden_state_flags &= ~HS_INTERNAL; }
 
     void set_embedding_model(const EmbeddingsModel::Ptr& embedder) {
         m_embedding = embedder;
@@ -152,39 +148,6 @@ public:
         m_rotated_block_logical_indices_per_sequence_for_each_layer =
             std::move(rotated_logical_block_indices_per_sequence_for_each_layer);
         m_cache_rotation_deltas_for_each_layer = std::move(rotation_deltas_for_each_layer);
-    }
-
-    ov::Tensor get_hidden_state(uint64_t request_id, uint64_t seq_grouped_id) const {
-        if (m_hidden_states.get_size() == 0) {
-            return ov::Tensor();
-        }
-
-        const auto key = std::make_pair(request_id, seq_grouped_id);
-        const auto it = m_sequence_hidden_state_mapping.find(key);
-        if (it == m_sequence_hidden_state_mapping.end()) {
-            return ov::Tensor();
-        }
-
-        size_t start_idx = it->second.first;
-        size_t length = it->second.second;
-
-        auto shape = m_hidden_states.get_shape();
-        if (shape.size() < 2) {
-            return ov::Tensor();
-        }
-
-        ov::Coordinate start_coord(shape.size(), 0);
-        ov::Coordinate end_coord(shape.size(), 0);
-
-        start_coord[0] = start_idx;
-        end_coord[0] = start_idx + length;
-
-        for (size_t i = 1; i < shape.size(); ++i) {
-            start_coord[i] = 0;
-            end_coord[i] = shape[i];
-        }
-
-        return ov::Tensor(m_hidden_states, start_coord, end_coord);
     }
 
     void set_initial_hidden_state(uint64_t& request_id, const ov::Tensor& hidden_state) {
@@ -247,26 +210,9 @@ public:
             {batch_size_in_sequences}, ov::element::i32);
         ov::Tensor hidden_state_input;
         float* hidden_state_data = nullptr;
-        if (m_is_hidden_state_import_needed || m_is_hidden_state_internal_needed) {
-            if (hidden_size == 0) {
-                for (const auto& entry : m_initial_hidden_states) {
-                    const auto& stored_hidden_state = entry.second;
-                    if (stored_hidden_state.get_size() > 0) {
-                        auto shape = stored_hidden_state.get_shape();
-                        if (shape.size() >= 2) {
-                            hidden_size = shape[shape.size() - 1];
-                            if (!m_is_hidden_state_import_needed)
-                                hidden_size /= m_adjust_factor;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (hidden_size > 0) {
-                hidden_state_input = ov::Tensor(ov::element::f32, {total_num_tokens, 1, hidden_size});
-                hidden_state_data = hidden_state_input.data<float>();
-                std::memset(hidden_state_data, 0, total_num_tokens * hidden_size * sizeof(float));
-            }
+        hidden_state_input = _prepare_hidden_state_input(total_num_tokens, hidden_size);
+        if (hidden_state_input) {
+            hidden_state_data = hidden_state_input.data<float>();
         }
 
         ov::Tensor generated_ids_embeds;
@@ -339,14 +285,14 @@ public:
 
                 output_seq_len = 0;
                 Sequence::CPtr sequence = running_sequences[seq_idx];
-                if (m_is_hidden_state_export_needed) {
+                if (_is_hs_export()) {
                     size_t start_token_idx = current_token_idx;
                     size_t sequence_length = num_scheduled_tokens;
 
                     auto key = std::make_pair(sequence_group->get_request_id(), sequence->get_grouped_id());
                     m_sequence_hidden_state_mapping[key] = std::make_pair(start_token_idx, sequence_length);
                 }
-                if (m_is_hidden_state_import_needed && hidden_state_data && hidden_size > 0) {
+                if (_is_hs_import()) {
                     auto it = m_initial_hidden_states.find(sequence_group->get_request_id());
 
                     if (it != m_initial_hidden_states.end()) {
@@ -375,7 +321,7 @@ public:
                             OPENVINO_ASSERT(false, "missing hidden state from target model to eagle draft model");
                         }
                     }
-                } else {
+                } else if (_is_hs_internal()) {
                     // fill hidden_state_data with m_hidden_states
                     if (hidden_state_data) {
                         OPENVINO_ASSERT(num_scheduled_tokens == 1, "unexpected num_scheduled_tokens in speculative drafting stage in eagle3 mode");
@@ -497,7 +443,7 @@ public:
             }
         }
         if (hidden_state_input && hidden_state_input.get_size() > 0) {
-            if (m_is_hidden_state_import_needed) {
+            if (_is_hs_import()) {
                 try {
                     m_request.set_tensor("hidden_states", hidden_state_input);
                     auto shape = hidden_state_input.get_shape();
@@ -574,7 +520,7 @@ public:
 
         _reset_cache_rotation_coefficients();
 
-        if (m_is_hidden_state_export_needed) {
+        if (_is_hs_export()) {
             try {
                 m_hidden_states = m_request.get_tensor("last_hidden_state");
                 for (size_t i = 0; i < num_sequence_groups; ++i) {
@@ -584,7 +530,7 @@ public:
                     for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
                         Sequence::Ptr sequence = running_sequences[seq_idx];
                         sequence->update_hidden_state(
-                            get_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()));
+                            _get_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()));
                     }
                 }
             } catch (const ov::Exception&) {
@@ -654,6 +600,72 @@ public:
 
 private:
     ov::Tensor m_hidden_states;
+
+    // Hidden state flags and helpers
+    bool _is_hs_export()   const { return m_hidden_state_flags & HS_EXPORT; }
+    bool _is_hs_import()   const { return m_hidden_state_flags & HS_IMPORT; }
+    bool _is_hs_internal() const { return m_hidden_state_flags & HS_INTERNAL; }
+
+    ov::Tensor _get_hidden_state(uint64_t request_id, uint64_t seq_grouped_id) const {
+        if (m_hidden_states.get_size() == 0) {
+            return ov::Tensor();
+        }
+
+        const auto key = std::make_pair(request_id, seq_grouped_id);
+        const auto it = m_sequence_hidden_state_mapping.find(key);
+        if (it == m_sequence_hidden_state_mapping.end()) {
+            return ov::Tensor();
+        }
+
+        size_t start_idx = it->second.first;
+        size_t length = it->second.second;
+
+        auto shape = m_hidden_states.get_shape();
+        if (shape.size() < 2) {
+            return ov::Tensor();
+        }
+
+        ov::Coordinate start_coord(shape.size(), 0);
+        ov::Coordinate end_coord(shape.size(), 0);
+
+        start_coord[0] = start_idx;
+        end_coord[0] = start_idx + length;
+
+        for (size_t i = 1; i < shape.size(); ++i) {
+            start_coord[i] = 0;
+            end_coord[i] = shape[i];
+        }
+
+        return ov::Tensor(m_hidden_states, start_coord, end_coord);
+    }
+
+    ov::Tensor _prepare_hidden_state_input(size_t total_num_tokens,
+                                           size_t& hidden_size /*in/out*/) {
+        if (!(m_hidden_state_flags & (HS_IMPORT | HS_INTERNAL))) {
+            return {};
+        }
+
+        if (hidden_size == 0) {
+            for (const auto& kv : m_initial_hidden_states) {
+                const auto& t = kv.second;
+                if (t && t.get_shape().size() >= 2) {
+                    auto sh = t.get_shape();
+                    hidden_size = sh.back();
+                    if (!(m_hidden_state_flags & HS_IMPORT)) {
+                        hidden_size /= m_adjust_factor;
+                    }
+                    break;
+                }
+            }
+        }
+        if (hidden_size == 0) {
+            return {};
+        }
+
+        ov::Tensor hs(ov::element::f32, {total_num_tokens, 1, hidden_size});
+        std::memset(hs.data<float>(), 0, hs.get_byte_size());
+        return hs;
+    }
 
     // Common helper to copy a contiguous slice (first-dim range) from src to dst using ROI tensors.
     // src_start_idx: start index along src first dimension
