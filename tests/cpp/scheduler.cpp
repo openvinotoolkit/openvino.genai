@@ -145,7 +145,6 @@ SchedulerConfig get_scheduler_config(size_t max_num_batched_tokens,
     retval.dynamic_split_fuse = dynamic_split_fuse;
     retval.max_num_seqs = max_num_seqs;
     retval.use_cache_eviction = false;
-    retval.sparse_attention_config = ov::genai::SparseAttentionConfig();
     if (cache_eviction_config.has_value()) {
         retval.cache_eviction_config = cache_eviction_config.value();
     }
@@ -737,7 +736,6 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed) {
     scheduler_config.num_kv_blocks = 6;
     scheduler_config.dynamic_split_fuse = false;
     scheduler_config.max_num_seqs = 5;
-    scheduler_config.sparse_attention_config = ov::genai::SparseAttentionConfig();
 
     std::vector<uint64_t> tokens = {0,1,2,3,4,5,6,7,8,9,10,11};
     SequenceGroup::Ptr sequence_group1 = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
@@ -939,7 +937,6 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
     scheduler_config.dynamic_split_fuse = false;
     scheduler_config.max_num_seqs = 5;
     scheduler_config.use_cache_eviction = true;
-    scheduler_config.sparse_attention_config = ov::genai::SparseAttentionConfig();
     scheduler_config.cache_eviction_config = ov::genai::CacheEvictionConfig(2, 2, 6, ov::genai::AggregationMode::NORM_SUM);
 
     std::vector<uint64_t> tokens1 = {0, 1};  // 1 full block

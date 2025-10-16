@@ -628,7 +628,6 @@ SchedulerConfig get_latency_oriented_scheduler_config() {
     SchedulerConfig default_config;
     default_config.max_num_batched_tokens = std::numeric_limits<size_t>::max(); // don't limit total batch size
     default_config.enable_prefix_caching = true; // for better TTFT in chat scenarios
-    retval.sparse_attention_config = ov::genai::SparseAttentionConfig();
     return default_config;
 }
 
