@@ -11,6 +11,7 @@
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/genai/parsers.hpp"
 #include "py_utils.hpp"
+#include "openvino/genai/json_container.hpp"
 
 namespace py = pybind11;
 
@@ -21,6 +22,7 @@ using ov::genai::TextParserStreamer;
 using ov::genai::IncrementalParserBase;
 using ov::genai::ParsedMessage;
 using ov::genai::Tokenizer;
+using ov::genai::JsonContainer;
 
 namespace pyutils = ov::genai::pybind::utils;
 
@@ -75,11 +77,27 @@ public:
     using TextParserStreamer::TextParserStreamer;  // inherit base constructors
 
     StreamingStatus write(ParsedMessage& message) override {
+        py::dict message_py;
+        auto json_obj = message.to_json();
+        for (auto it = json_obj.begin(); it != json_obj.end(); ++it) {
+            message_py[py::cast(it.key())] = py::cast(it.value().get<std::string>());
+        }
+        
+        // call python implementation which accepts py::dict instead of ParsedMessage
+        auto res = py::get_override(this, "write")(message_py);
+        
+        auto msg_anymap = ov::genai::pybind::utils::py_object_to_any_map(message_py);
+        message = JsonContainer(msg_anymap);
+        
+        return res.cast<StreamingStatus>();
+    }
+
+    StreamingStatus write(py::dict& message) {
         PYBIND11_OVERRIDE_PURE(
-            StreamingStatus,  // Return type
-            TextParserStreamer,  // Parent class
-            write,  // Name of function in C++ (must match Python name)
-            message  // Argument(s)
+            StreamingStatus,
+            TextParserStreamer,
+            "write",
+            message
         );
     }
 };
@@ -139,9 +157,16 @@ void init_streamers(py::module_& m) {
             py::arg("parsers") = std::vector<std::variant<std::shared_ptr<IncrementalParserBase>, std::string>>({}),
             "TextParserStreamer is used to decode tokens into text, parse the text and call user-defined incremental parsers.")
         .def("write",
-             py::overload_cast<ParsedMessage&>(&TextParserStreamer::write),
-             py::arg("message"),
-             "Write is called with a ParsedMessage. Returns StreamingStatus.")
+            [](TextParserStreamer& self, py::dict& message) {
+                // Downcast to ConstructableTextParserStreamer if needed
+                auto* derived = dynamic_cast<ConstructableTextParserStreamer*>(&self);
+                if (!derived) {
+                    throw std::runtime_error("write(py::dict&) only available for ConstructableTextParserStreamer");
+                }
+                return derived->write(message);
+            },
+            py::arg("message"),
+            "Write is called with a ParsedMessage. Returns StreamingStatus.")
         .def("_write",
              py::overload_cast<std::string>(&TextParserStreamer::write),
              py::arg("message"),

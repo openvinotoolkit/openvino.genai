@@ -40,13 +40,24 @@ def hf_ov_genai_models(request, tmp_path_factory):
 @pytest.mark.precommit
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
-    [("katuni4ka/tiny-random-phi3", {"padding_side": "right"})],
+    [("katuni4ka/tiny-random-phi3", {"padding_side": "right"})],  # this tokenizer is used as a stub only
     indirect=True
 )
-def test_parsers_1(hf_ov_genai_models):
+@pytest.mark.parametrize("answer", [
+    "<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \boxed{3}.",
+
+    (
+        "<think>\nOkay, the user is asking for the answer to 2 + 1. Let me make sure I understand "
+        "the question correctly. They want a short answer, so I shouldn't overcomplicate things. "
+        "Basic addition here. Two plus one equals three. Yeah, that's straightforward. I need to "
+        "respond with the answer inside a box using the specified format. Let me double-check the "
+        "arithmetic to avoid any mistakes. Yep, 2 + 1 is definitely 3. Alright, time to put it in "
+        "the box.\n</think>\n\nThe answer to 2 + 1 is \boxed{3}."
+    ),
+])
+def test_phi4_reason_parser_1(hf_ov_genai_models, answer):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
     
-    answer = "<think>\nOkay, the user is asking for the answer to 2 + 1. Let me make sure I understand the question correctly. They want a short answer, so I shouldn't overcomplicate things. Basic addition here. Two plus one equals three. Yeah, that's straightforward. I need to respond with the answer inside a box using the specified format. Let me double-check the arithmetic to avoid any mistakes. Yep, 2 + 1 is definitely 3. Alright, time to put it in the box.\n</think>\n\nThe answer to 2 + 1 is \boxed{3}."
     stream_string = re.split(r"(\s+)", answer)
     
     class CustomStreamer(TextParserStreamer):
@@ -59,7 +70,6 @@ def test_parsers_1(hf_ov_genai_models):
     for subword in stream_string:
         streamer._write(subword)
 
-    # breakpoint()
     think_content = answer.split("</think>")[0].replace("<think>", "")
     content = answer
 
@@ -69,51 +79,37 @@ def test_parsers_1(hf_ov_genai_models):
 @pytest.mark.precommit
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
-    [("katuni4ka/tiny-random-phi3", {"padding_side": "right"})],
+    [("katuni4ka/tiny-random-phi3", {"padding_side": "right"})],  # this tokenizer is used as a stub only
     indirect=True
 )
-def test_final_parser_1(ov_genai_models):
-    prompt = textwrap.dedent('''
-    <|begin_of_text|><|start_header_id|>system<|end_header_id|>
+@pytest.mark.parametrize("split_answer", [
+    ["<th", "ink>", "\nOkay, ", "the user is asking", " for the ", "answer ", "to 2 + 1.", "</think>", "\n\nThe answer ", "to", "2 ", "+ ", "1 ", "is ", "\boxed{3}."],
+    ["<think>", "\nOkay, ", "the user is asking", " for the ", "answer ", "to 2 + 1.", "</th", "ink>", "\n\nThe answer ", "to", "2 ", "+ ", "1 ", "is ", "\boxed{3}."],
+    ["<t", "h", "ink>", "\nOkay, ", "the user is asking", " for the ", "answer ", "to 2 + 1.", "</th", "ink>", "\n\nThe answer ", "to", "2 ", "+ ", "1 ", "is ", "\boxed{3}."],
+    
+    # check that if thinking opening and closing tags are passed in a single subword, it is still parsed correctly
+    ["<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \boxed{3}."]
+])
+def test_phi4_reason_parser_2(hf_ov_genai_models, split_answer):
+    # check that if thinking opening and closing tags are in the middle of the subword, it is still parsed correctly
+    hf_tokenizer, genai_tokenizer = hf_ov_genai_models
+    
+    class CustomStreamer(TextParserStreamer):
+        def write(self, message):
+            msg.update(message)
+            return StreamingStatus.RUNNING
+    streamer = CustomStreamer(genai_tokenizer, parsers=["Phi4ReasoningParser"])
+    
+    msg = {}
+    for subword in split_answer:
+        streamer._write(subword)
 
-    Environment: ipython
-    Cutting Knowledge Date: December 2023
-    Today Date: 15 Oct 2025
+    think_content = (''.join(split_answer)).split("</think>")[0].replace("<think>", "")
+    content = ''.join(split_answer)
 
-    You have access to the following functions. To call functions, please respond with a python list of the calls. Respond in the format [func_name1(params_name1=params_value1, params_name2=params_value2...), func_name2(params)] Do not use variables.
+    assert msg['reasoning_content'] == think_content
+    assert msg['content'] == content
 
-    {
-        "type": "function",
-        "function": {
-            "name": "get_weather",
-            "description": "Get the current weather in a given location",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "location": {
-                        "type": "string",
-                        "description": "City and state, e.g., 'San Francisco, CA'"
-                    },
-                    "unit": {
-                        "type": "string",
-                        "enum": [
-                            "celsius",
-                            "fahrenheit"
-                        ]
-                    }
-                },
-                "required": [
-                    "location",
-                    "unit"
-                ]
-            }
-        }
-    }
-
-    You are a helpful assistant with tool calling capabilities. Only reply with a tool call if the function exists in the library provided by the user. If it doesn't exist, just reply directly in natural language. When you receive a tool call response, use the output to format an answer to the original user question.<|eot_id|><|start_header_id|>user<|end_header_id|>
-
-    What's the weather in New York today? Please explain what you are doing and call the tool<|eot_id|><|start_header_id|>assistant<|end_header_id|>
-    ''')
 
 def test_parsers_2(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
