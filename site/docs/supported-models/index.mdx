@@ -62,7 +62,9 @@ pip install timm einops
 ```
 #### MiniCPMO {#minicpm-o-notes}
 
-`openbmb/MiniCPM-o-2_6` doesn't support transformers>=4.52 which is required for `optimum-cli` export.
+1. `openbmb/MiniCPM-o-2_6` doesn't support transformers>=4.52 which is required for `optimum-cli` export.
+2. `--task image-text-to-text` is required for `optimum-cli export openvino --trust-remote-code` because `image-text-to-text` isn't `MiniCPM-o-2_6`'s native task.
+
 #### phi3_v {#phi3_v-notes}
 
 Models' configs aren't consistent. It's required to override the default `eos_token_id` with the one from a tokenizer:
