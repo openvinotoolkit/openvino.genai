@@ -174,9 +174,8 @@ def test_structural_tags_old(ov_pipe, prompt_and_structural_tag):
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize(
-    "ov_pipe", [model_id for model_id in structured_id_models if "random" not in model_id], indirect=True
-)
+# use only non-random model for stable output in TriggeredTags test
+@pytest.mark.parametrize("ov_pipe", ["TinyLlama/TinyLlama-1.1B-Chat-v1.0"], indirect=True)
 @pytest.mark.parametrize(
     "prompt,tag,validate",
     [
