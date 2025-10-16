@@ -142,6 +142,7 @@ ov::genai::ChatHistory js_to_cpp<ov::genai::ChatHistory>(const Napi::Env& env, c
         }
     }
 
+    // TODO Consider using direct native JsonContainer conversion instead of string serialization
     auto messages = ov::genai::JsonContainer::from_json_string(json_stringify(env, value));
     return ov::genai::ChatHistory(messages);
 }
