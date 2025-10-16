@@ -150,7 +150,7 @@
 - 'tools/continuous_batching/**/*'
 - 'tools/cacheviz/**/*'
 - 'tests/python_tests/test_continuous_batching.py'
-- 'tests/python_tests/test_kv_cache_eviction.py'
+- 'tests/python_tests/test_kv_cache_eviction/**/*'
 - 'tests/cpp/data/**/*'
 - 'tests/cpp/block_allocator.cpp'
 - 'tests/cpp/block_hash_store.cpp'
