@@ -91,7 +91,7 @@ export const VLM_MODELS: VLMModelType[] = [
       {
         name: 'MiniCPM-o-2_6',
         loraSupport: false,
-        links: ['https://huggingface.co/openbmb/openbmb/MiniCPM-o-2_6'],
+        links: ['https://huggingface.co/openbmb/MiniCPM-o-2_6'],
         notesLink: '#minicpm-o-notes',
       },
     ],
