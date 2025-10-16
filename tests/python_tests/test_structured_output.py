@@ -180,43 +180,59 @@ def test_structural_tags_old(ov_pipe, prompt_and_structural_tag):
 @pytest.mark.parametrize(
     "prompt,tag,validate",
     [
-        (
-            "raw string",
-            """{
-        "type": "structural_tag",
-        "format": {
-            "type": "const_string",
-            "value": "abc"
-        }
-    }""",
-            lambda x: x == "abc",
-        ),
-        ("regex", SOC.Regex("a*"), lambda x: re.match(r"^a*$", x) is not None),
-        ("json", SOC.JSONSchema(json.dumps(RESTAPIResponse.model_json_schema())), RESTAPIResponse.model_validate_json),
-        (
-            "Generate a date with EBNF",
-            SOC.EBNF((
-                """
-            root ::= date
-            date ::= year "-" month "-" day
-            year ::= digit digit digit digit
-            month ::= digit digit
-            day ::= digit digit
-            digit ::= "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
+        pytest.param(
+            "",
             """
-            )),
-            lambda x: re.match(r"^\d{4}-\d{2}-\d{2}$", x) is not None,
+            {
+                "type": "structural_tag",
+                "format": {
+                    "type": "const_string",
+                    "value": "abc"
+                }
+            }""",
+            lambda x: x == "abc",
+            id="Raw string structural tag",
         ),
-        ("constant_string", SOC.ConstString("constant_string"), lambda x: x == "constant_string"),
-        ("AnyText", SOC.AnyText(), lambda x: len(x) > 0),
-        (
-            "Tag",
+        pytest.param("", SOC.Regex("a*"), lambda x: re.match(r"^a*$", x) is not None, id="Regex"),
+        pytest.param(
+            "",
+            SOC.JSONSchema(json.dumps(RESTAPIResponse.model_json_schema())),
+            RESTAPIResponse.model_validate_json,
+            id="JSONSchema",
+        ),
+        pytest.param(
+            "",
+            SOC.EBNF(
+                """
+                root ::= date
+                date ::= year "-" month "-" day
+                year ::= digit digit digit digit
+                month ::= digit digit
+                day ::= digit digit
+                digit ::= "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
+                """
+            ),
+            lambda x: re.match(r"^\d{4}-\d{2}-\d{2}$", x) is not None,
+            id="EBNF",
+        ),
+        pytest.param("", SOC.ConstString("constant_string"), lambda x: x == "constant_string", id="ConstantString"),
+        pytest.param("", SOC.AnyText(), lambda x: len(x) > 0, id="AnyText"),
+        pytest.param(
+            "",
             SOC.Tag(begin="function", content=SOC.ConstString("..."), end="</function>"),
             lambda x: x == "function...</function>",
+            id="Tag",
         ),
-        ("Concat", SOC.ConstString("a") + SOC.ConstString("b") + SOC.ConstString("c"), lambda x: x == "abc"),
-        ("Union", SOC.ConstString("a") | SOC.ConstString("b") | SOC.ConstString("c"), lambda x: x in ["a", "b", "c"]),
-        (
+        pytest.param(
+            "", SOC.ConstString("a") + SOC.ConstString("b") + SOC.ConstString("c"), lambda x: x == "abc", id="Concat"
+        ),
+        pytest.param(
+            "",
+            SOC.ConstString("a") | SOC.ConstString("b") | SOC.ConstString("c"),
+            lambda x: x in ["a", "b", "c"],
+            id="Union",
+        ),
+        pytest.param(
             "QwenXMLParametersFormat",
             SOC.QwenXMLParametersFormat(json.dumps(RESTAPIResponse.model_json_schema())),
             lambda x: (
@@ -224,8 +240,9 @@ def test_structural_tags_old(ov_pipe, prompt_and_structural_tag):
                 re.search(r"<parameter=status>\"(success|error)\"</parameter>", x) is not None
                 and re.search(r"<parameter=data>[A-Z][a-z]{1,20}</parameter>", x) is not None
             ),
+            id="QwenXMLParametersFormat",
         ),
-        (
+        pytest.param(
             "TriggeredTags. Repeat word 'function'",
             SOC.TriggeredTags(
                 triggers=["function"],
@@ -237,8 +254,9 @@ def test_structural_tags_old(ov_pipe, prompt_and_structural_tag):
                 stop_after_first=True,
             ),
             lambda x: re.match(r"(function(A|B)</function>)", x) is not None,
+            id="TriggeredTags",
         ),
-        (
+        pytest.param(
             "TagsWithSeparator",
             SOC.TagsWithSeparator(
                 tags=[
@@ -250,10 +268,11 @@ def test_structural_tags_old(ov_pipe, prompt_and_structural_tag):
                 stop_after_first=False,
             ),
             lambda x: re.match(r"(<f>(A|B)</f>(;<f>(A|B)</f>))*", x) is not None,
+            id="TagsWithSeparator",
         ),
     ],
 )
-def test_structural_tags_new(ov_pipe, prompt, tag, validate):
+def test_structural_tags(ov_pipe, prompt, tag, validate):
     gen_config = ov_genai.GenerationConfig()
     gen_config.max_new_tokens = 3 if isinstance(tag, SOC.AnyText) else 100
     gen_config.do_sample = False

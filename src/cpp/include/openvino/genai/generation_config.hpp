@@ -113,13 +113,17 @@ public:
                 case '\n': stream << "\\n"; break;
                 case '\r': stream << "\\r"; break;
                 case '\t': stream << "\\t"; break;
-                default:
-                    if (static_cast<unsigned char>(character) < 0x20) {
+                default: {
+                    // Interpret `character` as a raw byte to avoid sign-extension on platforms where `char` is signed. 
+                    unsigned char uc = static_cast<unsigned char>(character);
+                    if (uc < 0x20) {
+                        // control characters < 0x20 must be escaped as \uXXXX in JSON
                         stream << "\\u" << std::hex << std::uppercase << std::setfill('0') << std::setw(4)
-                                << static_cast<int>(static_cast<unsigned char>(character)) << std::dec << std::nouppercase;
+                               << static_cast<int>(uc) << std::dec << std::nouppercase;
                     } else {
                         stream << character;
                     }
+                }
             }
         }
         stream << '"';
@@ -127,6 +131,9 @@ public:
     }
 
     // base grammar types for structural tags construction
+    /**
+     * @brief Regex structural tag constrains output using a regular expression.
+     */
     struct Regex {
         std::string value;
 
@@ -143,6 +150,10 @@ public:
         }
     };
 
+    /**
+     * @brief JSONSchema structural tag constrains output to a JSON document that
+     *        must conform to the provided JSON Schema string.
+     */
     struct JSONSchema {
         std::string value;
 
@@ -159,6 +170,9 @@ public:
         }
     };
 
+    /**
+     * @brief EBNF structural tag constrains output using an EBNF grammar.
+     */
     struct EBNF {
         std::string value;
 
@@ -175,6 +189,10 @@ public:
         }
     };
 
+    /**
+     * @brief ConstString structural tag forces the generator to produce exactly
+     *        the provided constant string value.
+     */
     struct ConstString {
         std::string value;
 
@@ -191,6 +209,10 @@ public:
         }
     };
 
+    /**
+     * @brief AnyText structural tag allows any text for the portion
+     *        of output covered by this tag.
+     */
     struct AnyText {
         AnyText() = default;
         std::string to_string() const {
@@ -204,6 +226,11 @@ public:
         }
     };
 
+    /**
+     * @brief QwenXMLParametersFormat instructs the generator to output an XML
+     *        parameters block derived from the provided JSON schema. This is a
+     *        specialized helper for Qwen-style XML parameter formatting.
+     */
     struct QwenXMLParametersFormat {
         std::string json_schema;
 
@@ -220,7 +247,7 @@ public:
         }
     };
 
-    // compound grammar types
+    // nested grammar types
     struct Concat;
     struct Union;
     struct Tag;
@@ -287,8 +314,15 @@ public:
         }
     }
 
-    // compound grammar types - Concat and Union are used to combine multiple grammars into one
-    // Concat combines two grammars in sequence, e.g. "A B" means A followed by B
+    // nested grammar types
+    /**
+     * @brief Concat composes multiple structural tags in sequence. Each element
+     *        must be produced in the given order.
+     *        Can be used indirectly with + operator.
+     *
+     * Example: Concat(ConstString("a"), ConstString("b")) produces "ab".
+     *          ConstString("a") + ConstString("b") is equivalent.
+     */
     struct Concat {
         std::vector<StructuralTag> elements;
 
@@ -325,6 +359,11 @@ public:
     };
 
     // Union combines two grammars in parallel, e.g. "A | B" means either A or B
+    /**
+     * @brief Union composes multiple structural tags as alternatives. The
+     *        model may produce any one of the provided elements.
+     *        Can be used indirectly with | operator.
+     */
     struct Union {
         std::vector<StructuralTag> elements;
 
@@ -360,6 +399,15 @@ public:
         }
     };
 
+    /**
+     * @brief Tag defines a begin/end wrapper with constrained inner content.
+     *
+     * The generator will output `begin`, then the `content` (a StructuralTag),
+     * and finally `end`. Useful for embedding structured fragments inside free
+     * text using explicit markers.
+     *
+     * Example: Tag("<think>", AnyText(), "</think>") represents thinking portion of the model output.
+     */
     struct Tag {
         std::string begin;
         StructuralTag content;
@@ -386,11 +434,18 @@ public:
         }
     };
 
+    /**
+     * @brief TriggeredTags associates a set of `triggers` with multiple `tags`.
+     *
+     * When the model generates any of the trigger strings the structured generation
+     * activates to produce configured tags. Flags allow requiring
+     * at least one tag and stopping structured generation after the first tag.
+     */
     struct TriggeredTags {
         std::vector<std::string> triggers;
         std::vector<Tag> tags;
         bool at_least_one = false;  // if true, at least one tag must be generated after trigger
-        bool stop_after_first = false; // if true, generation stops after first tag is generated
+        bool stop_after_first = false; // if true, structured generation stops after first tag is generated
         
         TriggeredTags() = default;
         TriggeredTags(const std::vector<std::string>& triggers,
@@ -440,6 +495,13 @@ public:
         };
     };
 
+    /**
+     * @brief TagsWithSeparator configures generation of a sequence of tags
+     *        separated by a fixed `separator` string.
+     *
+     * Can be used to produce repeated tagged elements like
+     * "<f>A</f>;<f>B</f>" where `separator`=";".
+     */
     struct TagsWithSeparator {
         std::vector<Tag> tags;
         std::string separator;
