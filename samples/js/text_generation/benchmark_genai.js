@@ -55,7 +55,7 @@ async function main() {
 
   let prompt;
   if (argv.prompt !== undefined && argv.prompt_file !== undefined) {
-    console.error(`Prompt and prompt file should not exist together!`);
+    console.error(`Cannot specify both --prompt and --prompt_file options simultaneously!`);
     process.exit(1);
   } else {
     if (argv.prompt_file !== undefined) {
