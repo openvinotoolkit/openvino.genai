@@ -104,7 +104,6 @@ int main(int argc, char* argv[]) {
 
     ov::genai::GenerationConfig generation_config;
     generation_config.max_new_tokens = 100;
-    generation_config.apply_chat_template = false;
 
     std::string prompt;
 
@@ -112,7 +111,7 @@ int main(int argc, char* argv[]) {
     std::cout << "question:\n";
 
     std::getline(std::cin, prompt);
-    pipe.generate("<|im_start|>user\n<image>./</image>\nAnswer the question posed in the mobile screenshot.<|im_end|>\n<|im_start|>assistant\n",
+    pipe.generate(prompt,
                   ov::genai::images(rgbs),
                   ov::genai::generation_config(generation_config),
                   ov::genai::streamer(print_subword));

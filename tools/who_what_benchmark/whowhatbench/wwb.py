@@ -461,6 +461,7 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
 
 def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question):
     image_data = ov.Tensor(np.array(image)[None])
+    print(prompt)
     out = model.generate(
         prompt,
         **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
