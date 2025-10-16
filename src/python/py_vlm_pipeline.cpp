@@ -37,6 +37,7 @@ auto vlm_generate_docstring = R"(
     LLaVa-NeXT-Video: <image>
     nanoLLaVA: <image>\n
     nanoLLaVA-1.5: <image>\n
+    MiniCPM-o-2_6: <image>./</image>\n
     MiniCPM-V-2_6: <image>./</image>\n
     Phi-3-vision: <|image_i|>\n - the index starts with one
     Phi-4-multimodal-instruct: <|image_i|>\n - the index starts with one
@@ -79,6 +80,7 @@ auto vlm_generate_kwargs_docstring = R"(
     LLaVa-NeXT-Video: <image>
     nanoLLaVA: <image>\n
     nanoLLaVA-1.5: <image>\n
+    MiniCPM-o-2_6: <image>./</image>\n
     MiniCPM-V-2_6: <image>./</image>\n
     Phi-3-vision: <|image_i|>\n - the index starts with one
     Phi-4-multimodal-instruct: <|image_i|>\n - the index starts with one

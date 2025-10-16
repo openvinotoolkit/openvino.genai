@@ -338,7 +338,6 @@ std::pair<EncodedImage, ImageSliceResult> llava_image_embed_make_with_bytes_slic
         }
     }
 
-    // size_t counter = 1;
     if (1 < preprocessed.size()) {
         for (size_t row = 1; row < preprocessed.size(); ++row) {
             size_t n_slices = preprocessed.at(row).size();
