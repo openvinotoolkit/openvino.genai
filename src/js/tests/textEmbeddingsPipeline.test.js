@@ -1,5 +1,5 @@
 import { describe, it, before } from "node:test";
-import { TextEmbeddingPipeline } from "../dist/index.js";
+import { TextEmbeddingPipeline, PoolingType } from "../dist/index.js";
 import { isFloat32Array } from "util/types";
 import assert from "node:assert/strict";
 import { models } from "./models.js";
@@ -47,5 +47,13 @@ describe("TextEmbeddingPipeline", () => {
     assert.ok(embedResult instanceof Array);
     assert.strictEqual(embedResult.length, 2);
     assert.ok(isFloat32Array(embedResult[0]));
+  });
+
+  it("test TextEmbeddingPipeline config param", async () => {
+    const pipelineWithConfig = await TextEmbeddingPipeline(EMBEDDING_MODEL_PATH, "CPU", {
+      pooling_type: PoolingType.MEAN,
+      normalize: false,
+    });
+    assert.ok(pipelineWithConfig instanceof Object);
   });
 });
