@@ -16,9 +16,6 @@ For downloading pre-converted models, see [Download Pre-Converted OpenVINO Model
 ## Converting Models from Hugging Face
 
 1. Install `optimum-intel` package to download, convert and optimize models:
-    ```bash
-    pip install optimum-intel@git+https://github.com/huggingface/optimum-intel.git
-    ```
 
     :::info Note
     Some models may require additional dependencies.
@@ -63,8 +60,7 @@ ModelScope models need to be downloaded first, then converted to OpenVINO IR for
 
 1. Install `modelscope` and `optimum-intel` packages to download, convert and optimize models:
     ```bash
-    pip install modelscope
-    pip install optimum-intel@git+https://github.com/huggingface/optimum-intel.git
+    pip install modelscope --requirement ./samples/export-requirements.txt
     ```
 2. Download the required model (e.g. `Qwen/Qwen2-7b`) to a local directory using `modelscope` tool:
     ```bash
