@@ -45,6 +45,21 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'nanoLLaVA',
+    models: [
+      {
+        name: 'nanoLLaVA',
+        loraSupport: false,
+        links: ['https://huggingface.co/qnguyen3/nanoLLaVA'],
+      },
+      {
+        name: 'nanoLLaVA-1.5',
+        loraSupport: false,
+        links: ['https://huggingface.co/qnguyen3/nanoLLaVA-1.5'],
+      },
+    ],
+  },
+  {
     architecture: 'LLaVA-NeXT',
     models: [
       {
@@ -54,6 +69,18 @@ export const VLM_MODELS: VLMModelType[] = [
           'https://huggingface.co/llava-hf/llava-v1.6-mistral-7b-hf',
           'https://huggingface.co/llava-hf/llava-v1.6-vicuna-7b-hf',
           'https://huggingface.co/llava-hf/llama3-llava-next-8b-hf',
+        ],
+      },
+    ],
+  },
+  {
+    architecture: 'LLaVA-NeXT-Video',
+    models: [
+      {
+        name: 'LLaVA-Next-Video',
+        loraSupport: false,
+        links: [
+          'https://huggingface.co/llava-hf/LLaVA-NeXT-Video-7B-hf',
         ],
       },
     ],

@@ -3,6 +3,7 @@
 namespace {
 constexpr const char* JS_SCHEDULER_CONFIG_KEY = "schedulerConfig";
 constexpr const char* CPP_SCHEDULER_CONFIG_KEY = "scheduler_config";
+constexpr const char* POOLING_TYPE_KEY = "pooling_type";
 }  // namespace
 
 ov::AnyMap to_anyMap(const Napi::Env& env, const Napi::Value& val) {
@@ -85,6 +86,9 @@ ov::AnyMap js_to_cpp<ov::AnyMap>(const Napi::Env& env, const Napi::Value& value)
         const std::string& key_name = keys.Get(i).ToString();
         if (key_name == JS_SCHEDULER_CONFIG_KEY) {
             result_map[CPP_SCHEDULER_CONFIG_KEY] = js_to_cpp<ov::genai::SchedulerConfig>(env, object.Get(key_name));
+        } else if (key_name == POOLING_TYPE_KEY) {
+            result_map[key_name] =
+                ov::genai::TextEmbeddingPipeline::PoolingType(object.Get(key_name).ToNumber().Int32Value());
         } else {
             result_map[key_name] = js_to_cpp<ov::Any>(env, object.Get(key_name));
         }
@@ -127,12 +131,13 @@ ov::genai::StringInputs js_to_cpp<ov::genai::StringInputs>(const Napi::Env& env,
 
 template <>
 ov::genai::ChatHistory js_to_cpp<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value) {
+    // TODO Update for new ChatHistory type: Record<string, any>[]
     auto incorrect_argument_message = "Chat history must be { role: string, content: string }[]";
     if (value.IsArray()) {
         auto array = value.As<Napi::Array>();
         size_t arrayLength = array.Length();
 
-        std::vector<std::unordered_map<std::string, std::string>> nativeArray;
+        std::vector<ov::AnyMap> nativeArray;
         for (uint32_t i = 0; i < arrayLength; ++i) {
             Napi::Value arrayItem = array[i];
             if (!arrayItem.IsObject()) {
@@ -142,7 +147,7 @@ ov::genai::ChatHistory js_to_cpp<ov::genai::ChatHistory>(const Napi::Env& env, c
             if (obj.Get("role").IsUndefined() || obj.Get("content").IsUndefined()) {
                 OPENVINO_THROW(incorrect_argument_message);
             }
-            std::unordered_map<std::string, std::string> result;
+            ov::AnyMap result;
             Napi::Array keys = obj.GetPropertyNames();
 
             for (uint32_t i = 0; i < keys.Length(); ++i) {
