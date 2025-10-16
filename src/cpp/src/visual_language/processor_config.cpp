@@ -37,7 +37,6 @@ ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_pa
     read_json_param(parsed, "max_pixels", max_pixels);
     read_json_param(parsed, "temporal_patch_size", temporal_patch_size);
     read_json_param(parsed, "merge_size", merge_size);
-    read_json_param(parsed, "tokens_per_second", tokens_per_second);
 
     // Setting gemma3-4b-it config params
     read_json_param(parsed, "size.height", size_height);

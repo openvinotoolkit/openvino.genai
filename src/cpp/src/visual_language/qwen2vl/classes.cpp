@@ -1223,7 +1223,7 @@ ov::Tensor InputsEmbedderQwen2VL::create_position_ids(
     const int64_t vision_start_token_id,
     const std::vector<std::pair<std::size_t, std::size_t>> history_vision_count) {
     const size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
-    const size_t tokens_per_second = m_vision_encoder->get_processor_config().tokens_per_second;
+    const size_t tokens_per_second = m_vlm_config.vision_config_tokens_per_second;
     std::vector<std::array<size_t, 3>> reordered_images_grid_thw;
 
     if (history_vision_count.size() > 0) {

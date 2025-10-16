@@ -84,6 +84,9 @@ public:
     /// @brief A size of a window for Qwen2.5VL model, used in window attention.
     size_t vision_config_window_size = 112;
 
+    /// @brief A token id per second for Qwen2.5VL model, used in calc position_ids.
+    size_t vision_config_tokens_per_second = 2;
+
     /// @brief A string token denoting start of vision embeddings for gemma3-4b-it model.
     std::string start_of_image = "<start_of_image>";
     /// @brief A placeholder for image embeddings in text for gemma3-4b-it model.
