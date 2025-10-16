@@ -31,7 +31,7 @@ int main(int argc, char* argv[]) {
     const char* text_prompt = (argc > 4) ? argv[4] : "Describe this image";
 
     size_t tensor_count;
-    const ov_tensor_t** tensors = load_images(image_path, &tensor_count);
+    ov_tensor_t** tensors = load_images(image_path, &tensor_count);
 
     // Create VLM pipeline
     ov_genai_vlm_pipeline* pipeline = NULL;
