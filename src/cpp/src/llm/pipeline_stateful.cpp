@@ -65,7 +65,8 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     if (!m_use_full_chat_history)
         m_kv_cache_state.seq_length_axis = kv_pos.seq_len;
 
-    auto filtered_properties = extract_adapters_from_properties(properties, &m_generation_config.adapters);
+    auto [filtered_properties_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties);
+    auto filtered_properties = extract_adapters_from_properties(filtered_properties_without_gguf, &m_generation_config.adapters);
     if (m_generation_config.adapters) {
         m_generation_config.adapters->set_tensor_name_prefix("base_model.model.");
         m_adapter_controller = AdapterController(model, *m_generation_config.adapters, device);   // TODO: Make the prefix name configurable
@@ -93,7 +94,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const std::filesystem::path& models_path,
     const std::string& device,
     const ov::AnyMap& plugin_config)
-    : StatefulLLMPipeline{models_path, Tokenizer(models_path), device, plugin_config} {}
+    : StatefulLLMPipeline{models_path, Tokenizer(models_path, plugin_config), device, plugin_config} {}
 
 DecodedResults StatefulLLMPipeline::generate(
     StringInputs inputs,
@@ -119,8 +120,20 @@ DecodedResults StatefulLLMPipeline::generate(
     TokenizedInputs encoded_input;
 
     if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
-        OPENVINO_ASSERT(!is_chat_conversation, "Can't chat with multiple prompts");
-        if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
+        if (is_chat_conversation) {
+            OPENVINO_ASSERT(input_vector->size() == 1, "Can't chat with multiple prompts");
+            m_history.push_back({{"role", "user"}, {"content", (*input_vector)[0]}});
+            constexpr bool add_generation_prompt = true;
+            auto new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+            auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
+
+            if (m_use_full_chat_history) {
+                encoded_input = new_chat_tokens;
+            } else {
+                ov::genai::align_kv_cache_and_history(new_chat_tokens.input_ids, m_kv_cache_state);
+                encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_kv_cache_state);
+            }
+        } else if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
             std::vector<std::string> templated_input_vector;
             for (auto& input : *input_vector) {
                 ChatHistory history({{{"role", "user"}, {"content", input}}});
@@ -371,7 +384,7 @@ EncodedResults StatefulLLMPipeline::generate(
     }
 
     ov::genai::utils::GenerationFinishInfo finish_info = get_lm_encoded_results(m_model_runner, input_ids, concatenated_attention_mask, streamer_ptr, m_sampler,
-                                                                                requests, position_ids, m_kv_cache_state, nullptr, std::nullopt, m_max_kv_cache_size);
+                                                                                requests, position_ids, std::nullopt, m_kv_cache_state, nullptr, std::nullopt, m_max_kv_cache_size);
     ov::genai::EncodedResults& result = finish_info.results;
     m_chat_generation_finish_status = finish_info.streaming_finish_status;
 

@@ -14,41 +14,31 @@ ov::genai::ProcessorConfig::ProcessorConfig(const std::filesystem::path& json_pa
     read_json_param(parsed, "patch_size", patch_size); // For llava - stored in config.json vision_config
     read_json_param(parsed, "scale_resolution", scale_resolution);
     read_json_param(parsed, "max_slice_nums", max_slice_nums);
-    if (parsed.contains("norm_mean")) {
-        norm_mean = parsed.at("norm_mean").get<std::array<float, 3>>();
-    }
-    if (parsed.contains("norm_std")) {
-        norm_std = parsed.at("norm_std").get<std::array<float, 3>>();
-    }
+
+    read_json_param(parsed, "norm_mean", norm_mean);
+    read_json_param(parsed, "norm_std", norm_std);
     
     // Setting llava config params
-    if (parsed.contains("image_mean")) {
-        image_mean = parsed.at("image_mean").get<std::array<float, 3>>();
-    }
-    if (parsed.contains("image_std")) {
-        image_std = parsed.at("image_std").get<std::array<float, 3>>();
-    }
-
-    if (parsed.contains("crop_size")) {
-        crop_size_height = parsed.at("crop_size").at("height");
-        crop_size_width = parsed.at("crop_size").at("width");
-    }
-    if (parsed.contains("size") && parsed.at("size").contains("shortest_edge")) {
-        size_shortest_edge = parsed.at("size").at("shortest_edge");
-    }
+    read_json_param(parsed, "image_mean", image_mean);
+    read_json_param(parsed, "image_std", image_std);
+    read_json_param(parsed, "crop_size.height", crop_size_height);
+    read_json_param(parsed, "crop_size.width", crop_size_width);
+    read_json_param(parsed, "size.shortest_edge", size_shortest_edge);
 
     // Setting llava-next config params
-    if (parsed.contains("image_grid_pinpoints")) {
-        image_grid_pinpoints = parsed.at("image_grid_pinpoints").get<std::vector<std::pair<int, int>>>();
-    }
+    read_json_param(parsed, "image_grid_pinpoints", image_grid_pinpoints);
     read_json_param(parsed, "num_crops", phi3_v.num_crops);
-    if (parsed.contains("img_processor")) {
-        phi3_v.num_img_tokens = parsed.at("img_processor").at("num_img_tokens");
-    }
+
+    // Setting phi3_v config params
+    read_json_param(parsed, "img_processor.num_img_tokens", phi3_v.num_img_tokens);
 
     // Setting qwen2vl config params
     read_json_param(parsed, "min_pixels", min_pixels);
     read_json_param(parsed, "max_pixels", max_pixels);
     read_json_param(parsed, "temporal_patch_size", temporal_patch_size);
     read_json_param(parsed, "merge_size", merge_size);
+
+    // Setting gemma3-4b-it config params
+    read_json_param(parsed, "size.height", size_height);
+    read_json_param(parsed, "size.width", size_width);
 }

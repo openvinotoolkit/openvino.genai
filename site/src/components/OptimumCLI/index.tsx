@@ -26,6 +26,8 @@ export default function OptimumCLI({
     args.push('--trust-remote-code');
   }
   return (
-    <CodeBlock language="bash">{`optimum-cli export ${args.join(' ')} ${outputDir}`}</CodeBlock>
+    <CodeBlock language="bash">{`optimum-cli export openvino ${args.join(
+      ' '
+    )} ${outputDir}`}</CodeBlock>
   );
 }

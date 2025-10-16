@@ -386,6 +386,17 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
+    architecture: 'GptOssForCausalLM',
+    models: [
+      {
+        name: 'GPT-OSS',
+        links: [
+          'https://huggingface.co/openai/gpt-oss-20b',
+        ],
+      },
+    ],
+  },
+  {
     architecture: 'GraniteForCausalLM',
     models: [
       {
@@ -493,6 +504,7 @@ export const LLM_MODELS: LLMModelType[] = [
           'https://huggingface.co/meta-llama/Llama-2-7b-hf',
           'https://huggingface.co/meta-llama/Llama-2-70b-chat-hf',
           'https://huggingface.co/meta-llama/Llama-2-70b-hf',
+          'https://huggingface.co/microsoft/Llama2-7b-WhoIsHarryPotter',
         ],
       },
       {
@@ -552,6 +564,8 @@ export const LLM_MODELS: LLMModelType[] = [
           'https://huggingface.co/openbmb/MiniCPM-2B-dpo-fp32',
           'https://huggingface.co/openbmb/MiniCPM-2B-sft-bf16',
           'https://huggingface.co/openbmb/MiniCPM-2B-dpo-bf16',
+          'https://huggingface.co/openbmb/MiniCPM4-0.5B',
+          'https://huggingface.co/openbmb/MiniCPM4-8B',
         ],
       },
     ],
@@ -681,21 +695,19 @@ export const LLM_MODELS: LLMModelType[] = [
           'https://huggingface.co/microsoft/Phi-3.5-mini-instruct',
           'https://huggingface.co/microsoft/Phi-4-mini-instruct',
           'https://huggingface.co/microsoft/phi-4',
-          'https://huggingface.co/microsoft/Phi-4-reasoning'
+          'https://huggingface.co/microsoft/Phi-4-reasoning',
         ],
       },
     ],
   },
   {
-    architecture: "PhimoeForCausalLM",
+    architecture: 'PhimoeForCausalLM',
     models: [
       {
-        name: "Phi-3.5-MoE",
-        links: [
-          "https://huggingface.co/microsoft/Phi-3.5-MoE-instruct"
-        ]
-      }
-    ]
+        name: 'Phi-3.5-MoE',
+        links: ['https://huggingface.co/microsoft/Phi-3.5-MoE-instruct'],
+      },
+    ],
   },
   {
     architecture: 'QWenLMHeadModel',
@@ -742,6 +754,7 @@ export const LLM_MODELS: LLMModelType[] = [
           'https://huggingface.co/Qwen/Qwen1.5-7B-Chat',
           'https://huggingface.co/Qwen/Qwen1.5-14B-Chat',
           'https://huggingface.co/Qwen/Qwen1.5-32B-Chat',
+          'https://huggingface.co/Qwen/Qwen1.5-7B-Chat-GPTQ-Int4',
           'https://huggingface.co/Qwen/QwQ-32B',
           'https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B',
           'https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B',
@@ -766,37 +779,37 @@ export const LLM_MODELS: LLMModelType[] = [
     ],
   },
   {
-   architecture: 'Qwen3ForCausalLM',
-   models: [
-    {
-      name: 'Qwen3',
-      links: [
-        'https://huggingface.co/Qwen/Qwen3-0.6B',
-        'https://huggingface.co/Qwen/Qwen3-1.7B',
-        'https://huggingface.co/Qwen/Qwen3-4B',
-        'https://huggingface.co/Qwen/Qwen3-8B',
-        'https://huggingface.co/Qwen/Qwen3-14B',
-        'https://huggingface.co/Qwen/Qwen3-32B',
-        'https://huggingface.co/Qwen/Qwen3-0.6B-Base',
-        'https://huggingface.co/Qwen/Qwen3-1.7B-Base',
-        'https://huggingface.co/Qwen/Qwen3-4B-Base',
-        'https://huggingface.co/Qwen/Qwen3-8B-Base',
-        'https://huggingface.co/Qwen/Qwen3-14B-Base',
-      ]
-    }
-   ]
+    architecture: 'Qwen3ForCausalLM',
+    models: [
+      {
+        name: 'Qwen3',
+        links: [
+          'https://huggingface.co/Qwen/Qwen3-0.6B',
+          'https://huggingface.co/Qwen/Qwen3-1.7B',
+          'https://huggingface.co/Qwen/Qwen3-4B',
+          'https://huggingface.co/Qwen/Qwen3-8B',
+          'https://huggingface.co/Qwen/Qwen3-14B',
+          'https://huggingface.co/Qwen/Qwen3-32B',
+          'https://huggingface.co/Qwen/Qwen3-0.6B-Base',
+          'https://huggingface.co/Qwen/Qwen3-1.7B-Base',
+          'https://huggingface.co/Qwen/Qwen3-4B-Base',
+          'https://huggingface.co/Qwen/Qwen3-8B-Base',
+          'https://huggingface.co/Qwen/Qwen3-14B-Base',
+        ],
+      },
+    ],
   },
   {
     architecture: 'Qwen3MoeForCausalLM',
     models: [
       {
-      name: 'Qwen3MoE',
-      links: [
-        'https://huggingface.co/Qwen/Qwen3-30B-A3B',
-        'https://huggingface.co/Qwen/Qwen3-30B-A3B-Base',
-      ]
-    }
-  ]
+        name: 'Qwen3MoE',
+        links: [
+          'https://huggingface.co/Qwen/Qwen3-30B-A3B',
+          'https://huggingface.co/Qwen/Qwen3-30B-A3B-Base',
+        ],
+      },
+    ],
   },
   {
     architecture: 'StableLmForCausalLM',

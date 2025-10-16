@@ -67,6 +67,7 @@ class StableDiffusion3Pipeline : public DiffusionPipeline {
 public:
     StableDiffusion3Pipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) :
         DiffusionPipeline(pipeline_type) {
+        m_root_dir = root_dir;
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -129,6 +130,7 @@ public:
                              const std::string& device,
                              const ov::AnyMap& properties) :
         DiffusionPipeline(pipeline_type) {
+        m_root_dir = root_dir;
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -217,6 +219,19 @@ public:
         OPENVINO_ASSERT(!pipe.is_inpainting_model(), "Cannot create ",
             pipeline_type == PipelineType::TEXT_2_IMAGE ? "'Text2ImagePipeline'" : "'Image2ImagePipeline'", " from InpaintingPipeline with inpainting model");
 
+        m_root_dir = pipe.m_root_dir;
+
+        if (pipe.m_t5_text_encoder) {
+            m_t5_text_encoder = std::make_shared<T5EncoderModel>(*pipe.m_t5_text_encoder);
+        }
+
+        m_clip_text_encoder_1 = std::make_shared<CLIPTextModelWithProjection>(*pipe.m_clip_text_encoder_1);
+        m_clip_text_encoder_2 = std::make_shared<CLIPTextModelWithProjection>(*pipe.m_clip_text_encoder_2);
+        m_transformer = std::make_shared<SD3Transformer2DModel>(*pipe.m_transformer);
+        m_vae = std::make_shared<AutoencoderKL>(*pipe.m_vae);
+
+        // initialize generation config
+
         m_pipeline_type = pipeline_type;
         initialize_generation_config("StableDiffusion3Pipeline");
     }
@@ -261,6 +276,37 @@ public:
         }
         m_transformer->compile(denoise_device, properties);
         m_vae->compile(vae_device, properties);
+    }
+
+    std::shared_ptr<DiffusionPipeline> clone() override {
+        OPENVINO_ASSERT(!m_root_dir.empty(), "Cannot clone pipeline without root directory");
+
+        std::shared_ptr<AutoencoderKL> vae = std::make_shared<AutoencoderKL>(m_vae->clone());
+        std::shared_ptr<CLIPTextModelWithProjection> clip_text_encoder_1 = std::static_pointer_cast<CLIPTextModelWithProjection>(m_clip_text_encoder_1->clone());
+        std::shared_ptr<CLIPTextModelWithProjection> clip_text_encoder_2 = std::static_pointer_cast<CLIPTextModelWithProjection>(m_clip_text_encoder_2->clone());
+        std::shared_ptr<SD3Transformer2DModel> transformer = std::make_shared<SD3Transformer2DModel>(m_transformer->clone());
+
+        std::shared_ptr<StableDiffusion3Pipeline> pipeline;
+        if (m_t5_text_encoder) {
+            std::shared_ptr<T5EncoderModel> t5_text_encoder = m_t5_text_encoder->clone();
+            pipeline = std::make_shared<StableDiffusion3Pipeline>(m_pipeline_type,
+                                                                  *clip_text_encoder_1,
+                                                                  *clip_text_encoder_2,
+                                                                  *t5_text_encoder,
+                                                                  *transformer,
+                                                                  *vae);
+        } else {
+            pipeline = std::make_shared<StableDiffusion3Pipeline>(m_pipeline_type,
+                                                                  *clip_text_encoder_1,
+                                                                  *clip_text_encoder_2,
+                                                                  *m_transformer,
+                                                                  *vae);
+        }
+
+        pipeline->m_root_dir = m_root_dir;
+        pipeline->set_scheduler(Scheduler::from_config(m_root_dir / "scheduler/scheduler_config.json"));
+        pipeline->set_generation_config(m_generation_config);
+        return pipeline;
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
@@ -657,8 +703,8 @@ private:
     }
 
     void initialize_generation_config(const std::string& class_name) override {
-        assert(m_transformer != nullptr);
-        assert(m_vae != nullptr);
+        OPENVINO_ASSERT(m_transformer != nullptr);
+        OPENVINO_ASSERT(m_vae != nullptr);
 
         const auto& transformer_config = m_transformer->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
@@ -679,8 +725,8 @@ private:
     }
 
     void check_image_size(const int height, const int width) const override {
-        assert(m_transformer != nullptr);
-        assert(m_vae != nullptr);
+        OPENVINO_ASSERT(m_transformer != nullptr);
+        OPENVINO_ASSERT(m_vae != nullptr);
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const size_t patch_size = m_transformer->get_config().patch_size;
@@ -692,7 +738,7 @@ private:
     }
 
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
-        check_image_size(generation_config.width, generation_config.height);
+        check_image_size(generation_config.height, generation_config.width);
 
         const bool is_classifier_free_guidance = do_classifier_free_guidance(generation_config.guidance_scale);
 

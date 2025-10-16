@@ -42,7 +42,7 @@ the properties of the compiled model are printed as follows:
     CPU: Intel(R) Xeon(R) Platinum 8468
 ```
 
-When Speculative Decoding ot Prompt Lookup pipeline is executed, performance metrics will be also printed.
+When Speculative Decoding or Prompt Lookup pipeline is executed, performance metrics will be also printed.
 
 For example:
 
@@ -64,4 +64,16 @@ Generated tokens: 100
 Accepted token rate, %: 51
 ===============================
 Request_id: 0 ||| 40 0 40 20 0 0 40 40 0 20 20 20 0 40 0 0 20 80 0 80 20 0 0 0 40 80 0 40 60 40 80 0 0 0 0 40 20 20 0 40 20 40 0 20 0 0 0
+```
+
+
+When GGUF model passed to LLMPipeline, the details debug info will be also printed.
+
+For example:
+```
+[GGUF Reader]: Loading and unpacking model from: gguf_models/qwen2.5-0.5b-instruct-q4_0.gguf
+[GGUF Reader]: Loading and unpacking model done. Time: 196ms
+[GGUF Reader]: Start generating OpenVINO model...
+[GGUF Reader]: Save generated OpenVINO model to: gguf_models/openvino_model.xml done. Time: 466 ms
+[GGUF Reader]: Model generation done. Time: 757ms
 ```

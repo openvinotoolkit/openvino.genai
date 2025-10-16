@@ -6,6 +6,7 @@
 #include <cstddef>
 
 #include "openvino/genai/cache_eviction.hpp"
+#include "openvino/genai/sparse_attention.hpp"
 
 namespace ov::genai {
 struct SchedulerConfig {
@@ -58,6 +59,13 @@ struct SchedulerConfig {
     // when a sequence has finished generation its cache is released.
     // When ContinuousBatching is invoked from LLMPipeline (client scenario) by default prefix caching is turned on.
     bool enable_prefix_caching = false;
+
+    /** Whether to apply block-wise sparse attention to the prefill stage.
+     */
+    bool use_sparse_attention = false;
+    /** Configuration struct for the sparse attention prefill functionality.
+     */
+    SparseAttentionConfig sparse_attention_config;
 
     bool operator==(const SchedulerConfig& other) const {
         return max_num_batched_tokens == other.max_num_batched_tokens && num_kv_blocks == other.num_kv_blocks &&

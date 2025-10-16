@@ -12,11 +12,15 @@ namespace ov::genai {
 enum class VLMModelType {
     MINICPM,
     LLAVA,
+    NANOLLAVA,
     LLAVA_NEXT,
+    LLAVA_NEXT_VIDEO,
     INTERNVL_CHAT,
     PHI3_V,
+    PHI4MM,
     QWEN2_VL,
     QWEN2_5_VL,
+    GEMMA3,
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to
@@ -65,7 +69,7 @@ public:
     std::string image_context_token = "<IMG_CONTEXT>";
     /// @brief A string token denoting end of image embeddings for InternVL2 model.
     std::string image_end_token = "</img>";
-    /// @brief phi3_v new line token embedding to separate images.
+    /// @brief phi3_v and phi4mm new line token embedding to separate images.
     std::vector<float> sub_GN = std::vector(4096, 0.0f);
     std::vector<float> glb_GN = std::vector(4096, 0.0f);
     
@@ -78,6 +82,16 @@ public:
     
     /// @brief A size of a window for Qwen2.5VL model, used in window attention.
     size_t vision_config_window_size = 112;
+
+    /// @brief A string token denoting start of vision embeddings for gemma3-4b-it model.
+    std::string start_of_image = "<start_of_image>";
+    /// @brief A placeholder for image embeddings in text for gemma3-4b-it model.
+    std::string image_soft_token = "<image_soft_token>";
+    /// @brief A string token denoting end of vision embeddings for gemma3-4b-it model.
+    std::string end_of_image = "<end_of_image>";
+
+    /// @brief A string token denoting start of video embeddings 
+    std::string video_start = "<video>";
 
     /// @brief Default constructor.
     VLMConfig() = default;

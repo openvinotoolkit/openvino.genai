@@ -13,6 +13,7 @@ class StableDiffusionXLPipeline : public StableDiffusionPipeline {
 public:
     StableDiffusionXLPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) :
         StableDiffusionPipeline(pipeline_type) {
+        m_root_dir = root_dir;
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -69,6 +70,7 @@ public:
 
     StableDiffusionXLPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir, const std::string& device, const ov::AnyMap& properties) :
         StableDiffusionPipeline(pipeline_type) {
+        m_root_dir = root_dir;
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -78,34 +80,48 @@ public:
 
         set_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
 
-        auto updated_properties = update_adapters_in_properties(properties, &DiffusionPipeline::derived_adapters);
+        const auto [properties_without_blob, blob_path] = utils::extract_export_properties(properties);
+
+        auto updated_properties = update_adapters_in_properties(properties_without_blob, &DiffusionPipeline::derived_adapters);
         // updated_properies are for passing to the pipeline subcomponents only, not for the generation config
 
         const std::string text_encoder = data["text_encoder"][1].get<std::string>();
         if (text_encoder == "CLIPTextModel") {
+            if (blob_path.has_value()) {
+                updated_properties.fork()[ov::genai::blob_path.name()] = blob_path.value() / "text_encoder";
+            }
             m_clip_text_encoder = std::make_shared<CLIPTextModel>(
                 root_dir / "text_encoder",
                 device,
                 *properties_for_text_encoder(*updated_properties, "lora_te1")
             );
+            updated_properties.fork().erase(ov::genai::blob_path.name());
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder, "' text encoder type");
         }
 
         const std::string text_encoder_2 = data["text_encoder_2"][1].get<std::string>();
         if (text_encoder_2 == "CLIPTextModelWithProjection") {
+            if (blob_path.has_value()) {
+                updated_properties.fork()[ov::genai::blob_path.name()] = blob_path.value() / "text_encoder_2";
+            }
             m_clip_text_encoder_with_projection = std::make_shared<CLIPTextModelWithProjection>(
                 root_dir / "text_encoder_2",
                 device,
                 *properties_for_text_encoder(*updated_properties, "lora_te2")
             );
+            updated_properties.fork().erase(ov::genai::blob_path.name());
         } else {
             OPENVINO_THROW("Unsupported '", text_encoder_2, "' text encoder type");
         }
 
         const std::string unet = data["unet"][1].get<std::string>();
         if (unet == "UNet2DConditionModel") {
+            if (blob_path.has_value()) {
+                updated_properties.fork()[ov::genai::blob_path.name()] = blob_path.value() / "unet";
+            }
             m_unet = std::make_shared<UNet2DConditionModel>(root_dir / "unet", device, *updated_properties);
+            updated_properties.fork().erase(ov::genai::blob_path.name());
         } else {
             OPENVINO_THROW("Unsupported '", unet, "' UNet type");
         }
@@ -118,6 +134,9 @@ public:
 
         const std::string vae = data["vae"][1].get<std::string>();
         if (vae == "AutoencoderKL") {
+            if (blob_path.has_value()) {
+                updated_properties.fork()[ov::genai::blob_path.name()] = blob_path.value();
+            }
             if (m_pipeline_type == PipelineType::TEXT_2_IMAGE)
                 m_vae = std::make_shared<AutoencoderKL>(root_dir / "vae_decoder", device, *updated_properties);
             else if (m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) {
@@ -125,6 +144,7 @@ public:
             } else {
                 OPENVINO_ASSERT("Unsupported pipeline type");
             }
+            updated_properties.fork().erase(ov::genai::blob_path.name());
         } else {
             OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
         }
@@ -157,6 +177,13 @@ public:
         OPENVINO_ASSERT(!pipe.is_inpainting_model(), "Cannot create ",
             pipeline_type == PipelineType::TEXT_2_IMAGE ? "'Text2ImagePipeline'" : "'Image2ImagePipeline'", " from InpaintingPipeline with inpainting model");
 
+        m_root_dir = pipe.m_root_dir;
+
+        m_clip_text_encoder = std::make_shared<CLIPTextModel>(*pipe.m_clip_text_encoder);
+        m_clip_text_encoder_with_projection = std::make_shared<CLIPTextModelWithProjection>(*pipe.m_clip_text_encoder_with_projection);
+        m_unet = std::make_shared<UNet2DConditionModel>(*pipe.m_unet);
+        m_vae = std::make_shared<AutoencoderKL>(*pipe.m_vae);
+
         m_pipeline_type = pipeline_type;
         initialize_generation_config("StableDiffusionXLPipeline");
     }
@@ -183,6 +210,26 @@ public:
         m_clip_text_encoder_with_projection->compile(text_encode_device, *updated_properties);
         m_unet->compile(denoise_device, *updated_properties);
         m_vae->compile(vae_device, *updated_properties);
+    }
+
+    std::shared_ptr<DiffusionPipeline> clone() override {
+        OPENVINO_ASSERT(!m_root_dir.empty(), "Cannot clone pipeline without root directory");
+
+        std::shared_ptr<AutoencoderKL> vae = std::make_shared<AutoencoderKL>(m_vae->clone());
+        std::shared_ptr<CLIPTextModel> clip_text_encoder = m_clip_text_encoder->clone();
+        std::shared_ptr<CLIPTextModelWithProjection> clip_text_encoder_with_projection = std::static_pointer_cast<CLIPTextModelWithProjection>(m_clip_text_encoder_with_projection->clone());
+        std::shared_ptr<UNet2DConditionModel> unet = std::make_shared<UNet2DConditionModel>(m_unet->clone());
+        std::shared_ptr<StableDiffusionXLPipeline> pipeline = std::make_shared<StableDiffusionXLPipeline>(
+            m_pipeline_type,
+            *clip_text_encoder,
+            *clip_text_encoder_with_projection,
+            *unet,
+            *vae);
+
+        pipeline->m_root_dir = m_root_dir;
+        pipeline->set_scheduler(Scheduler::from_config(m_root_dir / "scheduler/scheduler_config.json"));
+        pipeline->set_generation_config(m_generation_config);
+        return pipeline;
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
@@ -351,10 +398,17 @@ public:
         }
     }
 
+    void export_model(const std::filesystem::path& export_path) override {
+        m_unet->export_model(export_path / "unet");
+        m_clip_text_encoder->export_model(export_path / "text_encoder");
+        m_clip_text_encoder_with_projection->export_model(export_path / "text_encoder_2");
+        m_vae->export_model(export_path);
+    }
+
 private:
     void initialize_generation_config(const std::string& class_name) override {
-        assert(m_unet != nullptr);
-        assert(m_vae != nullptr);
+        OPENVINO_ASSERT(m_unet != nullptr);
+        OPENVINO_ASSERT(m_vae != nullptr);
         const auto& unet_config = m_unet->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
 
@@ -386,7 +440,7 @@ private:
     }
 
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
-        check_image_size(generation_config.width, generation_config.height);
+        check_image_size(generation_config.height, generation_config.width);
 
         const bool is_classifier_free_guidance = m_unet->do_classifier_free_guidance(generation_config.guidance_scale);
         const char * const pipeline_name = "Stable Diffusion XL";

@@ -1,0 +1,59 @@
+.heroSection {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem 0;
+
+  background-image: url('@site/static/img/background.webp');
+  background-size: cover;
+  background-position: center;
+  height: 530px;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  .genAITitle {
+    font-size: 4rem;
+    padding-bottom: 1.25rem;
+
+    background: linear-gradient(101deg, #91ffed 0.16%, #3094ff 36.93%, #b57cff 73.71%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 500;
+    filter: drop-shadow(2px 2px 2px rgba(23, 20, 98, 0.86));
+  }
+}
+
+.sectionContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+
+  .subtitle {
+    font-size: 1.5rem;
+    text-align: center;
+    color: var(--genai-color-text-white);
+    margin-bottom: 1rem;
+  }
+
+  .description {
+    font-size: 1rem;
+    max-width: 600px;
+    text-align: center;
+    color: var(--genai-color-text-white);
+    margin: 0 auto;
+  }
+
+  .getStartedButton {
+    margin: 2rem 0;
+  }
+
+  .pipelinesCarousel {
+    margin-top: 1rem;
+  }
+}

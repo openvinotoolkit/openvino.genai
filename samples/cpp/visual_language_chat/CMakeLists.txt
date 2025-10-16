@@ -16,7 +16,7 @@ file(DOWNLOAD
 # create main sample executable
 
 add_executable(visual_language_chat visual_language_chat.cpp load_image.cpp)
-target_include_directories(visual_language_chat PRIVATE "${CMAKE_CURRENT_SOUCE_DIR}" "${CMAKE_BINARY_DIR}")
+target_include_directories(visual_language_chat PRIVATE "${CMAKE_BINARY_DIR}")
 target_link_libraries(visual_language_chat PRIVATE openvino::genai)
 
 set_target_properties(visual_language_chat PROPERTIES
@@ -31,7 +31,7 @@ install(TARGETS visual_language_chat
 # create encrypted model sample executable
 
 add_executable(encrypted_model_vlm encrypted_model_vlm.cpp load_image.cpp)
-target_include_directories(encrypted_model_vlm PRIVATE "${CMAKE_CURRENT_SOUCE_DIR}" "${CMAKE_BINARY_DIR}")
+target_include_directories(encrypted_model_vlm PRIVATE "${CMAKE_BINARY_DIR}")
 target_link_libraries(encrypted_model_vlm PRIVATE openvino::genai)
 
 set_target_properties(encrypted_model_vlm PROPERTIES
@@ -44,9 +44,8 @@ install(TARGETS encrypted_model_vlm
         EXCLUDE_FROM_ALL)
 
 # create benchmark executable
-
-add_executable(benchmark_vlm benchmark_vlm.cpp load_image.cpp)
-target_include_directories(benchmark_vlm PRIVATE "${CMAKE_CURRENT_SOUCE_DIR}" "${CMAKE_BINARY_DIR}")
+add_executable(benchmark_vlm benchmark_vlm.cpp load_image.cpp ../text_generation/read_prompt_from_file.cpp)
+target_include_directories(benchmark_vlm PRIVATE "${CMAKE_BINARY_DIR}")
 target_link_libraries(benchmark_vlm PRIVATE openvino::genai cxxopts::cxxopts)
 set_target_properties(benchmark_vlm PROPERTIES
     # Ensure out of box LC_RPATH on macOS with SIP

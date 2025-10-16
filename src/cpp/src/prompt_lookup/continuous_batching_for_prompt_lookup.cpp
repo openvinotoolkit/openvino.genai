@@ -60,6 +60,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
         size_t max_validation_len = 0;
         for (auto& running_sequence : request->get_running_sequences()) {
             const auto generated_tokens = running_sequence->get_generated_ids();
+            if (generated_tokens.empty()) {
+                continue;
+            }
             TokenIds full_input_ids = prompt;
             full_input_ids.insert(full_input_ids.end(), generated_tokens.begin(), generated_tokens.end());
 

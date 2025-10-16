@@ -45,17 +45,9 @@ export default function Button({
   const destination = disabled ? null : link;
 
   return (
-    <Link to={destination}>
+    <Link className={className} to={destination}>
       <button
-        className={clsx(
-          'button',
-          sizeClass,
-          outlineClass,
-          variantClass,
-          blockClass,
-          disabledClass,
-          className
-        )}
+        className={clsx('button', sizeClass, outlineClass, variantClass, blockClass, disabledClass)}
         style={style}
         role="button"
         aria-disabled={disabled}

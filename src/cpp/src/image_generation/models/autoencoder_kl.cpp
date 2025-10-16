@@ -128,8 +128,19 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_encoder_path,
 AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_decoder_path,
                              const std::string& device,
                              const ov::AnyMap& properties)
-    : AutoencoderKL(vae_decoder_path) {
-    compile(device, *extract_adapters_from_properties(properties));
+    : m_config(vae_decoder_path / "config.json") {
+
+    const auto [properties_without_blob, blob_path] = utils::extract_export_properties(properties);
+
+    if (blob_path.has_value()) {
+        import_model(*blob_path, device, properties_without_blob);
+        return;
+    }
+
+    m_decoder_model = utils::singleton_core().read_model(vae_decoder_path / "openvino_model.xml");
+    // apply VaeImageProcessor postprocessing steps by merging them into the VAE decoder model
+    merge_vae_image_post_processing();
+    compile(device, *extract_adapters_from_properties(properties_without_blob));
 }
 
 AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_encoder_path,
@@ -182,7 +193,32 @@ AutoencoderKL::AutoencoderKL(const std::string& vae_encoder_model,
     compile(device, *extract_adapters_from_properties(properties));
 }
 
-AutoencoderKL::AutoencoderKL(const AutoencoderKL&) = default;
+AutoencoderKL::AutoencoderKL(const AutoencoderKL& rhs) = default;
+
+AutoencoderKL AutoencoderKL::clone() {
+    OPENVINO_ASSERT((m_decoder_model != nullptr) ^ static_cast<bool>(m_decoder_request), "AutoencoderKL must have exactly one of m_decoder_model or m_decoder_request initialized");  // encoder is optional
+
+    AutoencoderKL cloned = *this;
+
+    // Required, decoder model
+    if (m_decoder_model) {
+        cloned.m_decoder_model = m_decoder_model->clone();
+    } else {
+        cloned.m_decoder_request = m_decoder_request.get_compiled_model().create_infer_request();
+    }
+
+    // Optional encoder model
+    if (m_encoder_model) {
+        cloned.m_encoder_model = m_encoder_model->clone();
+    } else {
+        // Might not be defined
+        if (m_encoder_request) {
+            cloned.m_encoder_request = m_encoder_request.get_compiled_model().create_infer_request();
+        }
+    }
+
+    return cloned;
+}
 
 AutoencoderKL& AutoencoderKL::reshape(int batch_size, int height, int width) {
     OPENVINO_ASSERT(m_decoder_model, "Model has been already compiled. Cannot reshape already compiled model");
@@ -213,15 +249,18 @@ AutoencoderKL& AutoencoderKL::compile(const std::string& device, const ov::AnyMa
     OPENVINO_ASSERT(m_decoder_model, "Model has been already compiled. Cannot re-compile already compiled model");
     ov::Core core = utils::singleton_core();
 
+    std::optional<AdapterConfig> unused;
+    auto filtered_properties = extract_adapters_from_properties(properties, &unused);
+
     if (m_encoder_model) {
-        ov::CompiledModel encoder_compiled_model = core.compile_model(m_encoder_model, device, handle_scale_factor(m_encoder_model, device, properties));
+        ov::CompiledModel encoder_compiled_model = core.compile_model(m_encoder_model, device, handle_scale_factor(m_encoder_model, device, *filtered_properties));
         ov::genai::utils::print_compiled_model_properties(encoder_compiled_model, "Auto encoder KL encoder model");
         m_encoder_request = encoder_compiled_model.create_infer_request();
         // release the original model
         m_encoder_model.reset();
     }
 
-    ov::CompiledModel decoder_compiled_model = core.compile_model(m_decoder_model, device, handle_scale_factor(m_decoder_model, device, properties));
+    ov::CompiledModel decoder_compiled_model = core.compile_model(m_decoder_model, device, handle_scale_factor(m_decoder_model, device, *filtered_properties));
     ov::genai::utils::print_compiled_model_properties(decoder_compiled_model, "Auto encoder KL decoder model");
     m_decoder_request = decoder_compiled_model.create_infer_request();
     // release the original model
@@ -303,6 +342,29 @@ void AutoencoderKL::merge_vae_image_post_processing() const {
     ppp.output().tensor().set_layout("NHWC");
 
     ppp.build();
+}
+
+void AutoencoderKL::export_model(const std::filesystem::path& blob_path) {
+    OPENVINO_ASSERT(m_decoder_request, "VAE decoder model must be compiled first. Cannot export non-compiled model");
+    auto decoder_compiled_model = m_decoder_request.get_compiled_model();
+    ov::genai::utils::export_model(decoder_compiled_model, blob_path / "vae_decoder" / "openvino_model.blob");
+
+    if (m_encoder_request) {
+        auto encoder_compiled_model = m_encoder_request.get_compiled_model();
+        ov::genai::utils::export_model(encoder_compiled_model, blob_path / "vae_encoder" / "openvino_model.blob");
+    }
+}
+
+void AutoencoderKL::import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties) {
+    auto decoder_compiled_model = utils::import_model(blob_path / "vae_decoder" / "openvino_model.blob", device, properties);
+    ov::genai::utils::print_compiled_model_properties(decoder_compiled_model, "Auto encoder KL decoder model");
+    m_decoder_request = decoder_compiled_model.create_infer_request();
+
+    if (std::filesystem::exists(blob_path / "vae_encoder" / "openvino_model.blob")) {
+        auto encoder_compiled_model = utils::import_model(blob_path / "vae_encoder" / "openvino_model.blob", device, properties);
+        ov::genai::utils::print_compiled_model_properties(encoder_compiled_model, "Auto encoder KL encoder model");
+        m_encoder_request = encoder_compiled_model.create_infer_request();
+    }
 }
 
 } // namespace genai

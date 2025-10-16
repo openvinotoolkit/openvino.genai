@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <memory>
+
 #include "lora/helper.hpp"
 #include "image_generation/models/unet_inference.hpp"
 #include "utils.hpp"
@@ -12,7 +14,25 @@ namespace genai {
 
 // Static Batch-Size 1 variant of UNetInference
 class UNet2DConditionModel::UNetInferenceStaticBS1 : public UNet2DConditionModel::UNetInference {
+
+    UNetInferenceStaticBS1(const UNetInferenceStaticBS1&) = delete;
+    UNetInferenceStaticBS1(UNetInferenceStaticBS1&&) = delete;
+    UNetInferenceStaticBS1(UNetInferenceStaticBS1& other) = delete;
+
 public:
+    UNetInferenceStaticBS1() : UNetInference(), m_native_batch_size(0) {}
+
+    virtual std::shared_ptr<UNetInference> clone() override {
+        OPENVINO_ASSERT(m_requests.size(), "UNet2DConditionModel must have m_requests initialized");
+        auto clone = std::make_shared<UNetInferenceStaticBS1>();
+        clone->m_native_batch_size = m_native_batch_size;
+        clone->m_requests.reserve(m_requests.size());
+        for (auto& request : m_requests) {
+            clone->m_requests.push_back(request.get_compiled_model().create_infer_request());
+        }
+        return clone;
+    }
+
     virtual void compile(std::shared_ptr<ov::Model> model,
                          const std::string& device,
                          const ov::AnyMap& properties) override {
@@ -134,6 +154,30 @@ public:
         }
 
         return out_sample;
+    }
+
+    virtual void export_model(const std::filesystem::path& blob_path) override {
+        OPENVINO_ASSERT(m_native_batch_size && m_native_batch_size == m_requests.size(),
+                        "UNet model must be compiled first");
+        OPENVINO_ASSERT(m_requests.size() > 0, "UNet model must have at least one infer request");
+        auto compiled_model = m_requests[0].get_compiled_model();
+        utils::export_model(compiled_model, blob_path / "openvino_model.blob");
+    }
+
+    virtual void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties) override {
+        auto compiled_model = utils::import_model(blob_path / "openvino_model.blob", device, properties);
+
+        // we'll create a separate infer request for each batch.
+        // todo: preserve original requested batch size when exporting the model
+        // current implementation imports model with batch = 1 and creates a single infer request.
+        m_native_batch_size = compiled_model.input("sample").get_shape()[0];
+        m_requests.resize(m_native_batch_size);
+
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "UNet 2D Condition batch-1 model");
+
+        for (int i = 0; i < m_native_batch_size; i++) {
+            m_requests[i] = compiled_model.create_infer_request();
+        }
     }
 
 private:

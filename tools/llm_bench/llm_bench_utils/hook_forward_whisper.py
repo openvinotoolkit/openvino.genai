@@ -1,6 +1,10 @@
 import time
 import copy
+import logging as log
 import llm_bench_utils.hook_greedy_search
+
+
+logger = log.getLogger(__name__)
 
 
 class WhisperHook:
@@ -63,12 +67,12 @@ class WhisperHook:
                     f"encoder infers latency: {data['enc_infer_time']:.2f} ms/infer"
             if 'dec_1st_token_time' and 'dec_2nd_tokens_time' in data:
                 str += \
-                    f"\n{title} decoder first token latency: {data['dec_1st_token_time']} ms/token, " \
+                    f"\n{title} decoder first token latency: {data['dec_1st_token_time']} ms, " \
                     f"decoder other tokens latency: {data['dec_2nd_tokens_time']} ms/token, " \
                     f"decoder tokens count: {data['dec_token_count']}\n"
             if 'dec_1st_infer_time' and 'dec_2nd_infers_time' in data:
                 str += \
-                    f"{title} decoder first infer latency: {data['dec_1st_infer_time']} ms/infer, " \
+                    f"{title} decoder first infer latency: {data['dec_1st_infer_time']} ms, " \
                     f"decoder other infers latency: {data['dec_2nd_infers_time']} ms/infer, " \
                     f"decoder infers count: {data['dec_infer_count']}"
             if idx < len(self.latency_list) - 1:
@@ -129,7 +133,7 @@ class WhisperHook:
     def set_decoder_time_data(self):
         if self.enc_infer_count > 0:
             prev_loop_data = self.time_data[self.enc_infer_count - 1]
-            if self.greedy_hook is not None:
+            if self.greedy_hook is not None and (self.greedy_hook.get_time_list() or self.greedy_hook.get_time_infer_list()):
                 prev_loop_data['dec_token_time'] = copy.deepcopy(self.greedy_hook.get_time_list())
                 prev_loop_data['dec_infer_time'] = copy.deepcopy(self.greedy_hook.get_time_infer_list())
                 self.greedy_hook.clear_time_list()

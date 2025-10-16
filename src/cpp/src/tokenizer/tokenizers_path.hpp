@@ -25,25 +25,33 @@ class ScopedVar {
     bool was_already_set{false};
 public:
     static constexpr char ENVIRONMENT_VARIABLE_NAME[] = "OPENVINO_TOKENIZERS_PATH_GENAI";
+    static constexpr wchar_t ENVIRONMENT_VARIABLE_NAME_W[] = L"OPENVINO_TOKENIZERS_PATH_GENAI";
 
     explicit ScopedVar(const std::filesystem::path& environment_variable_value) {
+
 #ifdef _WIN32
-        char* value = nullptr;
+        wchar_t* value = nullptr;
         size_t len = 0;
-        _dupenv_s(&value, &len, ENVIRONMENT_VARIABLE_NAME);
-        if (value == nullptr)
-            _putenv_s(ENVIRONMENT_VARIABLE_NAME, environment_variable_value.string().c_str());
-#else
-        if (!getenv(ENVIRONMENT_VARIABLE_NAME))
-            setenv(ENVIRONMENT_VARIABLE_NAME, environment_variable_value.string().c_str(), 1);
-#endif
-        else
+        _wdupenv_s(&value, &len, ENVIRONMENT_VARIABLE_NAME_W);
+        if (value == nullptr) {
+            _wputenv_s(ENVIRONMENT_VARIABLE_NAME_W, environment_variable_value.wstring().c_str());
+        } else {
             was_already_set = true;
+            free(value);
+        }
+#else
+        if (!getenv(ENVIRONMENT_VARIABLE_NAME)) {
+            setenv(ENVIRONMENT_VARIABLE_NAME, environment_variable_value.string().c_str(), 1);
+        } else {
+            was_already_set = true;
+        }
+#endif
     }
+    
     ~ScopedVar() {
         if (!was_already_set) {
 #ifdef _WIN32
-            _putenv_s(ENVIRONMENT_VARIABLE_NAME, "");
+            _wputenv_s(ENVIRONMENT_VARIABLE_NAME_W, L"");
 #else
             unsetenv(ENVIRONMENT_VARIABLE_NAME);
 #endif

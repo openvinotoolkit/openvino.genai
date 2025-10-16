@@ -1,6 +1,6 @@
---extra-index-url https://storage.openvinotoolkit.org/simple/wheels/pre-release
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-openvino_genai~=2025.2.0.0.dev
-librosa==0.10.2.post1  # For Whisper
-pillow==11.2.1  # Image processing for VLMs
-json5==0.12.0  # For ReAct
+openvino_genai~=2025.4.0.0.dev
+librosa==0.11.0  # For Whisper
+pillow==11.3.0  # Image processing for VLMs
+json5==0.12.1  # For ReAct
+pydantic==2.12.2  # For Structured output json schema

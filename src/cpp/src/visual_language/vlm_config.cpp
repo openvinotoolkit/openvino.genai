@@ -13,12 +13,17 @@ namespace {
 VLMModelType to_vlm_model_type(const std::string& value) {
     static const std::unordered_map<std::string, VLMModelType> model_types_map = {
         {"minicpmv", VLMModelType::MINICPM},
+        {"minicpmo", VLMModelType::MINICPM},
         {"llava", VLMModelType::LLAVA},
+        {"llava-qwen2", VLMModelType::NANOLLAVA},
         {"llava_next", VLMModelType::LLAVA_NEXT},
+        {"llava_next_video", VLMModelType::LLAVA_NEXT_VIDEO},
         {"internvl_chat", VLMModelType::INTERNVL_CHAT},
         {"phi3_v", VLMModelType::PHI3_V},
+        {"phi4mm", VLMModelType::PHI4MM},
         {"qwen2_vl", VLMModelType::QWEN2_VL},
         {"qwen2_5_vl", VLMModelType::QWEN2_5_VL},
+        {"gemma3", VLMModelType::GEMMA3},
     };
 
     auto it = model_types_map.find(value);
@@ -26,6 +31,12 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         return it->second;
     }
     OPENVINO_THROW("Unsupported '", value, "' VLM model type");
+}
+
+void assert_size(size_t size, VLMModelType model_type) {
+    if (model_type == VLMModelType::PHI3_V) {
+        OPENVINO_ASSERT(size == 4096, "Expected size 4096 for PHI3_V model type");
+    }
 }
 
 } // namespace
@@ -43,22 +54,20 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
 
     // Setting llava_next specific config params
     read_json_param(parsed, "image_newline", image_newline);
-    if (parsed.contains("vision_config")) {
-        read_json_param(parsed.at("vision_config"), "patch_size", vision_config_patch_size);
-    }
-    // phi3_v
-    if (parsed.contains("sub_GN")) {
+    read_json_param(parsed, "vision_config.patch_size", vision_config_patch_size);
+
+    // phi3_v and phi4mm
+    if (parsed.contains("sub_GN") && parsed.at("sub_GN").is_array()) {
         sub_GN = parsed.at("sub_GN").get<std::vector<std::vector<std::vector<std::vector<float>>>>>().at(0).at(0).at(0);
     }
-    OPENVINO_ASSERT(sub_GN.size() == 4096);
-    if (parsed.contains("glb_GN")) {
+    assert_size(sub_GN.size(), model_type);
+    if (parsed.contains("glb_GN") && parsed.at("glb_GN").is_array()) {
         glb_GN = parsed.at("glb_GN").get<std::vector<std::vector<std::vector<float>>>>().at(0).at(0);
     }
-    OPENVINO_ASSERT(glb_GN.size() == 4096);
+    assert_size(glb_GN.size(), model_type);
+
     // Qwen2.5VL
-    if (parsed.contains("vision_config")) {
-        read_json_param(parsed.at("vision_config"), "window_size", vision_config_window_size);
-    }
+    read_json_param(parsed, "vision_config.window_size", vision_config_window_size);
 }
 
 } // namespace ov::genai

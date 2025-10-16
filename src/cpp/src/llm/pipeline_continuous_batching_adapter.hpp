@@ -58,7 +58,7 @@ public:
         const SchedulerConfig& scheduler_config,
         const std::string& device,
         const ov::AnyMap& plugin_config
-    ): LLMPipelineImplBase{Tokenizer(models_path), GenerationConfig()} {
+    ): LLMPipelineImplBase{Tokenizer(models_path, plugin_config), GenerationConfig()} {
         auto mutable_plugin_config = plugin_config;
         mutable_plugin_config["sampler_num_threads"] = 1;
         m_impl = std::make_unique<ContinuousBatchingPipeline>(models_path, m_tokenizer, scheduler_config, device, mutable_plugin_config);
@@ -98,9 +98,9 @@ public:
         PerfMetrics perf_metrics;
         // For GenerationResults, all perf_metrics are the same except tokenization and detokenization durations.
         // Since we return here only one perf_metrics, we should accumulate all tokenization and detokenization times.
-        if (generated.size() > 0) {
-            perf_metrics = generated[0].perf_metrics;
-        }
+        OPENVINO_ASSERT(!generated.empty());
+        perf_metrics = generated[0].perf_metrics;
+        perf_metrics.load_time = m_load_time_ms;
 
         // Tokenizations and detokenization times are dispersed across GenerationResult vector.
         // Need to collect them into a single perf_metric for DecodedResult.
@@ -122,7 +122,7 @@ public:
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
 
-        return {std::move(plain_replies), std::move(plain_scores), std::move(perf_metrics)};
+        return {std::move(plain_replies), std::move(plain_scores), std::move(perf_metrics), generated[0].extended_perf_metrics};
     }
 
     EncodedResults generate(
@@ -191,9 +191,10 @@ public:
         
         PerfMetrics perf_metrics;
         // For EncodedGenerationResults, all perf_metrics are the same.
-        if (generated.size() > 0) {
-            perf_metrics = generated[0].perf_metrics;
-        }
+        OPENVINO_ASSERT(!generated.empty());
+        perf_metrics = generated[0].perf_metrics;
+        perf_metrics.load_time = m_load_time_ms;
+
         auto& raw_counters = perf_metrics.raw_metrics;
         raw_counters.generate_durations.clear();
         raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
@@ -201,16 +202,16 @@ public:
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
 
-        return {std::move(plain_tokens), std::move(plain_scores), std::move(perf_metrics)};
+        return {std::move(plain_tokens), std::move(plain_scores), std::move(perf_metrics), generated[0].extended_perf_metrics};
     }
 
     void start_chat(const std::string& system_message) override {
-        m_impl->start_chat();
-    };
+        m_impl->start_chat(system_message);
+    }
 
     void finish_chat() override {
         m_impl->finish_chat();
-    };
+    }
 };
 
 } // namespace ov::genai

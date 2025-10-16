@@ -4,10 +4,224 @@
 #include "continuous_batching/cache_eviction.hpp"
 
 namespace ov::genai {
+
+    void EvictionScoreManager::remove_scores(const std::vector<size_t>& evicted_block_indices, size_t decoder_layer_idx) {
+        if (evicted_block_indices.empty()) {
+            return;
+        }
+        const auto &accumulated_scores_for_current_decoder_layer = m_scores[decoder_layer_idx];
+        const auto &counter_for_current_decoder_layer = m_cache_counter[decoder_layer_idx];
+
+        if (m_aggregation_mode == AggregationMode::NORM_SUM) {
+            OPENVINO_ASSERT(
+                    accumulated_scores_for_current_decoder_layer.size() == counter_for_current_decoder_layer.size());
+        }
+
+        auto old_size = accumulated_scores_for_current_decoder_layer.size();
+        auto new_size =
+                accumulated_scores_for_current_decoder_layer.size() - evicted_block_indices.size() * m_block_size;
+
+        std::vector<double> new_scores;
+        new_scores.reserve(new_size);
+
+        std::vector<size_t> new_counter;
+
+        if (m_aggregation_mode == AggregationMode::NORM_SUM) {
+            new_counter.reserve(new_size);
+        }
+
+        for (size_t token_idx = 0, evicted_block_idx = 0; token_idx < old_size;) {
+            if (evicted_block_idx < evicted_block_indices.size() &&
+                token_idx == evicted_block_indices[evicted_block_idx] * m_block_size) {
+                ++evicted_block_idx;
+                token_idx += m_block_size;
+                continue;
+            }
+            new_scores.push_back(accumulated_scores_for_current_decoder_layer[token_idx]);
+            if (m_aggregation_mode == AggregationMode::NORM_SUM) {
+                new_counter.push_back(counter_for_current_decoder_layer[token_idx]);
+            }
+            ++token_idx;
+        }
+
+        m_scores[decoder_layer_idx] = new_scores;
+        m_cache_counter[decoder_layer_idx] = new_counter;
+    }
+
+    void EvictionScoreManager::register_new_token_scores(
+            const AttentionScoresForEachDecoderLayer &attention_scores_for_all_decoder_layers,
+            const std::set<size_t>& skipped_logical_block_ids, size_t num_snapkv_scores) {
+
+        if (m_num_registered_snapkv_aggregated_scores < m_snapkv_window_size) {
+            OPENVINO_ASSERT(num_snapkv_scores + m_num_registered_snapkv_aggregated_scores <= m_snapkv_window_size, "Total number of aggregated SnapKV scores during prefill phase may not be larger than the configured SnapKV window size");
+            m_num_registered_snapkv_aggregated_scores += num_snapkv_scores;
+        }
+
+        // FIXME (vshampor): currently in terms of counters we do not discern between the cases when the last chunk has been prefill-only
+        // or last-prefill-chunk-plus-one-generation_token
+        for (size_t decoder_layer_idx = 0; decoder_layer_idx < m_num_decoder_layers; decoder_layer_idx++) {
+
+            const auto &attention_scores = attention_scores_for_all_decoder_layers[decoder_layer_idx];
+            // "Start" tokens are never evicted, won't track scores for these
+            // "Recent" tokens are also not evicted just yet, but need to accumulate their scores since they may
+            // ultimately move into the "intermediate" eviction region of cache
+            // Taking the [1, start_size:seq_len] span of the attention scores:
+            auto attn_shape = attention_scores.get_shape();
+            size_t scores_size_in_tokens = attn_shape[0];
+            if (scores_size_in_tokens <= m_ignore_first_n_blocks * m_block_size) {
+                return;
+            }
+
+            std::set<size_t> skip_set_adjusted;
+            size_t num_skipped_blocks_in_ignore_area = 0;
+            for (size_t i = 0; i < m_ignore_first_n_blocks; i++) {
+                if (skipped_logical_block_ids.find(i) != skipped_logical_block_ids.end()) {
+                    num_skipped_blocks_in_ignore_area++;
+                }
+            }
+
+            OPENVINO_ASSERT(num_skipped_blocks_in_ignore_area <= m_ignore_first_n_blocks);
+            size_t start_token_offset_in_scores = (m_ignore_first_n_blocks - num_skipped_blocks_in_ignore_area) * m_block_size;
+
+            for (size_t skipped_block_id : skipped_logical_block_ids) {
+                if (skipped_block_id >= m_ignore_first_n_blocks) {
+                    skip_set_adjusted.insert(skipped_block_id - m_ignore_first_n_blocks);
+                } // else do not include this block in the adjusted skip set since it is in the start area already
+            }
+
+            auto hh_score = ov::Tensor(
+                    attention_scores,
+                    ov::Coordinate{start_token_offset_in_scores},
+                    ov::Coordinate{scores_size_in_tokens}
+            );
+
+            std::vector<double> max_pooled_hh_scores(hh_score.get_size());
+            auto hh_score_data = hh_score.data<float>();
+            size_t num_hh_scores = hh_score.get_size();
+
+            for (size_t idx = 0; idx < num_hh_scores; idx++) {
+                size_t effective_window_size = m_max_pool_window_size;
+                size_t elements_left = num_hh_scores - idx;
+                if (elements_left < effective_window_size) {
+                    effective_window_size = elements_left;
+                }
+                auto max_val = hh_score_data[idx];
+                for (size_t window_idx = 1; window_idx < effective_window_size; window_idx++) {
+                    auto val = hh_score_data[idx + window_idx];
+                    max_val = std::max(val, max_val);
+                }
+                max_pooled_hh_scores[idx] = max_val;
+            }
+
+            auto& accumulated_scores_for_current_decoder_layer = m_scores[decoder_layer_idx];
+
+            if (accumulated_scores_for_current_decoder_layer.empty()) {
+                if (m_snapkv_window_size != 0 && num_snapkv_scores == 0) {
+                    // SnapKV window not yet reached, no meaningful scores to accumulate
+                    continue;
+                }
+                // New sequence to track
+                if (skipped_logical_block_ids.empty()) {
+                    accumulated_scores_for_current_decoder_layer = max_pooled_hh_scores;
+                }
+                else {
+                    accumulated_scores_for_current_decoder_layer.resize(max_pooled_hh_scores.size() + m_block_size * skipped_logical_block_ids.size(), 0.0);
+                    size_t src_idx = 0;
+                    for (size_t dst_idx = 0; dst_idx < accumulated_scores_for_current_decoder_layer.size(); dst_idx++) {
+                        size_t curr_logical_block_idx = dst_idx / m_block_size;
+                        if (skipped_logical_block_ids.find(curr_logical_block_idx) != skipped_logical_block_ids.end()) {
+                            dst_idx += m_block_size;
+                            continue;
+                        }
+                        accumulated_scores_for_current_decoder_layer[dst_idx] = accumulated_scores_for_current_decoder_layer[src_idx];
+                        src_idx++;
+                    }
+                    OPENVINO_ASSERT(src_idx == max_pooled_hh_scores.size());
+                }
+
+                if (m_aggregation_mode == AggregationMode::NORM_SUM) {
+                    std::size_t new_scores_size = num_hh_scores;
+                    std::vector<std::size_t> counter(new_scores_size);
+                    if (m_snapkv_window_size == 0) {
+                        // Will simulate that the tokens comprising the sequence were added one-by-one
+                        // from the standpoint of the occurrence tracker
+                        std::generate(counter.begin(), counter.begin() + new_scores_size,
+                                      [&new_scores_size] { return new_scores_size--; });
+                    }
+                    else {
+                        OPENVINO_ASSERT(num_snapkv_scores > 0);
+                        OPENVINO_ASSERT(new_scores_size >= num_snapkv_scores);
+                        std::fill(counter.begin(), counter.end() - num_snapkv_scores, num_snapkv_scores);
+                        std::iota(counter.rbegin(), counter.rbegin() + num_snapkv_scores, 1);
+                    }
+                    m_cache_counter[decoder_layer_idx] = counter;
+                }
+            } else {
+                size_t old_size_in_tokens = accumulated_scores_for_current_decoder_layer.size();
+                size_t new_size_in_tokens = max_pooled_hh_scores.size() + m_block_size * skipped_logical_block_ids.size();
+
+                OPENVINO_ASSERT(new_size_in_tokens >= old_size_in_tokens);
+                size_t num_new_tokens = new_size_in_tokens - old_size_in_tokens;
+                if (m_aggregation_mode == AggregationMode::NORM_SUM) {
+                    auto &counter_for_current_decoder_layer = m_cache_counter[decoder_layer_idx];
+                    counter_for_current_decoder_layer.resize(new_size_in_tokens);
+                    if (m_snapkv_window_size == 0 || m_num_registered_snapkv_aggregated_scores == m_snapkv_window_size) {
+                        // Increment occurrence counts of all currently tracked cache blocks
+                        for (auto it = counter_for_current_decoder_layer.begin();
+                             it != counter_for_current_decoder_layer.end(); it++) {
+                            *it += num_new_tokens;
+                        }
+                        // Add occurrence counts for new tokens like above
+                        for (size_t i = 0; i < num_new_tokens; i++) {
+                            auto idx = old_size_in_tokens + i;
+                            counter_for_current_decoder_layer[idx] = num_new_tokens - i;
+                        }
+                    }
+                    else {
+                        OPENVINO_ASSERT(new_size_in_tokens >= m_num_registered_snapkv_aggregated_scores);
+                        std::fill(counter_for_current_decoder_layer.begin(), counter_for_current_decoder_layer.end() - m_num_registered_snapkv_aggregated_scores, m_num_registered_snapkv_aggregated_scores);
+                        std::iota(counter_for_current_decoder_layer.rbegin(), counter_for_current_decoder_layer.rbegin() + m_num_registered_snapkv_aggregated_scores, 1);
+                    }
+
+                }
+                accumulated_scores_for_current_decoder_layer.resize(new_size_in_tokens);
+                add_with_skips(accumulated_scores_for_current_decoder_layer, max_pooled_hh_scores, skip_set_adjusted);
+            }
+        }
+    }
+
+    size_t EvictionScoreManager::get_current_scores_length_in_tokens(size_t layer_idx) const {
+        return m_scores[layer_idx].size();
+    }
+
+    const std::vector<std::vector<double>>& EvictionScoreManager::get_scores() const {
+        return m_scores;
+    }
+
+    const std::vector<std::vector<size_t>>& EvictionScoreManager::get_counters() const {
+        return m_cache_counter;
+    }
+
+    void EvictionScoreManager::add_with_skips(std::vector<double>& dst, const std::vector<double>& src, const std::set<size_t>& skipped_logical_block_ids) const {
+            OPENVINO_ASSERT(skipped_logical_block_ids.size() * m_block_size + src.size() == dst.size());
+            size_t src_idx = 0;
+            for (size_t dst_idx = 0; dst_idx < dst.size(); dst_idx++) {
+                size_t curr_logical_block_idx = dst_idx / m_block_size;
+                if (skipped_logical_block_ids.find(curr_logical_block_idx) != skipped_logical_block_ids.end()) {
+                    dst_idx = m_block_size * (curr_logical_block_idx + 1) - 1;
+                    continue;
+                }
+                dst[dst_idx] += src[src_idx];
+                src_idx++;
+            }
+            OPENVINO_ASSERT(src_idx == src.size());
+    }
+
     CacheEvictionAlgorithm::CacheEvictionAlgorithm(const CacheEvictionConfig &eviction_config, size_t block_size,
-                                                   size_t num_decoder_layers) :
+                                                   size_t num_decoder_layers, size_t max_pool_window_size) :
             m_eviction_config(eviction_config), m_block_size(block_size), m_num_decoder_layers(num_decoder_layers),
-            m_cache_counter(num_decoder_layers), m_scores(num_decoder_layers) {
+            m_score_manager(block_size, num_decoder_layers, max_pool_window_size, eviction_config.aggregation_mode, eviction_config.get_start_size() / block_size, eviction_config.snapkv_window_size), m_kvcrush_algo(eviction_config.kvcrush_config, block_size)
+    {
             OPENVINO_ASSERT(!(m_eviction_config.get_start_size() % m_block_size),
                             "CacheEvictionConfig.start_size in tokens must be a multiple of block size ", m_block_size);
             OPENVINO_ASSERT(!(m_eviction_config.get_recent_size() % m_block_size),
@@ -37,9 +251,9 @@ namespace ov::genai {
 
         std::vector<std::set<size_t>> retval(m_num_decoder_layers);
 
-
-        for (size_t decoder_layer_idx = 0; decoder_layer_idx < m_scores.size(); decoder_layer_idx++) {
-            const auto &accumulated_scores_for_current_decoder_layer = m_scores[decoder_layer_idx];
+        const auto& scores = m_score_manager.get_scores();
+        for (size_t decoder_layer_idx = 0; decoder_layer_idx < scores.size(); decoder_layer_idx++) {
+            const auto &accumulated_scores_for_current_decoder_layer = scores[decoder_layer_idx];
             auto scores_length = accumulated_scores_for_current_decoder_layer.size();
             if (scores_length + m_eviction_config.get_start_size() <= get_max_cache_size_after_eviction()) {
                 // KV cache is not yet filled, keep all currently occupied blocks
@@ -51,6 +265,38 @@ namespace ov::genai {
             size_t num_blocks_to_evict = get_num_blocks_to_evict(decoder_layer_idx);
             auto evicted_block_indices = get_indices_of_blocks_to_evict(scores_for_all_evictable_blocks, num_blocks_to_evict);
 
+            // KVCrush: start
+            bool should_apply_kvcrush = (m_eviction_config.kvcrush_config.budget > 0) &&
+                                        (evicted_block_indices.size() >= m_eviction_config.kvcrush_config.budget);
+            if (should_apply_kvcrush) {
+                size_t num_tokens_in_evictable_blocks = scores_for_all_evictable_blocks.size() * m_block_size;
+
+                auto kvcrush_retained_block_indices = m_kvcrush_algo.get_indices_of_blocks_to_retain_using_kvcrush(
+                    num_tokens_in_evictable_blocks,
+                    evicted_block_indices,
+                    m_score_manager.get_scores()[decoder_layer_idx]);
+
+                // Remove the indices in kvcrush_retained_block_indices from evicted_block_indices
+                if (!kvcrush_retained_block_indices.empty()) {
+                    // Convert both vectors to sets for efficient operations
+                    std::unordered_set<std::size_t> retained_set(kvcrush_retained_block_indices.begin(),
+                                                                 kvcrush_retained_block_indices.end());
+
+                    // Create a new vector containing only elements not in retained_set
+                    std::vector<std::size_t> filtered_evicted_indices;
+                    filtered_evicted_indices.reserve(evicted_block_indices.size());
+
+                    for (const auto& idx : evicted_block_indices) {
+                        if (retained_set.find(idx) == retained_set.end()) {
+                            filtered_evicted_indices.push_back(idx);
+                        }
+                    }
+                    // Replace the original vector with the filtered one
+                    evicted_block_indices = std::move(filtered_evicted_indices);
+                }
+            }
+            // KVCrush: end
+
             m_num_evicted_tokens += evicted_block_indices.size() * m_block_size;
 
             // No longer need to track the overall "heavy-hitter" attention scores for freshly evicted blocks
@@ -58,7 +304,6 @@ namespace ov::genai {
 
             // Adjust indices to account for start area
             for (auto &idx: evicted_block_indices) idx += get_num_blocks(m_eviction_config.get_start_size());
-            // auto remaining_block_indices = get_remaining_block_indices(evicted_block_indices);
             for (auto &idx: evicted_block_indices) retval[decoder_layer_idx].insert(idx);
         }
         return retval;
@@ -69,7 +314,7 @@ namespace ov::genai {
     }
 
     CacheEvictionAlgorithm::CacheEvictionRange CacheEvictionAlgorithm::get_evictable_block_range(size_t layer_idx) const {
-        std::size_t current_sequence_length = m_eviction_config.get_start_size() + m_scores[layer_idx].size();
+        std::size_t current_sequence_length = m_eviction_config.get_start_size() + m_score_manager.get_current_scores_length_in_tokens(layer_idx);
         if (current_sequence_length <= get_max_cache_size_after_eviction()) {
             return CacheEvictionRange::invalid(); // purposely invalid range since no eviction can take place yet
         }
@@ -79,67 +324,17 @@ namespace ov::genai {
     }
 
     void CacheEvictionAlgorithm::register_new_token_scores(
-            const AttentionScoresForEachDecoderLayer &attention_scores_for_all_decoder_layers) {
-        for (size_t decoder_layer_idx = 0; decoder_layer_idx < m_cache_counter.size(); decoder_layer_idx++) {
-
-            const auto &attention_scores = attention_scores_for_all_decoder_layers[decoder_layer_idx];
-            // "Start" tokens are never evicted, won't track scores for these
-            // "Recent" tokens are also not evicted just yet, but need to accumulate their scores since they may
-            // ultimately move into the "intermediate" eviction region of cache
-            // Taking the [1, start_size:seq_len] span of the attention scores:
-            auto attn_shape = attention_scores.get_shape();
-            size_t kv_cache_size_in_tokens = attn_shape[0];
-            if (kv_cache_size_in_tokens <= m_eviction_config.get_start_size() + 1) {
-                return;
-            }
-
-            auto hh_score = ov::Tensor(
-                    attention_scores,
-                    ov::Coordinate{m_eviction_config.get_start_size()},
-                    ov::Coordinate{kv_cache_size_in_tokens}
-            );
-
-            auto &accumulated_scores_for_current_decoder_layer = m_scores[decoder_layer_idx];
-
-            if (accumulated_scores_for_current_decoder_layer.empty()) {
-                accumulated_scores_for_current_decoder_layer = std::vector<double>(hh_score.get_size());
-                for (size_t idx = 0; idx < accumulated_scores_for_current_decoder_layer.size(); idx++) {
-                    accumulated_scores_for_current_decoder_layer[idx] = hh_score.data<float>()[idx];
-                }
-                if (m_eviction_config.aggregation_mode == AggregationMode::NORM_SUM) {
-                    // New sequence to track - will simulate that the tokens comprising the sequence were added one-by-one
-                    // from the standpoint of the occurrence tracker
-                    std::size_t new_scores_size = hh_score.get_size();
-                    std::vector<std::size_t> counter(new_scores_size);
-                    std::generate(counter.begin(), counter.begin() + new_scores_size,
-                                  [&new_scores_size] { return new_scores_size--; });
-                    m_cache_counter[decoder_layer_idx] = counter;
-                }
-            } else {
-                size_t old_size_in_tokens = accumulated_scores_for_current_decoder_layer.size();
-                size_t num_new_tokens = hh_score.get_size() - accumulated_scores_for_current_decoder_layer.size();
-                if (m_eviction_config.aggregation_mode == AggregationMode::NORM_SUM) {
-                    // Increment occurrence counts of all currently tracked cache blocks
-                    auto &counter_for_current_decoder_layer = m_cache_counter[decoder_layer_idx];
-                    for (auto it = counter_for_current_decoder_layer.begin();
-                         it != counter_for_current_decoder_layer.end(); it++) {
-                        *it += num_new_tokens;
-                    }
-                    // Add occurrence counts for new tokens like above
-                    counter_for_current_decoder_layer.resize(hh_score.get_size());
-                    for (size_t i = 0; i < num_new_tokens; i++) {
-                        auto idx = old_size_in_tokens + i;
-                        counter_for_current_decoder_layer[idx] = num_new_tokens - i;
-                    }
-                }
-                accumulated_scores_for_current_decoder_layer.resize(hh_score.get_size());
-                auto hh_score_data = hh_score.data<float>();
-                for (size_t i = 0; i < hh_score.get_size(); ++i) {
-                    accumulated_scores_for_current_decoder_layer[i] += hh_score_data[i];
-                }
-            }
-        }
+            const AttentionScoresForEachDecoderLayer &attention_scores_for_all_decoder_layers, size_t num_snapkv_scores_aggregated) {
+        register_new_token_scores(attention_scores_for_all_decoder_layers, {}, num_snapkv_scores_aggregated);
     }
+
+    void CacheEvictionAlgorithm::register_new_token_scores(
+            const AttentionScoresForEachDecoderLayer &attention_scores_for_all_decoder_layers,
+            const std::set<size_t>& skipped_logical_block_ids,
+            size_t num_snapkv_scores_aggregated) {
+        m_score_manager.register_new_token_scores(attention_scores_for_all_decoder_layers, skipped_logical_block_ids, num_snapkv_scores_aggregated);
+    }
+
 
     std::size_t CacheEvictionAlgorithm::get_num_blocks(std::size_t num_tokens) const {
         return static_cast<std::size_t>(std::ceil(((double) num_tokens) / m_block_size));
@@ -160,9 +355,9 @@ namespace ov::genai {
     }
 
     std::vector<double> CacheEvictionAlgorithm::get_scores_for_all_evictable_blocks(size_t decoder_layer_idx) const {
-        auto accumulated_scores_for_current_decoder_layer = m_scores[decoder_layer_idx];
+        const auto& accumulated_scores_for_current_decoder_layer = m_score_manager.get_scores()[decoder_layer_idx];
         auto num_tracked_tokens = accumulated_scores_for_current_decoder_layer.size();
-        auto counter_for_current_decoder_layer = m_cache_counter[decoder_layer_idx];
+        const auto& counter_for_current_decoder_layer = m_score_manager.get_counters()[decoder_layer_idx];
 
         // Make sure that there is at least one block that can be completely evicted
         OPENVINO_ASSERT((num_tracked_tokens + m_eviction_config.get_start_size()) > get_max_cache_size_after_eviction(),
@@ -225,48 +420,9 @@ namespace ov::genai {
 
     void CacheEvictionAlgorithm::remove_scores_of_evicted_blocks(const std::vector<std::size_t> &evicted_block_indices,
                                                                  size_t decoder_layer_idx) {
-        if (evicted_block_indices.empty()) {
-            return;
-        }
-
-        const auto &accumulated_scores_for_current_decoder_layer = m_scores[decoder_layer_idx];
-        const auto &counter_for_current_decoder_layer = m_cache_counter[decoder_layer_idx];
-
-        if (m_eviction_config.aggregation_mode == AggregationMode::NORM_SUM) {
-            OPENVINO_ASSERT(
-                    accumulated_scores_for_current_decoder_layer.size() == counter_for_current_decoder_layer.size());
-        }
-
-        auto old_size = accumulated_scores_for_current_decoder_layer.size();
-        auto new_size =
-                accumulated_scores_for_current_decoder_layer.size() - evicted_block_indices.size() * m_block_size;
-
-        std::vector<double> new_scores;
-        new_scores.reserve(new_size);
-
-        std::vector<size_t> new_counter;
-
-        if (m_eviction_config.aggregation_mode == AggregationMode::NORM_SUM) {
-            new_counter.reserve(new_size);
-        }
-
-        for (size_t token_idx = 0, evicted_block_idx = 0; token_idx < old_size;) {
-            if (evicted_block_idx < evicted_block_indices.size() &&
-                token_idx == evicted_block_indices[evicted_block_idx] * m_block_size) {
-                ++evicted_block_idx;
-                token_idx += m_block_size;
-                continue;
-            }
-            new_scores.push_back(accumulated_scores_for_current_decoder_layer[token_idx]);
-            if (m_eviction_config.aggregation_mode == AggregationMode::NORM_SUM) {
-                new_counter.push_back(counter_for_current_decoder_layer[token_idx]);
-            }
-            ++token_idx;
-        }
-
-        m_scores[decoder_layer_idx] = new_scores;
-        m_cache_counter[decoder_layer_idx] = new_counter;
+        m_score_manager.remove_scores(evicted_block_indices, decoder_layer_idx);
     }
+
 
     CacheRotationCalculator::CacheRotationCalculator(size_t block_size,
                                                      size_t max_context_length_in_blocks,
@@ -362,4 +518,27 @@ namespace ov::genai {
 
         return retval;
     }
+
+size_t SnapKVScoreAggregationCalculator::get_num_token_scores_to_aggregate(size_t prompt_len, size_t num_scheduled_tokens, size_t num_processed_tokens) {
+    if (m_snapkv_window_size == 0) {
+        // If SnapKV is disabled, aggregate all available scores in this chunk
+        return num_scheduled_tokens;
+    }
+    size_t first_scored_token_position = m_snapkv_window_size > prompt_len ? 0 : prompt_len - m_snapkv_window_size;
+    size_t num_scored_token_positions_in_this_chunk = 0;
+    size_t num_processed_tokens_before_this_chunk = num_processed_tokens;
+    size_t num_processed_tokens_after_this_chunk = num_processed_tokens_before_this_chunk + num_scheduled_tokens;
+    if (num_processed_tokens_after_this_chunk > first_scored_token_position) {
+        if (num_processed_tokens_before_this_chunk > first_scored_token_position) {
+            num_scored_token_positions_in_this_chunk = num_scheduled_tokens;
+        }
+        else {
+            num_scored_token_positions_in_this_chunk = num_processed_tokens_after_this_chunk - first_scored_token_position;
+        }
+
+    }
+    return num_scored_token_positions_in_this_chunk;
 }
+
+}
+

@@ -3,6 +3,8 @@
 
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 
+#include <iostream>
+#include <memory>
 #include <fstream>
 
 #include "json_utils.hpp"
@@ -42,8 +44,17 @@ CLIPTextModel::CLIPTextModel(const std::filesystem::path& root_dir) :
 
 CLIPTextModel::CLIPTextModel(const std::filesystem::path& root_dir,
                              const std::string& device,
-                             const ov::AnyMap& properties) :
-    CLIPTextModel(root_dir) {
+                             const ov::AnyMap& properties)
+    : m_clip_tokenizer(get_tokenizer_path_by_text_encoder(root_dir)),
+      m_config(root_dir / "config.json") {
+    const auto [properties_without_blob, blob_path] = utils::extract_export_properties(properties);
+
+    if (blob_path.has_value()) {
+        import_model(*blob_path, device, properties_without_blob);
+        return;
+    }
+
+    m_model = utils::singleton_core().read_model(root_dir / "openvino_model.xml");
     compile(device, properties);
 }
 
@@ -66,6 +77,20 @@ CLIPTextModel::CLIPTextModel(const std::string& model,
 }
 
 CLIPTextModel::CLIPTextModel(const CLIPTextModel&) = default;
+
+std::shared_ptr<CLIPTextModel> CLIPTextModel::clone() {
+    OPENVINO_ASSERT((m_model != nullptr) ^ static_cast<bool>(m_request), "CLIPTextModel must have exactly one of m_model or m_request initialized");
+
+    std::shared_ptr<CLIPTextModel> cloned = std::make_shared<CLIPTextModel>(*this);
+
+    if (m_model) {
+        cloned->m_model = m_model->clone();
+    } else {
+        cloned->m_request = m_request.get_compiled_model().create_infer_request();
+    }
+
+    return cloned;
+}
 
 const CLIPTextModel::Config& CLIPTextModel::get_config() const {
     return m_config;
@@ -178,6 +203,21 @@ ov::Tensor CLIPTextModel::get_output_tensor(const size_t idx) {
     } else {
         return infer_out_tensor;
     }
+}
+
+void CLIPTextModel::export_model(const std::filesystem::path& blob_path) {
+    OPENVINO_ASSERT(m_request, "CLIP text encoder model must be compiled first.");
+    auto compiled_model = m_request.get_compiled_model();
+    utils::export_model(compiled_model, blob_path / "openvino_model.blob");
+}
+
+void CLIPTextModel::import_model(const std::filesystem::path& blob_path,
+                                 const std::string& device,
+                                 const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(!m_request, "Model has been already compiled. Cannot re-compile already compiled model");
+    auto compiled_model = utils::import_model(blob_path / "openvino_model.blob", device, properties);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "Clip Text model");
+    m_request = compiled_model.create_infer_request();
 }
 
 } // namespace genai

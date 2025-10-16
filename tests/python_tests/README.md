@@ -17,21 +17,16 @@ pip install -r tests/python_tests/requirements.txt
 python -m pytest tests/python_tests/ -m precommit
 ```
 
-During the test downloaded HuggingFace (HF) models will be saved into the current directory. If you wish to place them somewhere else you can specify `GENAI_MODELS_PATH_PREFIX` environment variable, e.g.
-```sh
-GENAI_MODELS_PATH_PREFIX=$HOME/test_models python -m pytest tests/python_tests/ -m precommit
-```
-
 If you have built GenAI library by yourself instead of using wheel please set `PYTHONPATH` so that test could find library, e.g.
 ```sh
 PYTHONPATH=$PYTHONPATH:.../openvino.genai/build-Release/ python -m pytest tests/python_tests/ -m precommit
 ```
 
-## Customise tests run
+## Customize tests run
 
-Tests have `precommit` and `nightly` set of models. `precommit` contains lightweight models which can be quickly inferred, `nightly` models are heavier and required more time for inference. If you wish to run specific tests only for nightly models, you can use `-k` option, for example to run only multibatch and chat tests:
+Tests have `precommit` set of models. `precommit` contains lightweight models which can be quickly inferred. If you wish to run specific tests, you can use `-k` option, for example to run only multibatch and chat tests:
 ```sh
-python -m pytest tests/python_tests/ -m nightly -k "test_multibatch and test_chat"
+python -m pytest tests/python_tests/ -m precommit -k "test_multibatch and test_chat"
 ```
 
 If you wish to run all tests except beam search do the following:
@@ -41,10 +36,10 @@ python -m pytest tests/python_tests/ -m precommit -k "not test_beam_search"
 
 Argument `--model_ids` can be used to run tests selectively only for specific models. HF model ids should be separated by space, e.g:
 ```sh
-python -m pytest tests/python_tests/ -m nightly -k "test_multibatch" --model_ids "TinyLlama/TinyLlama-1.1B-Chat-v1.0 Qwen/Qwen2-0.5B-Instruct"
+python -m pytest tests/python_tests/ -m precommit -k "test_multibatch" --model_ids "TinyLlama/TinyLlama-1.1B-Chat-v1.0 Qwen/Qwen2-0.5B-Instruct"
 ```
 
-List of currently supported `nightly` and `precommit` models can be found in tests/python_tests/ov_genai_test_utils.py:get_models_list
+List of currently supported models can be found in tests/python_tests/models.py:get_models_list
 
 ## Test Samples
 To test samples, set the `SAMPLES_PY_DIR` and `SAMPLES_CPP_DIR` environment variables to the directories containing your Python samples and built C++ samples respectively. The `SAMPLES_CPP_DIR` should point to the folder with built C++ samples, which can be installed using `cmake --component samples_bin`. For example:
@@ -71,3 +66,5 @@ If the `CLEANUP_CACHE` environment variable is set, all downloaded and converted
 ```sh
 CLEANUP_CACHE=1 python -m pytest tests/python_tests -m samples
 ```
+
+Test images are saved to pytest's default cache dir. It can be changed with `--override-ini cache_dir=new_path`. `-p no:cacheprovider` disables the cache.

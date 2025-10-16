@@ -9,6 +9,7 @@ There are several sample files:
  - [`image2image.py`](./image2image.py) demonstrates basic usage of the image to image pipeline
  - [`inpainting.py`](./inpainting.py) demonstrates basic usage of the inpainting pipeline
  - [`benchmark_image_gen.py`](./benchmark_image_gen.py) demonstrates how to benchmark the text to image / image to image / inpainting pipeline
+ - [`stable_diffusion_export_import.py`](./stable_diffusion_export_import.py) demonstrates how to export and import compiled models in the text to image pipeline. Only the Stable Diffusion XL model is supported.
 
 Users can change the sample code and play with the following generation parameters:
 
@@ -30,10 +31,27 @@ Users can change the sample code and play with the following generation paramete
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
 Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
-
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
+```
+
+Then, run the export with Optimum CLI:
+
+```sh
 optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 dreamlike_anime_1_0_ov/FP16
+```
+
+Alternatively, do it in Python code (FP16 is used by default). If NNCF is installed, the model will be compressed to INT8 automatically.
+
+```python
+from optimum.exporters.openvino.convert import export_tokenizer
+from optimum.intel import OVPipelineForText2Image
+
+output_dir = "dreamlike_anime_1_0_ov/FP16"
+
+pipeline = OVPipelineForText2Image.from_pretrained("dreamlike-art/dreamlike-anime-1.0", export=True)
+pipeline.save_pretrained(output_dir)
+export_tokenizer(pipeline.tokenizer, output_dir + "/tokenizer")
 ```
 
 ## Run text to image
@@ -73,6 +91,18 @@ image = pipe.generate(
 ## Run with optional LoRA adapters
 
 LoRA adapters can be connected to the pipeline and modify generated images to have certain style, details or quality. Adapters are supported in Safetensors format and can be downloaded from public sources like [Civitai](https://civitai.com) or [HuggingFace](https://huggingface.co/models) or trained by the user. Adapters compatible with a base model should be used only. A weighted blend of multiple adapters can be applied by specifying multiple adapter files with corresponding alpha parameters in command line. Check `lora_text2image.py` source code to learn how to enable adapters and specify them in each `generate` call.
+
+> [!NOTE]
+> ### LoRA `alpha` interpretation in OpenVINO GenAI
+> The OpenVINO GenAI implementation merges the traditional LoRA parameters into a **single effective scaling factor** used during inference.
+>
+> In this context, the `alpha` value already includes:
+> - normalization by LoRA rank (`alpha / rank`)
+> - any user-defined scaling factor (`weight`)
+>
+> This means `alpha` in GenAI should be treated as the **final scaling weight** applied to the LoRA update — not the raw `alpha` parameter from training.
+
+### Example: Running with a LoRA Adapter
 
 Here is an example how to run the sample with a single adapter. First download adapter file from https://civitai.com/models/67927/soulcard page manually and save it as `soulcard.safetensors`. Or download it from command line:
 
@@ -208,4 +238,40 @@ Performance output:
 Test finish, load time: 9356.00 ms
 Warmup number:1, first generate warmup time:85008.00 ms, infer warmup time:84999.88 ms
 Generate iteration number:3, for one iteration, generate avg time: 84372.34 ms, infer avg time:84363.95 ms, all text encoders infer avg time:76.67 ms, vae encoder infer avg time:0.00 ms, vae decoder infer avg time:4470.33 ms
+```
+
+### Image Generation Pipeline reuse
+
+To extend the pipeline's capabilities, we provide an interface that allows a specific image generation pipeline to reuse models from another pipeline that has already loaded them. The table below shows the support scope.
+
+| Image Generation pipeline | Model can be reused from |
+|:---|:---|
+| `Text2ImagePipeline` | `Image2ImagePipeline` or `InpaintingPipeline` |
+| `Image2ImagePipeline` | `InpaintingPipeline` |
+| `InpaintingPipeline` | `Image2ImagePipeline` |
+
+This example shows how `Text2ImagePipeline` reuses models from `Image2ImagePipeline` and executes a different pipeline depending on whether an initial image is provided.
+
+```py
+img2img_pipe = openvino_genai.Image2ImagePipeline(models_path, device)
+text2img_pipe = openvino_genai.Text2ImagePipeline(img2img_pipe)
+
+if image_path:
+   image = read_image(image_path)
+   image_tensor = img2img_pipe.generate(prompt, image, strength=0.8)
+else:
+   image_tensor = text2img_pipe.generate(prompt, strength=1.0)
+```
+
+## Export and import compiled models
+
+`openvino_genai.Image2ImagePipeline` supports exporting and importing compiled models to and from a specified directory. This API can significantly reduce model load time, especially for large models like UNet. Only the Stable Diffusion XL model is supported.
+
+```python
+# export models
+pipeline = openvino_genai.Text2ImagePipeline(models_path, device)
+pipeline.export_model(models_path / "blobs")
+
+# import models
+imported_pipeline = openvino_genai.Text2ImagePipeline(models_path, device, blob_path=models_path / "blobs")
 ```

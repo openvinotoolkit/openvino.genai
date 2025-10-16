@@ -23,10 +23,7 @@ MAX_NEW_TOKENS = 128
 SEQS_PER_REQUEST = 5
 MAX_SEQUENCES = 100
 
-
-model = OVModelForCausalLM.from_pretrained(
-    model_id, export=True, trust_remote_code=True
-)
+model = OVModelForCausalLM.from_pretrained(model_id, export=True)
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 model_path = PosixPath(tempfile.gettempdir()) / model_id
 model.save_pretrained(model_path)

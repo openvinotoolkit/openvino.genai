@@ -52,6 +52,18 @@ wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text --genai
 
 > **NOTE**: use --verbose option for debug to see the outputs with the largest difference.
 
+### Compare Visual Language Models (VLMs)
+```sh
+# Export FP16 model to OpenVINO
+optimum-cli export openvino -m llava-hf/llava-v1.6-mistral-7b-hf  --weight-format int8 llava-int8
+# Collect the references and save the mappling in the .csv file. 
+# Reference images will be stored in the "reference" subfolder under the same path with .csv.
+wwb --base-model llava-hf/llava-v1.6-mistral-7b-hf --gt-data llava_test/gt.csv --model-type visual-text --hf
+# Compute the metric
+# Target images will be stored in the "target" subfolder under the same path with .csv.
+wwb --target-model llava-int8 --gt-data llava_test/gt.csv --model-type visual-text --genai
+```
+
 ### Compare Text-to-image models
 ```sh
 # Export model with 8-bit quantized weights to OpenVINO
@@ -64,16 +76,17 @@ wwb --base-model SimianLuo/LCM_Dreamshaper_v7--gt-data lcm_test/gt.csv --model-t
 wwb --target-model sd-lcm-int8 --gt-data lcm_test/gt.csv --model-type text-to-image --genai
 ```
 
-### Compare Visual Language Models (VLMs)
+### Compare Text-to-image models with LoRA
 ```sh
 # Export FP16 model to OpenVINO
-optimum-cli export openvino -m llava-hf/llava-v1.6-mistral-7b-hf  --weight-format int8 llava-int8
-# Collect the references and save the mappling in the .csv file. 
+optimum-cli export openvino -m black-forest-labs/FLUX.1-dev FLUX.1-dev-fp
+
+# Collect the references and save the mappling in the .csv file.
 # Reference images will be stored in the "reference" subfolder under the same path with .csv.
-wwb --base-model llava-hf/llava-v1.6-mistral-7b-hf --gt-data llava_test/gt.csv --model-type visual-text --hf
+wwb --base-model black-forest-labs/FLUX.1-dev --gt-data flux.1-dev/gt.csv --model-type text-to-image --adapters Octree/flux-schnell-lora Shakker-Labs/FLUX.1-dev-LoRA-add-details --alphas 0.1 0.9 --hf
 # Compute the metric
 # Target images will be stored in the "target" subfolder under the same path with .csv.
-wwb --target-model llava-int8 --gt-data llava_test/gt.csv --model-type visual-text --genai
+wwb --target-model FLUX.1-dev-fp --gt-data flux.1-dev/gt.csv --model-type text-to-image --adapters flux-schnell-lora.safetensors FLUX-dev-lora-add_details.safetensors --alphas 0.1 0.9 --genai
 ```
 
 ### API

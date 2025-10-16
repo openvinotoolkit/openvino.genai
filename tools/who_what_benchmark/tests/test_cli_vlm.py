@@ -1,20 +1,96 @@
 import subprocess  # nosec B404
-import os
-import shutil
 import pytest
 import logging
-import tempfile
+import sys
+from test_cli_image import run_wwb, get_similarity
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def run_wwb(args):
-    logger.info(" ".join(["TRANSFOREMRS_VERBOSITY=debug wwb"] + args))
-    result = subprocess.run(["wwb"] + args, capture_output=True, text=True)
-    logger.info(result)
-    return result
+def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path):
+    if sys.platform == 'darwin':
+        pytest.xfail("Ticket 173169")
+    GT_FILE = tmp_path / "gt.csv"
+    MODEL_PATH = tmp_path / model_id.replace("/", "--")
+
+    result = subprocess.run(["optimum-cli", "export",
+                             "openvino", "-m", model_id,
+                             MODEL_PATH, "--task",
+                             "image-text-to-text",
+                             "--trust-remote-code"],
+                            capture_output=True,
+                            text=True,
+                            )
+    assert result.returncode == 0
+
+    # Collect reference with HF model
+    run_wwb([
+        "--base-model",
+        model_id,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--hf",
+    ])
+
+    # test Optimum
+    output = run_wwb([
+        "--target-model",
+        MODEL_PATH,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+    ])
+    if optimum_threshold is not None:
+        similarity = get_similarity(output)
+        assert similarity >= optimum_threshold
+
+    # test GenAI
+    output = run_wwb([
+        "--target-model",
+        MODEL_PATH,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--genai",
+        "--output",
+        tmp_path,
+    ])
+    if genai_threshold is not None:
+        similarity = get_similarity(output)
+        assert similarity >= genai_threshold
+
+    # test w/o models
+    run_wwb([
+        "--target-data",
+        tmp_path / "target.csv",
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--genai",
+    ])
 
 
 @pytest.mark.parametrize(
@@ -23,89 +99,16 @@ def run_wwb(args):
         ("katuni4ka/tiny-random-llava", "visual-text"),
     ],
 )
-def test_vlm_basic(model_id, model_type):
-    with tempfile.TemporaryDirectory() as temp_dir:
-        GT_FILE = os.path.join(temp_dir, "gt.csv")
-        MODEL_PATH = os.path.join(temp_dir, model_id.replace("/", "--"))
+def test_vlm_basic(model_id, model_type, tmp_path):
+    run_test(model_id, model_type, None, None, tmp_path)
 
-        result = subprocess.run(["optimum-cli", "export",
-                                 "openvino", "-m", model_id,
-                                 MODEL_PATH, "--task",
-                                 "image-text-to-text",
-                                 "--trust-remote-code"],
-                                capture_output=True,
-                                text=True,
-                                )
-        assert result.returncode == 0
 
-        # Collect reference with HF model
-        wwb_args = [
-            "--base-model",
-            model_id,
-            "--num-samples",
-            "1",
-            "--gt-data",
-            GT_FILE,
-            "--device",
-            "CPU",
-            "--model-type",
-            model_type,
-            "--hf",
-        ]
-        result = run_wwb(wwb_args)
-        assert result.returncode == 0
-
-        # test Optimum
-        wwb_args = [
-            "--target-model",
-            MODEL_PATH,
-            "--num-samples",
-            "1",
-            "--gt-data",
-            GT_FILE,
-            "--device",
-            "CPU",
-            "--model-type",
-            model_type,
-        ]
-        result = run_wwb(wwb_args)
-        assert result.returncode == 0
-
-        # test GenAI
-        wwb_args = [
-            "--target-model",
-            MODEL_PATH,
-            "--num-samples",
-            "1",
-            "--gt-data",
-            GT_FILE,
-            "--device",
-            "CPU",
-            "--model-type",
-            model_type,
-            "--genai",
-            "--output",
-            "target",
-        ]
-        result = run_wwb(wwb_args)
-        assert result.returncode == 0
-
-        # test w/o models
-        wwb_args = [
-            "--target-data",
-            "target/target.csv",
-            "--num-samples",
-            "1",
-            "--gt-data",
-            GT_FILE,
-            "--device",
-            "CPU",
-            "--model-type",
-            model_type,
-            "--genai",
-        ]
-        result = run_wwb(wwb_args)
-        assert result.returncode == 0
-        shutil.rmtree("reference", ignore_errors=True)
-        shutil.rmtree("target", ignore_errors=True)
-        shutil.rmtree(MODEL_PATH, ignore_errors=True)
+@pytest.mark.nanollava
+@pytest.mark.parametrize(
+    ("model_id", "model_type", "optimum_threshold", "genai_threshold"),
+    [
+        ("qnguyen3/nanoLLaVA", "visual-text", 0.99, 0.88),
+    ],
+)
+def test_vlm_nanollava(model_id, model_type, optimum_threshold, genai_threshold, tmp_path):
+    run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)

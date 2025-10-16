@@ -11,6 +11,8 @@
 namespace ov::genai {
 class ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
 public:
+    const std::size_t default_num_assistant_tokens = 5;
+ 
     ContinuousBatchingForSpeculativeDecodingImpl() = default;
 
     ContinuousBatchingForSpeculativeDecodingImpl(const std::shared_ptr<ov::Model>& model,
@@ -32,6 +34,8 @@ public:
     size_t get_processed_tokens_per_iteration();
 
     UpdateRequestResult init_request_by_candidate(uint64_t request_id, const GeneratedSequences& candidates);
+
+    RawPerfMetrics raw_perf_metrics;
 
 protected:
     void finish_request(SequenceGroup::Ptr request);

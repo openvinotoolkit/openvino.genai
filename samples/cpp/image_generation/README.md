@@ -4,11 +4,14 @@ Examples in this folder showcase inference of text to image models like Stable D
 
 There are several sample files:
  - [`text2image.cpp`](./text2image.cpp) demonstrates basic usage of the text to image pipeline
+ - [`text2image_concurrency.cpp`](./text2image_concurrency.cpp) demonstrates concurrent usage of the text to image pipeline to create multiple images with different prompts
  - [`lora_text2image.cpp`](./lora_text2image.cpp) shows how to apply LoRA adapters to the pipeline
  - [`heterogeneous_stable_diffusion.cpp`](./heterogeneous_stable_diffusion.cpp) shows how to assemble a heterogeneous txt2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
  - [`image2image.cpp`](./image2image.cpp) demonstrates basic usage of the image to image pipeline
+ - [`image2image_concurrency.cpp.cpp`](./image2image_concurrency.cpp) demonstrates concurrent usage of the image to image pipeline to create multiple images with different prompts
  - [`inpainting.cpp`](./inpainting.cpp) demonstrates basic usage of the inpainting pipeline
  - [`benchmark_image_gen.cpp`](./benchmark_image_gen.cpp) demonstrates how to benchmark the text to image / image to image / inpainting pipeline
+ - [`stable_diffusion_export_import.cpp`](./stable_diffusion_export_import.cpp) demonstrates how to export and import compiled models from/to the text to image pipeline. Only the Stable Diffusion XL model is supported.
 
 Users can change the sample code and play with the following generation parameters:
 
@@ -74,6 +77,18 @@ ov::Tensor image = pipe.generate(prompt,
 ## Run with optional LoRA adapters
 
 LoRA adapters can be connected to the pipeline and modify generated images to have certain style, details or quality. Adapters are supported in Safetensors format and can be downloaded from public sources like [Civitai](https://civitai.com) or [HuggingFace](https://huggingface.co/models) or trained by the user. Adapters compatible with a base model should be used only. A weighted blend of multiple adapters can be applied by specifying multiple adapter files with corresponding alpha parameters in command line. Check `lora.cpp` source code to learn how to enable adapters and specify them in each `generate` call.
+
+> [!NOTE]
+> ### LoRA `alpha` interpretation in OpenVINO GenAI
+> The OpenVINO GenAI implementation merges the traditional LoRA parameters into a **single effective scaling factor** used during inference.
+>
+> In this context, the `alpha` value already includes:
+> - normalization by LoRA rank (`alpha / rank`)
+> - any user-defined scaling factor (`weight`)
+>
+> This means `alpha` in GenAI should be treated as the **final scaling weight** applied to the LoRA update — not the raw `alpha` parameter from training.
+
+### Example: Running with a LoRA Adapter
 
 Here is an example how to run the sample with a single adapter. First download adapter file from https://civitai.com/models/67927/soulcard page manually and save it as `soulcard.safetensors`. Or download it from command line:
 
@@ -209,4 +224,86 @@ Performance output:
 Test finish, load time: 9356.00 ms
 Warmup number:1, first generate warmup time:85008.00 ms, infer warmup time:84999.88 ms
 Generate iteration number:3, for one iteration, generate avg time: 84372.34 ms, infer avg time:84363.95 ms, all text encoders infer avg time:76.67 ms, vae encoder infer avg time:0.00 ms, vae decoder infer avg time:4470.33 ms
+```
+
+### Run multiple generations with different prompt in parallel
+
+It is highly recommended to use `ov::genai::num_images_per_prompt(X)` parameter to generate multiple images in parallel. However, when the generation options differ (prompt, height, width), it is recommended to clone the pipeline.
+It is possible to re-use models compiled into device for concurrent generation with different prompts in separate threads.
+
+Here in this example we load and compile the entire pipeline once, and then use `clone()` to create separate generation requests to be reused in separate threads:
+
+
+```cpp
+std::vector<ov::genai::Text2ImagePipeline> pipelines;
+
+// Prepare initial pipeline and compiled models into device
+pipelines.emplace_back(models_path, device);
+// Clone pipeline for concurrent usage
+for (size_t i = 1; i < 4; i++)
+   pipelines.emplace_back(pipelines.begin()->clone());
+
+std::vector<std::thread> threads;
+
+for (size_t i = 0; i < 4; i++) {
+  auto& pipe = pipelines.at(i);
+  threads.emplace_back([&pipe, i] {
+    std::string prompt = "A card with number " + std::to_string(i);
+
+    ov::Tensor image = pipe.generate(prompt,
+      ov::AnyMap{
+        ov::genai::width(512),
+        ov::genai::height(512),
+        ov::genai::num_inference_steps(25)});
+
+    // save image
+  });
+}
+
+for (auto& thread : threads) {
+   thread.join();
+}
+```
+
+### Image Generation Pipeline reuse
+
+To extend the pipeline's capabilities, we provide an interface that allows a specific image generation pipeline to reuse models from another pipeline that has already loaded them. The table below shows the support scope.
+
+| Image Generation pipeline | Model can be reused from |
+|:---|:---|
+| `Text2ImagePipeline` | `Image2ImagePipeline` or `InpaintingPipeline` |
+| `Image2ImagePipeline` | `InpaintingPipeline` |
+| `InpaintingPipeline` | `Image2ImagePipeline` |
+
+This example shows how `Text2ImagePipeline` reuses models from `Image2ImagePipeline` and executes a different pipeline depending on whether an initial image is provided.
+
+```cpp
+ov::genai::Image2ImagePipeline img2img_pipe(models_path, device);
+ov::genai::Text2ImagePipeline text2img_pipe(img2img_pipe);
+
+ov::Tensor generated_image;
+
+if (image_path.empty()) {
+   generated_image = text2img_pipe.generate(prompt,
+      ov::genai::strength(1.f),
+      ov::genai::callback(progress_bar));
+} else {
+   ov::Tensor image = utils::load_image(image_path);
+   generated_image = img2img_pipe.generate(prompt, image,
+      ov::genai::strength(0.8f),
+      ov::genai::callback(progress_bar));
+}
+```
+
+## Export and import compiled models
+
+`ov::genai::Image2ImagePipeline` supports exporting and importing compiled models to and from a specified directory. This API can significantly reduce model load time, especially for large models like UNet. Only the Stable Diffusion XL model is supported.
+
+```cpp
+// export models
+ov::genai::Text2ImagePipeline pipeline(models_path, device);
+pipeline.export_model(models_path / "blobs");
+
+// import models
+ov::genai::Text2ImagePipeline imported_pipeline(models_path, device, ov::genai::blob_path(models_path / "blobs"));
 ```

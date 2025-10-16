@@ -4,6 +4,7 @@
 #pragma once
 
 #include <filesystem>
+#include <memory>
 #include <string>
 
 #include "openvino/genai/visibility.hpp"
@@ -69,6 +70,8 @@ public:
 
     CLIPTextModel(const CLIPTextModel&);
 
+    std::shared_ptr<CLIPTextModel> clone();
+
     const Config& get_config() const;
 
     CLIPTextModel& reshape(int batch_size);
@@ -88,15 +91,25 @@ public:
 
     ov::Tensor get_output_tensor(const size_t idx);
 
+    /**
+     * @brief Exports compiled model to a specified directory.
+     * @param export_path A path to a directory to export compiled model to
+     *
+     * See @ref ov::genai::blob_path property to load previously exported model and for more details.
+     */
+    void export_model(const std::filesystem::path& export_path);
+
 private:
     Config m_config;
     AdapterController m_adapter_controller;
+    Tokenizer m_clip_tokenizer;
+    bool m_slice_batch1_output = false;
+
+protected:
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
 
-    Tokenizer m_clip_tokenizer;
-
-    bool m_slice_batch1_output = false;
+    void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties);
 };
 
 } // namespace genai

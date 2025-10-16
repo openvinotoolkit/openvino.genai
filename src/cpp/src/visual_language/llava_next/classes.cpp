@@ -13,9 +13,7 @@ namespace ov::genai {
 // forward declaration
 clip_image_f32 preprocess_clip_image_llava(const clip_image_u8& image, const ProcessorConfig& config);
 
-namespace {
-
-ov::Tensor get_pixel_values_llava_next(const ov::Tensor& image, const ProcessorConfig& config) {
+ov::Tensor VisionEncoderLLaVANext::get_pixel_values_llava_next(const ov::Tensor& image, const ProcessorConfig& config) {
     clip_image_u8 input_image = tensor_to_clip_image_u8(image);
 
     std::pair<int, int> size{config.size_shortest_edge, config.size_shortest_edge};
@@ -46,8 +44,6 @@ ov::Tensor get_pixel_values_llava_next(const ov::Tensor& image, const ProcessorC
 
     return concatenated_tensor;
 }
-
-} // namespace
 
 EncodedImage VisionEncoderLLaVANext::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
@@ -99,6 +95,7 @@ ov::Tensor unpad_image(const ov::Tensor& tensor, const ImageSize& original_size)
         size_t new_height = static_cast<size_t>(original_height * scale_factor);
         size_t padding = (current_height - new_height) / 2;
         size_t unpadded_height_dim = new_height + 1;
+        unpadded_height_dim = std::min(unpadded_height_dim, current_height);
         unpadded_tensor = ov::Tensor(tensor.get_element_type(), {embed_dim, unpadded_height_dim, current_width});
 
         for (size_t e = 0; e < embed_dim; ++e) {
@@ -115,6 +112,7 @@ ov::Tensor unpad_image(const ov::Tensor& tensor, const ImageSize& original_size)
         size_t new_width = static_cast<size_t>(original_width * scale_factor);
         size_t padding = (current_width - new_width) / 2;
         size_t unpadded_width_dim = new_width + 1;
+        unpadded_width_dim = std::min(unpadded_width_dim, current_width);
         unpadded_tensor = ov::Tensor(tensor.get_element_type(), {embed_dim, current_height, unpadded_width_dim});
 
         for (size_t e = 0; e < embed_dim; ++e) {
@@ -251,6 +249,7 @@ ov::Tensor add_image_newline(const ov::Tensor& image_feature, const ov::Tensor& 
 
     return feature_with_newline;
 }
+} // namespace
 
 /**
  * @brief Processes base and patches image features extracted from encoded image.
@@ -261,9 +260,9 @@ ov::Tensor add_image_newline(const ov::Tensor& image_feature, const ov::Tensor& 
  * @param image_newline An image newline tensor with a shape (embed_dim)
  * @return A tensor with a shape (1, new_seq_len, embed_dim)
  */
-ov::Tensor pack_image_features_llava_next(
+ov::Tensor InputsEmbedderLLaVANext::pack_image_features_llava_next(
     const EncodedImage& encoded_image,
-    const ov::Tensor& image_newline) {
+    const ov::Tensor& image_newline) const {
     auto image_feature = encoded_image.resized_source;
     auto image_feature_shape = image_feature.get_shape();
     size_t num_patches = image_feature_shape[0];
@@ -331,8 +330,6 @@ ov::Tensor pack_image_features_llava_next(
     }
 }
 
-} // namespace
-
 std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVANext::encode_images(const std::vector<ov::Tensor>& images) {
     std::vector<EncodedImage> embeds;
     ov::AnyMap vision_config = {{"patch_size", m_vlm_config.vision_config_patch_size}};
@@ -343,7 +340,7 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVANext::encode_images(cons
     return embeds;
 }
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedderLLaVANext::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormlizedPrompt InputsEmbedderLLaVANext::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     std::string image_token = m_vlm_config.im_start;
     auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size());
     std::vector<ov::Tensor> image_embeds;
@@ -408,7 +405,7 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& unified
     OPENVINO_ASSERT(metrics.raw_metrics.tokenization_durations.size() > 0);
     metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
-    return merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
+    return utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
 }
 
 } // namespace ov::genai

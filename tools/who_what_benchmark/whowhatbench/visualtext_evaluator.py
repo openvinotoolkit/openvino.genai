@@ -25,7 +25,7 @@ def prepare_default_data(num_samples=None):
     set_seed(42)
     default_dataset = datasets.load_dataset(
         DATASET_NAME, split="test", streaming=True
-    ).take(NUM_SAMPLES)
+    ).shuffle(42).take(NUM_SAMPLES)
     return default_dataset.map(
         lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
     )
@@ -141,6 +141,10 @@ class VisualTextEvaluator(TextEvaluator):
                 tokenizer=tokenizer,
                 **get_ignore_parameters_flag()
             )
+            if isinstance(tokens, tuple) and isinstance(tokens[0], list) and isinstance(tokens[0][0], str):
+                # Some models return a decoded output, like miniCPM-o
+                # The output tuple has format (<list of decoded outputs without question/prompt>, <GenerateDecoderOnlyOutput>)
+                return tokens[0][0]
             if crop_question:
                 tokens = tokens[:, inputs["input_ids"].shape[-1] :]
 

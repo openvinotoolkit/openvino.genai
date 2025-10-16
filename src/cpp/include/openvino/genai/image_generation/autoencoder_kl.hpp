@@ -116,6 +116,8 @@ public:
 
     AutoencoderKL(const AutoencoderKL&);
 
+    AutoencoderKL clone();
+
     AutoencoderKL& reshape(int batch_size, int height, int width);
 
     AutoencoderKL& compile(const std::string& device, const ov::AnyMap& properties = {});
@@ -135,8 +137,17 @@ public:
 
     size_t get_vae_scale_factor() const;
 
+    /**
+     * @brief Exports compiled models to a specified directory.
+     * @param export_path A path to a directory to export compiled models to
+     *
+     * See @ref ov::genai::blob_path property to load previously exported models and for more details.
+     */
+    void export_model(const std::filesystem::path& export_path);
+
 private:
     void merge_vae_image_post_processing() const;
+    void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties = {});
 
     Config m_config;
     ov::InferRequest m_encoder_request, m_decoder_request;

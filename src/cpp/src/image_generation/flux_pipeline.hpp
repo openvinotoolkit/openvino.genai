@@ -110,6 +110,7 @@ namespace genai {
 class FluxPipeline : public DiffusionPipeline {
 public:
     FluxPipeline(PipelineType pipeline_type, const std::filesystem::path& root_dir) : FluxPipeline(pipeline_type) {
+        m_root_dir = root_dir;
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -166,6 +167,7 @@ public:
                  const std::string& device,
                  const ov::AnyMap& properties)
         : FluxPipeline(pipeline_type) {
+        m_root_dir = root_dir;
         const std::filesystem::path model_index_path = root_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -240,8 +242,17 @@ public:
         OPENVINO_ASSERT(!pipe.is_inpainting_model(), "Cannot create ",
             pipeline_type == PipelineType::TEXT_2_IMAGE ? "'Text2ImagePipeline'" : "'Image2ImagePipeline'", " from InpaintingPipeline with inpainting model");
 
+        m_root_dir = pipe.m_root_dir;
+
+        m_clip_text_encoder = std::make_shared<CLIPTextModel>(*pipe.m_clip_text_encoder);
+        m_t5_text_encoder = std::make_shared<T5EncoderModel>(*pipe.m_t5_text_encoder);
+        m_vae = std::make_shared<AutoencoderKL>(*pipe.m_vae);
+        m_transformer = std::make_shared<FluxTransformer2DModel>(*pipe.m_transformer);
+
         m_pipeline_type = pipeline_type;
         initialize_generation_config("FluxPipeline");
+
+        OPENVINO_ASSERT(!is_inpainting_model(), "inpainting model is not currently supported by Flux InpaintingPipeline. Please, contact OpenVINO GenAI developers.");
     }
 
     void reshape(const int num_images_per_prompt,
@@ -267,6 +278,25 @@ public:
         m_t5_text_encoder->compile(text_encode_device, *updated_properties);
         m_vae->compile(vae_device, *updated_properties);
         m_transformer->compile(denoise_device, *updated_properties);
+    }
+
+    std::shared_ptr<DiffusionPipeline> clone() override {
+        OPENVINO_ASSERT(!m_root_dir.empty(), "Cannot clone pipeline without root directory");
+        
+        std::shared_ptr<AutoencoderKL> vae = std::make_shared<AutoencoderKL>(m_vae->clone());
+        std::shared_ptr<CLIPTextModel> clip_text_encoder = std::static_pointer_cast<CLIPTextModel>(m_clip_text_encoder->clone());
+        std::shared_ptr<FluxTransformer2DModel> transformer = std::make_shared<FluxTransformer2DModel>(m_transformer->clone());
+        std::shared_ptr<T5EncoderModel> t5_text_encoder = m_t5_text_encoder->clone();
+        std::shared_ptr<FluxPipeline> pipeline = std::make_shared<FluxPipeline>(m_pipeline_type,
+                                                              *clip_text_encoder,
+                                                              *t5_text_encoder,
+                                                              *transformer,
+                                                              *vae);
+
+        pipeline->m_root_dir = m_root_dir;
+        pipeline->set_scheduler(Scheduler::from_config(m_root_dir / "scheduler/scheduler_config.json"));
+        pipeline->set_generation_config(m_generation_config);
+        return pipeline;
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const ImageGenerationConfig& generation_config) override {
@@ -547,8 +577,8 @@ protected:
     }
 
     void initialize_generation_config(const std::string& class_name) override {
-        assert(m_transformer != nullptr);
-        assert(m_vae != nullptr);
+        OPENVINO_ASSERT(m_transformer != nullptr);
+        OPENVINO_ASSERT(m_vae != nullptr);
 
         const auto& transformer_config = m_transformer->get_config();
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
@@ -579,7 +609,7 @@ protected:
     }
 
     void check_image_size(const int height, const int width) const override {
-        assert(m_transformer != nullptr);
+        OPENVINO_ASSERT(m_transformer != nullptr);
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) && (width % vae_scale_factor == 0 || width < 0),
                         "Both 'width' and 'height' must be divisible by ",
@@ -587,7 +617,7 @@ protected:
     }
 
     void check_inputs(const ImageGenerationConfig& generation_config, ov::Tensor initial_image) const override {
-        check_image_size(generation_config.width, generation_config.height);
+        check_image_size(generation_config.height, generation_config.width);
 
         OPENVINO_ASSERT(generation_config.max_sequence_length <= 512, "T5's 'max_sequence_length' must be less or equal to 512");
 
@@ -606,7 +636,7 @@ protected:
     }
 
     size_t get_config_in_channels() const override {
-        assert(m_transformer != nullptr);
+        OPENVINO_ASSERT(m_transformer != nullptr);
         return m_transformer->get_config().in_channels;
     }
 

@@ -7,6 +7,8 @@
 #include <nlohmann/json.hpp>
 #include <openvino/runtime/core.hpp>
 #include "openvino/genai/generation_config.hpp"
+#include "sampling/structured_output/structured_output_controller.hpp"
+#include "tokenizer/tokenizer_impl.hpp"
 #include "json_utils.hpp"
 #include "utils.hpp"
 
@@ -148,6 +150,80 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     read_anymap_param(properties, "assistant_confidence_threshold", assistant_confidence_threshold);
     read_anymap_param(properties, "num_assistant_tokens", num_assistant_tokens);
     read_anymap_param(properties, "max_ngram_size", max_ngram_size);
+
+    // Structured output
+    read_anymap_param(properties, "structured_output_config", structured_output_config);
+}
+
+
+StructuralTagItem::StructuralTagItem(const ov::AnyMap& properties) {
+    update_config(properties);
+}
+
+void StructuralTagItem::update_config(const ov::AnyMap& properties) {
+    using utils::read_anymap_param;
+
+    read_anymap_param(properties, "begin", begin);
+    read_anymap_param(properties, "schema", schema);
+    read_anymap_param(properties, "end", end);
+}
+
+
+std::string StructuralTagItem::to_string() const {
+    return "StructuralTagItem(begin=" + begin +
+           ", schema=" + schema +
+           ", end=" + end + ")";
+}
+
+
+StructuralTagsConfig::StructuralTagsConfig(const ov::AnyMap& properties) {
+    update_config(properties);
+}
+
+
+void StructuralTagsConfig::update_config(const ov::AnyMap& properties) {
+    using utils::read_anymap_param;
+
+    read_anymap_param(properties, "structural_tags", structural_tags);
+    read_anymap_param(properties, "triggers", triggers);
+}
+
+
+std::string StructuralTagsConfig::to_string() const {
+    std::ostringstream tags_repr;
+    tags_repr << "[";
+    for (auto it = structural_tags.begin(); it != structural_tags.end(); ++it) {
+        if (it != structural_tags.begin()) tags_repr << ", ";
+        tags_repr << it->to_string();
+    }
+    tags_repr << "]";
+
+    std::ostringstream triggers_repr;
+    triggers_repr << "[";
+    for (auto it = triggers.begin(); it != triggers.end(); ++it) {
+        if (it != triggers.begin()) triggers_repr << ", ";
+        triggers_repr << *it;
+    }
+    triggers_repr << "]";
+
+    return "StructuralTagsConfig(structural_tags=" + tags_repr.str() +
+           ", triggers=" + triggers_repr.str() + ")";
+}
+
+StructuredOutputConfig::StructuredOutputConfig(const ov::AnyMap& properties) {
+    update_config(properties);
+    validate();
+}
+
+void StructuredOutputConfig::update_config(const ov::AnyMap& properties) {
+    using utils::read_anymap_param;
+
+    read_anymap_param(properties, "json_schema", json_schema);
+    read_anymap_param(properties, "regex", regex);
+    read_anymap_param(properties, "grammar", grammar);
+    read_anymap_param(properties, "structural_tags_config", structural_tags_config);
+    read_anymap_param(properties, "compound_grammar", compound_grammar);
+    read_anymap_param(properties, "backend", backend);
 }
 
 size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
@@ -155,6 +231,7 @@ size_t GenerationConfig::get_max_new_tokens(size_t prompt_length) const {
     if (max_new_tokens != SIZE_MAX) {
         return max_new_tokens;
     } else {
+        OPENVINO_ASSERT(max_length > prompt_length, "Internal error: generation_config.max_length should be bigger than number of prompt tokens");
         return max_length - prompt_length;
     }
 }
@@ -177,6 +254,10 @@ bool GenerationConfig::is_speculative_decoding() const {
 
 bool GenerationConfig::is_assisting_generation() const {
     return assistant_confidence_threshold > 0 || num_assistant_tokens > 0;
+}
+
+bool GenerationConfig::is_structured_output_generation() const {
+    return structured_output_config.has_value();
 }
 
 bool GenerationConfig::is_prompt_lookup() const {
@@ -264,6 +345,59 @@ void GenerationConfig::validate() const {
     if (num_assistant_tokens == 0) {
         OPENVINO_ASSERT(max_ngram_size == 0, "'max_ngram_size' should be set to default value 0 when prompt lookup is disabled");
     }
+
+    if(is_structured_output_generation()) {
+        (*structured_output_config).validate();
+    }
+}
+
+void StructuredOutputConfig::validate() const {
+    auto& registry = StructuredOutputController::get_backend_registry();
+    std::string backend_name = backend.has_value() ? *backend : StructuredOutputController::get_default_backend_name();
+    std::string upper_name = backend_name;
+    std::transform(upper_name.begin(), upper_name.end(), upper_name.begin(), [](unsigned char c){ return std::toupper(c); });
+
+    OPENVINO_ASSERT(registry.find(backend_name) != registry.end(),
+                    "Structured output backend '", backend_name, "' is not registered. "
+                    "Please recompile with -DENABLE_" + upper_name + "=ON option to enable it.");
+
+    OPENVINO_ASSERT(
+        (json_schema.has_value() + regex.has_value() + grammar.has_value() + structural_tags_config.has_value() + compound_grammar.has_value()) == 1,
+        "Only one of json, regex, grammar, structural_tags_config, or compound_grammar should be set in StructuredOutputConfig, but got: ",
+        (json_schema.has_value() ? "json=" + *json_schema +", " : ""),
+        (regex.has_value() ? "regex=" + *regex + ", " : ""),
+        (grammar.has_value() ? "grammar=" + *grammar : ""),
+        (structural_tags_config.has_value() ? "structural_tags_config=" + structural_tags_config->to_string() : ""),
+        (compound_grammar.has_value() ? "compound_grammar=" + std::visit([](const auto& g) -> std::string {
+            if constexpr (
+                std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<ov::genai::StructuredOutputConfig::Concat>> ||
+                std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<ov::genai::StructuredOutputConfig::Union>>
+            ) {
+                return g ? g->to_string() : "null";
+            } else {
+                return g.to_string();
+            }
+        }, *compound_grammar) : "")
+    );
+}
+
+void StructuredOutputConfig::validate(Tokenizer& tokenizer) const {
+    validate();
+    OPENVINO_ASSERT(tokenizer.m_pimpl != nullptr, "Tokenizer not initialized properly");
+    tokenizer.m_pimpl->get_structured_output_controller()->validate_grammar(*this);
+}
+
+
+std::shared_ptr<ov::genai::StructuredOutputConfig::Concat>
+operator+(const ov::genai::StructuredOutputConfig::CompoundGrammar& lhs,
+          const ov::genai::StructuredOutputConfig::CompoundGrammar& rhs) {
+    return std::make_shared<ov::genai::StructuredOutputConfig::Concat>(lhs, rhs);
+}
+
+std::shared_ptr<ov::genai::StructuredOutputConfig::Union>
+operator|(const ov::genai::StructuredOutputConfig::CompoundGrammar& lhs,
+          const ov::genai::StructuredOutputConfig::CompoundGrammar& rhs) {
+    return std::make_shared<ov::genai::StructuredOutputConfig::Union>(lhs, rhs);
 }
 
 GenerationConfig beam_search() {

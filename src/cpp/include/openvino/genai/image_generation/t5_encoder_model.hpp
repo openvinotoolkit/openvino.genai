@@ -4,6 +4,7 @@
 #pragma once
 
 #include <filesystem>
+#include <memory>
 #include <string>
 
 #include "openvino/genai/visibility.hpp"
@@ -53,6 +54,8 @@ public:
         : T5EncoderModel(model, weights, tokenizer, device, ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     T5EncoderModel(const T5EncoderModel&);
+
+    std::shared_ptr<T5EncoderModel> clone();
 
     T5EncoderModel& reshape(int batch_size, int max_sequence_length);
 

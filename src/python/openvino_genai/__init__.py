@@ -44,6 +44,9 @@ from .py_openvino_genai import (
 # Generation config
 from .py_openvino_genai import (
     GenerationConfig,
+    StructuralTagItem,
+    StructuralTagsConfig,
+    StructuredOutputConfig,
     StopCriteria
 )
 
@@ -91,12 +94,17 @@ from .py_openvino_genai import (
     GenerationStatus,
     SchedulerConfig,
     CacheEvictionConfig,
-    AggregationMode
+    AggregationMode,
+    SparseAttentionMode,
+    SparseAttentionConfig,
+    KVCrushAnchorPointMode,
+    KVCrushConfig
 )
 
 # RAG
 from .py_openvino_genai import (
-    TextEmbeddingPipeline
+    TextEmbeddingPipeline,
+    TextRerankPipeline
 )
 
 # Speech generation
