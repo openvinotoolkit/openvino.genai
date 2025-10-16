@@ -726,34 +726,49 @@ std::vector<std::string> Tokenizer::TokenizerImpl::decode(const std::vector<std:
     return std::vector<std::string>(res_data, res_data + res.get_shape()[0]);
 }
 
-std::string Tokenizer::TokenizerImpl::apply_chat_template(ChatHistory history,
-                                bool add_generation_prompt,
-                                const std::string& chat_template) const {
+std::string Tokenizer::TokenizerImpl::apply_chat_template(
+    ChatHistory history,
+    bool add_generation_prompt,
+    const std::string& chat_template,
+    const ToolDefinitions& tools,
+    const ov::AnyMap& extra_context
+) const {
     std::string chat_tpl = chat_template.empty() ? m_chat_template : remap_template(chat_template);
     OPENVINO_ASSERT(!chat_tpl.empty(),
                     "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
                     " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario."
                     " For more information see the section Troubleshooting in README.md");
-
-    minja::chat_template minja_template(chat_tpl, m_bos_token, m_eos_token);
-
-    nlohmann::ordered_json messages = nlohmann::ordered_json::array();
+    
+    nlohmann::ordered_json messages_json = nlohmann::ordered_json::array();
     for (const auto& message : history) {
-        nlohmann::ordered_json msg;
-        for (const auto& [key, value] : message) {
-            msg[key] = value;
-        }
-        messages.push_back(msg);
+        nlohmann::ordered_json message_json = ov::genai::utils::any_map_to_json(message);
+        messages_json.push_back(message_json);
     }
 
+    nlohmann::ordered_json tools_json = nlohmann::ordered_json::array();
+    for (const auto& tool : tools) {
+        nlohmann::ordered_json tool_json = ov::genai::utils::any_map_to_json(tool);
+        tools_json.push_back(tool_json);
+    }
+
+    minja::chat_template minja_template(chat_tpl, m_bos_token, m_eos_token);
+    
     minja::chat_template_inputs minja_inputs;
-    minja_inputs.messages = messages;
+    minja_inputs.messages = messages_json;
+    if (!tools_json.empty()) {
+        minja_inputs.tools = tools_json;
+    }
     minja_inputs.add_generation_prompt = add_generation_prompt;
     minja_inputs.extra_context = nlohmann::ordered_json::object();
     minja_inputs.extra_context["bos_token"] = m_bos_token;
     minja_inputs.extra_context["eos_token"] = m_eos_token;
     minja_inputs.extra_context["pad_token"] = m_pad_token;
 
+    if (!extra_context.empty()) {
+        auto extra_context_json = ov::genai::utils::any_map_to_json(extra_context);
+        minja_inputs.extra_context.update(extra_context_json);
+    }
+    
     std::string result;
     try {
         result = minja_template.apply(minja_inputs);
@@ -766,8 +781,8 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(ChatHistory history,
                         "Minja's error: ", error.what());
     }
     OPENVINO_ASSERT(!result.empty(), "Applied chat template resulted in an empty string. "
-                                        "Please check the chat template or apply template manually to your prompt before calling generate."
-                                        "For example: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
+                                     "Please check the chat template or apply template manually to your prompt before calling generate."
+                                     "For example: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
     return result;
 }
 

@@ -6,7 +6,8 @@ tests
 thirdparty
 
 CMakeLists.txt
-eslint.config.jt
+eslint.config.cjs
+.prettierrc
 tsconfig.json
 *.md
 !README.md

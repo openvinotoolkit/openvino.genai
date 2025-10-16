@@ -591,7 +591,7 @@ void adjust_pos_cache(
 
 } // namespace
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedderMiniCPM::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormlizedPrompt InputsEmbedderMiniCPM::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     
     auto [unified_prompt, image_sequence] = normalize(
         prompt,
@@ -625,7 +625,7 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderMiniCPM::normalize_pro
         unified_prompt.replace(unified_prompt.find(NATIVE_TAG), NATIVE_TAG.length(), expanded_tag);
     }
 
-    return {std::move(unified_prompt), std::move(image_sequence)};
+    return {std::move(unified_prompt), std::move(image_sequence), {}};
 }
 
 
