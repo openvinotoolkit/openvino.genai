@@ -403,8 +403,7 @@ public:
      * @brief Tag defines a begin/end wrapper with constrained inner content.
      *
      * The generator will output `begin`, then the `content` (a StructuralTag),
-     * and finally `end`. Useful for embedding structured fragments inside free
-     * text using explicit markers.
+     * and finally `end`.
      *
      * Example: Tag("<think>", AnyText(), "</think>") represents thinking portion of the model output.
      */
