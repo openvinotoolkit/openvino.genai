@@ -47,7 +47,6 @@ auto structured_output_config_docstring = R"(
         The compound grammar a Union or Concat of several grammars, where each grammar can be a JSON schema, regex, EBNF, Union or Concat.
 )";
 
-// Docstrings for structural tag building blocks
 auto regex_docstring = R"(
     Regex structural tag constrains output using a regular expression.
 )";
