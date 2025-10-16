@@ -874,7 +874,7 @@ image_id_ignorant =  tag_inserted_by_template + [
 
 models_to_tag = image_id_ignorant + [
     # minicpm tracks image number in expanded tags
-    ("katuni4ka/tiny-random-minicpmv-2_6", lambda idx: "(<image>./</image>)\n"),
+    ("katuni4ka/tiny-random-minicpmv-2_6", lambda idx: "<image>./</image>\n"),
     (
         "katuni4ka/tiny-random-phi3-vision",
         lambda idx: "<|image_" + str(idx + 1) + "|>\n",

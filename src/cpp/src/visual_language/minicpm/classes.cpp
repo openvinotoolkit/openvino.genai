@@ -65,7 +65,7 @@ std::pair<int, int> get_refine_size(std::pair<int, int> original_size, std::pair
     std::pair<int, int> refine_size = std::make_pair(best_grid_width * grid_x, best_grid_height * grid_y);
     return refine_size;
 }
-
+#include "debug_utils.hpp"
 std::vector<std::vector<clip_image_u8>> slice_image(const clip_image_u8& img, const int max_slice_nums, const int scale_resolution, const int patch_size, const bool never_split) {
     const std::pair<int, int> original_size{img.nx, img.ny};
     const int original_width = img.nx;
@@ -95,6 +95,10 @@ std::vector<std::vector<clip_image_u8>> slice_image(const clip_image_u8& img, co
         auto best_size = find_best_resize(original_size, scale_resolution, patch_size);
         images.back().push_back(clip_image_u8{});
         bicubic_resize(img, images.back().back(), best_size.first, best_size.second);
+        ov::Tensor source_image = from_npy("source_image.npy");
+        std::copy_n(source_image.data<uint8_t>(), source_image.get_size(), images.back().back().buf.begin());
+        // std::cout << images.back().back().nx << " " << images.back().back().ny << std::endl;
+        // std::cout << source_image.get_shape() << "\n";
 
         std::vector<std::pair<int, int>> candidate_grids;
 
@@ -121,6 +125,10 @@ std::vector<std::vector<clip_image_u8>> slice_image(const clip_image_u8& img, co
         auto refine_size = get_refine_size(original_size, best_grid, scale_resolution, patch_size, true);
         clip_image_u8 refine_image;
         bicubic_resize(img, refine_image, refine_size.first, refine_size.second);
+        ov::Tensor refine_image_tensor = from_npy("refine_image.npy");
+        std::copy_n(refine_image_tensor.data<uint8_t>(), refine_image_tensor.get_size(), refine_image.buf.begin());
+        // std::cout << refine_image.nx << " " << refine_image.ny << std::endl;
+        // std::cout << refine_image_tensor.get_shape() << '\n';
 
         // split_to_patches
         int width = refine_image.nx;
@@ -241,9 +249,43 @@ ov::Tensor preprocess_for_encoder(const ov::Tensor& images, size_t kernel) {
 std::vector<int64_t> bucket_size_right(const std::vector<float>& fractional_coords, const std::vector<float>& boundaries) {
     std::vector<int64_t> bucket_coords(fractional_coords.size());
     std::transform(fractional_coords.begin(), fractional_coords.end(), bucket_coords.begin(), [&boundaries](float fractional_coord) {
-        return std::distance(boundaries.begin(), std::upper_bound(boundaries.begin(), boundaries.end(), fractional_coord));
+        return std::distance(boundaries.begin(), std::upper_bound(boundaries.begin(), boundaries.end(), fractional_coord, std::less{}));
     });
     return bucket_coords;
+}
+
+template <typename T>
+T max_diff(const T* lhs, const T* rhs, size_t size) {
+    T max_diff = 0;
+    for (size_t idx = 0; idx < size; ++idx) {
+        OPENVINO_SUPPRESS_DEPRECATED_START
+        max_diff = std::max(
+            max_diff,
+            std::abs(lhs[idx] - rhs[idx])
+        );
+        OPENVINO_SUPPRESS_DEPRECATED_END
+    }
+    return max_diff;
+}
+
+inline float max_diff(const ov::Tensor& lhs, const ov::Tensor& rhs) {
+    OPENVINO_ASSERT(lhs.get_shape() == rhs.get_shape());
+    switch (lhs.get_element_type()) {
+        case ov::element::f32:
+            return max_diff(lhs.data<const float>(), rhs.data<const float>(), lhs.get_size());
+        // case ov::element::f16:
+        //     return max_diff(lhs.data<const ov::float16>(), rhs.data<const ov::float16>(), lhs.get_size());
+        case ov::element::i64:
+            return max_diff(lhs.data<const int64_t>(), rhs.data<const int64_t>(), lhs.get_size());
+        // case ov::element::i32:
+        //     return max_diff(lhs.data<const int32_t>(), rhs.data<const int32_t>(), lhs.get_size());
+        // case ov::element::u8:
+        //     return max_diff(lhs.data<const uint8_t>(), rhs.data<const uint8_t>(), lhs.get_size());
+        case ov::element::boolean:
+            return !std::equal(lhs.data<const bool>(), lhs.data<const bool>() + lhs.get_size(), rhs.data<const bool>());  // if not equal the max diff is at leas one bool
+        default:
+            OPENVINO_THROW("Not implemented element type");
+    }
 }
 
 ov::Tensor prepare_vis_position_ids(
@@ -252,36 +294,57 @@ ov::Tensor prepare_vis_position_ids(
     const std::vector<ImageSize> tgt_sizes,
     size_t patch_size,
     size_t num_patches_per_side) {
-    size_t batch_size = pixel_values.get_shape().at(0);
-    size_t max_im_h = pixel_values.get_shape().at(2), max_im_w = pixel_values.get_shape().at(3);
-    size_t max_nb_patches_h = max_im_h / patch_size, max_nb_patches_w = max_im_w / patch_size;
-    std::vector<float> boundaries(1.0f * num_patches_per_side - 1);
-    std::generate(boundaries.begin(), boundaries.end(), [num_patches_per_side, val = 0.0f]() mutable {
-        val += 1.0f / num_patches_per_side;
-        return val;
+    size_t batch_size = pixel_values.get_shape().at(0);  // 9
+    size_t max_im_h = pixel_values.get_shape().at(2), max_im_w = pixel_values.get_shape().at(3); // 14, 14448
+    size_t max_nb_patches_h = max_im_h / patch_size, max_nb_patches_w = max_im_w / patch_size;  // 1, 1032
+    std::vector<float> boundaries(num_patches_per_side - 1);
+    std::iota(boundaries.begin(), boundaries.end(), 1.0f);
+    std::transform(boundaries.begin(), boundaries.end(), boundaries.begin(), [num_patches_per_side](float val) {
+        return val / num_patches_per_side;
     });
+    // tensor([0.0143, 0.0286, 0.0429, 0.0571, 0.0714, 0.0857, 0.1000, 0.1143, 0.1286,
+        // 0.1429, 0.1571, 0.1714, 0.1857, 0.2000, 0.2143, 0.2286, 0.2429, 0.2571,
+        // 0.2714, 0.2857, 0.3000, 0.3143, 0.3286, 0.3429, 0.3571, 0.3714, 0.3857,
+        // 0.4000, 0.4143, 0.4286, 0.4429, 0.4571, 0.4714, 0.4857, 0.5000, 0.5143,  37
+        // 0.5286, 0.5429, 0.5571, 0.5714, 0.5857, 0.6000, 0.6143, 0.6286, 0.6429,
+        // 0.6571, 0.6714, 0.6857, 0.7000, 0.7143, 0.7286, 0.7429, 0.7571, 0.7714,
+        // 0.7857, 0.8000, 0.8143, 0.8286, 0.8429, 0.8571, 0.8714, 0.8857, 0.9000,
+        // 0.9143, 0.9286, 0.9429, 0.9571, 0.9714, 0.9857])
     size_t position_ids_batch_elem = max_nb_patches_h * max_nb_patches_w;
     ov::Tensor position_ids{ov::element::i64, {batch_size, position_ids_batch_elem}};
     int64_t* res_data = position_ids.data<int64_t>();
-    std::fill_n(res_data, position_ids.get_size(), 0);
+    std::fill_n(res_data, position_ids.get_size(), 0);  // torch.Size([9, 1032])
 
     for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-        size_t nb_patches_h = tgt_sizes.at(batch_idx).height;
-        size_t nb_patches_w = tgt_sizes.at(batch_idx).width;
+        size_t nb_patches_h = tgt_sizes.at(batch_idx).height;  // 30
+        size_t nb_patches_w = tgt_sizes.at(batch_idx).width;  // 34
 
         std::vector<float> fractional_coords_h(nb_patches_h);
-        std::generate(fractional_coords_h.begin(), fractional_coords_h.end(), [nb_patches_h, val = -1.0f / nb_patches_h]() mutable {
-            val += 1.0f / nb_patches_h;
-            return val;
+        std::iota(fractional_coords_h.begin(), fractional_coords_h.end(), 0.0f);
+        std::transform(fractional_coords_h.begin(), fractional_coords_h.end(), fractional_coords_h.begin(), [nb_patches_h](float val) {
+            return val / nb_patches_h;
         });
+        // float32[30]: tensor([0.0000, 0.0333, 0.0667, 0.1000, 0.1333, 0.1667, 0.2000, 0.2333, 0.2667,
+        // 0.3000, 0.3333, 0.3667, 0.4000, 0.4333, 0.4667, 0.5000, 0.5333, 0.5667,
+        // 0.6000, 0.6333, 0.6667, 0.7000, 0.7333, 0.7667, 0.8000, 0.8333, 0.8667,
+        // 0.9000, 0.9333, 0.9667])
         std::vector<float> fractional_coords_w(nb_patches_w);
-        std::generate(fractional_coords_w.begin(), fractional_coords_w.end(), [nb_patches_w, val = -1.0f / nb_patches_w]() mutable {
-            val += 1.0f / nb_patches_w;
-            return val;
+        std::iota(fractional_coords_w.begin(), fractional_coords_w.end(), 0.0f);
+        std::transform(fractional_coords_w.begin(), fractional_coords_w.end(), fractional_coords_w.begin(), [nb_patches_w](float val) {
+            return val / nb_patches_w;
         });
+        // float32[34]: tensor([0.0000, 0.0294, 0.0588, 0.0882, 0.1176, 0.1471, 0.1765, 0.2059, 0.2353,
+        // 0.2647, 0.2941, 0.3235, 0.3529, 0.3824, 0.4118, 0.4412, 0.4706, 0.5000,
+        // 0.5294, 0.5588, 0.5882, 0.6176, 0.6471, 0.6765, 0.7059, 0.7353, 0.7647,
+        // 0.7941, 0.8235, 0.8529, 0.8824, 0.9118, 0.9412, 0.9706])
 
         std::vector<int64_t> bucket_coords_h = bucket_size_right(fractional_coords_h, boundaries);
+        // 30:
+        // tensor([ 0, 2, 4, 7, 9, 11, 14, 16, 18, 21, 23, 25, 28, 30, 32, 35, 37, 39, 42, 44, 46, 49, 51, 53, 56, 58, 60, 63, 65, 67])
         std::vector<int64_t> bucket_coords_w = bucket_size_right(fractional_coords_w, boundaries);
+        // 34:
+        // tensor([ 0,  2,  4,  6,  8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 35,
+        // 37, 39, 41, 43, 45, 47, 49, 51, 53, 55, 57, 59, 61, 63, 65, 67])
 
         std::vector<int64_t> pos_ids(bucket_coords_h.size() * bucket_coords_w.size());
         for (size_t col = 0; col < bucket_coords_h.size(); ++col) {
@@ -289,10 +352,15 @@ ov::Tensor prepare_vis_position_ids(
                 pos_ids.at(col * bucket_coords_w.size() + row) = bucket_coords_h.at(col) * num_patches_per_side + bucket_coords_w.at(row);
             }
         }
+        // pos_ids.size == 1020, int64
+        ov::Tensor pos_ids_tensor = from_npy(std::string{"pos_ids_-"} + std::to_string(batch_idx) + ".npy");
+        ov::Tensor pos_ids_cpp{ov::element::i64, {pos_ids.size()}, pos_ids.data()};
+        OPENVINO_ASSERT(max_diff(pos_ids_cpp, pos_ids_tensor) == 0);
         std::copy(pos_ids.begin(), pos_ids.end(), res_data + batch_idx * position_ids_batch_elem);
     }
     return position_ids;
 }
+
 
 std::pair<EncodedImage, ImageSliceResult> llava_image_embed_make_with_bytes_slice(clip_ctx& ctx_clip, const ov::Tensor& img, ov::InferRequest& encoder, int max_slice_nums, int scale_resolution, size_t patch_size, bool never_split) {
     clip_image_u8 source = tensor_to_clip_image_u8(img);
@@ -328,6 +396,9 @@ std::pair<EncodedImage, ImageSliceResult> llava_image_embed_make_with_bytes_slic
     size_t img_w = resized_preprocessed.nx;
     ov::Tensor clip_img{ov::element::f32, {1, channels, img_h, img_w}, resized_preprocessed.buf.data()};
     ov::Tensor clip_pixel_values = preprocess_for_encoder(clip_img, patch_size);
+    ov::Tensor ref = from_npy(std::string("inputs_input_ids-") + std::to_string(0) + ".npy");
+    ov::Tensor ref_with_batch{ov::element::f32, {1, ref.get_shape().at(0), ref.get_shape().at(1), ref.get_shape().at(2)}, ref.data<float>()};
+    OPENVINO_ASSERT(max_diff(clip_pixel_values, ref_with_batch) == 0);
 
     float* clip_value_data = clip_pixel_values.data<float>();
     size_t batch_pixel = 1;
@@ -342,6 +413,7 @@ std::pair<EncodedImage, ImageSliceResult> llava_image_embed_make_with_bytes_slic
         }
     }
 
+    size_t counter = 1;
     if (1 < preprocessed.size()) {
         for (size_t row = 1; row < preprocessed.size(); ++row) {
             size_t n_slices = preprocessed.at(row).size();
@@ -351,6 +423,10 @@ std::pair<EncodedImage, ImageSliceResult> llava_image_embed_make_with_bytes_slic
                 img_w = elem.nx;
                 ov::Tensor clip_img{ov::element::f32, {1, channels, img_h, img_w}, elem.buf.data()};
                 ov::Tensor clip_pixel_values = preprocess_for_encoder(clip_img, patch_size);
+                ov::Tensor ref = from_npy(std::string("inputs_input_ids-") + std::to_string(counter) + ".npy");
+                ov::Tensor ref_with_batch{ov::element::f32, {1, ref.get_shape().at(0), ref.get_shape().at(1), ref.get_shape().at(2)}, ref.data<float>()};
+                OPENVINO_ASSERT(max_diff(clip_pixel_values, ref_with_batch) == 0);
+                ++counter;
 
                 d3_clip_pixel = clip_pixel_values.get_shape().at(3);
                 clip_value_data = clip_pixel_values.data<float>();
@@ -368,6 +444,8 @@ std::pair<EncodedImage, ImageSliceResult> llava_image_embed_make_with_bytes_slic
             }
         }
     }
+    ov::Tensor all_pixel_values = from_npy("all_pixel_values.npy");
+    OPENVINO_ASSERT(max_diff(pixel_values, all_pixel_values) == 0);
     encoder.set_tensor("pixel_values", pixel_values);
 
     ov::Tensor patch_attention_mask{ov::element::f32, {pixel_values.get_shape().at(0), 1, max_h / patch_size * max_w / patch_size}};
@@ -383,22 +461,28 @@ std::pair<EncodedImage, ImageSliceResult> llava_image_embed_make_with_bytes_slic
             }
         }
     }
+    ov::Tensor patch_attn_mask = from_npy("patch_attn_mask.npy");
+    OPENVINO_ASSERT(max_diff(patch_attention_mask, patch_attn_mask) == 0);
     encoder.set_tensor("patch_attention_mask", patch_attention_mask);
 
     ImageSize resized_source_size{resized_preprocessed.ny / patch_size, resized_preprocessed.nx / patch_size};
     std::vector<ImageSize> tgt_sizes{resized_source_size};
     if (1 < preprocessed.size()) {
-        for (const std::vector<clip_image_f32>& row : preprocessed) {
-            for (const clip_image_f32& elem : row) {
+        for (auto row = preprocessed.begin() + 1; row != preprocessed.end(); ++row) {
+            for (const clip_image_f32& elem : *row) {
                 tgt_sizes.push_back({elem.ny / patch_size, elem.nx / patch_size});
             }
         }
     }
     ImageSliceResult image_slice_result;
     ov::Tensor position_ids = prepare_vis_position_ids(pixel_values, patch_attention_mask, tgt_sizes, patch_size, ctx_clip.image_size / patch_size);
+    ov::Tensor position_ids_ref = from_npy("position_ids.npy");
+    OPENVINO_ASSERT(max_diff(position_ids, position_ids_ref) == 0);
     encoder.set_tensor("position_ids", position_ids);
     encoder.infer();
     const ov::Tensor& output_tensor = encoder.get_output_tensor();
+    ov::Tensor vision_embedding_before_resample = from_npy("vision_embedding_before_resample.npy");
+    OPENVINO_ASSERT(max_diff(output_tensor, vision_embedding_before_resample) == 0);
 
     if (1 == preprocessed.size()) {
         ov::Tensor resized_source{ov::element::f32, output_tensor.get_shape()};
@@ -411,7 +495,7 @@ std::pair<EncodedImage, ImageSliceResult> llava_image_embed_make_with_bytes_slic
     ov::Tensor resized_source{ov::element::f32, {1, resized_source_size.height * resized_source_size.width, old_hidden_size}};
     std::copy_n(out, resized_source.get_size(), resized_source.data<float>());
 
-    size_t n_patches = tgt_sizes.at(1).height * tgt_sizes.at(1).width;
+    size_t n_patches = resized_source_size.height * resized_source_size.width;
     image_slice_result.slices = ov::Tensor{ov::element::f32, {preprocessed.size() - 1, preprocessed.at(1).size(), n_patches, old_hidden_size}};
     for (size_t col = 0; col < preprocessed.size() - 1; ++col) {
         for (size_t row = 0; row < preprocessed.at(1).size(); ++row) {
@@ -435,6 +519,10 @@ EncodedImage VisionEncoderMiniCPM::encode(const ov::Tensor& image, const ov::Any
     std::copy(config.norm_std.begin(), config.norm_std.end(), ctx_clip.image_std);
 
     auto [encoded_image, image_slice_result] = llava_image_embed_make_with_bytes_slice(ctx_clip, image, encoder, config.max_slice_nums, config.scale_resolution, config.patch_size, 0 == config.max_slice_nums);
+    // torch.Size([9, 1032, 1152])
+    // ov::Tensor vision_embedding_before_resample = from_npy("vision_embedding_before_resample.npy");
+    // ov::Tensor view{ov::element::f32, {1, vision_embedding_before_resample.get_shape().at(1), vision_embedding_before_resample.get_shape().at(2)}, vision_embedding_before_resample.data<float>()};
+    // OPENVINO_ASSERT(max_diff(encoded_image.resized_source, view) == 0);
     encoded_image.resampled_image = resample_encoded_image(encoded_image, image_slice_result.slices, image_slice_result.target_size);
     if (image_slice_result.slices) {
         encoded_image.slices_shape = image_slice_result.slices.get_shape();
@@ -443,7 +531,8 @@ EncodedImage VisionEncoderMiniCPM::encode(const ov::Tensor& image, const ov::Any
 }
 
 ResampledImage VisionEncoderMiniCPM::resample_encoded_image(const EncodedImage& encoded_image, const ov::Tensor& slices, const ImageSize& target_size) {
-    const ov::Tensor& resampled_source = resample(encoded_image.resized_source, {encoded_image.resized_source_size});
+    size_t pad_to_max = std::max(encoded_image.resized_source_size.height * encoded_image.resized_source_size.width, target_size.height * target_size.width);
+    const ov::Tensor& resampled_source = resample(encoded_image.resized_source, encoded_image.resized_source_size, pad_to_max);
     std::vector<std::vector<ov::Tensor>> vision_embed_tensors;
     if (slices) {
         size_t token_idx = 0;
@@ -456,7 +545,7 @@ ResampledImage VisionEncoderMiniCPM::resample_encoded_image(const EncodedImage& 
                 size_t d2 = slices_shape.at(2);
                 size_t d3 = slices_shape.at(3);
                 ov::Tensor encoded_view{ov::element::f32, {1, d2, d3}, slices.data<float>() + (i * slices_shape.at(1) + ja) * d2 * d3};
-                vision_embeds[ja] = resample(encoded_view, {target_size});
+                vision_embeds[ja] = resample(encoded_view, target_size, pad_to_max);
             }
             vision_embed_tensors[i] = vision_embeds;
         }
@@ -489,7 +578,9 @@ ov::Tensor concatenate_last_dim(const ov::Tensor& first, const ov::Tensor& secon
             }
         }
     }
-    return res;
+    ov::Tensor emb_ref = from_npy("emb.npy");
+    std::cout << "emb diff " << max_diff(emb_ref, res) << '\n';
+    return emb_ref;
 }
 
 /// embed_dim: output dimension for each position
@@ -508,16 +599,16 @@ ov::Tensor get_1d_sincos_pos_embed_from_grid_new(size_t embed_dim, const ov::Ten
 
     std::vector<size_t> out_shape = {H, W, embed_dim};
     ov::Tensor emb(ov::element::f32, out_shape);
+    // std::cout << "out_shape " << emb.get_shape() << '\n';  [70,70,1792]
 
     auto pos_data = pos.data<float>();
     auto emb_data = emb.data<float>();
 
-    size_t counter = 0;
     for (size_t h = 0; h < H; ++h) {
         for (size_t w = 0; w < W; ++w) {
             for (size_t d = 0; d < embed_dim / 2; ++d) {
-                // Correctly access the 2D position grid
                 float value = omega[d] * pos_data[h * W + w];
+                // sin() and cos() are the source of difference with Python until a newer C++ standard is used.
                 emb_data[h * W * embed_dim + w * embed_dim + d] = std::sin(value);
                 emb_data[h * W * embed_dim + w * embed_dim + d + (embed_dim / 2)] = std::cos(value);
             }
@@ -596,7 +687,7 @@ NormlizedPrompt InputsEmbedderMiniCPM::normalize_prompt(const std::string& promp
     auto [unified_prompt, image_sequence] = normalize(
         prompt,
         NATIVE_TAG,
-        '(' + NATIVE_TAG + ")\n",
+        NATIVE_TAG + '\n',
         base_id,
         images.size()
     );
@@ -627,7 +718,12 @@ NormlizedPrompt InputsEmbedderMiniCPM::normalize_prompt(const std::string& promp
 
     return {std::move(unified_prompt), std::move(image_sequence), {}};
 }
+// 151644, 872, 198, 151677, 15, 151678, 151665, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151666, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 198, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 198, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 198, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 198, 16141, 279, 3405, 36160, 304, 279, 6371, 36190, 13, 151645, 198, 151644, 77091, 198
 
+// 618:
+// [151644, 872, 198, 151677, 15, 151678, 151665, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151666, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 198, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 198, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 198, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 198, 16141, 279, 3405, 36160, 304, 279, 6371, 36190, 13, 151645, 198, 151644, 77091, 198]
+//  inputs['input_ids']
+// [151644, 872, 198, 151677, 15, 151678, 151665, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151666, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 198, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 198, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 198, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 151675, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 128244, 151676, 198, 16141, 279, 3405, 36160, 304, 279, 6371, 36190, 13, 151645, 198, 151644, 77091, 198]
 
 ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {
     std::string unk64;
@@ -665,9 +761,15 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& unified_p
     size_t encoded_input_size = encoded_input.get_size();
     int64_t* end = ids + encoded_input_size;
     float* inputs_embeds_data = inputs_embeds.data<float>();
+    ov::Tensor vision_hidden_states = from_npy("vision_hidden_states.npy");
+    std::cout << vision_hidden_states.get_shape() << std::endl;
     for (size_t image_id : images_sequence) {
         const EncodedImage& encoded_image = images.at(image_id);
         const ov::Tensor& resampled_source = encoded_image.resampled_image.resampled_source;
+        // std::c3out << resampled_source.get_shape() << std::endl;
+        // std::cout << max_diff(ov::Tensor{ov::element::f32, {1, vision_hidden_states.get_shape()[1], vision_hidden_states.get_shape()[2]}, vision_hidden_states.data<float>()}, resampled_source) << '\n';
+        // std::cout << "AAAAAAAAAAAAAAA\n";
+        // OPENVINO_ASSERT(max_diff(ov::Tensor{ov::element::f32, {1, vision_hidden_states.get_shape()[1], vision_hidden_states.get_shape()[2]}, vision_hidden_states.data<float>()}, resampled_source) == 0);
         auto emb = resampled_source.data<float>();
         ids = std::find(ids, end, im_start_id);
         OPENVINO_ASSERT(end != ids);
@@ -677,9 +779,13 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& unified_p
         ov::Shape slices_shape = encoded_image.slices_shape;
         if (slices_shape.size()) {
             size_t token_idx = 0;
+            size_t counter = 1;
             for (size_t i = 0; i < slices_shape.at(0); ++i) {
                 for (size_t ja = 0; ja < slices_shape.at(1); ++ja) {
                     const ov::Tensor& vision_embed_tensor_i_j = encoded_image.resampled_image.vision_embed_tensors[i][ja];
+                    std::cout << vision_embed_tensor_i_j.get_shape() << std::endl;
+                    std::cout << max_diff(ov::Tensor{ov::element::f32, {1, vision_hidden_states.get_shape()[1], vision_hidden_states.get_shape()[2]}, vision_hidden_states.data<float>() + counter * vision_hidden_states.get_shape()[1] *vision_hidden_states.get_shape()[2]}, resampled_source) << '\n';
+                    counter++;
                     ids = std::find(ids, end, slice_start_id);
                     OPENVINO_ASSERT(end != ids);
                     ++ids;
@@ -694,32 +800,37 @@ ov::Tensor InputsEmbedderMiniCPM::get_inputs_embeds(const std::string& unified_p
     // so we need to return a copy to make sure data does not get corrupted 
     ov::Tensor inputs_embeds_copy(inputs_embeds.get_element_type(), inputs_embeds.get_shape());
     std::memcpy(inputs_embeds_copy.data(), inputs_embeds.data(), inputs_embeds.get_byte_size());
+    ov::Tensor vllm_embedding = from_npy("vllm_embedding.npy");
+    std::cout << max_diff(vllm_embedding, inputs_embeds_copy) << '\n';
+    // OPENVINO_ASSERT(max_diff(vllm_embedding, inputs_embeds_copy) == 0);
     return inputs_embeds_copy;
 }
 
-ov::Tensor VisionEncoderMiniCPM::resample(const ov::Tensor& encoded_image, const std::vector<ImageSize>& target_sizes) {
+ov::Tensor VisionEncoderMiniCPM::resample(const ov::Tensor& encoded_image, const ImageSize& target_size, size_t pad_to_max) {
     size_t bs = encoded_image.get_shape().at(0);
-    std::vector<size_t> patch_len{target_sizes.size()};
-    std::transform(target_sizes.begin(), target_sizes.end(), patch_len.begin(), [](const ImageSize& height_width) {
-        return height_width.height * height_width.width;
-    });
+    size_t patch_len = target_size.height * target_size.width;
     adjust_pos_cache(
-        target_sizes,
+        {target_size},
         m_vlm_config.hidden_size,
         m_pos_embed_cache
     );
-    size_t max_patch_len = *std::max_element(patch_len.begin(), patch_len.end());
-    ov::Tensor key_padding_mask(ov::element::f32, {bs, max_patch_len});
+    // ov::Tensor cache_ref = from_npy("pos_embeds_cache.npy");
+    // std::cout << max_diff(cache_ref, m_pos_embed_cache) << '\n';
+    // std::cout << "BBBBBBBBBBBBBBBBBBbb\n";
+    std::cout << "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCc\n";
+    std::cout << "pad_to_max: " << pad_to_max << '\n';
+    std::cout << encoded_image.get_shape() << std::endl;
+    ov::Tensor key_padding_mask(ov::element::f32, {bs, pad_to_max});
     float* mask_data = key_padding_mask.data<float>();
     size_t embed_len = m_pos_embed_cache.get_shape().at(2);
-    ov::Tensor pos_embed(ov::element::f32, {max_patch_len, bs, embed_len});  // BLD => L * B * D
+    ov::Tensor pos_embed(ov::element::f32, {pad_to_max, bs, embed_len});  // BLD => L * B * D
     float* pos_embed_data = pos_embed.data<float>();
     float* cache_data = m_pos_embed_cache.data<float>();
     size_t _d0 = m_pos_embed_cache.get_shape().at(0);
     size_t _d1 = m_pos_embed_cache.get_shape().at(1);
     for (size_t i = 0; i < bs; ++i) {
-        size_t target_h = target_sizes.at(i).height;
-        size_t target_w = target_sizes.at(i).width;
+        size_t target_h = target_size.height;
+        size_t target_w = target_size.width;
         for (size_t h_idx = 0; h_idx < target_h; ++h_idx) {
             for (size_t w_idx = 0; w_idx < target_w; ++w_idx) {
                 std::copy_n(
@@ -729,14 +840,25 @@ ov::Tensor VisionEncoderMiniCPM::resample(const ov::Tensor& encoded_image, const
                 );
             }
         }
-        for (size_t flat = target_h * target_w; flat < max_patch_len; ++flat) {
+        for (size_t flat = target_h * target_w; flat < pad_to_max; ++flat) {
             std::fill_n(pos_embed_data + flat * bs * embed_len + i * embed_len, embed_len, 0.0f);
         }
-        std::fill_n(mask_data + i * max_patch_len, patch_len[i], 0.0f);
-        std::fill_n(mask_data + i * max_patch_len + patch_len[i], max_patch_len - patch_len[i], 1.0f);
+        std::fill_n(mask_data + i * pad_to_max, patch_len, 0.0f);
+        std::fill_n(mask_data + i * pad_to_max + patch_len, pad_to_max - patch_len, 1.0f);
     }
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_resampler.get());
     ov::InferRequest& resampler = infer_request_guard.get();
+    static int counter = 0;
+    std::cout << "resampler.infer()\n";
+    ov::Tensor x = from_npy("x.npy");
+    ov::Tensor x_first{ov::element::f32, {1, encoded_image.get_shape().at(1), encoded_image.get_shape().at(2)}, x.data<float>() + counter * encoded_image.get_shape().at(1) * encoded_image.get_shape().at(2)};
+    OPENVINO_ASSERT(max_diff(x_first, encoded_image) == 0);
+    ov::Tensor pos_embed_ref = from_npy("pos_embed.npy");
+    ov::Tensor pos_embed_first{ov::element::f32, {pos_embed_ref.get_shape().at(0), 1, pos_embed_ref.get_shape().at(2)}, pos_embed_ref.data<float>() + counter * pos_embed_ref.get_shape().at(0) * pos_embed_ref.get_shape().at(2)};
+    std::cout << max_diff(pos_embed_first, pos_embed) << '\n';
+    ov::Tensor key_padding_mask_ref = from_npy("key_padding_mask.npy");
+    ov::Tensor key_padding_mask_first{ov::element::f32, {1, key_padding_mask_ref.get_shape().at(1)}, key_padding_mask_ref.data<float>() + counter * key_padding_mask_ref.get_shape().at(1)};
+    OPENVINO_ASSERT(max_diff(key_padding_mask_first, key_padding_mask) == 0);
     resampler.set_tensor("image_feature", encoded_image);  // [N, H*W, old_hidden_size]
     resampler.set_tensor("pos_embed", pos_embed);  // [H*W, N, new_hidden_size]
     resampler.set_tensor("key_padding_mask", key_padding_mask);  // [N, H*W]
@@ -746,13 +868,17 @@ ov::Tensor VisionEncoderMiniCPM::resample(const ov::Tensor& encoded_image, const
     // so we need to return a copy to make sure data does not get corrupted 
     ov::Tensor res(resampler_out.get_element_type(), resampler_out.get_shape());
     std::memcpy(res.data(), resampler_out.data(), resampler_out.get_byte_size());
+    ov::Tensor resampled = from_npy("resampled0.npy");
+    ov::Tensor resampled_first{ov::element::f32, {1, resampled.get_shape().at(1), resampled.get_shape().at(2)}, resampled.data<float>() + counter * resampled.get_shape().at(1) * resampled.get_shape().at(2)};
+    std::cout << max_diff(resampled_first, res) << '\n';
+    ++counter;
     return res;  // [N, query_num, new_hidden_size]
 }
 
 VisionEncoderMiniCPM::VisionEncoderMiniCPM(
         const std::filesystem::path& model_dir,
         const std::string& device,
-        const ov::AnyMap properties) : VisionEncoder{model_dir, device, properties}  {
+        const ov::AnyMap properties) : VisionEncoder{model_dir, device, properties} {
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
     auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_resampler_model.xml", device, properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM resampler model");
