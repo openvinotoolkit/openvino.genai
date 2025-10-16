@@ -51,7 +51,7 @@ class ModelRunner {
 
     bool m_is_hidden_state_export_needed = false; // need to export hidden state after inference
     bool m_is_hidden_state_import_needed = false; // need to import hidden state from another model runner
-    bool m_is_hidden_state_internal_needed = false; // need to use internal hidden state, e.g, eagle2
+    bool m_is_hidden_state_internal_needed = false; // need to use internal hidden state, e.g, eagle SD
     std::map<std::pair<size_t, size_t>, std::pair<size_t, size_t>> m_sequence_hidden_state_mapping; // pre-requisite: main/draft have same seq group and running seq grouped id
     // a container which use sequence group id and request id as key to store hidden states
     std::map<size_t, ov::Tensor> m_initial_hidden_states; // shape: [N, seq_len, hidden_size]
@@ -154,13 +154,13 @@ public:
         m_cache_rotation_deltas_for_each_layer = std::move(rotation_deltas_for_each_layer);
     }
 
-    ov::Tensor get_hidden_state(size_t request_id, size_t seq_grouped_id) const {
+    ov::Tensor get_hidden_state(uint64_t request_id, uint64_t seq_grouped_id) const {
         if (m_hidden_states.get_size() == 0) {
             return ov::Tensor();
         }
 
-        auto key = std::make_pair(request_id, seq_grouped_id);
-        auto it = m_sequence_hidden_state_mapping.find(key);
+        const auto key = std::make_pair(request_id, seq_grouped_id);
+        const auto it = m_sequence_hidden_state_mapping.find(key);
         if (it == m_sequence_hidden_state_mapping.end()) {
             return ov::Tensor();
         }
@@ -172,8 +172,6 @@ public:
         if (shape.size() < 2) {
             return ov::Tensor();
         }
-
-        size_t hidden_size = shape[shape.size() - 1];
 
         ov::Coordinate start_coord(shape.size(), 0);
         ov::Coordinate end_coord(shape.size(), 0);
@@ -189,7 +187,7 @@ public:
         return ov::Tensor(m_hidden_states, start_coord, end_coord);
     }
 
-    void set_initial_hidden_state(size_t request_id, const ov::Tensor& hidden_state) {
+    void set_initial_hidden_state(uint64_t& request_id, const ov::Tensor& hidden_state) {
         m_initial_hidden_states[request_id] = hidden_state;
     }
 
@@ -349,7 +347,6 @@ public:
                     m_sequence_hidden_state_mapping[key] = std::make_pair(start_token_idx, sequence_length);
                 }
                 if (m_is_hidden_state_import_needed && hidden_state_data && hidden_size > 0) {
-                    //auto key = std::make_pair(sequence_group->get_request_id(), sequence->get_grouped_id());
                     auto it = m_initial_hidden_states.find(sequence_group->get_request_id());
 
                     if (it != m_initial_hidden_states.end()) {
@@ -370,7 +367,7 @@ public:
 
                                         size_t source_start_idx =
                                             stored_seq_len >= copy_length ? stored_seq_len - copy_length : 0;
-                                        copy_roi_between_tensors(stored_hidden_state, source_start_idx, copy_length, hidden_state_input, current_token_idx);
+                                        _copy_roi_between_tensors(stored_hidden_state, source_start_idx, copy_length, hidden_state_input, current_token_idx);
                                     }
                                 }
                             }
@@ -395,7 +392,7 @@ public:
                                 size_t src_start_idx = seq_len >= copy_length ? seq_len - copy_length : 0;
                                 auto target_shape = ov::Shape{num_scheduled_tokens, 1, hidden_size};
                                 ov::Tensor target_base(ov::element::f32, target_shape, hidden_state_data + current_token_idx * hidden_size);
-                                copy_roi_between_tensors(hidden_state, src_start_idx, copy_length, target_base, 0);
+                                _copy_roi_between_tensors(hidden_state, src_start_idx, copy_length, target_base, 0);
                             }
                         }
                     }
@@ -663,7 +660,7 @@ private:
     // copy_length: number of elements along first dim to copy
     // dst_base: destination base tensor (may be full buffer or a wrapper around a raw pointer)
     // dst_first_dim_start: start index in first dimension of dst_base where copy should be placed
-    static void copy_roi_between_tensors(const ov::Tensor& src,
+    static void _copy_roi_between_tensors(const ov::Tensor& src,
                                          size_t src_start_idx,
                                          size_t copy_length,
                                          const ov::Tensor& dst_base,
