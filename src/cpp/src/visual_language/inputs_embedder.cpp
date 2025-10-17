@@ -358,6 +358,14 @@ void InputsEmbedder::finish_chat() {
     return m_impl->finish_chat();
 }
 
+void InputsEmbedder::set_visual_token_pruning_config(size_t pruning_ratio,
+                                                     float relevance_weight,
+                                                     bool pruning_debug_mode) {
+    return m_impl->set_visual_token_pruning_config(pruning_ratio,
+                                                   relevance_weight,
+                                                   pruning_debug_mode);
+}
+
 NormlizedPrompt InputsEmbedder::normalize_prompt(
     const std::string& prompt,
     size_t base_id,
