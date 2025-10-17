@@ -2,6 +2,7 @@ import subprocess  # nosec B404
 import pytest
 import logging
 import sys
+from constants import WWB_CACHE_PATH
 from test_cli_image import run_wwb, get_similarity
 
 
@@ -13,17 +14,18 @@ def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
     GT_FILE = tmp_path / "gt.csv"
-    MODEL_PATH = tmp_path / model_id.replace("/", "--")
+    MODEL_PATH = WWB_CACHE_PATH / model_id.replace("/", "--")
 
-    result = subprocess.run(["optimum-cli", "export",
-                             "openvino", "-m", model_id,
-                             MODEL_PATH, "--task",
-                             "image-text-to-text",
-                             "--trust-remote-code"],
-                            capture_output=True,
-                            text=True,
-                            )
-    assert result.returncode == 0
+    if not MODEL_PATH.exists():
+        result = subprocess.run(["optimum-cli", "export",
+                                 "openvino", "-m", model_id,
+                                 MODEL_PATH, "--task",
+                                 "image-text-to-text",
+                                 "--trust-remote-code"],
+                                capture_output=True,
+                                text=True,
+                                )
+        assert result.returncode == 0
 
     # Collect reference with HF model
     run_wwb([
@@ -71,7 +73,7 @@ def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
         model_type,
         "--genai",
         "--output",
-        tmp_path,
+        WWB_CACHE_PATH,
     ])
     if genai_threshold is not None:
         similarity = get_similarity(output)
@@ -80,7 +82,7 @@ def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
     # test w/o models
     run_wwb([
         "--target-data",
-        tmp_path / "target.csv",
+        WWB_CACHE_PATH / "target.csv",
         "--num-samples",
         "1",
         "--gt-data",
