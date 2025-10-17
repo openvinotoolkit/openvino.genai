@@ -176,10 +176,13 @@ ov::Tensor decode(ov::Tensor& encoder_hidden_state,
 
 ov::Tensor decode_with_past(ov::InferRequest& decoder_with_past,
                             const int64_t input_id,
+                            const bool has_cache_position,
                             const int64_t position_id,
                             ov::genai::RawPerfMetrics& raw_metrics) {
     decoder_with_past.get_tensor("input_ids").data<int64_t>()[0] = input_id;
-    decoder_with_past.get_tensor("cache_position").data<int64_t>()[0] = position_id;
+    if (has_cache_position) {
+        decoder_with_past.get_tensor("cache_position").data<int64_t>()[0] = position_id;
+    }
     OPENVINO_ASSERT(position_id >= 1);
     decoder_with_past.get_tensor("attention_mask").data<float>()[position_id - 1] = 0.0f;
 
@@ -328,6 +331,7 @@ std::pair<ov::genai::EncodedResults, bool> full_decode(ov::Tensor& encoder_hidde
     stream_generated_tokens(streamer, handle, return_timestamps);
 
     prepare_decoder_with_past(models.decoder_with_past, models.decoder, init_ids.size());
+    const bool has_cache_position = ov::genai::utils::input_exists(models.decoder_with_past, "cache_position");
 
     while (!sequence_group->has_finished() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
         sequence_group->schedule_tokens(1);
@@ -338,6 +342,7 @@ std::pair<ov::genai::EncodedResults, bool> full_decode(ov::Tensor& encoder_hidde
 
         auto logits = decode_with_past(models.decoder_with_past,
                                        last_token,
+                                       has_cache_position,
                                        last_idx + init_ids.size(),
                                        raw_metrics);
         process_whisper_logits(logits, config, return_timestamps, running_sequences.front()->get_generated_ids());
@@ -956,8 +961,10 @@ std::shared_ptr<ov::Model> prepare_decoder_model(std::shared_ptr<ov::Model>& mod
     remove_input_kv_tensors(decoder_model);
     // 3) Expose all states that requires initialization on the first run as outputs
     expose_runtime_states_as_outputs(decoder_model);
-    // 4) Remove cache_position input
-    remove_cache_position(decoder_model);
+    // 4) Remove cache_position input if it exists
+    if (ov::genai::utils::input_exists(*decoder_model, "cache_position")) {
+        remove_cache_position(decoder_model);
+    }
     // 5) Normalize output names - should be done in stateful_to_stateless_transformation
     normalize_output_key_value_names(decoder_model);
 
@@ -990,11 +997,7 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     , m_sampler(m_tokenizer) {
     ov::Core core = utils::singleton_core();
 
-    // Remove "STATIC_PIPELINE" as we don't need to pass it further
-    auto model_properties = properties;
-    utils::pop_option(model_properties, "STATIC_PIPELINE");
-
-    auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, model_properties);
+    auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, properties);
     reshape_to_static_encoder(encoder_model, m_feature_extractor.feature_size);
     auto last_hidden_state_shape = get_encoder_hidden_state_shape(encoder_model);
 
@@ -1002,10 +1005,10 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     std::shared_ptr<ov::Model> decoder_with_past_model;
 
     if (std::filesystem::exists(models_path / "openvino_decoder_with_past_model.xml") ) {
-        decoder_model = core.read_model(models_path / "openvino_decoder_model.xml", {}, model_properties);
-        decoder_with_past_model = core.read_model(models_path / "openvino_decoder_with_past_model.xml", {}, model_properties);
+        decoder_model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
+        decoder_with_past_model = core.read_model(models_path / "openvino_decoder_with_past_model.xml", {}, properties);
     } else {
-        auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, model_properties);
+        auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
         ov::pass::StatefulToStateless().run_on_model(model);
 
         decoder_model = prepare_decoder_model(model);
@@ -1034,15 +1037,15 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     preprocess_decoder(decoder_with_past_model);
 
     ov::CompiledModel compiled_model;
-    compiled_model = core.compile_model(encoder_model, "NPU", model_properties);
+    compiled_model = core.compile_model(encoder_model, "NPU", properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Static Whisper encoder model");
     m_models.encoder = compiled_model.create_infer_request();
 
-    compiled_model = core.compile_model(decoder_with_past_model, "NPU", model_properties);
+    compiled_model = core.compile_model(decoder_with_past_model, "NPU", properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Static Whisper decoder with past model");
     m_models.decoder_with_past = compiled_model.create_infer_request();
 
-    compiled_model = core.compile_model(decoder_model, "NPU", model_properties);
+    compiled_model = core.compile_model(decoder_model, "NPU", properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Static Whisper decoder model");
     m_models.decoder = compiled_model.create_infer_request();
 
