@@ -1,4 +1,4 @@
-// Copyright (C) 2024 Intel Corporation
+// Copyright (C) 2024-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "whisper/whisper_utils.hpp"
@@ -55,6 +55,14 @@ int64_t argmax(const ov::Tensor& logits, const size_t batch_idx) {
     float max_logit = logits_data[out_token];
 
     return out_token;
+}
+
+bool input_exists(const std::shared_ptr<ov::Model>& model, const std::string& name) {
+    auto inputs = model->inputs();
+    auto it = std::find_if(inputs.begin(), inputs.end(), [&](const auto& port) {
+        return port.get_names().count(name) != 0;
+    });
+    return it != inputs.end();
 }
 
 }  // namespace utils

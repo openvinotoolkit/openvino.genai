@@ -18,7 +18,8 @@ std::shared_ptr<WhisperDecoder> WhisperDecoder::from_path(const std::filesystem:
 
     if (has_decoder_with_past) {
         if (device == "NPU") {
-            OPENVINO_THROW("Please use STATIC_PIPELINE config option for NPU for 3-model whisper pipeline.");
+            OPENVINO_THROW("For NPU, 3-model whisper pipeline works only with STATIC_PIPELINE : YES configuration "
+                           "(which is default for NPU).");
         }
         return std::make_shared<WhisperWithPastDecoder>(models_path, device, properties);
     }

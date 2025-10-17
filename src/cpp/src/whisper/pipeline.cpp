@@ -42,7 +42,9 @@ ov::InferRequest init_model(ov::CompiledModel& compiled) {
     }
 }
 
-void reshape_to_static_encoder(std::shared_ptr<ov::Model> model, const size_t feature_size) {
+void reshape_to_static_encoder(std::shared_ptr<ov::Model> model,
+                               const size_t batch_size,
+                               const size_t feature_size) {
     std::map<std::string, ov::PartialShape> new_shapes;
     for (auto input : model->inputs()) {
         const auto& input_name = input.get_any_name();
@@ -51,10 +53,10 @@ void reshape_to_static_encoder(std::shared_ptr<ov::Model> model, const size_t fe
             const auto& partial_shape = input.get_partial_shape();
             OPENVINO_ASSERT(partial_shape.size() >= 3);
             new_shape = partial_shape;
-            new_shape[0] = 1;  // batch_dim
+            new_shape[0] = batch_size;  // batch_dim
             new_shape[1] = feature_size;
+            new_shapes.emplace(input_name, new_shape);
         }
-        new_shapes.emplace(input_name, new_shape);
     }
     model->reshape(new_shapes);
 }
@@ -76,7 +78,7 @@ public:
         if (device == "NPU") {
             auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, properties);
             // NB: only batch_size == 1 is supported now for NPU
-            reshape_to_static_encoder(encoder_model, m_feature_extractor.feature_size);
+            reshape_to_static_encoder(encoder_model, 1, m_feature_extractor.feature_size);
             compiled_model = core.compile_model(encoder_model, "NPU", properties);
         } else {
             compiled_model = core.compile_model(models_path / "openvino_encoder_model.xml", device, properties);
@@ -178,8 +180,14 @@ ov::genai::WhisperPipeline::WhisperPipeline(const std::filesystem::path& models_
                                             const std::string& device,
                                             const ov::AnyMap& properties) {
     auto start_time = std::chrono::steady_clock::now();
-    if (device == "NPU" && properties.count("STATIC_PIPELINE")) {
-        m_impl = std::make_unique<StaticWhisperPipeline>(models_path, properties);
+    if (device == "NPU") {
+        auto properties_copy = properties;
+        const bool use_static_pipeline = utils::pop_or_default(properties_copy, "STATIC_PIPELINE", true);
+        if (!use_static_pipeline) {
+            m_impl = std::make_unique<WhisperPipelineStatefulImpl>(models_path, device, properties_copy);
+        } else {
+            m_impl = std::make_unique<StaticWhisperPipeline>(models_path, properties_copy);
+        }
     } else {
         m_impl = std::make_unique<WhisperPipelineStatefulImpl>(models_path, device, properties);
     }
