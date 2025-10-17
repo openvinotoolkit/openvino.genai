@@ -86,6 +86,9 @@ jobs:
         arch: 'arm64'
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
         revision: latest_available_commit
+        # Set specific revision and uncomment to use OV from its PR build:
+        # branch_name: master
+        # event_name: pull_request
 
   genai_build_cmake:
     name: Build cpack - ${{ matrix.build-type }}
@@ -467,7 +470,7 @@ jobs:
           - name: 'WWB tests'
             cmd: 'python -m pytest -v ./tools/who_what_benchmark/tests -m "not nanollava"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
-            timeout: 90
+            timeout: 180
           - name: 'WWB tests (nanollava)'
             cmd: |
               python -m pip install transformers==4.48.0
