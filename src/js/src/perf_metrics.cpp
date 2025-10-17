@@ -30,6 +30,7 @@ Napi::Function PerfMetricsWrapper::get_class(Napi::Env env) {
             InstanceMethod("getGrammarCompilerInitTimes", &PerfMetricsWrapper::get_grammar_compiler_init_times),
             InstanceMethod("getGrammarCompileTime", &PerfMetricsWrapper::get_grammar_compile_time),
             InstanceAccessor<&PerfMetricsWrapper::get_raw_metrics>("rawMetrics"),
+            InstanceMethod("add", &PerfMetricsWrapper::add),
         });
 }
 
@@ -166,4 +167,19 @@ Napi::Value PerfMetricsWrapper::get_raw_metrics(const Napi::CallbackInfo& info) 
                 get_ms(_metrics.raw_metrics, &ov::genai::RawPerfMetrics::m_grammar_compile_times)));
 
     return obj;
+}
+
+Napi::Value PerfMetricsWrapper::add(const Napi::CallbackInfo& info) {
+    VALIDATE_ARGS_COUNT(info, 1, "add()");
+    const auto env = info.Env();
+    try {
+        _metrics += unwrap<ov::genai::PerfMetrics>(env, info[0]);
+    } catch (const std::exception& ex) {
+        Napi::TypeError::New(env, ex.what()).ThrowAsJavaScriptException();
+    }
+    return info.This();
+}
+
+ov::genai::PerfMetrics& PerfMetricsWrapper::get_value() {
+    return _metrics;
 }

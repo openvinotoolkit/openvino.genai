@@ -185,9 +185,9 @@ LLMPipeline and Tokenizer objects can be initialized directly from the memory bu
 
 ### 9. LLMs benchmarking sample (`benchmark_genai`)
 - **Description:** 
-This sample script demonstrates how to benchmark an LLMs in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text, and calculating various performance metrics.
+This sample script demonstrates how to benchmark LLMs in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text, and calculating various performance metrics.
 
-For more information how performance metrics are calculated please follow [performance-metrics tutorial](../../../src/README.md#performance-metrics).
+For more information how performance metrics are calculated, please follow the [performance-metrics tutorial](../../../src/README.md#performance-metrics).
 - **Main Feature:** Benchmark model via GenAI
 - **Run Command:**
   ```bash
