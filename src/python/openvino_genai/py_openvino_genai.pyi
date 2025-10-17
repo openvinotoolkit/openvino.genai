@@ -505,11 +505,6 @@ class DecodedResults:
     def texts(self) -> list[str]:
         ...
 class DeepSeekR1ReasoningParser(IncrementalParserBase):
-    @staticmethod
-    def get_parser(name: str) -> IncrementalParserBase:
-        """
-        Factory method to get parser by name.
-        """
     def __init__(self) -> None:
         ...
     def parse(self, msg: dict, previous_text: str, delta_text: str, previous_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
@@ -914,10 +909,10 @@ class GenerationConfig:
     def num_return_sequences(self, arg0: typing.SupportsInt) -> None:
         ...
     @property
-    def parsers(self) -> list[str | openvino_genai.py_openvino_genai.ParserBase]:
+    def parsers(self) -> list[ParserBase]:
         ...
     @parsers.setter
-    def parsers(self, arg0: collections.abc.Sequence[str | openvino_genai.py_openvino_genai.ParserBase]) -> None:
+    def parsers(self, arg0: collections.abc.Sequence[ParserBase]) -> None:
         ...
     @property
     def presence_penalty(self) -> float:
@@ -1759,11 +1754,6 @@ class LLMPipeline:
     def start_chat(self, system_message: str = '') -> None:
         ...
 class Llama32JsonToolParser(ParserBase):
-    @staticmethod
-    def get_parser(name: str) -> ParserBase:
-        """
-        Factory method to get parser by name.
-        """
     def __init__(self) -> None:
         ...
     def parse(self, text: dict) -> None:
@@ -1771,11 +1761,6 @@ class Llama32JsonToolParser(ParserBase):
         Parse is called with the full text. Returns a dict with parsed content.
         """
 class Llama32PythonicToolParser(ParserBase):
-    @staticmethod
-    def get_parser(name: str) -> ParserBase:
-        """
-        Factory method to get parser by name.
-        """
     def __init__(self) -> None:
         ...
     def parse(self, text: dict) -> None:
@@ -1903,11 +1888,6 @@ class PerfMetrics:
     def raw_metrics(self) -> RawPerfMetrics:
         ...
 class Phi4ReasoningParser(IncrementalParserBase):
-    @staticmethod
-    def get_parser(name: str) -> IncrementalParserBase:
-        """
-        Factory method to get parser by name.
-        """
     def __init__(self, expect_open_tag: bool = False) -> None:
         ...
     def parse(self, msg: dict, previous_text: str, delta_text: str, previous_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
@@ -3205,7 +3185,7 @@ class TextEmbeddingPipeline:
         Waits computed embeddings for a query
         """
 class TextParserStreamer(TextStreamer):
-    def __init__(self, tokenizer: Tokenizer, parsers: collections.abc.Sequence[openvino_genai.py_openvino_genai.IncrementalParserBase | str] = []) -> None:
+    def __init__(self, tokenizer: Tokenizer, parsers: collections.abc.Sequence[IncrementalParserBase] = []) -> None:
         """
         TextParserStreamer is used to decode tokens into text, parse the text and call user-defined incremental parsers.
         """
@@ -3216,10 +3196,6 @@ class TextParserStreamer(TextStreamer):
     def get_parsed_message(self) -> dict:
         """
         Get the current parsed message
-        """
-    def get_parsers(self) -> list[IncrementalParserBase]:
-        """
-        Get the list of parsers
         """
     def write(self, message: dict) -> StreamingStatus:
         """

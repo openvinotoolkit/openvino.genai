@@ -4,10 +4,6 @@
 #pragma once
 #include <string>
 #include <memory>
-#include <variant>
-#include <map>
-#include <functional>
-#include <optional>
 #include <vector>
 #include "openvino/genai/json_container.hpp"
 
@@ -26,8 +22,6 @@ public:
         const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt, 
         const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
     ) = 0;
-
-    static std::shared_ptr<IncrementalParserBase> get_parser(std::string name);
 };
 
 class ReasoningParser : public IncrementalParserBase {
@@ -50,30 +44,25 @@ public:
 class DeepSeekR1ReasoningParser : public ReasoningParser {
 public:
     explicit DeepSeekR1ReasoningParser(bool expect_open_tag = true) : ReasoningParser(expect_open_tag) {};
-    static std::string name() { return "DeepSeekR1ReasoningParser"; }
 };
 
 class Phi4ReasoningParser : public ReasoningParser {
 public:
     explicit Phi4ReasoningParser(bool expect_open_tag = false) : ReasoningParser(expect_open_tag) {};
-    static std::string name() { return "Phi4ReasoningParser"; }
 };
 
 class ParserBase {
 public:
     ParserBase() = default;
     virtual JsonContainer parse(JsonContainer& text) = 0;
-    static std::shared_ptr<ParserBase> get_parser(std::string name);
 };
 
 class Llama32PythonicToolParser : public ParserBase {
 // Does not modify original content, only extracts and adds tool calls
 public:
-    // TODO: Check that vLLM has the same default.
     explicit Llama32PythonicToolParser(bool keep_original_content = true) : m_keep_original_content(keep_original_content) {}
 
     JsonContainer parse(JsonContainer& input) override;
-    static std::string name() { return "Llama32PythonicToolParser"; }
 private:
     bool m_keep_original_content;
 };
@@ -81,11 +70,9 @@ private:
 class Llama32JsonToolParser : public ParserBase {
 // Does not modify original content, only extracts and adds tool calls
 public:
-    // TODO: Check that vLLM has the same default.
     explicit Llama32JsonToolParser(bool keep_original_content = true) : m_keep_original_content(keep_original_content) {}
 
     JsonContainer parse(JsonContainer& input) override;
-    static std::string name() { return "Llama32JsonToolParser"; }
 private:
     bool m_keep_original_content;
 };

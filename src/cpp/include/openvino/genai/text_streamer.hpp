@@ -49,14 +49,13 @@ private:
 
 class TextParserStreamer : public TextStreamer {
 public:
-    TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::variant<std::shared_ptr<IncrementalParserBase>, std::string>> parsers = {});
+    TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::shared_ptr<IncrementalParserBase>> parsers = {});
 
     virtual StreamingStatus write(JsonContainer& message) = 0;
 
     CallbackTypeVariant write(std::string message);
     
     JsonContainer get_parsed_message() const { return m_parsed_message; }
-    std::vector<std::shared_ptr<IncrementalParserBase>> get_parsers() const { return m_parsers; }
 private:
     JsonContainer m_parsed_message;
     std::string m_text_buffer;

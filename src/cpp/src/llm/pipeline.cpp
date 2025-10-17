@@ -219,36 +219,21 @@ DecodedResults LLMPipeline::generate(
         return res;
     }
 
-    std::vector<std::shared_ptr<ParserBase>> parsers;
-    if (generation_config.has_value() && !(*generation_config).parsers.empty()) {
-        for (auto& parser_variant : (*generation_config).parsers) {
-            if (std::holds_alternative<std::string>(parser_variant)) {
-                auto parser_name = std::get<std::string>(parser_variant);
-                auto parser = ParserBase::get_parser(parser_name);
-                if (!parser) {
-                    OPENVINO_THROW("Parser with name ", parser_name, " is not registered");
-                }
-                parsers.push_back(parser);
-            } else if (std::holds_alternative<std::shared_ptr<ParserBase>>(parser_variant)) {
-                auto parser = std::get<std::shared_ptr<ParserBase>>(parser_variant);
-                parsers.push_back(parser);
-            }
-        }
+    if (!generation_config.has_value()  || (*generation_config).parsers.empty()) {
+        return res;
     }
-    
-    res.parsed.resize(res.texts.size());
 
+    std::vector<std::shared_ptr<ParserBase>> parsers = (*generation_config).parsers;
+    res.parsed.resize(res.texts.size());
     // Apply Base parsers sequentially even if IncrementalParser has run.
-    if (!parsers.empty()) {
-        for (size_t i = 0; i < res.texts.size(); ++i) {
-            JsonContainer msg;
-            msg["content"] = res.texts[i];
-            for (auto& parser: parsers) {
-                // TODO: Check the state of incremental parser and reset if necessary
-                parser->parse(msg);
-            }
-            res.parsed[i] = msg;
+    for (size_t i = 0; i < res.texts.size(); ++i) {
+        JsonContainer msg;
+        msg["content"] = res.texts[i];
+        for (auto& parser: parsers) {
+            // TODO: Check the state of incremental parser and reset if necessary
+            parser->parse(msg);
         }
+        res.parsed[i] = msg;
     }
 
     return res;

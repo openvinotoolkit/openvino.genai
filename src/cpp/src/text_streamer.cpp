@@ -124,23 +124,10 @@ void TextStreamer::end() {
 
 StreamerBase::~StreamerBase() = default;
 
-TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::variant<std::shared_ptr<IncrementalParserBase>, std::string>> parsers) 
+TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::shared_ptr<IncrementalParserBase>> parsers) 
     : TextStreamer(tokenizer, [this](std::string s) -> CallbackTypeVariant {
                 return this->write(s);
-    }) {
-        for (auto& parser : parsers) {
-            if (std::holds_alternative<std::string>(parser)) {
-                auto parser_name = std::get<std::string>(parser);
-                auto parser = IncrementalParserBase::get_parser(parser_name);
-                if (!parser) {
-                    OPENVINO_THROW("Parser with name " + parser_name + " is not registered");
-                }
-                m_parsers.push_back(parser);
-            } else {
-                m_parsers.push_back(std::get<std::shared_ptr<IncrementalParserBase>>(parser));
-            }
-        }
-    }
+    }), m_parsers{parsers} {}
 
 CallbackTypeVariant TextParserStreamer::write(std::string message) {
     for (auto& parser: m_parsers) {

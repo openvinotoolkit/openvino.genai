@@ -350,7 +350,7 @@ public:
     bool is_structured_output_generation() const;
 
     // parsers
-    std::vector<std::variant<std::string, std::shared_ptr<ParserBase>>> parsers;
+    std::vector<std::shared_ptr<ParserBase>> parsers;
 
     OPENVINO_DEPRECATED("Please, use `is_assisting_generation()` instead of `is_speculative_decoding()`. This method will be removed in 2026.0.0 release")
     bool is_speculative_decoding() const;

@@ -162,8 +162,7 @@ void init_parsers(py::module_& m) {
             },
             "Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.",
             py::arg("msg"), py::arg("previous_text"), py::arg("delta_text"),
-            py::arg("previous_tokens") = std::nullopt, py::arg("delta_tokens") = std::nullopt)
-        .def_static("get_parser", &Phi4ReasoningParser::get_parser, py::arg("name"), "Factory method to get parser by name.");
+            py::arg("previous_tokens") = std::nullopt, py::arg("delta_tokens") = std::nullopt);
 
     py::class_<DeepSeekR1ReasoningParser, std::shared_ptr<DeepSeekR1ReasoningParser>, IncrementalParserBase>(m, "DeepSeekR1ReasoningParser")
         .def(py::init<>())
@@ -189,8 +188,7 @@ void init_parsers(py::module_& m) {
             },
             "Parse is called with the full text. Returns a dict with parsed content.",
             py::arg("msg"), py::arg("previous_text"), py::arg("delta_text"),
-            py::arg("previous_tokens") = std::nullopt, py::arg("delta_tokens") = std::nullopt)
-        .def_static("get_parser", &DeepSeekR1ReasoningParser::get_parser, py::arg("name"), "Factory method to get parser by name.");
+            py::arg("previous_tokens") = std::nullopt, py::arg("delta_tokens") = std::nullopt);
 
     py::class_<ParserBase, ConstructableParserBase, std::shared_ptr<ParserBase>>(m, "ParserBase")
     .def(py::init<>())
@@ -208,8 +206,7 @@ void init_parsers(py::module_& m) {
                 return call_parser(msg, [&self](JsonContainer& m) { return self.parse(m); });
             },
             py::arg("text"),
-            "Parse is called with the full text. Returns a dict with parsed content.")
-        .def_static("get_parser", &Llama32JsonToolParser::get_parser, py::arg("name"), "Factory method to get parser by name.");
+            "Parse is called with the full text. Returns a dict with parsed content.");
 
     py::class_<Llama32PythonicToolParser, std::shared_ptr<Llama32PythonicToolParser>, ParserBase>(m, "Llama32PythonicToolParser")
         .def(py::init<>())
@@ -218,6 +215,5 @@ void init_parsers(py::module_& m) {
                 return call_parser(msg, [&self](JsonContainer& m) { return self.parse(m); });
             },
             py::arg("text"),
-            "Parse is called with the full text. Returns a dict with parsed content.")
-        .def_static("get_parser", &Llama32PythonicToolParser::get_parser, py::arg("name"), "Factory method to get parser by name.");
+            "Parse is called with the full text. Returns a dict with parsed content.");
 }

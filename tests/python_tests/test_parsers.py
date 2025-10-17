@@ -64,7 +64,7 @@ def test_phi4_reason_parser_1(hf_ov_genai_models, answer):
         def write(self, message):
             msg.update(message)
             return StreamingStatus.RUNNING
-    streamer = CustomStreamer(genai_tokenizer, parsers=["Phi4ReasoningParser"])
+    streamer = CustomStreamer(genai_tokenizer, parsers=[Phi4ReasoningParser()])
     
     msg = {}
     for subword in stream_string:
@@ -98,7 +98,7 @@ def test_phi4_reason_parser_2(hf_ov_genai_models, split_answer):
         def write(self, message):
             msg.update(message)
             return StreamingStatus.RUNNING
-    streamer = CustomStreamer(genai_tokenizer, parsers=["Phi4ReasoningParser"])
+    streamer = CustomStreamer(genai_tokenizer, parsers=[Phi4ReasoningParser()])
     
     msg = {}
     for subword in split_answer:
@@ -139,9 +139,10 @@ def test_parsers_2(hf_ov_genai_models):
             if "content" in message:
                 print(message["content"])
             return StreamingStatus.RUNNING
-    
-    streamer = TextParserStreamer(genai_tokenizer, parsers=["DeepSeekR1ReasoningParser"])
-    
+
+    streamer = TextParserStreamer(genai_tokenizer, parsers=[DeepSeekR1ReasoningParser()])
+    breakpoint()
+
     msg = {}
     stream_string = [
         "<｜begin▁of▁sentence｜>", "First", ",", " I", " recognize", " that", " the", " question", " is", " asking", 

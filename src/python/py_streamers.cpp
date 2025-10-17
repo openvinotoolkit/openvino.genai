@@ -150,11 +150,11 @@ void init_streamers(py::module_& m) {
     // TODO: double check/add more relevant docstrings for TextParserStreamer.
     py::class_<TextParserStreamer, ConstructableTextParserStreamer, std::shared_ptr<TextParserStreamer>, TextStreamer>(m, "TextParserStreamer")
         .def(py::init([](const Tokenizer& tokenizer,
-                         std::vector<std::variant<std::shared_ptr<IncrementalParserBase>, std::string>> parsers) {
+                         std::vector<std::shared_ptr<IncrementalParserBase>> parsers) {
                 return std::make_shared<ConstructableTextParserStreamer>(tokenizer, parsers);
             }),
             py::arg("tokenizer"),
-            py::arg("parsers") = std::vector<std::variant<std::shared_ptr<IncrementalParserBase>, std::string>>({}),
+            py::arg("parsers") = std::vector<std::shared_ptr<IncrementalParserBase>>(),
             "TextParserStreamer is used to decode tokens into text, parse the text and call user-defined incremental parsers.")
         .def("write",
             [](TextParserStreamer& self, py::dict& message) {
@@ -182,7 +182,5 @@ void init_streamers(py::module_& m) {
 
                 return json_dict;
                 
-            }, "Get the current parsed message")
-
-        .def("get_parsers", &TextParserStreamer::get_parsers, "Get the list of parsers");
+            }, "Get the current parsed message");
 }
