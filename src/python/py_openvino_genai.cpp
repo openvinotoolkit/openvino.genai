@@ -33,6 +33,7 @@ void init_lora_adapter(py::module_& m);
 void init_perf_metrics(py::module_& m);
 void init_tokenizer(py::module_& m);
 void init_streamers(py::module_& m);
+void init_parsers(py::module_& m);
 void init_generation_config(py::module_& m);
 
 void init_continuous_batching_pipeline(py::module_& m);
@@ -92,6 +93,18 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def(py::init<>())
         .def_property_readonly("texts", [](const DecodedResults &dr) -> py::typing::List<py::str> { return pyutils::handle_utf8((std::vector<std::string>)dr); })
         .def_readonly("scores", &DecodedResults::scores)
+        .def_property_readonly("parsed", [](const DecodedResults& dr) -> py::dict {
+            static py::object json_mod = py::module_::import("json");
+            py::list result_dicts;
+            
+            for (const auto& parsed: dr.parsed) {
+                auto json_str =  parsed.to_json_string();
+                py::dict json_dict = json_mod.attr("loads")(json_str);
+
+                result_dicts.append(json_dict);
+            }
+            return result_dicts;
+        })
         .def_readonly("perf_metrics", &DecodedResults::perf_metrics)
         .def_readonly("extended_perf_metrics", &DecodedResults::extended_perf_metrics)
         .def("__str__", [](const DecodedResults &dr) -> py::str {
@@ -114,6 +127,7 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def_readonly("extended_perf_metrics", &EncodedResults::extended_perf_metrics);
 
     init_lora_adapter(m);
+    init_parsers(m);
     init_generation_config(m);
     init_tokenizer(m);
     init_streamers(m);

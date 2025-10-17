@@ -18,7 +18,17 @@ from .py_openvino_genai import (
     StreamerBase,
     get_version,
     StreamingStatus,
-    TextStreamer
+    TextStreamer,
+    TextParserStreamer
+)
+
+from .py_openvino_genai import (
+    ParserBase,
+    IncrementalParserBase,
+    Phi4ReasoningParser,
+    DeepSeekR1ReasoningParser,
+    Llama32JsonToolParser,
+    Llama32PythonicToolParser,
 )
 
 __version__ = get_version()

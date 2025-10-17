@@ -9,13 +9,18 @@
 
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/text_streamer.hpp"
+#include "openvino/genai/parsers.hpp"
 #include "py_utils.hpp"
+#include "openvino/genai/json_container.hpp"
 
 namespace py = pybind11;
 
 using ov::genai::CallbackTypeVariant;
 using ov::genai::StreamingStatus;
 using ov::genai::TextStreamer;
+using ov::genai::TextParserStreamer;
+using ov::genai::IncrementalParserBase;
+using ov::genai::JsonContainer;
 using ov::genai::Tokenizer;
 
 namespace pyutils = ov::genai::pybind::utils;
@@ -66,6 +71,36 @@ class ConstructableStreamer: public StreamerBase {
     }
 };
 
+class ConstructableTextParserStreamer: public TextParserStreamer {
+public:
+    using TextParserStreamer::TextParserStreamer;  // inherit base constructors
+
+    StreamingStatus write(JsonContainer& message) override {
+        py::dict message_py;
+        auto json_obj = message.to_json();
+        for (auto it = json_obj.begin(); it != json_obj.end(); ++it) {
+            message_py[py::cast(it.key())] = py::cast(it.value().get<std::string>());
+        }
+        
+        // call python implementation which accepts py::dict instead of JsonContainer
+        auto res = py::get_override(this, "write")(message_py);
+        
+        auto msg_anymap = ov::genai::pybind::utils::py_object_to_any_map(message_py);
+        message = JsonContainer(msg_anymap);
+        
+        return res.cast<StreamingStatus>();
+    }
+
+    StreamingStatus write(py::dict& message) {
+        PYBIND11_OVERRIDE_PURE(
+            StreamingStatus,
+            TextParserStreamer,
+            "write",
+            message
+        );
+    }
+};
+
 } // namespace
 
 void init_streamers(py::module_& m) {
@@ -110,5 +145,42 @@ void init_streamers(py::module_& m) {
                 }
             },
             py::arg("token"))
-        .def("end", &TextStreamer::end);
+            .def("end", &TextStreamer::end);
+        
+    // TODO: double check/add more relevant docstrings for TextParserStreamer.
+    py::class_<TextParserStreamer, ConstructableTextParserStreamer, std::shared_ptr<TextParserStreamer>, TextStreamer>(m, "TextParserStreamer")
+        .def(py::init([](const Tokenizer& tokenizer,
+                         std::vector<std::shared_ptr<IncrementalParserBase>> parsers) {
+                return std::make_shared<ConstructableTextParserStreamer>(tokenizer, parsers);
+            }),
+            py::arg("tokenizer"),
+            py::arg("parsers") = std::vector<std::shared_ptr<IncrementalParserBase>>(),
+            "TextParserStreamer is used to decode tokens into text, parse the text and call user-defined incremental parsers.")
+        .def("write",
+            [](TextParserStreamer& self, py::dict& message) {
+                // Downcast to ConstructableTextParserStreamer if needed
+                auto* derived = dynamic_cast<ConstructableTextParserStreamer*>(&self);
+                if (!derived) {
+                    throw std::runtime_error("write(py::dict&) only available for ConstructableTextParserStreamer");
+                }
+                return derived->write(message);
+            },
+            py::arg("message"),
+            "Write is called with a dict. Returns StreamingStatus.")
+        .def("_write",
+             py::overload_cast<std::string>(&TextParserStreamer::write),
+             py::arg("message"),
+             "Write is called with a string message. Returns CallbackTypeVariant. This is a private method.")
+        
+        .def("get_parsed_message", 
+            [](TextParserStreamer& self) {
+                static py::object json_mod = py::module_::import("json");
+                
+                auto res = self.get_parsed_message();
+                auto json_str =  res.to_json_string();
+                py::dict json_dict = json_mod.attr("loads")(json_str);
+
+                return json_dict;
+                
+            }, "Get the current parsed message");
 }

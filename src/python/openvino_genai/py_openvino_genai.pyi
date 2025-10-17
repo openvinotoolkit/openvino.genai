@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__: list[str] = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParserBase', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'Llama32JsonToolParser', 'Llama32PythonicToolParser', 'MeanStdPair', 'ParserBase', 'PerfMetrics', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -493,6 +493,9 @@ class DecodedResults:
     def extended_perf_metrics(self) -> ExtendedPerfMetrics:
         ...
     @property
+    def parsed(self) -> dict:
+        ...
+    @property
     def perf_metrics(self) -> PerfMetrics:
         ...
     @property
@@ -501,6 +504,13 @@ class DecodedResults:
     @property
     def texts(self) -> list[str]:
         ...
+class DeepSeekR1ReasoningParser(IncrementalParserBase):
+    def __init__(self) -> None:
+        ...
+    def parse(self, msg: dict, previous_text: str, delta_text: str, previous_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
+        """
+        Parse is called with the full text. Returns a dict with parsed content.
+        """
 class EncodedGenerationResult:
     """
     
@@ -897,6 +907,12 @@ class GenerationConfig:
         ...
     @num_return_sequences.setter
     def num_return_sequences(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def parsers(self) -> list[ParserBase]:
+        ...
+    @parsers.setter
+    def parsers(self, arg0: collections.abc.Sequence[ParserBase]) -> None:
         ...
     @property
     def presence_penalty(self) -> float:
@@ -1374,6 +1390,13 @@ class ImageGenerationPerfMetrics:
     @property
     def raw_metrics(self) -> RawImageGenerationPerfMetrics:
         ...
+class IncrementalParserBase:
+    def __init__(self) -> None:
+        ...
+    def parse(self, msg: dict, previous_text: str, delta_text: str, previous_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
+        """
+        Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.
+        """
 class InpaintingPipeline:
     """
     This class is used for generation with inpainting models.
@@ -1730,6 +1753,20 @@ class LLMPipeline:
         ...
     def start_chat(self, system_message: str = '') -> None:
         ...
+class Llama32JsonToolParser(ParserBase):
+    def __init__(self) -> None:
+        ...
+    def parse(self, text: dict) -> None:
+        """
+        Parse is called with the full text. Returns a dict with parsed content.
+        """
+class Llama32PythonicToolParser(ParserBase):
+    def __init__(self) -> None:
+        ...
+    def parse(self, text: dict) -> None:
+        """
+        Parse is called with the full text. Returns a dict with parsed content.
+        """
 class MeanStdPair:
     def __init__(self) -> None:
         ...
@@ -1741,6 +1778,13 @@ class MeanStdPair:
     @property
     def std(self) -> float:
         ...
+class ParserBase:
+    def __init__(self) -> None:
+        ...
+    def parse(self, text: dict) -> None:
+        """
+        Parse is called with the full text. Returns a dict with parsed content.
+        """
 class PerfMetrics:
     """
     
@@ -1843,6 +1887,13 @@ class PerfMetrics:
     @property
     def raw_metrics(self) -> RawPerfMetrics:
         ...
+class Phi4ReasoningParser(IncrementalParserBase):
+    def __init__(self, expect_open_tag: bool = False) -> None:
+        ...
+    def parse(self, msg: dict, previous_text: str, delta_text: str, previous_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
+        """
+        Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.
+        """
 class PipelineMetrics:
     """
     
@@ -3274,6 +3325,23 @@ class TextEmbeddingPipeline:
     def wait_embed_query(self) -> list[float] | list[int] | list[int]:
         """
         Waits computed embeddings for a query
+        """
+class TextParserStreamer(TextStreamer):
+    def __init__(self, tokenizer: Tokenizer, parsers: collections.abc.Sequence[IncrementalParserBase] = []) -> None:
+        """
+        TextParserStreamer is used to decode tokens into text, parse the text and call user-defined incremental parsers.
+        """
+    def _write(self, message: str) -> bool | openvino_genai.py_openvino_genai.StreamingStatus:
+        """
+        Write is called with a string message. Returns CallbackTypeVariant. This is a private method.
+        """
+    def get_parsed_message(self) -> dict:
+        """
+        Get the current parsed message
+        """
+    def write(self, message: dict) -> StreamingStatus:
+        """
+        Write is called with a dict. Returns StreamingStatus.
         """
 class TextRerankPipeline:
     """

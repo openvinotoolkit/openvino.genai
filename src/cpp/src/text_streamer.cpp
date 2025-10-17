@@ -122,7 +122,24 @@ void TextStreamer::end() {
     return;
 }
 
-ov::genai::StreamerBase::~StreamerBase() = default;
+StreamerBase::~StreamerBase() = default;
+
+TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::shared_ptr<IncrementalParserBase>> parsers) 
+    : TextStreamer(tokenizer, [this](std::string s) -> CallbackTypeVariant {
+                return this->write(s);
+    }), m_parsers{parsers} {}
+
+CallbackTypeVariant TextParserStreamer::write(std::string message) {
+    for (auto& parser: m_parsers) {
+        message = parser->parse(m_parsed_message, m_text_buffer, message);
+        // Message can be modified inside parser, if parser for example extracted tool calling from message content
+        // but parser
+        m_parsed_message["content"] = m_parsed_message["content"].get_string() + message;
+    }
+
+    m_text_buffer = message;
+    return write(m_parsed_message);
+}
 
 }  // namespace genai
 }  // namespace ov
