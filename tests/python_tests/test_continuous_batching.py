@@ -474,6 +474,7 @@ def get_data_by_pipeline_type(model_path: Path, pipeline_type: str, generation_c
         raise RuntimeError(f"{pipeline_type} is unknown pipeline type!")
     return pipe, prompt, generation_config
 
+
 def run_extended_perf_metrics_collection(model_id, generation_config: GenerationConfig, prompt: str, pipeline_type: PipelineType):
     _, _, model_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(model_path, pipeline_type=pipeline_type)
