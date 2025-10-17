@@ -107,15 +107,16 @@ InputsEmbedderQwen2_5_VL::InputsEmbedderQwen2_5_VL(
     const ov::AnyMap device_config) :
     InputsEmbedderQwen2VL(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
-ov::Tensor InputsEmbedderQwen2_5_VL::run_image_embeddings_merger(
+std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2_5_VL::run_video_image_embeddings_merger(
     const std::vector<EncodedImage>& images, 
     const std::vector<size_t>& images_sequence,
     const std::vector<EncodedVideo>& videos,
     const std::vector<size_t>& videos_sequence
 ) {
-    auto [reordered_image_embeds, reordered_images_grid_thw] = qwen2_vl_utils::reorder_image_video_embeds_and_grid_thw(images, images_sequence, videos, videos_sequence);
+    auto [reordered_image_embeds, reordered_images_grid_thw] = qwen2_vl_utils::reorder_image_embeds_and_grid_thw(images, images_sequence);
+    auto [reordered_video_embeds, reordered_videos_grid_thw] = qwen2_vl_utils::reorder_video_embeds_and_grid_thw(videos, videos_sequence);
 
-    ov::Tensor concatenated_embeds = qwen2_vl_utils::concatenate_image_embeds(reordered_image_embeds);
+    ov::Tensor concatenated_embeds = qwen2_vl_utils::concatenate_video_image_embeds(reordered_video_embeds, reordered_image_embeds);
     ov::Tensor rotary_pos_emb = get_rotary_pos_emb(reordered_images_grid_thw);
 
     auto [window_index, cu_window_seqlens] = qwen2_5_vl_utils::get_window_index(
@@ -128,13 +129,13 @@ ov::Tensor InputsEmbedderQwen2_5_VL::run_image_embeddings_merger(
     ov::InferRequest& vision_embeddings_merger = infer_request_guard.get();
     vision_embeddings_merger.set_tensor("hidden_states", concatenated_embeds);
     if (m_with_cu_seqlens_input) {
-        ov::Tensor cu_seq_lens = qwen2_vl_utils::get_cu_seqlens(reordered_images_grid_thw);
+        ov::Tensor cu_seq_lens = qwen2_vl_utils::get_cu_seqlens(reordered_images_grid_thw, reordered_videos_grid_thw);
         ov::Tensor t_cu_window_seqlens = qwen2_5_vl_utils::get_cu_window_seqlens(cu_window_seqlens);
         vision_embeddings_merger.set_tensor("cu_seq_lens", cu_seq_lens);
         vision_embeddings_merger.set_tensor("cu_window_seqlens", t_cu_window_seqlens);
     }
     else {
-        ov::Tensor attention_mask = qwen2_vl_utils::get_attention_mask(reordered_images_grid_thw);
+        ov::Tensor attention_mask = qwen2_vl_utils::get_attention_mask(reordered_images_grid_thw, reordered_videos_grid_thw);
         size_t hidden_states_size = attention_mask.get_shape().at(1);
         ov::Tensor window_attention_mask = qwen2_5_vl_utils::get_window_attention_mask(hidden_states_size, cu_window_seqlens);
         vision_embeddings_merger.set_tensor("attention_mask", attention_mask);
@@ -145,9 +146,33 @@ ov::Tensor InputsEmbedderQwen2_5_VL::run_image_embeddings_merger(
     vision_embeddings_merger.infer();
     ov::Tensor processed_vision_embeds = vision_embeddings_merger.get_output_tensor();
 
-    ov::Tensor res = ov::Tensor(processed_vision_embeds.get_element_type(), processed_vision_embeds.get_shape());
-    std::memcpy(res.data(), processed_vision_embeds.data(), processed_vision_embeds.get_byte_size());
-    return res;
+    auto out_vision_shape = processed_vision_embeds.get_shape();
+
+    // Split Video and Image's features.
+    auto calculate_product = [](const std::vector<std::array<size_t, 3>>& data) {
+        size_t total_product = 1;
+        for (const auto& arr : data) {
+            for (size_t element : arr) {
+                total_product *= element;
+            }
+        }
+        return total_product;
+    };
+    auto video_fea_num = calculate_product(reordered_videos_grid_thw);
+    auto image_fea_num = calculate_product(reordered_images_grid_thw);
+    size_t video_fea_count = out_vision_shape.at(0) * video_fea_num / (video_fea_num + image_fea_num);
+    size_t fea_size = out_vision_shape.at(1);
+
+    ov::Shape video_fea_shape = ov::Shape({video_fea_count, out_vision_shape.at(1)});
+    ov::Tensor res_video = ov::Tensor(processed_vision_embeds.get_element_type(), video_fea_shape);
+    std::memcpy(res_video.data(), processed_vision_embeds.data(), res_video.get_byte_size());
+
+    ov::Shape image_fea_shape = ov::Shape({out_vision_shape.at(0) - video_fea_count, out_vision_shape.at(1)});
+    ov::Tensor res_image = ov::Tensor(processed_vision_embeds.get_element_type(), image_fea_shape);
+    std::memcpy(res_image.data(),
+                processed_vision_embeds.data() + res_video.get_byte_size(),
+                res_image.get_byte_size());
+    return {res_video, res_image};
 }
 
 } // namespace ov::genai

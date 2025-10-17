@@ -69,8 +69,12 @@ struct EncodedVideo {
     /// @brief Number of video tokens required to append to a normalized prompt
     size_t num_video_tokens;
 
-    /// @brief Some models'video processing is similiar. Reuse EncodedImage for model: QWen2-VL, QWen2.5-VL.
-    std::vector<EncodedImage> video_frames_features;
+    /// @brief A size of an image used to compute embeddings for
+    /// divided by ProcessorConfig's patch_size.
+    ImageSize resized_source_size;
+
+    /// @brief A number of encoded frames.
+    size_t frame_num;
 };
 
 /// @brief A class used to infer embeddings of an image using

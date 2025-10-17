@@ -21,8 +21,19 @@ public:
     EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) override;
 
 private:
-    EncodedImage encode_with_imagepreprocess_cpp(const std::vector<ov::Tensor>& image, const ov::AnyMap& config_map);
-    EncodedImage encode_with_imagepreprocess_ov(const std::vector<ov::Tensor>& image, const ov::AnyMap& config_map);
+    void encode_with_imagepreprocess_cpp(const std::vector<ov::Tensor>& image,
+                                                 const ov::AnyMap& config_map,
+                                                 ov::Tensor& out_tensor,
+                                                 ImageSize& out_rsz_size,
+                                                 size_t frame_num = 1,
+                                                 size_t frame_id = 0);
+    void encode_with_imagepreprocess_ov(const std::vector<ov::Tensor>& image,
+                                        const ov::AnyMap& config_map,
+                                        ov::Tensor& out_tensor,
+                                        ImageSize& out_rsz_size,
+                                        size_t frame_num = 1,
+                                        size_t frame_id = 0);
+
     bool use_ov_image_preprocess = true; // default use ov image preprocess, control by env IMAGE_PREPROCESS=CPP to use cpp image preprocess
 };
 
@@ -89,11 +100,12 @@ protected:
     ov::Tensor m_position_ids;
     int64_t m_rope_delta = 0;
     ov::Tensor m_merged_image_embeddings;
+    ov::Tensor m_merged_video_embeddings;
     std::map<std::string, int64_t> m_vision_token_ids;
 
     bool m_with_cu_seqlens_input = false;
 
-    virtual ov::Tensor run_image_embeddings_merger(
+    virtual std::pair<ov::Tensor, ov::Tensor> run_video_image_embeddings_merger(
         const std::vector<EncodedImage>& images, 
         const std::vector<size_t>& images_sequence,
         const std::vector<EncodedVideo>& videos,
@@ -120,17 +132,17 @@ protected:
 
 namespace qwen2_vl_utils {
 
-std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_image_video_embeds_and_grid_thw(
+std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_image_embeds_and_grid_thw(
     const std::vector<EncodedImage>& encoded_images,
-    const std::vector<size_t>& images_sequence,
+    const std::vector<size_t>& images_sequence);
+std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_video_embeds_and_grid_thw(
     const std::vector<EncodedVideo>& videos,
-    const std::vector<size_t>& videos_sequence
-);
+    const std::vector<size_t>& videos_sequence);
 
-ov::Tensor get_attention_mask(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw);
-ov::Tensor get_cu_seqlens(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw);
+ov::Tensor get_attention_mask(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw, const std::vector<std::array<size_t, 3>>& reordered_videos_grid_thw);
+ov::Tensor get_cu_seqlens(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw, const std::vector<std::array<size_t, 3>>& reordered_videos_grid_thw);
 
-ov::Tensor concatenate_image_embeds(const std::vector<ov::Tensor>& reordered_image_embeds);
+ov::Tensor concatenate_video_image_embeds(const std::vector<ov::Tensor>& reordered_video_embeds, const std::vector<ov::Tensor>& reordered_image_embeds);
 
 } // namespace qwen2vl_utils
 

@@ -35,7 +35,7 @@ public:
         const ov::AnyMap device_config);
 
 protected:
-    ov::Tensor run_image_embeddings_merger(
+    std::pair<ov::Tensor, ov::Tensor> run_video_image_embeddings_merger(
         const std::vector<EncodedImage>& images, 
         const std::vector<size_t>& images_sequence,
         const std::vector<EncodedVideo>& videos,
