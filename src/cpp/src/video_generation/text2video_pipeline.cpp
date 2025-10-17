@@ -6,12 +6,16 @@
 #include "image_generation/schedulers/ischeduler.hpp"
 #include "image_generation/numpy_utils.hpp"
 #include <openvino/op/transpose.hpp>
+#include "openvino/op/add.hpp"
+#include "openvino/op/multiply.hpp"
+#include "openvino/op/divide.hpp"
 #include <nlohmann/json.hpp>
 #include <fstream>
 
 using namespace ov::genai;
 
 namespace {
+
 std::shared_ptr<IScheduler> cast_scheduler(std::shared_ptr<Scheduler> scheduler) {
     auto casted = std::dynamic_pointer_cast<IScheduler>(scheduler);
     OPENVINO_ASSERT(casted != nullptr, "Passed incorrect scheduler type");
@@ -57,6 +61,122 @@ ov::Tensor pack_latents(ov::Tensor& latents, size_t patch_size, size_t patch_siz
     ov::Shape permuted_shape = outputs.at(0).get_shape();
     outputs.at(0).set_shape({permuted_shape.at(0), permuted_shape.at(1) * permuted_shape.at(2) * permuted_shape.at(3), permuted_shape.at(4) * permuted_shape.at(5) * permuted_shape.at(6)});
     return outputs.at(0);
+}
+
+// Packed latents of shape [B, S, D] (S is the effective video sequence length, D is the effective feature dimensions)
+// are unpacked and reshaped into a video tensor of shape [B, C, F, H, W]. This is the inverse operation of what happens in the `_pack_latents` method.
+ov::Tensor unpack_latents(ov::Tensor& latents,
+                          size_t num_frames,
+                          size_t height,
+                          size_t width,
+                          size_t patch_size = 1,
+                          size_t patch_size_t = 1) {
+    const ov::Shape in_shape = latents.get_shape();
+    OPENVINO_ASSERT(in_shape.size() == 3, "unpack_latents expects [B, S, D] input shape");
+    const size_t batch_size = in_shape.at(0), sequence_length = in_shape.at(1), feature_dimensions = in_shape.at(2);
+
+    const size_t patch_volume = patch_size_t * patch_size * patch_size;
+    OPENVINO_ASSERT(feature_dimensions % patch_volume == 0, "D must be divisible by patch_size_t * patch_size * patch_size");
+    const size_t num_channels = feature_dimensions / patch_volume;
+
+    latents.set_shape({batch_size, num_frames, height, width, num_channels, patch_size_t, patch_size, patch_size});
+
+    // permute(0, 4, 1, 5, 2, 6, 3, 7) -> [B, C, F//patch_size_t, patch_size_t, H//patch_size, patch_size, W//patch_size, patch_size]
+    const std::array<int64_t, 8> order = {0, 4, 1, 5, 2, 6, 3, 7};
+    std::vector<ov::Tensor> outputs{ov::Tensor(latents.get_element_type(), {})};
+    ov::op::v1::Transpose{}.evaluate(
+        outputs,
+        {latents, ov::Tensor(ov::element::i64, ov::Shape{order.size()}, const_cast<int64_t*>(order.data()))}
+    );
+
+    // (F//patch_size_t, patch_size_t) -> F, (H//patch_size, patch_size) -> H, (W//patch_size, patch_size) -> W
+    const ov::Shape perm = outputs[0].get_shape(); // [B, C, F//patch_size_t, patch_size_t, H//patch_size, patch_size, W//patch_size, patch_size]
+    OPENVINO_ASSERT(perm.size() == 8, "Unexpected rank after transpose");
+
+    const size_t F = perm[2] * perm[3]; // (F//patch_size_t) * patch_size_t
+    const size_t H = perm[4] * perm[5]; // (H//patch_size) * patch_size
+    const size_t W = perm[6] * perm[7]; // (W//patch_size) * patch_size
+
+    outputs[0].set_shape({perm[0], perm[1], F, H, W}); // [B, C, F, H, W]
+    return outputs[0];
+}
+
+inline void reshape_to_1C111(ov::Tensor& t, size_t C) {
+    size_t elems = 1;
+    for (auto d : t.get_shape()) elems *= d;
+
+    OPENVINO_ASSERT(elems == C, "latents_mean/std must contain exactly C elements (got ", elems, ", expected ", C, ")");
+
+    t.set_shape({1, C, 1, 1, 1});
+}
+
+inline ov::Tensor make_scalar(const ov::element::Type& et, float v) {
+    ov::Tensor s(et, {});
+    if (et == ov::element::f32) {
+        *s.data<float>() = v;
+    } else if (et == ov::element::f16) {
+        *s.data<ov::float16>() = static_cast<ov::float16>(v);
+    } else if (et == ov::element::bf16) {
+        *s.data<ov::bfloat16>() = static_cast<ov::bfloat16>(v);
+    } else {
+        OPENVINO_ASSERT(false, "Unsupported element type for scalar scaling_factor");
+    }
+    return s;
+}
+
+// Denormalize latents across channel dim: [B, C, F, H, W]
+// latents = latents * latents_std / scaling_factor + latents_mean
+ov::Tensor denormalize_latents(ov::Tensor latents,
+                               ov::Tensor latents_mean,
+                               ov::Tensor latents_std,
+                               float scaling_factor = 1.0f) {
+    const ov::Shape latents_shape = latents.get_shape();
+    OPENVINO_ASSERT(latents_shape.size() == 5, "denormalize_latents expects [B, C, F, H, W]");
+    const size_t num_channels = latents_shape[1];
+
+    // .view(1, -1, 1, 1, 1)
+    reshape_to_1C111(latents_mean, num_channels);
+    reshape_to_1C111(latents_std,  num_channels);
+
+    const auto latents_type = latents.get_element_type();
+    ov::Tensor scale = make_scalar(latents_type, scaling_factor);
+
+    // latents * latents_std
+    std::vector<ov::Tensor> tmp{ov::Tensor(latents_type, {})};
+    ov::op::v1::Multiply{}.evaluate(tmp, {latents, latents_std}); // NUMPY broadcast
+
+    // (...) / scaling_factor
+    std::vector<ov::Tensor> tmp2{ov::Tensor(latents_type, {})};
+    ov::op::v1::Divide{}.evaluate(tmp2, {tmp[0], scale});
+
+    // (...) + latents_mean
+    std::vector<ov::Tensor> result{ov::Tensor(latents_type, {})};
+    ov::op::v1::Add{}.evaluate(result, {tmp2[0], latents_mean});
+
+    return result[0]; // [B, C, F, H, W]
+}
+
+// For debug
+void saveTensorToFile(const ov::Tensor& tensor, const std::string& filename) {
+    std::ofstream file(filename);
+    if (!file) {
+        throw std::runtime_error("Failed to open file: " + filename);
+    }
+ 
+    // Write shape information
+    ov::Shape shape = tensor.get_shape();
+    for (size_t dim : shape) {
+        file << dim << " ";  // Write dimensions space-separated
+    }
+    file << "\n";  // Newline after shape
+ 
+    // Write tensor data
+    float* data = tensor.data<float>();
+    for (size_t i = 0; i < tensor.get_size(); ++i) {
+        file << data[i] << " ";
+    }
+    file << "\n";  // Newline after data
+    file.close();
 }
 
 // for debug only
@@ -158,7 +278,6 @@ ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_co
     size_t num_frames = (generation_config.num_frames - 1) / temporal_compression_ratio + 1;
     ov::Shape shape{generation_config.num_images_per_prompt, num_channels_latents, num_frames, height, width};
     // ov::Tensor latents = generation_config.generator->randn_tensor(shape);
-    std::cout << "!!!!!!!!!!!!!!latents_shape " << shape << std::endl;
     ov::Tensor latents = loadTensorFromFile("/home/alikh/projects/openvino.genai/latents_before_pack.txt");
     return pack_latents(latents, transformer_spatial_patch_size, transformer_temporal_patch_size);
 }
@@ -179,7 +298,6 @@ class Text2VideoPipeline::LTXPipeline {
         auto infer_start = std::chrono::steady_clock::now();
         bool do_classifier_free_guidance = generation_config.guidance_scale > 1.0;
 
-
         // torch.cat([negative_prompt_embeds, prompt_embeds], dim=0)
         // genai m_t5_text_encoder->infer retuns the same tensor [negative_prompt_embeds, prompt_embeds]
         ov::Tensor prompt_embeds = m_t5_text_encoder->infer(
@@ -199,34 +317,8 @@ class Text2VideoPipeline::LTXPipeline {
         prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
         prompt_attention_mask = numpy_utils::repeat(prompt_attention_mask, generation_config.num_images_per_prompt);
 
-        // std::cout << "prompt_attention_mask after reshape " << prompt_attention_mask.get_shape() << std::endl;
-        // std::cout << "prompt_embeds after reshape " << prompt_embeds.get_shape() << std::endl;
-
-        // text_ids = torch.zeros(prompt_embeds.shape[1], 3)
-        // ov::Shape text_ids_shape = {prompt_embeds.get_shape()[1], 3};
-        // ov::Tensor text_ids(ov::element::f32, text_ids_shape);
-        // std::fill_n(text_ids.data<float>(), text_ids.get_size(), 0.0f);
-
-        // const size_t num_channels_latents = m_transformer->get_config().in_channels / 4;
-        // const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
-        // size_t height = generation_config.height / vae_scale_factor;
-        // size_t width = generation_config.width / vae_scale_factor;
-
-        // ov::Tensor latent_image_ids = prepare_latent_image_ids(generation_config.num_images_per_prompt, height / 2, width / 2);
-
-        // if (m_transformer->get_config().guidance_embeds) {
-        //     ov::Tensor guidance = ov::Tensor(ov::element::f32, {generation_config.num_images_per_prompt});
-        //     std::fill_n(guidance.data<float>(), guidance.get_size(), static_cast<float>(generation_config.guidance_scale));
-        //     m_transformer->set_hidden_states("guidance", guidance);
-        // }
-
-        // TODO:: fix this - encoder output is not the same :(
-        prompt_embeds = loadTensorFromFile("/home/alikh/projects/openvino.genai/prompt_embeds_input.txt");
         m_transformer->set_hidden_states("encoder_hidden_states", prompt_embeds);
-        // print_ov_tensor(prompt_embeds, "encoder_hidden_states");
-        prompt_attention_mask = loadIntTensorFromFile("/home/alikh/projects/openvino.genai/prompt_attention_mask_input.txt");
         m_transformer->set_hidden_states("encoder_attention_mask", prompt_attention_mask);
-        // print_ov_tensor(prompt_attention_mask, "encoder_attention_mask");
     }
 
 public:
@@ -302,7 +394,6 @@ public:
     }
 
     ov::Tensor generate(const std::string& positive_prompt, const std::string& negative_prompt, const ov::AnyMap& properties = {}) {
-        std::cout << "000" << std::endl;
         const auto gen_start = std::chrono::steady_clock::now();
         m_perf_metrics.clean_up();
         VideoGenerationConfig merged_generation_config = m_generation_config;
@@ -314,8 +405,6 @@ public:
 
 
         check_inputs(merged_generation_config, vae_scale_factor);
-
-        std::cout << "111" << std::endl;
 
         // Use callback if defined
         std::function<bool(size_t, size_t, ov::Tensor&)> callback;
@@ -356,7 +445,7 @@ public:
         rope_interpolation_scale.data<float>()[1] = spatial_compression_ratio;
         rope_interpolation_scale.data<float>()[2] = spatial_compression_ratio;
         m_transformer->set_hidden_states("rope_interpolation_scale", rope_interpolation_scale);
-        // print_ov_tensor(rope_interpolation_scale, "rope_interpolation_scale");
+        print_ov_tensor(rope_interpolation_scale, "rope_interpolation_scale");
 
         auto make_scalar_tensor = [](size_t value) {
             ov::Tensor scalar(ov::element::i64, {});
@@ -364,16 +453,11 @@ public:
             return scalar;
         };
         m_transformer->set_hidden_states("num_frames", make_scalar_tensor(latent_num_frames));
-        // print_ov_tensor(make_scalar_tensor(latent_num_frames), "num_frames");
-
         m_transformer->set_hidden_states("height", make_scalar_tensor(latent_height));
-        // print_ov_tensor(make_scalar_tensor(latent_height), "height");
-
         m_transformer->set_hidden_states("width", make_scalar_tensor(latent_width));
-        // print_ov_tensor(make_scalar_tensor(latent_width), "width");
-        
+
         // // Prepare timesteps
-        ov::Tensor timestep(ov::element::f32, {1});
+        ov::Tensor timestep(ov::element::f32, {2});
         float* timestep_data = timestep.data<float>();
 
         ov::Shape latent_shape_cfg = latent.get_shape();
@@ -394,12 +478,17 @@ public:
             }
 
             timestep_data[0] = timesteps[inference_step];
-
-            std::cout << "timestep " << timestep_data[0] << std::endl;
+            timestep_data[1] = timesteps[inference_step];
 
             auto infer_start = std::chrono::steady_clock::now();
+            print_ov_tensor(latent_cfg, "latent input");
+            saveTensorToFile(latent_cfg, "latent_cfg_" + std::to_string(timestep_data[0]) +".txt");
+            saveTensorToFile(timestep, "timestep_" + std::to_string(timestep_data[0]) +".txt");
+
+            std::cout << "timestep " << timestep_data[0] << std::endl;
             ov::Tensor noise_pred_tensor = m_transformer->infer(latent_cfg, timestep);
-            print_ov_tensor(noise_pred_tensor, "noise_pred_tensor");
+            print_ov_tensor(noise_pred_tensor, "noise_pred");
+            // saveTensorToFile(noise_pred_tensor, "noise_pred_tensor_" + std::to_string(timestep_data[0]) +".txt");
             auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
@@ -421,11 +510,44 @@ public:
                 noisy_residual_tensor = noise_pred_tensor;
             }
 
+            // print_ov_tensor(noisy_residual_tensor, "noise_pred 2");
+
+            print_ov_tensor(latent, "latents before step");
+
+            // saveTensorToFile(latent, "latents_before_step_" + std::to_string(timestep_data[0]) +".txt");
 
             auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, merged_generation_config.generator);
             latent = scheduler_step_result["latent"];
 
+            // saveTensorToFile(latent, "latents_after_step_" + std::to_string(timestep_data[0]) +".txt");
 
+            print_ov_tensor(latent, "latents after step");
+        }
+
+        // latent = loadTensorFromFile("/home/alikh/projects/openvino.genai/transformer_output.txt"); // unpack and denormalize works correctly
+
+        latent = unpack_latents(latent,
+                                latent_num_frames,
+                                latent_height,
+                                latent_width,
+                                transformer_spatial_patch_size,
+                                transformer_temporal_patch_size);
+        print_ov_tensor(latent, "unpack_latents");
+
+        auto tensor_from_vector = [](const std::vector<float>& data) -> ov::Tensor {
+            ov::Tensor t{ov::element::f32, ov::Shape{data.size()}};
+            if (!data.empty()) {
+                std::memcpy(t.data<float>(), data.data(), data.size() * sizeof(float));
+            }
+            return t;
+        };
+
+        latent = denormalize_latents(latent,
+                                    tensor_from_vector(m_vae->get_config().latents_mean_data),
+                                    tensor_from_vector(m_vae->get_config().latents_std_data),
+                                    m_vae->get_config().scaling_factor);
+        print_ov_tensor(latent, "denormalize_latents");
+        saveTensorToFile(latent, "denormalize_latents.txt");
 
         //     if (callback && callback(inference_step, timesteps.size(), latents)) {
         //         auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
@@ -440,7 +562,6 @@ public:
 
         //     auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
         //     m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
-        }
 
         // latents = unpack_latents(latents, custom_generation_config.height, custom_generation_config.width, vae_scale_factor);
         // const auto decode_start = std::chrono::steady_clock::now();
