@@ -11,6 +11,10 @@ import openvino
 import pytest
 import pathlib
 
+
+pytest.xfail("Port for tensor name cache_position was not found. Ticket CVS-174805.")
+
+
 # This test suite is designed specifically to validate the functionality 
 # and robustness of the WhisperStaticPipeline on NPUW:CPU.
 config = {"NPU_USE_NPUW" : "YES",

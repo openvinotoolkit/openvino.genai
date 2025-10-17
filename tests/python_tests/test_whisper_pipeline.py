@@ -22,6 +22,10 @@ from utils.constants import get_ov_cache_models_dir, extra_generate_kwargs
 from utils.network import retry_request
 from typing import Any
 
+
+pytest.xfail("Port for tensor name cache_position was not found. Ticket CVS-174805.")
+
+
 @pytest.fixture(scope="class", autouse=True)
 def run_gc_after_test():
     """

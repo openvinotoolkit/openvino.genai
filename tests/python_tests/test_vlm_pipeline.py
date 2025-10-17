@@ -77,7 +77,6 @@ def get_ov_model(model_id):
             device="CPU",
             export=True,
             load_in_8bit=False,
-            trust_remote_code=True,
             ov_config=get_default_llm_properties(),
         )
     )
