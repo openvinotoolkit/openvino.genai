@@ -493,7 +493,7 @@ class DecodedResults:
     def extended_perf_metrics(self) -> ExtendedPerfMetrics:
         ...
     @property
-    def parsed(self) -> list[...]:
+    def parsed(self) -> dict:
         ...
     @property
     def perf_metrics(self) -> PerfMetrics:
@@ -512,9 +512,9 @@ class DeepSeekR1ReasoningParser(IncrementalParserBase):
         """
     def __init__(self) -> None:
         ...
-    def parse(self, msg: ..., previous_text: str, delta_text: str, previous_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
+    def parse(self, msg: dict, previous_text: str, delta_text: str, previous_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
         """
-        Parse is called with the full text. Returns a JsonContainer with parsed content.
+        Parse is called with the full text. Returns a dict with parsed content.
         """
 class EncodedGenerationResult:
     """
@@ -1768,7 +1768,7 @@ class Llama32JsonToolParser(ParserBase):
         ...
     def parse(self, text: dict) -> None:
         """
-        Parse is called with the full text. Returns a JsonContainer with parsed content.
+        Parse is called with the full text. Returns a dict with parsed content.
         """
 class Llama32PythonicToolParser(ParserBase):
     @staticmethod
@@ -1780,7 +1780,7 @@ class Llama32PythonicToolParser(ParserBase):
         ...
     def parse(self, text: dict) -> None:
         """
-        Parse is called with the full text. Returns a JsonContainer with parsed content.
+        Parse is called with the full text. Returns a dict with parsed content.
         """
 class MeanStdPair:
     def __init__(self) -> None:
@@ -1798,7 +1798,7 @@ class ParserBase:
         ...
     def parse(self, text: dict) -> None:
         """
-        Parse is called with the full text. Returns a JsonContainer with parsed content.
+        Parse is called with the full text. Returns a dict with parsed content.
         """
 class PerfMetrics:
     """
@@ -1910,7 +1910,7 @@ class Phi4ReasoningParser(IncrementalParserBase):
         """
     def __init__(self, starts_with_thinking: bool = False) -> None:
         ...
-    def parse(self, msg: ..., previous_text: str, delta_text: str, previous_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
+    def parse(self, msg: dict, previous_text: str, delta_text: str, previous_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
         """
         Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.
         """
@@ -3213,7 +3213,7 @@ class TextParserStreamer(TextStreamer):
         """
         Write is called with a string message. Returns CallbackTypeVariant. This is a private method.
         """
-    def get_parsed_message(self) -> ...:
+    def get_parsed_message(self) -> dict:
         """
         Get the current parsed message
         """
@@ -3223,7 +3223,7 @@ class TextParserStreamer(TextStreamer):
         """
     def write(self, message: dict) -> StreamingStatus:
         """
-        Write is called with a JsonContainer. Returns StreamingStatus.
+        Write is called with a dict. Returns StreamingStatus.
         """
 class TextRerankPipeline:
     """

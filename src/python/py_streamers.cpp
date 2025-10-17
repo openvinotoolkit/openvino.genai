@@ -22,7 +22,6 @@ using ov::genai::TextParserStreamer;
 using ov::genai::IncrementalParserBase;
 using ov::genai::JsonContainer;
 using ov::genai::Tokenizer;
-using ov::genai::JsonContainer;
 
 namespace pyutils = ov::genai::pybind::utils;
 
@@ -167,13 +166,23 @@ void init_streamers(py::module_& m) {
                 return derived->write(message);
             },
             py::arg("message"),
-            "Write is called with a JsonContainer. Returns StreamingStatus.")
+            "Write is called with a dict. Returns StreamingStatus.")
         .def("_write",
              py::overload_cast<std::string>(&TextParserStreamer::write),
              py::arg("message"),
              "Write is called with a string message. Returns CallbackTypeVariant. This is a private method.")
         
-        .def("get_parsed_message", &TextParserStreamer::get_parsed_message, "Get the current parsed message")
+        .def("get_parsed_message", 
+            [](TextParserStreamer& self) {
+                static py::object json_mod = py::module_::import("json");
+                
+                auto res = self.get_parsed_message();
+                auto json_str =  res.to_json_string();
+                py::dict json_dict = json_mod.attr("loads")(json_str);
+
+                return json_dict;
+                
+            }, "Get the current parsed message")
 
         .def("get_parsers", &TextParserStreamer::get_parsers, "Get the list of parsers");
 }

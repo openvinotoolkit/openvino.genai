@@ -13,18 +13,17 @@
 
 namespace py = pybind11;
 
-using ov::genai::JsonContainer;
 using ov::genai::IncrementalParserBase;
 using ov::genai::ParserVariant;
 using ov::genai::ParserBase;
 using ov::genai::ReasoningParser;
 using ov::genai::Phi4ReasoningParser;
 using ov::genai::DeepSeekR1ReasoningParser;
+using ov::genai::JsonContainer;
 using ov::genai::Llama32JsonToolParser;
 using ov::genai::Llama32PythonicToolParser;
 using ov::genai::Tokenizer;
 using ov::genai::StreamingStatus;
-using ov::genai::JsonContainer;
 
 namespace pyutils = ov::genai::pybind::utils;
 
@@ -84,6 +83,32 @@ void call_parser(py::dict& msg, std::function<JsonContainer(JsonContainer&)> fun
     }
 }
 
+// wrapper to enhance calling incremental parser from Python
+std::string call_incremental_parser(
+    IncrementalParserBase& parser,
+    py::dict& msg,
+    const std::string& previous_text,
+    std::string& delta_text,
+    const std::optional<std::vector<int64_t>>& previous_tokens,
+    const std::optional<std::vector<int64_t>>& delta_tokens,
+    std::function<std::string(JsonContainer&, const std::string&, std::string&, const std::optional<std::vector<int64_t>>&,
+                               const std::optional<std::vector<int64_t>>&)> func) {
+    auto msg_anymap = ov::genai::pybind::utils::py_object_to_any_map(msg);
+    auto msg_cpp = JsonContainer(msg_anymap);
+
+    auto res = func(msg_cpp, previous_text, delta_text, previous_tokens, delta_tokens);
+
+    auto json_str = msg_cpp.to_json_string();
+    py::dict result = json_mod.attr("loads")(json_str);
+    
+    // update msg with result
+    msg.clear();
+    for (auto item : result) {
+        msg[item.first] = item.second;
+    }
+    return res;   
+}
+
 } // namespace
 
 // TODO: double check/add more relevant docstrings for parsers.
@@ -117,7 +142,25 @@ void init_parsers(py::module_& m) {
     py::class_<Phi4ReasoningParser, std::shared_ptr<Phi4ReasoningParser>, IncrementalParserBase>(m, "Phi4ReasoningParser")
         .def(py::init<bool>(), py::arg("starts_with_thinking") = false)
         .def("parse",
-            &Phi4ReasoningParser::parse,
+            [](Phi4ReasoningParser& self,
+               py::dict& msg,
+               const std::string& previous_text,
+               std::string& delta_text,
+               const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt,
+               const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt) {
+                return call_incremental_parser(
+                    self,
+                    msg,
+                    previous_text,
+                    delta_text,
+                    previous_tokens,
+                    delta_tokens,
+                    [&self](JsonContainer& m, const std::string& prev_text, std::string& delta_t,
+                            const std::optional<std::vector<int64_t>>& prev_tokens,
+                            const std::optional<std::vector<int64_t>>& delta_toks) {
+                        return self.parse(m, prev_text, delta_t, prev_tokens, delta_toks);
+                    });
+            },
             "Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.",
             py::arg("msg"), py::arg("previous_text"), py::arg("delta_text"),
             py::arg("previous_tokens") = std::nullopt, py::arg("delta_tokens") = std::nullopt)
@@ -126,8 +169,26 @@ void init_parsers(py::module_& m) {
     py::class_<DeepSeekR1ReasoningParser, std::shared_ptr<DeepSeekR1ReasoningParser>, IncrementalParserBase>(m, "DeepSeekR1ReasoningParser")
         .def(py::init<>())
         .def("parse",
-            &DeepSeekR1ReasoningParser::parse,
-            "Parse is called with the full text. Returns a JsonContainer with parsed content.",
+            [](DeepSeekR1ReasoningParser& self,
+               py::dict& msg,
+               const std::string& previous_text,
+               std::string& delta_text,
+               const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt,
+               const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt) {
+                return call_incremental_parser(
+                    self,
+                    msg,
+                    previous_text,
+                    delta_text,
+                    previous_tokens,
+                    delta_tokens,
+                    [&self](JsonContainer& m, const std::string& prev_text, std::string& delta_t,
+                            const std::optional<std::vector<int64_t>>& prev_tokens,
+                            const std::optional<std::vector<int64_t>>& delta_toks) {
+                        return self.parse(m, prev_text, delta_t, prev_tokens, delta_toks);
+                    });
+            },
+            "Parse is called with the full text. Returns a dict with parsed content.",
             py::arg("msg"), py::arg("previous_text"), py::arg("delta_text"),
             py::arg("previous_tokens") = std::nullopt, py::arg("delta_tokens") = std::nullopt)
         .def_static("get_parser", &DeepSeekR1ReasoningParser::get_parser, py::arg("name"), "Factory method to get parser by name.");
@@ -139,7 +200,7 @@ void init_parsers(py::module_& m) {
             return call_parser(msg, [&self](JsonContainer& m) {return self.parse(m);});
         },
         py::arg("text"),
-        "Parse is called with the full text. Returns a JsonContainer with parsed content.");
+        "Parse is called with the full text. Returns a dict with parsed content.");
     
     py::class_<Llama32JsonToolParser, std::shared_ptr<Llama32JsonToolParser>, ParserBase>(m, "Llama32JsonToolParser")
         .def(py::init<>())
@@ -148,7 +209,7 @@ void init_parsers(py::module_& m) {
                 return call_parser(msg, [&self](JsonContainer& m) { return self.parse(m); });
             },
             py::arg("text"),
-            "Parse is called with the full text. Returns a JsonContainer with parsed content.")
+            "Parse is called with the full text. Returns a dict with parsed content.")
         .def_static("get_parser", &Llama32JsonToolParser::get_parser, py::arg("name"), "Factory method to get parser by name.");
 
     py::class_<Llama32PythonicToolParser, std::shared_ptr<Llama32PythonicToolParser>, ParserBase>(m, "Llama32PythonicToolParser")
@@ -158,6 +219,6 @@ void init_parsers(py::module_& m) {
                 return call_parser(msg, [&self](JsonContainer& m) { return self.parse(m); });
             },
             py::arg("text"),
-            "Parse is called with the full text. Returns a JsonContainer with parsed content.")
+            "Parse is called with the full text. Returns a dict with parsed content.")
         .def_static("get_parser", &Llama32PythonicToolParser::get_parser, py::arg("name"), "Factory method to get parser by name.");
 }
