@@ -265,8 +265,6 @@ public:
             print_ov_tensor(latent, "latents after step");
         }
 
-        // latent = loadTensorFromFile("/home/alikh/projects/openvino.genai/transformer_output.txt"); // unpack and denormalize works correctly
-
         latent = unpack_latents(latent,
                                 latent_num_frames,
                                 latent_height,
