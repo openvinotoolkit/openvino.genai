@@ -12,7 +12,6 @@
 #include "openvino/runtime/properties.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "openvino/genai/visibility.hpp"
-// #include "openvino/genai/lora_adapter.hpp"
 
 namespace ov {
 namespace genai {
@@ -34,40 +33,9 @@ public:
                           const std::string& device,
                           const ov::AnyMap& properties = {});
 
-    // LTXVideoTransformer3DModel(const std::string& model,
-    //                       const Tensor& weights,
-    //                       const Config& config,
-    //                       const size_t vae_scale_factor);
-
-    // LTXVideoTransformer3DModel(const std::string& model,
-    //                       const Tensor& weights,
-    //                       const Config& config,
-    //                       const size_t vae_scale_factor,
-    //                       const std::string& device,
-    //                       const ov::AnyMap& properties = {});
-
-    // template <typename... Properties,
-    //           typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    // LTXVideoTransformer3DModel(const std::filesystem::path& root_dir, const std::string& device, Properties&&... properties)
-    //     : LTXVideoTransformer3DModel(root_dir, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
-
-    // template <typename... Properties,
-    //           typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
-    // LTXVideoTransformer3DModel(const std::string& model,
-    //                       const Tensor& weights,
-    //                       const Config& config,
-    //                       const size_t vae_scale_factor,
-    //                       const std::string& device,
-    //                       Properties&&... properties)
-    //     : LTXVideoTransformer3DModel(model, weights, config, vae_scale_factor, device, ov::AnyMap{std::forward<Properties>(properties)...}) {}
-
     LTXVideoTransformer3DModel(const LTXVideoTransformer3DModel&);
 
-    // LTXVideoTransformer3DModel clone();
-
     const Config& get_config() const;
-
-    // LTXVideoTransformer3DModel& reshape(int batch_size, int height, int width, int tokenizer_model_max_length);
 
     LTXVideoTransformer3DModel& compile(const std::string& device, const ov::AnyMap& properties = {});
 
@@ -89,7 +57,6 @@ private:
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
     size_t m_vae_scale_factor;
-    // AdapterController m_adapter_controller;
 
     class InferenceDynamic;
     class InferenceStaticBS1;

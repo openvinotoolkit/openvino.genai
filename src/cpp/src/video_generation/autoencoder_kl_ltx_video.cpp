@@ -69,11 +69,9 @@ AutoencoderKLLTXVideo::Config::Config(const std::filesystem::path& config_path) 
 
 AutoencoderKLLTXVideo::AutoencoderKLLTXVideo(const std::filesystem::path& vae_decoder_path)
     : m_config(vae_decoder_path / "config.json") {
-     std::cout << "111111111111" << std::endl;
     m_decoder_model = utils::singleton_core().read_model(vae_decoder_path / "openvino_model.xml");
     // apply VaeImageProcessor postprocessing steps by merging them into the VAE decoder model
-    // merge_vae_image_post_processing(); // TODO: check if it's the same - not the same, fails
-    std::cout << "222222222222222" << std::endl;
+    // merge_vae_image_post_processing(); // TODO: check if it's the same - not the same, fix!!!
 }
 
 AutoencoderKLLTXVideo::AutoencoderKLLTXVideo(const std::filesystem::path& vae_encoder_path,
@@ -117,8 +115,6 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::compile(const std::string& device,
     m_decoder_request = decoder_compiled_model.create_infer_request();
     // release the original model
     m_decoder_model.reset();
-
-     std::cout << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << std::endl;
 
     return *this;
 }

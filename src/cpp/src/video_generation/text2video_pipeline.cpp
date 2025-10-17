@@ -156,26 +156,24 @@ ov::Tensor denormalize_latents(ov::Tensor latents,
     return result[0]; // [B, C, F, H, W]
 }
 
-// For debug
+// For debug only
 void saveTensorToFile(const ov::Tensor& tensor, const std::string& filename) {
     std::ofstream file(filename);
     if (!file) {
         throw std::runtime_error("Failed to open file: " + filename);
     }
  
-    // Write shape information
     ov::Shape shape = tensor.get_shape();
     for (size_t dim : shape) {
-        file << dim << " ";  // Write dimensions space-separated
+        file << dim << " ";
     }
-    file << "\n";  // Newline after shape
+    file << "\n";
  
-    // Write tensor data
     float* data = tensor.data<float>();
     for (size_t i = 0; i < tensor.get_size(); ++i) {
         file << data[i] << " ";
     }
-    file << "\n";  // Newline after data
+    file << "\n";
     file.close();
 }
 
@@ -187,8 +185,6 @@ ov::Tensor loadTensorFromFile(const std::string& filename) {
     }
 
     std::string line;
-
-    // Read shape information
     if (!std::getline(file, line)) {
         throw std::runtime_error("File format error: missing shape line");
     }
@@ -199,11 +195,11 @@ ov::Tensor loadTensorFromFile(const std::string& filename) {
     while (shape_stream >> dim) {
         shape_vec.push_back(dim);
     }
-    ov::Shape shape(shape_vec);  // Create tensor shape
+    ov::Shape shape(shape_vec);
 
-    // Read tensor data (handle multi-line case)
+
     std::vector<float> data;
-    while (std::getline(file, line)) {  // Read all remaining lines
+    while (std::getline(file, line)) {
         std::istringstream data_stream(line);
         float value;
         while (data_stream >> value) {
@@ -211,7 +207,6 @@ ov::Tensor loadTensorFromFile(const std::string& filename) {
         }
     }
 
-    // Validate tensor size
     size_t expected_size = ov::shape_size(shape);
     if (data.size() != expected_size) {
         throw std::runtime_error("Data size mismatch: expected " +
@@ -219,58 +214,12 @@ ov::Tensor loadTensorFromFile(const std::string& filename) {
                                 ", but got " + std::to_string(data.size()));
     }
 
-    // Create OpenVINO tensor and copy data
     ov::Tensor tensor(ov::element::f32, shape);
     std::memcpy(tensor.data<float>(), data.data(), data.size() * sizeof(float));
 
-    return tensor;  // Return OpenVINO tensor
+    return tensor;
 }
 
-ov::Tensor loadIntTensorFromFile(const std::string& filename) {
-    std::ifstream file(filename);
-    if (!file) {
-        throw std::runtime_error("Failed to open file: " + filename);
-    }
-
-    std::string line;
-
-    // Read shape information
-    if (!std::getline(file, line)) {
-        throw std::runtime_error("File format error: missing shape line");
-    }
-
-    std::istringstream shape_stream(line);
-    std::vector<size_t> shape_vec;
-    size_t dim;
-    while (shape_stream >> dim) {
-        shape_vec.push_back(dim);
-    }
-    ov::Shape shape(shape_vec);  // Create tensor shape
-
-    // Read tensor data (handle multi-line case)
-    std::vector<size_t> data;
-    while (std::getline(file, line)) {  // Read all remaining lines
-        std::istringstream data_stream(line);
-        size_t value;
-        while (data_stream >> value) {
-            data.push_back(value);
-        }
-    }
-
-    // Validate tensor size
-    size_t expected_size = ov::shape_size(shape);
-    if (data.size() != expected_size) {
-        throw std::runtime_error("Data size mismatch: expected " +
-                                std::to_string(expected_size) +
-                                ", but got " + std::to_string(data.size()));
-    }
-
-    // Create OpenVINO tensor and copy data
-    ov::Tensor tensor(ov::element::i64, shape);
-    std::memcpy(tensor.data<size_t>(), data.data(), data.size() * sizeof(size_t));
-
-    return tensor;  // Return OpenVINO tensor
-}
 
 ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_config, size_t num_channels_latents, size_t spatial_compression_ratio, size_t temporal_compression_ratio, size_t transformer_spatial_patch_size, size_t transformer_temporal_patch_size) {
     size_t height = generation_config.height / spatial_compression_ratio;
@@ -278,7 +227,7 @@ ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_co
     size_t num_frames = (generation_config.num_frames - 1) / temporal_compression_ratio + 1;
     ov::Shape shape{generation_config.num_images_per_prompt, num_channels_latents, num_frames, height, width};
     // ov::Tensor latents = generation_config.generator->randn_tensor(shape);
-    ov::Tensor latents = loadTensorFromFile("/home/alikh/projects/openvino.genai/latents_before_pack.txt");
+    ov::Tensor latents = loadTensorFromFile("../latents_before_pack.txt");
     return pack_latents(latents, transformer_spatial_patch_size, transformer_temporal_patch_size);
 }
 }  // anonymous namespace
@@ -523,8 +472,6 @@ public:
 
             print_ov_tensor(latent, "latents after step");
         }
-
-        // latent = loadTensorFromFile("/home/alikh/projects/openvino.genai/transformer_output.txt"); // unpack and denormalize works correctly
 
         latent = unpack_latents(latent,
                                 latent_num_frames,
