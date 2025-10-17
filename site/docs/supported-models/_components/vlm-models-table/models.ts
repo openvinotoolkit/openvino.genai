@@ -86,6 +86,17 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'MiniCPMO',
+    models: [
+      {
+        name: 'MiniCPM-o-2_6',
+        loraSupport: false,
+        links: ['https://huggingface.co/openbmb/MiniCPM-o-2_6'],
+        notesLink: '#minicpm-o-notes',
+      },
+    ],
+  },
+  {
     architecture: 'MiniCPMV',
     models: [
       {
