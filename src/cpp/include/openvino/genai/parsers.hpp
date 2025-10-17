@@ -56,14 +56,14 @@ public:
 class ParserBase {
 public:
     ParserBase() = default;
-    virtual JsonContainer parse(JsonContainer& text) = 0;
+    virtual void parse(JsonContainer& text) = 0;
 };
 
 class Llama32PythonicToolParser : public ParserBase {
 // Does not modify original content, only extracts and adds tool calls
 public:
     explicit Llama32PythonicToolParser(bool keep_original_content = true);
-    JsonContainer parse(JsonContainer& input) override;
+    void parse(JsonContainer& input) override;
 private:
     class Llama32PythonicToolParserImpl;
     std::shared_ptr<Llama32PythonicToolParserImpl> m_impl;
@@ -73,7 +73,7 @@ class Llama32JsonToolParser : public ParserBase {
 // Does not modify original content, only extracts and adds tool calls
 public:
     explicit Llama32JsonToolParser(bool keep_original_content = true);
-    JsonContainer parse(JsonContainer& input) override;
+    void parse(JsonContainer& input) override;
 private:
     class Llama32JsonToolParserImpl;
     std::shared_ptr<Llama32JsonToolParserImpl> m_impl;
@@ -82,7 +82,7 @@ private:
 class BaseReasoningParser : public ParserBase{
 public:
     BaseReasoningParser(bool expect_open_tag = true, bool keep_original_content = true, std::string open_tag = "<think>", std::string close_tag = "</think>");
-    JsonContainer parse(JsonContainer& input) override;
+    void parse(JsonContainer& input) override;
 private:
     class BaseReasoningParserImpl;
     std::shared_ptr<BaseReasoningParserImpl> m_impl;

@@ -172,7 +172,7 @@ public:
     Llama32PythonicToolParserImpl(bool keep_original_content) : m_keep_original_content(keep_original_content) {}
     bool m_keep_original_content;
 
-    JsonContainer parse(JsonContainer& input) {
+    void parse(JsonContainer& input) {
         // Input example
         // string input = "[get_weather(location='New York, NY', unit='celsius')]<|eom_id|>";
 
@@ -181,7 +181,7 @@ public:
         const std::string& text = input["content"].get_string();
         std::regex r(R"(\[.*?\])");
         if (!std::regex_search(text, m, r)) {
-            return input;
+            return;
         }
 
         // Strip outer [ ]
@@ -209,7 +209,6 @@ public:
         if (!m_keep_original_content) {
             input["content"] = regex_replace(text, r, "");
         }
-        return input;
     }
 };
 
@@ -217,8 +216,8 @@ Llama32PythonicToolParser::Llama32PythonicToolParser(bool keep_original_content)
     m_impl = std::make_shared<Llama32PythonicToolParserImpl>(keep_original_content);
 }
 
-JsonContainer Llama32PythonicToolParser::parse(JsonContainer& input) {
-    return m_impl->parse(input);
+void Llama32PythonicToolParser::parse(JsonContainer& input) {
+    m_impl->parse(input);
 }
 
 class Llama32JsonToolParser::Llama32JsonToolParserImpl {
@@ -227,14 +226,14 @@ private:
 public:
     Llama32JsonToolParserImpl(bool keep_original_content) : m_keep_original_content(keep_original_content) {}
 
-    JsonContainer parse(JsonContainer& message) {
+    void parse(JsonContainer& message) {
         // Find JSON in the message
         std::string msg_content = message["content"].get_string();
 
         size_t json_start = msg_content.find('{');
         size_t json_end = msg_content.rfind('}');
         if (json_start == std::string::npos || json_end == std::string::npos || json_end <= json_start) {
-            return message;
+            return;
         }
         auto res = JsonContainer::array();
         res.push_back(JsonContainer::from_json_string(msg_content.substr(json_start, json_end - json_start + 1)));
@@ -243,7 +242,6 @@ public:
         if (!m_keep_original_content) {
             message["content"] = msg_content.substr(0, json_start) + msg_content.substr(json_end + 1);
         }
-        return message;
     }
 };
 
@@ -251,8 +249,8 @@ Llama32JsonToolParser::Llama32JsonToolParser(bool keep_original_content) {
     m_impl = std::make_shared<Llama32JsonToolParserImpl>(keep_original_content);
 }
 
-JsonContainer Llama32JsonToolParser::parse(JsonContainer& input) {
-    return m_impl->parse(input);
+void Llama32JsonToolParser::parse(JsonContainer& input) {
+    m_impl->parse(input);
 }
 
 class BaseReasoningParser::BaseReasoningParserImpl {
@@ -266,8 +264,7 @@ public:
     m_open_tag(open_tag),
     m_close_tag(close_tag) {};
 
-    JsonContainer parse(JsonContainer& input) {
-        JsonContainer res;
+    void parse(JsonContainer& input) {
         std::string reasoning_content;
         std::string content = input["content"].get_string();
 
@@ -285,7 +282,6 @@ public:
         }
 
         input["reasoning_content"] = reasoning_content;
-        return input;
     }
 private:
     bool m_expect_open_tag;
@@ -298,8 +294,8 @@ BaseReasoningParser::BaseReasoningParser(bool expect_open_tag, bool keep_origina
     m_impl = std::make_shared<BaseReasoningParserImpl>(expect_open_tag, keep_original_content, open_tag, close_tag);
 }
 
-JsonContainer BaseReasoningParser::parse(JsonContainer& input) {
-    return m_impl->parse(input);
+void BaseReasoningParser::parse(JsonContainer& input) {
+    m_impl->parse(input);
 }
 
 } // namespace ov::genai

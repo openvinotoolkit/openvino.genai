@@ -53,9 +53,9 @@ public:
 
 class ConstructableParserBase: public ParserBase {
 public:
-    JsonContainer parse(JsonContainer& text) override {
+    void parse(JsonContainer& text) override {
         PYBIND11_OVERRIDE_PURE(
-            JsonContainer,  // Return type
+            void,  // Return type
             ParserBase,  // Parent class
             parse,  // Name of function in C++ (must match Python name)
             text  // Argument(s)
@@ -66,7 +66,7 @@ public:
 static py::object json_mod = py::module_::import("json");
 
 // wrapper to enhance calling parser from Python
-void call_parser(py::dict& msg, std::function<JsonContainer(JsonContainer&)> func) {
+void call_parser(py::dict& msg, std::function<void(JsonContainer&)> func) {
     auto msg_anymap = ov::genai::pybind::utils::py_object_to_any_map(msg);
     auto msg_cpp = JsonContainer(msg_anymap);
 
@@ -194,7 +194,7 @@ void init_parsers(py::module_& m) {
     .def(py::init<>())
     .def("parse",
         [](ParserBase& self, py::dict& msg) {
-            return call_parser(msg, [&self](JsonContainer& m) {return self.parse(m);});
+            return call_parser(msg, [&self](JsonContainer& m) {self.parse(m);});
         },
         py::arg("text"),
         "Parse is called with the full text. Returns a dict with parsed content.");
@@ -203,7 +203,7 @@ void init_parsers(py::module_& m) {
         .def(py::init<>())
         .def("parse",
             [](Llama32JsonToolParser& self, py::dict& msg) {
-                return call_parser(msg, [&self](JsonContainer& m) { return self.parse(m); });
+                return call_parser(msg, [&self](JsonContainer& m) { self.parse(m); });
             },
             py::arg("text"),
             "Parse is called with the full text. Returns a dict with parsed content.");
@@ -212,7 +212,7 @@ void init_parsers(py::module_& m) {
         .def(py::init<>())
         .def("parse",
             [](Llama32PythonicToolParser& self, py::dict& msg) {
-                return call_parser(msg, [&self](JsonContainer& m) { return self.parse(m); });
+                return call_parser(msg, [&self](JsonContainer& m) { self.parse(m); });
             },
             py::arg("text"),
             "Parse is called with the full text. Returns a dict with parsed content.");
