@@ -81,7 +81,7 @@ def get_ov_model(model_id):
                 "katuni4ka/tiny-random-phi3-vision",
                 "qnguyen3/nanoLLaVA",
                 "katuni4ka/tiny-random-phi-4-multimodal",
-            }
+            },
             ov_config=get_default_llm_properties(),
         )
     )
