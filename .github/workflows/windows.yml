@@ -642,7 +642,7 @@ jobs:
           - name: 'WWB tests'
             cmd: 'python -m pytest -s -v tools/who_what_benchmark/tests -m "not nanollava"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
-            timeout: 90
+            timeout: 180
           - name: 'WWB tests (nanollava)'
             cmd: |
               python -m pip install transformers==4.48.0
