@@ -10,7 +10,11 @@ namespace ov::genai {
 struct GeneratedSequence {
     std::vector<int64_t> token_ids;
     std::vector<float> log_probs;
-    ov::Tensor hidden_states; // reserved for eagle speculative
+    // Stores the hidden states tensor associated with the generated sequence.
+    // This field is primarily used for the "eagle speculative" decoding algorithm,
+    // where hidden states are required to efficiently validate and extend speculative tokens.
+    // If not using eagle speculative decoding, this field may remain empty.
+    ov::Tensor hidden_states;
     GeneratedSequence(const std::vector<int64_t>& generated_token_ids,
                     const std::vector<float>& generated_log_probs,
                     const ov::Tensor generated_hidden_states = {}) :
