@@ -39,7 +39,6 @@ class Text2VideoPipeline::LTXPipeline {
         auto infer_start = std::chrono::steady_clock::now();
         bool do_classifier_free_guidance = generation_config.guidance_scale > 1.0;
 
-
         // torch.cat([negative_prompt_embeds, prompt_embeds], dim=0)
         // genai m_t5_text_encoder->infer retuns the same tensor [negative_prompt_embeds, prompt_embeds]
         ov::Tensor prompt_embeds = m_t5_text_encoder->infer(
@@ -59,34 +58,8 @@ class Text2VideoPipeline::LTXPipeline {
         prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
         prompt_attention_mask = numpy_utils::repeat(prompt_attention_mask, generation_config.num_images_per_prompt);
 
-        // std::cout << "prompt_attention_mask after reshape " << prompt_attention_mask.get_shape() << std::endl;
-        // std::cout << "prompt_embeds after reshape " << prompt_embeds.get_shape() << std::endl;
-
-        // text_ids = torch.zeros(prompt_embeds.shape[1], 3)
-        // ov::Shape text_ids_shape = {prompt_embeds.get_shape()[1], 3};
-        // ov::Tensor text_ids(ov::element::f32, text_ids_shape);
-        // std::fill_n(text_ids.data<float>(), text_ids.get_size(), 0.0f);
-
-        // const size_t num_channels_latents = m_transformer->get_config().in_channels / 4;
-        // const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
-        // size_t height = generation_config.height / vae_scale_factor;
-        // size_t width = generation_config.width / vae_scale_factor;
-
-        // ov::Tensor latent_image_ids = prepare_latent_image_ids(generation_config.num_images_per_prompt, height / 2, width / 2);
-
-        // if (m_transformer->get_config().guidance_embeds) {
-        //     ov::Tensor guidance = ov::Tensor(ov::element::f32, {generation_config.num_images_per_prompt});
-        //     std::fill_n(guidance.data<float>(), guidance.get_size(), static_cast<float>(generation_config.guidance_scale));
-        //     m_transformer->set_hidden_states("guidance", guidance);
-        // }
-
-        // TODO:: fix this - encoder output is not the same :(
-        prompt_embeds = loadTensorFromFile("/home/alikh/projects/openvino.genai/prompt_embeds_input.txt");
         m_transformer->set_hidden_states("encoder_hidden_states", prompt_embeds);
-        // print_ov_tensor(prompt_embeds, "encoder_hidden_states");
-        prompt_attention_mask = loadIntTensorFromFile("/home/alikh/projects/openvino.genai/prompt_attention_mask_input.txt");
         m_transformer->set_hidden_states("encoder_attention_mask", prompt_attention_mask);
-        // print_ov_tensor(prompt_attention_mask, "encoder_attention_mask");
     }
 
 public:
@@ -162,7 +135,6 @@ public:
     }
 
     ov::Tensor generate(const std::string& positive_prompt, const std::string& negative_prompt, const ov::AnyMap& properties = {}) {
-        std::cout << "000" << std::endl;
         const auto gen_start = std::chrono::steady_clock::now();
         m_perf_metrics.clean_up();
         VideoGenerationConfig merged_generation_config = m_generation_config;
@@ -174,8 +146,6 @@ public:
 
 
         check_inputs(merged_generation_config, vae_scale_factor);
-
-        std::cout << "111" << std::endl;
 
         // Use callback if defined
         std::function<bool(size_t, size_t, ov::Tensor&)> callback;
@@ -216,7 +186,7 @@ public:
         rope_interpolation_scale.data<float>()[1] = spatial_compression_ratio;
         rope_interpolation_scale.data<float>()[2] = spatial_compression_ratio;
         m_transformer->set_hidden_states("rope_interpolation_scale", rope_interpolation_scale);
-        // print_ov_tensor(rope_interpolation_scale, "rope_interpolation_scale");
+        print_ov_tensor(rope_interpolation_scale, "rope_interpolation_scale");
 
         auto make_scalar_tensor = [](size_t value) {
             ov::Tensor scalar(ov::element::i64, {});
@@ -224,16 +194,11 @@ public:
             return scalar;
         };
         m_transformer->set_hidden_states("num_frames", make_scalar_tensor(latent_num_frames));
-        // print_ov_tensor(make_scalar_tensor(latent_num_frames), "num_frames");
-
         m_transformer->set_hidden_states("height", make_scalar_tensor(latent_height));
-        // print_ov_tensor(make_scalar_tensor(latent_height), "height");
-
         m_transformer->set_hidden_states("width", make_scalar_tensor(latent_width));
-        // print_ov_tensor(make_scalar_tensor(latent_width), "width");
-        
+
         // // Prepare timesteps
-        ov::Tensor timestep(ov::element::f32, {1});
+        ov::Tensor timestep(ov::element::f32, {2});
         float* timestep_data = timestep.data<float>();
 
         ov::Shape latent_shape_cfg = latent.get_shape();
@@ -254,12 +219,17 @@ public:
             }
 
             timestep_data[0] = timesteps[inference_step];
-
-            std::cout << "timestep " << timestep_data[0] << std::endl;
+            timestep_data[1] = timesteps[inference_step];
 
             auto infer_start = std::chrono::steady_clock::now();
+            print_ov_tensor(latent_cfg, "latent input");
+            saveTensorToFile(latent_cfg, "latent_cfg_" + std::to_string(timestep_data[0]) +".txt");
+            saveTensorToFile(timestep, "timestep_" + std::to_string(timestep_data[0]) +".txt");
+
+            std::cout << "timestep " << timestep_data[0] << std::endl;
             ov::Tensor noise_pred_tensor = m_transformer->infer(latent_cfg, timestep);
-            print_ov_tensor(noise_pred_tensor, "noise_pred_tensor");
+            print_ov_tensor(noise_pred_tensor, "noise_pred");
+            // saveTensorToFile(noise_pred_tensor, "noise_pred_tensor_" + std::to_string(timestep_data[0]) +".txt");
             auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
@@ -281,11 +251,44 @@ public:
                 noisy_residual_tensor = noise_pred_tensor;
             }
 
+            // print_ov_tensor(noisy_residual_tensor, "noise_pred 2");
+
+            print_ov_tensor(latent, "latents before step");
+
+            // saveTensorToFile(latent, "latents_before_step_" + std::to_string(timestep_data[0]) +".txt");
 
             auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, merged_generation_config.generator);
             latent = scheduler_step_result["latent"];
 
+            // saveTensorToFile(latent, "latents_after_step_" + std::to_string(timestep_data[0]) +".txt");
 
+            print_ov_tensor(latent, "latents after step");
+        }
+
+        // latent = loadTensorFromFile("/home/alikh/projects/openvino.genai/transformer_output.txt"); // unpack and denormalize works correctly
+
+        latent = unpack_latents(latent,
+                                latent_num_frames,
+                                latent_height,
+                                latent_width,
+                                transformer_spatial_patch_size,
+                                transformer_temporal_patch_size);
+        print_ov_tensor(latent, "unpack_latents");
+
+        auto tensor_from_vector = [](const std::vector<float>& data) -> ov::Tensor {
+            ov::Tensor t{ov::element::f32, ov::Shape{data.size()}};
+            if (!data.empty()) {
+                std::memcpy(t.data<float>(), data.data(), data.size() * sizeof(float));
+            }
+            return t;
+        };
+
+        latent = denormalize_latents(latent,
+                                    tensor_from_vector(m_vae->get_config().latents_mean_data),
+                                    tensor_from_vector(m_vae->get_config().latents_std_data),
+                                    m_vae->get_config().scaling_factor);
+        print_ov_tensor(latent, "denormalize_latents");
+        saveTensorToFile(latent, "denormalize_latents.txt");
 
         //     if (callback && callback(inference_step, timesteps.size(), latents)) {
         //         auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
@@ -300,7 +303,6 @@ public:
 
         //     auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
         //     m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
-        }
 
         // latents = unpack_latents(latents, custom_generation_config.height, custom_generation_config.width, vae_scale_factor);
         // const auto decode_start = std::chrono::steady_clock::now();
