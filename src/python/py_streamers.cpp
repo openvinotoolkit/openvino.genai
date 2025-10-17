@@ -145,7 +145,8 @@ void init_streamers(py::module_& m) {
                     return self.write(tokens);
                 }
             },
-            py::arg("token"));
+            py::arg("token"))
+            .def("end", &TextStreamer::end);
         
     // TODO: double check/add more relevant docstrings for TextParserStreamer.
     py::class_<TextParserStreamer, ConstructableTextParserStreamer, std::shared_ptr<TextParserStreamer>, TextStreamer>(m, "TextParserStreamer")

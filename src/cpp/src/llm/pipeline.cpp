@@ -244,10 +244,10 @@ DecodedResults LLMPipeline::generate(
             JsonContainer msg;
             msg["content"] = res.texts[i];
             for (auto& parser: parsers) {
-                // TODO: check if is_active() is needed here
                 // TODO: Check the state of incremental parser and reset if necessary
-                msg = parser->parse(msg);
+                parser->parse(msg);
             }
+            res.parsed[i] = msg;
         }
     }
 

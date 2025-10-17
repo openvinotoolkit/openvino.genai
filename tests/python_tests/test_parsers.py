@@ -138,7 +138,7 @@ def test_parsers_2(hf_ov_genai_models):
         def write(self, message):
             if "content" in message:
                 print(message["content"])
-            return True
+            return StreamingStatus.RUNNING
     
     streamer = TextParserStreamer(genai_tokenizer, parsers=["DeepSeekR1ReasoningParser"])
     

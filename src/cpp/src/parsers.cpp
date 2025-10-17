@@ -14,6 +14,7 @@ namespace ov::genai {
 class ReasoningParserImpl {
 private:
     bool m_starts_with_thinking = true;
+    bool m_first_run = true;
     bool m_keep_original_content = true;
     bool m_think_tag_opened = false;
     std::string m_open_tag = "<think>";
@@ -35,6 +36,14 @@ public:
         const std::optional<std::vector<int64_t>>& previous_tokens, 
         const std::optional<std::vector<int64_t>>& delta_tokens
     ) {
+        if (m_deactivated) {
+            return delta_text;
+        }
+        if (m_starts_with_thinking && m_first_run) {
+            m_think_tag_opened = true;
+        }
+        m_first_run = false;
+
         if (!msg.contains("reasoning_content")) {
             msg["reasoning_content"] = "";
         }
@@ -42,10 +51,6 @@ public:
             msg["content"] = "";
         }
         
-        bool think_tag_closed = delta_text.find(m_close_tag) != std::string::npos;
-        if (m_starts_with_thinking) {
-            m_think_tag_opened = true;
-        }
 
         auto txt_chunk = m_text_cache + delta_text;
         auto reason_str = msg["reasoning_content"].get_string();
@@ -114,7 +119,8 @@ public:
             for (size_t i = txt_chunk.size(); i >= 1; --i) {
                 // Get the substring of the i last characters of txt_chunk
                 auto suffix = txt_chunk.substr(txt_chunk.size() - i, i);
-                if (m_close_tag.find(suffix) != std::string::npos) {
+                // If this suffix is a prefix of m_close_tag, we need to keep it in the cache.
+                if (m_close_tag.find(suffix) == 0) {
                     num_chars_to_keep = i;
                     break;
                 }
@@ -157,10 +163,6 @@ std::string ReasoningParser::parse(
     return m_impl->parse(msg, previous_text, delta_text, previous_tokens, delta_tokens);
 }
 
-bool ReasoningParser::is_active() const {
-    return !m_impl->m_deactivated;
-}
-
 JsonContainer Llama32PythonicToolParser::parse(JsonContainer& input) {
     // Input example
     // string input = "[get_weather(location='New York, NY', unit='celsius')]<|eom_id|>";
@@ -182,14 +184,14 @@ JsonContainer Llama32PythonicToolParser::parse(JsonContainer& input) {
     size_t pos = call.find('(');
     std::string name = call.substr(0, pos);
     std::string args = call.substr(pos + 1, call.size() - pos - 2); // inside (...)
-
+    
+    
+    JsonContainer kv;
     // Parse arguments of the form key='value'
-    JsonContainer kv = JsonContainer::array();
-
     std::regex arg_re(R"((\w+)\s*=\s*\"([^"]*)\")");
     auto it = std::sregex_iterator(args.begin(), args.end(), arg_re);
     for (; it != std::sregex_iterator(); ++it) {
-        kv.push_back(JsonContainer(ov::AnyMap{{"key", std::string((*it)[1])}, {"value", std::string((*it)[2])}}));
+        kv[std::string((*it)[1])] = std::string((*it)[2]);
     }
     
     input["tool_calls"] = JsonContainer::array();
@@ -198,8 +200,7 @@ JsonContainer Llama32PythonicToolParser::parse(JsonContainer& input) {
     if (!m_keep_original_content) {
         input["content"] = regex_replace(text, r, "");
     }
-
-    return JsonContainer{};
+    return input;
 }
 
 JsonContainer Llama32JsonToolParser::parse(JsonContainer& message) {
@@ -224,9 +225,7 @@ JsonContainer Llama32JsonToolParser::parse(JsonContainer& message) {
 JsonContainer BaseReasoningParser::parse(JsonContainer& input) {
     JsonContainer res;
     std::string reasoning_content;
-    // auto content = input["content"];
     std::string content = input["content"].get_string();
-    res["content"] = content;
 
     size_t start = content.find(m_open_tag);
     size_t end = content.find(m_close_tag);
@@ -235,14 +234,14 @@ JsonContainer BaseReasoningParser::parse(JsonContainer& input) {
         reasoning_content = content.substr(start + m_open_tag.size(), end - (start + m_open_tag.size()));
         if (!m_keep_original_content) {
             // Remove <think>...</think/> from content
-            res["content"] = content.substr(0, start) + content.substr(end + m_close_tag.size());
+            input["content"] = content.substr(0, start) + content.substr(end + m_close_tag.size());
         }
     } else {
         reasoning_content = "";
     }
 
-    res["reasoning_content"] = reasoning_content;
-    return res;
+    input["reasoning_content"] = reasoning_content;
+    return input;
 }
 
 std::map<std::string, std::function<std::shared_ptr<IncrementalParserBase>()>> registered_incremental_parsers;

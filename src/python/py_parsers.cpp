@@ -51,14 +51,6 @@ public:
             delta_tokens
         );
     }
-    
-    bool is_active() const override {
-        PYBIND11_OVERRIDE_PURE(
-            bool,  // Return type
-            IncrementalParserBase,  // Parent class
-            is_active,  // Name of function in C++ (must match Python name)
-        );
-    }
 };
 
 class ConstructableParserBase: public ParserBase {
@@ -120,8 +112,7 @@ void init_parsers(py::module_& m) {
             return res;
         }, py::arg("msg"), py::arg("previous_text"), py::arg("delta_text"),
            py::arg("previous_tokens") = std::nullopt, py::arg("delta_tokens") = std::nullopt,
-           "Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.")
-        .def("is_active", &IncrementalParserBase::is_active, "Indicates whether the parser is active and should be used during parsing.");
+           "Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.");
     
     py::class_<Phi4ReasoningParser, std::shared_ptr<Phi4ReasoningParser>, IncrementalParserBase>(m, "Phi4ReasoningParser")
         .def(py::init<bool>(), py::arg("starts_with_thinking") = false)

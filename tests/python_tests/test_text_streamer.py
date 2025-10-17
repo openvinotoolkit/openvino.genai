@@ -29,7 +29,7 @@ Sub PrintFiles()
     Set folder = Application.GetNamespace("Microsoft Office").PackagedInstance.GetFolder("Folder Name")
 'Get all files in the folder
     folder.Files.Clear
-""" 
+"""
 eng_prompts = [
     'What is the previous answer?',
     'Why is the Sun yellow?',
@@ -72,7 +72,7 @@ def test_text_prompts(tmp_path, prompt, model_id):
         streamer.write(token)
     streamer.end()
 
-    class CurrentStremaer(BaseStreamer):
+    class CurrentStreamer(BaseStreamer):
         def write(self, token_chunk):
             pass
 

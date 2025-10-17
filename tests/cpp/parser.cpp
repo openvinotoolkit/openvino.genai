@@ -12,12 +12,13 @@ using namespace ov::genai;
 nlohmann::json run_parser_test(std::shared_ptr<ParserBase> parser, const std::string& prompt) {
     JsonContainer input;
     input["content"] = prompt;
-    return (parser->parse(input)).to_json();
+    parser->parse(input);
+    return input.to_json();
 }
 
 
 TEST(ParserTest, test_llama32_parser_1) {
-    std::string prompt = R"(What's the weather in New York today?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n[get_weather(location='New York, NY', unit='celsius')]<|eom_id|>)";
+    std::string prompt = R"(What's the weather in New York today?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n[get_weather(location="New York, NY", unit="celsius")]<|eom_id|>)";
     nlohmann::json expected;
     
     // By default content should keep original values.
@@ -40,7 +41,7 @@ TEST(ParserTest, test_llama32_parser_1) {
 }
 
 TEST(ParserTest, test_llama32_parser_2) {
-    std::string prompt = R"(What's the weather in New York today?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n[get_weather(location='New York, NY', unit='celsius')]<|eom_id|>)";
+    std::string prompt = R"(What's the weather in New York today?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n[get_weather(location="New York, NY", unit="celsius")]<|eom_id|>)";
     nlohmann::json expected;
     
     // In this test tool calling part will be cut from the content after parsing.
@@ -100,7 +101,7 @@ TEST(ParserTest, test_reasoning_parser_2) {
 
 class DeepSeekR1ReasoningParserTest : public ::testing::Test {
 protected:
-    ov::genai::ReasoningParser parser;
+    ov::genai::DeepSeekR1ReasoningParser parser;
     JsonContainer msg;
 };
 

@@ -27,7 +27,6 @@ public:
         const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
     ) = 0;
 
-    virtual bool is_active() const = 0;
     static std::shared_ptr<IncrementalParserBase> get_parser(std::string name);
 };
 
@@ -48,7 +47,6 @@ public:
         const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt, 
         const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
     ) override;
-    bool is_active() const override;
 };
 
 class DeepSeekR1ReasoningParser : public ReasoningParser {
