@@ -14,15 +14,15 @@
         fprintf(stderr, "[ERROR] return status %d, line %d\n", return_status, __LINE__); \
         goto err;                                                                        \
     }
-ov_genai_streamming_status_e print_callback(const char* str, void* args) {
+ov_genai_streaming_status_e print_callback(const char* str, void* args) {
     if (str) {
         // If args is not null, it needs to be cast to its actual type.
         fprintf(stdout, "%s", str);
         fflush(stdout);
-        return OV_GENAI_STREAMMING_STATUS_RUNNING;
+        return OV_GENAI_STREAMING_STATUS_RUNNING;
     } else {
         printf("Callback executed with NULL message!\n");
-        return OV_GENAI_STREAMMING_STATUS_STOP;
+        return OV_GENAI_STREAMING_STATUS_STOP;
     }
 }
 
