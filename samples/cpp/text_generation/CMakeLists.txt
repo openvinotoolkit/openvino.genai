@@ -29,7 +29,6 @@ set (SAMPLE_LIST
     lora_greedy_causal_lm
     multinomial_causal_lm
     prompt_lookup_decoding_lm
-    parsed_output_sample
     speculative_decoding_lm)
 
 foreach(sample IN LISTS SAMPLE_LIST)
