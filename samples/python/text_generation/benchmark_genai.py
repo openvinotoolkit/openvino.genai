@@ -21,7 +21,7 @@ def main():
     args = parser.parse_args()
 
     if args.prompt is not None and args.prompt_file is not None:
-        raise RuntimeError(f'Cannot specify both --prompt and --prompt_file options simultaneously!')
+        raise RuntimeError("Cannot specify both --prompt and --prompt_file options simultaneously!")
     else:
         if args.prompt_file is not None:
             with open(args.prompt_file, "r", encoding="utf-8") as f:

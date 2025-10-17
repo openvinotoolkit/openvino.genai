@@ -75,6 +75,7 @@ async function main() {
 
   const config = {
     max_new_tokens: argv.max_new_tokens,
+    apply_chat_template: false,
     return_decoded_results: true,
   };
 
