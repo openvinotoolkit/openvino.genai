@@ -23,7 +23,7 @@ from utils.network import retry_request
 from typing import Any
 
 
-pytest.xfail("Port for tensor name cache_position was not found. Ticket CVS-174805.")
+pytest.skip("Port for tensor name cache_position was not found. Ticket CVS-174805.", allow_module_level=True)
 
 
 @pytest.fixture(scope="class", autouse=True)
