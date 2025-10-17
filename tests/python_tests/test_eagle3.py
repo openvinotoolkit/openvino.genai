@@ -22,7 +22,6 @@ devices = [
 def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_device, prompt):
     # Download and convert model:
     main_opt_model, main_hf_tokenizer, main_model_path = download_and_convert_model(main_model)
-    print("finised")
     __, __, draft_model_path = download_and_convert_model(draft_model)
 
     # Create OpenVINO GenAI pipeline:

@@ -140,7 +140,7 @@ public:
         m_hidden_state = tensor;
     }
 
-    ov::Tensor& get_hidden_state() {
+    ov::Tensor& get_hidden_state() const {
         return m_hidden_state;
     }
 
