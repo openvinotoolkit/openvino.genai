@@ -734,7 +734,7 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& image_promp
         }, chunk);
     }
 
-    if (!m_is_chat_conversation) {
+    if (!m_is_chat_conversation || m_use_full_chat_history) {
         m_tokens_per_images.clear();
     }
     return inputs_embeds;
