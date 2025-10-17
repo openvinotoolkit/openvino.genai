@@ -23,7 +23,7 @@ LTXVideoTransformer3DModel::Config::Config(const std::filesystem::path& config_p
 
     read_json_param(data, "in_channels", in_channels);
     read_json_param(data, "patch_size", patch_size);
-    read_json_param(data, "patch_size_t", patch_size);
+    read_json_param(data, "patch_size_t", patch_size_t);
 }
 
 LTXVideoTransformer3DModel::LTXVideoTransformer3DModel(const std::filesystem::path& root_dir)
@@ -100,8 +100,7 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
     std::optional<AdapterConfig> adapters;
     auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
     OPENVINO_ASSERT(!adapters, "Adapters are not currently supported for Video Generation Pipeline.");
-    //     adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or("transformer"));
-    //     m_adapter_controller = AdapterController(m_model, *adapters, device);
+
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, *filtered_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Flux Transformer 2D model");
     m_request = compiled_model.create_infer_request();
