@@ -44,7 +44,7 @@ ov::InferRequest init_model(ov::CompiledModel& compiled) {
 
 void reshape_to_static_encoder(std::shared_ptr<ov::Model> model,
                                const size_t batch_size,
-                               const size_t feature_size
+                               const size_t feature_size) {
     std::map<std::string, ov::PartialShape> new_shapes;
     for (auto input : model->inputs()) {
         const auto& input_name = input.get_any_name();
