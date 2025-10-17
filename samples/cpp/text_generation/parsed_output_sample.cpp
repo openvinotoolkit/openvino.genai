@@ -11,7 +11,7 @@ private:
 public:
     CurrentStreamer(const ov::genai::Tokenizer& tokenizer)
         : ov::genai::TextParserStreamer(tokenizer) {}
-    ov::genai::StreamingStatus write(ov::genai::ParsedMessage& message) {
+    ov::genai::StreamingStatus write(ov::genai::JsonContainer& message) {
        std::cout << message["content"].get_string() << std::flush;
         return ov::genai::StreamingStatus::RUNNING;
     }

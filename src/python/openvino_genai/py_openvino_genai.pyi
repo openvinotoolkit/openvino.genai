@@ -1383,7 +1383,7 @@ class IncrementalParserBase:
         """
     def parse(self, msg: collections.abc.Mapping[str, str], previous_text: str, delta_text: str, previous_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> dict[str, str]:
         """
-        Parse is called every time new text delta is decoded. Returns a ParsedMessage with parsed content.
+        Parse is called every time new text delta is decoded. Returns a JsonContainer with parsed content.
         """
 class InpaintingPipeline:
     """
@@ -1757,7 +1757,7 @@ class ParserBase:
         ...
     def parse(self, text: collections.abc.Mapping[str, str]) -> dict[str, str]:
         """
-        Parse is called with the full text. Returns a ParsedMessage with parsed content.
+        Parse is called with the full text. Returns a JsonContainer with parsed content.
         """
 class PerfMetrics:
     """
@@ -3158,7 +3158,7 @@ class TextParserStreamer:
         """
     def write(self, message: collections.abc.Mapping[str, str]) -> StreamingStatus:
         """
-        Write is called with a ParsedMessage. Returns StreamingStatus.
+        Write is called with a JsonContainer. Returns StreamingStatus.
         """
 class TextRerankPipeline:
     """

@@ -69,7 +69,6 @@ public:
     std::vector<float> scores;
     PerfMetrics perf_metrics;
     std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
-    // std::vector<ParsedMessage> parsed;
     std::vector<JsonContainer> parsed;
 
     // @brief Convert DecodedResults to a string.

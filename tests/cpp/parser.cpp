@@ -10,7 +10,7 @@
 using namespace ov::genai;
 
 nlohmann::json run_parser_test(std::shared_ptr<ParserBase> parser, const std::string& prompt) {
-    ParsedMessage input;
+    JsonContainer input;
     input["content"] = prompt;
     return (parser->parse(input)).to_json();
 }
@@ -101,7 +101,7 @@ TEST(ParserTest, test_reasoning_parser_2) {
 class DeepSeekR1ReasoningParserTest : public ::testing::Test {
 protected:
     ov::genai::ReasoningParser parser;
-    ParsedMessage msg;
+    JsonContainer msg;
 };
 
 TEST_F(DeepSeekR1ReasoningParserTest, ReasoningContentAccumulatesAcrossCalls) {
@@ -118,7 +118,7 @@ TEST_F(DeepSeekR1ReasoningParserTest, ReasoningContentAccumulatesAcrossCalls) {
     
     std::string ref_res = "First, I recognize that the question is asking for the sum of 2 and 1.\n\nI know that addition involves combining two numbers to find their total.\n\nStarting with 2, I add 1 to it.\n\n2 plus 1 equals 3.\n";
     
-    ParsedMessage msg;
+    JsonContainer msg;
     
     
     for (int i = 1; i < input_stream.size(); i++) {

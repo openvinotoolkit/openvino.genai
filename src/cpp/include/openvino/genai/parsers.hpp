@@ -14,17 +14,13 @@
 namespace ov {
 namespace genai {
 
-// TODO: will be converted to JSONLike object
-// using ParsedMessage = std::map<std::string, std::string>;
-using ParsedMessage = JsonContainer;
-
 class IncrementalParserBase {
 public:
     IncrementalParserBase() = default;
 
     // We return string which with filtered text to be added to content.
     virtual std::string parse(
-        ParsedMessage& msg,
+        JsonContainer& msg,
         const std::string& previous_text, 
         std::string& delta_text, 
         const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt, 
@@ -46,7 +42,7 @@ public:
                     bool keep_original_content = true);
 
     std::string parse(
-        ParsedMessage& msg,
+        JsonContainer& msg,
         const std::string& previous_text, 
         std::string& delta_text,
         const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt, 
@@ -71,7 +67,7 @@ class ParserBase {
 public:
     ParserBase() = default;
 
-    virtual ParsedMessage parse(ParsedMessage& text) = 0;
+    virtual JsonContainer parse(JsonContainer& text) = 0;
     static std::shared_ptr<ParserBase> get_parser(std::string name);
 };
 
@@ -83,7 +79,7 @@ public:
     // TODO: Check that vLLM has the same default.
     Llama32PythonicToolParser(bool keep_original_content = true) : m_keep_original_content(keep_original_content) {}
 
-    ParsedMessage parse(ParsedMessage& input) override;
+    JsonContainer parse(JsonContainer& input) override;
     static std::string name() { return "Llama32PythonicToolParser"; }
 private:
     bool m_keep_original_content = true;
@@ -95,7 +91,7 @@ public:
     // TODO: Check that vLLM has the same default.
     Llama32JsonToolParser(bool keep_original_content = true) : m_keep_original_content(keep_original_content) {}
 
-    ParsedMessage parse(ParsedMessage& input) override;
+    JsonContainer parse(JsonContainer& input) override;
     static std::string name() { return "Llama32JsonToolParser"; }
 private:
     bool m_keep_original_content = true;
@@ -109,7 +105,7 @@ public:
     m_open_tag(open_tag), 
     m_close_tag(close_tag) {}
 
-    ParsedMessage parse(ParsedMessage& input) override;
+    JsonContainer parse(JsonContainer& input) override;
 
 private:
     bool m_expect_open_tag = true;

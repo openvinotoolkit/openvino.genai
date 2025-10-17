@@ -241,7 +241,7 @@ DecodedResults LLMPipeline::generate(
     // Apply Base parsers sequentially even if IncrementalParser has run.
     if (!parsers.empty()) {
         for (size_t i = 0; i < res.texts.size(); ++i) {
-            ParsedMessage msg;
+            JsonContainer msg;
             msg["content"] = res.texts[i];
             for (auto& parser: parsers) {
                 // TODO: check if is_active() is needed here

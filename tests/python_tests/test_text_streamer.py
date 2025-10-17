@@ -78,7 +78,7 @@ def test_text_prompts(tmp_path, prompt, model_id):
 
     class CurrentParsingStreamer(TextParserStreamer):
         def write(self, word: str):
-            msg: ParsedMessage = get_current_message()
+            msg: JsonContainer = get_current_message()
             
             
     streamer = lambda x: print(x)
