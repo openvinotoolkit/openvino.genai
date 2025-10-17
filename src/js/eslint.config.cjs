@@ -48,6 +48,7 @@ module.exports = defineConfig([
             "num_kv_blocks",
             "cache_size",
             "dynamic_split_fuse",
+            "pooling_type",
           ],
         },
       ],
