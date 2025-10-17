@@ -1,7 +1,7 @@
 accelerate>=0.26.0
 transformers>=4.35.2
 sentence-transformers>=2.2.2
-# openvino-genai
+openvino-genai
 optimum-intel[nncf]>=1.19.0
 pandas>=2.0.3
 numpy>=1.23.5

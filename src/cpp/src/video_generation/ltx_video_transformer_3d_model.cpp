@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/video_generation/ltx_video_transformer_3d_model.hpp"
-// #include "image_generation/models/sd3transformer_2d_inference_dynamic.hpp"
-// #include "image_generation/models/sd3transformer_2d_inference_static_bs1.hpp"
 
 #include <fstream>
 
@@ -38,62 +36,11 @@ LTXVideoTransformer3DModel::LTXVideoTransformer3DModel(const std::filesystem::pa
     compile(device, properties);
 }
 
-// LTXVideoTransformer3DModel::LTXVideoTransformer3DModel(const std::string& model,
-//                                              const Tensor& weights,
-//                                              const Config& config,
-//                                              const size_t vae_scale_factor) :
-//     m_config(config), m_vae_scale_factor(vae_scale_factor) {
-//     m_model = utils::singleton_core().read_model(model, weights);
-// }
-
-// LTXVideoTransformer3DModel::LTXVideoTransformer3DModel(const std::string& model,
-//                                              const Tensor& weights,
-//                                              const Config& config,
-//                                              const size_t vae_scale_factor,
-//                                              const std::string& device,
-//                                              const ov::AnyMap& properties) :
-//     LTXVideoTransformer3DModel(model, weights, config, vae_scale_factor) {
-//     compile(device, properties);
-// }
-
 LTXVideoTransformer3DModel::LTXVideoTransformer3DModel(const LTXVideoTransformer3DModel&) = default;
-
-// LTXVideoTransformer3DModel LTXVideoTransformer3DModel::clone() {
-//     OPENVINO_ASSERT((m_model != nullptr) ^ (m_impl != nullptr), "LTXVideoTransformer3DModel must have exactly one of m_model or m_impl initialized");
-
-//     LTXVideoTransformer3DModel cloned = *this;
-    
-//     if (m_model) {
-//         cloned.m_model = m_model->clone();
-//     } else {
-//         cloned.m_impl = m_impl->clone();
-//     }
-
-//     return cloned;
-// }
 
 const LTXVideoTransformer3DModel::Config& LTXVideoTransformer3DModel::get_config() const {
     return m_config;
 }
-
-// LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int batch_size,
-//                                                       int height,
-//                                                       int width,
-//                                                       int tokenizer_model_max_length) {
-//     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
-
-//     // hidden_states=latent_model_input,
-//     // timestep=timestep,
-//     // encoder_hidden_states=prompt_embeds,
-//     // pooled_projections=pooled_prompt_embeds,
-
-//     height /= m_vae_scale_factor;
-//     width /= m_vae_scale_factor;
-
-//     LTXVideoTransformer3DModel::Inference::reshape(m_model, batch_size, height, width, tokenizer_model_max_length);
-
-//     return *this;
-// }
 
 LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::string& device, const ov::AnyMap& properties) {
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
@@ -124,7 +71,6 @@ ov::Tensor LTXVideoTransformer3DModel::infer(const ov::Tensor latent_model_input
 
     return m_request.get_output_tensor();
 }
-
 
 }  // namespace genai
 }  // namespace ov
