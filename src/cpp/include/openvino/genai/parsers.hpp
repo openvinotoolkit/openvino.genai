@@ -31,8 +31,8 @@ private:
 public:
     ReasoningParser(bool expect_open_tag = true,
                     bool keep_original_content = true, 
-                    std::string open_tag="<think>", 
-                    std::string close_tag="</think>");
+                    const std::string& open_tag = "<think>", 
+                    const std::string& close_tag = "</think>");
 
     std::string parse(
         JsonContainer& msg,
@@ -81,7 +81,11 @@ private:
 
 class BaseReasoningParser : public ParserBase{
 public:
-    BaseReasoningParser(bool expect_open_tag = true, bool keep_original_content = true, std::string open_tag = "<think>", std::string close_tag = "</think>");
+    BaseReasoningParser(
+        bool expect_open_tag = true, 
+        bool keep_original_content = true, 
+        const std::string& open_tag = "<think>", 
+        const std::string& close_tag = "</think>");
     void parse(JsonContainer& input) override;
 private:
     class BaseReasoningParserImpl;

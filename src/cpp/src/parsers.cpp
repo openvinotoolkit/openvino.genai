@@ -26,12 +26,12 @@ public:
     ReasoningParserImpl() = default;
     ReasoningParserImpl(bool expect_open_tag,
                     bool keep_original_content,
-                    std::string open_tag, 
-                    std::string close_tag)
+                    const std::string& open_tag, 
+                    const std::string& close_tag)
         : m_expect_open_tag(expect_open_tag),
           m_keep_original_content(keep_original_content),
-          m_open_tag(std::move(open_tag)),
-          m_close_tag(std::move(close_tag)) {}
+          m_open_tag(open_tag),
+          m_close_tag(close_tag) {}
 
     std::string parse(
         JsonContainer&  msg,
@@ -153,8 +153,8 @@ public:
     }
 };
 
-ReasoningParser::ReasoningParser(bool expect_open_tag, bool keep_original_content, std::string open_tag, std::string close_tag) {
-    m_impl = std::make_shared<ReasoningParserImpl>(expect_open_tag, keep_original_content, std::move(open_tag), std::move(close_tag));
+ReasoningParser::ReasoningParser(bool expect_open_tag, bool keep_original_content, const std::string& open_tag, const std::string& close_tag) {
+    m_impl = std::make_shared<ReasoningParserImpl>(expect_open_tag, keep_original_content, open_tag, close_tag);
 }
 
 std::string ReasoningParser::parse(
@@ -257,8 +257,8 @@ class BaseReasoningParser::BaseReasoningParserImpl {
 public:
     BaseReasoningParserImpl(bool expect_open_tag,
                             bool keep_original_content,
-                            std::string open_tag,
-                            std::string close_tag):
+                            const std::string& open_tag,
+                            const std::string& close_tag):
     m_expect_open_tag(expect_open_tag),
     m_keep_original_content(keep_original_content),
     m_open_tag(open_tag),
@@ -290,7 +290,7 @@ private:
     std::string m_close_tag;
 };
 
-BaseReasoningParser::BaseReasoningParser(bool expect_open_tag, bool keep_original_content, std::string open_tag, std::string close_tag) {
+BaseReasoningParser::BaseReasoningParser(bool expect_open_tag, bool keep_original_content, const std::string& open_tag, const std::string& close_tag) {
     m_impl = std::make_shared<BaseReasoningParserImpl>(expect_open_tag, keep_original_content, open_tag, close_tag);
 }
 
