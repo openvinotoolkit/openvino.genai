@@ -688,11 +688,11 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& image_promp
     } else {
         std::string templated_prompt;
         if (m_apply_chat_template) {
-            ChatHistory history({{{"role", "user"}, {"content", std::move(image_prompt)}}});
+            ChatHistory history({{{"role", "user"}, {"content", image_prompt}}});
             constexpr bool add_generation_prompt = true;
             templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
         } else {
-            templated_prompt = std::move(image_prompt);
+            templated_prompt = image_prompt;
         }
         auto start_tokenizer_time = std::chrono::steady_clock::now();
         new_chat_tokens = phi_utils::split_tokenize(templated_prompt, m_tokenizer, NATIVE_PATTERN);
