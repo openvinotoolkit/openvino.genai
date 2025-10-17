@@ -163,63 +163,92 @@ std::string ReasoningParser::parse(
     return m_impl->parse(msg, previous_text, delta_text, previous_tokens, delta_tokens);
 }
 
-JsonContainer Llama32PythonicToolParser::parse(JsonContainer& input) {
-    // Input example
-    // string input = "[get_weather(location='New York, NY', unit='celsius')]<|eom_id|>";
+class Llama32PythonicToolParser::Llama32PythonicToolParserImpl {
+public:
+    Llama32PythonicToolParserImpl(bool keep_original_content) : m_keep_original_content(keep_original_content) {}
+    bool m_keep_original_content;
 
-    // Regex to capture the [...] part
-    std::smatch m;
-    const std::string& text = input["content"].get_string();
-    std::regex r(R"(\[.*?\])");
-    if (!std::regex_search(text, m, r)) {
+    JsonContainer parse(JsonContainer& input) {
+        // Input example
+        // string input = "[get_weather(location='New York, NY', unit='celsius')]<|eom_id|>";
+
+        // Regex to capture the [...] part
+        std::smatch m;
+        const std::string& text = input["content"].get_string();
+        std::regex r(R"(\[.*?\])");
+        if (!std::regex_search(text, m, r)) {
+            return input;
+        }
+
+        // Strip outer [ ]
+        std::string call = m.str().substr(1, m.str().size() - 2);
+
+        // Split function name and arguments
+        input["tool_calls"] = JsonContainer::array();
+        
+        size_t pos = call.find('(');
+        std::string name = call.substr(0, pos);
+        std::string args = call.substr(pos + 1, call.size() - pos - 2); // inside (...)
+        
+        
+        JsonContainer kv;
+        // Parse arguments of the form key='value'
+        std::regex arg_re(R"((\w+)\s*=\s*\"([^"]*)\")");
+        auto it = std::sregex_iterator(args.begin(), args.end(), arg_re);
+        for (; it != std::sregex_iterator(); ++it) {
+            kv[std::string((*it)[1])] = std::string((*it)[2]);
+        }
+        
+        input["tool_calls"] = JsonContainer::array();
+        input["tool_calls"].push_back(JsonContainer({{"name", name}, {"arguments", kv}}));
+        
+        if (!m_keep_original_content) {
+            input["content"] = regex_replace(text, r, "");
+        }
         return input;
     }
+};
 
-    // Strip outer [ ]
-    std::string call = m.str().substr(1, m.str().size() - 2);
-
-    // Split function name and arguments
-    input["tool_calls"] = JsonContainer::array();
-    
-    size_t pos = call.find('(');
-    std::string name = call.substr(0, pos);
-    std::string args = call.substr(pos + 1, call.size() - pos - 2); // inside (...)
-    
-    
-    JsonContainer kv;
-    // Parse arguments of the form key='value'
-    std::regex arg_re(R"((\w+)\s*=\s*\"([^"]*)\")");
-    auto it = std::sregex_iterator(args.begin(), args.end(), arg_re);
-    for (; it != std::sregex_iterator(); ++it) {
-        kv[std::string((*it)[1])] = std::string((*it)[2]);
-    }
-    
-    input["tool_calls"] = JsonContainer::array();
-    input["tool_calls"].push_back(JsonContainer({{"name", name}, {"arguments", kv}}));
-    
-    if (!m_keep_original_content) {
-        input["content"] = regex_replace(text, r, "");
-    }
-    return input;
+Llama32PythonicToolParser::Llama32PythonicToolParser(bool keep_original_content) {
+    m_impl = std::make_shared<Llama32PythonicToolParserImpl>(keep_original_content);
 }
 
-JsonContainer Llama32JsonToolParser::parse(JsonContainer& message) {
-    // Find JSON in the message
-    std::string msg_content = message["content"].get_string();
+JsonContainer Llama32PythonicToolParser::parse(JsonContainer& input) {
+    return m_impl->parse(input);
+}
 
-    size_t json_start = msg_content.find('{');
-    size_t json_end = msg_content.rfind('}');
-    if (json_start == std::string::npos || json_end == std::string::npos || json_end <= json_start) {
+class Llama32JsonToolParser::Llama32JsonToolParserImpl {
+private:
+    bool m_keep_original_content;
+public:
+    Llama32JsonToolParserImpl(bool keep_original_content) : m_keep_original_content(keep_original_content) {}
+
+    JsonContainer parse(JsonContainer& message) {
+        // Find JSON in the message
+        std::string msg_content = message["content"].get_string();
+
+        size_t json_start = msg_content.find('{');
+        size_t json_end = msg_content.rfind('}');
+        if (json_start == std::string::npos || json_end == std::string::npos || json_end <= json_start) {
+            return message;
+        }
+        auto res = JsonContainer::array();
+        res.push_back(JsonContainer::from_json_string(msg_content.substr(json_start, json_end - json_start + 1)));
+        message["tool_calls"] = res;
+        
+        if (!m_keep_original_content) {
+            message["content"] = msg_content.substr(0, json_start) + msg_content.substr(json_end + 1);
+        }
         return message;
     }
-    auto res = JsonContainer::array();
-    res.push_back(JsonContainer::from_json_string(msg_content.substr(json_start, json_end - json_start + 1)));
-    message["tool_calls"] = res;
-    
-    if (!m_keep_original_content) {
-        message["content"] = msg_content.substr(0, json_start) + msg_content.substr(json_end + 1);
-    }
-    return message;
+};
+
+Llama32JsonToolParser::Llama32JsonToolParser(bool keep_original_content) {
+    m_impl = std::make_shared<Llama32JsonToolParserImpl>(keep_original_content);
+}
+
+JsonContainer Llama32JsonToolParser::parse(JsonContainer& input) {
+    return m_impl->parse(input);
 }
 
 class BaseReasoningParser::BaseReasoningParserImpl {

@@ -60,21 +60,21 @@ public:
 class Llama32PythonicToolParser : public ParserBase {
 // Does not modify original content, only extracts and adds tool calls
 public:
-    explicit Llama32PythonicToolParser(bool keep_original_content = true) : m_keep_original_content(keep_original_content) {}
-
+    explicit Llama32PythonicToolParser(bool keep_original_content = true);
     JsonContainer parse(JsonContainer& input) override;
 private:
-    bool m_keep_original_content;
+    class Llama32PythonicToolParserImpl;
+    std::shared_ptr<Llama32PythonicToolParserImpl> m_impl;
 };
 
 class Llama32JsonToolParser : public ParserBase {
 // Does not modify original content, only extracts and adds tool calls
 public:
-    explicit Llama32JsonToolParser(bool keep_original_content = true) : m_keep_original_content(keep_original_content) {}
-
+    explicit Llama32JsonToolParser(bool keep_original_content = true);
     JsonContainer parse(JsonContainer& input) override;
 private:
-    bool m_keep_original_content;
+    class Llama32JsonToolParserImpl;
+    std::shared_ptr<Llama32JsonToolParserImpl> m_impl;
 };
 
 class BaseReasoningParser : public ParserBase{
