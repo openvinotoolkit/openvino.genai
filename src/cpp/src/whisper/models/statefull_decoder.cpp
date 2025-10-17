@@ -8,6 +8,7 @@
 namespace {
 void reshape_hidden_states_to_static(std::shared_ptr<ov::Model> model, const ov::PartialShape& lhstates_shape) {
     ov::PartialShape new_shape = model->input("encoder_hidden_states").get_partial_shape();
+    OPENVINO_ASSERT(new_shape.size() > 1);
     new_shape[1] = lhstates_shape[1];
     std::map<std::string, ov::PartialShape> name_to_shape{{"encoder_hidden_states", new_shape}};
     model->reshape(name_to_shape);
