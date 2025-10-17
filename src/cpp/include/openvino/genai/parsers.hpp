@@ -30,7 +30,9 @@ private:
     std::shared_ptr<ReasoningParserImpl> m_impl;
 public:
     ReasoningParser(bool expect_open_tag = true,
-                    bool keep_original_content = true);
+                    bool keep_original_content = true, 
+                    std::string open_tag="<think>", 
+                    std::string close_tag="</think>");
 
     std::string parse(
         JsonContainer& msg,

@@ -13,21 +13,25 @@ namespace ov::genai {
 
 class ReasoningParser::ReasoningParserImpl {
 private:
-    bool m_expect_open_tag = true;
+    bool m_expect_open_tag;
     bool m_first_run = true;
     bool m_keep_original_content;
     bool m_think_tag_opened = false;
-    std::string m_open_tag = "<think>";
-    std::string m_close_tag = "</think>";
+    std::string m_open_tag;
+    std::string m_close_tag;
     std::string m_text_cache = "";
     std::map<std::string, std::string> accumulated_parsed;
 public:
     bool m_deactivated = false;
     ReasoningParserImpl() = default;
-    ReasoningParserImpl(bool expect_open_tag = true,
-                    bool keep_original_content = true)
+    ReasoningParserImpl(bool expect_open_tag,
+                    bool keep_original_content,
+                    std::string open_tag, 
+                    std::string close_tag)
         : m_expect_open_tag(expect_open_tag),
-          m_keep_original_content(keep_original_content) {}
+          m_keep_original_content(keep_original_content),
+          m_open_tag(std::move(open_tag)),
+          m_close_tag(std::move(close_tag)) {}
 
     std::string parse(
         JsonContainer&  msg,
@@ -149,8 +153,8 @@ public:
     }
 };
 
-ReasoningParser::ReasoningParser(bool expect_open_tag, bool keep_original_content) {
-    m_impl = std::make_shared<ReasoningParserImpl>(expect_open_tag, keep_original_content);
+ReasoningParser::ReasoningParser(bool expect_open_tag, bool keep_original_content, std::string open_tag, std::string close_tag) {
+    m_impl = std::make_shared<ReasoningParserImpl>(expect_open_tag, keep_original_content, std::move(open_tag), std::move(close_tag));
 }
 
 std::string ReasoningParser::parse(
