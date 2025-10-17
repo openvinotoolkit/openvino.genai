@@ -11,11 +11,11 @@ using json = nlohmann::json;
 
 namespace ov::genai {
 
-class ReasoningParserImpl {
+class ReasoningParser::ReasoningParserImpl {
 private:
-    bool m_starts_with_thinking = true;
+    bool m_expect_open_tag = true;
     bool m_first_run = true;
-    bool m_keep_original_content = true;
+    bool m_keep_original_content;
     bool m_think_tag_opened = false;
     std::string m_open_tag = "<think>";
     std::string m_close_tag = "</think>";
@@ -24,9 +24,9 @@ private:
 public:
     bool m_deactivated = false;
     ReasoningParserImpl() = default;
-    ReasoningParserImpl(bool starts_with_thinking = true,
+    ReasoningParserImpl(bool expect_open_tag = true,
                     bool keep_original_content = true)
-        : m_starts_with_thinking(starts_with_thinking),
+        : m_expect_open_tag(expect_open_tag),
           m_keep_original_content(keep_original_content) {}
 
     std::string parse(
@@ -39,7 +39,7 @@ public:
         if (m_deactivated) {
             return delta_text;
         }
-        if (m_starts_with_thinking && m_first_run) {
+        if (m_expect_open_tag && m_first_run) {
             m_think_tag_opened = true;
         }
         m_first_run = false;
@@ -56,7 +56,7 @@ public:
         auto reason_str = msg["reasoning_content"].get_string();
         auto content_str = msg["content"].get_string();
 
-        if (!m_think_tag_opened && txt_chunk.find(m_open_tag) != std::string::npos && !m_starts_with_thinking) {
+        if (!m_think_tag_opened && txt_chunk.find(m_open_tag) != std::string::npos && !m_expect_open_tag) {
             OPENVINO_ASSERT(m_open_tag.find(m_text_cache) != std::string::npos, "m_text_cache should be a prefix of m_open_tag");
             
             // Thinking has started
@@ -149,8 +149,8 @@ public:
     }
 };
 
-ReasoningParser::ReasoningParser(bool starts_with_thinking, bool keep_original_content) {
-    m_impl = std::make_shared<ReasoningParserImpl>(starts_with_thinking, keep_original_content);
+ReasoningParser::ReasoningParser(bool expect_open_tag, bool keep_original_content) {
+    m_impl = std::make_shared<ReasoningParserImpl>(expect_open_tag, keep_original_content);
 }
 
 std::string ReasoningParser::parse(
@@ -222,26 +222,51 @@ JsonContainer Llama32JsonToolParser::parse(JsonContainer& message) {
     return message;
 }
 
-JsonContainer BaseReasoningParser::parse(JsonContainer& input) {
-    JsonContainer res;
-    std::string reasoning_content;
-    std::string content = input["content"].get_string();
+class BaseReasoningParser::BaseReasoningParserImpl {
+public:
+    BaseReasoningParserImpl(bool expect_open_tag,
+                            bool keep_original_content,
+                            std::string open_tag,
+                            std::string close_tag):
+    m_expect_open_tag(expect_open_tag),
+    m_keep_original_content(keep_original_content),
+    m_open_tag(open_tag),
+    m_close_tag(close_tag) {};
 
-    size_t start = content.find(m_open_tag);
-    size_t end = content.find(m_close_tag);
+    JsonContainer parse(JsonContainer& input) {
+        JsonContainer res;
+        std::string reasoning_content;
+        std::string content = input["content"].get_string();
 
-    if (start != std::string::npos && end != std::string::npos && end > start) {
-        reasoning_content = content.substr(start + m_open_tag.size(), end - (start + m_open_tag.size()));
-        if (!m_keep_original_content) {
-            // Remove <think>...</think/> from content
-            input["content"] = content.substr(0, start) + content.substr(end + m_close_tag.size());
+        size_t start = content.find(m_open_tag);
+        size_t end = content.find(m_close_tag);
+
+        if (start != std::string::npos && end != std::string::npos && end > start) {
+            reasoning_content = content.substr(start + m_open_tag.size(), end - (start + m_open_tag.size()));
+            if (!m_keep_original_content) {
+                // Remove <think>...</think/> from content
+                input["content"] = content.substr(0, start) + content.substr(end + m_close_tag.size());
+            }
+        } else {
+            reasoning_content = "";
         }
-    } else {
-        reasoning_content = "";
-    }
 
-    input["reasoning_content"] = reasoning_content;
-    return input;
+        input["reasoning_content"] = reasoning_content;
+        return input;
+    }
+private:
+    bool m_expect_open_tag;
+    bool m_keep_original_content;
+    std::string m_open_tag;
+    std::string m_close_tag;
+};
+
+BaseReasoningParser::BaseReasoningParser(bool expect_open_tag, bool keep_original_content, std::string open_tag, std::string close_tag) {
+    m_impl = std::make_shared<BaseReasoningParserImpl>(expect_open_tag, keep_original_content, open_tag, close_tag);
+}
+
+JsonContainer BaseReasoningParser::parse(JsonContainer& input) {
+    return m_impl->parse(input);
 }
 
 std::map<std::string, std::function<std::shared_ptr<IncrementalParserBase>()>> registered_incremental_parsers;
@@ -249,9 +274,9 @@ std::map<std::string, std::function<std::shared_ptr<ParserBase>()>> registered_b
 
 // static initializer to register available buildin parsers
 static bool register_backends() {
-    registered_incremental_parsers[DeepSeekR1ReasoningParser::name()] = []() { return std::make_shared<DeepSeekR1ReasoningParser>(/*starts_with_thinking*/ true); };
-    registered_incremental_parsers[Phi4ReasoningParser::name()] = []() { return std::make_shared<Phi4ReasoningParser>(/*starts_with_thinking*/ false); };
-    
+    registered_incremental_parsers[DeepSeekR1ReasoningParser::name()] = []() { return std::make_shared<DeepSeekR1ReasoningParser>(/*expect_open_tag*/ true); };
+    registered_incremental_parsers[Phi4ReasoningParser::name()] = []() { return std::make_shared<Phi4ReasoningParser>(/*expect_open_tag*/ false); };
+
     registered_base_parsers[Llama32PythonicToolParser::name()] = []() { return std::make_shared<Llama32PythonicToolParser>(); };
 
     // TODO: Add more parsers and register them here.

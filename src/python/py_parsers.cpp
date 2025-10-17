@@ -14,7 +14,6 @@
 namespace py = pybind11;
 
 using ov::genai::IncrementalParserBase;
-using ov::genai::ParserVariant;
 using ov::genai::ParserBase;
 using ov::genai::ReasoningParser;
 using ov::genai::Phi4ReasoningParser;
@@ -140,7 +139,7 @@ void init_parsers(py::module_& m) {
            "Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.");
     
     py::class_<Phi4ReasoningParser, std::shared_ptr<Phi4ReasoningParser>, IncrementalParserBase>(m, "Phi4ReasoningParser")
-        .def(py::init<bool>(), py::arg("starts_with_thinking") = false)
+        .def(py::init<bool>(), py::arg("expect_open_tag") = false)
         .def("parse",
             [](Phi4ReasoningParser& self,
                py::dict& msg,

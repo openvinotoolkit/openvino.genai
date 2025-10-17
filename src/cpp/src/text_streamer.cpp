@@ -124,7 +124,7 @@ void TextStreamer::end() {
 
 StreamerBase::~StreamerBase() = default;
 
-TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<ParserVariant> parsers) 
+TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::variant<std::shared_ptr<IncrementalParserBase>, std::string>> parsers) 
     : TextStreamer(tokenizer, [this](std::string s) -> CallbackTypeVariant {
                 return this->write(s);
     }) {

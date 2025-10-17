@@ -1908,7 +1908,7 @@ class Phi4ReasoningParser(IncrementalParserBase):
         """
         Factory method to get parser by name.
         """
-    def __init__(self, starts_with_thinking: bool = False) -> None:
+    def __init__(self, expect_open_tag: bool = False) -> None:
         ...
     def parse(self, msg: dict, previous_text: str, delta_text: str, previous_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
         """
