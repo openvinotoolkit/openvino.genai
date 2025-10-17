@@ -57,7 +57,7 @@ TokenizedInputs Tokenizer::encode(const std::string& prompt, const ov::AnyMap& t
                                           ov::genai::max_length.name(),
                                           ov::genai::pad_to_max_length.name(),
                                           ov::genai::padding_side.name()});
-    return m_pimpl->encode(std::move(prompt), tokenization_params);
+    return m_pimpl->encode(prompt, tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(const std::vector<std::pair<std::string, std::string>>& prompts, const ov::AnyMap& tokenization_params) {
@@ -141,6 +141,10 @@ std::string Tokenizer::apply_chat_template(ChatHistory history,
 
 std::string Tokenizer::get_chat_template() const {
     return m_pimpl->get_chat_template();
+}
+
+std::string Tokenizer::get_original_chat_template() const {
+    return m_pimpl->get_original_chat_template();
 }
 
 void Tokenizer::set_chat_template(const std::string& chat_template) {

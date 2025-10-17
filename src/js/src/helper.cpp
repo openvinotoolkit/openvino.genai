@@ -6,6 +6,7 @@
 namespace {
 constexpr const char* JS_SCHEDULER_CONFIG_KEY = "schedulerConfig";
 constexpr const char* CPP_SCHEDULER_CONFIG_KEY = "scheduler_config";
+constexpr const char* POOLING_TYPE_KEY = "pooling_type";
 }  // namespace
 
 ov::AnyMap to_anyMap(const Napi::Env& env, const Napi::Value& val) {
@@ -88,6 +89,9 @@ ov::AnyMap js_to_cpp<ov::AnyMap>(const Napi::Env& env, const Napi::Value& value)
         const std::string& key_name = keys.Get(i).ToString();
         if (key_name == JS_SCHEDULER_CONFIG_KEY) {
             result_map[CPP_SCHEDULER_CONFIG_KEY] = js_to_cpp<ov::genai::SchedulerConfig>(env, object.Get(key_name));
+        } else if (key_name == POOLING_TYPE_KEY) {
+            result_map[key_name] =
+                ov::genai::TextEmbeddingPipeline::PoolingType(object.Get(key_name).ToNumber().Int32Value());
         } else {
             result_map[key_name] = js_to_cpp<ov::Any>(env, object.Get(key_name));
         }
