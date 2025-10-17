@@ -109,38 +109,18 @@ class RerankingEvaluator(BaseEvaluator):
 
     def _generate_data(self, model, gen_answer_fn=None, result_dir="reference"):
         def default_gen_answer(model, tokenizer, query, passages):
-            device = "cpu"
-            if hasattr(model, "device"):
-                device = model.device
-
             # post/pre processing for qwen models added according to transformers Qwen3-Embedding-0.6B model card:
             # https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
             if model.config.model_type == "qwen3":
+                print("NEW WAY")
                 prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the '\
                          + 'Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
                 suffix = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
                 task = "Given a web search query, retrieve relevant passages that answer the query"
                 pairs = []
-                if reranking_base_on_causallm_arch(model.config):
-                    for doc in passages:
-                        pairs.append(f"<Instruct>: {task}\n<Query>: {query}\n<Document>: {doc}")
-                    prefix_tokens = tokenizer.encode(prefix, add_special_tokens=False)
-                    suffix_tokens = tokenizer.encode(suffix, add_special_tokens=False)
-                    input_data = tokenizer(
-                        pairs, padding=False, truncation="longest_first", return_attention_mask=False,
-                        max_length=DEFAULT_MAX_LENGTH_QWEN - len(prefix_tokens) - len(suffix_tokens)
-                    )
-                    for i, ele in enumerate(input_data["input_ids"]):
-                        input_data["input_ids"][i] = prefix_tokens + ele + suffix_tokens
-                    input_data = tokenizer.pad(input_data,
-                                               padding=True,
-                                               return_tensors="pt",
-                                               max_length=DEFAULT_MAX_LENGTH_QWEN,
-                                               padding_side="left").to(device)
-                else:
-                    for doc in passages:
-                        pairs.append(f"{prefix}<Instruct>: {task}\n<Query>: {query}\n<Document>: {doc}{suffix}")
-                    input_data = tokenizer(pairs, padding=True, truncation=True, max_length=DEFAULT_MAX_LENGTH_QWEN, return_tensors="pt", padding_side="left")
+                for doc in passages:
+                    pairs.append(f"{prefix}<Instruct>: {task}\n<Query>: {query}\n<Document>: {doc}{suffix}")
+                input_data = tokenizer(pairs, padding=True, truncation=True, max_length=DEFAULT_MAX_LENGTH_QWEN, return_tensors="pt", padding_side="left")
             else:
                 tokenizer_kwargs = {"truncation": True, "padding": True, "max_length": DEFAULT_MAX_LENGTH}
                 inputs = [query] * len(passages)
