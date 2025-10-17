@@ -128,7 +128,7 @@ jobs:
 
       - name: Build for coverity
         run: |
-          ${{ env.COV_TOOL_DIR }}/bin/cov-build --config ${{ env.COV_TOOL_DIR }}/config/coverity_config.xml --tmpdir cov_temp --dir ${BUILD_DIR}/cov-int --fs-capture-search ./openvino.genai sh build.sh
+          ${{ env.COV_TOOL_DIR }}/bin/cov-build --config ${{ env.COV_TOOL_DIR }}/config/coverity_config.xml --tmpdir cov_temp --dir ${BUILD_DIR}/cov-int sh build.sh
 
       - name: Pack for analysis submission
         run: tar -cvf - cov-int | pigz > openvino-genai.tgz
