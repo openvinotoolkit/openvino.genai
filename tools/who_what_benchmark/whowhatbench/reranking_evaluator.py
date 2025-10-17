@@ -64,7 +64,9 @@ class RerankingEvaluator(BaseEvaluator):
         self.gt_dir = os.path.dirname(gt_data)
 
         if base_model:
-            self.gt_data = self._generate_data(base_model, gen_rerank_fn)
+            self.gt_data = self._generate_data(
+                base_model, gen_rerank_fn, os.path.join(self.gt_dir, "reference")
+            )
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 

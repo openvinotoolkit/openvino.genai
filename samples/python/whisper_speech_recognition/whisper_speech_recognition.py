@@ -11,6 +11,10 @@ def read_wav(filepath):
     raw_speech, samplerate = librosa.load(filepath, sr=16000)
     return raw_speech.tolist()
 
+def get_config_for_cache():
+    config_cache = dict()
+    config_cache["CACHE_DIR"] = "whisper_cache"
+    return config_cache
 
 def main():
     parser = argparse.ArgumentParser()
@@ -19,7 +23,13 @@ def main():
     parser.add_argument("device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
     args = parser.parse_args()
 
-    pipe = openvino_genai.WhisperPipeline(args.model_dir, args.device)
+    ov_config = dict()
+    if args.device == "NPU" or "GPU" in args.device: # need to handle cases like "GPU", "GPU.0" and "GPU.1"
+        # Cache compiled models on disk for GPU and NPU to save time on the
+        # next run. It's not beneficial for CPU.
+        ov_config = get_config_for_cache()
+
+    pipe = openvino_genai.WhisperPipeline(args.model_dir, args.device, **ov_config)
 
     config = pipe.get_generation_config()
     # 'task' and 'language' parameters are supported for multilingual models only

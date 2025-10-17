@@ -29,27 +29,6 @@ from llm_bench_utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPip
 from dataclasses import dataclass, field
 
 
-def normalize_model_ids(model_ids_list):
-    return [m_id[:-1] if m_id.endswith('_') else m_id for m_id in model_ids_list]
-
-
-def get_use_case_by_model_id(model_type, task=None):
-    possible_use_cases = sum(list(USE_CASES.values()), [])
-    if task:
-        if task in list(UseCaseImageGen.TASK.keys()):
-            possible_use_cases = USE_CASES["image_gen"]
-        else:
-            possible_use_cases = USE_CASES[task]
-    for use_case in possible_use_cases:
-        for m_type in normalize_model_ids(use_case.model_types):
-            # TODO go to equality and raise error if use_cases is already found, as it will mean that
-            # model with that task can be applicable to execute with different pipelines and user doesn't specify one
-            if model_type.startswith(m_type):
-                return use_case, m_type
-
-    return None, None
-
-
 @dataclass
 class UseCase:
     task = ''

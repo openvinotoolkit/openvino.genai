@@ -746,7 +746,6 @@ TEST(TestScheduler, test_partially_preempted_prompt_not_allowed) {
     auto idx1 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
 
-
     // schedule 2 sequence groups that use all available 2*3 kv blocks, we used all available kv-blocks.
     const bool can_use_partial_preemption = false;
     Scheduler scheduler = Scheduler(4, init_cache_manager(scheduler_config), scheduler_config, 1, can_use_partial_preemption);
@@ -952,7 +951,6 @@ TEST(TestScheduler, FullyPreemptsCacheEvictedSequences) {
                                                                          ov::genai::greedy(), 2);
     auto idx2 = (*sequence_group2)[0]->get_id();
     std::vector<SequenceGroup::Ptr> requests = {sequence_group1, sequence_group2};
-
 
     Scheduler scheduler = Scheduler(2, init_cache_manager(scheduler_config), scheduler_config);
     // prompt phase - schedules 1 block for seq 1, 5 blocks for seq 2

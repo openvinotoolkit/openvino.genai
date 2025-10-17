@@ -53,7 +53,7 @@ enum class GenerationFinishReason {
 
 struct GenerationResult {
     // request ID - obsolete when handle API is approved as handle will connect results with prompts.
-    uint64_t m_request_id;
+    uint64_t m_request_id = 0;
 
     // in a generic case we have multiple generation results per initial prompt
     // depending on sampling parameters (e.g. beam search or parallel sampling)
@@ -77,8 +77,8 @@ struct GenerationResult {
 struct GenerationOutput {
     std::vector<int64_t> generated_ids;
     std::vector<float> generated_log_probs;
-    float score;
-    GenerationFinishReason finish_reason;
+    float score = 0;
+    GenerationFinishReason finish_reason = GenerationFinishReason::NONE;
 };
 
 using GenerationOutputs = std::unordered_map<uint64_t, GenerationOutput>;
