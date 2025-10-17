@@ -211,16 +211,13 @@ public:
         }
 
         // Add text prompt to vision config for CDPruner
-        if (generation_config.pruning_ratio > 0 && generation_config.pruning_ratio < 100) {
+        if (generation_config.pruning_ratio != 0) {
             std::cout << "[CDPruner] Warning: Pruning is disabled. It is only supported when using PA as the attention "
                          "backend."
                       << std::endl;
             // Disable CDPruner
             generation_config.pruning_ratio = 0;
         }
-        m_inputs_embedder->set_visual_token_pruning_config(generation_config.pruning_ratio,
-                                                           generation_config.relevance_weight);
-
         const auto encoded_images = m_inputs_embedder->encode_images(images);
         const auto encoded_videos = m_inputs_embedder->encode_videos(videos);
         auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);

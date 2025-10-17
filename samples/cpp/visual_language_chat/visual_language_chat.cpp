@@ -33,10 +33,8 @@ int main(int argc, char* argv[]) try {
     ov::genai::GenerationConfig generation_config;
     generation_config.max_new_tokens = 100;
     // Configure CDPruner if requested
-    if (pruning_ratio > 0 && pruning_ratio < 100) {
-        generation_config.pruning_ratio = pruning_ratio;
-        generation_config.relevance_weight = pruning_relevance_weight;
-    }
+    generation_config.pruning_ratio = pruning_ratio;
+    generation_config.relevance_weight = pruning_relevance_weight;
 
     // Initialize VLMPipeline with cache configuration if needed
     ov::genai::VLMPipeline pipe(model_dir, device, enable_compile_cache);

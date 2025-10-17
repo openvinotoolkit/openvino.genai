@@ -65,7 +65,6 @@ protected:
         // Initialize common config for testing
         base_config.pruning_ratio = 50;  // Will prune 50% tokens
         base_config.relevance_weight = 0.5f;
-        base_config.pruning_debug_mode = false;
         base_config.use_negative_relevance = false;
         base_config.numerical_threshold = 1e-6f;
         base_config.device = "CPU";
@@ -198,29 +197,8 @@ TEST_P(DPPParameterizedTest, BasicTokenSelection) {
 
     for (size_t batch = 0; batch < selected_tokens.size(); ++batch) {
         // Verify correct number of tokens selected
-        if (params.matrix_mode == MatrixMode::Split && params.num_tokens_to_select == 3) {
-            // Special case: split mode with 3 tokens may behave differently for OpenCL
-            if (params.backend == Backend::OpenCL) {
-                // OpenCL split mode might return different count due to even number requirement
-                EXPECT_GT(selected_tokens[batch].size(), 0) << "Batch " << batch << " should select some tokens";
-            } else {
-                EXPECT_EQ(selected_tokens[batch].size(), params.num_tokens_to_select)
-                    << "Batch " << batch << " should select " << params.num_tokens_to_select << " tokens";
-            }
-        } else {
-            EXPECT_EQ(selected_tokens[batch].size(), params.num_tokens_to_select)
-                << "Batch " << batch << " should select " << params.num_tokens_to_select << " tokens";
-        }
-
-        // Verify token indices are valid
-        for (size_t token : selected_tokens[batch]) {
-            if (params.matrix_mode == MatrixMode::Split) {
-                EXPECT_LT(token, 8) << "Split mode token index should be < 8 (4 + 4)";
-            } else {
-                EXPECT_LT(token, 4) << "Normal mode token index should be < 4";
-            }
-        }
-
+        EXPECT_EQ(selected_tokens[batch].size(), params.num_tokens_to_select)
+            << "Batch " << batch << " should select " << params.num_tokens_to_select << " tokens";
         // Verify no duplicate tokens
         std::vector<size_t> sorted_tokens = selected_tokens[batch];
         std::sort(sorted_tokens.begin(), sorted_tokens.end());
@@ -330,10 +308,14 @@ protected:
     }
 
     // Helper function to create visual features with simple test patterns
-    ov::Tensor createVisualFeatures(size_t batch_size, size_t sequence_length, size_t hidden_dim, float base_value = 0.5f, float scale = 0.01f) {
+    ov::Tensor createVisualFeatures(size_t batch_size,
+                                    size_t sequence_length,
+                                    size_t hidden_dim,
+                                    float base_value = 0.5f,
+                                    float scale = 0.01f) {
         ov::Tensor visual_features(ov::element::f32, {batch_size, sequence_length, hidden_dim});
         float* visual_data = visual_features.data<float>();
-        
+
         for (size_t b = 0; b < batch_size; ++b) {
             for (size_t s = 0; s < sequence_length; ++s) {
                 for (size_t h = 0; h < hidden_dim; ++h) {
@@ -349,7 +331,7 @@ protected:
     ov::Tensor createTextFeatures(size_t batch_size, size_t hidden_dim, float base_value = 0.3f, float scale = 0.01f) {
         ov::Tensor text_features(ov::element::f32, {batch_size, hidden_dim});
         float* text_data = text_features.data<float>();
-        
+
         for (size_t b = 0; b < batch_size; ++b) {
             for (size_t h = 0; h < hidden_dim; ++h) {
                 size_t idx = b * hidden_dim + h;
@@ -360,12 +342,16 @@ protected:
     }
 
     // Helper function to create multi-frame visual features
-    std::vector<ov::Tensor> createMultiFrameVisualFeatures(size_t num_frames, size_t batch_size, size_t sequence_length_per_frame, size_t hidden_dim) {
+    std::vector<ov::Tensor> createMultiFrameVisualFeatures(size_t num_frames,
+                                                           size_t batch_size,
+                                                           size_t sequence_length_per_frame,
+                                                           size_t hidden_dim) {
         std::vector<ov::Tensor> visual_features;
         for (size_t frame = 0; frame < num_frames; ++frame) {
             // Each frame has a different base value pattern for testing
             float base_value = 0.1f * (frame + 1);
-            visual_features.push_back(createVisualFeatures(batch_size, sequence_length_per_frame, hidden_dim, base_value, 0.01f));
+            visual_features.push_back(
+                createVisualFeatures(batch_size, sequence_length_per_frame, hidden_dim, base_value, 0.01f));
         }
         return visual_features;
     }
@@ -412,8 +398,9 @@ TEST_P(CDPrunerIntegrationTest, MultiFramePruning) {
     size_t batch_size = 1;
 
     // Create multi-frame visual features using helper function
-    auto visual_features = createMultiFrameVisualFeatures(num_frames, batch_size, sequence_length_per_frame, hidden_dim);
-    
+    auto visual_features =
+        createMultiFrameVisualFeatures(num_frames, batch_size, sequence_length_per_frame, hidden_dim);
+
     // Create text features using helper function
     auto text_features = createTextFeatures(batch_size, hidden_dim, 0.5f, 0.1f);
 
@@ -470,8 +457,9 @@ TEST_P(CDPrunerIntegrationTest, MultiFramePruningEdgeCases) {
         auto text_features = createTextFeatures(batch_size, hidden_dim);
 
         // This should either return empty tensor or handle gracefully
-        auto result = cdpruner.apply_pruning(empty_frames, text_features);
-        // We don't expect this to crash - specific behavior depends on implementation
+        ov::Tensor result;
+        EXPECT_NO_THROW(result = cdpruner.apply_pruning(empty_frames, text_features));
+        EXPECT_TRUE(!result) << "Empty frames should result in empty output tensor";
     }
 
     // Test case 3: Many small frames

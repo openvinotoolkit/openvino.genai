@@ -13,6 +13,7 @@
 #include "openvino/op/parameter.hpp"
 #include "openvino/op/result.hpp"
 #include "openvino/openvino.hpp"
+#include "utils.hpp"
 
 namespace ov::genai::cdpruner {
 
@@ -37,15 +38,9 @@ ConditionalKernelBuilder::ConditionalKernelBuilder(const Config& config)
 
         m_requests_initialized = true;
 
-        if (m_config.pruning_debug_mode) {
-            std::cout << "[CDPruner] ConditionalKernelBuilder: InferRequests initialized for device " << m_config.device
-                      << std::endl;
-        }
+        GENAI_DEBUG_LOG("[CDPruner] ConditionalKernelBuilder: InferRequests initialized for device " + m_config.device);
     } catch (const std::exception& e) {
-        if (m_config.pruning_debug_mode) {
-            std::cout << "[CDPruner] ConditionalKernelBuilder: InferRequest initialization failed, will use fallback: "
-                      << e.what() << std::endl;
-        }
+        GENAI_DEBUG_LOG("[CDPruner] ConditionalKernelBuilder: InferRequest initialization failed, will use fallback: " + std::string(e.what()));
         m_requests_initialized = false;
     }
 }
@@ -65,10 +60,7 @@ ov::Tensor ConditionalKernelBuilder::build(const ov::Tensor& visual_features, co
     try {
         conditional_kernel = build_with_ov_model(visual_features, input_param);
     } catch (const std::exception& e) {
-        if (m_config.pruning_debug_mode) {
-            std::cout << "[CDPruner] ConditionalKernelBuilder: OV model failed, falling back to normal pipeline: "
-                      << e.what() << std::endl;
-        }
+        GENAI_DEBUG_LOG("[CDPruner] ConditionalKernelBuilder: OV model failed, falling back to normal pipeline: " + std::string(e.what()));
         conditional_kernel = build_with_normal_pipeline(visual_features, input_param);
     }
 
@@ -93,10 +85,7 @@ ov::Tensor ConditionalKernelBuilder::build_with_ov_model(const ov::Tensor& visua
         throw std::invalid_argument("Visual features and text features must have consistent batch size, token "
                                     "count, and feature dimension");
     }
-    if (m_config.pruning_debug_mode) {
-        std::cout << "  Text input: [" << text_features.get_shape()[0] << ", " << text_features.get_shape()[1] << "]"
-                  << std::endl;
-    }
+    GENAI_DEBUG_LOG("[CDPruner] Text input: [" + std::to_string(text_features.get_shape()[0]) + ", " + std::to_string(text_features.get_shape()[1]) + "]");
 
     auto kernel_build_start = std::chrono::high_resolution_clock::now();
     ov::Tensor conditional_kernel = compute_conditional_kernel_gpu(visual_features, text_features);
@@ -104,11 +93,8 @@ ov::Tensor ConditionalKernelBuilder::build_with_ov_model(const ov::Tensor& visua
     auto kernel_build_duration =
         std::chrono::duration_cast<std::chrono::microseconds>(kernel_build_end - kernel_build_start);
 
-    if (m_config.pruning_debug_mode) {
-        std::cout << " Kernel computation: " << (kernel_build_duration.count() / 1000.0) << " ms ("
-                  << (static_cast<double>(total_operations) / kernel_build_duration.count() * 1000000) << " ops/sec)"
-                  << std::endl;
-    }
+    GENAI_DEBUG_LOG("[CDPruner] Kernel computation: " + std::to_string(kernel_build_duration.count() / 1000.0) + " ms ("
+                    + std::to_string(static_cast<double>(total_operations) / kernel_build_duration.count() * 1000000) + " ops/sec)");
 
     return conditional_kernel;
 }
@@ -125,10 +111,7 @@ ov::Tensor ConditionalKernelBuilder::build_with_normal_pipeline(const ov::Tensor
         throw std::invalid_argument("Relevance scores must be 2D tensor [B, N]");
     }
     auto relevance_shape = relevance_scores.get_shape();
-    if (m_config.pruning_debug_mode) {
-        std::cout << "[CDPruner] Input tensors: relevance_scores[" << relevance_shape[0] << ", " << relevance_shape[1]
-                  << "]" << std::endl;
-    }
+    GENAI_DEBUG_LOG("[CDPruner] Input tensors: relevance_scores[" + std::to_string(relevance_shape[0]) + ", " + std::to_string(relevance_shape[1]) + "]");
 
     // Check shape consistency
     if (relevance_shape[0] != batch_size || relevance_shape[1] != num_tokens) {
@@ -167,27 +150,23 @@ ov::Tensor ConditionalKernelBuilder::build_with_normal_pipeline(const ov::Tensor
         std::chrono::duration_cast<std::chrono::microseconds>(kernel_build_end - kernel_build_start);
 
     // Print performance breakdown only in debug mode
-    if (m_config.pruning_debug_mode) {
-        std::cout << "[CDPruner]   L2 normalization [" << batch_size << ", " << num_tokens << ", " << feature_dim
-                  << "]: " << normalize_duration.count() << " us ("
-                  << (static_cast<double>(normalize_duration.count()) / total_kernel_duration.count() * 100) << "%)"
-                  << std::endl;
-        std::cout << "[CDPruner]   Similarity matrix [" << batch_size << ", " << num_tokens << ", " << num_tokens
-                  << "]: " << similarity_duration.count() << " us ("
-                  << (static_cast<double>(similarity_duration.count()) / total_kernel_duration.count() * 100) << "%)"
-                  << std::endl;
-        std::cout << "[CDPruner]   Conditional kernel [" << batch_size << ", " << num_tokens << ", " << num_tokens
-                  << "]: " << conditional_duration.count() << " us ("
-                  << (static_cast<double>(conditional_duration.count()) / total_kernel_duration.count() * 100) << "%)"
-                  << std::endl;
+    std::ostringstream ss;
+    ss << "[CDPruner]   L2 normalization [" << batch_size << ", " << num_tokens << ", " << feature_dim
+                    << "]: " << normalize_duration.count() << " us ("
+                    << (static_cast<double>(normalize_duration.count()) / total_kernel_duration.count() * 100) << "%)" << std::endl;
+    ss << "[CDPruner]   Similarity matrix [" << batch_size << ", " << num_tokens << ", " << num_tokens
+                    << "]: " << similarity_duration.count() << " us ("
+                    << (static_cast<double>(similarity_duration.count()) / total_kernel_duration.count() * 100) << "%)" << std::endl;
+    ss << "[CDPruner]   Conditional kernel [" << batch_size << ", " << num_tokens << ", " << num_tokens
+                    << "]: " << conditional_duration.count() << " us ("
+                    << (static_cast<double>(conditional_duration.count()) / total_kernel_duration.count() * 100) << "%)" << std::endl;
 
-        std::cout << "[CDPruner] Total kernel build time: " << total_kernel_duration.count() << " us ("
-                  << (total_kernel_duration.count() / 1000.0) << " ms)" << std::endl;
-        // Performance metrics
-        std::cout << "[CDPruner] Kernel build throughput: "
-                  << (static_cast<double>(total_operations) / total_kernel_duration.count() * 1000000) << " ops/sec"
-                  << std::endl;
-    }
+    ss << "[CDPruner] Total kernel build time: " << total_kernel_duration.count() << " us ("
+                    << (total_kernel_duration.count() / 1000.0) << " ms)" << std::endl;
+    // Performance metrics
+    ss << "[CDPruner] Kernel build throughput: "
+                    << (static_cast<double>(total_operations) / total_kernel_duration.count() * 1000000) << " ops/sec" << std::endl;
+    GENAI_DEBUG_LOG(ss.str());
 
     return conditional_kernel;
 }
@@ -199,9 +178,7 @@ ov::Tensor ConditionalKernelBuilder::compute_similarity_matrix_gpu(const ov::Ten
 
     if (!m_requests_initialized) {
         // Fallback to CPU implementation if infer requests not initialized
-        if (m_config.pruning_debug_mode) {
-            std::cout << "Using CPU fallback for similarity matrix computation" << std::endl;
-        }
+        GENAI_DEBUG_LOG("[CDPruner] Using CPU fallback for similarity matrix computation");
         return compute_similarity_matrix(features);
     }
 
@@ -215,9 +192,7 @@ ov::Tensor ConditionalKernelBuilder::compute_similarity_matrix_gpu(const ov::Ten
 
     } catch (const std::exception& e) {
         // Fallback to CPU implementation if GPU fails
-        if (m_config.pruning_debug_mode) {
-            std::cout << "GPU MatMul failed, falling back to CPU." << std::endl;
-        }
+        GENAI_DEBUG_LOG("[CDPruner] GPU MatMul failed, falling back to CPU.");
         return compute_similarity_matrix(features);
     }
 }

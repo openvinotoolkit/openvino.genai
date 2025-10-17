@@ -34,9 +34,6 @@ struct Config {
     /// @brief Device to run CDPruner computations on
     std::string device = "CPU";
 
-    /// @brief Whether to enable debug output
-    bool pruning_debug_mode = false;
-
     /// @brief Threshold for numerical stability
     float numerical_threshold = 1e-6f;
 

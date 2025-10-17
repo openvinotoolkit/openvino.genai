@@ -16,6 +16,7 @@
 #include <stdexcept>
 
 #include "openvino/openvino.hpp"
+#include "utils.hpp"
 
 #ifdef ENABLE_OPENCL_DPP
 #    ifdef OV_GPU_USE_OPENCL_HPP
@@ -138,9 +139,7 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel,
         if (m_opencl_dpp && m_opencl_dpp->is_available()) {
             return select_opencl_internal(kernel, num_tokens);
         } else {
-            if (m_config.pruning_debug_mode) {
-                std::cout << "[FastGreedyDPP] OpenCL not available, falling back to CPU implementation" << std::endl;
-            }
+            GENAI_DEBUG_LOG("[FastGreedyDPP] OpenCL not available, falling back to CPU implementation");
         }
     }
 #endif
@@ -158,11 +157,11 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel_
     size_t tokens_first_half = num_tokens_to_keep / 2;
     size_t tokens_second_half = num_tokens_to_keep - tokens_first_half;
 
-    if (m_config.pruning_debug_mode) {
-        std::cout << "[FastGreedyDPP] Step 3: Selecting tokens using parallel DPP..." << std::endl;
-        std::cout << "[FastGreedyDPP]   Selecting " << tokens_first_half << " tokens from first half, "
-                  << tokens_second_half << " tokens from second half in parallel" << std::endl;
-    }
+    GENAI_DEBUG_LOG("[FastGreedyDPP] Step 3: Selecting tokens using parallel DPP...");
+    std::ostringstream ss;
+    ss << "[FastGreedyDPP]   Selecting " << tokens_first_half << " tokens from first half, "
+       << tokens_second_half << " tokens from second half in parallel";
+    GENAI_DEBUG_LOG(ss.str());
 #ifdef ENABLE_OPENCL_DPP
     // Check if OpenCL DPP is enabled and available
     if (m_config.use_cl_kernel) {
@@ -187,22 +186,16 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel(const ov::Tensor
                                                                 size_t tokens_first_half,
                                                                 size_t tokens_second_half,
                                                                 size_t split_point) {
-    if (m_config.pruning_debug_mode) {
-        std::cout << "[FastGreedyDPP] Using parallel CPU DPP processing..." << std::endl;
-    }
+    GENAI_DEBUG_LOG("[FastGreedyDPP] Using parallel CPU DPP processing...");
 
     // Launch parallel tasks for DPP selection
     std::future<std::vector<std::vector<size_t>>> dpp_first_future = std::async(std::launch::async, [&]() {
-        if (m_config.pruning_debug_mode) {
-            std::cout << "[FastGreedyDPP] Thread 1: DPP selection for first half..." << std::endl;
-        }
+        GENAI_DEBUG_LOG("[FastGreedyDPP] Thread 1: DPP selection for first half...");
         return this->select_cpu_internal(kernel_matrix_first, tokens_first_half);
     });
 
     std::future<std::vector<std::vector<size_t>>> dpp_second_future = std::async(std::launch::async, [&]() {
-        if (m_config.pruning_debug_mode) {
-            std::cout << "[FastGreedyDPP] Thread 2: DPP selection for second half..." << std::endl;
-        }
+        GENAI_DEBUG_LOG("[FastGreedyDPP] Thread 2: DPP selection for second half...");
         return this->select_cpu_internal(kernel_matrix_second, tokens_second_half);
     });
 
@@ -250,9 +243,7 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
                                                                        size_t tokens_first_half,
                                                                        size_t tokens_second_half,
                                                                        size_t split_point) {
-    if (m_config.pruning_debug_mode) {
-        std::cout << "[FastGreedyDPP] Using OpenCL DPP for merged batch processing..." << std::endl;
-    }
+    GENAI_DEBUG_LOG("[FastGreedyDPP] Using OpenCL DPP for merged batch processing...");
 
     // Initialize OpenCL DPP if not already done
     if (!m_opencl_dpp) {
@@ -261,9 +252,7 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
 
     // Verify OpenCL is available
     if (!m_opencl_dpp || !m_opencl_dpp->is_available()) {
-        if (m_config.pruning_debug_mode) {
-            std::cout << "[FastGreedyDPP] OpenCL not available, falling back to CPU parallel processing" << std::endl;
-        }
+        GENAI_DEBUG_LOG("[FastGreedyDPP] OpenCL not available, falling back to CPU parallel processing");
         return select_parallel(kernel_matrix_first,
                                kernel_matrix_second,
                                tokens_first_half,
@@ -294,9 +283,7 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
 
     // Check if both matrices have the same token size
     if (first_tokens == second_tokens) {
-        if (m_config.pruning_debug_mode) {
-            std::cout << "[FastGreedyDPP] Matrices have same token size, creating merged tensor..." << std::endl;
-        }
+        GENAI_DEBUG_LOG("[FastGreedyDPP] Matrices have same token size, creating merged tensor...");
 
         // Create merged tensor with shape [original_batch_size, 2, tokens, tokens]
         merged_kernel = ov::Tensor(ov::element::f32, {original_batch_size, 2, first_tokens, first_tokens});
@@ -322,9 +309,7 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
         }
 
     } else {
-        if (m_config.pruning_debug_mode) {
-            std::cout << "[FastGreedyDPP] Matrices have different token sizes, padding to max size..." << std::endl;
-        }
+        GENAI_DEBUG_LOG("[FastGreedyDPP] Matrices have different token sizes, padding to max size...");
 
         // Create merged tensor with padding for different sizes
         size_t max_tokens = std::max(first_tokens, second_tokens);
@@ -445,62 +430,66 @@ std::vector<size_t> FastGreedyDPP::select_single_batch(const ov::Tensor& kernel,
         update_marginal_gains(t, total_tokens, cis_data, di2s_data);
 
         // Debug output: print cis matrix content
-        if (m_config.pruning_debug_mode && t < 10) {
-            std::cout << "[CDPruner] === CIS Matrix Content after iteration " << t << " ===" << std::endl;
-            std::cout << "[CDPruner] CIS matrix shape: [" << (t + 1) << ", " << total_tokens << "]" << std::endl;
+        if (t < 10) {
+            std::ostringstream ss;
+            ss << "[CDPruner] === CIS Matrix Content after iteration " << t << " ===" << std::endl;
+            ss << "[CDPruner] CIS matrix shape: [" << (t + 1) << ", " << total_tokens << "]" << std::endl;
 
             const float* cis_data_debug = cis.data<const float>();
             size_t print_tokens = std::min(total_tokens, static_cast<size_t>(10));
 
             // Print each orthogonal vector (each row of cis) - only first 10 elements
             for (size_t row = 0; row <= t; ++row) {
-                std::cout << "[CDPruner] cis[" << row << "] (orthogonal vector for selected token "
-                          << selected_indices[row] << "): [";
+                ss << "[CDPruner] cis[" << row << "] (orthogonal vector for selected token "
+                                << selected_indices[row] << "): [";
 
                 for (size_t col = 0; col < print_tokens; ++col) {
                     if (col > 0)
-                        std::cout << ", ";
+                        ss << ", ";
                     size_t idx = row * total_tokens + col;
-                    std::cout << std::fixed << std::setprecision(4) << cis_data_debug[idx];
+                    ss << std::fixed << std::setprecision(4) << cis_data_debug[idx];
                 }
 
                 if (total_tokens > 10) {
-                    std::cout << ", ... (" << (total_tokens - 10) << " more)";
+                    ss << ", ... (" << (total_tokens - 10) << " more)";
                 }
-                std::cout << "]" << std::endl;
+                ss << "]" << std::endl;
             }
-            std::cout << std::endl;
+            ss << std::endl;
+            GENAI_DEBUG_LOG(ss.str());
         }
 
         // Debug output: print updated conditional kernel matrix after each selection
-        if (m_config.pruning_debug_mode && t < 10) {
+        if (t < 10) {
             // Print current selected indices
-            std::cout << "[CDPruner] Selected tokens so far: [";
+            std::ostringstream ss;
+            ss << "[CDPruner] Selected tokens so far: [";
             for (size_t i = 0; i < selected_indices.size(); ++i) {
                 if (i > 0)
-                    std::cout << ", ";
-                std::cout << selected_indices[i];
+                    ss << ", ";
+                ss << selected_indices[i];
             }
-            std::cout << "]" << std::endl;
+            ss << "]" << std::endl;
 
             // Print current marginal gains (di2s) - limited to first 10 elements
-            std::cout << "[CDPruner] Current marginal gains: [";
+            ss << "[CDPruner] Current marginal gains: [";
             const float* di2s_data_debug = di2s.data<const float>();
             size_t print_gains_size = std::min(total_tokens, static_cast<size_t>(10));
 
             for (size_t i = 0; i < print_gains_size; ++i) {
                 if (i > 0)
-                    std::cout << ", ";
+                    ss << ", ";
                 if (di2s_data_debug[i] == -std::numeric_limits<float>::infinity()) {
-                    std::cout << "-inf";
+                    ss << "-inf";
                 } else {
-                    std::cout << std::fixed << std::setprecision(4) << di2s_data_debug[i];
+                    ss << std::fixed << std::setprecision(4) << di2s_data_debug[i];
                 }
             }
             if (total_tokens > 10) {
-                std::cout << ", ... (" << (total_tokens - 10) << " more elements)";
+                ss << ", ... (" << (total_tokens - 10) << " more elements)";
             }
-            std::cout << "]" << std::endl << std::endl;
+            ss << "]" << std::endl << std::endl;
+            GENAI_DEBUG_LOG(ss.str());
         }
 
         // Set the selected token's gain to negative infinity to prevent re-selection
@@ -520,13 +509,11 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_cpu_internal(const ov::Te
         static bool simd_logged = false;
         if (!simd_logged) {
 #ifdef __AVX__
-            std::cout << "[CDPruner] Using AVX SIMD instructions for vector operations (8 floats/operation)"
-                      << std::endl;
+            GENAI_DEBUG_LOG("[CDPruner] Using AVX SIMD instructions for vector operations (8 floats/operation)");
 #elif defined(__SSE2__)
-            std::cout << "[CDPruner] Using SSE2 SIMD instructions for vector operations (4 floats/operation)"
-                      << std::endl;
+            GENAI_DEBUG_LOG("[CDPruner] Using SSE2 SIMD instructions for vector operations (4 floats/operation)");
 #else
-            std::cout << "[CDPruner] Using scalar operations (no SIMD acceleration)" << std::endl;
+            GENAI_DEBUG_LOG("[CDPruner] Using scalar operations (no SIMD acceleration)");
 #endif
             simd_logged = true;
         }
@@ -744,9 +731,7 @@ bool OpenCLDPP::initialize_opencl() {
         cl::Platform::get(&platforms);
 
         if (platforms.empty()) {
-            if (m_config.pruning_debug_mode) {
-                std::cerr << "[OpenCLDPP] No OpenCL platforms found" << std::endl;
-            }
+            GENAI_WARNING_LOG("[OpenCLDPP] No OpenCL platforms found");
             return false;
         }
 
@@ -755,17 +740,13 @@ bool OpenCLDPP::initialize_opencl() {
         m_state->context = cl::Context(m_state->device);
         m_state->queue = cl::CommandQueue(m_state->context, m_state->device);
 
-        if (m_config.pruning_debug_mode) {
-            std::string device_name;
-            m_state->device.getInfo(CL_DEVICE_NAME, &device_name);
-            std::cout << "[OpenCLDPP] Using OpenCL device: " << device_name << std::endl;
-        }
+        std::string device_name;
+        m_state->device.getInfo(CL_DEVICE_NAME, &device_name);
+        GENAI_DEBUG_LOG("[OpenCLDPP] Using OpenCL device: " + device_name);
 
         return load_and_compile_kernels();
     } catch (const std::exception& e) {
-        if (m_config.pruning_debug_mode) {
-            std::cerr << "[OpenCLDPP] OpenCL initialization failed: " << e.what() << std::endl;
-        }
+        GENAI_ERROR_LOG("[OpenCLDPP] OpenCL initialization failed: " + std::string(e.what()));
         return false;
     }
 }
@@ -775,9 +756,7 @@ bool OpenCLDPP::load_and_compile_kernels() {
         const char* kernel_source = dpp_kernel_split_cl;
         size_t kernel_length = std::strlen(kernel_source);
 
-        if (m_config.pruning_debug_mode) {
-            std::cout << "[OpenCLDPP] Loaded kernel source (" << kernel_length << " chars) from header." << std::endl;
-        }
+        GENAI_DEBUG_LOG("[OpenCLDPP] Loaded kernel source (" + std::to_string(kernel_length) + " chars) from header.");
 
         cl::Program::Sources sources;
         sources.push_back({kernel_source, kernel_length});
@@ -789,22 +768,16 @@ bool OpenCLDPP::load_and_compile_kernels() {
             // Get build log for debugging
             std::string build_log;
             m_state->program.getBuildInfo(m_state->device, CL_PROGRAM_BUILD_LOG, &build_log);
-            if (m_config.pruning_debug_mode) {
-                std::cerr << "[OpenCLDPP] Kernel compilation failed with error: " << result << std::endl;
-                std::cerr << "[OpenCLDPP] Build log: " << build_log << std::endl;
-            }
+            GENAI_ERROR_LOG("[OpenCLDPP] Kernel compilation failed with error: " + std::to_string(result));
+            GENAI_ERROR_LOG("[OpenCLDPP] Build log: " + build_log);
             return false;
         }
 
-        if (m_config.pruning_debug_mode) {
-            std::cout << "[OpenCLDPP] Kernel compilation successful" << std::endl;
-        }
+        GENAI_DEBUG_LOG("[OpenCLDPP] Kernel compilation successful");
 
         return true;
     } catch (const std::exception& e) {
-        if (m_config.pruning_debug_mode) {
-            std::cerr << "[OpenCLDPP] Kernel compilation failed: " << e.what() << std::endl;
-        }
+        GENAI_ERROR_LOG("[OpenCLDPP] Kernel compilation failed: " + std::string(e.what()));
         return false;
     }
 }
@@ -864,12 +837,9 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
     merged_kernel.setArg(8, sizeof(float) * lws[1], nullptr);  // local memory for reduction
     merged_kernel.setArg(9, sizeof(int) * lws[1], nullptr);    // local memory for argmax
 
-    if (m_config.pruning_debug_mode) {
-        std::cout << "[OpenCLDPP] Global work size: [" << gws[0] << ", " << gws[1] << ", " << gws[2] << "]"
-                  << std::endl;
-        std::cout << "[OpenCLDPP] Local work size: [" << lws[0] << ", " << lws[1] << ", " << lws[2] << "]" << std::endl;
-        std::cout << "[OpenCLDPP] Selected tokens per batch: " << selected_token_num_per_batch << std::endl;
-    }
+    GENAI_DEBUG_LOG("[OpenCLDPP] Global work size: [" + std::to_string(gws[0]) + ", " + std::to_string(gws[1]) + ", " + std::to_string(gws[2]) + "]");
+    GENAI_DEBUG_LOG("[OpenCLDPP] Local work size: [" + std::to_string(lws[0]) + ", " + std::to_string(lws[1]) + ", " + std::to_string(lws[2]) + "]");
+    GENAI_DEBUG_LOG("[OpenCLDPP] Selected tokens per batch: " + std::to_string(selected_token_num_per_batch));
 
     // Initialize buffers
     m_state->queue.enqueueWriteBuffer(buffer_di2s,
@@ -902,22 +872,23 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
                                      sizeof(int) * selected_token_num_per_batch * batch_size,
                                      output_ids.data());
 
-    if (m_config.pruning_debug_mode) {
-        std::cout << "[OpenCLDPP] DPP selection completed with " << selected_token_num_per_batch * batch_size
-                  << " tokens" << std::endl;
+    GENAI_DEBUG_LOG("[OpenCLDPP] DPP selection completed with " + std::to_string(selected_token_num_per_batch * batch_size) + " tokens");
 
-        // Print first few selected token IDs for debugging
-        std::cout << "[OpenCLDPP] Selected tokens (first batch): [";
+    // Print first few selected token IDs for debugging (single log line)
+    {
+        std::ostringstream oss;
+        oss << "[OpenCLDPP] Selected tokens (first batch): [";
         size_t print_count = std::min(selected_token_num_per_batch * batch_size, static_cast<size_t>(10));
         for (size_t i = 0; i < print_count; ++i) {
             if (i > 0)
-                std::cout << ", ";
-            std::cout << output_ids[i];
+                oss << ", ";
+            oss << output_ids[i];
         }
         if (selected_token_num_per_batch * batch_size > 10) {
-            std::cout << ", ... (" << (selected_token_num_per_batch * batch_size - 10) << " more)";
+            oss << ", ... (" << (selected_token_num_per_batch * batch_size - 10) << " more)";
         }
-        std::cout << "]" << std::endl;
+        oss << "]";
+        GENAI_DEBUG_LOG(oss.str());
     }
 
     std::vector<size_t> results;

@@ -129,8 +129,8 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
 
             kernel_duration = computation_duration;
         } catch (const std::exception& e) {
-            std::cerr << "[CDPruner] Error occurred during kernel building: " << e.what() << std::endl;
-            std::cout << "[CDPruner] Falling back to traditional approach..." << std::endl;
+            GENAI_ERROR_LOG(std::string("[CDPruner] Error occurred during kernel building: ") + e.what());
+            GENAI_DEBUG_LOG("[CDPruner] Falling back to traditional approach...");
             computation_mode = "Traditional Step-by-Step by CPU";
             auto relevance_start = std::chrono::high_resolution_clock::now();
             // CDPruner Step 1: Compute relevance scores
@@ -230,7 +230,6 @@ ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features, const ov::
     size_t text_feature_dim = text_shape[1];
 
     float pruning_ratio = 1.0f - static_cast<float>(num_tokens_to_keep) / static_cast<float>(total_tokens);
-    float reduction_percentage = pruning_ratio * 100.0f;
     size_t tokens_removed = total_tokens - num_tokens_to_keep;
 
     utils::print_cdpruner_processing_overview(total_tokens,
@@ -239,7 +238,6 @@ ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features, const ov::
                                               text_feature_dim,
                                               num_tokens_to_keep,
                                               tokens_removed,
-                                              reduction_percentage,
                                               m_config.pruning_ratio,
                                               m_config.relevance_weight);
 
@@ -272,18 +270,20 @@ ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features, const ov::
     m_last_statistics.pruning_ratio = 1.0f - static_cast<float>(actual_selected_tokens) / total_tokens;
     m_last_statistics.batch_size = batch_size;
 
-    if (!selected_tokens.empty() && m_config.pruning_debug_mode) {
-        std::cout << "\n[CDPruner] Selected token indices (batch 0): [";
+    if (!selected_tokens.empty()) {
         const auto& first_batch_tokens = selected_tokens[0];
+        std::ostringstream oss;
+        oss << "[CDPruner] Selected token indices (batch 0): [";
         for (size_t i = 0; i < std::min(static_cast<size_t>(10), first_batch_tokens.size()); ++i) {
             if (i > 0)
-                std::cout << ", ";
-            std::cout << first_batch_tokens[i];
+                oss << ", ";
+            oss << first_batch_tokens[i];
         }
         if (first_batch_tokens.size() > 10) {
-            std::cout << ", ... (+" << (first_batch_tokens.size() - 10) << " more)";
+            oss << ", ... (+" << (first_batch_tokens.size() - 10) << " more)";
         }
-        std::cout << "]" << std::endl;
+        oss << "]";
+        GENAI_DEBUG_LOG(oss.str());
     }
 
     return pruned_features;
@@ -337,12 +337,12 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
     for (size_t frame_idx = 0; frame_idx < visual_features_list.size(); ++frame_idx) {
         const auto& visual_feature = visual_features_list[frame_idx];
         ov::Tensor pruned_feature = apply_pruning(visual_feature, text_features, true);
-        if (m_config.pruning_debug_mode) {
-            auto shape = visual_feature.get_shape();
-            auto pruned_shape = pruned_feature.get_shape();
-            std::cout << "[CDPruner] Frame " << frame_idx << ": [" << shape[1] << " → " << pruned_shape[1] << " tokens]"
-                      << std::endl;
-        }
+        auto shape = visual_feature.get_shape();
+        auto pruned_shape = pruned_feature.get_shape();
+        std::ostringstream ss;
+        ss << "[CDPruner] Frame " << frame_idx << ": [" << shape[1] << " → " << pruned_shape[1]
+           << " tokens]";
+        GENAI_DEBUG_LOG(ss.str());
         pruned_features_list.push_back(std::move(pruned_feature));
     }
 
@@ -405,19 +405,19 @@ void CDPruner::validate_config(const Config& config) {
         return;  // Pruning disabled, no validation needed
 
     if (config.pruning_ratio < 1 || config.pruning_ratio > 100) {
-        throw std::invalid_argument("pruning_ratio must be between 1 and 100 (or 0 to disable)");
+        OPENVINO_THROW("pruning ratio must be between 0 and 100");
     }
 
     if (config.relevance_weight < 0.0f || config.relevance_weight > 1.0f) {
-        throw std::invalid_argument("relevance_weight must be in range [0.0, 1.0]");
+        OPENVINO_THROW("relevance weight must be between 0.0 and 1.0");
     }
 
     if (config.numerical_threshold < 0.0f) {
-        throw std::invalid_argument("numerical_threshold must be positive");
+        OPENVINO_THROW("numerical_threshold must be positive");
     }
 
     if (config.device.empty()) {
-        throw std::invalid_argument("device cannot be empty");
+        OPENVINO_THROW("device cannot be empty");
     }
 }
 

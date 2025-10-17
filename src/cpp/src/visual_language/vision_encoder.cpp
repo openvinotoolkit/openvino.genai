@@ -31,7 +31,6 @@ VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::
 
     // [CDPruner] Initialize CDPruner with default configuration
     ov::genai::cdpruner::Config cdpruner_config;
-    cdpruner_config.pruning_ratio = 50;           // 50% pruning by default
     cdpruner_config.device = device;             // Use same device as the model
     m_cdpruner = std::make_unique<ov::genai::cdpruner::CDPruner>(cdpruner_config);
 }
@@ -54,8 +53,7 @@ VisionEncoder::VisionEncoder(
 
     // [CDPruner] Initialize CDPruner with default configuration
     ov::genai::cdpruner::Config cdpruner_config;
-    cdpruner_config.pruning_ratio = 50;           // 50% pruning by default
-    cdpruner_config.device = device;             // Use same device as the model
+    cdpruner_config.device = device;  // Use same device as the model
     m_cdpruner = std::make_unique<ov::genai::cdpruner::CDPruner>(cdpruner_config);
 }
 

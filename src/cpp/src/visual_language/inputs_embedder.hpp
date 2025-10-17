@@ -87,8 +87,7 @@ public:
 
     // set CDPruner setting
     virtual void set_visual_token_pruning_config(size_t pruning_ratio,
-                                                 float relevance_weight,
-                                                 bool pruning_debug_mode = false);
+                                                 float relevance_weight);
     virtual NormlizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
@@ -164,16 +163,12 @@ private:
         }
 
         virtual void set_visual_token_pruning_config(size_t pruning_ratio,
-                                                     float relevance_weight,
-                                                     bool pruning_debug_mode) {
+                                                     float relevance_weight) {
             if (!m_vision_encoder)
                 return;
             auto pruner_config = m_vision_encoder->get_pruning_config();
-            if (pruner_config.has_value()) {
-                pruner_config->pruning_ratio = pruning_ratio;
-                pruner_config->relevance_weight = relevance_weight;
-                pruner_config->pruning_debug_mode = pruning_debug_mode;
-            }
+            pruner_config->pruning_ratio = pruning_ratio;
+            pruner_config->relevance_weight = relevance_weight;
             m_vision_encoder->set_pruning_config(pruner_config.value());
         }
 

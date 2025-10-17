@@ -460,11 +460,7 @@ ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front
 }
 
 bool env_setup_for_print_debug_info() {
-    // Specify the name of the environment variable
-    const char* env_var_name = "OPENVINO_LOG_LEVEL";
-    const char* env_var_value = std::getenv(env_var_name);
-    // Check if the environment variable was found
-    return (env_var_value != nullptr && atoi(env_var_value) > static_cast<int>(ov::log::Level::WARNING));
+    return get_openvino_env_log_level() > ov::log::Level::WARNING;
 }
 
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title) {
@@ -523,23 +519,22 @@ void print_cdpruner_processing_overview(size_t total_tokens,
                                         size_t text_feature_dim,
                                         size_t num_tokens_to_keep,
                                         size_t tokens_removed,
-                                        float reduction_percentage,
                                         size_t pruning_ratio,
                                         float relevance_weight) {
-    if (!env_setup_for_print_debug_info()) {
-        return;
+    float reduction_percentage = 0.0f;
+    if (total_tokens > 0) {
+        reduction_percentage = (static_cast<float>(tokens_removed) / static_cast<float>(total_tokens)) * 100.0f;
     }
-    std::ostringstream reduction_ss;
-    reduction_ss << std::fixed << std::setprecision(1) << reduction_percentage;
-
-    std::cout << "\n+--- CDPruner Processing Overview -------------------------+" << std::endl;
-    std::cout << "[CDPruner] Input:  Vision[" << total_tokens << " tokens x " << feature_dim << "D] + Text["
-              << text_tokens << " tokens x " << text_feature_dim << "D]" << std::endl;
-    std::cout << "[CDPruner] Config: Keep " << pruning_ratio << "% (" << num_tokens_to_keep << "/" << total_tokens
-              << " tokens) | Weight=" << relevance_weight << std::endl;
-    std::cout << "[CDPruner] Result: " << tokens_removed << " tokens removed (" << reduction_ss.str()
-              << "% reduction)" << std::endl;
-    std::cout << "+----------------------------------------------------------+" << std::endl;
+    GENAI_INFO_LOG("+--- CDPruner Processing Overview -------------------------+");
+    GENAI_INFO_LOG("[CDPruner] Input:  Vision[" + std::to_string(total_tokens) + " tokens x " +
+                   std::to_string(feature_dim) + "D] + Text[" + std::to_string(text_tokens) + " tokens x " +
+                   std::to_string(text_feature_dim) + "D]");
+    GENAI_INFO_LOG("[CDPruner] Config: Keep " + std::to_string(100 - pruning_ratio) + "% (" +
+                   std::to_string(num_tokens_to_keep) + "/" + std::to_string(total_tokens) +
+                   " tokens) | Weight=" + std::to_string(relevance_weight));
+    GENAI_INFO_LOG("[CDPruner] Result: " + std::to_string(tokens_removed) + " tokens removed (" +
+                   std::to_string(reduction_percentage) + "% reduction)");
+    GENAI_INFO_LOG("+----------------------------------------------------------+");
 }
 
 void print_cdpruner_processing_overview(size_t frame_count,
@@ -562,18 +557,17 @@ void print_cdpruner_processing_overview(size_t frame_count,
             (1.0f - static_cast<float>(total_output_tokens) / static_cast<float>(total_input_tokens)) * 100.0f;
     }
 
-    std::ostringstream reduction_ss;
-    reduction_ss << std::fixed << std::setprecision(1) << reduction_percentage;
-
-    std::cout << "\n+--- CDPruner Multi-Frame Processing Overview -------------+" << std::endl;
-    std::cout << "[CDPruner] Input:  " << frame_count << " frames × Vision[" << tokens_per_frame << " tokens x "
-              << feature_dim << "D] + Text[" << text_tokens << " tokens x " << text_feature_dim << "D]"
-              << std::endl;
-    std::cout << "[CDPruner] Config: Keep " << pruning_ratio << "% (" << num_tokens_to_keep_per_frame << "/"
-              << tokens_per_frame << " tokens per frame) | Weight=" << relevance_weight << std::endl;
-    std::cout << "[CDPruner] Total:  " << total_input_tokens << " → " << total_output_tokens << " tokens ("
-              << reduction_ss.str() << "% reduction)" << std::endl;
-    std::cout << "+----------------------------------------------------------+" << std::endl;
+    GENAI_INFO_LOG("+--- CDPruner Multi-Frame Processing Overview -------------+");
+    GENAI_INFO_LOG("[CDPruner] Input:  " + std::to_string(frame_count) + " frames x Vision[" +
+                   std::to_string(tokens_per_frame) + " tokens x " + std::to_string(feature_dim) + "D] + Text[" +
+                   std::to_string(text_tokens) + " tokens x " + std::to_string(text_feature_dim) + "D]");
+    GENAI_INFO_LOG("[CDPruner] Config: Keep " + std::to_string(pruning_ratio) + "% (" +
+                   std::to_string(num_tokens_to_keep_per_frame) + "/" + std::to_string(tokens_per_frame) +
+                   " tokens per frame) | Weight=" + std::to_string(relevance_weight));
+    GENAI_INFO_LOG("[CDPruner] Total:  " + std::to_string(total_input_tokens) + " → " +
+                   std::to_string(total_output_tokens) + " tokens (" + std::to_string(reduction_percentage) +
+                   "% reduction)");
+    GENAI_INFO_LOG("+----------------------------------------------------------+");
 }
 
 void print_cdpruner_performance_summary(const std::string& computation_mode,
@@ -585,33 +579,34 @@ void print_cdpruner_performance_summary(const std::string& computation_mode,
     if (!env_setup_for_print_debug_info()) {
         return;
     }
-    std::cout << "\n+--- CDPruner Performance Summary -------------------------+" << std::endl;
-    std::cout << "[CDPruner] Computation mode: " << computation_mode << std::endl;
-    std::cout << "[CDPruner] Total processing time: " << total_duration.count() << " us ("
-              << (total_duration.count() / 1000.0) << " ms)" << std::endl;
-
-    std::cout << "[CDPruner] Performance Metrics:" << std::endl;
-    std::cout << "[CDPruner]   Kernel computation time: " << kernel_duration.count() << " us ("
-              << (kernel_duration.count() / 1000.0) << " ms)" << std::endl;
-    std::cout << "[CDPruner]   DPP selection time: " << dpp_duration.count() << " us ("
-              << (dpp_duration.count() / 1000.0) << " ms)" << std::endl;
+    GENAI_INFO_LOG("+-------------- CDPruner Performance Summary --------------+");
+    GENAI_INFO_LOG("[CDPruner] Computation mode: " + computation_mode);
+    GENAI_INFO_LOG("[CDPruner] Total processing time: " + std::to_string(total_duration.count()) + " us (" +
+                   std::to_string(total_duration.count() / 1000.0) + " ms)");
+    GENAI_INFO_LOG("[CDPruner] Performance Metrics:");
+    GENAI_INFO_LOG("[CDPruner]   Kernel computation time: " + std::to_string(kernel_duration.count()) + " us (" +
+                   std::to_string(kernel_duration.count() / 1000.0) + " ms)");
+    GENAI_INFO_LOG("[CDPruner]   DPP selection time: " + std::to_string(dpp_duration.count()) + " us (" +
+                   std::to_string(dpp_duration.count() / 1000.0) + " ms)");
     if (total_duration.count() > 0) {
         const double total_time_sec = static_cast<double>(total_duration.count()) / 1'000'000.0;
-        std::cout << "[CDPruner]   Overall throughput: " << (static_cast<double>(total_input_tokens) / total_time_sec)
-                  << " input tokens/sec" << std::endl;
-        std::cout << "[CDPruner]   Pruning efficiency: " << (static_cast<double>(total_output_tokens) / total_time_sec)
-                  << " output tokens/sec" << std::endl;
+        GENAI_INFO_LOG("[CDPruner]   Overall throughput: " +
+                       std::to_string(static_cast<double>(total_input_tokens) / total_time_sec) + " input tokens/sec");
+        GENAI_INFO_LOG("[CDPruner]   Pruning efficiency: " +
+                       std::to_string(static_cast<double>(total_output_tokens) / total_time_sec) +
+                       " output tokens/sec");
     } else {
-        std::cout << "[CDPruner]   Overall throughput: N/A" << std::endl;
-        std::cout << "[CDPruner]   Pruning efficiency: N/A" << std::endl;
+        GENAI_INFO_LOG("[CDPruner]   Overall throughput: N/A");
+        GENAI_INFO_LOG("[CDPruner]   Pruning efficiency: N/A");
     }
     if (total_input_tokens > 0) {
-        std::cout << "[CDPruner]   Pruning ratio: "
-                  << (1.0 - static_cast<double>(total_output_tokens) / total_input_tokens) * 100 << "%" << std::endl;
+        GENAI_INFO_LOG("[CDPruner]   Pruning ratio: " +
+                       std::to_string((1.0 - static_cast<double>(total_output_tokens) / total_input_tokens) * 100) +
+                       "%");
     } else {
-        std::cout << "[CDPruner]   Pruning ratio: N/A" << std::endl;
+        GENAI_INFO_LOG("[CDPruner]   Pruning ratio: N/A");
     }
-    std::cout << "+----------------------------------------------------------+" << std::endl;
+    GENAI_INFO_LOG("+----------------------------------------------------------+");
 }
 
 void print_cdpruner_performance_summary(const std::string& computation_mode,
@@ -625,44 +620,46 @@ void print_cdpruner_performance_summary(const std::string& computation_mode,
         return;
     }
 
-    std::cout << "\n+--- CDPruner Multi-Frame Processing Performance Summary ----------------+" << std::endl;
-    std::cout << "[CDPruner] Computation mode: " << computation_mode << std::endl;
-    std::cout << "[CDPruner] Total processing time: " << total_duration.count() << " us ("
-              << (total_duration.count() / 1000.0) << " ms)" << std::endl;
-    std::cout << "[CDPruner] Performance Metrics:" << std::endl;
+    GENAI_INFO_LOG("+---------- CDPruner Multi-Frame Processing Performance Summary ---------+");
+    GENAI_INFO_LOG("[CDPruner] Computation mode: " + computation_mode);
+    GENAI_INFO_LOG("[CDPruner] Total processing time: " + std::to_string(total_duration.count()) + " us (" +
+                   std::to_string(total_duration.count() / 1000.0) + " ms)");
+    GENAI_INFO_LOG("[CDPruner] Performance Metrics:");
 
     if (frame_count > 0) {
-        std::cout << "[CDPruner]   Frames processed: " << frame_count << std::endl;
-        std::cout << "[CDPruner]   Average time per frame: " << (total_duration.count() / frame_count)
-                  << " us (" << (total_duration.count() / frame_count / 1000.0) << " ms)" << std::endl;
+        GENAI_INFO_LOG("[CDPruner]   Frames processed: " + std::to_string(frame_count));
+        GENAI_INFO_LOG("[CDPruner]   Average time per frame: " + std::to_string(total_duration.count() / frame_count) +
+                       " us (" + std::to_string(total_duration.count() / frame_count / 1000.0) + " ms)");
     } else {
-        std::cout << "[CDPruner]   Frames processed: 0" << std::endl;
-        std::cout << "[CDPruner]   Average time per frame: N/A" << std::endl;
+        GENAI_INFO_LOG("[CDPruner]   Frames processed: 0");
+        GENAI_INFO_LOG("[CDPruner]   Average time per frame: N/A");
     }
 
     if (total_duration.count() > 0) {
         const double duration_us = static_cast<double>(total_duration.count());
-        std::cout << "[CDPruner]   Overall throughput: "
-                  << (static_cast<double>(total_input_tokens) / duration_us * 1'000'000)
-                  << " input tokens/sec" << std::endl;
-        std::cout << "[CDPruner]   Pruning efficiency: "
-                  << (static_cast<double>(actual_total_tokens) / duration_us * 1'000'000)
-                  << " output tokens/sec" << std::endl;
+        GENAI_INFO_LOG("[CDPruner]   Overall throughput: " +
+                       std::to_string(static_cast<double>(total_input_tokens) / duration_us * 1'000'000) +
+                       " input tokens/sec");
+        GENAI_INFO_LOG("[CDPruner]   Pruning efficiency: " +
+                       std::to_string(static_cast<double>(actual_total_tokens) / duration_us * 1'000'000) +
+                       " output tokens/sec");
     } else {
-        std::cout << "[CDPruner]   Overall throughput: N/A" << std::endl;
-        std::cout << "[CDPruner]   Pruning efficiency: N/A" << std::endl;
+        GENAI_INFO_LOG("[CDPruner]   Overall throughput: N/A");
+        GENAI_INFO_LOG("[CDPruner]   Pruning efficiency: N/A");
     }
 
     if (total_input_tokens > 0) {
-        std::cout << "[CDPruner]   Combined pruning ratio: "
-                  << (1.0 - static_cast<double>(actual_total_tokens) / total_input_tokens) * 100 << "%" << std::endl;
+        GENAI_INFO_LOG("[CDPruner]   Combined pruning ratio: " +
+                       std::to_string((1.0 - static_cast<double>(actual_total_tokens) / total_input_tokens) * 100) +
+                       "%");
     } else {
-        std::cout << "[CDPruner]   Combined pruning ratio: N/A" << std::endl;
+        GENAI_INFO_LOG("[CDPruner]   Combined pruning ratio: N/A");
     }
 
-    std::cout << "[CDPruner] Final result: [" << actual_batch_size << ", " << actual_total_tokens << ", "
-              << actual_hidden_dim << "] from " << frame_count << " frames" << std::endl;
-    std::cout << "+----------------------------------------------------------+" << std::endl;
+    GENAI_INFO_LOG("[CDPruner] Final result: [" + std::to_string(actual_batch_size) + ", " +
+                   std::to_string(actual_total_tokens) + ", " + std::to_string(actual_hidden_dim) + "] from " +
+                   std::to_string(frame_count) + " frames");
+    GENAI_INFO_LOG("+----------------------------------------------------------+");
 }
 
 std::pair<ov::CompiledModel, KVDesc>

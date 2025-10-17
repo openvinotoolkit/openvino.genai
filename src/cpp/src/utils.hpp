@@ -3,6 +3,10 @@
 
 #pragma once
 #include <chrono>
+#include <cstdlib>
+#include <iostream>
+#include <mutex>
+#include <sstream>
 #include <string>
 #include <type_traits>
 #include <optional>
@@ -31,6 +35,81 @@ extern const std::string SDPA_BACKEND;
 namespace ov {
 namespace genai {
 namespace utils {
+inline ov::log::Level get_openvino_env_log_level() {
+    const char* env = std::getenv("OPENVINO_LOG_LEVEL");
+    if (!env)
+        return ov::log::Level::NO;
+    try {
+        std::string env_str(env);
+        size_t idx = 0;
+        int env_var_value = std::stoi(env_str, &idx);
+        if (idx != env_str.size()) {
+            return ov::log::Level::NO;
+        }
+        return static_cast<ov::log::Level>(env_var_value);
+    } catch (...) {
+        return ov::log::Level::NO;
+    }
+}
+class GenAILogStream : public std::ostringstream {
+public:
+    GenAILogStream() = default;
+    GenAILogStream(const GenAILogStream&) = delete;
+    GenAILogStream& operator=(const GenAILogStream&) = delete;
+    static GenAILogStream* get_instance() {
+        static GenAILogStream instance;
+        return &instance;
+    }
+    void do_log(ov::log::Level level, const char* file, int line, const std::string& msg) {
+        static std::mutex log_mutex;
+        std::lock_guard<std::mutex> lock(log_mutex);
+        if (should_log(level)) {
+            std::cout << format_prefix(level, file, line) << msg << std::endl;
+        }
+    }
+    bool should_log(ov::log::Level level) const {
+        static auto current_log_level = get_openvino_env_log_level();
+        return level <= current_log_level;
+    }
+
+private:
+    std::string get_filename(const std::string& filePath) const {
+        auto index = filePath.find_last_of("/\\");
+        if (std::string::npos == index) {
+            return filePath;
+        }
+        return filePath.substr(index + 1);
+    }
+    std::string format_prefix(ov::log::Level level, const char* file, int line) const {
+        std::string level_str;
+        switch (level) {
+        case ov::log::Level::DEBUG:
+            level_str = "[DEBUG]";
+            break;
+        case ov::log::Level::INFO:
+            level_str = "[INFO]";
+            break;
+        case ov::log::Level::WARNING:
+            level_str = "[WARNING]";
+            break;
+        case ov::log::Level::ERR:
+            level_str = "[ERROR]";
+            break;
+        default:
+            level_str = "[LOG]";
+            break;
+        }
+        return level_str + "[" + get_filename(file) + ":" + std::to_string(line) + "] ";
+    }
+};
+#define GenAILogger ov::genai::utils::GenAILogStream::get_instance()
+
+#define GenAILogPrint(level, msg) GenAILogger->do_log(level, __FILE__, __LINE__, msg)
+
+#define GENAI_DEBUG_LOG(msg)   GenAILogPrint(ov::log::Level::DEBUG, msg)
+#define GENAI_INFO_LOG(msg)    GenAILogPrint(ov::log::Level::INFO, msg)
+#define GENAI_WARNING_LOG(msg) GenAILogPrint(ov::log::Level::WARNING, msg)
+#define GENAI_ERROR_LOG(msg)   GenAILogPrint(ov::log::Level::ERR, msg)
 
 // Variable template that checks if a type has begin() and end() member functions
 template<typename, typename = void>
@@ -161,7 +240,6 @@ void print_cdpruner_processing_overview(size_t total_tokens,
                                         size_t text_feature_dim,
                                         size_t num_tokens_to_keep,
                                         size_t tokens_removed,
-                                        float reduction_percentage,
                                         size_t pruning_ratio,
                                         float relevance_weight);
 
