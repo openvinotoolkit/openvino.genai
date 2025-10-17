@@ -141,7 +141,6 @@ def test_parsers_2(hf_ov_genai_models):
             return StreamingStatus.RUNNING
 
     streamer = TextParserStreamer(genai_tokenizer, parsers=[DeepSeekR1ReasoningParser()])
-    breakpoint()
 
     msg = {}
     stream_string = [
