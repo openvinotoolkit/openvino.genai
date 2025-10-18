@@ -329,6 +329,7 @@ std::pair<ov::genai::EncodedResults, bool> full_decode(ov::Tensor& encoder_hidde
     stream_generated_tokens(streamer, handle, return_timestamps);
 
     prepare_decoder_with_past(models.decoder_with_past, models.decoder, init_ids.size());
+
     while (!sequence_group->has_finished() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
         sequence_group->schedule_tokens(1);
         const auto running_sequences = sequence_group->get_running_sequences();
@@ -570,7 +571,6 @@ void add_cache_position_input(std::shared_ptr<ov::Model> model) {
 
             register_matcher(std::make_shared<Matcher>(tile, this->get_type_info().name),
                 [model, unsqueeze](Matcher& m) {
-                std::cout << "matched" << std::endl;
                 auto& node_to_output = m.get_pattern_value_map();
                 auto unsqueeze_node = node_to_output.at(unsqueeze).get_node_shared_ptr();
                 auto matched_unsqueeze = std::static_pointer_cast<v0::Unsqueeze>(unsqueeze_node);
@@ -579,8 +579,9 @@ void add_cache_position_input(std::shared_ptr<ov::Model> model) {
                 cache_position->get_output_tensor(0).set_names({"cache_position"});
                 cache_position->set_friendly_name("cache_position");
                 model->add_parameters({cache_position});
-                // If cache_position was missed in model, then it was derived by fp32 Range from
-                // shapes of inputs. So operations expect fp32 input.
+                // If cache_position input is missed in the model, it means that position is calculated
+                // by the model itself using fp32 range constructed from the shapes of inputs.
+                // So operations below this range expect fp32 input.
                 auto cache_position_f32 = std::make_shared<v0::Convert>(cache_position, ov::element::f32);
 
                 matched_unsqueeze->input(0).replace_source_output(cache_position_f32->output(0));
@@ -1086,12 +1087,10 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Static Whisper encoder model");
     m_models.encoder = compiled_model.create_infer_request();
 
-    // ov::save_model(decoder_with_past_model, "decoder_with_past_model.xml");
     compiled_model = core.compile_model(decoder_with_past_model, "NPU", properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Static Whisper decoder with past model");
     m_models.decoder_with_past = compiled_model.create_infer_request();
 
-    // ov::save_model(decoder_model, "decoder_model.xml");
     compiled_model = core.compile_model(decoder_model, "NPU", properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Static Whisper decoder model");
     m_models.decoder = compiled_model.create_infer_request();
