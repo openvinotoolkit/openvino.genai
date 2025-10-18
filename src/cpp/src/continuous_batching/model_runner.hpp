@@ -118,7 +118,6 @@ class ModelRunner {
     bool m_is_use_xattention_inputs;
 
     bool m_is_use_adaptive_rkv;
-
     // A model to compute token embeddings.
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
@@ -1123,7 +1122,6 @@ private:
             }
         }
 
-        std::vector<std::string> xattention_tensor_names(m_num_decoder_layers);
         for (size_t i = 0; i < m_num_decoder_layers; i++) {
             auto tensor_name = std::string("xattention_threshold.") + std::to_string(i);
             m_request.set_tensor(tensor_name, xattention_thresholds);
@@ -1140,6 +1138,7 @@ private:
 
         ov::Tensor adaptive_rkv_evictable_sizes(ov::element::i32, {batch_size_in_sequences});
         float* adaptive_rkv_evictable_sizes_data = adaptive_rkv_evictable_sizes.data<float>();
+        std::vector<size_t> running_seq_ids;
         for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); i++) {
             size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
             SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
@@ -1148,22 +1147,53 @@ private:
             for (size_t k = 0; k < num_running_sequences; ++k) {
                 Sequence::CPtr sequence = running_sequences[k];
                 size_t seq_id = sequence->get_id();
-                size_t evictable_size = 0;
-
-                if (scheduler_output.m_adaptive_rkv_evictable_sizes.find(seq_id) != scheduler_output.m_adaptive_rkv_evictable_sizes.end()) {
-                    evictable_size = scheduler_output.m_adaptive_rkv_evictable_sizes.at(seq_id);
-                }
-                *adaptive_rkv_evictable_sizes_data = evictable_size;
-                adaptive_rkv_evictable_sizes_data += 1;
+                running_seq_ids.push_back(seq_id);
             }
+        }
+
+        for (size_t seq_id : running_seq_ids) {
+            size_t evictable_size = 0;
+
+            if (scheduler_output.m_adaptive_rkv_evictable_sizes.find(seq_id) != scheduler_output.m_adaptive_rkv_evictable_sizes.end()) {
+                evictable_size = scheduler_output.m_adaptive_rkv_evictable_sizes.at(seq_id);
+            }
+            *adaptive_rkv_evictable_sizes_data = evictable_size;
+            adaptive_rkv_evictable_sizes_data += 1;
         }
 
         m_request.set_tensor("adaptive_rkv_evictable_sizes", adaptive_rkv_evictable_sizes);
 
+        std::vector<size_t> num_diversity_set_blocks_per_layer(m_num_decoder_layers, 0);
         // Reserved for future use
-        ov::Tensor adaptive_rkv_diversity_block_set(ov::element::i32, {batch_size_in_sequences});
-        m_request.set_tensor("adaptive_rkv_diversity_block_set", adaptive_rkv_diversity_block_set);
+        for (size_t i = 0; i < m_num_decoder_layers; i++) {
+            ov::Tensor adaptive_rkv_diversity_block_set_begins(ov::element::i32, {batch_size_in_sequences + 1});
+            OPENVINO_ASSERT(batch_size_in_sequences == running_seq_ids.size());
+            auto begins_data = adaptive_rkv_diversity_block_set_begins.data<int32_t>();
+            begins_data[0] = 0;
+            begins_data += 1;
 
+            auto begins_name = std::string("adaptive_rkv_diversity_block_set_indices_begins.") + std::to_string(i);
+            const auto& adaptive_rkv_diversity_block_map = scheduler_output.m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence[i];
+            for (size_t seq_id : running_seq_ids) {
+                OPENVINO_ASSERT(adaptive_rkv_diversity_block_map.find(seq_id) != adaptive_rkv_diversity_block_map.end());
+                size_t num_blocks = adaptive_rkv_diversity_block_map.at(seq_id).size();
+                num_diversity_set_blocks_per_layer[i] += num_blocks;
+                *begins_data  = num_diversity_set_blocks_per_layer[i];
+                begins_data += 1;
+            }
+            m_request.set_tensor(begins_name, adaptive_rkv_diversity_block_set_begins);
+        }
+
+        std::vector<std::string> indices_tensor_names(m_num_decoder_layers);
+        for (size_t i = 0; i < m_num_decoder_layers; i++) {
+            auto indices_name = std::string("adaptive_rkv_diversity_block_set_indices.") + std::to_string(i);
+            indices_tensor_names[i] = indices_name;
+            auto indices_tensor = m_request.get_tensor(indices_name);
+            indices_tensor.set_shape({num_diversity_set_blocks_per_layer[i]});
+        }
+        _fill_select_indices_from_block_tables(indices_tensor_names,
+                                               scheduler_output,
+                                               scheduler_output.m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence);
     }
 };
 }
