@@ -181,10 +181,12 @@ ov::genai::WhisperPipeline::WhisperPipeline(const std::filesystem::path& models_
                                             const ov::AnyMap& properties) {
     auto start_time = std::chrono::steady_clock::now();
     if (device == "NPU") {
-        if (properties.count("STATIC_PIPELINE") && properties.at("STATIC_PIPELINE").as<bool>() == false) {
-            m_impl = std::make_unique<WhisperPipelineStatefulImpl>(models_path, device, properties);
+        auto properties_copy = properties;
+        const bool use_static_pipeline = utils::pop_or_default(properties_copy, "STATIC_PIPELINE", true);
+        if (!use_static_pipeline) {
+            m_impl = std::make_unique<WhisperPipelineStatefulImpl>(models_path, device, properties_copy);
         } else {
-            m_impl = std::make_unique<StaticWhisperPipeline>(models_path, properties);
+            m_impl = std::make_unique<StaticWhisperPipeline>(models_path, properties_copy);
         }
     } else {
         m_impl = std::make_unique<WhisperPipelineStatefulImpl>(models_path, device, properties);
