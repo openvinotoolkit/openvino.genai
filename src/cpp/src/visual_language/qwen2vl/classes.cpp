@@ -583,7 +583,7 @@ size_t calculate_product(const std::vector<std::array<size_t, 3>>& data) {
             total_product *= element;
         }
     }
-    return total_product;
+    return data.size() > 0 ? total_product : 0;
 };
 
 ov::Tensor merge_text_and_video_image_embeddings(
