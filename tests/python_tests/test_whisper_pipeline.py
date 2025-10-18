@@ -26,6 +26,10 @@ from typing import Any
 pytest.skip("Port for tensor name cache_position was not found. Ticket CVS-174805.", allow_module_level=True)
 
 
+def test_avoid_0_collected_tests():
+    pass
+
+
 @pytest.fixture(scope="class", autouse=True)
 def run_gc_after_test():
     """
