@@ -605,15 +605,15 @@ ov::Tensor merge_text_and_video_image_embeddings(
         for (size_t seq_idx = 0; seq_idx < seq_length; ++seq_idx) {
             size_t flat_idx = batch_idx * seq_length + seq_idx;
             if (input_ids_data[flat_idx] == vid_token) {
-                std::copy_n(video_embeds_data + image_embed_idx * hidden_size,
-                            hidden_size,
-                            merged_embeds_data + flat_idx * hidden_size);
-                ++image_embed_idx;
-            } else if (input_ids_data[flat_idx] == img_token) {
-                std::copy_n(image_embeds_data + video_embed_idx * hidden_size,
+                std::copy_n(video_embeds_data + video_embed_idx * hidden_size,
                             hidden_size,
                             merged_embeds_data + flat_idx * hidden_size);
                 ++video_embed_idx;
+            } else if (input_ids_data[flat_idx] == img_token) {
+                std::copy_n(image_embeds_data + image_embed_idx * hidden_size,
+                            hidden_size,
+                            merged_embeds_data + flat_idx * hidden_size);
+                ++image_embed_idx;
             }
         }
     }
@@ -1135,7 +1135,7 @@ void InputsEmbedderQwen2VL::cvt_to_3_chn_image(ov::Tensor& image) {
         uint8_t* out_data = new_img.data<uint8_t>();
 
         for (size_t i = 0; i < shape[0] * shape[1] * shape[2]; ++i) {
-            float gray_val = *(in_data + i);
+            auto gray_val = *(in_data + i);
             *(out_data + i * 3 + 0) = gray_val;
             *(out_data + i * 3 + 1) = gray_val;
             *(out_data + i * 3 + 2) = gray_val;
