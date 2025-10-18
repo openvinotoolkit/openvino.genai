@@ -1175,20 +1175,30 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, vi
             ],
         }
     ]
-    if video_name is not None:
-        prompt = "Describe this video."
-        resized_video = request.getfixturevalue(video_name)
-        conversation[0]["content"] = [{"type": "video"}] + conversation[0]["content"]
-    if image_name is not None:
-        resized_image = request.getfixturevalue(image_name)
-        if video_name is not None:
-            prompt = "Describe this image and video."
-        else:
-            prompt = "Describe this image."
 
-        if model_id in ["katuni4ka/tiny-random-qwen2.5-vl"]:
-            conversation[0]["content"] = conversation[0]["content"] + [{"type": "image"}]
-        else:
+    if model_id in ["katuni4ka/tiny-random-qwen2.5-vl", "katuni4ka/tiny-random-qwen2vl"]:
+        if image_name is not None:
+            resized_image = request.getfixturevalue(image_name)
+            prompt = "Describe this image."
+            conversation[0]["content"] = [{"type": "image"}] + conversation[0]["content"]
+        if video_name is not None:
+            if image_name is not None:
+                prompt = "Describe this image and video."
+            else:
+                prompt = "Describe this video."
+            resized_video = request.getfixturevalue(video_name)
+            conversation[0]["content"] = [{"type": "video"}] + conversation[0]["content"]
+    else:
+        if video_name is not None:
+            prompt = "Describe this video."
+            resized_video = request.getfixturevalue(video_name)
+            conversation[0]["content"] = [{"type": "video"}] + conversation[0]["content"]
+        if image_name is not None:
+            resized_image = request.getfixturevalue(image_name)
+            if video_name is not None:
+                prompt = "Describe this image and video."
+            else:
+                prompt = "Describe this image."
             conversation[0]["content"] = [{"type": "image"}] + conversation[0]["content"]
 
     conversation[0]["content"][-1]["text"] = prompt
