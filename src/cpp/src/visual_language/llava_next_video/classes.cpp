@@ -222,7 +222,7 @@ ov::Tensor InputsEmbedderLLaVANextVideo::get_inputs_embeds(
     std::vector<ov::Tensor> video_embeds;
     for (size_t video_id : videos_sequence) {
         const EncodedVideo& encoded_video = videos.at(video_id);
-        video_embeds.push_back(encoded_video.video_feautures);
+        video_embeds.push_back(encoded_video.video_features);
     }
 
     // llava-next-video tokenizer always adds special tokens in pytorch
@@ -318,7 +318,7 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderLLaVANextVideo::encode_videos
         EncodedVideo encoded_video;
         ov::Shape new_shape = {1, video_features.get_shape()[0] * video_features.get_shape()[1], video_features.get_shape()[2]};
         video_features.set_shape(new_shape);
-        encoded_video.video_feautures = std::move(video_features);
+        encoded_video.video_features = std::move(video_features);
         encoded_video.num_video_tokens = num_video_tokens;
         encoded_videos.push_back(encoded_video);
     }

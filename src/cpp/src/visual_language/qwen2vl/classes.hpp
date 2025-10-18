@@ -144,6 +144,8 @@ ov::Tensor get_cu_seqlens(const std::vector<std::array<size_t, 3>>& reordered_im
 
 ov::Tensor concatenate_video_image_embeds(const std::vector<ov::Tensor>& reordered_video_embeds, const std::vector<ov::Tensor>& reordered_image_embeds);
 
+size_t calculate_product(const std::vector<std::array<size_t, 3>>& data);
+
 } // namespace qwen2vl_utils
 
 } // namespace ov::genai

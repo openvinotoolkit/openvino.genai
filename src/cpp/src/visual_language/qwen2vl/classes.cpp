@@ -576,6 +576,16 @@ ov::Tensor concatenate_video_image_embeds(const std::vector<ov::Tensor>& reorder
     return concatenated_embeds;
 }
 
+size_t calculate_product(const std::vector<std::array<size_t, 3>>& data) {
+    size_t total_product = 1;
+    for (const auto& arr : data) {
+        for (size_t element : arr) {
+            total_product *= element;
+        }
+    }
+    return total_product;
+};
+
 ov::Tensor merge_text_and_video_image_embeddings(
     const ov::Tensor& input_ids,
     const ov::Tensor& text_embeds, 
@@ -1217,17 +1227,8 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2VL::run_video_image_embeddi
     auto out_vision_shape = processed_vision_embeds.get_shape();
 
     // Split Video and Image's features.
-    auto calculate_product = [](const std::vector<std::array<size_t, 3>>& data) {
-        size_t total_product = 1;
-        for (const auto& arr : data) {
-            for (size_t element : arr) {
-                total_product *= element;
-            }
-        }
-        return total_product;
-    };
-    auto video_fea_num = calculate_product(reordered_videos_grid_thw);
-    auto image_fea_num = calculate_product(reordered_images_grid_thw);
+    auto video_fea_num = qwen2_vl_utils::calculate_product(reordered_videos_grid_thw);
+    auto image_fea_num = qwen2_vl_utils::calculate_product(reordered_images_grid_thw);
     size_t video_fea_count = out_vision_shape.at(0) * video_fea_num / (video_fea_num + image_fea_num);
 
     ov::Shape video_fea_shape = ov::Shape({video_fea_count, out_vision_shape.at(1)});
