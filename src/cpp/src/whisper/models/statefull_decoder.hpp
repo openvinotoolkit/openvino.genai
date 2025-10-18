@@ -1,4 +1,4 @@
-// Copyright (C) 2024 Intel Corporation
+// Copyright (C) 2024-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -28,5 +28,6 @@ private:
 
 private:
     ov::InferRequest m_request;
+    bool m_has_cache_position = true;
 };
 }  // namespace ov::genai
