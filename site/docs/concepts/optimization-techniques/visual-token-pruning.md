@@ -29,8 +29,8 @@ Effect: Smaller effective visual context reduces memory and can speed up generat
 ## Configuration Interface
 Visual Token Pruning is exposed through fields of `ov::genai::GenerationConfig`:
 
-* `pruning_ratio` (size_t / integer percentage): Portion of visual tokens to prune. Value range: 0–99. A value of 0 disables pruning. For example, `25` means prune 25% of the visual tokens (keep 75%). Values >= 100 are ignored (treated as disabled) to avoid eliminating the entire visual context.
-* `relevance_weight` (float): Weighting factor applied when aggregating or scaling dominance scores. Higher values emphasize relevance (making pruning slightly more conservative on borderline tokens); lower values increase pruning aggressiveness. Default in the sample is `0.5f`.
+* `pruning_ratio` (integer, 0–99): Portion of visual tokens to prune, specified as an integer percentage. A value of 0 disables pruning. For example, `25` means prune 25% of the visual tokens (keep 75%). Out-of-range values (negative or >=100) are treated as 0 (disabled) to avoid eliminating the entire visual context.
+* `relevance_weight` (float): Weighting factor applied when aggregating or scaling dominance scores. **Recommended range:** 0.0–1.0. A value of 0 disables relevance weighting (pruning is based solely on raw dominance scores), while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens. Values above 1.0 are allowed but may have diminishing or unpredictable effects; negative values are not recommended. Default in the sample is `0.5f`.
 
 ### Sample Usage (Python Benchmark Script)
 `samples/python/visual_language_chat/benchmark_vlm.py` provides a convenient way to measure performance impact of pruning.
