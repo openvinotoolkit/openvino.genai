@@ -245,7 +245,7 @@ public:
             proccesed_image = m_image_resizer->execute(initial_image, generation_config.height, generation_config.width);
             proccesed_image = m_image_processor->execute(proccesed_image);
 
-            // prepate image latent for cases:
+            // prepare image latent for cases:
             // - image to image
             // - inpainting with strength < 1.0
             // - inpainting with non-specialized model
