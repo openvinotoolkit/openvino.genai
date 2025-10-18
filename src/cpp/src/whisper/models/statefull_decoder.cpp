@@ -4,7 +4,7 @@
 #include "statefull_decoder.hpp"
 
 #include "utils.hpp"
-#include "whisper\whisper_utils.hpp"
+#include "whisper/whisper_utils.hpp"
 
 namespace {
 void reshape_hidden_states_to_static(std::shared_ptr<ov::Model> model, const ov::PartialShape& lhstates_shape) {
