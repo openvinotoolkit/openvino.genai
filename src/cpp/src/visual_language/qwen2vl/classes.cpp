@@ -561,7 +561,7 @@ ov::Tensor concatenate_video_image_embeds(const std::vector<ov::Tensor>& reorder
         }
 
         concatenated_embeds = ov::Tensor(type, {total_length, hidden_dim});
-        uint8_t* concat_data = concatenated_embeds.data<uint8_t>();
+        uint8_t* concat_data = reinterpret_cast<uint8_t*>(concatenated_embeds.data());
 
         size_t offset = 0;
         for (const auto& embed : reordered_video_embeds) {
@@ -765,7 +765,7 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_cpp(const std::vector<ov:
         out_tensor = ov::Tensor(infer_output.get_element_type(), out_shape);
     }
 
-    std::memcpy(out_tensor.data<uint8_t>() + frame_id * infer_output.get_byte_size(),
+    std::memcpy(reinterpret_cast<uint8_t*>(out_tensor.data()) + frame_id * infer_output.get_byte_size(),
                 infer_output.data(),
                 infer_output.get_byte_size());
     out_rsz_size = ImageSize{grid_h, grid_w};
@@ -860,7 +860,7 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vector<ov::
         out_tensor = ov::Tensor(infer_output.get_element_type(), out_shape);
     }
 
-    std::memcpy(out_tensor.data<uint8_t>() + frame_id * infer_output.get_byte_size(),
+    std::memcpy(reinterpret_cast<uint8_t*>(out_tensor.data()) + frame_id * infer_output.get_byte_size(),
                 infer_output.data(),
                 infer_output.get_byte_size());
     out_rsz_size = ImageSize{grid_h, grid_w};
@@ -1237,7 +1237,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2VL::run_video_image_embeddi
 
     ov::Shape image_fea_shape = ov::Shape({out_vision_shape.at(0) - video_fea_count, out_vision_shape.at(1)});
     ov::Tensor res_image = ov::Tensor(processed_vision_embeds.get_element_type(), image_fea_shape);
-    std::memcpy(res_image.data(), processed_vision_embeds.data<uint8_t>() + res_video.get_byte_size(), res_image.get_byte_size());
+    std::memcpy(res_image.data(), reinterpret_cast<uint8_t*>(processed_vision_embeds.data()) + res_video.get_byte_size(), res_image.get_byte_size());
     return {res_video, res_image};
 }
 
