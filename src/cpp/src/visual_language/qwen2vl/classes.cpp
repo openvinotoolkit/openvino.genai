@@ -853,7 +853,7 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vector<ov::
 
     const ov::Tensor& infer_output = encoder.get_output_tensor();
 
-    // Just avoid to multple copy.
+    // Just avoid to multiple copy.
     if (frame_id == 0u) {
         auto out_shape = infer_output.get_shape();
         out_shape[0] = out_shape[0] * frame_num;
