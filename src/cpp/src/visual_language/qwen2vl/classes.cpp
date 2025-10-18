@@ -880,11 +880,11 @@ EncodedVideo VisionEncoderQwen2VL::encode_frames(const std::vector<ov::Tensor>& 
     EncodeFunc encode_func;
     if (use_ov_image_preprocess == false) {
         encode_func = [this](const std::vector<ov::Tensor>& image, const ov::AnyMap& config_map, ov::genai::EncodedVideo& encoded_video, size_t frm_num, size_t frm_id) {
-            this->encode_with_imagepreprocess_cpp(image, config_map, encoded_video.video_feautures, encoded_video.resized_source_size, frm_num, frm_id);
+            this->encode_with_imagepreprocess_cpp(image, config_map, encoded_video.video_features, encoded_video.resized_source_size, frm_num, frm_id);
         };
     } else {
         encode_func = [this](const std::vector<ov::Tensor>& image, const ov::AnyMap& config_map, ov::genai::EncodedVideo& encoded_video, size_t frm_num, size_t frm_id) {
-            this->encode_with_imagepreprocess_ov(image, config_map, encoded_video.video_feautures, encoded_video.resized_source_size, frm_num, frm_id);
+            this->encode_with_imagepreprocess_ov(image, config_map, encoded_video.video_features, encoded_video.resized_source_size, frm_num, frm_id);
         };
     }
 
