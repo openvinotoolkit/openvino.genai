@@ -454,7 +454,7 @@ std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_v
     std::vector<std::array<size_t, 3>> videos_grid_thw;
 
     for (const auto& encoded_video : videos) {
-        ov::Tensor single_video_embeds = encoded_video.video_feautures;
+        ov::Tensor single_video_embeds = encoded_video.video_features;
         video_embeds.push_back(std::move(single_video_embeds));
         size_t grid_t = encoded_video.frame_num;
         size_t grid_h = encoded_video.resized_source_size.height;
