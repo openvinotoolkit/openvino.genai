@@ -55,6 +55,7 @@ public:
         size_t m_adaptive_rkv_start_size = 0;
         // A value of 0 means that Adaptive R-KV similarity computation is not to be applied
         std::map<uint64_t, size_t> m_adaptive_rkv_evictable_sizes;
+        std::vector<std::map<size_t, std::vector<size_t>>> m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence;
 
         // total number of scheduled tokens
         size_t m_total_num_scheduled_tokens = 0;
