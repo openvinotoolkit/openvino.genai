@@ -216,7 +216,7 @@ class RerankingSimilarity:
 
             per_query_text = []
             for i, score in enumerate(gold_data):
-                # documets on the same position of top_n is different
+                # documents on the same position of top_n is different
                 if i >= len(prediction_data) or int(score[0]) != int(prediction_data[i][0]):
                     per_query_text.append(math.inf)
                 else:
