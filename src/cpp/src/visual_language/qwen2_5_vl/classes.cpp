@@ -176,7 +176,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2_5_VL::run_video_image_embe
     ov::Shape image_fea_shape = ov::Shape({out_vision_shape.at(0) - video_fea_count, out_vision_shape.at(1)});
     ov::Tensor res_image = ov::Tensor(processed_vision_embeds.get_element_type(), image_fea_shape);
     std::memcpy(res_image.data(),
-                processed_vision_embeds.data() + res_video.get_byte_size(),
+                processed_vision_embeds.data<uint8_t>() + res_video.get_byte_size(),
                 res_image.get_byte_size());
     return {res_video, res_image};
 }
