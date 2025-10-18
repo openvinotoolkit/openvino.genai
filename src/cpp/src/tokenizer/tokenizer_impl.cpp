@@ -159,7 +159,7 @@ void Tokenizer::TokenizerImpl::set_state_value(ov::VariableState& state, std::op
     std::optional<T> last_value;
     ov::genai::utils::read_anymap_param(state_flags, state.get_name(), last_value);
 
-    // If requested add[skip]_special_tokens, max_length, pading mode, etc.
+    // If requested add[skip]_special_tokens, max_length, padding mode, etc.
     // is different from the stored state, need to set state variable.
     // Or if we run for the first time and don't know the latest state we need to set it.
     if (value.has_value() && (!last_value.has_value() || *value != *last_value)) {
@@ -377,7 +377,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::pair<std::shared_ptr<o
     is_paired_input = pass_errors.str().empty() && ov_tokenizer && ov_tokenizer->get_parameters().size() == 2;
     OPENVINO_ASSERT(!two_input_requested || is_paired_input || !ov_tokenizer, "Two input requested but AddSecondInputPass failed with " + pass_errors.str());
     
-    // temporary allow absense both tokenizer and detokenizer for GGUF support
+    // temporary allow absence both tokenizer and detokenizer for GGUF support
     // TODO: remove this code once Tokenizers can be created from GGUF file
     if (!ov_tokenizer && !ov_detokenizer) {
         return;

@@ -55,7 +55,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         // but embedding model is available => compute embeddings first, then pass to LLM
         std::vector<std::vector<ov::Tensor>> images(prompts.size());
         auto results_vlm = generate(prompts, images, sampling_params, streamer);
-        std::vector<GenerationResult> resutls;
+        std::vector<GenerationResult> results;
         for (auto& vlm_result : results_vlm) {
             GenerationResult result;
             result.m_generation_ids = std::move(vlm_result.texts);
