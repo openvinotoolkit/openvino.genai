@@ -193,8 +193,11 @@ def handwritten_tensor(pytestconfig):
     handwritten_url = "https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350"
     return openvino.Tensor(from_cache_or_download(pytestconfig, handwritten_url, "handwritten.png"))
 
+
 video_model_ids = [
     "katuni4ka/tiny-random-llava-next-video",
+    "katuni4ka/tiny-random-qwen2vl",
+    "katuni4ka/tiny-random-qwen2.5-vl"
 ]
 
 model_ids = [
@@ -204,8 +207,6 @@ model_ids = [
     "katuni4ka/tiny-random-llava",
     "katuni4ka/tiny-random-llava-next",
     "katuni4ka/tiny-random-internvl2",
-    "katuni4ka/tiny-random-qwen2vl",
-    "katuni4ka/tiny-random-qwen2.5-vl",
     "katuni4ka/tiny-random-gemma3",
     "qnguyen3/nanoLLaVA",
     *video_model_ids
@@ -252,7 +253,6 @@ def test_vlm_pipeline(model_id, backend, cat_tensor, handwritten_tensor, car_ten
         assert res.texts[0] == "".join(result_from_streamer)
 
     gc.collect()
-
 
 configs = [
     get_greedy(),
@@ -1125,8 +1125,16 @@ def cat_image_32x32(cat_image):
     [
         pytest.param("katuni4ka/tiny-random-qwen2vl", "cat_image_336x336", None, "SDPA"),
         pytest.param("katuni4ka/tiny-random-qwen2vl", "cat_image_336x336", None, "PA"),
+        pytest.param("katuni4ka/tiny-random-qwen2vl", None, "synthetic_video_32x32", "SDPA"),
+        pytest.param("katuni4ka/tiny-random-qwen2vl", None, "synthetic_video_32x32", "PA"),
+        pytest.param("katuni4ka/tiny-random-qwen2vl", "cat_image_336x336", "synthetic_video_32x32", "SDPA"),
+        pytest.param("katuni4ka/tiny-random-qwen2vl", "cat_image_336x336", "synthetic_video_32x32", "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", None, "SDPA"),
         pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", None, "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", None, "synthetic_video_32x32", "SDPA"),
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", None, "synthetic_video_32x32", "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", "synthetic_video_32x32", "SDPA"),
+        pytest.param("katuni4ka/tiny-random-qwen2.5-vl", "cat_image_336x336", "synthetic_video_32x32", "PA", marks=pytest.mark.xfail(reason="CVS-167316")),
         pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", None, "SDPA", marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) if sys.platform == "darwin" else pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", None, "SDPA"),
         pytest.param("katuni4ka/tiny-random-gemma3", "cat_image_32x32", None, "PA", marks=pytest.mark.xfail(reason="CVS-171180")),
         pytest.param("qnguyen3/nanoLLaVA", "cat_image_384x384", None, "SDPA"),
@@ -1167,17 +1175,31 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, vi
             ],
         }
     ]
-    if video_name is not None:
-        prompt = "Describe this video."
-        resized_video = request.getfixturevalue(video_name)
-        conversation[0]["content"] = [{"type": "video"}] + conversation[0]["content"]
-    if image_name is not None:
-        resized_image = request.getfixturevalue(image_name)
-        if video_name is not None:
-            prompt = "Describe this image and video."
-        else:
+
+    if model_id in ["katuni4ka/tiny-random-qwen2.5-vl", "katuni4ka/tiny-random-qwen2vl"]:
+        if image_name is not None:
+            resized_image = request.getfixturevalue(image_name)
             prompt = "Describe this image."
-        conversation[0]["content"] = [{"type": "image"}] + conversation[0]["content"]
+            conversation[0]["content"] = [{"type": "image"}] + conversation[0]["content"]
+        if video_name is not None:
+            if image_name is not None:
+                prompt = "Describe this image and video."
+            else:
+                prompt = "Describe this video."
+            resized_video = request.getfixturevalue(video_name)
+            conversation[0]["content"] = [{"type": "video"}] + conversation[0]["content"]
+    else:
+        if video_name is not None:
+            prompt = "Describe this video."
+            resized_video = request.getfixturevalue(video_name)
+            conversation[0]["content"] = [{"type": "video"}] + conversation[0]["content"]
+        if image_name is not None:
+            resized_image = request.getfixturevalue(image_name)
+            if video_name is not None:
+                prompt = "Describe this image and video."
+            else:
+                prompt = "Describe this image."
+            conversation[0]["content"] = [{"type": "image"}] + conversation[0]["content"]
 
     conversation[0]["content"][-1]["text"] = prompt
 
