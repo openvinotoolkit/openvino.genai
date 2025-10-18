@@ -24,7 +24,7 @@ class VisionEncoderMiniCPM : public VisionEncoder {
     // VLM config
     VLMConfig m_vlm_config;
 
-    ov::Tensor resample(const ov::Tensor& encoded_image, const std::vector<ImageSize>& target_sizes);
+    ov::Tensor resample(const ov::Tensor& encoded_image, const ImageSize& target_size, size_t pad_to_max);
 
     ResampledImage resample_encoded_image(const EncodedImage& image, const ov::Tensor& slices, const ImageSize& target_sizes);
 public:
