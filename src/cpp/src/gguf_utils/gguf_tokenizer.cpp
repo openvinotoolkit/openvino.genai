@@ -584,7 +584,7 @@ create_tokenizer_from_config(const std::shared_ptr<void>& shared_object_ov_token
 
 std::string patch_gguf_chat_template(const std::string& chat_template) {
     std::string patched_chat_template = chat_template;
-    // Define the exact pattern to find in orignal chat_template
+    // Define the exact pattern to find in original chat_template
     // Using C++ raw string literals (R"(...)") to correctly represent the literal content,
     const std::string qwen2_5_substring_to_find = R"({{\"name\": <function-name>, \"arguments\": <args-json-object>}})";
     // Define the exact replacement substring for str2

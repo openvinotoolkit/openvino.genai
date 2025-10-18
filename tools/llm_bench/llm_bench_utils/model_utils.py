@@ -72,7 +72,7 @@ def get_param_from_file(args, input_key):
                 if args.get("mask_image"):
                     data_dict["mask_image"] = args["mask_image"]
                 else:
-                    raise RuntimeError("Mask image is not provided. Inpainting Models cannot start of generation wihtout it. Please, provide a mask image.")
+                    raise RuntimeError("Mask image is not provided. Inpainting Models cannot start of generation without it. Please, provide a mask image.")
             data_list.append(data_dict)
     else:
         input_prompt_list = args['prompt_file']
