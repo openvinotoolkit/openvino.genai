@@ -999,13 +999,15 @@ NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prom
         size_t merge_length = std::pow(m_vision_encoder->get_processor_config().merge_size, 2);
         size_t num_image_pad_tokens = grid_t * grid_h * grid_w / merge_length;
 
-        std::ostringstream oss;
-        oss << m_vlm_config.vision_start_token;
+        std::string expanded_tag;
+        expanded_tag.reserve(m_vlm_config.vision_start_token.length() +
+                             m_vlm_config.image_pad_token.length() * num_image_pad_tokens +
+                             m_vlm_config.vision_end_token.length());
+        expanded_tag.append(m_vlm_config.vision_start_token);
         for (int i = 0; i < num_image_pad_tokens; ++i) {
-            oss << m_vlm_config.image_pad_token;
+            expanded_tag.append(m_vlm_config.image_pad_token);
         }
-        oss << m_vlm_config.vision_end_token;
-        std::string expanded_tag = oss.str();
+        expanded_tag.append(m_vlm_config.vision_end_token);
 
         unified_prompt.replace(unified_prompt.find(NATIVE_TAG), NATIVE_TAG.length(), expanded_tag);
     }
@@ -1030,13 +1032,15 @@ NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prom
         size_t merge_length = std::pow(m_vision_encoder->get_processor_config().merge_size, 2);
         size_t num_video_pad_tokens = grid_t * grid_h * grid_w / merge_length;
 
-        std::ostringstream oss;
-        oss << m_vlm_config.vision_start_token;
+        std::string expanded_tag;
+        expanded_tag.reserve(m_vlm_config.vision_start_token.length() +
+                             m_vlm_config.video_pad_token.length() * num_video_pad_tokens +
+                             m_vlm_config.vision_end_token.length());
+        expanded_tag.append(m_vlm_config.vision_start_token);
         for (int i = 0; i < num_video_pad_tokens; ++i) {
-            oss << m_vlm_config.video_pad_token;
+            expanded_tag.append(m_vlm_config.video_pad_token);
         }
-        oss << m_vlm_config.vision_end_token;
-        std::string expanded_tag = oss.str();
+        expanded_tag.append(m_vlm_config.vision_end_token);
 
         unified_prompt.replace(unified_prompt.find(NATIVE_VIDEO_TAG), NATIVE_VIDEO_TAG.length(), expanded_tag);
     }
