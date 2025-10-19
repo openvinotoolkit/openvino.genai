@@ -8,6 +8,6 @@ using AttentionScoresForEachDecoderLayer = std::vector<AttentionScoresForCacheOf
 using AttentionScoresForEachSubsequence = std::map<size_t, AttentionScoresForEachDecoderLayer>;
 
 
-using TokenSimilarityForSubsequence = ov::Tensor;
-using TokenSimilarityForEachDecoderLayer = std::vector<TokenSimilarityForSubsequence>;
-using TokenSimilarityForEachSubsequence = std::map<size_t, TokenSimilarityForEachDecoderLayer>;
+using BlockDiversityForSubsequence = ov::Tensor;
+using BlockDiversityForEachDecoderLayer = std::vector<BlockDiversityForSubsequence>;
+using BlockDiversityForEachSubsequence = std::map<size_t, BlockDiversityForEachDecoderLayer>;
