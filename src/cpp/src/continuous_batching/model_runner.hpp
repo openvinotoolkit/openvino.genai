@@ -25,9 +25,9 @@ inline std::string get_paged_attention_score_output_for_decoder_layer(size_t dec
     return ss.str();
 }
 
-inline std::string get_adaptive_rkv_similarity_score_output_for_decoder_layer(size_t decoder_layer_id) {
+inline std::string get_adaptive_rkv_diversity_score_output_for_decoder_layer(size_t decoder_layer_id) {
     std::stringstream ss;
-    ss << "adaptive_rkv_similarity." << decoder_layer_id;
+    ss << "adaptive_rkv_diversity." << decoder_layer_id;
     return ss.str();
 }
 
@@ -102,7 +102,7 @@ struct HiddenStateRange {
 class ModelRunner {
     ov::InferRequest m_request;
     AttentionScoresForEachSubsequence m_last_attention_scores;
-    TokenSimilarityForEachSubsequence m_last_token_similarities;
+    BlockDiversityForEachSubsequence m_last_block_diversities;
     size_t m_block_size;
     size_t m_num_decoder_layers;
     bool m_collect_attention_scores;
@@ -205,8 +205,8 @@ public:
         return m_last_attention_scores;
     }
 
-    const TokenSimilarityForEachSubsequence& get_last_token_similarities() const {
-        return m_last_token_similarities;
+    const BlockDiversityForEachSubsequence& get_last_block_diversities() const {
+        return m_last_block_diversities;
     }
 
     void set_cache_rotation_trig_lut(ov::Tensor&& rotation_trig_lut) {
@@ -574,7 +574,7 @@ public:
         }
 
         if (m_is_use_adaptive_rkv) {
-            _collect_token_similarities(sequence_groups, scheduler_output);
+            _collect_adaptive_rkv_block_diversities(sequence_groups, scheduler_output);
         }
 
         _reset_cache_rotation_coefficients();
@@ -1047,8 +1047,8 @@ private:
         }
     }
 
-    void _collect_token_similarities(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
-        m_last_token_similarities.clear();
+    void _collect_adaptive_rkv_block_diversities(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
+        m_last_block_diversities.clear();
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
         using IndexSpan = std::pair<size_t, size_t>;
         std::list<std::pair<size_t, IndexSpan>> running_seq_ids_and_kvcache_spans;
@@ -1063,32 +1063,32 @@ private:
                 size_t global_sequence_id = sequence->get_id();
                 auto it = scheduler_output.m_adaptive_rkv_evictable_sizes.find(global_sequence_id);
                 if (it == scheduler_output.m_adaptive_rkv_evictable_sizes.end()) {
-                    // Adaptive R-KV similarity calculation was not scheduled for this sequence
+                    // Adaptive R-KV diversity calculation was not scheduled for this sequence
                     continue;
                 }
-                size_t num_similarity_tokens_calculated = it->second * m_block_size;
+                size_t num_diversity_values_calculated = it->second * it->second * m_block_size; // [eviction_size / block_size, eviction_size]
                 // As we only evict during generation phase, so will the similarity calculation will only be
                 // scheduled after prefill is finished
                 OPENVINO_ASSERT(sequence_group->can_generate_tokens());
 
-                IndexSpan span = {offset, offset + num_similarity_tokens_calculated};
-                offset += num_similarity_tokens_calculated;
+                IndexSpan span = {offset, offset + num_diversity_values_calculated};
+                offset += num_diversity_values_calculated;
                 running_seq_ids_and_kvcache_spans.emplace_back(global_sequence_id, span);
             }
         }
 
         for (const auto& seq_id_and_score_span : running_seq_ids_and_kvcache_spans) {
-            auto token_similarities_across_decoder_layers_for_current_sequence = TokenSimilarityForEachDecoderLayer(m_num_decoder_layers);
+            auto block_diversities_across_decoder_layers_for_current_sequence = BlockDiversityForEachDecoderLayer(m_num_decoder_layers);
             size_t global_sequence_id = seq_id_and_score_span.first;
             IndexSpan span = seq_id_and_score_span.second;
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; decoder_layer_id++) {
-                auto attention_score = m_request.get_tensor(get_adaptive_rkv_similarity_score_output_for_decoder_layer(decoder_layer_id));
-                auto scores_for_cache_of_current_sequence_group = ov::Tensor(attention_score, ov::Coordinate{span.first}, ov::Coordinate{span.second});
-                auto copied_tensor = ov::Tensor(scores_for_cache_of_current_sequence_group.get_element_type(), ov::Shape{span.second - span.first});
-                scores_for_cache_of_current_sequence_group.copy_to(copied_tensor);
-                token_similarities_across_decoder_layers_for_current_sequence[decoder_layer_id] = scores_for_cache_of_current_sequence_group;
+                auto diversities_in_this_layer = m_request.get_tensor(get_adaptive_rkv_diversity_score_output_for_decoder_layer(decoder_layer_id));
+                auto diversities_of_current_sequence_group = ov::Tensor(diversities_in_this_layer, ov::Coordinate{span.first}, ov::Coordinate{span.second});
+                auto copied_tensor = ov::Tensor(diversities_of_current_sequence_group.get_element_type(), ov::Shape{span.second - span.first});
+                diversities_of_current_sequence_group.copy_to(copied_tensor);
+                block_diversities_across_decoder_layers_for_current_sequence[decoder_layer_id] = diversities_of_current_sequence_group;
             }
-            m_last_token_similarities[global_sequence_id] = token_similarities_across_decoder_layers_for_current_sequence;
+            m_last_block_diversities[global_sequence_id] = block_diversities_across_decoder_layers_for_current_sequence;
         }
     }
 
