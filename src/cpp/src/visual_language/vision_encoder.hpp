@@ -14,9 +14,9 @@ namespace ov::genai {
 /// @brief A pair describing image size.
 struct ImageSize {
     /// @brief Height of a corresponding image.
-    size_t height;
+    size_t height = 0;
     /// @brief Width of a corresponding image.
-    size_t width;
+    size_t width = 0;
 };
 
 
