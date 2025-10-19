@@ -777,10 +777,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
          }
 
         if (sched_config.cache_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV) {
-            const auto& token_similarities = m_model_runner->get_last_attention_scores();
-            auto it = token_similarities.find(seq_id);
-            if (it != token_similarities.end()) {
-                cache_eviction_algo.register_token_similarity(it->second);
+            const auto& block_diversities = m_model_runner->get_last_block_diversities();
+            auto it = block_diversities.find(seq_id);
+            if (it != block_diversities.end()) {
+                cache_eviction_algo.register_block_diversity(it->second);
             }
         }
 

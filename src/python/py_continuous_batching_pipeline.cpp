@@ -339,11 +339,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def("get_recent_size", &CacheEvictionConfig::get_recent_size)
             .def("get_max_cache_size", &CacheEvictionConfig::get_max_cache_size)
             .def("get_evictable_size", &CacheEvictionConfig::get_evictable_size)
-<<<<<<< HEAD
-            .def("to_string", &CacheEvictionConfig::to_string);
-=======
+            .def("to_string", &CacheEvictionConfig::to_string)
             .def_readwrite("adaptive_rkv_config", &CacheEvictionConfig::adaptive_rkv_config);
->>>>>>> faa18e57 (Fix Python API)
 
     py::enum_<SparseAttentionMode>(m, "SparseAttentionMode",
                             R"(Represents the mode of sparse attention applied during generation.

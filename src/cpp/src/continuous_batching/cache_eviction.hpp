@@ -221,7 +221,7 @@ public:
      */
     std::vector<std::set<std::size_t>> evict_logical_blocks();
 
-    void register_token_similarity(const TokenSimilarityForEachDecoderLayer& token_similarity_for_all_decoder_layers);
+    void register_block_diversity(const BlockDiversityForEachDecoderLayer& token_similarity_for_all_decoder_layers);
 
 
 private:
@@ -244,9 +244,10 @@ private:
     std::size_t m_num_decoder_layers;
     EvictionScoreManager m_score_manager;
 
-    std::vector<std::vector<double>> m_last_token_similarity;
-    std::pair<std::set<size_t>, size_t> get_adaptive_rkv_similarity_set(size_t max_num_blocks_kept, const std::vector<double>& evictable_area_token_scores);
-    std::set<size_t> get_adaptive_rkv_diverse_blocks(size_t num_blocks_left_to_fill, const std::set<size_t>& similarity_set, const std::vector<double>& token_similarity);
+    std::vector<std::vector<double>> m_last_block_diversity;
+    std::pair<std::set<size_t>, size_t> get_adaptive_rkv_unselected_block_set(size_t max_num_blocks_kept, const std::vector<double>& evictable_area_token_scores);
+    std::set<size_t> get_adaptive_rkv_diverse_blocks(size_t num_blocks_left_to_fill, const std::set<size_t>& diversity_set, const std::vector<double>& filtered_block_diversity);
+    std::vector<double> get_filtered_adaptive_rkv_block_diversity(const std::vector<double>& unfiltered_diversity, size_t eviction_size, const std::set<size_t>& unselected_blocks);
 };
 
 

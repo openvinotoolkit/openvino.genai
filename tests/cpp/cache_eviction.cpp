@@ -983,7 +983,7 @@ struct CacheEvictionAdaptiveRKVLowScoreAndSimilarityTestStruct {
     size_t tokens_over_max_cache_size;
     ov::genai::AdaptiveRKVConfig adaptive_rkv_config;
     std::vector<float> evictable_area_token_scores;
-    std::vector<float> evictable_area_token_similarity;
+    std::vector<float> evictable_area_block_diversity;
     std::set<size_t> ref_evicted_blocks;
 };
 
@@ -1026,8 +1026,8 @@ TEST_P(CacheEvictionAdaptiveRKVLowScoreAndSimilarityParameterizedTest, EvictsLow
         }
     }
     algo.register_new_token_scores(scores);
-    auto similarity = std::vector<std::vector<float>>(DEFAULT_NUM_DECODER_LAYERS, test_struct.evictable_area_token_similarity);
-    algo.register_token_similarity(get_layer_scores_from_2d_vector(similarity));
+    auto diversity = std::vector<std::vector<float>>(DEFAULT_NUM_DECODER_LAYERS, test_struct.evictable_area_block_diversity);
+    algo.register_block_diversity(get_layer_scores_from_2d_vector(diversity));
 
     auto test_evicted_blocks = algo.evict_logical_blocks();
     auto ref_evicted_blocks = test_struct.ref_evicted_blocks;
@@ -1239,10 +1239,10 @@ INSTANTIATE_TEST_SUITE_P(VariousInvalidInitParams, CacheEvictionAlgoInitializati
 TEST(CacheEvictionAlgoAdaptiveRKVTest, ThrowsIfEvictingWithoutSimilarityData) {
     auto algo = ov::genai::CacheEvictionAlgorithm(ov::genai::CacheEvictionConfig(4, 4, 12, ov::genai::AggregationMode::ADAPTIVE_RKV, /* apply_rotation = */ false, /* snapkv_window_size = */ 0), DEFAULT_BLOCK_SIZE, DEFAULT_NUM_DECODER_LAYERS, DEFAULT_MAX_POOL_WINDOW_SIZE);
     std::vector<std::vector<float>> mock_scores(2, std::vector<float>(16, 0.0));
-    std::vector<std::vector<float>> mock_similarity(2, std::vector<float>(8, 0.0));
+    std::vector<std::vector<float>> mock_diversity(2, std::vector<float>(8, 0.0));
     algo.register_new_token_scores(get_layer_scores_from_2d_vector(mock_scores));
     EXPECT_THROW(algo.evict_logical_blocks(), ov::Exception);
-    algo.register_token_similarity(get_layer_scores_from_2d_vector(mock_similarity));
+    algo.register_block_diversity(get_layer_scores_from_2d_vector(mock_diversity));
     EXPECT_NO_THROW(algo.evict_logical_blocks());
 }
 
