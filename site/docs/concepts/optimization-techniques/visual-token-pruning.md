@@ -50,14 +50,12 @@ Relevant configuration excerpt:
 ```python
 config = ov_genai.GenerationConfig()
 config.max_new_tokens = args.max_new_tokens
-config.pruning_ratio = args.pruning_ratio if args.pruning_ratio is not None else 0
-if config.pruning_ratio > 0 and config.pruning_ratio < 100:
-    print(f"[CDPruner] Enabling CDPruner with {config.pruning_ratio}% visual token pruning")
-    if args.relevance_weight is not None:
-        config.relevance_weight = args.relevance_weight
-        print(f"[CDPruner] Setting relevance weight to {config.relevance_weight}")
-else:
-    config.pruning_ratio = 0
+if args.pruning_ratio is not None:
+  config.pruning_ratio = args.pruning_ratio
+  print(f"[CDPruner] Enabling CDPruner with {config.pruning_ratio}% visual token pruning")
+  if args.relevance_weight is not None:
+    config.relevance_weight = args.relevance_weight
+    print(f"[CDPruner] Setting relevance weight to {config.relevance_weight}")
 ```
 
 Pipeline creation and generation:
@@ -73,8 +71,8 @@ The script prints performance metrics (time-to-first-token TTFT, throughput, per
 * Lower per-step attention computations involving image tokens -> improved latency.
 * Helpful for edge or GPU memory-constrained deployments (e.g., running VLM on integrated GPU with limited VRAM).
 
-## Limitations
+## Current Limitations
 * Current implementation assumes a standard image encoder output; exotic hierarchical or sparse encoders might require adjusted scoring strategies.
 * Pruning applied only after the initial image encoding; does not dynamically re-introduce pruned tokens later.
 * Score computation details are internal; no per-token debug API exposed yet.
-* Current implementation support QWen-VL models only, will be applied to other models in next.
+* Current implementation supports QWen-VL models only, will be applied to other models in next step.
