@@ -32,6 +32,7 @@ using ov::genai::SchedulerConfig;
 using ov::genai::PipelineMetrics;
 using ov::genai::KVCrushAnchorPointMode;
 using ov::genai::KVCrushConfig;
+using ov::genai::ChatHistory;
 
 namespace {
 
@@ -179,7 +180,7 @@ std::ostream& operator << (std::ostream& stream, const GenerationResult& generat
 }
 
 py::object __call_cb_generate(ContinuousBatchingPipeline& pipe,
-                              const std::variant<std::vector<ov::Tensor>, std::vector<std::string>>& inputs,
+                              const std::variant<std::vector<ov::Tensor>, std::vector<std::string>, std::vector<ChatHistory>>& inputs,
                               const std::vector<ov::genai::GenerationConfig>& sampling_params,
                               const pyutils::PyBindStreamerVariant& py_streamer) {
     ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
@@ -199,6 +200,14 @@ py::object __call_cb_generate(ContinuousBatchingPipeline& pipe,
         {
             py::gil_scoped_release rel;
             generated_results = pipe.generate(prompts, sampling_params, streamer);
+        }  
+        results = py::cast(generated_results);
+    },
+    [&](std::vector<ChatHistory> histories) {
+        std::vector<ov::genai::GenerationResult> generated_results;
+        {
+            py::gil_scoped_release rel;
+            generated_results = pipe.generate(histories, sampling_params, streamer);
         }  
         results = py::cast(generated_results);
     }},
@@ -458,6 +467,21 @@ void init_continuous_batching_pipeline(py::module_& m) {
             py::arg("generation_config"),
             py::arg("streamer") = std::monostate{}
         )
+
+        .def(
+            "generate",
+            [](ContinuousBatchingPipeline& pipe,
+               const std::vector<ChatHistory>& histories,
+               const std::vector<ov::genai::GenerationConfig>& generation_config,
+               const pyutils::PyBindStreamerVariant& streamer
+            ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
+                return __call_cb_generate(pipe, histories, generation_config, streamer);
+            },
+            py::arg("prompts"),
+            py::arg("generation_config"),
+            py::arg("streamer") = std::monostate{}
+        )
+
         .def(
             "generate",
             [](ContinuousBatchingPipeline& pipe,
