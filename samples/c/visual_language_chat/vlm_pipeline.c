@@ -8,8 +8,11 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "openvino/genai/c/vlm_pipeline.h"
 #include "load_image.h"
+
+#define MAX_PROMPT_LENGTH 64
 
 // Callback function for streaming results
 ov_genai_streaming_status_e stream_callback(const char* str, void* args) {
@@ -20,15 +23,14 @@ ov_genai_streaming_status_e stream_callback(const char* str, void* args) {
 
 int main(int argc, char* argv[]) {
     if (argc < 4) {
-        printf("Usage: %s <models_path> <device> <image_path> [text_prompt]\n", argv[0]);
-        printf("Example: %s ./models CPU ./image.jpg \"Describe this image\"\n", argv[0]);
+        printf("Usage: %s <models_path> <device> <image_path> \n", argv[0]);
+        printf("Example: %s ./models CPU ./image.jpg \n", argv[0]);
         return -1;
     }
 
     const char* models_path = argv[1];
     const char* device = argv[2];
     const char* image_path = argv[3];
-    const char* text_prompt = (argc > 4) ? argv[4] : "Describe this image";
 
     size_t tensor_count;
     const ov_tensor_t** tensors = load_images(image_path, &tensor_count);
@@ -36,13 +38,6 @@ int main(int argc, char* argv[]) {
     // Create VLM pipeline
     ov_genai_vlm_pipeline* pipeline = NULL;
     ov_genai_vlm_pipeline_create(models_path, device, 0, &pipeline);
-
-    printf("VLM Pipeline created successfully!\n");
-    printf("Models path: %s\n", models_path);
-    printf("Device: %s\n", device);
-    printf("Image path: %s\n", image_path);
-    printf("Text prompt: %s\n", text_prompt);
-    printf("\nGenerating response...\n\n");
 
     // Set up streaming callback
     streamer_callback callback = {
@@ -55,10 +50,29 @@ int main(int argc, char* argv[]) {
     ov_genai_generation_config* config = NULL;
     ov_genai_generation_config_create(&config);
     ov_genai_generation_config_set_max_new_tokens(config, 100);
+    char prompt[MAX_PROMPT_LENGTH];
 
-    ov_genai_vlm_pipeline_generate(pipeline, text_prompt, tensors, tensor_count, config, &callback, &results);
+    ov_genai_vlm_pipeline_start_chat(pipeline);
+    printf("question:\n");
 
-    printf("\n\nGeneration completed successfully!\n");
+    if (fgets(prompt, MAX_PROMPT_LENGTH, stdin)) {
+        prompt[strcspn(prompt, "\n")] = 0;
+        if (strlen(prompt) > 0) {
+            ov_genai_vlm_pipeline_generate(pipeline, prompt, tensors, tensor_count, config, &callback, &results);
+            printf("\n----------\nquestion:\n");
+        }
+    }
+
+    while (fgets(prompt, MAX_PROMPT_LENGTH, stdin)) {
+        prompt[strcspn(prompt, "\n")] = 0;
+        if (strlen(prompt) == 0) {
+            continue; 
+        }
+        ov_genai_vlm_pipeline_generate(pipeline, prompt, NULL, 0, config, &callback, &results);
+        printf("\n----------\nquestion:\n");
+    }
+    ov_genai_vlm_pipeline_finish_chat(pipeline);
+
 
     // Get performance metrics
     ov_genai_perf_metrics* metrics = NULL;
@@ -77,8 +91,8 @@ int main(int argc, char* argv[]) {
 
     // Cleanup
     ov_genai_vlm_decoded_results_free(results);
+    ov_genai_generation_config_free(config);
     ov_genai_vlm_pipeline_free(pipeline);
 
-    printf("Example completed successfully!\n");
     return 0;
 }

@@ -125,7 +125,7 @@ ov_status_e ov_genai_vlm_pipeline_generate(ov_genai_vlm_pipeline* pipe,
                                            const ov_genai_generation_config* config,
                                            const streamer_callback* streamer,
                                            ov_genai_vlm_decoded_results** results) {
-    if (!pipe || !(pipe->object) || !text_inputs || !rgbs || !(streamer || results)) {
+    if (!pipe || !(pipe->object) || !text_inputs || !(streamer || results)) {
         return ov_status_e::INVALID_C_PARAM;
     }
 
@@ -161,9 +161,16 @@ ov_status_e ov_genai_vlm_pipeline_generate(ov_genai_vlm_pipeline* pipe,
             auto callback = [streamer](std::string word) -> ov::genai::StreamingStatus {
                 return static_cast<ov::genai::StreamingStatus>((streamer->callback_func)(word.c_str(), streamer->args));
             };
-            *(_results->object) = (config && config->object)
-                                      ? pipe->object->generate(input_str, rgbs_cpp, *(config->object), callback)
-                                      : pipe->object->generate(input_str, rgbs_cpp, {}, callback);
+            if (num_images > 0) {
+                *(_results->object) = (config && config->object)
+                                        ? pipe->object->generate(input_str, rgbs_cpp, *(config->object), callback)
+                                        : pipe->object->generate(input_str, rgbs_cpp, {}, callback);
+            }
+            if (num_images == 0){
+                *(_results->object) = (config && config->object)
+                ? pipe->object->generate(input_str, ov::genai::generation_config(*(config->object)), ov::genai::streamer(callback))
+                : pipe->object->generate(input_str, ov::genai::streamer(callback));
+            }
         } 
         // //Currently, VLM pipeline in GenAI does not support non-streaming mode, but we retain the code support here for future support.
         // else {
