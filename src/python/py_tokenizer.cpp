@@ -297,6 +297,7 @@ void init_tokenizer(py::module_& m) {
             &Tokenizer::set_chat_template
         )
 
+        .def("get_original_chat_template", &Tokenizer::get_original_chat_template)
         .def("get_pad_token_id", &Tokenizer::get_pad_token_id)
         .def("get_bos_token_id", &Tokenizer::get_bos_token_id)
         .def("get_eos_token_id", &Tokenizer::get_eos_token_id)

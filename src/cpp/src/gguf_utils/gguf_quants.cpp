@@ -234,7 +234,7 @@ void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
     // For scales and bias
     shape[shape.size() - 1] = shape[shape.size() - 1] / weights_per_block;
 
-    ov::Tensor scales(ov::element::f16, std::move(shape));
+    ov::Tensor scales(ov::element::f16, shape);
     ov::Tensor biases(ov::element::f16, std::move(shape));
     if (tensor.type == GGUF_TYPE_Q4_0) {
         extract_q4_0_data(tensor, weights, scales, biases);
