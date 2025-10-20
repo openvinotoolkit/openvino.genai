@@ -125,7 +125,7 @@ DecodedResults StatefulLLMPipeline::generate(
 ) {
     auto start_time = std::chrono::steady_clock::now();
 
-    GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+    GenerationConfig config = generation_config.value_or(m_generation_config);
     std::string prompt;
     if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
         OPENVINO_ASSERT(input_vector->size() == 1u, "Currently only batch size=1 is supported");
@@ -170,7 +170,7 @@ DecodedResults StatefulLLMPipeline::generate(
             m_history.push_back({{"role", "assistant"}, {"content", answer}});
     }
 
-    // generate_durations
+    // Update perf metrics
     decoded_results.perf_metrics = encoded_results.perf_metrics;
     auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
     auto stop_time = std::chrono::steady_clock::now();
@@ -180,6 +180,44 @@ DecodedResults StatefulLLMPipeline::generate(
     raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
     decoded_results.perf_metrics.m_evaluated = false;
     decoded_results.perf_metrics.evaluate_statistics(start_time);
+    return decoded_results;
+}
+
+DecodedResults StatefulLLMPipeline::generate(
+    const ChatHistory& history,
+    OptionalGenerationConfig generation_config,
+    StreamerVariant streamer
+) {
+    auto start_time = std::chrono::steady_clock::now();
+
+    GenerationConfig config = generation_config.value_or(m_generation_config);
+
+    OPENVINO_ASSERT(config.apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
+    OPENVINO_ASSERT(!m_tokenizer.get_chat_template().empty(), "Chat template must not be empty when using ChatHistory in generate method.");
+    
+    constexpr bool add_generation_prompt = true;
+    auto templated_chat_history = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+    // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
+    auto tokenized_inputs = m_tokenizer.encode(templated_chat_history, ov::genai::add_special_tokens(false));
+
+    auto encode_stop_time =  std::chrono::steady_clock::now();
+    auto encoded_results = generate(tokenized_inputs, config, streamer);
+
+    auto decode_start_time =  std::chrono::steady_clock::now();
+    DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+    auto decode_stop_time =  std::chrono::steady_clock::now();
+    
+    // Update perf metrics
+    decoded_results.perf_metrics = encoded_results.perf_metrics;
+    auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
+    auto stop_time = std::chrono::steady_clock::now();
+    raw_counters.generate_durations.clear();
+    raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
+    raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
+    decoded_results.perf_metrics.m_evaluated = false;
+    decoded_results.perf_metrics.evaluate_statistics(start_time);
+    
     return decoded_results;
 }
 
@@ -204,7 +242,7 @@ EncodedResults StatefulLLMPipeline::generate(
     const size_t batch_size = prompts_shape[0];
     OPENVINO_ASSERT(batch_size == 1u, "Currently only batch size=1 is supported");
 
-    GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
+    GenerationConfig config = generation_config.value_or(m_generation_config);
     // If stop_token_ids were not provided, take value from default m_generation_config
     if (config.stop_token_ids.empty())
         config.stop_token_ids = m_generation_config.stop_token_ids;
@@ -320,6 +358,8 @@ EncodedResults StatefulLLMPipeline::generate(
     m_sampler.clear_request_info(sequence_group->get_request_id());
 
     auto stop_time = std::chrono::steady_clock::now();
+
+    // Update perf metrics
     // If is called without tokenization then that stat will not be reported.
     auto& metrics = results.perf_metrics;
     metrics.num_input_tokens = batch_size * input_ids.get_shape().at(1);
