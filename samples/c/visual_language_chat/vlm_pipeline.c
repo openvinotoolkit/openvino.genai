@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * @file vlm_pipeline_example.c
+ * @file vlm_pipeline.c
  * @brief Example demonstrating how to use OpenVINO GenAI VLM Pipeline C API
  */
 
