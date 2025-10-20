@@ -128,7 +128,7 @@ Napi::Value LLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
         auto generation_config = js_to_cpp<ov::AnyMap>(info.Env(), info[2]);
         ov::AnyMap options;
         if (info.Length() == 4) {
-            options = to_anyMap(info.Env(), info[3]);
+            options = js_to_cpp<ov::AnyMap>(info.Env(), info[3]);
         }
 
         context = new TsfnContext(prompt);

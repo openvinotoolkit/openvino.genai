@@ -3,7 +3,7 @@
 
 import readline from 'readline';
 import { z } from 'zod';
-import { LLMPipeline, StreamingStatus } from 'openvino-genai-node';
+import { LLMPipeline, StreamingStatus, StructuredOutputConfig } from 'openvino-genai-node';
 import { serialize_json } from './helper.js';
 
 const getWeatherTool = {
@@ -92,24 +92,24 @@ async function main() {
         await pipe.startChat(sysMessage);
         if (useStructuralTags) {
             generation_config.structured_output_config = {
-                structural_tags_config: {
-                    structural_tags: tools.map(tool => ({
+                structural_tags_config: StructuredOutputConfig.TriggeredTags({
+                    tags: tools.map(tool => StructuredOutputConfig.Tag({
                         begin: `<function=\"${tool.name}\">`,
-                        schema: serialize_json(z.toJSONSchema(tool.schema)),
+                        content: StructuredOutputConfig.JSONSchema(serialize_json(z.toJSONSchema(tool.schema))),
                         end: "</function>"
                     })),
                     triggers: ["<function="]
-                }
+                })
             };
-            generation_config.do_sample = true;
-        }
+        };
+        generation_config.do_sample = true;
 
         const response = await pipe.generate(prompt, generation_config, streamer);
         await pipe.finishChat();
         console.log("\n" + "-".repeat(80));
 
         console.log("Correct tool calls by the model:");
-        console.log(parseToolsFromResponse(response));
+        console.log(parseToolsFromResponse(response.toString()));
     }
 }
 

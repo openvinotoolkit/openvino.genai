@@ -19,59 +19,104 @@ export enum StopCriteria {
 }
 
 export declare namespace StructuredOutputConfig {
-  export type CompoundGrammar = Regex | JSONSchema | EBNF | Concat | Union;
+  export type StructuralTag =
+    | string
+    | Regex
+    | JSONSchema
+    | EBNF
+    | ConstString
+    | AnyText
+    | QwenXMLParametersFormat
+    | Concat
+    | Union
+    | Tag
+    | TriggeredTags
+    | TagsWithSeparator;
+  /** Regex structural tag constrains output using a regular expression. */
   export type Regex = {
-    regex: string;
+    structuralTagType: "Regex";
+    value: string;
   };
+  /** JSONSchema structural tag constrains output to a JSON document that
+   * must conform to the provided JSON Schema string. */
   export type JSONSchema = {
-    json_schema: string;
+    structuralTagType: "JSONSchema";
+    value: string;
   };
+  /** EBNF structural tag constrains output using an EBNF grammar. */
   export type EBNF = {
-    grammar?: string;
+    structuralTagType: "EBNF";
+    value: string;
   };
+  /** ConstString structural tag forces the generator to produce exactly
+   * the provided constant string value. */
+  export type ConstString = {
+    structuralTagType: "ConstString";
+    value: string;
+  };
+  /** AnyText structural tag allows any text for the portion
+   * of output covered by this tag. */
+  export type AnyText = {
+    structuralTagType: "AnyText";
+  };
+  /** QwenXMLParametersFormat instructs the generator to output an XML
+   * parameters block derived from the provided JSON schema. This is a
+   * specialized helper for Qwen-style XML parameter formatting. */
+  export type QwenXMLParametersFormat = {
+    structuralTagType: "QwenXMLParametersFormat";
+    jsonSchema: string;
+  };
+  /** Concat composes multiple structural tags in sequence. Each element
+   * must be produced in the given order.
+   *
+   * Example: Concat(ConstString("a"), ConstString("b")) produces "ab".*/
   export type Concat = {
-    compoundType: "Concat";
-    left: CompoundGrammar;
-    right: CompoundGrammar;
+    structuralTagType: "Concat";
+    elements: StructuralTag[];
   };
+  /** Union composes multiple structural tags as alternatives. The
+   * model may produce any one of the provided elements. */
   export type Union = {
-    compoundType: "Union";
-    left: CompoundGrammar;
-    right: CompoundGrammar;
+    structuralTagType: "Union";
+    elements: StructuralTag[];
+  };
+  /** Tag defines a begin/end wrapper with constrained inner content.
+   *
+   * The generator will output `begin`, then the `content` (a StructuralTag),
+   * and finally `end`.
+   *
+   * Example: Tag("<think>", AnyText(), "</think>") represents thinking portion of the model output. */
+  export type Tag = {
+    structuralTagType: "Tag";
+    begin: string;
+    content: StructuralTag;
+    end: string;
+  };
+  /** TriggeredTags associates a set of `triggers` with multiple `tags`.
+   *
+   * When the model generates any of the trigger strings the structured generation
+   * activates to produce configured tags. Flags allow requiring
+   * at least one tag and stopping structured generation after the first tag. */
+  export type TriggeredTags = {
+    structuralTagType: "TriggeredTags";
+    triggers: string[];
+    tags: Tag[];
+    atLeastOne: boolean;
+    stopAfterFirst: boolean;
+  };
+  /** TagsWithSeparator configures generation of a sequence of tags
+   *        separated by a fixed `separator` string.
+   *
+   * Can be used to produce repeated tagged elements like
+   * "<f>A</f>;<f>B</f>" where `separator`=";". */
+  export type TagsWithSeparator = {
+    structuralTagType: "TagsWithSeparator";
+    tags: Tag[];
+    separator: string;
+    atLeastOne: boolean;
+    stopAfterFirst: boolean;
   };
 }
-
-/** Structure to keep generation config parameters for structural tags in structured output generation.
- * It is used to store the configuration for a single structural tag item, which includes the begin string,
- * schema, and end string. */
-export type StructuralTagItem = {
-  /** the string that marks the beginning of the structural tag. */
-  begin: string;
-  /** the JSON schema that defines the structure of the tag. */
-  schema: string;
-  /** the string that marks the end of the structural tag. */
-  end: string;
-};
-
-/** Configures structured output generation by combining regular sampling with structural tags.
- *
- * When the model generates a trigger string, it switches to structured output mode and produces output
- * based on the defined structural tags. Afterward, regular sampling resumes.
- *
- * Example:
- *   - Trigger "<func=" activates tags with begin "<func=sum>" or "<func=multiply>".
- *
- * Note:
- *   - Simple triggers like "<" may activate structured output unexpectedly if present in regular text.
- *   - Very specific or long triggers may be difficult for the model to generate,
- *     so structured output may not be triggered. */
-export type StructuralTagsConfig = {
-  /** List of StructuralTagItem objects defining structural tags. */
-  structural_tags: StructuralTagItem[];
-  /** List of strings that trigger structured output generation.
-   * Triggers may match the beginning or part of a tag's begin string. */
-  triggers: string[];
-};
 
 /** This object is used to store the configuration for structured generation, which includes
  * the JSON schema and other related parameters. */
@@ -83,53 +128,91 @@ export class StructuredOutputConfig {
   /** if set, the output will be constraint by specified EBNF grammar. */
   grammar?: string;
   /** if set, the output will be constraint by specified structural tags configuration. */
-  structural_tags_config?: StructuralTagsConfig;
-  /** if set, the output will be constraint by specified compound grammar.
-   * Compound grammar is a combination of multiple grammars that can be used to generate structured outputs.
-   * It allows for more complex and flexible structured output generation.
-   * The compound grammar a Union or Concat of several grammars, where each grammar can be a JSON schema, regex, EBNF, Union or Concat. */
-  compound_grammar?: StructuredOutputConfig.CompoundGrammar;
+  structural_tags_config?: StructuredOutputConfig.StructuralTag;
 
   constructor(params: {
     json_schema?: string;
     regex?: string;
     grammar?: string;
-    structural_tags_config?: StructuralTagsConfig;
-    compound_grammar?: StructuredOutputConfig.CompoundGrammar;
+    structural_tags_config?: StructuredOutputConfig.StructuralTag;
   }) {
-    const { json_schema, regex, grammar, structural_tags_config, compound_grammar } = params;
+    const { json_schema, regex, grammar, structural_tags_config } = params;
     this.json_schema = json_schema;
     this.regex = regex;
     this.grammar = grammar;
     this.structural_tags_config = structural_tags_config;
-    this.compound_grammar = compound_grammar;
   }
 
-  /** JSON schema building block for compound grammar configuration. */
-  static JSONSchema(json_schema: string): StructuredOutputConfig.JSONSchema {
-    return { json_schema };
+  static JSONSchema(value: string): StructuredOutputConfig.JSONSchema {
+    return { structuralTagType: "JSONSchema", value };
   }
-  /** Regex building block for compound grammar configuration. */
-  static Regex(regex: string): StructuredOutputConfig.Regex {
-    return { regex: regex };
+
+  static Regex(value: string): StructuredOutputConfig.Regex {
+    return { structuralTagType: "Regex", value };
   }
-  /** EBNF grammar building block for compound grammar configuration. */
-  static EBNF(grammar?: string): StructuredOutputConfig.EBNF {
-    return { grammar: grammar };
+
+  static EBNF(value: string): StructuredOutputConfig.EBNF {
+    return { structuralTagType: "EBNF", value };
   }
-  /** Concat combines two grammars sequentially, e.g. "A B" means A followed by B */
+
+  static ConstString(value: string): StructuredOutputConfig.ConstString {
+    return { structuralTagType: "ConstString", value };
+  }
+
+  static AnyText(): StructuredOutputConfig.AnyText {
+    return { structuralTagType: "AnyText" };
+  }
+
+  static QwenXMLParametersFormat(
+    jsonSchema: string,
+  ): StructuredOutputConfig.QwenXMLParametersFormat {
+    return { structuralTagType: "QwenXMLParametersFormat", jsonSchema };
+  }
+
   static Concat(
-    left: StructuredOutputConfig.CompoundGrammar,
-    right: StructuredOutputConfig.CompoundGrammar,
+    ...elements: StructuredOutputConfig.StructuralTag[]
   ): StructuredOutputConfig.Concat {
-    return { compoundType: "Concat", left, right };
+    return { structuralTagType: "Concat", elements };
   }
-  /** Union combines two grammars in parallel, e.g. "A | B" means either A or B */
-  static Union(
-    left: StructuredOutputConfig.CompoundGrammar,
-    right: StructuredOutputConfig.CompoundGrammar,
-  ): StructuredOutputConfig.Union {
-    return { compoundType: "Union", left, right };
+
+  static Union(...elements: StructuredOutputConfig.StructuralTag[]): StructuredOutputConfig.Union {
+    return { structuralTagType: "Union", elements };
+  }
+
+  static Tag(params: {
+    begin: string;
+    content: StructuredOutputConfig.StructuralTag;
+    end: string;
+  }): StructuredOutputConfig.Tag {
+    return { structuralTagType: "Tag", ...params };
+  }
+
+  static TriggeredTags(params: {
+    triggers: string[];
+    tags: StructuredOutputConfig.Tag[];
+    atLeastOne?: boolean;
+    stopAfterFirst?: boolean;
+  }): StructuredOutputConfig.TriggeredTags {
+    return {
+      structuralTagType: "TriggeredTags",
+      ...params,
+      atLeastOne: params.atLeastOne ?? false,
+      stopAfterFirst: params.stopAfterFirst ?? false,
+    };
+  }
+
+  static TagsWithSeparator(params: {
+    tags: StructuredOutputConfig.Tag[];
+    separator: string;
+    atLeastOne?: boolean;
+    stopAfterFirst?: boolean;
+  }): StructuredOutputConfig.TagsWithSeparator {
+    return {
+      structuralTagType: "TagsWithSeparator",
+      ...params,
+      atLeastOne: params.atLeastOne ?? false,
+      stopAfterFirst: params.stopAfterFirst ?? false,
+    };
   }
 }
 

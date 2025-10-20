@@ -4,9 +4,7 @@
 import readline from 'readline';
 import { z } from 'zod';
 import { LLMPipeline, StructuredOutputConfig } from 'openvino-genai-node';
-import { exit } from 'process';
 
-// Define schemas using zod
 const PersonSchema = z.object({
     name: z.string().regex(/^[A-Z][a-z]{1,20}$/),
     surname: z.string().regex(/^[A-Z][a-z]{1,20}$/),
@@ -72,13 +70,6 @@ async function main() {
         "You can ask to generate information about a person, car, or bank transaction. " +
         'For example, you can ask: "Please generate jsons for 3 persons and 1 transaction."');
 
-    const pyJsonSchema = {
-        'general': '{"properties": {"person": {"maximum": 100, "minimum": 0, "title": "Person", "type": "integer"}, "car": {"maximum": 100, "minimum": 0, "title": "Car", "type": "integer"}, "transaction": {"maximum": 100, "minimum": 0, "title": "Transaction", "type": "integer"}}, "required": ["person", "car", "transaction"], "title": "ItemQuantities", "type": "object"}',
-        'person': '{"properties": {"name": {"pattern": "^[A-Z][a-z]{1,20}$", "title": "Name", "type": "string"}, "surname": {"pattern": "^[A-Z][a-z]{1,20}$", "title": "Surname", "type": "string"}, "age": {"title": "Age", "type": "integer"}, "city": {"enum": ["Dublin", "Dubai", "Munich"], "title": "City", "type": "string"}}, "required": ["name", "surname", "age", "city"], "title": "Person", "type": "object"}',
-        'car': '{"properties": {"model": {"pattern": "^[A-Z][a-z]{1,20} ?[A-Z][a-z]{0,20} ?.?$", "title": "Model", "type": "string"}, "year": {"title": "Year", "type": "integer"}, "engine_type": {"enum": ["diesel", "petrol", "electric", "hybrid"], "title": "Engine Type", "type": "string"}}, "required": ["model", "year", "engine_type"], "title": "Car", "type": "object"}',
-        'transaction': '{"properties": {"id": {"maximum": 10000000, "minimum": 1000, "title": "Id", "type": "integer"}, "amount": {"title": "Amount", "type": "number"}, "currency": {"enum": ["EUR", "PLN", "RUB", "AED", "CHF", "GBP", "USD"], "title": "Currency", "type": "string"}}, "required": ["id", "amount", "currency"], "title": "Transaction", "type": "object"}',
-    }
-
     async function handleInput(prompt) {
         try {
             await pipe.startChat(sysMessage);
@@ -103,7 +94,6 @@ async function main() {
                 if (!schema) continue;
                 config.structured_output_config = new StructuredOutputConfig({
                     json_schema: JSON.stringify(z.toJSONSchema(schema))
-                    // json_schema: pyJsonSchema[item]
                 });
                 for (let i = 0; i < quantity; i++) {
                     generateHasRun = true;
@@ -122,8 +112,6 @@ async function main() {
         }
 
     }
-
-    // await handleInput("Generate jsons for 2 persons, 3 cars and 1 transaction.");
 
     rl.on('line', handleInput);
 }

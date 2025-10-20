@@ -345,7 +345,7 @@ describe("LLMPipeline.generate() with generation config", () => {
     const generationConfig = {
       max_new_tokens: 50,
       structured_output_config: {
-        compound_grammar: StructuredOutputConfig.JSONSchema(
+        structural_tags_config: StructuredOutputConfig.JSONSchema(
           JSON.stringify({
             type: "object",
             properties: {
@@ -402,7 +402,7 @@ describe("LLMPipeline.generate() with generation config", () => {
     const generationConfig = {
       max_new_tokens: 10,
       structured_output_config: {
-        compound_grammar: StructuredOutputConfig.Regex("yes|no"),
+        structural_tags_config: StructuredOutputConfig.Regex("yes|no"),
       },
       return_decoded_results: true,
     };
@@ -416,7 +416,7 @@ describe("LLMPipeline.generate() with generation config", () => {
     const generationConfig = {
       max_new_tokens: 10,
       structured_output_config: {
-        compound_grammar: StructuredOutputConfig.Union(
+        structural_tags_config: StructuredOutputConfig.Union(
           StructuredOutputConfig.Regex("yes"),
           StructuredOutputConfig.Regex("no"),
         ),
@@ -449,7 +449,7 @@ table::= "users" | "orders" | "products"`,
     const generationConfig = {
       max_new_tokens: 50,
       structured_output_config: {
-        compound_grammar:
+        structural_tags_config:
           StructuredOutputConfig.EBNF(`root::= "SELECT " column (", " column)? " from " table ";"
 column::= "name" | "username" | "email" | "postcode" | "*"
 table::= "users" | "orders" | "products"`),
@@ -466,7 +466,7 @@ table::= "users" | "orders" | "products"`),
     const generationConfig = {
       max_new_tokens: 50,
       structured_output_config: {
-        compound_grammar: StructuredOutputConfig.Concat(
+        structural_tags_config: StructuredOutputConfig.Concat(
           StructuredOutputConfig.JSONSchema(
             JSON.stringify({
               type: "object",
@@ -516,7 +516,7 @@ table::= "users" | "orders" | "products"`),
     assert.ok(typeof parsed.city === "string");
   });
 
-  it("generate with structural_tags_config in structured_output_config", async () => {
+  it("generate with TriggeredTags in structural_tags_config", async () => {
     const tools = [
       {
         name: "get_weather",
@@ -545,14 +545,16 @@ table::= "users" | "orders" | "products"`),
     const generationConfig = {
       max_new_tokens: 200,
       structured_output_config: {
-        structural_tags_config: {
-          structural_tags: tools.map((tool) => ({
-            begin: `<function="${tool.name}">`,
-            schema: JSON.stringify(tool.schema),
-            end: "</function>",
-          })),
+        structural_tags_config: StructuredOutputConfig.TriggeredTags({
           triggers: ["<function="],
-        },
+          tags: tools.map((tool) =>
+            StructuredOutputConfig.Tag({
+              begin: `<function="${tool.name}">`,
+              content: StructuredOutputConfig.JSONSchema(JSON.stringify(tool.schema)),
+              end: "</function>",
+            }),
+          ),
+        }),
       },
       return_decoded_results: true,
     };
@@ -598,6 +600,170 @@ If you don't know the answer, just say that you don't know, but try to call the 
     } finally {
       await pipeline.finishChat();
     }
+  });
+
+  it("generate with ConstString in structural_tags_config", async () => {
+    const generationConfig = {
+      max_new_tokens: 50,
+      structured_output_config: {
+        structural_tags_config: StructuredOutputConfig.ConstString("constant_string"),
+      },
+      return_decoded_results: true,
+    };
+    const prompt = `Generate a JSON object with the following properties:
+    - name: a random name
+    - age: a random age between 1 and 100
+    - city: a random city
+    The JSON object should be in the following format:
+    {
+      "name": "John Doe",
+      "age": 30,
+      "city": "New York"
+    }
+    `;
+    const res = await pipeline.generate(prompt, generationConfig);
+    const text = res.texts[0];
+    assert.equal(text, "constant_string", `Unexpected output: ${text}`);
+  });
+
+  it("generate with ConstString in structural_tags_config", async () => {
+    const generationConfig = {
+      max_new_tokens: 50,
+      structured_output_config: {
+        structural_tags_config: StructuredOutputConfig.AnyText(),
+      },
+      return_decoded_results: true,
+    };
+    const prompt = `Generate a JSON object with the following properties:
+    - name: a random name
+    - age: a random age between 1 and 100
+    - city: a random city
+    The JSON object should be in the following format:
+    {
+      "name": "John Doe",
+      "age": 30,
+      "city": "New York"
+    }
+    `;
+    const res = await pipeline.generate(prompt, generationConfig);
+    const text = res.texts[0];
+    assert.ok(text.length > 0, `Unexpected output: ${text}`);
+  });
+
+  it("generate with Tag in structural_tags_config", async () => {
+    const generationConfig = {
+      max_new_tokens: 50,
+      structured_output_config: {
+        structural_tags_config: StructuredOutputConfig.Tag({
+          begin: "<start>",
+          content: StructuredOutputConfig.ConstString("..."),
+          end: "</end>",
+        }),
+      },
+      return_decoded_results: true,
+    };
+    const prompt = `Generate a JSON object with the following properties:
+    - name: a random name
+    - age: a random age between 1 and 100
+    - city: a random city
+    The JSON object should be in the following format:
+    {
+      "name": "John Doe",
+      "age": 30,
+      "city": "New York"
+    }
+    `;
+    const res = await pipeline.generate(prompt, generationConfig);
+    const text = res.texts[0];
+    assert.equal(text, "<start>...</end>", `Unexpected output: ${text}`);
+  });
+
+  it("generate with QwenXMLParametersFormat in structural_tags_config", async () => {
+    const generationConfig = {
+      max_new_tokens: 50,
+      structured_output_config: {
+        structural_tags_config: StructuredOutputConfig.QwenXMLParametersFormat(
+          JSON.stringify({
+            properties: {
+              status: {
+                enum: ["success", "error"],
+                title: "Status",
+                type: "string",
+              },
+              data: {
+                pattern: "^[A-Z][a-z]{1,20}$",
+                title: "Data",
+                type: "string",
+              },
+            },
+            required: ["status", "data"],
+            title: "RESTAPIResponse",
+            type: "object",
+          }),
+        ),
+      },
+      return_decoded_results: true,
+    };
+    const prompt = "Make a request to a REST API.";
+    const res = await pipeline.generate(prompt, generationConfig);
+    const text = res.texts[0];
+    const statusPattern = /<parameter=status>\s*"(success|error)"\s*<\/parameter>/;
+    const dataPattern = /<parameter=data>\s*[A-Z][a-z]{1,20}\s*<\/parameter>/;
+
+    assert.ok(statusPattern.test(text), `Unexpected output: ${text}`);
+    assert.ok(dataPattern.test(text), `Unexpected output: ${text}`);
+  });
+
+  it("generate with TagsWithSeparator in structural_tags_config", async () => {
+    const generationConfig = {
+      max_new_tokens: 50,
+      structured_output_config: {
+        structural_tags_config: StructuredOutputConfig.TagsWithSeparator({
+          tags: [
+            StructuredOutputConfig.Tag({
+              begin: "<f>",
+              content: StructuredOutputConfig.ConstString("A"),
+              end: "</f>",
+            }),
+            StructuredOutputConfig.Tag({
+              begin: "<f>",
+              content: StructuredOutputConfig.ConstString("B"),
+              end: "</f>",
+            }),
+          ],
+          separator: ";",
+          atLeastOne: true,
+          stopAfterFirst: false,
+        }),
+      },
+      return_decoded_results: true,
+    };
+    const prompt = "";
+    const res = await pipeline.generate(prompt, generationConfig);
+    const text = res.texts[0];
+    const pattern = /(<f>(A|B)<\/f>(;<f>(A|B)<\/f>))*/;
+
+    assert.ok(pattern.test(text), 1, `Unexpected output: ${text}`);
+  });
+
+  it("generate with string structural_tags_config", async () => {
+    const generationConfig = {
+      max_new_tokens: 50,
+      structured_output_config: {
+        structural_tags_config: JSON.stringify({
+          type: "structural_tag",
+          format: {
+            type: "const_string",
+            value: "abc",
+          },
+        }),
+      },
+      return_decoded_results: true,
+    };
+    const prompt = "";
+    const res = await pipeline.generate(prompt, generationConfig);
+    const text = res.texts[0];
+    assert.equal(text, "abc", `Unexpected output: ${text}`);
   });
 });
 

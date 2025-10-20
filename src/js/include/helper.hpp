@@ -16,8 +16,6 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
         return info.Env().Undefined();                                                         \
     }
 
-ov::AnyMap to_anyMap(const Napi::Env&, const Napi::Value&);
-
 /**
  * @brief  Template function to convert Javascript data types into C++ data types
  * @tparam TargetType destinated C++ data type
@@ -52,12 +50,12 @@ ov::genai::SchedulerConfig js_to_cpp<ov::genai::SchedulerConfig>(const Napi::Env
 /** @brief  A template specialization for TargetType ov::genai::StructuredOutputConfig */
 template <>
 ov::genai::StructuredOutputConfig js_to_cpp<ov::genai::StructuredOutputConfig>(const Napi::Env& env, const Napi::Value& value);
-/** @brief  A template specialization for TargetType std::vector<ov::genai::StructuralTagItem> */
+/** @brief  A template specialization for TargetType ov::genai::StructuredOutputConfig::Tag */
 template <>
-std::vector<ov::genai::StructuralTagItem> js_to_cpp<std::vector<ov::genai::StructuralTagItem>>(const Napi::Env& env, const Napi::Value& value);
-/** @brief  A template specialization for TargetType ov::genai::StructuredOutputConfig::CompoundGrammar */
+ov::genai::StructuredOutputConfig::Tag js_to_cpp<ov::genai::StructuredOutputConfig::Tag>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType ov::genai::StructuredOutputConfig::StructuralTag */
 template <>
-ov::genai::StructuredOutputConfig::CompoundGrammar js_to_cpp<ov::genai::StructuredOutputConfig::CompoundGrammar>(const Napi::Env& env, const Napi::Value& value);
+ov::genai::StructuredOutputConfig::StructuralTag js_to_cpp<ov::genai::StructuredOutputConfig::StructuralTag>(const Napi::Env& env, const Napi::Value& value);
 /**
  * @brief  Template function to convert C++ data types into Javascript data types
  * @tparam TargetType Destinated Javascript data type.
