@@ -234,41 +234,6 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
 
 void print_gguf_debug_info(const std::string& debug_info);
 
-void print_cdpruner_processing_overview(size_t total_tokens,
-                                        size_t feature_dim,
-                                        size_t text_tokens,
-                                        size_t text_feature_dim,
-                                        size_t num_tokens_to_keep,
-                                        size_t tokens_removed,
-                                        size_t pruning_ratio,
-                                        float relevance_weight);
-
-void print_cdpruner_processing_overview(size_t frame_count,
-                                        size_t tokens_per_frame,
-                                        size_t feature_dim,
-                                        size_t text_tokens,
-                                        size_t text_feature_dim,
-                                        size_t num_tokens_to_keep_per_frame,
-                                        size_t total_input_tokens,
-                                        size_t total_output_tokens,
-                                        size_t pruning_ratio,
-                                        float relevance_weight);
-
-void print_cdpruner_performance_summary(const std::string& computation_mode,
-                                        std::chrono::microseconds total_duration,
-                                        std::chrono::microseconds kernel_duration,
-                                        std::chrono::microseconds dpp_duration,
-                                        size_t total_input_tokens,
-                                        size_t total_output_tokens);
-
-void print_cdpruner_performance_summary(const std::string& computation_mode,
-                                        std::chrono::microseconds total_duration,
-                                        size_t frame_count,
-                                        size_t total_input_tokens,
-                                        size_t actual_total_tokens,
-                                        size_t actual_batch_size,
-                                        size_t actual_hidden_dim);
-
 struct KVDesc {
     uint32_t max_prompt_len;
     uint32_t min_response_len;

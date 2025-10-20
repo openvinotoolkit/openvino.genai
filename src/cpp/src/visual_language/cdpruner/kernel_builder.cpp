@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 
 #include "openvino/op/ops.hpp"
@@ -40,7 +41,8 @@ ConditionalKernelBuilder::ConditionalKernelBuilder(const Config& config)
 
         GENAI_DEBUG_LOG("[CDPruner] ConditionalKernelBuilder: InferRequests initialized for device " + m_config.device);
     } catch (const std::exception& e) {
-        GENAI_DEBUG_LOG("[CDPruner] ConditionalKernelBuilder: InferRequest initialization failed, will use fallback: " + std::string(e.what()));
+        GENAI_DEBUG_LOG("[CDPruner] ConditionalKernelBuilder: InferRequest initialization failed, will use fallback: " +
+                        std::string(e.what()));
         m_requests_initialized = false;
     }
 }
@@ -60,7 +62,8 @@ ov::Tensor ConditionalKernelBuilder::build(const ov::Tensor& visual_features, co
     try {
         conditional_kernel = build_with_ov_model(visual_features, input_param);
     } catch (const std::exception& e) {
-        GENAI_DEBUG_LOG("[CDPruner] ConditionalKernelBuilder: OV model failed, falling back to normal pipeline: " + std::string(e.what()));
+        GENAI_DEBUG_LOG("[CDPruner] ConditionalKernelBuilder: OV model failed, falling back to normal pipeline: " +
+                        std::string(e.what()));
         conditional_kernel = build_with_normal_pipeline(visual_features, input_param);
     }
 
@@ -85,7 +88,8 @@ ov::Tensor ConditionalKernelBuilder::build_with_ov_model(const ov::Tensor& visua
         throw std::invalid_argument("Visual features and text features must have consistent batch size, token "
                                     "count, and feature dimension");
     }
-    GENAI_DEBUG_LOG("[CDPruner] Text input: [" + std::to_string(text_features.get_shape()[0]) + ", " + std::to_string(text_features.get_shape()[1]) + "]");
+    GENAI_DEBUG_LOG("[CDPruner] Text input: [" + std::to_string(text_features.get_shape()[0]) + ", " +
+                    std::to_string(text_features.get_shape()[1]) + "]");
 
     auto kernel_build_start = std::chrono::high_resolution_clock::now();
     ov::Tensor conditional_kernel = compute_conditional_kernel_gpu(visual_features, text_features);
@@ -93,8 +97,9 @@ ov::Tensor ConditionalKernelBuilder::build_with_ov_model(const ov::Tensor& visua
     auto kernel_build_duration =
         std::chrono::duration_cast<std::chrono::microseconds>(kernel_build_end - kernel_build_start);
 
-    GENAI_DEBUG_LOG("[CDPruner] Kernel computation: " + std::to_string(kernel_build_duration.count() / 1000.0) + " ms ("
-                    + std::to_string(static_cast<double>(total_operations) / kernel_build_duration.count() * 1000000) + " ops/sec)");
+    GENAI_DEBUG_LOG(
+        "[CDPruner] Kernel computation: " + std::to_string(kernel_build_duration.count() / 1000.0) + " ms (" +
+        std::to_string(static_cast<double>(total_operations) / kernel_build_duration.count() * 1000000) + " ops/sec)");
 
     return conditional_kernel;
 }
@@ -111,7 +116,8 @@ ov::Tensor ConditionalKernelBuilder::build_with_normal_pipeline(const ov::Tensor
         throw std::invalid_argument("Relevance scores must be 2D tensor [B, N]");
     }
     auto relevance_shape = relevance_scores.get_shape();
-    GENAI_DEBUG_LOG("[CDPruner] Input tensors: relevance_scores[" + std::to_string(relevance_shape[0]) + ", " + std::to_string(relevance_shape[1]) + "]");
+    GENAI_DEBUG_LOG("[CDPruner] Input tensors: relevance_scores[" + std::to_string(relevance_shape[0]) + ", " +
+                    std::to_string(relevance_shape[1]) + "]");
 
     // Check shape consistency
     if (relevance_shape[0] != batch_size || relevance_shape[1] != num_tokens) {
@@ -149,26 +155,42 @@ ov::Tensor ConditionalKernelBuilder::build_with_normal_pipeline(const ov::Tensor
     auto total_kernel_duration =
         std::chrono::duration_cast<std::chrono::microseconds>(kernel_build_end - kernel_build_start);
 
-    // Print performance breakdown only in debug mode
-    std::ostringstream ss;
-    ss << "[CDPruner]   L2 normalization [" << batch_size << ", " << num_tokens << ", " << feature_dim
-                    << "]: " << normalize_duration.count() << " us ("
-                    << (static_cast<double>(normalize_duration.count()) / total_kernel_duration.count() * 100) << "%)" << std::endl;
-    ss << "[CDPruner]   Similarity matrix [" << batch_size << ", " << num_tokens << ", " << num_tokens
-                    << "]: " << similarity_duration.count() << " us ("
-                    << (static_cast<double>(similarity_duration.count()) / total_kernel_duration.count() * 100) << "%)" << std::endl;
-    ss << "[CDPruner]   Conditional kernel [" << batch_size << ", " << num_tokens << ", " << num_tokens
-                    << "]: " << conditional_duration.count() << " us ("
-                    << (static_cast<double>(conditional_duration.count()) / total_kernel_duration.count() * 100) << "%)" << std::endl;
-
-    ss << "[CDPruner] Total kernel build time: " << total_kernel_duration.count() << " us ("
-                    << (total_kernel_duration.count() / 1000.0) << " ms)" << std::endl;
-    // Performance metrics
-    ss << "[CDPruner] Kernel build throughput: "
-                    << (static_cast<double>(total_operations) / total_kernel_duration.count() * 1000000) << " ops/sec" << std::endl;
-    GENAI_DEBUG_LOG(ss.str());
+    print_kernel_build_performance(batch_size,
+                                   num_tokens,
+                                   feature_dim,
+                                   total_operations,
+                                   normalize_duration,
+                                   similarity_duration,
+                                   conditional_duration,
+                                   total_kernel_duration);
 
     return conditional_kernel;
+}
+
+void ConditionalKernelBuilder::print_kernel_build_performance(size_t batch_size,
+                                                              size_t num_tokens,
+                                                              size_t feature_dim,
+                                                              size_t total_operations,
+                                                              const std::chrono::microseconds& normalize_duration,
+                                                              const std::chrono::microseconds& similarity_duration,
+                                                              const std::chrono::microseconds& conditional_duration,
+                                                              const std::chrono::microseconds& total_kernel_duration) {
+    std::ostringstream ss;
+    ss << "[CDPruner]   L2 normalization [" << batch_size << ", " << num_tokens << ", " << feature_dim
+       << "]: " << normalize_duration.count() << " us ("
+       << (static_cast<double>(normalize_duration.count()) / total_kernel_duration.count() * 100) << "%)" << std::endl;
+    ss << "[CDPruner]   Similarity matrix [" << batch_size << ", " << num_tokens << ", " << num_tokens
+       << "]: " << similarity_duration.count() << " us ("
+       << (static_cast<double>(similarity_duration.count()) / total_kernel_duration.count() * 100) << "%)" << std::endl;
+    ss << "[CDPruner]   Conditional kernel [" << batch_size << ", " << num_tokens << ", " << num_tokens
+       << "]: " << conditional_duration.count() << " us ("
+       << (static_cast<double>(conditional_duration.count()) / total_kernel_duration.count() * 100) << "%)"
+       << std::endl;
+    ss << "[CDPruner] Total kernel build time: " << total_kernel_duration.count() << " us ("
+       << (total_kernel_duration.count() / 1000.0) << " ms)" << std::endl;
+    ss << "[CDPruner] Kernel build throughput: "
+       << (static_cast<double>(total_operations) / total_kernel_duration.count() * 1000000) << " ops/sec" << std::endl;
+    GENAI_DEBUG_LOG(ss.str());
 }
 
 // GPU-accelerated similarity matrix computation using OpenVINO

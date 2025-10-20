@@ -203,12 +203,12 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
                 computation_mode += " + OpenCL GPU DPP";
             }
 #endif
-            utils::print_cdpruner_performance_summary(computation_mode,
-                                                      total_duration,
-                                                      kernel_duration,
-                                                      dpp_duration,
-                                                      total_input_tokens,
-                                                      total_output_tokens);
+            print_cdpruner_performance_summary(computation_mode,
+                                               total_duration,
+                                               kernel_duration,
+                                               dpp_duration,
+                                               total_input_tokens,
+                                               total_output_tokens);
         }
 
         return selected_tokens;
@@ -232,14 +232,14 @@ ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features, const ov::
     float pruning_ratio = 1.0f - static_cast<float>(num_tokens_to_keep) / static_cast<float>(total_tokens);
     size_t tokens_removed = total_tokens - num_tokens_to_keep;
 
-    utils::print_cdpruner_processing_overview(total_tokens,
-                                              feature_dim,
-                                              text_tokens,
-                                              text_feature_dim,
-                                              num_tokens_to_keep,
-                                              tokens_removed,
-                                              m_config.pruning_ratio,
-                                              m_config.relevance_weight);
+    print_cdpruner_processing_overview(total_tokens,
+                                       feature_dim,
+                                       text_tokens,
+                                       text_feature_dim,
+                                       num_tokens_to_keep,
+                                       tokens_removed,
+                                       m_config.pruning_ratio,
+                                       m_config.relevance_weight);
 
     auto selected_tokens = select_tokens(visual_features, text_features, silent);
 
@@ -315,16 +315,16 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
     size_t text_tokens = text_shape[0];
     size_t text_feature_dim = text_shape[1];
 
-    utils::print_cdpruner_processing_overview(visual_features_list.size(),
-                                              tokens_per_frame,
-                                              feature_dim,
-                                              text_tokens,
-                                              text_feature_dim,
-                                              num_tokens_to_keep,
-                                              total_input_tokens,
-                                              total_output_tokens,
-                                              m_config.pruning_ratio,
-                                              m_config.relevance_weight);
+    print_cdpruner_processing_overview(visual_features_list.size(),
+                                       tokens_per_frame,
+                                       feature_dim,
+                                       text_tokens,
+                                       text_feature_dim,
+                                       num_tokens_to_keep,
+                                       total_input_tokens,
+                                       total_output_tokens,
+                                       m_config.pruning_ratio,
+                                       m_config.relevance_weight);
 
     // Apply pruning to each visual feature and collect results (using silent mode)
     std::vector<ov::Tensor> pruned_features_list;
@@ -340,8 +340,7 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
         auto shape = visual_feature.get_shape();
         auto pruned_shape = pruned_feature.get_shape();
         std::ostringstream ss;
-        ss << "[CDPruner] Frame " << frame_idx << ": [" << shape[1] << " → " << pruned_shape[1]
-           << " tokens]";
+        ss << "[CDPruner] Frame " << frame_idx << ": [" << shape[1] << " → " << pruned_shape[1] << " tokens]";
         GENAI_DEBUG_LOG(ss.str());
         pruned_features_list.push_back(std::move(pruned_feature));
     }
@@ -380,14 +379,13 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
 #else
     std::string computation_mode = std::string("OV Model by ") + m_config.device + std::string(" + Traditional DPP");
 #endif
-
-    utils::print_cdpruner_performance_summary(computation_mode,
-                                              total_duration,
-                                              visual_features_list.size(),
-                                              total_input_tokens,
-                                              actual_total_tokens,
-                                              actual_batch_size,
-                                              actual_hidden_dim);
+    print_cdpruner_performance_summary(computation_mode,
+                                       total_duration,
+                                       visual_features_list.size(),
+                                       total_input_tokens,
+                                       actual_total_tokens,
+                                       actual_batch_size,
+                                       actual_hidden_dim);
 
     return concatenated_features;
 }
@@ -398,6 +396,144 @@ float CDPruner::compute_pruning_ratio() const {
 
 PruningStatistics CDPruner::get_last_pruning_statistics() const {
     return m_last_statistics;
+}
+
+void CDPruner::print_cdpruner_processing_overview(size_t total_tokens,
+                                                  size_t feature_dim,
+                                                  size_t text_tokens,
+                                                  size_t text_feature_dim,
+                                                  size_t num_tokens_to_keep,
+                                                  size_t tokens_removed,
+                                                  size_t pruning_ratio,
+                                                  float relevance_weight) {
+    float reduction_percentage = 0.0f;
+    if (total_tokens > 0) {
+        reduction_percentage = (static_cast<float>(tokens_removed) / static_cast<float>(total_tokens)) * 100.0f;
+    }
+    GENAI_INFO_LOG("+--- CDPruner Processing Overview -------------------------+");
+    GENAI_INFO_LOG("[CDPruner] Input:  Vision[" + std::to_string(total_tokens) + " tokens x " +
+                   std::to_string(feature_dim) + "D] + Text[" + std::to_string(text_tokens) + " tokens x " +
+                   std::to_string(text_feature_dim) + "D]");
+    GENAI_INFO_LOG("[CDPruner] Config: Keep " + std::to_string(100 - pruning_ratio) + "% (" +
+                   std::to_string(num_tokens_to_keep) + "/" + std::to_string(total_tokens) +
+                   " tokens) | Weight=" + std::to_string(relevance_weight));
+    GENAI_INFO_LOG("[CDPruner] Result: " + std::to_string(tokens_removed) + " tokens removed (" +
+                   std::to_string(reduction_percentage) + "% reduction)");
+    GENAI_INFO_LOG("+----------------------------------------------------------+");
+}
+
+void CDPruner::print_cdpruner_processing_overview(size_t frame_count,
+                                                  size_t tokens_per_frame,
+                                                  size_t feature_dim,
+                                                  size_t text_tokens,
+                                                  size_t text_feature_dim,
+                                                  size_t num_tokens_to_keep_per_frame,
+                                                  size_t total_input_tokens,
+                                                  size_t total_output_tokens,
+                                                  size_t pruning_ratio,
+                                                  float relevance_weight) {
+    float reduction_percentage = 0.0f;
+    if (total_input_tokens > 0) {
+        reduction_percentage =
+            (1.0f - static_cast<float>(total_output_tokens) / static_cast<float>(total_input_tokens)) * 100.0f;
+    }
+
+    GENAI_INFO_LOG("+--- CDPruner Multi-Frame Processing Overview -------------+");
+    GENAI_INFO_LOG("[CDPruner] Input:  " + std::to_string(frame_count) + " frames x Vision[" +
+                   std::to_string(tokens_per_frame) + " tokens x " + std::to_string(feature_dim) + "D] + Text[" +
+                   std::to_string(text_tokens) + " tokens x " + std::to_string(text_feature_dim) + "D]");
+    GENAI_INFO_LOG("[CDPruner] Config: Keep " + std::to_string(pruning_ratio) + "% (" +
+                   std::to_string(num_tokens_to_keep_per_frame) + "/" + std::to_string(tokens_per_frame) +
+                   " tokens per frame) | Weight=" + std::to_string(relevance_weight));
+    GENAI_INFO_LOG("[CDPruner] Total:  " + std::to_string(total_input_tokens) + " → " +
+                   std::to_string(total_output_tokens) + " tokens (" + std::to_string(reduction_percentage) +
+                   "% reduction)");
+    GENAI_INFO_LOG("+----------------------------------------------------------+");
+}
+
+void CDPruner::print_cdpruner_performance_summary(const std::string& computation_mode,
+                                                  std::chrono::microseconds total_duration,
+                                                  std::chrono::microseconds kernel_duration,
+                                                  std::chrono::microseconds dpp_duration,
+                                                  size_t total_input_tokens,
+                                                  size_t total_output_tokens) {
+    GENAI_INFO_LOG("+-------------- CDPruner Performance Summary --------------+");
+    GENAI_INFO_LOG("[CDPruner] Computation mode: " + computation_mode);
+    GENAI_INFO_LOG("[CDPruner] Total processing time: " + std::to_string(total_duration.count()) + " us (" +
+                   std::to_string(total_duration.count() / 1000.0) + " ms)");
+    GENAI_INFO_LOG("[CDPruner] Performance Metrics:");
+    GENAI_INFO_LOG("[CDPruner]   Kernel computation time: " + std::to_string(kernel_duration.count()) + " us (" +
+                   std::to_string(kernel_duration.count() / 1000.0) + " ms)");
+    GENAI_INFO_LOG("[CDPruner]   DPP selection time: " + std::to_string(dpp_duration.count()) + " us (" +
+                   std::to_string(dpp_duration.count() / 1000.0) + " ms)");
+    if (total_duration.count() > 0) {
+        const double total_time_sec = static_cast<double>(total_duration.count()) / 1'000'000.0;
+        GENAI_INFO_LOG("[CDPruner]   Overall throughput: " +
+                       std::to_string(static_cast<double>(total_input_tokens) / total_time_sec) + " input tokens/sec");
+        GENAI_INFO_LOG("[CDPruner]   Pruning efficiency: " +
+                       std::to_string(static_cast<double>(total_output_tokens) / total_time_sec) +
+                       " output tokens/sec");
+    } else {
+        GENAI_INFO_LOG("[CDPruner]   Overall throughput: N/A");
+        GENAI_INFO_LOG("[CDPruner]   Pruning efficiency: N/A");
+    }
+    if (total_input_tokens > 0) {
+        GENAI_INFO_LOG("[CDPruner]   Pruning ratio: " +
+                       std::to_string((1.0 - static_cast<double>(total_output_tokens) / total_input_tokens) * 100) +
+                       "%");
+    } else {
+        GENAI_INFO_LOG("[CDPruner]   Pruning ratio: N/A");
+    }
+    GENAI_INFO_LOG("+----------------------------------------------------------+");
+}
+
+void CDPruner::print_cdpruner_performance_summary(const std::string& computation_mode,
+                                                  std::chrono::microseconds total_duration,
+                                                  size_t frame_count,
+                                                  size_t total_input_tokens,
+                                                  size_t actual_total_tokens,
+                                                  size_t actual_batch_size,
+                                                  size_t actual_hidden_dim) {
+    GENAI_INFO_LOG("+---------- CDPruner Multi-Frame Processing Performance Summary ---------+");
+    GENAI_INFO_LOG("[CDPruner] Computation mode: " + computation_mode);
+    GENAI_INFO_LOG("[CDPruner] Total processing time: " + std::to_string(total_duration.count()) + " us (" +
+                   std::to_string(total_duration.count() / 1000.0) + " ms)");
+    GENAI_INFO_LOG("[CDPruner] Performance Metrics:");
+
+    if (frame_count > 0) {
+        GENAI_INFO_LOG("[CDPruner]   Frames processed: " + std::to_string(frame_count));
+        GENAI_INFO_LOG("[CDPruner]   Average time per frame: " + std::to_string(total_duration.count() / frame_count) +
+                       " us (" + std::to_string(total_duration.count() / frame_count / 1000.0) + " ms)");
+    } else {
+        GENAI_INFO_LOG("[CDPruner]   Frames processed: 0");
+        GENAI_INFO_LOG("[CDPruner]   Average time per frame: N/A");
+    }
+
+    if (total_duration.count() > 0) {
+        const double duration_us = static_cast<double>(total_duration.count());
+        GENAI_INFO_LOG("[CDPruner]   Overall throughput: " +
+                       std::to_string(static_cast<double>(total_input_tokens) / duration_us * 1'000'000) +
+                       " input tokens/sec");
+        GENAI_INFO_LOG("[CDPruner]   Pruning efficiency: " +
+                       std::to_string(static_cast<double>(actual_total_tokens) / duration_us * 1'000'000) +
+                       " output tokens/sec");
+    } else {
+        GENAI_INFO_LOG("[CDPruner]   Overall throughput: N/A");
+        GENAI_INFO_LOG("[CDPruner]   Pruning efficiency: N/A");
+    }
+
+    if (total_input_tokens > 0) {
+        GENAI_INFO_LOG("[CDPruner]   Combined pruning ratio: " +
+                       std::to_string((1.0 - static_cast<double>(actual_total_tokens) / total_input_tokens) * 100) +
+                       "%");
+    } else {
+        GENAI_INFO_LOG("[CDPruner]   Combined pruning ratio: N/A");
+    }
+
+    GENAI_INFO_LOG("[CDPruner] Final result: [" + std::to_string(actual_batch_size) + ", " +
+                   std::to_string(actual_total_tokens) + ", " + std::to_string(actual_hidden_dim) + "] from " +
+                   std::to_string(frame_count) + " frames");
+    GENAI_INFO_LOG("+----------------------------------------------------------+");
 }
 
 void CDPruner::validate_config(const Config& config) {

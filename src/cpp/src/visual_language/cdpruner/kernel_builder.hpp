@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <openvino/runtime/infer_request.hpp>
 
 #include "cdpruner_config.hpp"
@@ -52,6 +53,16 @@ private:
     /// @param relevance_scores Relevance scores [B, N]
     /// @return Conditional kernel matrix [B, N, N]
     ov::Tensor build_with_normal_pipeline(const ov::Tensor& visual_features, const ov::Tensor& relevance_scores);
+
+    /// @brief Log detailed performance metrics for kernel construction steps
+    void print_kernel_build_performance(size_t batch_size,
+                                        size_t num_tokens,
+                                        size_t feature_dim,
+                                        size_t total_operations,
+                                        const std::chrono::microseconds& normalize_duration,
+                                        const std::chrono::microseconds& similarity_duration,
+                                        const std::chrono::microseconds& conditional_duration,
+                                        const std::chrono::microseconds& total_kernel_duration);
     /// @brief Create OpenVINO ops model for relevance and kernel computation
     /// @return Shared pointer to the OpenVINO model
     std::shared_ptr<ov::Model> create_conditional_kernel_model();
