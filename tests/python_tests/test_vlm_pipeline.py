@@ -63,7 +63,7 @@ def get_ov_model(model_id):
         pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
     ov_cache_models_dir = get_ov_cache_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
-model_dir = ov_cache_models_dir / dir_name
+    model_dir = ov_cache_models_dir / dir_name
     if (model_dir / "openvino_language_model.xml").exists():
         return model_dir
     align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
