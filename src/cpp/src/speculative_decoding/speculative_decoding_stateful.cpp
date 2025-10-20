@@ -484,8 +484,8 @@ DecodedResults StatefulSpeculativeLLMPipeline::generate(
     // Update perf metrics
     decoded_results.perf_metrics = encoded_results.perf_metrics;
     decoded_results.extended_perf_metrics = encoded_results.extended_perf_metrics;
-    auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
     generate_timer.end();
+    auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
     raw_counters.generate_durations.clear();
     raw_counters.generate_durations.emplace_back(generate_timer.get_duration_microsec());
     raw_counters.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());

@@ -341,5 +341,7 @@ def test_chat_generation(config, model_id):
     assert messages_stateful == messages_static, f"CPU output:\n{messages_stateful}\nNPU output:\n{messages_static}"
     
     answers_chat_history_static = [msg["content"] for msg in messages_static if msg["role"] == "assistant"]
-    assert answers_chat_mode_static == answers_chat_history_static, \
-        f"NPU chat mode output:\n{answers_chat_mode_static}\nNPU chat history output:\n{answers_chat_history_static}"
+    assert answers_chat_mode_static == answers_chat_history_static, (
+        f"NPU chat mode output:\n{answers_chat_mode_static}\n"
+        f"NPU chat history output:\n{answers_chat_history_static}"
+    )

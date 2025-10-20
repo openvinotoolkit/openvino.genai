@@ -25,6 +25,7 @@ from data.models import get_models_list, get_chat_models_list
 
 
 def assert_hf_equals_genai(hf_reference, genai_output):
+    __tracebackhide__ = True
     assert hf_reference == genai_output, f"HF reference:\n{hf_reference}\nGenAI output:\n{genai_output}"
 
 
