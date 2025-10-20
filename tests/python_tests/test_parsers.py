@@ -125,10 +125,9 @@ def test_final_parser_llama_32_json(hf_ov_genai_models):
     content_json = {
         "content": f"Calling weather API: {json_str}"
     }
-
+    
     parser = Llama32JsonToolParser()
     parser.parse(content_json)
-
     assert content_json['tool_calls'][0] == json.loads(json_str)
 
 

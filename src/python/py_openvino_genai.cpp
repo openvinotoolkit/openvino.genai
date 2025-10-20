@@ -94,15 +94,10 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def(py::init<>())
         .def_property_readonly("texts", [](const DecodedResults &dr) -> py::typing::List<py::str> { return pyutils::handle_utf8((std::vector<std::string>)dr); })
         .def_readonly("scores", &DecodedResults::scores)
-        .def_property_readonly("parsed", [](const DecodedResults& dr) -> py::dict {
-            static py::object json_mod = py::module_::import("json");
+        .def_property_readonly("parsed", [](const DecodedResults& dr) -> py::list {
             py::list result_dicts;
-            
             for (const auto& parsed: dr.parsed) {
-                auto json_str =  parsed.to_json_string();
-                py::dict json_dict = json_mod.attr("loads")(json_str);
-
-                result_dicts.append(json_dict);
+                result_dicts.append(pyutils::json_container_to_py_object(parsed));
             }
             return result_dicts;
         })

@@ -9,94 +9,86 @@
 
 using namespace ov::genai;
 
-nlohmann::json run_parser_test(std::shared_ptr<ParserBase> parser, const std::string& prompt) {
+TEST(ParserTest, test_llama32_parser_1) {
+    std::string prompt = R"(What's the weather in New York today?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n[get_weather(location="New York, NY", unit="celsius")]<|eom_id|>)";
+    // By default content should keep original values.
+    
+    JsonContainer expected;
+    expected["content"] = prompt;
+    expected["tool_calls"] = JsonContainer::array();
+    expected["tool_calls"].push_back(JsonContainer({
+        {"name", "get_weather"},
+        {"arguments", JsonContainer{
+            {"location", "New York, NY"},
+            {"unit", "celsius"}
+        }}
+    }));
+
+
+    std::shared_ptr<Llama32PythonicToolParser> parser = std::make_shared<Llama32PythonicToolParser>();
     JsonContainer input;
     input["content"] = prompt;
     parser->parse(input);
-    return input.to_json();
-}
-
-
-TEST(ParserTest, test_llama32_parser_1) {
-    std::string prompt = R"(What's the weather in New York today?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n[get_weather(location="New York, NY", unit="celsius")]<|eom_id|>)";
-    nlohmann::json expected;
     
-    // By default content should keep original values.
-    expected["content"] = prompt;
-    
-    expected["tool_calls"] = nlohmann::json::array({
-        {
-            {"name", "get_weather"},
-            {"arguments", {
-                {"location", "New York, NY"},
-                {"unit", "celsius"}
-            }}
-        }
-    });
-    std::shared_ptr<Llama32PythonicToolParser> parser = std::make_shared<Llama32PythonicToolParser>();
-    
-    nlohmann::json res = run_parser_test(parser, prompt);
-    
-    ASSERT_EQ(res, expected);
+    ASSERT_TRUE(expected == input);
 }
 
 TEST(ParserTest, test_llama32_parser_2) {
     std::string prompt = R"(What's the weather in New York today?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n[get_weather(location="New York, NY", unit="celsius")]<|eom_id|>)";
-    nlohmann::json expected;
     
-    // In this test tool calling part will be cut from the content after parsing.
+    JsonContainer expected;
     expected["content"] = std::string(R"(What's the weather in New York today?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n<|eom_id|>)");
-    
-    expected["tool_calls"] = nlohmann::json::array({
-        {
-            {"name", "get_weather"},
-            {"arguments", {
-                {"location", "New York, NY"},
-                {"unit", "celsius"}
-            }}
-        }
-    });
-    auto parser = std::make_shared<Llama32PythonicToolParser>(/*keep_original_content*/ false);
+    expected["tool_calls"] = JsonContainer::array();
+    expected["tool_calls"].push_back(JsonContainer(ov::AnyMap({
+        {"name", "get_weather"},
+        {"arguments", ov::AnyMap{
+            {"location", "New York, NY"},
+            {"unit", "celsius"}
+        }}
+    })));
 
-    nlohmann::json res = run_parser_test(parser, prompt);
+    std::shared_ptr<Llama32PythonicToolParser> parser = std::make_shared<Llama32PythonicToolParser>(/*keep_original_content*/ false);
+    JsonContainer input;
+    input["content"] = prompt;
+    parser->parse(input);
 
-    ASSERT_EQ(res, expected);
+    ASSERT_EQ(input, expected);
 }
 
 TEST(ParserTest, test_reasoning_parser_1) {
     std::string prompt = R"("<｜begin▁of▁sentence｜><｜begin▁of▁sentence｜><｜User｜>What is 2 + 1?<｜Assistant｜><think>\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n</think>\n\n**Solution:**\n\nTo find the sum of 2 and 1, )";
-    nlohmann::json expected;
     
-    // In this test reasoning part will be cut from the content after parsing.
+    JsonContainer expected;
     expected["content"] = std::string(R"("<｜begin▁of▁sentence｜><｜begin▁of▁sentence｜><｜User｜>What is 2 + 1?<｜Assistant｜>\n\n**Solution:**\n\nTo find the sum of 2 and 1, )");
-    
     expected["reasoning_content"] = std::string(R"(\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n)");
-    auto parser = std::make_shared<BaseReasoningParser>(
+
+    std::shared_ptr<BaseReasoningParser> parser = std::make_shared<BaseReasoningParser>(
         /*expect_open_tag*/ true,
         /*keep_original_content*/ false
     );
+    JsonContainer input;
+    input["content"] = prompt;
+    parser->parse(input);
 
-    nlohmann::json res = run_parser_test(parser, prompt);
-
-    ASSERT_EQ(res, expected);
+    ASSERT_EQ(input, expected);
 }
 
 TEST(ParserTest, test_reasoning_parser_2) {
     std::string prompt = R"("<｜begin▁of▁sentence｜><｜begin▁of▁sentence｜><｜User｜>What is 2 + 1?<｜Assistant｜><think>\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n</think>\n\n**Solution:**\n\nTo find the sum of 2 and 1, )";
-    nlohmann::json expected;
     
-    // In this test content should keep original values.
+    JsonContainer expected;
     expected["content"] = prompt;
-    
     expected["reasoning_content"] = std::string(R"(\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n)");
-    auto parser = std::make_shared<BaseReasoningParser>(
+
+    std::shared_ptr<BaseReasoningParser> parser = std::make_shared<BaseReasoningParser>(
         /*expect_open_tag*/ true,
         /*keep_original_content*/ true
     );
+    JsonContainer input;
+    input["content"] = prompt;
+    parser->parse(input);
 
-    nlohmann::json res = run_parser_test(parser, prompt);
-
-    ASSERT_EQ(res, expected);
+    ASSERT_EQ(input, expected);
 }
 
 class DeepSeekR1ReasoningParserTest : public ::testing::Test {
@@ -120,7 +112,6 @@ TEST_F(DeepSeekR1ReasoningParserTest, ReasoningContentAccumulatesAcrossCalls) {
     std::string ref_res = "First, I recognize that the question is asking for the sum of 2 and 1.\n\nI know that addition involves combining two numbers to find their total.\n\nStarting with 2, I add 1 to it.\n\n2 plus 1 equals 3.\n";
     
     JsonContainer msg;
-    
     
     for (int i = 1; i < input_stream.size(); i++) {
         std::string previous_text = input_stream[i - 1];

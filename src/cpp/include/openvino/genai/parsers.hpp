@@ -22,6 +22,8 @@ public:
         const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt, 
         const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
     ) = 0;
+
+    virtual ~IncrementalParserBase() = default;
 };
 
 class ReasoningParser : public IncrementalParserBase {
@@ -33,6 +35,7 @@ public:
                     bool keep_original_content = true, 
                     const std::string& open_tag = "<think>", 
                     const std::string& close_tag = "</think>");
+    virtual ~ReasoningParser() = default;
 
     std::string parse(
         JsonContainer& msg,
@@ -56,6 +59,7 @@ public:
 class ParserBase {
 public:
     ParserBase() = default;
+    virtual ~ParserBase() = default;
     virtual void parse(JsonContainer& text) = 0;
 };
 

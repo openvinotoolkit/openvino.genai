@@ -67,11 +67,11 @@ static py::object json_mod = py::module_::import("json");
 
 // wrapper to enhance calling parser from Python
 void call_parser(py::dict& msg, std::function<void(JsonContainer&)> func) {
-    auto msg_anymap = ov::genai::pybind::utils::py_object_to_any_map(msg);
-    auto msg_cpp = JsonContainer(msg_anymap);
-
+    auto msg_cpp = pyutils::py_object_to_json_container(msg);
     func(msg_cpp);
 
+    // TODO: msg = pyutils::json_container_to_py_object(msg_cpp) does not work properly here,
+    // since it create a new object instead of updating existing dict.
     auto json_str = msg_cpp.to_json_string();
     py::dict result = json_mod.attr("loads")(json_str);
     
@@ -92,14 +92,14 @@ std::string call_incremental_parser(
     const std::optional<std::vector<int64_t>>& delta_tokens,
     std::function<std::string(JsonContainer&, const std::string&, std::string&, const std::optional<std::vector<int64_t>>&,
                                const std::optional<std::vector<int64_t>>&)> func) {
-    auto msg_anymap = ov::genai::pybind::utils::py_object_to_any_map(msg);
-    auto msg_cpp = JsonContainer(msg_anymap);
+    auto msg_cpp = pyutils::py_object_to_json_container(msg);
 
     auto res = func(msg_cpp, previous_text, delta_text, previous_tokens, delta_tokens);
-
     auto json_str = msg_cpp.to_json_string();
-    py::dict result = json_mod.attr("loads")(json_str);
     
+    // TODO: msg = pyutils::json_container_to_py_object(msg_cpp) does not work properly here,
+    // since it create a new object instead of updating existing dict.
+    py::dict result = json_mod.attr("loads")(json_str);
     // update msg with result
     msg.clear();
     for (auto item : result) {
@@ -120,20 +120,19 @@ void init_parsers(py::module_& m) {
                          std::string& delta_text,
                          const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt,
                          const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt) {
-            // TODO: optimize conversion between py::dict and JsonContainer
-            auto msg_anymap = ov::genai::pybind::utils::py_object_to_any_map(msg);
-            auto msg_cpp = JsonContainer(msg_anymap);
-
-
-            auto res = self.parse(msg_cpp, previous_text, delta_text, previous_tokens, delta_tokens);
-            msg.clear();
-            
-            auto json_obj = msg_cpp.to_json();
-            for (auto it = json_obj.begin(); it != json_obj.end(); ++it) {
-                msg[py::cast(it.key())] = py::cast(it.value());
-            }
-
-            return res;
+            return call_incremental_parser(
+                self,
+                msg,
+                previous_text,
+                delta_text,
+                previous_tokens,
+                delta_tokens,
+                [&self](JsonContainer& m, const std::string& prev_text, std::string& delta_t,
+                        const std::optional<std::vector<int64_t>>& prev_tokens,
+                        const std::optional<std::vector<int64_t>>& delta_toks) {
+                    return self.parse(m, prev_text, delta_t, prev_tokens, delta_toks);
+                }
+            );
         }, py::arg("msg"), py::arg("previous_text"), py::arg("delta_text"),
            py::arg("previous_tokens") = std::nullopt, py::arg("delta_tokens") = std::nullopt,
            "Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.");
@@ -147,18 +146,18 @@ void init_parsers(py::module_& m) {
                std::string& delta_text,
                const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt,
                const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt) {
-                return call_incremental_parser(
-                    self,
-                    msg,
-                    previous_text,
-                    delta_text,
-                    previous_tokens,
-                    delta_tokens,
-                    [&self](JsonContainer& m, const std::string& prev_text, std::string& delta_t,
-                            const std::optional<std::vector<int64_t>>& prev_tokens,
-                            const std::optional<std::vector<int64_t>>& delta_toks) {
-                        return self.parse(m, prev_text, delta_t, prev_tokens, delta_toks);
-                    });
+            return call_incremental_parser(
+                self,
+                msg,
+                previous_text,
+                delta_text,
+                previous_tokens,
+                delta_tokens,
+                [&self](JsonContainer& m, const std::string& prev_text, std::string& delta_t,
+                        const std::optional<std::vector<int64_t>>& prev_tokens,
+                        const std::optional<std::vector<int64_t>>& delta_toks) {
+                    return self.parse(m, prev_text, delta_t, prev_tokens, delta_toks);
+                });
             },
             "Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.",
             py::arg("msg"), py::arg("previous_text"), py::arg("delta_text"),
@@ -173,19 +172,20 @@ void init_parsers(py::module_& m) {
                std::string& delta_text,
                const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt,
                const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt) {
-                return call_incremental_parser(
-                    self,
-                    msg,
-                    previous_text,
-                    delta_text,
-                    previous_tokens,
-                    delta_tokens,
-                    [&self](JsonContainer& m, const std::string& prev_text, std::string& delta_t,
-                            const std::optional<std::vector<int64_t>>& prev_tokens,
-                            const std::optional<std::vector<int64_t>>& delta_toks) {
-                        return self.parse(m, prev_text, delta_t, prev_tokens, delta_toks);
-                    });
-            },
+            return call_incremental_parser(
+                self,
+                msg,
+                previous_text,
+                delta_text,
+                previous_tokens,
+                delta_tokens,
+                [&self](JsonContainer& m, const std::string& prev_text, std::string& delta_t,
+                        const std::optional<std::vector<int64_t>>& prev_tokens,
+                        const std::optional<std::vector<int64_t>>& delta_toks) {
+                    return self.parse(m, prev_text, delta_t, prev_tokens, delta_toks);
+                }
+            );
+        },
             "Parse is called with the full text. Returns a dict with parsed content.",
             py::arg("msg"), py::arg("previous_text"), py::arg("delta_text"),
             py::arg("previous_tokens") = std::nullopt, py::arg("delta_tokens") = std::nullopt);

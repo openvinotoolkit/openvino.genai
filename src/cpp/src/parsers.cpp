@@ -5,9 +5,6 @@
 #include <vector>
 #include <cctype>
 #include <stdexcept>
-#include <nlohmann/json.hpp>
-
-using json = nlohmann::json;
 
 namespace ov::genai {
 
@@ -24,6 +21,7 @@ private:
 public:
     bool m_deactivated = false;
     ReasoningParserImpl() = default;
+    
     ReasoningParserImpl(bool expect_open_tag,
                     bool keep_original_content,
                     const std::string& open_tag, 
@@ -91,7 +89,6 @@ public:
             auto close_idx = txt_chunk.find(m_close_tag);
 
             reason_str += txt_chunk.substr(0, close_idx);
-            // content_str += txt_chunk.substr(close_idx + std::string(m_close_tag).size(), txt_chunk.size() - (close_idx + std::string(m_close_tag).size()));
             if (!m_keep_original_content) {
                 // Cut from the txt_chunk which is before </think> and leave only what is after </think>.
                 // Example if m_text_cache + delta_text = "...some text</th" + "ink>Answer is 3" = "...some text</think>Answer is 3"
@@ -187,13 +184,9 @@ public:
         // Strip outer [ ]
         std::string call = m.str().substr(1, m.str().size() - 2);
 
-        // Split function name and arguments
-        input["tool_calls"] = JsonContainer::array();
-        
         size_t pos = call.find('(');
         std::string name = call.substr(0, pos);
         std::string args = call.substr(pos + 1, call.size() - pos - 2); // inside (...)
-        
         
         JsonContainer kv;
         // Parse arguments of the form key='value'
@@ -203,6 +196,7 @@ public:
             kv[std::string((*it)[1])] = std::string((*it)[2]);
         }
         
+        // Split function name and arguments
         input["tool_calls"] = JsonContainer::array();
         input["tool_calls"].push_back(JsonContainer({{"name", name}, {"arguments", kv}}));
         

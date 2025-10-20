@@ -77,16 +77,11 @@ public:
 
     StreamingStatus write(JsonContainer& message) override {
         py::dict message_py;
-        auto json_obj = message.to_json();
-        for (auto it = json_obj.begin(); it != json_obj.end(); ++it) {
-            message_py[py::cast(it.key())] = py::cast(it.value().get<std::string>());
-        }
+        message_py = pyutils::json_container_to_py_object(message);
         
         // call python implementation which accepts py::dict instead of JsonContainer
         auto res = py::get_override(this, "write")(message_py);
-        
-        auto msg_anymap = ov::genai::pybind::utils::py_object_to_any_map(message_py);
-        message = JsonContainer(msg_anymap);
+        message = pyutils::py_object_to_json_container(message_py);
         
         return res.cast<StreamingStatus>();
     }
@@ -174,13 +169,7 @@ void init_streamers(py::module_& m) {
         
         .def("get_parsed_message", 
             [](TextParserStreamer& self) {
-                static py::object json_mod = py::module_::import("json");
-                
-                auto res = self.get_parsed_message();
-                auto json_str =  res.to_json_string();
-                py::dict json_dict = json_mod.attr("loads")(json_str);
-
-                return json_dict;
+                return pyutils::json_container_to_py_object(self.get_parsed_message());
                 
             }, "Get the current parsed message");
 }
