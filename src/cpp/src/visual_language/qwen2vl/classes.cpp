@@ -1037,7 +1037,7 @@ NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prom
                              m_vlm_config.video_pad_token.length() * num_video_pad_tokens +
                              m_vlm_config.vision_end_token.length());
         expanded_tag.append(m_vlm_config.vision_start_token);
-        for (int i = 0; i < num_video_pad_tokens; ++i) {
+        for (size_t i = 0; i < num_video_pad_tokens; ++i) {
             expanded_tag.append(m_vlm_config.video_pad_token);
         }
         expanded_tag.append(m_vlm_config.vision_end_token);
