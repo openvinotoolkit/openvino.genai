@@ -150,7 +150,7 @@ public:
         m_cache_rotation_deltas_for_each_layer = std::move(rotation_deltas_for_each_layer);
     }
 
-    void set_initial_hidden_state(uint64_t& request_id, const ov::Tensor& hidden_state) {
+    void set_initial_hidden_state(uint64_t request_id, const ov::Tensor& hidden_state) {
         m_initial_hidden_states[request_id] = hidden_state;
     }
 
