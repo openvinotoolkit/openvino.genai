@@ -147,10 +147,7 @@ def analyze_args(args):
 
     # CDPruner config
     model_args['pruning_ratio'] = args.pruning_ratio if args.pruning_ratio is not None else 0
-    if model_args['pruning_ratio'] > 0 and model_args['pruning_ratio'] < 100:
-        model_args['relevance_weight'] = args.relevance_weight if args.relevance_weight is not None else 0.5
-    else:
-        model_args['pruning_ratio'] = 0
+    model_args['relevance_weight'] = args.relevance_weight if args.relevance_weight is not None else 0.5
 
     optimum = args.optimum
 

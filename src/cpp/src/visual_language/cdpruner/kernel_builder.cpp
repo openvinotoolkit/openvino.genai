@@ -85,8 +85,7 @@ ov::Tensor ConditionalKernelBuilder::build_with_ov_model(const ov::Tensor& visua
 
     // Check shape consistency
     if (text_features.get_shape()[1] != feature_dim) {
-        throw std::invalid_argument("Visual features and text features must have consistent batch size, token "
-                                    "count, and feature dimension");
+        throw std::invalid_argument("Visual features and text features must have the same feature dimension");
     }
     GENAI_DEBUG_LOG("[CDPruner] Text input: [" + std::to_string(text_features.get_shape()[0]) + ", " +
                     std::to_string(text_features.get_shape()[1]) + "]");

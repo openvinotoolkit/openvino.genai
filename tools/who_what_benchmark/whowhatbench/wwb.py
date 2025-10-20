@@ -471,13 +471,7 @@ def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_to
     image_data = ov.Tensor(np.array(image)[None])
     config = openvino_genai.GenerationConfig()
     if generation_config is not None and 'pruning_ratio' in generation_config:
-        try:
-            config.pruning_ratio = int(generation_config.get('pruning_ratio'))
-        except (TypeError, ValueError):
-            print(f"[CDPruner] Disable CDPruner as invalid pruning ratio {config.pruning_ratio}%.")
-            config.pruning_ratio = 0
-        config.pruning_ratio = 0 if config.pruning_ratio <= 0 or config.pruning_ratio >= 100 else config.pruning_ratio
-        print(f'[CDPruner] Enable CDPruner with {config.pruning_ratio}% visual token pruning')
+        config.pruning_ratio = int(generation_config.get('pruning_ratio'))
     out = model.generate(
         prompt,
         **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
