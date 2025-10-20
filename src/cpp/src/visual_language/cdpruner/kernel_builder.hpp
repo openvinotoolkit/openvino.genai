@@ -39,7 +39,7 @@ public:
     /// @param visual_features Visual feature embeddings [B, N, D]
     /// @param text_features Text feature embeddings [B, M, D]
     /// @return Conditional kernel matrix [B, N, N]
-    ov::Tensor compute_conditional_kernel_gpu(const ov::Tensor& visual_features, const ov::Tensor& text_features);
+    ov::Tensor compute_conditional_kernel_with_model(const ov::Tensor& visual_features, const ov::Tensor& text_features);
 
 private:
     /// @brief Build conditional kernel using OpenVINO ops model
@@ -79,7 +79,7 @@ private:
     /// @brief GPU-accelerated similarity matrix computation using OpenVINO MatMul
     /// @param features Normalized visual features [B, N, D]
     /// @return Similarity matrix [B, N, N]
-    ov::Tensor compute_similarity_matrix_gpu(const ov::Tensor& features);
+    ov::Tensor compute_similarity_matrix_with_model(const ov::Tensor& features);
 
     /// @brief Create diagonal matrix from vector
     /// @param scores Vector of scores [B, N]
@@ -101,7 +101,7 @@ private:
     /// @param similarity_matrix Base similarity matrix [B, N, N]
     /// @param relevance_scores Token relevance scores [B, N]
     /// @return Conditional kernel matrix [B, N, N]
-    ov::Tensor build_conditional_kernel(const ov::Tensor& similarity_matrix, const ov::Tensor& relevance_scores);
+    ov::Tensor compute_conditional_kernel_normal(const ov::Tensor& similarity_matrix, const ov::Tensor& relevance_scores);
 
     /// @brief Create min-max normalization subgraph using OpenVINO ops
     /// @param input Input node to normalize

@@ -92,7 +92,7 @@ ov::Tensor ConditionalKernelBuilder::build_with_ov_model(const ov::Tensor& visua
                     std::to_string(text_features.get_shape()[1]) + "]");
 
     auto kernel_build_start = std::chrono::high_resolution_clock::now();
-    ov::Tensor conditional_kernel = compute_conditional_kernel_gpu(visual_features, text_features);
+    ov::Tensor conditional_kernel = compute_conditional_kernel_with_model(visual_features, text_features);
     auto kernel_build_end = std::chrono::high_resolution_clock::now();
     auto kernel_build_duration =
         std::chrono::duration_cast<std::chrono::microseconds>(kernel_build_end - kernel_build_start);
@@ -139,14 +139,14 @@ ov::Tensor ConditionalKernelBuilder::build_with_normal_pipeline(const ov::Tensor
     // This gives us the base similarity matrix [B, N, N]
     auto similarity_start = std::chrono::high_resolution_clock::now();
     // ov::Tensor similarity_matrix = compute_similarity_matrix(normalized_features);
-    ov::Tensor similarity_matrix = compute_similarity_matrix_gpu(normalized_features);
+    ov::Tensor similarity_matrix = compute_similarity_matrix_with_model(normalized_features);
     auto similarity_end = std::chrono::high_resolution_clock::now();
     auto similarity_duration = std::chrono::duration_cast<std::chrono::microseconds>(similarity_end - similarity_start);
 
     // Step 3: Build conditional kernel matrix L̃ = diag(r) · L · diag(r)
     // Following CDPruner: kernel = relevance.unsqueeze(2) * similarity * relevance.unsqueeze(1)
     auto conditional_start = std::chrono::high_resolution_clock::now();
-    ov::Tensor conditional_kernel = build_conditional_kernel(similarity_matrix, relevance_scores);
+    ov::Tensor conditional_kernel = compute_conditional_kernel_normal(similarity_matrix, relevance_scores);
     auto conditional_end = std::chrono::high_resolution_clock::now();
     auto conditional_duration =
         std::chrono::duration_cast<std::chrono::microseconds>(conditional_end - conditional_start);
@@ -156,25 +156,25 @@ ov::Tensor ConditionalKernelBuilder::build_with_normal_pipeline(const ov::Tensor
         std::chrono::duration_cast<std::chrono::microseconds>(kernel_build_end - kernel_build_start);
 
     print_kernel_build_performance(batch_size,
-                                   num_tokens,
-                                   feature_dim,
-                                   total_operations,
-                                   normalize_duration,
-                                   similarity_duration,
-                                   conditional_duration,
-                                   total_kernel_duration);
+                                 num_tokens,
+                                 feature_dim,
+                                 total_operations,
+                                 normalize_duration,
+                                 similarity_duration,
+                                 conditional_duration,
+                                 total_kernel_duration);
 
     return conditional_kernel;
 }
 
 void ConditionalKernelBuilder::print_kernel_build_performance(size_t batch_size,
-                                                              size_t num_tokens,
-                                                              size_t feature_dim,
-                                                              size_t total_operations,
-                                                              const std::chrono::microseconds& normalize_duration,
-                                                              const std::chrono::microseconds& similarity_duration,
-                                                              const std::chrono::microseconds& conditional_duration,
-                                                              const std::chrono::microseconds& total_kernel_duration) {
+                                                            size_t num_tokens,
+                                                            size_t feature_dim,
+                                                            size_t total_operations,
+                                                            const std::chrono::microseconds& normalize_duration,
+                                                            const std::chrono::microseconds& similarity_duration,
+                                                            const std::chrono::microseconds& conditional_duration,
+                                                            const std::chrono::microseconds& total_kernel_duration) {
     std::ostringstream ss;
     ss << "[CDPruner]   L2 normalization [" << batch_size << ", " << num_tokens << ", " << feature_dim
        << "]: " << normalize_duration.count() << " us ("
@@ -194,7 +194,7 @@ void ConditionalKernelBuilder::print_kernel_build_performance(size_t batch_size,
 }
 
 // GPU-accelerated similarity matrix computation using OpenVINO
-ov::Tensor ConditionalKernelBuilder::compute_similarity_matrix_gpu(const ov::Tensor& features) {
+ov::Tensor ConditionalKernelBuilder::compute_similarity_matrix_with_model(const ov::Tensor& features) {
     // features: [B, N, D] - normalized visual features
     // Result: [B, N, N] - similarity matrix
 
@@ -360,7 +360,7 @@ ov::Tensor ConditionalKernelBuilder::l2_normalize_features(const ov::Tensor& fea
     return normalized_features;
 }
 
-ov::Tensor ConditionalKernelBuilder::build_conditional_kernel(const ov::Tensor& similarity_matrix,
+ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_normal(const ov::Tensor& similarity_matrix,
                                                               const ov::Tensor& relevance_scores) {
     // similarity_matrix: [B, N, N]
     // relevance_scores: [B, N]
@@ -395,7 +395,7 @@ ov::Tensor ConditionalKernelBuilder::build_conditional_kernel(const ov::Tensor& 
     return conditional_kernel;
 }
 
-ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_gpu(const ov::Tensor& visual_features,
+ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_with_model(const ov::Tensor& visual_features,
                                                                     const ov::Tensor& text_features) {
     // Input validation
     if (visual_features.get_shape().size() != 3) {
