@@ -493,8 +493,6 @@ export const LLM_MODELS: LLMModelType[] = [
           'https://huggingface.co/meta-llama/Meta-Llama-3-70B-Instruct',
           'https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-8B',
           'https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B',
-          'https://huggingface.co/yuhuili/EAGLE3-LLaMA3.1-Instruct-8B',
-          'https://huggingface.co/Tengyunw/qwen3_8b_eagle3'
         ],
       },
       {
