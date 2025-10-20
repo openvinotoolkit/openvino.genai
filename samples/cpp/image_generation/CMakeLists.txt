@@ -88,6 +88,24 @@ install(TARGETS heterogeneous_stable_diffusion
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
 
+# create decode_intermediate_result_concurrency sample executable
+
+add_executable(decode_intermediate_result_concurrency
+    decode_intermediate_result_concurrency.cpp
+    imwrite.cpp)
+
+target_include_directories(decode_intermediate_result_concurrency PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(decode_intermediate_result_concurrency PRIVATE openvino::genai indicators::indicators)
+
+set_target_properties(decode_intermediate_result_concurrency PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS decode_intermediate_result_concurrency
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
 # create image2image sample executable
 
 add_executable(image2image image2image.cpp load_image.cpp imwrite.cpp)
