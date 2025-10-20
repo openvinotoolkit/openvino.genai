@@ -52,7 +52,11 @@ int main(int argc, char* argv[]) {
 
     // Generate response
     ov_genai_vlm_decoded_results* results = NULL;
-    ov_genai_vlm_pipeline_generate(pipeline, text_prompt, tensors, tensor_count, NULL, &callback, &results);
+    ov_genai_generation_config* config = NULL;
+    ov_genai_generation_config_create(&config);
+    ov_genai_generation_config_set_max_new_tokens(config, 100);
+
+    ov_genai_vlm_pipeline_generate(pipeline, text_prompt, tensors, tensor_count, config, &callback, &results);
 
     printf("\n\nGeneration completed successfully!\n");
 
