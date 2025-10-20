@@ -412,8 +412,10 @@ void share_embedding_weights(std::shared_ptr<ov::Model>& main_model, std::shared
 
     try {
         draft_weight_node->output(0).replace(main_weight_node->output(0));
+    } catch (const std::exception& e) {
+        std::cerr << "Error: failed to import embedding weights from main model to draft model. Exception: " << e.what() << std::endl;
     } catch (...) {
-        std::cout << "failed to import embedding weights from main model to draft model" << std::endl;
+        std::cerr << "Error: failed to import embedding weights from main model to draft model due to unknown exception." << std::endl;
     }
 }
 
