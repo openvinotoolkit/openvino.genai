@@ -82,6 +82,8 @@ def get_ov_model(model_id):
             export=True,
             load_in_8bit=False,
             trust_remote_code=model_id in {
+                "katuni4ka/tiny-random-minicpmv-2_6",
+                "katuni4ka/tiny-random-internvl2",
                 "katuni4ka/tiny-random-phi3-vision",
                 "katuni4ka/tiny-random-phi-4-multimodal",
                 "qnguyen3/nanoLLaVA",
