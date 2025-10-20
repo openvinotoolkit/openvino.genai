@@ -167,11 +167,12 @@ Napi::Value LLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
 
 Napi::Value LLMPipelineWrapper::start_chat(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
-    std::string system_message = "";
-    if (info[0].IsString()) {
-        system_message = info[0].As<Napi::String>().Utf8Value();
-    }
-    Napi::Function callback = info[1].As<Napi::Function>();
+    OPENVINO_ASSERT(
+        info.Length() == 2 && info[0].IsString() && info[1].IsFunction(),
+        "startChat expects 2 arguments: system_message and callback function"
+    );
+    auto system_message = js_to_cpp<std::string>(info.Env(), info[0]);
+    auto callback = info[1].As<Napi::Function>();
 
     StartChatWorker* asyncWorker = new StartChatWorker(callback, this->pipe, system_message);
     asyncWorker->Queue();
