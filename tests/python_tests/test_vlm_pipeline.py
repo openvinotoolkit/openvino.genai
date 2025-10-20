@@ -57,9 +57,9 @@ from utils.constants import get_default_llm_properties, get_ov_cache_models_dir
 
 
 def get_ov_model(model_id):
-    if "qnguyen3/nanoLLaVA" == model_id:
+    if model_id in {"tiny-random/phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
         pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
-    if ("katuni4ka/tiny-random-phi3-vision" == model_id):
+    if "katuni4ka/tiny-random-phi3-vision" == model_id:
         pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
     ov_cache_models_dir = get_ov_cache_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
