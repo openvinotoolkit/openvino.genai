@@ -9,38 +9,28 @@ import openvino
 import pytest
 from openvino_genai import Tokenizer, IncrementalParserBase, ParserBase, TextParserStreamer, StreamingStatus, Llama32JsonToolParser, Phi4ReasoningParser, DeepSeekR1ReasoningParser
 from transformers import AutoTokenizer
-from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
+from utils.hugging_face import convert_and_save_tokenizer
 import re
-import textwrap
 import json
 
 @pytest.fixture(scope="module")
 def hf_ov_genai_models(request, tmp_path_factory):
-    model_id, args = request.param
-    tok_load_properties = {"add_second_input": args.pop("add_second_input")} if "add_second_input" in args else {}
-    
-    hf_args = args.copy()  # to overcome mutable default argument side effects
-    if "padding_side" in hf_args and hf_args["padding_side"] is None:
-        # HF does not accept None.
-        # Need to remove padding_side and let HF to choose default value,
-        hf_args.pop("padding_side")
-    else:
-        hf_args["truncation_side"] = hf_args["padding_side"]
+    model_id = request.param
+
     model_dir = tmp_path_factory.getbasetemp() / model_id.replace("/", "_")
     model_dir.mkdir(exist_ok=True, parents=True)
 
-    hf_tokenizer = AutoTokenizer.from_pretrained(model_id, **hf_args)
-    convert_args = {"number_of_inputs": hf_args.pop("number_of_inputs")} if "number_of_inputs" in hf_args else {}
-    convert_and_save_tokenizer(hf_tokenizer, model_dir, **convert_args)
+    hf_tokenizer = AutoTokenizer.from_pretrained(model_id)
+    convert_and_save_tokenizer(hf_tokenizer, model_dir)
 
-    genai_tokenizer = Tokenizer(model_dir, tok_load_properties)
+    genai_tokenizer = Tokenizer(model_dir)
     return hf_tokenizer, genai_tokenizer
 
 
 @pytest.mark.precommit
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
-    [("katuni4ka/tiny-random-phi3", {"padding_side": "right"})],  # this tokenizer is used as a stub only
+    ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
     indirect=True
 )
 @pytest.mark.parametrize("answer", [
@@ -76,10 +66,11 @@ def test_phi4_reason_parser_1(hf_ov_genai_models, answer):
     assert msg['reasoning_content'] == think_content
     assert msg['content'] == content
 
+
 @pytest.mark.precommit
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
-    [("katuni4ka/tiny-random-phi3", {"padding_side": "right"})],  # this tokenizer is used as a stub only
+    ["katuni4ka/tiny-random-phi3"],
     indirect=True
 )
 @pytest.mark.parametrize("split_answer", [
@@ -111,11 +102,10 @@ def test_phi4_reason_parser_2(hf_ov_genai_models, split_answer):
     assert msg['content'] == content
 
 
-
 @pytest.mark.precommit
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
-    [("katuni4ka/tiny-random-phi3", {"padding_side": "right"})],
+    ["katuni4ka/tiny-random-phi3"],
     indirect=True
 )
 def test_final_parser_llama_32_json(hf_ov_genai_models):
@@ -125,7 +115,7 @@ def test_final_parser_llama_32_json(hf_ov_genai_models):
     content_json = {
         "content": f"Calling weather API: {json_str}"
     }
-    
+
     parser = Llama32JsonToolParser()
     parser.parse(content_json)
     assert content_json['tool_calls'][0] == json.loads(json_str)

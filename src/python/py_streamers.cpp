@@ -76,10 +76,13 @@ public:
     using TextParserStreamer::TextParserStreamer;  // inherit base constructors
 
     StreamingStatus write(JsonContainer& message) override {
+        // Since c++ calls function with JsonContainer while python override expects py::dict, 
+        // this function is a wrapper to call Python implementation of 'write' with py::dict
         py::dict message_py;
         message_py = pyutils::json_container_to_py_object(message);
         
-        // call python implementation which accepts py::dict instead of JsonContainer
+        // Call python implementation which accepts py::dict instead of JsonContainer
+        // And convert back the resulting message back to JsonContainer
         auto res = py::get_override(this, "write")(message_py);
         message = pyutils::py_object_to_json_container(message_py);
         
@@ -168,7 +171,7 @@ void init_streamers(py::module_& m) {
              "Write is called with a string message. Returns CallbackTypeVariant. This is a private method.")
         
         .def("get_parsed_message", 
-            [](TextParserStreamer& self) {
+            [](TextParserStreamer& self) -> py::dict{
                 return pyutils::json_container_to_py_object(self.get_parsed_message());
                 
             }, "Get the current parsed message");

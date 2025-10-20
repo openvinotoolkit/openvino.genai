@@ -63,7 +63,6 @@ public:
     }
 };
 
-static py::object json_mod = py::module_::import("json");
 
 // wrapper to enhance calling parser from Python
 void call_parser(py::dict& msg, std::function<void(JsonContainer&)> func) {
@@ -71,6 +70,8 @@ void call_parser(py::dict& msg, std::function<void(JsonContainer&)> func) {
     func(msg_cpp);
 
     // TODO: msg = pyutils::json_container_to_py_object(msg_cpp) does not work properly here,
+    py::object json_mod = py::module_::import("json");
+    
     // since it create a new object instead of updating existing dict.
     auto json_str = msg_cpp.to_json_string();
     py::dict result = json_mod.attr("loads")(json_str);
@@ -99,6 +100,7 @@ std::string call_incremental_parser(
     
     // TODO: msg = pyutils::json_container_to_py_object(msg_cpp) does not work properly here,
     // since it create a new object instead of updating existing dict.
+    py::object json_mod = py::module_::import("json");
     py::dict result = json_mod.attr("loads")(json_str);
     // update msg with result
     msg.clear();
