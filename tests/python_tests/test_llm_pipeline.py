@@ -20,8 +20,13 @@ from utils.constants import get_default_llm_properties, extra_generate_kwargs
 from utils.hugging_face import generation_config_to_hf, download_and_convert_model
 # model_tmp_path fixture import required
 from utils.tokenizers import delete_rt_info, model_tmp_path
-from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, get_main_pipeline_types, PipelineType
+from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, get_main_pipeline_types, PipelineType, GenerationChatInputsType
 from data.models import get_models_list, get_chat_models_list
+
+
+def assert_hf_equals_genai(hf_reference, genai_output):
+    assert hf_reference == genai_output, f"HF reference:\n{hf_reference}\nGenAI output:\n{genai_output}"
+
 
 #
 # e2e work
@@ -154,18 +159,21 @@ questions = [
 
 @pytest.mark.parametrize("inputs", chat_inputs)
 @pytest.mark.parametrize("model_id", get_chat_models_list())
-@pytest.mark.parametrize("string_inputs", [True, False])
+@pytest.mark.parametrize("input_type", [
+    GenerationChatInputsType.STRING,
+    GenerationChatInputsType.ENCODED_INPUTS,
+    GenerationChatInputsType.CHAT_HISTORY])
 @pytest.mark.precommit
-def test_chat_scenario(model_id, inputs, string_inputs):
+def test_chat_scenario(model_id, inputs, input_type):
     chat_history_hf = []
-    chat_history_ov = []
+    chat_history_ov = ov_genai.ChatHistory() if input_type == GenerationChatInputsType.CHAT_HISTORY else []
 
     opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
-    if string_inputs:
-        ov_pipe = create_ov_pipeline(models_path)
-    else:
+    if input_type == GenerationChatInputsType.ENCODED_INPUTS:
         # chat is not supported for PA backend with encoded_inputs format
         ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
+    else:
+        ov_pipe = create_ov_pipeline(models_path)
 
     generation_config_kwargs, system_message = inputs
 
@@ -177,6 +185,7 @@ def test_chat_scenario(model_id, inputs, string_inputs):
     ov_pipe.start_chat(system_message)
     chat_history_hf.append({"role": "system", "content": system_message})
     chat_history_ov.append({"role": "system", "content": system_message})
+    
     for prompt in questions:
         chat_history_hf.append({'role': 'user', 'content': prompt})
         chat_history_ov.append({'role': 'user', 'content': prompt})
@@ -189,9 +198,12 @@ def test_chat_scenario(model_id, inputs, string_inputs):
         answer_str = hf_tokenizer.decode(answer[prompt_len:], skip_special_tokens=True)
         chat_history_hf.append({'role': 'assistant', 'content': answer_str})
 
-        if string_inputs:
+        if input_type == GenerationChatInputsType.STRING:
             answer_ov = ov_pipe.generate(prompt, generation_config=ov_generation_config)
-        else:
+        elif input_type == GenerationChatInputsType.CHAT_HISTORY:
+            result_ov: ov_genai.DecodedResults = ov_pipe.generate(chat_history_ov, generation_config=ov_generation_config)
+            answer_ov = result_ov.texts[0]
+        elif input_type == GenerationChatInputsType.ENCODED_INPUTS:
             input_ids = np.array([tokenized['input_ids'][0][prev_chat_len:]], dtype=np.int64)
             attention_mask = np.array([tokenized['attention_mask'][0][prev_chat_len:]], dtype=np.int64)
             inputs_ov = ov_genai.TokenizedInputs(ov.Tensor(input_ids), ov.Tensor(attention_mask))
@@ -205,11 +217,22 @@ def test_chat_scenario(model_id, inputs, string_inputs):
 
     ov_pipe.finish_chat()
 
-    if chat_history_ov != chat_history_hf:
-        print(f'hf_output: {chat_history_hf}')
-        print(f'ov_output: {chat_history_ov}')
+    chat_history_messages_ov = chat_history_ov.get_messages() if input_type == GenerationChatInputsType.CHAT_HISTORY else chat_history_ov
+    assert_hf_equals_genai(chat_history_hf, chat_history_messages_ov)
 
-    assert chat_history_ov == chat_history_hf
+    # Test chat history generate without start_chat/finish_chat matches the same chat scenario
+    if input_type == GenerationChatInputsType.CHAT_HISTORY:
+        chat_history_ov = ov_genai.ChatHistory()
+        chat_history_ov.append({"role": "system", "content": system_message})
+
+        for prompt in questions:
+            chat_history_ov.append({"role": "user", "content": prompt})
+            result_ov: ov_genai.DecodedResults = ov_pipe.generate(chat_history_ov, generation_config=ov_generation_config)
+            answer_ov = result_ov.texts[0]
+            chat_history_ov.append({"role": "assistant", "content": answer_ov})
+
+        chat_history_messages_ov = chat_history_ov.get_messages()
+        assert_hf_equals_genai(chat_history_hf, chat_history_messages_ov)
 
 
 @pytest.mark.precommit
@@ -242,11 +265,7 @@ def test_chat_scenario_several_chats_in_series():
 
         ov_pipe.finish_chat()
 
-        if chat_history_ov != chat_history_hf:
-            print(f'hf_output: {chat_history_hf}')
-            print(f'ov_output: {chat_history_ov}')
-
-        assert chat_history_ov == chat_history_hf
+        assert_hf_equals_genai(chat_history_hf, chat_history_ov)
 
 
 @pytest.mark.precommit
@@ -448,11 +467,7 @@ def test_chat_scenario_callback_cancel(model_id):
 
     ov_pipe.finish_chat()
 
-    if chat_history_ov != chat_history_hf:
-        print(f'hf_output: {chat_history_hf}')
-        print(f'ov_output: {chat_history_ov}')
-
-    assert chat_history_ov == chat_history_hf
+    assert_hf_equals_genai(chat_history_hf, chat_history_ov)
 
 
 class PrinterNone(ov_genai.StreamerBase):
