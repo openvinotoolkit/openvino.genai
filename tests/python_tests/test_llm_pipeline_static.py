@@ -1,7 +1,7 @@
 # Copyright (C) 2024-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-from openvino_genai import GenerationConfig, Tokenizer, LLMPipeline, StreamerBase
+from openvino_genai import Tokenizer, LLMPipeline, StreamerBase, ChatHistory
 import os
 
 import pytest
@@ -26,9 +26,9 @@ if sys.platform == 'darwin' or platform.machine() in ["aarch64", "arm64", "ARM64
 
 
 default_config = {
-                     'NPUW_DEVICES': 'CPU',
-                     'NPUW_ONLINE_PIPELINE': 'NONE'
-                 } | get_default_llm_properties()
+    'NPUW_DEVICES': 'CPU',
+    'NPUW_ONLINE_PIPELINE': 'NONE'
+} | get_default_llm_properties()
 
 static_config = { **default_config, 'STATIC_PIPELINE': 'STATEFUL' }
 
@@ -37,14 +37,30 @@ pipeline_configs = [default_config, static_config]
 
 blob_with_weights = [True, False]
 
-def generate_chat_history(model_path, device, pipeline_config, questions):
+
+def generate_with_chat_mode(model_path, device, pipeline_config, questions) -> list[str]:
     pipe = LLMPipeline(model_path, device, **pipeline_config)
     pipe.start_chat()
-    chat_history = [ pipe.generate(question, max_new_tokens=50, do_sample=False) for question in questions ]
+    answers = [ pipe.generate(question, max_new_tokens=50, do_sample=False) for question in questions ]
     pipe.finish_chat()
+    return answers
+
+
+def generate_with_chat_history(model_path, device, pipeline_config, questions) -> ChatHistory:
+    pipe = LLMPipeline(model_path, device, **pipeline_config)
+    chat_history = ChatHistory()
+    for question in questions:
+        chat_history.append({"role": "user", "content": question})
+        decoded_results = pipe.generate(chat_history, max_new_tokens=50, do_sample=False)
+        chat_history.append({"role": "assistant", "content": decoded_results.texts[0]})                          
     return chat_history
 
 
+prompt = 'What is OpenVINO?'
+generate_inputs = [
+    [prompt],
+    ChatHistory([{ "role": "user", "content": prompt }])
+]
 generation_configs = [
     get_greedy(),
     get_greedy_with_penalties()
@@ -53,18 +69,18 @@ generation_configs = [
 @pytest.mark.parametrize("generation_config", generation_configs)
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
+@pytest.mark.parametrize("input", generate_inputs)
 @pytest.mark.xfail(reason="Generation result mismatch. Ticket 171117", raises=AssertionError)
-def test_generation_compare_with_stateful(generation_config, config, model_id):
-    prompt = 'What is OpenVINO?'
+def test_generation_compare_with_stateful(generation_config, config, model_id, input):
     _, _, model_path = download_and_convert_model(model_id)
 
     stateful_pipe = LLMPipeline(model_path, "CPU", **get_default_llm_properties())
-    ref_out = stateful_pipe.generate(prompt, generation_config)
+    ref_out = stateful_pipe.generate(input, generation_config)
 
     static_pipe = LLMPipeline(model_path, "NPU", **config)
-    actual_out = static_pipe.generate(prompt, generation_config)
+    actual_out = static_pipe.generate(input, generation_config)
 
-    assert ref_out == actual_out
+    assert ref_out.texts[0] == actual_out.texts[0]
 
 
 @pytest.mark.precommit
@@ -313,13 +329,17 @@ def test_chat_generation(config, model_id):
 
     _, _, model_path = download_and_convert_model(model_id)
 
-    chat_history_stateful = generate_chat_history(model_path, "CPU", get_default_llm_properties(), questions)
-    chat_history_static   = generate_chat_history(model_path, "NPU", config, questions)
+    answers_chat_mode_stateful = generate_with_chat_mode(model_path, "CPU", get_default_llm_properties(), questions)
+    answers_chat_mode_static = generate_with_chat_mode(model_path, "NPU", config, questions)
+    assert answers_chat_mode_stateful == answers_chat_mode_static, \
+        f"CPU output:\n{answers_chat_mode_stateful}\nNPU output:\n{answers_chat_mode_static}"
 
-    print('npu chat: \n{chat_history_static}\n')
-    print('cpu chat: \n{chat_history_stateful}')
-
-    if chat_history_stateful != chat_history_static:
-        print(f'hf_output: {chat_history_static}')
-        print(f'ov_output: {chat_history_stateful}')
-    assert chat_history_stateful == chat_history_static
+    chat_history_stateful = generate_with_chat_history(model_path, "CPU", get_default_llm_properties(), questions)
+    messages_stateful = chat_history_stateful.get_messages()
+    chat_history_static = generate_with_chat_history(model_path, "NPU", config, questions)
+    messages_static = chat_history_static.get_messages()
+    assert messages_stateful == messages_static, f"CPU output:\n{messages_stateful}\nNPU output:\n{messages_static}"
+    
+    answers_chat_history_static = [msg["content"] for msg in messages_static if msg["role"] == "assistant"]
+    assert answers_chat_mode_static == answers_chat_history_static, \
+        f"NPU chat mode output:\n{answers_chat_mode_static}\nNPU chat history output:\n{answers_chat_history_static}"
