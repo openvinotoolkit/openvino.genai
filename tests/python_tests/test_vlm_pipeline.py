@@ -57,13 +57,13 @@ from utils.constants import get_default_llm_properties, get_ov_cache_models_dir
 
 
 def get_ov_model(model_id):
-    if model_id in {"tiny-random/phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
+    if model_id in {"katuni4ka/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
         pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
     if "katuni4ka/tiny-random-phi3-vision" == model_id:
         pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
     ov_cache_models_dir = get_ov_cache_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
-    model_dir = ov_cache_models_dir / dir_name
+model_dir = ov_cache_models_dir / dir_name
     if (model_dir / "openvino_language_model.xml").exists():
         return model_dir
     align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
