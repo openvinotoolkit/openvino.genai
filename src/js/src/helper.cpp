@@ -273,11 +273,11 @@ ov::genai::StructuredOutputConfig::StructuralTag js_to_cpp<ov::genai::Structured
         auto stop_after_first = obj.Get("stopAfterFirst");
         OPENVINO_ASSERT(
             at_least_one.IsBoolean() && stop_after_first.IsBoolean(),
-            "TriggeredTags 'atLeastOne', and 'stopAfterFirst' must be booleans"
+            "TagsWithSeparator 'atLeastOne', and 'stopAfterFirst' must be booleans"
         );
 
         auto js_tags = obj.Get("tags");
-        OPENVINO_ASSERT(js_tags.IsArray(), "TriggeredTags 'tags' must be an array");
+        OPENVINO_ASSERT(js_tags.IsArray(), "TagsWithSeparator 'tags' must be an array");
         auto js_array = js_tags.As<Napi::Array>();
         size_t arrayLength = js_array.Length();
         for (uint32_t i = 0; i < arrayLength; ++i) {
