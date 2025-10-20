@@ -67,6 +67,7 @@ enum class GenerationChatInputsType {
     UNDEF = 0, // Default value, type of inputs is not defined
     STRING = 1, // Type of inputs is StringInputs
     ENCODED_INPUTS = 2, // Type of inputs is EncodedInputs
+    CHAT_HISTORY = 3, // Type of inputs is ChatHistory
 };
 
 struct GenerationFinishInfo
