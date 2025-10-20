@@ -265,6 +265,21 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::ve
     return decoded_results;
 }
 
+std::vector<GenerationResult> ContinuousBatchingPipeline::generate(
+    const std::vector<ChatHistory>& histories,
+    const std::vector<ov::genai::GenerationConfig>&
+    sampling_params,
+    const StreamerVariant& streamer
+) {
+    auto decoded_results = m_impl->generate(histories, sampling_params, streamer);
+
+    for (auto& decoded_result : decoded_results) {
+        decoded_result.perf_metrics.load_time = m_impl->m_load_time_ms;
+    }
+
+    return decoded_results;
+}
+
 std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
              const std::vector<std::string>& prompts,
              const std::vector<std::vector<ov::Tensor>>& images,
