@@ -10,7 +10,7 @@
 namespace ov {
 namespace genai {
 
-class IncrementalParserBase {
+class OPENVINO_GENAI_EXPORTS IncrementalParserBase {
 public:
     IncrementalParserBase() = default;
 
@@ -26,7 +26,7 @@ public:
     virtual ~IncrementalParserBase() = default;
 };
 
-class ReasoningParser : public IncrementalParserBase {
+class OPENVINO_GENAI_EXPORTS ReasoningParser : public IncrementalParserBase {
 private:
     class ReasoningParserImpl;
     std::shared_ptr<ReasoningParserImpl> m_impl;
@@ -46,12 +46,12 @@ public:
     ) override;
 };
 
-class DeepSeekR1ReasoningParser : public ReasoningParser {
+class OPENVINO_GENAI_EXPORTS DeepSeekR1ReasoningParser : public ReasoningParser {
 public:
     explicit DeepSeekR1ReasoningParser(bool expect_open_tag = true) : ReasoningParser(expect_open_tag) {};
 };
 
-class Phi4ReasoningParser : public ReasoningParser {
+class OPENVINO_GENAI_EXPORTS Phi4ReasoningParser : public ReasoningParser {
 public:
     explicit Phi4ReasoningParser(bool expect_open_tag = false) : ReasoningParser(expect_open_tag) {};
 };
@@ -63,7 +63,7 @@ public:
     virtual void parse(JsonContainer& text) = 0;
 };
 
-class Llama32PythonicToolParser : public ParserBase {
+class OPENVINO_GENAI_EXPORTS Llama32PythonicToolParser : public ParserBase {
 // Does not modify original content, only extracts and adds tool calls
 public:
     explicit Llama32PythonicToolParser(bool keep_original_content = true);
@@ -73,7 +73,7 @@ private:
     std::shared_ptr<Llama32PythonicToolParserImpl> m_impl;
 };
 
-class Llama32JsonToolParser : public ParserBase {
+class OPENVINO_GENAI_EXPORTS Llama32JsonToolParser : public ParserBase {
 // Does not modify original content, only extracts and adds tool calls
 public:
     explicit Llama32JsonToolParser(bool keep_original_content = true);
@@ -83,7 +83,7 @@ private:
     std::shared_ptr<Llama32JsonToolParserImpl> m_impl;
 };
 
-class BaseReasoningParser : public ParserBase{
+class OPENVINO_GENAI_EXPORTS BaseReasoningParser : public ParserBase{
 public:
     BaseReasoningParser(
         bool expect_open_tag = true, 

@@ -11,7 +11,7 @@ from openvino_genai import Tokenizer, IncrementalParserBase, ParserBase, TextPar
 from transformers import AutoTokenizer
 from utils.hugging_face import convert_and_save_tokenizer
 import re
-import json
+
 
 @pytest.fixture(scope="module")
 def hf_ov_genai_models(request, tmp_path_factory):

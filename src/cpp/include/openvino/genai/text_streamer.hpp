@@ -47,7 +47,7 @@ private:
     void compute_decoded_length_for_position(size_t cache_position);
 };
 
-class TextParserStreamer : public TextStreamer {
+class OPENVINO_GENAI_EXPORTS TextParserStreamer : public TextStreamer {
 public:
     TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::shared_ptr<IncrementalParserBase>> parsers = {});
 

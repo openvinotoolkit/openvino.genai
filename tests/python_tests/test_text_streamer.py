@@ -71,20 +71,6 @@ def test_text_prompts(tmp_path, prompt, model_id):
     for token in tokens:
         streamer.write(token)
     streamer.end()
-
-    class CurrentStreamer(BaseStreamer):
-        def write(self, token_chunk):
-            pass
-
-    class CurrentParsingStreamer(TextParserStreamer):
-        def write(self, word: str):
-            msg: JsonContainer = get_current_message()
-            
-            
-    streamer = lambda x: print(x)
-
-    streamer = TextStreamer(ov_tokenizer, lambda x: print(x))
-
     
     assert ''.join(accumulated) == ov_tokenizer.decode(tokens)
 
