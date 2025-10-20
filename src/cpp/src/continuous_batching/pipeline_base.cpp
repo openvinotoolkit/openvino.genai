@@ -291,15 +291,20 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
     OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
     ov::genai::VLMPerfMetrics metrics;
     ov::Tensor inputs;
+    std::optional<ov::Tensor> token_type_ids;
     {
         std::lock_guard<std::mutex> lock(m_embeddings_mutex);
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
         const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
 
         const auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);
-        inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);
+        if (m_inputs_embedder->has_token_type_ids()) {
+            std::tie(inputs, token_type_ids) = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt, encoded_images, metrics, true, image_sequence);
+        } else {
+            inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);
+        }
     }
-    return add_request(request_id, inputs, sampling_params);
+    return add_request(request_id, inputs, sampling_params, token_type_ids);
 }
 
 GenerationHandle 

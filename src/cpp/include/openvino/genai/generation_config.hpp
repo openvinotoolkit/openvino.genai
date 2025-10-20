@@ -7,6 +7,7 @@
 #include <limits>
 #include <variant>
 #include <string>
+#include <sstream>
 
 #include "openvino/runtime/compiled_model.hpp"
 #include "openvino/runtime/infer_request.hpp"
@@ -39,6 +40,10 @@ struct OPENVINO_GENAI_EXPORTS StructuralTagItem {
     void update_config(const ov::AnyMap& properties);
     std::string to_string() const;
 
+    bool operator==(const StructuralTagItem& other) const {
+        return begin == other.begin && schema == other.schema && end == other.end;
+    }
+
     std::string begin;
     std::string schema;
     std::string end;
@@ -66,6 +71,11 @@ public:
     StructuralTagsConfig(const ov::AnyMap& properties);
     void update_config(const ov::AnyMap& properties);
     std::string to_string() const;
+    std::string to_json() const;
+
+    bool operator==(const StructuralTagsConfig& other) const {
+        return structural_tags == other.structural_tags && triggers == other.triggers;
+    }
 
     std::vector<StructuralTagItem> structural_tags;
     std::vector<std::string> triggers;
@@ -92,7 +102,39 @@ public:
     StructuredOutputConfig(const ov::AnyMap& properties);
     StructuredOutputConfig() = default;
 
-    // base grammar types for compound grammar construction
+    static std::string format_for_json(const std::string& input) {
+        std::ostringstream stream;
+        stream << '"';
+        for (char character : input) {
+            switch (character) {
+                case '"': stream << "\\\""; break;
+                case '\\': stream << "\\\\"; break;
+                case '\b': stream << "\\b"; break;
+                case '\f': stream << "\\f"; break;
+                case '\n': stream << "\\n"; break;
+                case '\r': stream << "\\r"; break;
+                case '\t': stream << "\\t"; break;
+                default: {
+                    // Interpret `character` as a raw byte to avoid sign-extension on platforms where `char` is signed. 
+                    unsigned char uc = static_cast<unsigned char>(character);
+                    if (uc < 0x20) {
+                        // control characters < 0x20 must be escaped as \uXXXX in JSON
+                        stream << "\\u" << std::hex << std::uppercase << std::setfill('0') << std::setw(4)
+                               << static_cast<int>(uc) << std::dec << std::nouppercase;
+                    } else {
+                        stream << character;
+                    }
+                }
+            }
+        }
+        stream << '"';
+        return stream.str();
+    }
+
+    // base grammar types for structural tags construction
+    /**
+     * @brief Regex structural tag constrains output using a regular expression.
+     */
     struct Regex {
         std::string value;
 
@@ -101,11 +143,18 @@ public:
         std::string to_string() const {
             return "Regex(\"" + value + "\")";
         }
+        std::string to_json() const {
+            return std::string("{\"type\": \"regex\", \"pattern\": ") + format_for_json(value) + "}";
+        }
         bool operator==(const Regex& other) const {
             return value == other.value;
         }
     };
 
+    /**
+     * @brief JSONSchema structural tag constrains output to a JSON document that
+     *        must conform to the provided JSON Schema string.
+     */
     struct JSONSchema {
         std::string value;
 
@@ -114,11 +163,17 @@ public:
         std::string to_string() const {
             return "JSONSchema(\"" + value + "\")";
         }
+        std::string to_json() const {
+            return std::string("{\"type\": \"json_schema\", \"json_schema\": ") + value + "}";
+        }
         bool operator==(const JSONSchema& other) const {
             return value == other.value;
         }
     };
 
+    /**
+     * @brief EBNF structural tag constrains output using an EBNF grammar.
+     */
     struct EBNF {
         std::string value;
 
@@ -127,88 +182,370 @@ public:
         std::string to_string() const {
             return "EBNF(\"" + value + "\")";
         }
+        std::string to_json() const {
+            return std::string("{\"type\": \"grammar\", \"grammar\": ") + format_for_json(value) + "}";
+        }
         bool operator==(const EBNF& other) const {
             return value == other.value;
         }
     };
 
-    // compound grammar types
+    /**
+     * @brief ConstString structural tag forces the generator to produce exactly
+     *        the provided constant string value.
+     */
+    struct ConstString {
+        std::string value;
+
+        ConstString() = default;
+        ConstString(const std::string& str) : value(str) {}
+        std::string to_string() const {
+            return "ConstString(\"" + value + "\")";
+        }
+        std::string to_json() const {
+            return std::string("{\"type\": \"const_string\", \"value\": ") + format_for_json(value) + "}";
+        }
+        bool operator==(const ConstString& other) const {
+            return value == other.value;
+        }
+    };
+
+    /**
+     * @brief AnyText structural tag allows any text for the portion
+     *        of output covered by this tag.
+     */
+    struct AnyText {
+        AnyText() = default;
+        std::string to_string() const {
+            return "AnyText()";
+        }
+        std::string to_json() const {
+            return "{\"type\": \"any_text\"}";
+        }
+        bool operator==(const AnyText& other) const {
+            return true;
+        }
+    };
+
+    /**
+     * @brief QwenXMLParametersFormat instructs the generator to output an XML
+     *        parameters block derived from the provided JSON schema. This is a
+     *        specialized helper for Qwen-style XML parameter formatting.
+     */
+    struct QwenXMLParametersFormat {
+        std::string json_schema;
+
+        QwenXMLParametersFormat() = default;
+        QwenXMLParametersFormat(const std::string& schema) : json_schema(schema) {};
+        std::string to_json() const {
+            return std::string("{\"type\": \"qwen_xml_parameter\", \"json_schema\": ") + json_schema + "}";
+        };
+        std::string to_string() const {
+            return "QwenXMLParametersFormat(json_schema=" + json_schema + ")";
+        };
+        bool operator==(const QwenXMLParametersFormat& other) const {
+            return json_schema == other.json_schema;
+        }
+    };
+
+    // nested grammar types
     struct Concat;
     struct Union;
+    struct Tag;
+    struct TriggeredTags;
+    struct TagsWithSeparator;
 
-    using CompoundGrammar = std::variant<
+    using StructuralTag = std::variant<
+        std::string,
         Regex,
         JSONSchema,
         EBNF,
+        ConstString,
+        AnyText,
+        QwenXMLParametersFormat,
         std::shared_ptr<Concat>,
-        std::shared_ptr<Union>
+        std::shared_ptr<Union>,
+        std::shared_ptr<Tag>,
+        std::shared_ptr<TriggeredTags>,
+        std::shared_ptr<TagsWithSeparator>
     >;
+    using CompoundGrammar = StructuralTag;
 
-    // compound grammar types - Concat and Union are used to combine multiple grammars into one
-    // Concat combines two grammars in sequence, e.g. "A B" means A followed by B
+    template <typename T>
+    static std::string structural_tag_to_string(const T& g) {
+        if constexpr (std::is_same_v<T, std::string>) {
+                return g;
+        } else if constexpr (std::is_same_v<T, ov::genai::StructuredOutputConfig::Regex> ||
+                      std::is_same_v<T, ov::genai::StructuredOutputConfig::JSONSchema> ||
+                      std::is_same_v<T, ov::genai::StructuredOutputConfig::EBNF> ||
+                      std::is_same_v<T, ov::genai::StructuredOutputConfig::ConstString> ||
+                      std::is_same_v<T, ov::genai::StructuredOutputConfig::AnyText> ||
+                      std::is_same_v<T, ov::genai::StructuredOutputConfig::QwenXMLParametersFormat>) {
+            return g.to_string();
+        } else if constexpr (std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Concat>> ||
+                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Union>> ||
+                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Tag>> ||
+                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TriggeredTags>> ||
+                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TagsWithSeparator>>) {
+            return g ? g->to_string() : std::string("null");
+        } else {
+            OPENVINO_THROW("Unsupported structural tag, cannot convert to string:" + std::string(typeid(g).name()));
+        }
+    }
+
+    template <typename T>
+    static std::string structural_tag_to_json(const T& g) {
+        if constexpr (std::is_same_v<T, std::string>) {
+            return g;
+        } else if constexpr (std::is_same_v<T, ov::genai::StructuredOutputConfig::Regex> ||
+                             std::is_same_v<T, ov::genai::StructuredOutputConfig::JSONSchema> ||
+                             std::is_same_v<T, ov::genai::StructuredOutputConfig::EBNF> ||
+                             std::is_same_v<T, ov::genai::StructuredOutputConfig::ConstString> ||
+                             std::is_same_v<T, ov::genai::StructuredOutputConfig::AnyText> ||
+                             std::is_same_v<T, ov::genai::StructuredOutputConfig::QwenXMLParametersFormat>) {
+            return g.to_json();
+        } else if constexpr (std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Concat>> ||
+                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Union>> ||
+                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::Tag>> ||
+                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TriggeredTags>> ||
+                             std::is_same_v<T, std::shared_ptr<ov::genai::StructuredOutputConfig::TagsWithSeparator>>) {
+            return g ? g->to_json() : std::string("null");
+        } else {
+            OPENVINO_THROW("Unsupported structural tag, cannot convert to json:" + std::string(typeid(g).name()));
+        }
+    }
+
+    // nested grammar types
+    /**
+     * @brief Concat composes multiple structural tags in sequence. Each element
+     *        must be produced in the given order.
+     *        Can be used indirectly with + operator.
+     *
+     * Example: Concat(ConstString("a"), ConstString("b")) produces "ab".
+     *          ConstString("a") + ConstString("b") is equivalent.
+     */
     struct Concat {
-        CompoundGrammar left;
-        CompoundGrammar right;
+        std::vector<StructuralTag> elements;
 
         Concat() = default;
-        Concat(CompoundGrammar left, CompoundGrammar right) : left(std::move(left)), right(std::move(right)) {};
+        Concat(StructuralTag left, StructuralTag right) : elements{std::move(left), std::move(right)} {};
+        Concat(const std::vector<StructuralTag>& elems) : elements(elems) {};
+        std::string to_json() const {
+            std::ostringstream oss;
+            oss << "{\"type\": \"sequence\", \"elements\": [";
+            for (size_t i = 0; i < elements.size(); ++i) {
+                oss << std::visit([](const auto& g) { return structural_tag_to_json(g); }, elements[i]);
+                if (i != elements.size() - 1) {
+                    oss << ", ";
+                }
+            }
+            oss << "]}";
+            return oss.str();
+        };
         std::string to_string() const {
-            return "Concat(" + std::visit([](const auto& g) -> std::string {
-                if constexpr (std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<Concat>> ||
-                              std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<Union>>) {
-                    return g ? g->to_string() : "null";
-                } else {
-                    return g.to_string();
+            std::ostringstream oss;
+            oss << "Concat(";
+            for (size_t i = 0; i < elements.size(); ++i) {
+                oss << std::visit([](const auto& g) -> std::string { return structural_tag_to_string(g); }, elements[i]);
+                if (i != elements.size() - 1) {
+                    oss << ", ";
                 }
-            }, left) + ", " +
-            std::visit([](const auto& g) -> std::string {
-                if constexpr (std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<Concat>> ||
-                              std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<Union>>) {
-                    return g ? g->to_string() : "null";
-                } else {
-                    return g.to_string();
-                }
-            }, right) + ")";
+            }
+            oss << ")";
+            return oss.str();
         }
         bool operator==(const Concat& other) const {
-            return left == other.left && right == other.right;
+            return elements == other.elements;
         }
     };
 
     // Union combines two grammars in parallel, e.g. "A | B" means either A or B
+    /**
+     * @brief Union composes multiple structural tags as alternatives. The
+     *        model may produce any one of the provided elements.
+     *        Can be used indirectly with | operator.
+     */
     struct Union {
-        CompoundGrammar left;
-        CompoundGrammar right;
+        std::vector<StructuralTag> elements;
 
         Union() = default;
-        Union(CompoundGrammar left, CompoundGrammar right) : left(std::move(left)), right(std::move(right)) {};
+        Union(StructuralTag left, StructuralTag right) : elements{std::move(left), std::move(right)} {};
+        Union(const std::vector<StructuralTag>& elems) : elements(elems) {};
+        std::string to_json() const {
+            std::ostringstream oss;
+            oss << "{\"type\": \"or\", \"elements\": [";
+            for (size_t i = 0; i < elements.size(); ++i) {
+                oss << std::visit([](const auto& g) -> std::string { return structural_tag_to_json(g); }, elements[i]);
+                if (i != elements.size() - 1) {
+                    oss << ", ";
+                }
+            }
+            oss << "]}";
+            return oss.str();
+        }
         std::string to_string() const {
-            return "Union(" + std::visit([](const auto& g) -> std::string {
-                if constexpr (std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<Concat>> ||
-                              std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<Union>>) {
-                    return g ? g->to_string() : "null";
-                } else {
-                    return g.to_string();
+            std::ostringstream oss;
+            oss << "Union(";
+            for (size_t i = 0; i < elements.size(); ++i) {
+                oss << std::visit([](const auto& g) -> std::string { return structural_tag_to_string(g); }, elements[i]);
+                if (i != elements.size() - 1) {
+                    oss << ", ";
                 }
-            }, left) + ", " +
-            std::visit([](const auto& g) -> std::string {
-                if constexpr (std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<Concat>> ||
-                              std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<Union>>) {
-                    return g ? g->to_string() : "null";
-                } else {
-                    return g.to_string();
-                }
-            }, right) + ")";
+            }
+            oss << ")";
+            return oss.str();
         }
         bool operator==(const Union& other) const {
-            return left == other.left && right == other.right;
+            return elements == other.elements;
         }
+    };
+
+    /**
+     * @brief Tag defines a begin/end wrapper with constrained inner content.
+     *
+     * The generator will output `begin`, then the `content` (a StructuralTag),
+     * and finally `end`.
+     *
+     * Example: Tag("<think>", AnyText(), "</think>") represents thinking portion of the model output.
+     */
+    struct Tag {
+        std::string begin;
+        StructuralTag content;
+        std::string end;
+
+        Tag() = default;
+        Tag(const std::string& begin, StructuralTag content, const std::string& end) : begin(begin), content(std::move(content)), end(end) {};
+        std::string to_json() const {
+            std::ostringstream oss;
+            oss << "{\"type\": \"tag\", \"begin\": " << format_for_json(begin) << ", \"content\": " <<
+                   std::visit([](const auto& g) -> std::string { return structural_tag_to_json(g); }, content) <<
+                   ", \"end\": " << format_for_json(end) << "}";
+            return oss.str();
+        };
+        std::string to_string() const {
+            std::ostringstream oss;
+            oss << "Tag(begin=\"" << begin << "\", content=" <<
+                   std::visit([](const auto& g) -> std::string { return structural_tag_to_string(g); }, content) <<
+                   ", end=\"" << end << "\")";
+            return oss.str();
+        };
+        bool operator==(const Tag& other) const {
+            return begin == other.begin && content == other.content && end == other.end;
+        }
+    };
+
+    /**
+     * @brief TriggeredTags associates a set of `triggers` with multiple `tags`.
+     *
+     * When the model generates any of the trigger strings the structured generation
+     * activates to produce configured tags. Flags allow requiring
+     * at least one tag and stopping structured generation after the first tag.
+     */
+    struct TriggeredTags {
+        std::vector<std::string> triggers;
+        std::vector<Tag> tags;
+        bool at_least_one = false;  // if true, at least one tag must be generated after trigger
+        bool stop_after_first = false; // if true, structured generation stops after first tag is generated
+        
+        TriggeredTags() = default;
+        TriggeredTags(const std::vector<std::string>& triggers,
+                      const std::vector<Tag>& tags,
+                      bool at_least_one = false,
+                      bool stop_after_first = false)
+            : triggers(triggers), tags(tags), at_least_one(at_least_one), stop_after_first(stop_after_first) {};
+        std::string to_json() const {
+            std::ostringstream oss;
+            oss << "{\"type\": \"triggered_tags\", \"triggers\": [";
+            for (size_t i = 0; i < triggers.size(); ++i) {
+                oss << format_for_json(triggers[i]);
+                if (i != triggers.size() - 1) {
+                    oss << ", ";
+                }
+            }
+            oss << "], \"tags\": [";
+            for (size_t i = 0; i < tags.size(); ++i) {
+                oss << tags[i].to_json();
+                if (i != tags.size() - 1) {
+                    oss << ", ";
+                }
+            }
+            oss << "], \"at_least_one\": " << (at_least_one ? "true" : "false") <<
+                   ", \"stop_after_first\": " << (stop_after_first ? "true" : "false") << "}";
+            return oss.str();
+        };
+        std::string to_string() const {
+            std::ostringstream oss;
+            oss << "TriggeredTags(triggers=[";
+            for (size_t i = 0; i < triggers.size(); ++i) {
+                oss << "\"" << triggers[i] << "\"";
+                if (i != triggers.size() - 1) {
+                    oss << ", ";
+                }
+            };
+            oss << "], tags=[";
+            for (size_t i = 0; i < tags.size(); ++i) {
+                oss << tags[i].to_string();
+                if (i != tags.size() - 1) {
+                    oss << ", ";
+                }
+            }
+            oss << "], at_least_one=" << (at_least_one ? "True" : "False") <<
+                   ", stop_after_first=" << (stop_after_first ? "True" : "False") << ")";
+            return oss.str();
+        };
+    };
+
+    /**
+     * @brief TagsWithSeparator configures generation of a sequence of tags
+     *        separated by a fixed `separator` string.
+     *
+     * Can be used to produce repeated tagged elements like
+     * "<f>A</f>;<f>B</f>" where `separator`=";".
+     */
+    struct TagsWithSeparator {
+        std::vector<Tag> tags;
+        std::string separator;
+        bool at_least_one = false;  // if true, at least one tag must be generated
+        bool stop_after_first = false; // if true, generation stops after first tag is generated
+
+        TagsWithSeparator() = default;
+        TagsWithSeparator(const std::vector<Tag>& tags, 
+                          const std::string& separator,
+                          bool at_least_one = false,
+                          bool stop_after_first = false)
+            : tags(tags), separator(separator), at_least_one(at_least_one), stop_after_first(stop_after_first) {};
+        std::string to_json() const {
+            std::ostringstream oss;
+            oss << "{\"type\": \"tags_with_separator\", \"separator\": " << format_for_json(separator) << ", \"tags\": [";
+            for (size_t i = 0; i < tags.size(); ++i) {
+                oss << tags[i].to_json();
+                if (i != tags.size() - 1) {
+                    oss << ", ";
+                }
+            }
+            oss << "], \"at_least_one\": " << (at_least_one ? "true" : "false") <<
+                   ", \"stop_after_first\": " << (stop_after_first ? "true" : "false") << "}";
+            return oss.str();
+        };
+        std::string to_string() const {
+            std::ostringstream oss;
+            oss << "TagsWithSeparator(separator=\"" << separator << "\", tags=[";
+            for (size_t i = 0; i < tags.size(); ++i) {
+                oss << tags[i].to_string();
+                if (i != tags.size() - 1) {
+                    oss << ", ";
+                }
+            }
+            oss << "], at_least_one=" << (at_least_one ? "true" : "false") <<
+                   ", stop_after_first=" << (stop_after_first ? "true" : "false") << ")";
+            return oss.str();
+        };
     };
 
     std::optional<std::string> json_schema;
     std::optional<std::string> regex;
     std::optional<std::string> grammar;
-    std::optional<StructuralTagsConfig> structural_tags_config;
+    std::optional<std::variant<StructuralTagsConfig, StructuralTag>> structural_tags_config;
     std::optional<CompoundGrammar> compound_grammar;
     std::optional<std::string> backend;
     void validate() const;
@@ -218,12 +555,12 @@ public:
 
 
 OPENVINO_GENAI_EXPORTS std::shared_ptr<StructuredOutputConfig::Concat>
-operator+(const StructuredOutputConfig::CompoundGrammar& lhs,
-          const StructuredOutputConfig::CompoundGrammar& rhs);
+operator+(const StructuredOutputConfig::StructuralTag& lhs,
+          const StructuredOutputConfig::StructuralTag& rhs);
 
 OPENVINO_GENAI_EXPORTS std::shared_ptr<StructuredOutputConfig::Union>
-operator|(const StructuredOutputConfig::CompoundGrammar& lhs,
-          const StructuredOutputConfig::CompoundGrammar& rhs);
+operator|(const StructuredOutputConfig::StructuralTag& lhs,
+          const StructuredOutputConfig::StructuralTag& rhs);
 
 /**
  * @brief Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group
@@ -274,7 +611,10 @@ operator|(const StructuredOutputConfig::CompoundGrammar& lhs,
  *
  * Assisting generation parameters:
  * @param assistant_confidence_threshold the lower token probability of candidate to be validated by main model in case of dynamic strategy candidates number update.
+          NOTE: `assistant_confidence_threshold` is supported only by ContinuousBatching backend for Speculative Decode.
  * @param num_assistant_tokens the defined candidates number to be generated by draft model/prompt lookup in case of static strategy candidates number update.
+ *        NOTE: ContinuousBatching backend for Speculative Decode uses `num_assistant_tokens` as is. Stateful backend for Speculative Decode uses `num_assistant_tokens`'s
+ *        copy as initial value and adjusts it based on recent number of accepted tokens. If `num_assistant_tokens` is not set, it defaults to `5` for both backends.
  * @param max_ngram_size is maximum ngram to use when looking for matches in the prompt.
  *
  * @param structured_output_config if set, the output will be a string constrained by the specified json_schema, regex, or EBNF grammar.

@@ -322,6 +322,40 @@ def test_vlm_continuous_batching_generate_vs_add_request(model_id, config, cat_t
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("config", configs)
+def test_vlm_continuous_batching_generate_vs_add_request_for_gemma(config, cat_tensor):
+    scheduler_config = SchedulerConfig()
+    models_path = get_ov_model(model_ids[8])
+
+    generation_config = config
+    generation_config.max_new_tokens = 30
+    eps = 0.001
+    image_links_list = [[], [cat_tensor]]
+
+    cb_pipe = ContinuousBatchingPipeline(
+        models_path,
+        scheduler_config=scheduler_config,
+        device="CPU",
+        properties=get_default_llm_properties(),
+    )
+    tokenizer = cb_pipe.get_tokenizer()
+
+    for idx, images in enumerate(image_links_list):
+        handle = cb_pipe.add_request(idx, prompts[0], images, generation_config)
+        while handle.get_status() != GenerationStatus.FINISHED:
+            cb_pipe.step()
+        outputs = handle.read_all()
+        for out_idx, output in enumerate(outputs):
+            text = tokenizer.decode(output.generated_ids)
+            assert len(output.generated_ids) > 0, f"Should generate at least one token"
+            assert text.strip() != "", f"Decoded text should not be empty"
+            assert (
+                output.finish_reason == GenerationFinishReason.STOP
+                or output.finish_reason == GenerationFinishReason.LENGTH
+            )
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("config", configs)
 def test_vlm_continuous_batching_vs_stateful(config, cat_tensor):
     scheduler_config = SchedulerConfig()
     models_path = get_ov_model(model_ids[0])
@@ -874,7 +908,7 @@ image_id_ignorant =  tag_inserted_by_template + [
 
 models_to_tag = image_id_ignorant + [
     # minicpm tracks image number in expanded tags
-    ("katuni4ka/tiny-random-minicpmv-2_6", lambda idx: "(<image>./</image>)\n"),
+    ("katuni4ka/tiny-random-minicpmv-2_6", lambda idx: "<image>./</image>\n"),
     (
         "katuni4ka/tiny-random-phi3-vision",
         lambda idx: "<|image_" + str(idx + 1) + "|>\n",
