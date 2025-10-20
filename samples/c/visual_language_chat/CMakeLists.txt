@@ -19,7 +19,7 @@ FetchContent_MakeAvailable(stb)
 add_library(stb_image INTERFACE)
 target_include_directories(stb_image INTERFACE ${stb_SOURCE_DIR})
 
-# Whisper Speech Recognition Sample
+# VLM Pipeline Sample
 add_executable(vlm_pipeline_c vlm_pipeline.c load_image.c)
 
 # Specifies that the source file should be compiled as a C source file
