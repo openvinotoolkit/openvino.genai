@@ -516,6 +516,9 @@ class ContinuousBatchingPipeline:
     def generate(self, prompt: str, generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
     @typing.overload
+    def generate(self, prompts: collections.abc.Sequence[ChatHistory], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
+        ...
+    @typing.overload
     def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
     @typing.overload
@@ -1633,11 +1636,11 @@ class LLMPipeline:
     """
     This class is used for generation with LLMs
     """
-    def __call__(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str], generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
+    def __call__(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str] | openvino_genai.py_openvino_genai.ChatHistory, generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
         """
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
-            :param inputs: inputs in the form of string, list of strings or tokenized input_ids
+            :param inputs: inputs in the form of string, list of strings, chat history or tokenized input_ids
             :type inputs: str, list[str], ov.genai.TokenizedInputs, or ov.Tensor
         
             :param generation_config: generation_config
@@ -1730,11 +1733,11 @@ class LLMPipeline:
         """
     def finish_chat(self) -> None:
         ...
-    def generate(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str], generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
+    def generate(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str] | openvino_genai.py_openvino_genai.ChatHistory, generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
         """
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
-            :param inputs: inputs in the form of string, list of strings or tokenized input_ids
+            :param inputs: inputs in the form of string, list of strings, chat history or tokenized input_ids
             :type inputs: str, list[str], ov.genai.TokenizedInputs, or ov.Tensor
         
             :param generation_config: generation_config
