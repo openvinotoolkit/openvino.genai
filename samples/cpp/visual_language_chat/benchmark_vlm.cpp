@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) try {
     ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
     ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
     ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
-    ("pr,pruning_ratio", "Percentage of visual tokens to prune. 0 by default means no pruning", cxxopts::value<size_t>()->default_value("0"))
+    ("pr,pruning_ratio", "Percentage of visual tokens to prune (valid range: 0-100). 0 by default means no pruning", cxxopts::value<size_t>()->default_value("0"))
     ("rw,relevance_weight", "Relevance weight for the model", cxxopts::value<float>()->default_value("0.5"))
     ("h,help", "Print usage");
 

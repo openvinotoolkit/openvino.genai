@@ -458,7 +458,7 @@ std::shared_ptr<ov::Model> ConditionalKernelBuilder::create_conditional_kernel_m
 
     // ========== RELEVANCE COMPUTATION ==========
     // Step 1.1: L2 normalize visual features (will be reused for kernel computation)
-    auto axes = ov::op::v0::Constant::create(element::i32, {1}, {2});
+    auto axes = ov::op::v0::Constant::create(ov::element::i32, {1}, {2});
     auto visual_l2_norm = std::make_shared<ov::op::v0::NormalizeL2>(visual_input,
                                                                     axes,
                                                                     m_config.numerical_threshold,
