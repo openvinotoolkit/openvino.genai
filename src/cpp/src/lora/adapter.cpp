@@ -66,6 +66,14 @@ using ConstantVector = std::vector<std::shared_ptr<v0::Constant>>;
 using LoRANode = LoRAParts<std::shared_ptr<ov::Node>>;
 using LoRAPartsParser = LoRAParts<std::function<std::optional<std::string>(const std::string& name)>>;
 
+// Reads a file with a given filename expecting Safetensors file format.
+// The file data is mmaped to tensor.
+ConstantMap read_safetensors(const std::filesystem::path& filename) {
+    auto safetensor = ov::read_tensor_data(filename);
+
+    return safetensor_to_constant_map(safetensor);
+}
+
 // Default LoRA tensor name patterns observed in the existing LoRA adapters, captures the prefix that should correspond
 // to a layer name in the base model
 LoRAPartsParser default_lora_patterns () {

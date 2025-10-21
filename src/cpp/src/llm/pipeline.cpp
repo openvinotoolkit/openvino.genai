@@ -36,7 +36,6 @@ std::pair<std::string, Any> generation_config(const GenerationConfig& config) {
 
 inline void apply_eagle_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& properties, const std::filesystem::path& mapping_path) {
     if (model->has_rt_info("eagle3_mode") && model->get_rt_info<bool>("eagle3_mode")) {
-        std::cout << "Eagle3 model is detected from rt_info. Applying eagle3_mode property." << std::endl;
         properties["eagle3_mode"] = true;
         if (model->has_rt_info("hidden_layers_list"))
             properties["hidden_layers_list"] = model->get_rt_info<std::vector<int>>("hidden_layers_list");

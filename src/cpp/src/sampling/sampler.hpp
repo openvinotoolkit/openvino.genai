@@ -99,7 +99,7 @@ class Sampler {
     Tokenizer m_tokenizer;
 
     ThreadPool m_thread_pool;
-    std::shared_ptr<ov::op::v0::Constant> m_d2t; // Tensor to store draft2target mapping for eagle model
+    std::shared_ptr<ov::op::v0::Constant> m_draft2target_mapping; // Tensor to store draft2target mapping for eagle model
 public:
     Sampler(const Sampler& rhs) = delete;
     Sampler(Sampler&& rhs) = delete;
@@ -128,7 +128,7 @@ public:
     void clear_structured_output_compile_times();
 
     void set_d2t_for_decoding(std::shared_ptr<ov::op::v0::Constant>& d2t) {
-        m_d2t = d2t;
+        m_draft2target_mapping = d2t;
     };
 };
 

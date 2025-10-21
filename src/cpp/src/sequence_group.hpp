@@ -136,7 +136,7 @@ public:
         m_generated_ids.push_back(token_id);
     }
 
-    void update_hidden_state(ov::Tensor tensor) {
+    void update_hidden_state(const ov::Tensor& tensor) {
         m_hidden_state = tensor;
     }
 

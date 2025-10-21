@@ -35,15 +35,9 @@ ConstantMap safetensor_to_constant_map(const ov::Tensor& safetensor) {
 
         auto type = safetensors_to_ov_element_type(tensor.dtype);
         auto constant =
-            std::make_shared<v0::Constant>(type, shape, ptr, nullptr);      // wraps existing memory, no ownership
+            std::make_shared<ov::op::v0::Constant>(type, shape, ptr, nullptr);      // wraps existing memory, no ownership
         constant->get_rt_info()["__safetensors_buffer_holder"] = safetensor;    // to automatically deallocate underlying memory buffer when last constant that holds it is destroyed
         tensors[name] = constant;
     }
     return tensors;
-}
-
-ConstantMap read_safetensors(const std::filesystem::path& filename) {
-    auto safetensor = ov::read_tensor_data(filename);
-
-    return safetensor_to_constant_map(safetensor);
 }

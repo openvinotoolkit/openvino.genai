@@ -208,9 +208,9 @@ public:
             {1, total_num_tokens}, ov::element::i64);
         ov::Tensor score_aggregation_window = _get_or_resize_tensor(m_cached_score_aggregation_window, "score_aggregation_window",
             {batch_size_in_sequences}, ov::element::i32);
-        ov::Tensor hidden_state_input;
+
+        ov::Tensor hidden_state_input = _prepare_hidden_state_input(total_num_tokens, hidden_size);
         float* hidden_state_data = nullptr;
-        hidden_state_input = _prepare_hidden_state_input(total_num_tokens, hidden_size);
         if (hidden_state_input) {
             hidden_state_data = hidden_state_input.data<float>();
         }
@@ -647,10 +647,10 @@ private:
 
         if (hidden_size == 0) {
             for (const auto& kv : m_initial_hidden_states) {
-                const auto& t = kv.second;
-                if (t && t.get_shape().size() >= 2) {
-                    auto sh = t.get_shape();
-                    hidden_size = sh.back();
+                const auto& initial_hidden_states = kv.second;
+                if (initial_hidden_states && initial_hidden_states.get_shape().size() >= 2) {
+                    auto hidden_states_shape = initial_hidden_states.get_shape();
+                    hidden_size = hidden_states_shape.back();
                     if (!(m_hidden_state_flags & HS_IMPORT)) {
                         hidden_size /= m_adjust_factor;
                     }

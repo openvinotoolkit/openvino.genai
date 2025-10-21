@@ -43,12 +43,12 @@ protected:
     bool eagle_mode_enabled = false;
 };
 
-class ContinuousBatchingPipeline::ContinuousBatchingForEagleDecodingImpl
+class ContinuousBatchingPipeline::ContinuousBatchingForEagle3DecodingImpl
     : public ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl {
 public:
-    ContinuousBatchingForEagleDecodingImpl() = default;
+    ContinuousBatchingForEagle3DecodingImpl() = default;
 
-    ContinuousBatchingForEagleDecodingImpl(const std::shared_ptr<ov::Model>& model,
+    ContinuousBatchingForEagle3DecodingImpl(const std::shared_ptr<ov::Model>& model,
                                                  const Tokenizer& tokenizer,
                                                  const GenerationConfig& generation_config,
                                                  const SchedulerConfig& scheduler_config,
