@@ -801,7 +801,9 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vector<ov::
     // If cond_img_vid = 1: means image branch, just duplicating input_image_1 as input_image_2
     // If cond_img_vid = 0: means video branch, processing adjacent frames.
     OPENVINO_ASSERT(config.temporal_patch_size == 2u, "temporal_patch_size != 2.");
-    std::vector<float> cond_img_vid_data{images.size() == 2u ? 0.f : 1.f};
+    const float VIDEO_BRANCH_CONDITION = 0.f;
+    const float IMAGE_BRANCH_CONDITION = 1.f;
+    std::vector<float> cond_img_vid_data{images.size() == 2u ? VIDEO_BRANCH_CONDITION : IMAGE_BRANCH_CONDITION};
     ov::Tensor cond_img_vid(ov::element::f32, ov::Shape{1}, cond_img_vid_data.data());
     ov::Tensor input_image_1(ov::element::u8, image_shape, images[0].data<uint8_t>());
     ov::Tensor input_image_2(ov::element::u8,
