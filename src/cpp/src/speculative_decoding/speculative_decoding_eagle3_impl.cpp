@@ -326,13 +326,16 @@ ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_id
 }
 
 void ContinuousBatchingPipeline::Eagle3DecodingImpl::update_eagle_pipeline_params() {
-    auto m_main_eagle_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_main_pipeline);
-    auto m_draft_eagle_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_draft_pipeline);
-    m_main_eagle_pipeline->set_hidden_state_export_needed(true);
-    m_draft_eagle_pipeline->set_hidden_state_export_needed(true);
-    m_draft_eagle_pipeline->set_hidden_state_import_needed(true);
-    m_draft_eagle_pipeline->set_hidden_state_internal_needed(true);
-    m_draft_eagle_pipeline->set_adjust_factor(m_hidden_layers_to_abstract.size() > 0 ? m_hidden_layers_to_abstract.size() : 1);
+    std::call_once(m_eagle_params_once, [this]() {
+        auto m_main_eagle_pipeline  = std::dynamic_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_main_pipeline);
+        auto m_draft_eagle_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_draft_pipeline);
+        m_main_eagle_pipeline->set_hidden_state_export_needed(true);
+        m_draft_eagle_pipeline->set_hidden_state_export_needed(true);
+        m_draft_eagle_pipeline->set_hidden_state_import_needed(true);
+        m_draft_eagle_pipeline->set_hidden_state_internal_needed(true);
+        m_draft_eagle_pipeline->set_adjust_factor(
+            m_hidden_layers_to_abstract.size() > 0 ? m_hidden_layers_to_abstract.size() : 1);
+    });
 }
 
 GenerationHandle
@@ -383,135 +386,39 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
     std::optional<std::vector<ov::Tensor>> token_type_ids) {
-    m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
-    m_draft_pipeline->raw_perf_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
-
-    OPENVINO_ASSERT(!has_non_finished_requests(),
-                    "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use "
-                    "ContinuousBatchingPipeline::add_request");
-
-    OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
-
-    ManualTimer generate_timer("speculative_decoding: generate()");
-    generate_timer.start();
-
-    // checks that all requests has the same LoRA adapters property value
-    for (size_t i = 1; i < sampling_params.size(); ++i) {
-        OPENVINO_ASSERT(sampling_params[i - 1].adapters == sampling_params[i].adapters,
-                        "LoRA adapters value must be the same for all requests");
-    }
-    auto m_main_eagle_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_main_pipeline);
-    auto m_draft_eagle_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_draft_pipeline);
-
-    m_main_eagle_pipeline->set_adapters(sampling_params[0].adapters);
-    m_draft_eagle_pipeline->set_adapters(sampling_params[0].adapters);
-    update_eagle_pipeline_params();
-
-    const auto streamer_ptr = std::make_shared<ThreadedStreamerWrapper>(streamer, m_tokenizer);
-
-    OPENVINO_ASSERT(
-        !streamer_ptr->has_callback() || input_ids.size() == 1 && (sampling_params[0].is_greedy_decoding() ||
-                                                                   (sampling_params[0].is_multinomial() &&
-                                                                    sampling_params[0].num_return_sequences == 1)),
-        "Currently eagle streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
-
-    std::vector<GenerationHandle> main_generations;
-    ov::Tensor new_input_ids;
-    for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
-        auto new_input_ids = input_ids[request_id];
-        OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
-        auto main_sampling_params = sampling_params[request_id];
-        OPENVINO_ASSERT(
-            main_sampling_params.assistant_confidence_threshold == 0.f,
-            "Eagle3 Speculative Decoding pipeline only supports `num_assistant_tokens` "
-            "as parameter in GenerationConfig and doesn't work with `assistant_confidence_threshold`.\nPlease "
-            "remove its specification or set it to 0.f.");
-        if (main_sampling_params.num_assistant_tokens == 0) {
-            main_sampling_params.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
+    GenerateStrategy strategy;
+    strategy.prepare_request = [this](size_t,
+                                      const ov::Tensor& in_ids,
+                                      GenerationConfig& main_cfg,
+                                      GenerationConfig& draft_cfg,
+                                      ov::Tensor& main_in,
+                                      ov::Tensor& draft_in) {
+        OPENVINO_ASSERT(main_cfg.assistant_confidence_threshold == 0.f,
+                        "Eagle3 only supports num_assistant_tokens (assistant_confidence_threshold must be 0.f)");
+        if (main_cfg.num_assistant_tokens == 0) {
+            main_cfg.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
         }
-        main_generations.push_back(
-            m_main_pipeline->add_request(request_id, new_input_ids, main_sampling_params));
+        draft_cfg.ignore_eos = true;
+        draft_cfg.stop_strings = {};
+        main_in = in_ids;
+        draft_in = create_draft_input_ids(in_ids);
+    };
+    strategy.pre_loop = [this](){ update_eagle_pipeline_params(); };
+    strategy.check_streaming = [](const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr,
+                                  const std::vector<ov::Tensor>& input_ids,
+                                  const std::vector<GenerationConfig>& sampling_params) {
+        OPENVINO_ASSERT(!streamer_ptr->has_callback() ||
+                        (input_ids.size() == 1 &&
+                         (sampling_params[0].is_greedy_decoding())),
+                        "Eagle3 streaming only supports batch size=1 with greedy");
+    };
+    strategy.start_timer = [](){
+        return std::chrono::steady_clock::now();
+    };
+    strategy.stop_timer = [](TimePoint start){
+        return PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start);
+    };
 
-        auto draft_sampling_params = main_sampling_params;
-        // set the parameters do not stop draft generation without stopping of the same request for main pipeline
-        draft_sampling_params.ignore_eos = true;
-        draft_sampling_params.stop_strings = {};
-
-        // remove first token from input_ids to create draft_input_ids
-        ov::Tensor draft_input_ids = create_draft_input_ids(new_input_ids);
-
-        std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-        m_draft_generations.insert(
-            {request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params)});
-    }
-    auto all_requests = get_awaiting_requests();
-
-    GenerationHandle& generation = main_generations.at(0);
-
-    streamer_ptr->start();
-
-    while (has_non_finished_requests()) {
-        try {
-            step();
-        } catch (...) {
-            drop_requests();  // remove all requests from pipeline state in case of exception
-            streamer_ptr->end();
-            std::rethrow_exception(std::current_exception());
-        }
-        stream_tokens(streamer_ptr, generation);
-    }
-
-    // waiting for competion of streaming
-    streamer_ptr->end();
-
-    OPENVINO_ASSERT(is_requests_empty(),
-                    "Internal error: current request is supposed to be dropped within step() function as completed");
-
-    std::vector<EncodedGenerationResult> results;
-    results.reserve(all_requests.size());
-
-    m_perf_metrics.draft_model_metrics.raw_metrics = m_draft_pipeline->raw_perf_metrics;
-    generate_timer.end();
-
-    for (size_t request_id = 0; request_id < all_requests.size(); ++request_id) {
-        const auto& request = all_requests[request_id];
-        auto sampling_params = request->get_sampling_parameters();
-        const auto& sequences = request->get_finished_sequences();
-        size_t num_outputs = std::min(sampling_params.num_return_sequences, sequences.size());
-
-        EncodedGenerationResult result;
-        result.m_request_id = request_id;
-        result.m_generation_ids.resize(num_outputs);
-        result.m_scores.resize(num_outputs);
-        result.m_status = request->get_generation_stream()->get_status();
-
-        for (size_t i = 0; i < num_outputs; ++i) {
-            const auto& sequence = sequences[i];
-            const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params)
-                                                                 : sequence->get_cumulative_log_prob();
-            const auto& generated_ids = sequence->get_generated_ids();
-
-            if (sampling_params.echo) {
-                result.m_generation_ids[i] = request->get_prompt_ids();
-            }
-            std::copy(generated_ids.begin(), generated_ids.end(), std::back_inserter(result.m_generation_ids[i]));
-            result.m_scores[i] = score;
-        }
-
-        result.m_status = main_generations[request_id]->get_status();
-
-        // The same perf metrics for each sequence, only tokenization/detokenization will differ.
-        m_perf_metrics.raw_metrics.generate_durations.clear();
-        m_perf_metrics.raw_metrics.generate_durations.emplace_back(generate_timer.get_duration_microsec());
-        m_perf_metrics.num_input_tokens = request->get_prompt_len();
-        m_perf_metrics.evaluate_statistics(generate_timer.get_start_time());
-
-        result.perf_metrics = m_perf_metrics;
-        result.extended_perf_metrics = std::make_shared<SDPerModelsPerfMetrics>(m_perf_metrics);
-        results.push_back(std::move(result));
-    }
-
-    OPENVINO_ASSERT(results.size() == input_ids.size());
-    return results;
+    return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, strategy);
 }
 }  // namespace ov::genai

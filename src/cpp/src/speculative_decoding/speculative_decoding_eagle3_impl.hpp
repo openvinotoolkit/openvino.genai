@@ -20,6 +20,14 @@
 namespace ov::genai {
 class ContinuousBatchingPipeline::Eagle3DecodingImpl : public ContinuousBatchingPipeline::SpeculativeDecodingImpl {
 public:
+    template<class Impl>
+    friend std::vector<EncodedGenerationResult> generate_common(
+        Impl*,
+        const std::vector<ov::Tensor>&,
+        const std::vector<GenerationConfig>&,
+        const StreamerVariant&,
+        std::optional<std::vector<ov::Tensor>>,
+        GenerateStrategy&);
     Eagle3DecodingImpl(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc, const std::vector<int>& hidden_layers_to_abstract);
 
     std::vector<EncodedGenerationResult>
@@ -45,6 +53,8 @@ protected:
     void update_eagle_pipeline_params();
     ov::Tensor create_draft_input_ids(const ov::Tensor& original_input_ids);
     std::vector<int> m_hidden_layers_to_abstract;
+private:
+    std::once_flag m_eagle_params_once;
 };
 
 using NodePtr = std::shared_ptr<ov::Node>;
