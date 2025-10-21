@@ -15,6 +15,7 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "logger.hpp"
 #include "openvino/openvino.hpp"
 #include "utils.hpp"
 
@@ -138,8 +139,6 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel,
         // Use OpenCL if available
         if (m_opencl_dpp && m_opencl_dpp->is_available()) {
             return select_opencl_internal(kernel, num_tokens);
-        } else {
-            GENAI_DEBUG_LOG("[FastGreedyDPP] OpenCL not available, falling back to CPU implementation");
         }
     }
 #endif
@@ -156,12 +155,6 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel_
     // Distribute tokens to keep between both halves
     size_t tokens_first_half = num_tokens_to_keep / 2;
     size_t tokens_second_half = num_tokens_to_keep - tokens_first_half;
-
-    GENAI_DEBUG_LOG("[FastGreedyDPP] Step 3: Selecting tokens using parallel DPP...");
-    std::ostringstream ss;
-    ss << "[FastGreedyDPP]   Selecting " << tokens_first_half << " tokens from first half, "
-       << tokens_second_half << " tokens from second half in parallel";
-    GENAI_DEBUG_LOG(ss.str());
 #ifdef ENABLE_OPENCL_DPP
     // Check if OpenCL DPP is enabled and available
     if (m_config.use_cl_kernel) {
@@ -186,16 +179,12 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel(const ov::Tensor
                                                                 size_t tokens_first_half,
                                                                 size_t tokens_second_half,
                                                                 size_t split_point) {
-    GENAI_DEBUG_LOG("[FastGreedyDPP] Using parallel CPU DPP processing...");
-
     // Launch parallel tasks for DPP selection
     std::future<std::vector<std::vector<size_t>>> dpp_first_future = std::async(std::launch::async, [&]() {
-        GENAI_DEBUG_LOG("[FastGreedyDPP] Thread 1: DPP selection for first half...");
         return this->select_cpu_internal(kernel_matrix_first, tokens_first_half);
     });
 
     std::future<std::vector<std::vector<size_t>>> dpp_second_future = std::async(std::launch::async, [&]() {
-        GENAI_DEBUG_LOG("[FastGreedyDPP] Thread 2: DPP selection for second half...");
         return this->select_cpu_internal(kernel_matrix_second, tokens_second_half);
     });
 
@@ -243,8 +232,6 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
                                                                        size_t tokens_first_half,
                                                                        size_t tokens_second_half,
                                                                        size_t split_point) {
-    GENAI_DEBUG_LOG("[FastGreedyDPP] Using OpenCL DPP for merged batch processing...");
-
     // Initialize OpenCL DPP if not already done
     if (!m_opencl_dpp) {
         m_opencl_dpp = std::make_unique<OpenCLDPP>(m_config);
@@ -252,7 +239,6 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
 
     // Verify OpenCL is available
     if (!m_opencl_dpp || !m_opencl_dpp->is_available()) {
-        GENAI_DEBUG_LOG("[FastGreedyDPP] OpenCL not available, falling back to CPU parallel processing");
         return select_parallel(kernel_matrix_first,
                                kernel_matrix_second,
                                tokens_first_half,
@@ -283,8 +269,6 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
 
     // Check if both matrices have the same token size
     if (first_tokens == second_tokens) {
-        GENAI_DEBUG_LOG("[FastGreedyDPP] Matrices have same token size, creating merged tensor...");
-
         // Create merged tensor with shape [original_batch_size, 2, tokens, tokens]
         merged_kernel = ov::Tensor(ov::element::f32, {original_batch_size, 2, first_tokens, first_tokens});
         float* merged_data = merged_kernel.data<float>();
@@ -309,8 +293,6 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
         }
 
     } else {
-        GENAI_DEBUG_LOG("[FastGreedyDPP] Matrices have different token sizes, padding to max size...");
-
         // Create merged tensor with padding for different sizes
         size_t max_tokens = std::max(first_tokens, second_tokens);
         merged_kernel = ov::Tensor(ov::element::f32, {original_batch_size, 2, max_tokens, max_tokens});
@@ -429,69 +411,6 @@ std::vector<size_t> FastGreedyDPP::select_single_batch(const ov::Tensor& kernel,
         // di2s -= square(eis)
         update_marginal_gains(t, total_tokens, cis_data, di2s_data);
 
-        // Debug output: print cis matrix content
-        if (t < 10) {
-            std::ostringstream ss;
-            ss << "[CDPruner] === CIS Matrix Content after iteration " << t << " ===" << std::endl;
-            ss << "[CDPruner] CIS matrix shape: [" << (t + 1) << ", " << total_tokens << "]" << std::endl;
-
-            const float* cis_data_debug = cis.data<const float>();
-            size_t print_tokens = std::min(total_tokens, static_cast<size_t>(10));
-
-            // Print each orthogonal vector (each row of cis) - only first 10 elements
-            for (size_t row = 0; row <= t; ++row) {
-                ss << "[CDPruner] cis[" << row << "] (orthogonal vector for selected token "
-                                << selected_indices[row] << "): [";
-
-                for (size_t col = 0; col < print_tokens; ++col) {
-                    if (col > 0)
-                        ss << ", ";
-                    size_t idx = row * total_tokens + col;
-                    ss << std::fixed << std::setprecision(4) << cis_data_debug[idx];
-                }
-
-                if (total_tokens > 10) {
-                    ss << ", ... (" << (total_tokens - 10) << " more)";
-                }
-                ss << "]" << std::endl;
-            }
-            ss << std::endl;
-            GENAI_DEBUG_LOG(ss.str());
-        }
-
-        // Debug output: print updated conditional kernel matrix after each selection
-        if (t < 10) {
-            // Print current selected indices
-            std::ostringstream ss;
-            ss << "[CDPruner] Selected tokens so far: [";
-            for (size_t i = 0; i < selected_indices.size(); ++i) {
-                if (i > 0)
-                    ss << ", ";
-                ss << selected_indices[i];
-            }
-            ss << "]" << std::endl;
-
-            // Print current marginal gains (di2s) - limited to first 10 elements
-            ss << "[CDPruner] Current marginal gains: [";
-            const float* di2s_data_debug = di2s.data<const float>();
-            size_t print_gains_size = std::min(total_tokens, static_cast<size_t>(10));
-
-            for (size_t i = 0; i < print_gains_size; ++i) {
-                if (i > 0)
-                    ss << ", ";
-                if (di2s_data_debug[i] == -std::numeric_limits<float>::infinity()) {
-                    ss << "-inf";
-                } else {
-                    ss << std::fixed << std::setprecision(4) << di2s_data_debug[i];
-                }
-            }
-            if (total_tokens > 10) {
-                ss << ", ... (" << (total_tokens - 10) << " more elements)";
-            }
-            ss << "]" << std::endl << std::endl;
-            GENAI_DEBUG_LOG(ss.str());
-        }
-
         // Set the selected token's gain to negative infinity to prevent re-selection
         di2s_data[best_idx] = -std::numeric_limits<float>::infinity();
     }
@@ -509,11 +428,11 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_cpu_internal(const ov::Te
         static bool simd_logged = false;
         if (!simd_logged) {
 #ifdef __AVX__
-            GENAI_DEBUG_LOG("[CDPruner] Using AVX SIMD instructions for vector operations (8 floats/operation)");
+            Logger::warn("[CDPruner] Using AVX SIMD instructions for vector operations (8 floats/operation)");
 #elif defined(__SSE2__)
-            GENAI_DEBUG_LOG("[CDPruner] Using SSE2 SIMD instructions for vector operations (4 floats/operation)");
+            Logger::warn("[CDPruner] Using SSE2 SIMD instructions for vector operations (4 floats/operation)");
 #else
-            GENAI_DEBUG_LOG("[CDPruner] Using scalar operations (no SIMD acceleration)");
+            Logger::warn("[CDPruner] Using scalar operations (no SIMD acceleration)");
 #endif
             simd_logged = true;
         }
@@ -731,7 +650,7 @@ bool OpenCLDPP::initialize_opencl() {
         cl::Platform::get(&platforms);
 
         if (platforms.empty()) {
-            GENAI_WARNING_LOG("[OpenCLDPP] No OpenCL platforms found");
+            Logger::warn("[OpenCLDPP] No OpenCL platforms found");
             return false;
         }
 
@@ -742,11 +661,9 @@ bool OpenCLDPP::initialize_opencl() {
 
         std::string device_name;
         m_state->device.getInfo(CL_DEVICE_NAME, &device_name);
-        GENAI_DEBUG_LOG("[OpenCLDPP] Using OpenCL device: " + device_name);
-
         return load_and_compile_kernels();
     } catch (const std::exception& e) {
-        GENAI_ERROR_LOG("[OpenCLDPP] OpenCL initialization failed: " + std::string(e.what()));
+        Logger::warn("[OpenCLDPP] OpenCL initialization failed: " + std::string(e.what()));
         return false;
     }
 }
@@ -755,8 +672,6 @@ bool OpenCLDPP::load_and_compile_kernels() {
     try {
         const char* kernel_source = dpp_kernel_split_cl;
         size_t kernel_length = std::strlen(kernel_source);
-
-        GENAI_DEBUG_LOG("[OpenCLDPP] Loaded kernel source (" + std::to_string(kernel_length) + " chars) from header.");
 
         cl::Program::Sources sources;
         sources.push_back({kernel_source, kernel_length});
@@ -768,16 +683,14 @@ bool OpenCLDPP::load_and_compile_kernels() {
             // Get build log for debugging
             std::string build_log;
             m_state->program.getBuildInfo(m_state->device, CL_PROGRAM_BUILD_LOG, &build_log);
-            GENAI_ERROR_LOG("[OpenCLDPP] Kernel compilation failed with error: " + std::to_string(result));
-            GENAI_ERROR_LOG("[OpenCLDPP] Build log: " + build_log);
+            Logger::warn("[OpenCLDPP] Kernel compilation failed with error: " + std::to_string(result));
+            Logger::warn("[OpenCLDPP] Build log: " + build_log);
             return false;
         }
 
-        GENAI_DEBUG_LOG("[OpenCLDPP] Kernel compilation successful");
-
         return true;
     } catch (const std::exception& e) {
-        GENAI_ERROR_LOG("[OpenCLDPP] Kernel compilation failed: " + std::string(e.what()));
+        Logger::warn("[OpenCLDPP] Kernel compilation failed: " + std::string(e.what()));
         return false;
     }
 }
@@ -837,10 +750,6 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
     merged_kernel.setArg(8, sizeof(float) * lws[1], nullptr);  // local memory for reduction
     merged_kernel.setArg(9, sizeof(int) * lws[1], nullptr);    // local memory for argmax
 
-    GENAI_DEBUG_LOG("[OpenCLDPP] Global work size: [" + std::to_string(gws[0]) + ", " + std::to_string(gws[1]) + ", " + std::to_string(gws[2]) + "]");
-    GENAI_DEBUG_LOG("[OpenCLDPP] Local work size: [" + std::to_string(lws[0]) + ", " + std::to_string(lws[1]) + ", " + std::to_string(lws[2]) + "]");
-    GENAI_DEBUG_LOG("[OpenCLDPP] Selected tokens per batch: " + std::to_string(selected_token_num_per_batch));
-
     // Initialize buffers
     m_state->queue.enqueueWriteBuffer(buffer_di2s,
                                       CL_TRUE,
@@ -871,26 +780,6 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
                                      0,
                                      sizeof(int) * selected_token_num_per_batch * batch_size,
                                      output_ids.data());
-
-    GENAI_DEBUG_LOG("[OpenCLDPP] DPP selection completed with " + std::to_string(selected_token_num_per_batch * batch_size) + " tokens");
-
-    // Print first few selected token IDs for debugging (single log line)
-    {
-        std::ostringstream oss;
-        oss << "[OpenCLDPP] Selected tokens (first batch): [";
-        size_t print_count = std::min(selected_token_num_per_batch * batch_size, static_cast<size_t>(10));
-        for (size_t i = 0; i < print_count; ++i) {
-            if (i > 0)
-                oss << ", ";
-            oss << output_ids[i];
-        }
-        if (selected_token_num_per_batch * batch_size > 10) {
-            oss << ", ... (" << (selected_token_num_per_batch * batch_size - 10) << " more)";
-        }
-        oss << "]";
-        GENAI_DEBUG_LOG(oss.str());
-    }
-
     std::vector<size_t> results;
     for (auto id : output_ids)
         results.push_back(id);

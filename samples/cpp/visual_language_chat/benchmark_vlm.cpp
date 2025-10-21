@@ -20,8 +20,8 @@ int main(int argc, char* argv[]) try {
     ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
     ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
     ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
-    ("pr,pruning_ratio", "Percentage of visual tokens to prune (valid range: 0-100). 0 by default means no pruning", cxxopts::value<size_t>()->default_value("0"))
-    ("rw,relevance_weight", "Relevance weight for the model", cxxopts::value<float>()->default_value("0.5"))
+    ("pr,pruning_ratio", "Percentage of visual tokens to prune (valid range: 0-100)", cxxopts::value<size_t>())
+    ("rw,relevance_weight", "Relevance weight for the model", cxxopts::value<float>())
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
@@ -59,16 +59,18 @@ int main(int argc, char* argv[]) try {
     std::string device = result["device"].as<std::string>();
     size_t num_warmup = result["num_warmup"].as<size_t>();
     size_t num_iter = result["num_iter"].as<size_t>();
-    size_t pruning_ratio = result["pruning_ratio"].as<size_t>();
-    float relevance_weight = result["relevance_weight"].as<float>();
-    std::vector<ov::Tensor> images = utils::load_images(image_path);
 
     ov::genai::GenerationConfig config;
+    if (result.count("pruning_ratio")) {
+        config.pruning_ratio = result["pruning_ratio"].as<size_t>();
+    }
+    if (result.count("relevance_weight")) {
+        config.relevance_weight = result["relevance_weight"].as<float>();
+    }
+    std::vector<ov::Tensor> images = utils::load_images(image_path);
+
     config.max_new_tokens = result["max_new_tokens"].as<size_t>();
     config.ignore_eos = true;
-
-    config.pruning_ratio = pruning_ratio;
-    config.relevance_weight = relevance_weight;
 
     std::cout << ov::get_openvino_version() << std::endl;
 

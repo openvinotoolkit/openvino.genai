@@ -10,6 +10,7 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "logger.hpp"
 #include "openvino/op/ops.hpp"
 #include "openvino/op/parameter.hpp"
 #include "openvino/op/result.hpp"
@@ -39,10 +40,9 @@ ConditionalKernelBuilder::ConditionalKernelBuilder(const Config& config)
 
         m_requests_initialized = true;
 
-        GENAI_DEBUG_LOG("[CDPruner] ConditionalKernelBuilder: InferRequests initialized for device " + m_config.device);
     } catch (const std::exception& e) {
-        GENAI_DEBUG_LOG("[CDPruner] ConditionalKernelBuilder: InferRequest initialization failed, will use fallback: " +
-                        std::string(e.what()));
+        Logger::warn("[CDPruner] ConditionalKernelBuilder: InferRequest initialization failed, will use fallback: " +
+                     std::string(e.what()));
         m_requests_initialized = false;
     }
 }
@@ -62,8 +62,8 @@ ov::Tensor ConditionalKernelBuilder::build(const ov::Tensor& visual_features, co
     try {
         conditional_kernel = build_with_ov_model(visual_features, input_param);
     } catch (const std::exception& e) {
-        GENAI_DEBUG_LOG("[CDPruner] ConditionalKernelBuilder: OV model failed, falling back to normal pipeline: " +
-                        std::string(e.what()));
+        Logger::warn("[CDPruner] ConditionalKernelBuilder: OV model failed, falling back to normal pipeline: " +
+                     std::string(e.what()));
         conditional_kernel = build_with_normal_pipeline(visual_features, input_param);
     }
 
@@ -87,19 +87,7 @@ ov::Tensor ConditionalKernelBuilder::build_with_ov_model(const ov::Tensor& visua
     if (text_features.get_shape()[1] != feature_dim) {
         throw std::invalid_argument("Visual features and text features must have the same feature dimension");
     }
-    GENAI_DEBUG_LOG("[CDPruner] Text input: [" + std::to_string(text_features.get_shape()[0]) + ", " +
-                    std::to_string(text_features.get_shape()[1]) + "]");
-
-    auto kernel_build_start = std::chrono::high_resolution_clock::now();
     ov::Tensor conditional_kernel = compute_conditional_kernel_with_model(visual_features, text_features);
-    auto kernel_build_end = std::chrono::high_resolution_clock::now();
-    auto kernel_build_duration =
-        std::chrono::duration_cast<std::chrono::microseconds>(kernel_build_end - kernel_build_start);
-
-    GENAI_DEBUG_LOG(
-        "[CDPruner] Kernel computation: " + std::to_string(kernel_build_duration.count() / 1000.0) + " ms (" +
-        std::to_string(static_cast<double>(total_operations) / kernel_build_duration.count() * 1000000) + " ops/sec)");
-
     return conditional_kernel;
 }
 
@@ -115,9 +103,6 @@ ov::Tensor ConditionalKernelBuilder::build_with_normal_pipeline(const ov::Tensor
         throw std::invalid_argument("Relevance scores must be 2D tensor [B, N]");
     }
     auto relevance_shape = relevance_scores.get_shape();
-    GENAI_DEBUG_LOG("[CDPruner] Input tensors: relevance_scores[" + std::to_string(relevance_shape[0]) + ", " +
-                    std::to_string(relevance_shape[1]) + "]");
-
     // Check shape consistency
     if (relevance_shape[0] != batch_size || relevance_shape[1] != num_tokens) {
         throw std::invalid_argument(
@@ -155,25 +140,27 @@ ov::Tensor ConditionalKernelBuilder::build_with_normal_pipeline(const ov::Tensor
         std::chrono::duration_cast<std::chrono::microseconds>(kernel_build_end - kernel_build_start);
 
     print_kernel_build_performance(batch_size,
-                                 num_tokens,
-                                 feature_dim,
-                                 total_operations,
-                                 normalize_duration,
-                                 similarity_duration,
-                                 conditional_duration,
-                                 total_kernel_duration);
+                                   num_tokens,
+                                   feature_dim,
+                                   total_operations,
+                                   normalize_duration,
+                                   similarity_duration,
+                                   conditional_duration,
+                                   total_kernel_duration);
 
     return conditional_kernel;
 }
 
 void ConditionalKernelBuilder::print_kernel_build_performance(size_t batch_size,
-                                                            size_t num_tokens,
-                                                            size_t feature_dim,
-                                                            size_t total_operations,
-                                                            const std::chrono::microseconds& normalize_duration,
-                                                            const std::chrono::microseconds& similarity_duration,
-                                                            const std::chrono::microseconds& conditional_duration,
-                                                            const std::chrono::microseconds& total_kernel_duration) {
+                                                              size_t num_tokens,
+                                                              size_t feature_dim,
+                                                              size_t total_operations,
+                                                              const std::chrono::microseconds& normalize_duration,
+                                                              const std::chrono::microseconds& similarity_duration,
+                                                              const std::chrono::microseconds& conditional_duration,
+                                                              const std::chrono::microseconds& total_kernel_duration) {
+    if (!utils::env_setup_for_print_debug_info())
+        return;
     std::ostringstream ss;
     ss << "[CDPruner]   L2 normalization [" << batch_size << ", " << num_tokens << ", " << feature_dim
        << "]: " << normalize_duration.count() << " us ("
@@ -189,7 +176,7 @@ void ConditionalKernelBuilder::print_kernel_build_performance(size_t batch_size,
        << (total_kernel_duration.count() / 1000.0) << " ms)" << std::endl;
     ss << "[CDPruner] Kernel build throughput: "
        << (static_cast<double>(total_operations) / total_kernel_duration.count() * 1000000) << " ops/sec" << std::endl;
-    GENAI_DEBUG_LOG(ss.str());
+    std::cout << ss.str();
 }
 
 // GPU-accelerated similarity matrix computation using OpenVINO
@@ -199,7 +186,7 @@ ov::Tensor ConditionalKernelBuilder::compute_similarity_matrix_with_model(const 
 
     if (!m_requests_initialized) {
         // Fallback to CPU implementation if infer requests not initialized
-        GENAI_DEBUG_LOG("[CDPruner] Using CPU fallback for similarity matrix computation");
+        Logger::warn("[CDPruner] Using CPU fallback for similarity matrix computation");
         return compute_similarity_matrix(features);
     }
 
@@ -213,7 +200,7 @@ ov::Tensor ConditionalKernelBuilder::compute_similarity_matrix_with_model(const 
 
     } catch (const std::exception& e) {
         // Fallback to CPU implementation if GPU fails
-        GENAI_DEBUG_LOG("[CDPruner] GPU MatMul failed, falling back to CPU.");
+        Logger::warn("[CDPruner] GPU MatMul failed, falling back to CPU.");
         return compute_similarity_matrix(features);
     }
 }
@@ -360,7 +347,7 @@ ov::Tensor ConditionalKernelBuilder::l2_normalize_features(const ov::Tensor& fea
 }
 
 ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_normal(const ov::Tensor& similarity_matrix,
-                                                              const ov::Tensor& relevance_scores) {
+                                                                       const ov::Tensor& relevance_scores) {
     // similarity_matrix: [B, N, N]
     // relevance_scores: [B, N]
     // Result: [B, N, N] - conditional kernel matrix
@@ -395,7 +382,7 @@ ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_normal(const ov:
 }
 
 ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_with_model(const ov::Tensor& visual_features,
-                                                                    const ov::Tensor& text_features) {
+                                                                           const ov::Tensor& text_features) {
     // Input validation
     if (visual_features.get_shape().size() != 3) {
         throw std::invalid_argument("Visual features must be 3D tensor [B, N, D]");

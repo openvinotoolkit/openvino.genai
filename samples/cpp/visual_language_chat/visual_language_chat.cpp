@@ -18,8 +18,6 @@ int main(int argc, char* argv[]) try {
     std::string model_dir = argv[1];
     std::string image_file = argv[2];
     std::string device = argc > 3 ? argv[3] : "CPU";
-    size_t pruning_ratio = argc > 4 ? std::stoul(argv[4]) : 0;  // 0 means disabled
-    float pruning_relevance_weight = argc > 5 ? std::stof(argv[5]) : 0.5f;
 
     std::vector<ov::Tensor> rgbs = utils::load_images(image_file);
 
@@ -33,8 +31,12 @@ int main(int argc, char* argv[]) try {
     ov::genai::GenerationConfig generation_config;
     generation_config.max_new_tokens = 100;
     // Configure CDPruner if requested
-    generation_config.pruning_ratio = pruning_ratio;
-    generation_config.relevance_weight = pruning_relevance_weight;
+    if (argc > 4) {
+        generation_config.pruning_ratio = std::stoul(argv[4]);
+    }
+    if (argc > 5) {
+        generation_config.relevance_weight = std::stof(argv[5]);
+    }
 
     // Initialize VLMPipeline with cache configuration if needed
     ov::genai::VLMPipeline pipe(model_dir, device, enable_compile_cache);
