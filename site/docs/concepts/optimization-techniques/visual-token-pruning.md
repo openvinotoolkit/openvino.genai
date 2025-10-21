@@ -5,26 +5,25 @@ sidebar_position: 5
 # Visual Token Pruning (CDPruner)
 
 ## Overview
-Visual Token Pruning is a context compression technique for Multimodal / Visual Language Models (VLMs) that reduces the number of vision tokens kept for subsequent decoding steps. It is based on the "CDPruner" approach described in the paper [Contextual Dominance Pruning for Long-Context Vision-Language Models](https://arxiv.org/pdf/2506.10967). The main goal is to decrease memory usage and latency during generation while preserving the most semantically relevant visual information for answering downstream questions.
+Visual Token Pruning is a context compression technique for Multimodal / Visual Language Models (VLMs) that aims to enhance inference efficiency without significant performance degradation by identifying and removing redundant or less informative tokens. A representative approach is CDPruner, introduced in the paper [Beyond Attention or Similarity: Maximizing Conditional Diversity for Token Pruning in MLLMs](https://arxiv.org/pdf/2506.10967). Its main goal is to lower inference latency and memory footprint while retaining the visual information most relevant to the user's query.
 
-During the first (prefill) pass, the model ingests the image and produces a sequence of visual tokens. Instead of keeping all of them, Visual Token Pruning selects a subset according to learned dominance scores. Pruned tokens are removed from further attention computations, shrinking KV cache footprint, reducing TTFT and improving throughput. A relevance re-weighting factor lets the user balance aggressiveness of pruning versus retention of fine-grained details.
+Unlike traditional attention-based or similarity-based pruning techniques, which can either retain redundant tokens or neglect instruction relevance, CDPruner focuses on maximizing the conditional diversity of the retained visual tokens. Pruned tokens are removed from further attention computations, shrinking KV cache footprint, reducing TTFT and improving throughput. A relevance weighting factor controls the influence of instruction relevance during pruning, helping balance token reduction against the preservation of important visual details.
 
 ## Conceptual Model
-The visual token sequence extracted from the image encoder can be partitioned into:
+CDPruner operates on the sequence of visual token embeddings produced by the vision encoder before they are passed to the language model. Instead of forwarding all tokens, it selects a subset based on conditional diversity, combining token similarity and instruction relevance.
 
-* Retained Tokens: Subset judged most relevant by dominance scoring.
-* Pruned Tokens: Dropped from future decoding (no longer participate in cross-attention or self-attention depending on architecture).
-
-Pruning is controlled by a ratio (percentage of tokens to remove) and a relevance weight scaling that influences importance estimation.
+### Token Partitioning The visual tokens are conceptually divided into:
+* Retained Tokens: A selected subset that provides diverse and instruction-relevant visual information.
+* Pruned Tokens: Tokens excluded from further processing because they contribute redundant or low-relevance information.
 
 High-level flow:
 1. Encode image producing N visual tokens (embeddings).
-2. Compute per-token dominance / relevance scores (implementation detail hidden inside the OpenVINO GenAI pipeline CDPruner module).
-3. Sort / threshold to identify least important tokens according to `pruning_ratio`.
+2. Compute pairwise token similarity and per-token relevance scores.
+3. Relevance and similarity are combined into a conditional kernel. A greedy DPP-based MAP algorithm identifies the least important tokens to discard according to `pruning_ratio`, adjusting scores using `relevance_weight` to control the trade-off between diversity and relevance.
 4. Optionally adjust scores using `relevance_weight` before selecting final kept set.
 5. Build reduced token set; subsequent generation attends only to retained tokens.
 
-Effect: Smaller effective visual context reduces memory and can speed up generation; extremely high pruning may degrade answer quality for complex visual queries.
+Effect: Pruning less important visual tokens reduces memory usage and can speed up generation; extremely high pruning may degrade answer quality for complex visual queries.
 
 ## Configuration Interface
 Visual Token Pruning is exposed through fields of `ov::genai::GenerationConfig`:
@@ -33,7 +32,7 @@ Visual Token Pruning is exposed through fields of `ov::genai::GenerationConfig`:
 * `relevance_weight` (float): Weighting factor applied when aggregating or scaling dominance scores. **Recommended range:** 0.0–1.0. A value of 0 disables relevance weighting (pruning is based solely on raw dominance scores), while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens. Values above 1.0 are allowed but may have diminishing or unpredictable effects; negative values are not recommended. Default in the sample is `0.5f`.
 
 ### Sample Usage (Python Benchmark Script)
-`samples/python/visual_language_chat/benchmark_vlm.py` provides a convenient way to measure performance impact of pruning.
+[samples/python/visual_language_chat/benchmark_vlm.py](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/visual_language_chat/benchmark_vlm.py) provides a convenient way to measure performance impact of pruning.
 
 Minimal example (prune 70% of visual tokens on GPU):
 ```bash
@@ -50,12 +49,8 @@ Relevant configuration excerpt:
 ```python
 config = ov_genai.GenerationConfig()
 config.max_new_tokens = args.max_new_tokens
-if args.pruning_ratio is not None:
-  config.pruning_ratio = args.pruning_ratio
-  print(f"[CDPruner] Enabling CDPruner with {config.pruning_ratio}% visual token pruning")
-  if args.relevance_weight is not None:
-    config.relevance_weight = args.relevance_weight
-    print(f"[CDPruner] Setting relevance weight to {config.relevance_weight}")
+config.pruning_ratio = args.pruning_ratio
+config.relevance_weight = args.relevance_weight
 ```
 
 Pipeline creation and generation:
