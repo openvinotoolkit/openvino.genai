@@ -428,7 +428,7 @@ def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
         return False
 
     models_path = get_ov_model(model_id)
-    ov_pipe = VLMPipeline(models_path, device, ATTENTION_BACKEND=backend)
+    ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
 
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 30
