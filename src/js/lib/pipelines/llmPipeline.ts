@@ -8,11 +8,13 @@ export type Options = {
   max_new_tokens?: number;
 };
 
+type ChatHistory = Record<string, any>[];
+
 interface Tokenizer {
   /** Applies a chat template to format chat history into a prompt string. */
   // TODO Consider adding bindings for ChatHistory and JsonContainer classes
   applyChatTemplate(
-    chatHistory: Record<string, any>[],
+    chatHistory: ChatHistory,
     addGenerationPrompt: boolean,
     chatTemplate?: string,
     tools?: Record<string, any>[],
@@ -199,10 +201,11 @@ export class LLMPipeline {
     return result;
   }
 
-  stream(prompt: string, generationConfig: GenerationConfig = {}) {
+  stream(inputs: string | ChatHistory, generationConfig: GenerationConfig = {}) {
     if (!this.isInitialized) throw new Error("Pipeline is not initialized");
 
-    if (typeof prompt !== "string") throw new Error("Prompt must be a string");
+    if (typeof inputs !== "string" && !Array.isArray(inputs))
+      throw new Error("Prompt must be a string or string[]");
     if (typeof generationConfig !== "object") throw new Error("Options must be an object");
 
     let streamingStatus: StreamingStatus = StreamingStatus.RUNNING;
@@ -223,7 +226,7 @@ export class LLMPipeline {
       return streamingStatus;
     }
 
-    this.pipeline.generate(prompt, chunkOutput, generationConfig);
+    this.pipeline.generate(inputs, chunkOutput, generationConfig);
 
     return {
       async next() {
@@ -251,14 +254,11 @@ export class LLMPipeline {
   }
 
   async generate(
-    prompt: string | string[],
+    inputs: string | string[] | ChatHistory,
     generationConfig: GenerationConfig = {},
     callback: (chunk: string) => void | undefined,
   ) {
-    if (
-      typeof prompt !== "string" &&
-      !(Array.isArray(prompt) && prompt.every((item) => typeof item === "string"))
-    )
+    if (typeof inputs !== "string" && !Array.isArray(inputs))
       throw new Error("Prompt must be a string or string[]");
     if (typeof generationConfig !== "object") throw new Error("Options must be an object");
     if (callback !== undefined && typeof callback !== "function")
@@ -293,7 +293,7 @@ export class LLMPipeline {
 
         return StreamingStatus.RUNNING;
       };
-      this.pipeline.generate(prompt, chunkOutput, generationConfig, options);
+      this.pipeline.generate(inputs, chunkOutput, generationConfig, options);
     });
   }
 

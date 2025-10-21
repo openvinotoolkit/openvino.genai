@@ -10,13 +10,13 @@
 #include "include/tokenizer.hpp"
 
 struct TsfnContext {
-    TsfnContext(ov::genai::StringInputs prompt) : prompt(prompt) {};
+    TsfnContext(GenerateInputs inputs) : inputs(inputs) {};
     ~TsfnContext() {};
 
     std::thread native_thread;
     Napi::ThreadSafeFunction tsfn;
 
-    ov::genai::StringInputs prompt;
+    GenerateInputs inputs;
     std::shared_ptr<ov::genai::LLMPipeline> pipe = nullptr;
     std::shared_ptr<ov::AnyMap> generation_config = nullptr;
     std::shared_ptr<ov::AnyMap> options = nullptr;
@@ -75,7 +75,19 @@ void performInferenceThread(TsfnContext* context) {
             };
         }
 
-        auto result = context->pipe->generate(context->prompt, config, streamer);
+        ov::genai::DecodedResults result;
+        std::visit(overloaded{
+            [context, config, streamer, &result](ov::genai::StringInputs& inputs) {
+                result = context->pipe->generate(inputs, config, streamer);
+            },
+            [context, config, streamer, &result](ov::genai::ChatHistory& inputs) {
+                result = context->pipe->generate(inputs, config, streamer);
+            },
+            [&, context](auto&) {
+                OPENVINO_THROW("Unsupported type for generate inputs.");
+            }
+        }, context->inputs);
+
         napi_status status = context->tsfn.BlockingCall([result](Napi::Env env, Napi::Function jsCallback) {
             jsCallback.Call({Napi::Boolean::New(env, true), create_decoded_results_object(env, result)});
         });
@@ -124,14 +136,14 @@ Napi::Value LLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
     TsfnContext* context = nullptr;
 
     try {
-        ov::genai::StringInputs prompt = js_to_cpp<ov::genai::StringInputs>(env, info[0]);
+        auto inputs = js_to_cpp<GenerateInputs>(env, info[0]);
         auto generation_config = js_to_cpp<ov::AnyMap>(info.Env(), info[2]);
         ov::AnyMap options;
         if (info.Length() == 4) {
             options = js_to_cpp<ov::AnyMap>(info.Env(), info[3]);
         }
 
-        context = new TsfnContext(prompt);
+        context = new TsfnContext(inputs);
         context->pipe = this->pipe;
         context->generation_config = std::make_shared<ov::AnyMap>(generation_config);
         context->options = std::make_shared<ov::AnyMap>(options);

@@ -199,6 +199,34 @@ describe("LLMPipeline.generate()", () => {
     assert.strictEqual(replyStr, reply.toString());
   });
 
+  it("generate(chatHistory, config)", async () => {
+    const chatHistory = [
+      { role: "user", content: "Hello!" },
+      { role: "assistant", content: "Hi! How can I help you?" },
+      { role: "user", content: "Tell me a joke." },
+    ];
+    const config = {
+      max_new_tokens: 10,
+      return_decoded_results: true,
+    };
+    const reply = await pipeline.generate(chatHistory, config);
+    assert.strictEqual(typeof reply, "object");
+    assert.ok(Array.isArray(reply.texts));
+    assert.ok(reply.texts.every((text) => typeof text === "string"));
+    assert.ok(reply.perfMetrics !== undefined);
+  });
+
+  it("generate(chatHistory, config) with invalid chat history", async () => {
+    const chatHistory = [1, "assistant", null];
+    const config = {
+      max_new_tokens: 10,
+      return_decoded_results: true,
+    };
+    assert.rejects(async () => {
+      await pipeline.generate(chatHistory, config);
+    }, /An incorrect input value has been passed./);
+  });
+
   it("DecodedResults.perfMetrics", async (t) => {
     if (os.platform() === "darwin") {
       t.skip("Skipping perfMetrics test on macOS. Ticket - 173286");
