@@ -2,12 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
-#include <chrono>
-#include <cstdlib>
-#include <iostream>
-#include <mutex>
-#include <sstream>
-#include <string>
 #include <type_traits>
 #include <optional>
 #include <stdexcept>
@@ -35,22 +29,6 @@ extern const std::string SDPA_BACKEND;
 namespace ov {
 namespace genai {
 namespace utils {
-inline ov::log::Level get_openvino_env_log_level() {
-    const char* env = std::getenv("OPENVINO_LOG_LEVEL");
-    if (!env)
-        return ov::log::Level::NO;
-    try {
-        std::string env_str(env);
-        size_t idx = 0;
-        int env_var_value = std::stoi(env_str, &idx);
-        if (idx != env_str.size()) {
-            return ov::log::Level::NO;
-        }
-        return static_cast<ov::log::Level>(env_var_value);
-    } catch (...) {
-        return ov::log::Level::NO;
-    }
-}
 
 // Variable template that checks if a type has begin() and end() member functions
 template<typename, typename = void>

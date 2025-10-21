@@ -114,6 +114,7 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
             auto computation_start = std::chrono::high_resolution_clock::now();
 
             if (use_splitting) {
+                computation_mode += "<Split>";
                 // Building kernel matrix for first half
                 kernel_matrix_first = m_kernel_builder.build(visual_first_half, text_features);
                 // Building kernel matrix for second half
@@ -129,10 +130,11 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
 
             kernel_duration = computation_duration;
         } catch (const std::exception& e) {
-            computation_mode = "Traditional Step-by-Step by CPU";
+            computation_mode = "Traditional Step-by-Step";
             auto relevance_start = std::chrono::high_resolution_clock::now();
             // CDPruner Step 1: Compute relevance scores
             if (use_splitting) {
+                computation_mode += "<Split>";
                 // Compute relevance scores for both halves
                 ov::Tensor relevance_scores_first = m_relevance_calc.compute(visual_first_half, text_features);
                 ov::Tensor relevance_scores_second = m_relevance_calc.compute(visual_second_half, text_features);
@@ -395,7 +397,8 @@ void CDPruner::print_cdpruner_processing_overview(size_t total_tokens,
     std::cout << "[CDPruner] Input:  Vision[" << total_tokens << " tokens x " << feature_dim << "D] + Text["
               << text_tokens << " tokens x " << text_feature_dim << "D]" << std::endl;
     std::cout << "[CDPruner] Config: Keep " << (100 - pruning_ratio) << "% (" << num_tokens_to_keep << "/"
-              << total_tokens << " tokens) | Weight=" << relevance_weight << std::endl;
+              << total_tokens << " tokens) | Weight=" << relevance_weight
+              << " | Split Threshold=" << m_config.split_threshold << std::endl;
     std::cout << "[CDPruner] Result: " << tokens_removed << " tokens removed (" << reduction_percentage
               << "% reduction)" << std::endl;
     std::cout << "+----------------------------------------------------------+" << std::endl;
@@ -423,7 +426,8 @@ void CDPruner::print_cdpruner_processing_overview(size_t frame_count,
     std::cout << "[CDPruner] Input:  " << frame_count << " frames x Vision[" << tokens_per_frame << " tokens x "
               << feature_dim << "D] + Text[" << text_tokens << " tokens x " << text_feature_dim << "D]" << std::endl;
     std::cout << "[CDPruner] Config: Keep " << pruning_ratio << "% (" << num_tokens_to_keep_per_frame << "/"
-              << tokens_per_frame << " tokens per frame) | Weight=" << relevance_weight << std::endl;
+              << tokens_per_frame << " tokens per frame) | Weight=" << relevance_weight
+              << " | Split Threshold=" << m_config.split_threshold << std::endl;
     std::cout << "[CDPruner] Total:  " << total_input_tokens << " → " << total_output_tokens << " tokens ("
               << reduction_percentage << "% reduction)" << std::endl;
     std::cout << "+----------------------------------------------------------+" << std::endl;

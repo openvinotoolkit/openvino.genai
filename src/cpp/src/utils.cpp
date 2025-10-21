@@ -460,7 +460,11 @@ ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front
 }
 
 bool env_setup_for_print_debug_info() {
-    return get_openvino_env_log_level() > ov::log::Level::WARNING;
+    // Specify the name of the environment variable
+    const char* env_var_name = "OPENVINO_LOG_LEVEL";
+    const char* env_var_value = std::getenv(env_var_name);
+    // Check if the environment variable was found
+    return (env_var_value != nullptr && atoi(env_var_value) > static_cast<int>(ov::log::Level::WARNING));
 }
 
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title) {
