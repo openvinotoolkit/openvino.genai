@@ -660,20 +660,20 @@ def create_genai_image_text_gen_model(model_path, device, ov_config, memory_data
 
 
 def create_genai_text_embed_model(model_path, device, memory_data_collector, **kwargs):
-    import openvino_genai
+    from openvino_genai import TextEmbeddingPipeline
 
     pooling_type = kwargs.get("emb_pooling_type")
     max_length = kwargs.get("emb_max_length")
     padding_side = kwargs.get("embedding_padding_side")
 
-    config = openvino_genai.TextEmbeddingPipeline.Config()
+    config = TextEmbeddingPipeline.Config()
     if pooling_type is not None:
         if pooling_type == "mean":
-            config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.MEAN
+            config.pooling_type = TextEmbeddingPipeline.PoolingType.MEAN
         elif pooling_type == "last_token":
-            config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.LAST_TOKEN
+            config.pooling_type = TextEmbeddingPipeline.PoolingType.LAST_TOKEN
         else:
-            config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.CLS
+            config.pooling_type = TextEmbeddingPipeline.PoolingType.CLS
     if max_length is not None:
         config.max_length = max_length
         config.pad_to_max_length = True
@@ -685,13 +685,54 @@ def create_genai_text_embed_model(model_path, device, memory_data_collector, **k
 
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
+
     start = time.perf_counter()
-
-    pipe = openvino_genai.TextEmbeddingPipeline(model_path, device.upper(), config, **ov_config)
-
+    pipe = TextEmbeddingPipeline(model_path, device.upper(), config, **ov_config)
     end = time.perf_counter()
 
     log.info("Selected OpenVINO GenAI for benchmarking")
+    if kwargs.get("mem_consumption"):
+        memory_data_collector.stop_and_collect_data('compilation_phase')
+        memory_data_collector.log_data(compilation_phase=True)
+    log.info(f'Pipeline initialization time: {end - start:.2f}s')
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+    except Exception:
+        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    return pipe, tokenizer, end - start, None, True
+
+
+def create_langchain_text_embed_model(model_path, device, memory_data_collector, **kwargs):
+    from openvino_genai import TextEmbeddingPipeline
+    from langchain_community.embeddings import OpenVINOBgeEmbeddings
+
+    config = TextEmbeddingPipeline.Config()
+    encode_kwargs = {
+        "normalize_embeddings": kwargs.get("emb_normalize", False),
+        "batch_size": 1, # batch size affects the result
+        "mean_pooling": kwargs.get("emb_pooling_type") == "mean",
+    }
+    # max_length = kwargs.get("emb_max_length")
+    # padding_side = kwargs.get("embedding_padding_side")
+    # if max_length is not None:
+    #     config.max_length = max_length
+    #     config.pad_to_max_length = True
+    # if padding_side:
+    #     config.padding_side = padding_side
+
+    if kwargs.get("mem_consumption"):
+        memory_data_collector.start()
+
+    start = time.perf_counter()
+    pipe = OpenVINOBgeEmbeddings(model_name_or_path=model_path,
+                                 model_kwargs={"device": device.upper()},
+                                 encode_kwargs=encode_kwargs)
+    pipe.embed_instruction = config.embed_instruction or ""
+    pipe.query_instruction = config.query_instruction or ""
+
+    end = time.perf_counter()
+
+    log.info("Selected OpenVINO LangChain for benchmarking")
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data('compilation_phase')
         memory_data_collector.log_data(compilation_phase=True)
@@ -722,16 +763,18 @@ def create_text_embeddings_model(model_path, device, memory_data_collector, **kw
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
         trust_remote_code = True
     if kwargs.get("genai", True) and is_genai_available(log_msg=True):
-        try:
-            return create_genai_text_embed_model(model_path, device, memory_data_collector, **kwargs)
-        except Exception as exp:
-            log.warning(
-                f"Model is not supported by OpenVINO GenAI. "
-                f"GenAI pipeline loading failed with following error: {exp}"
-                "Benchmark will be switched to Optimum Intel pipeline realization"
-            )
+        # try:
+        return create_genai_text_embed_model(model_path, device, memory_data_collector, **kwargs)
+        # except Exception as exp:
+        #     log.warning(
+        #         f"Model is not supported by OpenVINO GenAI. "
+        #         f"GenAI pipeline loading failed with following error: {exp}"
+        #         "Benchmark will be switched to Optimum Intel pipeline realization"
+        #     )
 
-        log.info("Selected Optimum Intel for benchmarking")
+    log.info("Selected Optimum Intel for benchmarking")
+    return create_langchain_text_embed_model(model_path, device, memory_data_collector, **kwargs)
+
     model_class = kwargs['use_case'].ov_cls
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
