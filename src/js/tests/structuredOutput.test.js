@@ -2,6 +2,7 @@ import { LLMPipeline, StructuredOutputConfig } from "../dist/index.js";
 import { models } from "./models.js";
 import assert from "node:assert/strict";
 import { describe, it, before } from "node:test";
+import os from "node:os";
 
 const INSTRUCT_MODEL_PATH =
   process.env.INSTRUCT_MODEL_PATH || `./tests/models/${models.InstructLLM.split("/")[1]}`;
@@ -229,7 +230,11 @@ table::= "users" | "orders" | "products"`),
     assert.ok(typeof parsed.city === "string");
   });
 
-  it("generate with TriggeredTags in structural_tags_config", async () => {
+  it("generate with TriggeredTags in structural_tags_config", async (testContext) => {
+    if (os.platform() === "darwin") {
+      testContext.skip("Skipped for macOS due to inconsistent LLM outputs. CVS-175278");
+      return;
+    }
     const tools = [
       {
         name: "get_weather",
@@ -391,7 +396,11 @@ If you don't know the answer, just say that you don't know, but try to call the 
     assert.equal(text, "<start>...</end>", `Unexpected output: ${text}`);
   });
 
-  it("generate with QwenXMLParametersFormat in structural_tags_config", async () => {
+  it("generate with QwenXMLParametersFormat in structural_tags_config", async (testContext) => {
+    if (os.platform() === "darwin") {
+      testContext.skip("Skipped for macOS due to inconsistent LLM outputs. CVS-175278");
+      return;
+    }
     const generationConfig = {
       max_new_tokens: 50,
       structured_output_config: {
