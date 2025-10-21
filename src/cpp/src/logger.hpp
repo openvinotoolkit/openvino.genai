@@ -43,9 +43,10 @@ public:
     }
     void do_log(ov::log::Level level, const char* file, int line, const std::string& msg) {
         std::lock_guard<std::mutex> lock(log_mutex);
-        if (level <= log_level) {
-            std::cout << format_prefix(level, file, line) << msg << std::endl;
+        if (level > log_level) {
+            return;
         }
+        std::cout << format_prefix(level, file, line) << msg << std::endl;
     }
 
 private:
@@ -65,16 +66,16 @@ private:
             level_str = "[DEBUG][" + get_filename(file) + ":" + std::to_string(line) + "] ";
             break;
         case ov::log::Level::INFO:
-            level_str = "[INFO] ";
+            level_str = "[INFO]";
             break;
         case ov::log::Level::WARNING:
-            level_str = "[WARNING] ";
+            level_str = "[WARNING]";
             break;
         case ov::log::Level::ERR:
-            level_str = "[ERROR] ";
+            level_str = "[ERROR]";
             break;
         default:
-            level_str = "[LOG] ";
+            level_str = "[LOG]";
             break;
         }
         return level_str;
