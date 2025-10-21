@@ -65,16 +65,16 @@ private:
             level_str = "[DEBUG][" + get_filename(file) + ":" + std::to_string(line) + "] ";
             break;
         case ov::log::Level::INFO:
-            level_str = "[INFO]";
+            level_str = "[INFO] ";
             break;
         case ov::log::Level::WARNING:
-            level_str = "[WARNING]";
+            level_str = "[WARNING] ";
             break;
         case ov::log::Level::ERR:
-            level_str = "[ERROR]";
+            level_str = "[ERROR] ";
             break;
         default:
-            level_str = "[LOG]";
+            level_str = "[LOG] ";
             break;
         }
         return level_str;
