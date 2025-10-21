@@ -1176,31 +1176,20 @@ def test_vlm_pipeline_match_optimum_preresized(request, model_id, image_name, vi
         }
     ]
 
+    media_content = []
+    if image_name is not None:
+        resized_image = request.getfixturevalue(image_name)
+        media_content.append({"type": "image"})
+        prompt = f"Describe this image."
+    if video_name is not None:
+        resized_video = request.getfixturevalue(video_name)
+        media_content.append({"type": "video"})
+        prompt = f"Describe this video."
+    if image_name is not None and video_name is not None:
+        prompt = f"Describe this image and video."
     if model_id in ["katuni4ka/tiny-random-qwen2.5-vl", "katuni4ka/tiny-random-qwen2vl"]:
-        if image_name is not None:
-            resized_image = request.getfixturevalue(image_name)
-            prompt = "Describe this image."
-            conversation[0]["content"] = [{"type": "image"}] + conversation[0]["content"]
-        if video_name is not None:
-            if image_name is not None:
-                prompt = "Describe this image and video."
-            else:
-                prompt = "Describe this video."
-            resized_video = request.getfixturevalue(video_name)
-            conversation[0]["content"] = [{"type": "video"}] + conversation[0]["content"]
-    else:
-        if video_name is not None:
-            prompt = "Describe this video."
-            resized_video = request.getfixturevalue(video_name)
-            conversation[0]["content"] = [{"type": "video"}] + conversation[0]["content"]
-        if image_name is not None:
-            resized_image = request.getfixturevalue(image_name)
-            if video_name is not None:
-                prompt = "Describe this image and video."
-            else:
-                prompt = "Describe this image."
-            conversation[0]["content"] = [{"type": "image"}] + conversation[0]["content"]
-
+        media_content.reverse()
+    conversation[0]["content"] = media_content + conversation[0]["content"]
     conversation[0]["content"][-1]["text"] = prompt
 
     max_new_tokens = 100
