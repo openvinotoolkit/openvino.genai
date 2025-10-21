@@ -397,6 +397,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
                         "Eagle3 only supports num_assistant_tokens (assistant_confidence_threshold must be 0.f)");
         if (main_cfg.num_assistant_tokens == 0) {
             main_cfg.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
+            draft_cfg.num_assistant_tokens = main_cfg.num_assistant_tokens;
         }
         draft_cfg.ignore_eos = true;
         draft_cfg.stop_strings = {};
