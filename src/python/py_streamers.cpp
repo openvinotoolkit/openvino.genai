@@ -153,6 +153,7 @@ void init_streamers(py::module_& m) {
             }),
             py::arg("tokenizer"),
             py::arg("parsers") = std::vector<std::shared_ptr<IncrementalParserBase>>(),
+            py::keep_alive<1, 3>(),
             "TextParserStreamer is used to decode tokens into text, parse the text and call user-defined incremental parsers.")
         .def("write",
             [](TextParserStreamer& self, py::dict& message) {

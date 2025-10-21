@@ -3,13 +3,14 @@
 import dataclasses
 import json
 from typing import Optional
-
+from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
+from utils.ov_genai_pipelines import create_ov_pipeline
+from utils.network import retry_request
 import numpy as np
 import openvino
 import pytest
-from openvino_genai import Tokenizer, IncrementalParserBase, ParserBase, TextParserStreamer, StreamingStatus, Llama32JsonToolParser, Phi4ReasoningParser, DeepSeekR1ReasoningParser
+from openvino_genai import Tokenizer, IncrementalParserBase, ParserBase, TextParserStreamer, StreamingStatus, Llama32JsonToolParser, Phi4ReasoningParser, DeepSeekR1ReasoningParser, GenerationConfig
 from transformers import AutoTokenizer
-from utils.hugging_face import convert_and_save_tokenizer
 import re
 
 
@@ -121,6 +122,112 @@ def test_final_parser_llama_32_json(hf_ov_genai_models):
     assert content_json['tool_calls'][0] == json.loads(json_str)
 
 
+@pytest.mark.precommit
+@pytest.mark.parametrize(
+    "hf_ov_genai_models", 
+    ["katuni4ka/tiny-random-phi3"],
+    indirect=True
+)
+def test_custom_streamer_parser(hf_ov_genai_models):
+    hf_tokenizer, genai_tokenizer = hf_ov_genai_models
+
+    class CustomParser(IncrementalParserBase):
+        main_part_started: bool = False
+
+        def parse(self, msg: dict, previous_text: str, delta_text: str, prev_tokens = None, delta_tokens = None) -> str:
+            if 'content' not in msg:
+                msg['content'] = ''
+            if 'main_text' not in msg:
+                msg['main_text'] = ''
+
+            if not self.main_part_started and delta_text == '<start>':
+                self.main_part_started = True
+            elif self.main_part_started and delta_text == '</stop>':
+                self.main_part_started = False
+            else:
+                if self.main_part_started:
+                    msg['main_text'] += delta_text
+                
+            return delta_text
+
+    msg = {}
+    class CustomStreamer(TextParserStreamer):
+        def write(self, message):
+            msg.update(message)
+            return StreamingStatus.RUNNING
+
+    streamer = CustomStreamer(genai_tokenizer, parsers=[CustomParser()])
+
+    stream_string = ["Hello", "<start>", " ", "world", " ", "</stop>", "!"]
+
+    for subword in stream_string:
+        streamer._write(subword)
+
+    assert msg['main_text'] == ''.join(" world ")
+
+# @pytest.mark.precommit
+# @pytest.mark.parametrize(
+#     "hf_ov_genai_models", 
+#     ["microsoft/Phi-4-mini-reasoning"],
+#     # ["katuni4ka/tiny-random-phi3"],
+#     indirect=True
+# )
+# def test_custom_parser_(hf_ov_genai_models):
+
+
+#     msg = {
+#         "content": "<think>This is reasoning.</think> And this is the answer"
+#     }
+#     parser.parse(msg)
+
+#     assert msg['reasoning_content'] == "This is reasoning."
+
+@pytest.mark.parametrize("model_id", ["microsoft/Phi-4-mini-reasoning"])
+@pytest.mark.nightly
+def test_custom_parser(tmp_path, model_id):
+    _, _, models_path = download_and_convert_model(model_id, padding_side="left")
+    pipe = create_ov_pipeline(models_path)
+    tok = pipe.get_tokenizer()
+    
+    class CustomParser(ParserBase):
+        def parse(self, msg: dict):
+            content = None
+            if 'content' in msg:
+                content = msg['content']
+            if not content:
+                return
+
+            # find text between <think> and </think>
+            think_start = content.find("<think>")
+            think_end = content.find("</think>")
+            if think_start != -1 and think_end != -1 and think_end > think_start:
+                think_text = content[think_start + len("<think>"):think_end].strip()
+                msg['reasoning_content'] = think_text
+    
+    class CustomStreamer(TextParserStreamer):
+        def write(self, message):
+            # make whatever you want with message, but it will be accumulated and parsed by parser afterwards
+            # accumulated message can be found by get_parsed_message()
+            return StreamingStatus.RUNNING
+        
+    parser = CustomParser()
+    config = GenerationConfig()
+    config.max_new_tokens = 600
+    config.parsers = [parser]
+
+    res = pipe.generate(["Please say \"hello\""], generation_config=config)
+    
+    # extract manually reasoning content from the parsed result
+    content = res.texts[0]
+    think_start = content.find("<think>")
+    think_end = content.find("</think>")
+    if think_start != -1 and think_end != -1 and think_end > think_start:
+        think_text = content[think_start + len("<think>"):think_end].strip()
+    
+    assert 'reasoning_content' in res.parsed[0]
+    assert res.parsed[0]['reasoning_content'] != ""
+    assert res.parsed[0]['reasoning_content'] == think_text
+
 def test_parsers_2(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
     class CustomStreamer(TextParserStreamer):
@@ -150,7 +257,7 @@ def test_parsers_2(hf_ov_genai_models):
     parsers = streamer.get_parsers()
     
     extended = stream_string[:]
-    extended.append("")
+    extended.insert(0, "")
 
     for parser in parsers:
         for (prev_subword, subword) in zip(extended, stream_string):
@@ -159,4 +266,5 @@ def test_parsers_2(hf_ov_genai_models):
     assert msg['reasoning_content'] == think_content
     assert msg['content'] == content
 
-# TODO: add tests when streamer is called directly instead of manual subsequent calling of parsers.
+# TODO: add when streamer accepts integer tokens
+

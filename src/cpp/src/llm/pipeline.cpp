@@ -253,27 +253,27 @@ DecodedResults LLMPipeline::generate(
     auto res = m_pimpl->generate(inputs, generation_config, streamer);
     
     // If streamer is of StreamerBase type, and it is TextParserStreamer, get parsed message
+    // Streaming is available only for batch size 1 therefore only parsed[0]
     if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&streamer)) {
         if (auto parser_streamer = std::dynamic_pointer_cast<TextParserStreamer>(*streamer_obj)) {
-            res.parsed.resize(res.texts.size());
+            res.parsed.resize(1);
             res.parsed[0] = parser_streamer->get_parsed_message();
         }
     }
+
+    if (!generation_config.has_value() || generation_config->parsers.empty()) {
+        return res;
+    }
     
-    if (!generation_config.has_value() || (*generation_config).parsers.empty()) {
-        return res;
-    }
-
-    if (!generation_config.has_value()  || (*generation_config).parsers.empty()) {
-        return res;
-    }
-
     std::vector<std::shared_ptr<ParserBase>> parsers = (*generation_config).parsers;
     res.parsed.resize(res.texts.size());
     // Apply Base parsers sequentially even if IncrementalParser has run.
     for (size_t i = 0; i < res.texts.size(); ++i) {
-        JsonContainer msg;
-        msg["content"] = res.texts[i];
+        auto& msg = res.parsed[i];
+        if (!msg.contains("content")) {
+            // Initialize msg with content
+            msg["content"] = res.texts[i];
+        }
         for (auto& parser: parsers) {
             // TODO: Check the state of incremental parser and reset if necessary
             parser->parse(msg);

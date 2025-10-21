@@ -29,13 +29,13 @@ public:
 class OPENVINO_GENAI_EXPORTS ReasoningParser : public IncrementalParserBase {
 private:
     class ReasoningParserImpl;
-    std::shared_ptr<ReasoningParserImpl> m_impl;
+    std::unique_ptr<ReasoningParserImpl> m_impl;
 public:
     ReasoningParser(bool expect_open_tag = true,
                     bool keep_original_content = true, 
                     const std::string& open_tag = "<think>", 
                     const std::string& close_tag = "</think>");
-    virtual ~ReasoningParser() = default;
+    virtual ~ReasoningParser();
 
     std::string parse(
         JsonContainer& msg,
@@ -59,7 +59,7 @@ public:
 class ParserBase {
 public:
     ParserBase() = default;
-    virtual ~ParserBase() = default;
+    virtual ~ParserBase();
     virtual void parse(JsonContainer& text) = 0;
 };
 
@@ -67,20 +67,22 @@ class OPENVINO_GENAI_EXPORTS Llama32PythonicToolParser : public ParserBase {
 // Does not modify original content, only extracts and adds tool calls
 public:
     explicit Llama32PythonicToolParser(bool keep_original_content = true);
+    ~Llama32PythonicToolParser();
     void parse(JsonContainer& input) override;
 private:
     class Llama32PythonicToolParserImpl;
-    std::shared_ptr<Llama32PythonicToolParserImpl> m_impl;
+    std::unique_ptr<Llama32PythonicToolParserImpl> m_impl;
 };
 
 class OPENVINO_GENAI_EXPORTS Llama32JsonToolParser : public ParserBase {
 // Does not modify original content, only extracts and adds tool calls
 public:
     explicit Llama32JsonToolParser(bool keep_original_content = true);
+    ~Llama32JsonToolParser();
     void parse(JsonContainer& input) override;
 private:
     class Llama32JsonToolParserImpl;
-    std::shared_ptr<Llama32JsonToolParserImpl> m_impl;
+    std::unique_ptr<Llama32JsonToolParserImpl> m_impl;
 };
 
 class OPENVINO_GENAI_EXPORTS BaseReasoningParser : public ParserBase{
@@ -91,9 +93,10 @@ public:
         const std::string& open_tag = "<think>", 
         const std::string& close_tag = "</think>");
     void parse(JsonContainer& input) override;
+    ~BaseReasoningParser();
 private:
     class BaseReasoningParserImpl;
-    std::shared_ptr<BaseReasoningParserImpl> m_impl;
+    std::unique_ptr<BaseReasoningParserImpl> m_impl;
 };
 
 }  // namespace genai

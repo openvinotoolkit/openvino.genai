@@ -17,7 +17,6 @@ private:
     std::string m_open_tag;
     std::string m_close_tag;
     std::string m_text_cache = "";
-    std::map<std::string, std::string> accumulated_parsed;
 public:
     bool m_deactivated = false;
     ReasoningParserImpl() = default;
@@ -59,8 +58,6 @@ public:
         auto content_str = msg["content"].get_string();
 
         if (!m_think_tag_opened && txt_chunk.find(m_open_tag) != std::string::npos && !m_expect_open_tag) {
-            OPENVINO_ASSERT(m_open_tag.find(m_text_cache) != std::string::npos, "m_text_cache should be a prefix of m_open_tag");
-            
             // Thinking has started
             auto open_idx = txt_chunk.find(m_open_tag);
             reason_str += txt_chunk.substr(open_idx + std::string(m_open_tag).size(), txt_chunk.size() - (open_idx + std::string(m_open_tag).size()));
@@ -151,8 +148,10 @@ public:
 };
 
 ReasoningParser::ReasoningParser(bool expect_open_tag, bool keep_original_content, const std::string& open_tag, const std::string& close_tag) {
-    m_impl = std::make_shared<ReasoningParserImpl>(expect_open_tag, keep_original_content, open_tag, close_tag);
+    m_impl = std::make_unique<ReasoningParserImpl>(expect_open_tag, keep_original_content, open_tag, close_tag);
 }
+
+ReasoningParser::~ReasoningParser() = default;
 
 std::string ReasoningParser::parse(
     JsonContainer& msg,
@@ -207,12 +206,14 @@ public:
 };
 
 Llama32PythonicToolParser::Llama32PythonicToolParser(bool keep_original_content) {
-    m_impl = std::make_shared<Llama32PythonicToolParserImpl>(keep_original_content);
+    m_impl = std::make_unique<Llama32PythonicToolParserImpl>(keep_original_content);
 }
 
 void Llama32PythonicToolParser::parse(JsonContainer& input) {
     m_impl->parse(input);
 }
+
+Llama32PythonicToolParser::~Llama32PythonicToolParser() = default;
 
 class Llama32JsonToolParser::Llama32JsonToolParserImpl {
 private:
@@ -240,12 +241,14 @@ public:
 };
 
 Llama32JsonToolParser::Llama32JsonToolParser(bool keep_original_content) {
-    m_impl = std::make_shared<Llama32JsonToolParserImpl>(keep_original_content);
+    m_impl = std::make_unique<Llama32JsonToolParserImpl>(keep_original_content);
 }
 
 void Llama32JsonToolParser::parse(JsonContainer& input) {
     m_impl->parse(input);
 }
+
+Llama32JsonToolParser::~Llama32JsonToolParser() = default;
 
 class BaseReasoningParser::BaseReasoningParserImpl {
 public:
@@ -285,11 +288,15 @@ private:
 };
 
 BaseReasoningParser::BaseReasoningParser(bool expect_open_tag, bool keep_original_content, const std::string& open_tag, const std::string& close_tag) {
-    m_impl = std::make_shared<BaseReasoningParserImpl>(expect_open_tag, keep_original_content, open_tag, close_tag);
+    m_impl = std::make_unique<BaseReasoningParserImpl>(expect_open_tag, keep_original_content, open_tag, close_tag);
 }
 
 void BaseReasoningParser::parse(JsonContainer& input) {
     m_impl->parse(input);
 }
+
+BaseReasoningParser::~BaseReasoningParser() = default;
+
+ParserBase::~ParserBase() = default;
 
 } // namespace ov::genai

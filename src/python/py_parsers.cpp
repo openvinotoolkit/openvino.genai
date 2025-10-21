@@ -31,6 +31,7 @@ namespace {
 
 class ConstructableIncrementalParserBase: public IncrementalParserBase {
 public:
+    using IncrementalParserBase::IncrementalParserBase;
     std::string parse(
         JsonContainer& msg,
         const std::string& previous_text, 
@@ -38,10 +39,49 @@ public:
         const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt, 
         const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
     ) override {
+        // Convert JsonContainer to py::dict
+        py::dict py_msg = pyutils::json_container_to_py_object(msg);
+
+        py::function parse_method = py::get_override(static_cast<const IncrementalParserBase*>(this), "parse");
+        if (!parse_method) {
+            throw std::runtime_error("parse method not implemented in Python subclass");
+        }
+        
+        auto res = parse_method(
+            py_msg,
+            previous_text,
+            delta_text,
+            previous_tokens,
+            delta_tokens
+        );
+        
+        // iterate throught py_msg and update msg
+        msg.clear();
+        auto msg_anymap = pyutils::py_object_to_any_map(py_msg);
+        for (const auto& [key, value] : msg_anymap) {
+            if (value.is<std::string>()) {
+                msg[key] = value.as<std::string>();
+            } else if (value.is<ov::AnyMap>()) {
+                msg[key] = JsonContainer(value.as<ov::AnyMap>());
+            } else {
+                OPENVINO_THROW("Unsupported type in JsonContainer update from Python dict");
+            }
+        }
+        return res.cast<std::string>();
+    }
+
+    // This method should be overridden in Python
+    std::string parse(
+        py::dict& msg,
+        const std::string& previous_text,
+        std::string& delta_text,
+        const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt,
+        const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
+    ) {
         PYBIND11_OVERRIDE_PURE(
-            std::string,  // Return type
-            IncrementalParserBase,  // Parent class
-            parse,  // Name of function in C++ (must match Python name)
+            std::string,
+            IncrementalParserBase,
+            "parse",
             msg,
             previous_text,
             delta_text,
@@ -53,13 +93,30 @@ public:
 
 class ConstructableParserBase: public ParserBase {
 public:
-    void parse(JsonContainer& text) override {
-        PYBIND11_OVERRIDE_PURE(
-            void,  // Return type
-            ParserBase,  // Parent class
-            parse,  // Name of function in C++ (must match Python name)
-            text  // Argument(s)
-        );
+    void parse(JsonContainer& msg) override {
+        py::gil_scoped_acquire acquire;
+        
+        py::function parse_method = py::get_override(static_cast<const ParserBase*>(this), "parse");
+        if (!parse_method) {
+            throw std::runtime_error("parse method not implemented in Python subclass");
+        }
+        
+        // Convert JsonContainer to py::dict
+       py::dict py_msg = pyutils::json_container_to_py_object(msg);
+       parse_method(py_msg);
+
+       // iterate throught py_msg and update msg
+       msg.clear();
+       auto msg_anymap = pyutils::py_object_to_any_map(py_msg);
+       for (const auto& [key, value] : msg_anymap) {
+           if (value.is<std::string>()) {
+               msg[key] = value.as<std::string>();
+           } else if (value.is<ov::AnyMap>()) {
+               msg[key] = JsonContainer(value.as<ov::AnyMap>());
+           } else {
+               OPENVINO_THROW("Unsupported type in JsonContainer update from Python dict");
+           }
+       }
     }
 };
 
