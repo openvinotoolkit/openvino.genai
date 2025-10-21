@@ -368,7 +368,8 @@ public:
         if (system_message.empty()) {
             return;
         }
-        m_history = {{{"role", "system"}, {"content", m_system_message}}};
+        m_history.clear();
+        m_history.push_back({{"role", "system"}, {"content", m_system_message}});
     }
 
     void finish_chat() override {

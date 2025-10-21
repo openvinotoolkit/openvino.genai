@@ -100,3 +100,5 @@ Napi::Object cpp_map_to_js_object(const Napi::Env& env, const std::map<std::stri
 }
 
 bool is_napi_value_int(const Napi::Env& env, const Napi::Value& num);
+
+std::string json_stringify(const Napi::Env& env, const Napi::Value& value);
