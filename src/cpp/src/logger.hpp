@@ -10,6 +10,7 @@
 namespace ov::genai {
 inline ov::log::Level get_openvino_env_log_level() {
     const char* env = std::getenv("OPENVINO_LOG_LEVEL");
+    static ov::log::Level cur_log_level;
     if (!env)
         return ov::log::Level::NO;
     try {
@@ -19,17 +20,17 @@ inline ov::log::Level get_openvino_env_log_level() {
         if (idx != env_str.size()) {
             return ov::log::Level::NO;
         }
-        return static_cast<ov::log::Level>(env_var_value);
+        cur_log_level = static_cast<ov::log::Level>(env_var_value);
+        return cur_log_level;
     } catch (...) {
         return ov::log::Level::NO;
     }
 }
 
-const ov::log::Level cur_log_level = get_openvino_env_log_level();
 class Logger {
 public:
     Logger() {
-        log_level = cur_log_level;
+        log_level = get_openvino_env_log_level();
     }
     Logger(const Logger&) = delete;
     Logger& operator=(const Logger&) = delete;
