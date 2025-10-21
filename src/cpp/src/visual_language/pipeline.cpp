@@ -332,7 +332,10 @@ public:
                 m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
             } else {
                 m_history.pop_back();
-                m_encoded_images.resize(m_encoded_images.size() - images.size());
+                if (m_use_full_chat_history) {
+                    OPENVINO_ASSERT(images.size() <= encoded_images.size(), "Number of images to remove is more than stored images!");
+                    m_encoded_images.resize(m_encoded_images.size() - images.size());
+                }
             }
         } else
             kv_cache_state.reset_state();
