@@ -42,7 +42,6 @@ public:
         return &instance;
     }
     void do_log(ov::log::Level level, const char* file, int line, const std::string& msg) {
-        static std::mutex log_mutex;
         std::lock_guard<std::mutex> lock(log_mutex);
         if (level <= log_level) {
             std::cout << format_prefix(level, file, line) << msg << std::endl;
@@ -51,6 +50,7 @@ public:
 
 private:
     ov::log::Level log_level = ov::log::Level::NO;
+    std::mutex log_mutex;
     std::string get_filename(const std::string& filePath) const {
         auto index = filePath.find_last_of("/\\");
         if (std::string::npos == index) {
