@@ -81,12 +81,6 @@ public:
     // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
     void set_apply_chat_template_status(bool apply_chat_template);
 
-    //set the m_use_full_chat_history flag, which determines whether full chat history or only curent prompt will be used on each iteration in chat mode
-    void set_use_full_chat_history_mode(bool use_full_chat_history);
-
-    // get the m_use_full_chat_history flag
-    bool is_use_full_chat_history();
-
     // finishes chat and clears a chat history
     void finish_chat();
 
@@ -120,8 +114,6 @@ private:
         // True if chat mode is activated to save conversation
         // history between generate() calls.
         bool m_is_chat_conversation = false;
-        // if True, full history will be used as prompt on each chat generation
-        bool m_use_full_chat_history = false;
         // Chat history
         // True if chat template should be applied for non-chat scenario
         bool m_apply_chat_template = true;
@@ -172,14 +164,6 @@ private:
 
         void set_apply_chat_template_status(bool apply_chat_template) {
             m_apply_chat_template = apply_chat_template;
-        }
-
-        void set_use_full_chat_history_mode(bool use_full_chat_history) {
-            m_use_full_chat_history = use_full_chat_history;
-        }
-
-        bool is_use_full_chat_history() {
-            return m_use_full_chat_history;
         }
 
         void set_add_special_tokens(bool value) {

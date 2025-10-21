@@ -62,8 +62,12 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     size_t m_image_id = 0;
     size_t m_video_id = 0;
     ChatHistory m_history;
-    // It stores encoded images in case when use_full_chat_history_mode is on
+    // if True, full history will be used as prompt on each chat generation
+    bool m_use_full_chat_history = false;
+    // It stores encoded images in case when m_use_full_chat_history is true
     std::vector<ov::genai::EncodedImage> m_encoded_images;
+    // Is used when m_use_full_chat_history is true
+    std::string m_system_message;
 public:
     VLMPipelineImpl(
         const std::filesystem::path& models_dir,
@@ -120,7 +124,7 @@ public:
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
         // NPU is not supporting history, so in chat scenarios let's use full chat history on each iteration
-        m_inputs_embedder->set_use_full_chat_history_mode(m_is_npu);
+        m_use_full_chat_history = m_is_npu;
 
         utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
         kv_cache_state.seq_length_axis = kv_pos.seq_len;
@@ -213,20 +217,21 @@ public:
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
         }
         auto encoded_images = m_inputs_embedder->encode_images(images);
+        OPENVINO_ASSERT(images.size() == encoded_images.size(), "Input images size and encoded images size mismatch!");
         const auto encoded_videos = m_inputs_embedder->encode_videos(videos);
         auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
 
-        bool use_full_chat_history = m_inputs_embedder->is_use_full_chat_history();
         if (m_is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
             unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
 
-            if (use_full_chat_history) {
+            if (m_use_full_chat_history) {
                 for (auto&& encoded_image : encoded_images)
                     m_encoded_images.push_back(encoded_image);
                 image_sequence.resize(m_encoded_images.size());
                 std::iota(image_sequence.begin(), image_sequence.end(), 0);
                 encoded_images = m_encoded_images;
+                m_inputs_embedder->start_chat(m_system_message);
             } else {
                 for (size_t idx = 0; idx < image_sequence.size(); idx++) {
                    image_sequence[idx] -= m_image_id;
@@ -259,7 +264,7 @@ public:
 
         utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
         if (m_is_chat_conversation) {
-            if (use_full_chat_history) {
+            if (m_use_full_chat_history) {
                 kv_cache_state.reset_state();
                 m_language.reset_state();
                 m_language.get_tensor("attention_mask").set_shape({1, 0});
@@ -318,19 +323,21 @@ public:
             m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status);
 
             if (finish_info.streaming_finish_status != ov::genai::GenerationStatus::CANCEL) {
-                m_image_id += encoded_images.size();
+                // using here images.size() instead of encoded_images.size() since
+                // encoded_images could be overriden when m_use_full_chat_history is true
+                m_image_id += images.size();
                 m_video_id += encoded_videos.size();
                 // Tail of chat template is missing in KV cache.
                 // Find the tail to concatenate it with the next input prompt.
                 m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
             } else {
                 m_history.pop_back();
-                m_encoded_images.resize(m_encoded_images.size() - encoded_images.size());
+                m_encoded_images.resize(m_encoded_images.size() - images.size());
             }
         } else
             kv_cache_state.reset_state();
 
-        if (!(m_is_chat_conversation && use_full_chat_history))
+        if (!(m_is_chat_conversation && m_use_full_chat_history))
             m_encoded_images.clear();
 
         auto generate_end_time = std::chrono::steady_clock::now();
@@ -356,11 +363,12 @@ public:
 
     void start_chat(const std::string& system_message) override {
         m_is_chat_conversation = true;
-        m_inputs_embedder->start_chat(system_message);
+        m_system_message = system_message;
+        m_inputs_embedder->start_chat(m_system_message);
         if (system_message.empty()) {
             return;
         }
-        m_history = {{{"role", "system"}, {"content", system_message}}};
+        m_history = {{{"role", "system"}, {"content", m_system_message}}};
     }
 
     void finish_chat() override {

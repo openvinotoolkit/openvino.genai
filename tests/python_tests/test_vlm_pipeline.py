@@ -108,8 +108,9 @@ def get_ov_model(model_id):
 
 
 prompts = [
-    "What is on the image?",
+    "What is in the image?",
     "What is special about this image?",
+    "Describe the image"
 ]
 
 
@@ -210,6 +211,11 @@ model_ids = [
     "qnguyen3/nanoLLaVA",
     *video_model_ids
 ]
+
+npu_unsupported_models = {
+    "katuni4ka/tiny-random-internvl2",
+    "katuni4ka/tiny-random-gemma3",
+}
 
 # On macOS, transformers<4.52 is required, but this causes gemma3 to fail
 GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transformers"
@@ -388,7 +394,8 @@ def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
         return False
 
     models_path = get_ov_model(model_id)
-    ov_pipe = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=backend)
+    ov_pipe = VLMPipeline(models_path, device, ATTENTION_BACKEND=backend)
+
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 30
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
@@ -418,6 +425,82 @@ def test_vlm_pipeline_chat(model_id, system_message, iteration_images, backend):
 
     ov_pipe.finish_chat()
     gc.collect()
+
+
+@pytest.fixture(scope="module", params=[
+    pytest.param([[], []], id="generation with text input only"),
+    pytest.param(
+        [[], ["cat_tensor"], ["car_tensor"], ["handwritten_tensor"], []],
+        id="combination of generations with text input and text + image input, empty image first"
+    ),
+    pytest.param(
+        [["cat_tensor"], ["car_tensor"], ["handwritten_tensor"]],
+        id="generation with text + image input"
+    ),
+    pytest.param(
+        [["cat_tensor"], ["car_tensor"], [], ["handwritten_tensor"]],
+        id="combination of generations with text input and text + image input, image input first"
+    ),
+])
+def iteration_images_npu(request):
+    return [[request.getfixturevalue(image) for image in bundle] for bundle in request.param]
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("model_id", model_ids)
+@pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
+def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
+    def run_chat(ov_pipe, system_message, iteration_images):
+        result_from_streamer = []
+        def streamer(word: str) -> bool:
+            result_from_streamer.append(word)
+            return False
+
+        generation_config = ov_pipe.get_generation_config()
+        generation_config.max_new_tokens = 30
+        generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
+
+        ov_pipe.start_chat(system_message)
+
+        images = iteration_images[0]
+        result = []
+
+        res = ov_pipe.generate(
+            prompts[0],
+            images=images,
+            generation_config=generation_config,
+            streamer=streamer,
+        )
+        assert res.texts[0] == "".join(result_from_streamer)
+        result += []
+
+        for i, image_set in enumerate(iteration_images[1:]):
+            result_from_streamer = []
+            res = ov_pipe.generate(
+                prompts[i % len(prompts)],
+                images=image_set,
+                generation_config=generation_config,
+                streamer=streamer,
+            )
+            assert res.texts[0] == "".join(result_from_streamer)
+
+        ov_pipe.finish_chat()
+
+    if model_id in npu_unsupported_models:
+        pytest.skip(f"{model_id} is not supported")
+
+    models_path = get_ov_model(model_id)
+    properties = {
+        "DEVICE_PROPERTIES": {
+            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 4096}
+        }
+    }
+    npu_pipe = VLMPipeline(models_path, "NPU", config=properties)
+
+    run_chat(npu_pipe, system_message, iteration_images_npu)
+
+    gc.collect()
+
 
 @pytest.fixture(scope="module", params=[
     pytest.param(
@@ -584,12 +667,7 @@ def test_perf_metrics(backend, cat_tensor):
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
 def test_vlm_npu_no_exception(model_id, backend, cat_tensor, handwritten_tensor, car_tensor):
-    unsupported_models = {
-        "katuni4ka/tiny-random-internvl2",
-        "katuni4ka/tiny-random-gemma3",
-    }
-
-    if model_id in unsupported_models:
+    if model_id in npu_unsupported_models:
         pytest.skip(f"{model_id} is not supported")
 
     models_path = get_ov_model(model_id)
