@@ -73,6 +73,6 @@ The script prints performance metrics (time-to-first-token TTFT, throughput, per
 
 ## Current Limitations
 * Current implementation assumes a standard image encoder output; exotic hierarchical or sparse encoders might require adjusted scoring strategies.
-* Pruning applied only after the initial image encoding; does not dynamically re-introduce pruned tokens later.
-* Score computation details are internal; no per-token debug API exposed yet.
-* Current implementation supports QWen-VL models only; it will be applied to other models in a subsequent release.
+* Pruning is applied only after the initial image encoding; does not dynamically re-introduce pruned tokens later.
+* Score computation details are internal; no per-token debug API is exposed yet.
+* The current implementation supports Qwen-VL models only; support for other models will be added in a subsequent release.
