@@ -3,13 +3,9 @@
 
 #include "utils.hpp"
 
-#include <chrono>
-#include <fstream>
-#include <iomanip>
-#include <iostream>
-#include <memory>
-#include <sstream>
 #include <variant>
+#include <fstream>
+#include <memory>
 
 #include "openvino/op/add.hpp"
 #include "openvino/op/divide.hpp"
