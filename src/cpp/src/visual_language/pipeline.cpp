@@ -210,14 +210,6 @@ public:
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
         }
 
-        // Add text prompt to vision config for CDPruner
-        if (generation_config.pruning_ratio > 0 && generation_config.pruning_ratio < 100) {
-            std::cout << "[CDPruner] Warning: Pruning is disabled. It is only supported when using PA as the attention "
-                         "backend."
-                      << std::endl;
-            // Disable CDPruner
-            generation_config.pruning_ratio = 0;
-        }
         m_inputs_embedder->set_visual_token_pruning_config(generation_config.pruning_ratio,
                                                            generation_config.relevance_weight);
 
