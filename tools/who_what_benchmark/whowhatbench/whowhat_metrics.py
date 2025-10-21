@@ -12,7 +12,6 @@ import numpy as np
 from sentence_transformers import SentenceTransformer, util
 from transformers import CLIPImageProcessor, CLIPModel
 from tqdm import tqdm
-import math
 
 
 def evaluate_similarity(model, data_gold, data_prediction):
@@ -216,18 +215,16 @@ class RerankingSimilarity:
 
             per_query_text = []
             for i, score in enumerate(gold_data):
-                # documets on the same position of top_n is different
-                if i >= len(prediction_data) or int(score[0]) != int(prediction_data[i][0]):
-                    per_query_text.append(math.inf)
-                else:
-                    per_query_text.append(abs(score[1] - prediction_data[i][1]))
+                document_idx = score[0]
+                pred_i = 0
+                for pred_i, pred_score in enumerate(prediction_data):
+                    if int(pred_score[0]) == int(document_idx):
+                        per_query_text.append(abs(score[1] - pred_score[1]))
+                        break
+                prediction_data = np.delete(prediction_data, pred_i, 0)
             metric_per_query.append(per_query_text)
-
-            if math.inf in per_query_text:
-                similarity_per_query.append(0)
-            else:
-                dist = np.linalg.norm(per_query_text)
-                similarity_per_query.append(1 / (1 + dist))
+            dist = np.linalg.norm(per_query_text)
+            similarity_per_query.append(1 / (1 + dist))
 
         metric_dict = {"similarity": np.mean(similarity_per_query)}
         return metric_dict, {"similarity": similarity_per_query, "per_text_score_list": metric_per_query}

@@ -12,7 +12,7 @@ import datasets
 import numpy as np
 
 
-DEFAULT_TOP_K = 5
+DEFAULT_TOP_K = 100
 DEFAULT_MAX_LENGTH = 200
 DEFAULT_MAX_LENGTH_QWEN = 8192
 
@@ -164,11 +164,10 @@ class RerankingEvaluator(BaseEvaluator):
                 else:
                     scores = outputs.flatten()
                 scores = scipy.special.expit(scores)
-            sorted_scores = []
+            ordered_scores = []
             for index, (score, _) in enumerate(zip(scores, passages)):
-                sorted_scores.append(np.array([index, score.numpy()]))
-            sorted_scores.sort(key=lambda x: x[1], reverse=True)
-            return np.array(sorted_scores[:DEFAULT_TOP_K])
+                ordered_scores.append(np.array([index, score.numpy()]))
+            return np.array(ordered_scores[:DEFAULT_TOP_K])
 
         gen_answer_fn = gen_answer_fn or default_gen_answer
 
