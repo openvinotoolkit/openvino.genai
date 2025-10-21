@@ -26,7 +26,7 @@ env:
   SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
   HF_HOME: /mount/caches/huggingface/lin
   OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/0ace3b784c452c5cd600b84f72ee618ef7b79caf/
-  OPENVINO_LOG_LEVEL: 5
+  OPENVINO_LOG_LEVEL: 4
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
   ARTIFACTS_SHARE: '/mount/build-artifacts'
@@ -700,7 +700,7 @@ jobs:
 
       - name: Setup Node
         if: ${{ matrix.test.run_condition }}
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
           node-version: 21
 
@@ -850,7 +850,7 @@ jobs:
           merge-multiple: true
 
       - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
