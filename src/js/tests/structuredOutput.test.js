@@ -284,7 +284,7 @@ Use the tool name and arguments as defined in the tool schema.
 If you don't know the answer, just say that you don't know, but try to call the tool if it helps to answer the question.`;
 
     const prompt =
-      "What is the weather in London today and in Paris yesterday, and how many pounds can I get for 100 euros?";
+      "What is the weather in London today and in Paris yesterday with metric units, and how many pounds can I get for 100 euros?";
     await pipeline.startChat(sysMessage);
     try {
       const res = await pipeline.generate(prompt, generationConfig);
