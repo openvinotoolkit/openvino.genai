@@ -1,5 +1,8 @@
 #include "include/helper.hpp"
 
+#include "include/addon.hpp"
+#include "include/perf_metrics.hpp"
+
 namespace {
 constexpr const char* JS_SCHEDULER_CONFIG_KEY = "schedulerConfig";
 constexpr const char* CPP_SCHEDULER_CONFIG_KEY = "scheduler_config";
@@ -315,6 +318,18 @@ ov::genai::StructuredOutputConfig js_to_cpp<ov::genai::StructuredOutputConfig>(c
     }
 
     return config;
+}
+    
+ov::genai::PerfMetrics& unwrap<ov::genai::PerfMetrics>(const Napi::Env& env, const Napi::Value& value) {
+    const auto obj = value.As<Napi::Object>();
+    const auto& prototype = env.GetInstanceData<AddonData>()->perf_metrics;
+
+    OPENVINO_ASSERT(prototype, "Invalid pointer to prototype.");
+    OPENVINO_ASSERT(obj.InstanceOf(prototype.Value().As<Napi::Function>()),
+                    "Passed argument is not of type PerfMetrics");
+
+    const auto js_metrics = Napi::ObjectWrap<PerfMetricsWrapper>::Unwrap(obj);
+    return js_metrics->get_value();
 }
 
 template <>

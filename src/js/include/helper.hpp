@@ -57,6 +57,17 @@ ov::genai::StructuredOutputConfig::Tag js_to_cpp<ov::genai::StructuredOutputConf
 template <>
 ov::genai::StructuredOutputConfig::StructuralTag js_to_cpp<ov::genai::StructuredOutputConfig::StructuralTag>(const Napi::Env& env, const Napi::Value& value);
 /**
+ * @brief  Unwraps a C++ object from a JavaScript wrapper.
+ * @tparam TargetType The C++ class type to extract.
+ * @return Reference to the unwrapped C++ object.
+ */
+template <typename TargetType>
+TargetType& unwrap(const Napi::Env& env, const Napi::Value& value);
+
+template <>
+ov::genai::PerfMetrics& unwrap<ov::genai::PerfMetrics>(const Napi::Env& env, const Napi::Value& value);
+
+/**
  * @brief  Template function to convert C++ data types into Javascript data types
  * @tparam TargetType Destinated Javascript data type.
  * @tparam SourceType C++ data type.

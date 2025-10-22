@@ -29,9 +29,16 @@ and architectures, we still recommend converting the model to the IR format usin
 ## Sample Descriptions
 ### Common information
 
-Compile GenAI JavaScript bindings archive first using the instructions in [../../../src/js/README.md](../../../src/js/README.md#build-bindings).
+When you use the [openvino.genai](https://github.com/openvinotoolkit/openvino.genai) **release branch**, install dependencies before running samples.
+In the current directory, run:
+```bash
+npm install
+```
 
-Run `npm install` and the examples will be ready to run.
+If you use the master branch, you may need to follow 
+[this instruction](../../../src/js/README.md#build-bindings) 
+to build the latest version of `openvino-genai-node` from source first, then install dependencies.
+
 
 Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM. For example, the model meta-llama/Llama-2-13b-chat-hf can benefit from being run on a dGPU. Modify the source code to change the device for inference to the GPU.
 
@@ -92,7 +99,18 @@ Recommended models: Qwen/Qwen2.5-3B-Instruct, Qwen/Qwen2.5-7B-Instruct
   node react_sample.js model_dir
   ```
 
-### 6. Structured Output Sample (`structured_output_sample`)
+### 6. LLMs benchmarking sample (`benchmark_genai`)
+- **Description:** 
+  This sample script demonstrates how to benchmark LLMs in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text, and calculating various performance metrics.
+
+  For more information on how performance metrics are calculated, please follow the [performance-metrics tutorial](../../../src/README.md#performance-metrics).
+- **Main Feature:** Benchmark model via GenAI
+- **Run Command:**
+  ```bash
+  node benchmark_genai.js [-m MODEL] [-p PROMPT] [--nw NUM_WARMUP] [-n NUM_ITER] [--mt MAX_NEW_TOKENS] [-d DEVICE]
+  ```
+
+### 7. Structured Output Sample (`structured_output_sample`)
 - **Description:**
 This sample demonstrates how to use OpenVINO GenAI to generate structured outputs such as JSON from text prompts. This sample implementation is split into multiple "generate" calls to mitigate generating complex, variadic JSON structures in a single pass. This is done because not all models are able to generate a complex JSON, with a variadic number of elements in one shot, especially if the model is small and not fine-tuned for this task. By separating the task into two stages, it becomes possible to use smaller models and still achieve generated JSON good quality.
 
@@ -122,7 +140,7 @@ Recommended models: meta-llama/Llama-3.2-1B-Instruct, meta-llama/Llama-3.2-8B-In
 Structured output enforcement guarantees correct JSON formatting, but does not ensure the factual correctness or sensibility of the content. The model may generate implausible or nonsensical data, such as `{"name": "John", "age": 200000}` or `{"model": "AbrakaKadabra9999######4242"}`. These are valid JSONs but may not make sense. For best results, use the latest or fine-tuned models for this task to improve the quality and relevance of the generated output.
 
 
-### 7. Tool Calling with Structural Tags Sample (`structural_tags_generation`)
+### 8. Tool Calling with Structural Tags Sample (`structural_tags_generation`)
 - **Description:**
   Structural tags is a technique that allows to switch from regular sampling to structural output generation and back during the text generation.
   If during the sampling process the model produces a trigger string, it switches to structured mode and generates output according to a JSON schema defined by the tag. After that the model switches back to regular sampling mode.
@@ -157,7 +175,7 @@ If the model does not generate trigger strings there will be no structural const
 The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other models may not produce the expected results or might require different system prompt.
 
 
-### 8. Compound Grammar Generation Sample (`compound_grammar_generation`)
+### 9. Compound Grammar Generation Sample (`compound_grammar_generation`)
 - **Description:**
   This sample demonstrates advanced structured output generation using compound grammars in OpenVINO GenAI.
   It showcases how to combine multiple grammar types - Regex, JSONSchema and EBNF - using Union and Concat operations to strictly control LLM output.
@@ -179,6 +197,15 @@ The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other mode
 - **Notes:**
   This sample is ideal for scenarios requiring strict control over LLM outputs, such as building agents that interact with APIs or require validated structured responses. It showcases how to combine regex triggers and JSON schema enforcement for robust output generation.
   The sample is verified with `microsoft/Phi-4-mini-instruct` model. Other models may not produce the expected results or might require different system prompt.
+
+#### Options
+- `-m`, `--model`: Path to model and tokenizers base directory. [string] [required]
+- `-p`, `--prompt`: The prompt to generate text. If without `-p` and `--pf`, the default prompt is `The Sky is blue because`. [string]
+- `--prompt_file`, `--pf`: Read prompt from file. [string]
+- `--num_warmup`, `--nw`: Number of warmup iterations. [number] [default: 1]
+- `-n`, `--num_iter`: Number of iterations. [number] [default: 2]
+- `--max_new_tokens`, `--mt`: Maximal number of new tokens. [number] [default: 20]
+- `-d`, `--device`: Device to run the model on. [string] [default: "CPU"]
 
 ### Troubleshooting
 
