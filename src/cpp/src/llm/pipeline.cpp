@@ -17,22 +17,37 @@
 
 namespace {
 
-void run_parsers(ov::genai::DecodedResults& res, const ov::genai::OptionalGenerationConfig& generation_config, const ov::genai::StreamerVariant& streamer) {
+// This is an decorator function that wraps a generation callable to apply parsers and reset them before generation if needed.
+ov::genai::DecodedResults run_generate_with_parsers(const ov::genai::OptionalGenerationConfig& generation_config,
+                 const ov::genai::StreamerVariant& streamer,
+                std::function<ov::genai::DecodedResults(void)> generate_callable) {
+                    
+    std::shared_ptr<ov::genai::TextParserStreamer> parser_streamer;
     // If streamer is of StreamerBase type, and it is TextParserStreamer, get parsed message
     // Streaming is available only for batch size 1 therefore only parsed[0]
     if (auto streamer_obj = std::get_if<std::shared_ptr<ov::genai::StreamerBase>>(&streamer)) {
-        if (auto parser_streamer = std::dynamic_pointer_cast<ov::genai::TextParserStreamer>(*streamer_obj)) {
-            res.parsed.resize(1);
-            res.parsed[0] = parser_streamer->get_parsed_message();
-        }
+        parser_streamer = std::dynamic_pointer_cast<ov::genai::TextParserStreamer>(*streamer_obj);
     }
 
+    // determine from generation config when 'need_to_reset_parser' will be available
+    bool need_to_reset_parser = true;
+    if (parser_streamer && need_to_reset_parser) {
+        parser_streamer->reset();
+    }
+
+    auto res = generate_callable();
+
+    res.parsed.resize(1);
+    res.parsed[0] = parser_streamer->get_parsed_message();
+
+    // If no parsers are defined, return
     if (!generation_config.has_value() || generation_config->parsers.empty()) {
-        return;
+        return res;
     }
     
     std::vector<std::shared_ptr<ov::genai::Parser>> parsers = generation_config->parsers;
     res.parsed.resize(res.texts.size());
+    
     // Apply Base parsers sequentially even if IncrementalParser has run.
     for (size_t i = 0; i < res.texts.size(); ++i) {
         auto& msg = res.parsed[i];
@@ -40,12 +55,13 @@ void run_parsers(ov::genai::DecodedResults& res, const ov::genai::OptionalGenera
             // Initialize msg with content
             msg["content"] = res.texts[i];
         }
+        
         for (auto& parser: parsers) {
-            // TODO: Check the state of incremental parser and reset if necessary
             parser->parse(msg);
         }
         res.parsed[i] = msg;
     }
+    return res;
 }
 
 }
@@ -285,9 +301,10 @@ DecodedResults LLMPipeline::generate(
         StringInputs inputs,
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer) {
-    auto res = m_pimpl->generate(inputs, generation_config, streamer);
-    run_parsers(res, generation_config, streamer);
-    return res;
+
+    return run_generate_with_parsers(generation_config, streamer, [&]() -> DecodedResults {
+        return m_pimpl->generate(inputs, generation_config, streamer);
+    });
 }
 
 DecodedResults LLMPipeline::generate(StringInputs text, const ov::AnyMap& config_map) {
@@ -295,9 +312,10 @@ DecodedResults LLMPipeline::generate(StringInputs text, const ov::AnyMap& config
     GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
     config.update_generation_config(config_map);
     auto streamer = utils::get_streamer_from_map(config_map);
-    auto res = m_pimpl->generate(text, config, streamer);
-    run_parsers(res, config_arg, streamer);
-    return res;
+    
+    return run_generate_with_parsers(config_arg, streamer, [&]() -> DecodedResults {
+        return m_pimpl->generate(text, config, streamer);
+    });
 }
 
 EncodedResults LLMPipeline::generate(
