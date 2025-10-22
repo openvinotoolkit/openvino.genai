@@ -153,7 +153,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 std::vector<GenerationResult>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const std::vector<ChatHistory>& histories,
-    std::vector<ov::genai::GenerationConfig> sampling_params,
+    const std::vector<ov::genai::GenerationConfig>& sampling_params,
     const StreamerVariant& streamer
 ) {
     // TODO Enable chat history input for embeddings models.

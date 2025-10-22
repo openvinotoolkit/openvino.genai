@@ -154,7 +154,7 @@ public:
      */
     std::vector<GenerationResult>
     generate(const std::vector<ChatHistory>& histories,
-             std::vector<GenerationConfig> sampling_params,
+             const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer);
 
     /**
