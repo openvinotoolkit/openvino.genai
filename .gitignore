@@ -40,3 +40,4 @@ CMakeUserPresets.json
 __pycache__
 .py-build-cmake_cache
 *.egg-info
+_codeql_detected_source_root
