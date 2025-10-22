@@ -163,9 +163,9 @@ std::string ReasoningParser::parse(
     return m_impl->parse(msg, previous_text, delta_text, previous_tokens, delta_tokens);
 }
 
-class Llama32PythonicToolParser::Llama32PythonicToolParserImpl {
+class Llama3PythonicToolParser::Llama3PythonicToolParserImpl {
 public:
-    Llama32PythonicToolParserImpl(bool keep_original_content) : m_keep_original_content(keep_original_content) {}
+    Llama3PythonicToolParserImpl(bool keep_original_content) : m_keep_original_content(keep_original_content) {}
     bool m_keep_original_content;
 
     void parse(JsonContainer& input) {
@@ -205,21 +205,21 @@ public:
     }
 };
 
-Llama32PythonicToolParser::Llama32PythonicToolParser(bool keep_original_content) {
-    m_impl = std::make_unique<Llama32PythonicToolParserImpl>(keep_original_content);
+Llama3PythonicToolParser::Llama3PythonicToolParser(bool keep_original_content) {
+    m_impl = std::make_unique<Llama3PythonicToolParserImpl>(keep_original_content);
 }
 
-void Llama32PythonicToolParser::parse(JsonContainer& input) {
+void Llama3PythonicToolParser::parse(JsonContainer& input) {
     m_impl->parse(input);
 }
 
-Llama32PythonicToolParser::~Llama32PythonicToolParser() = default;
+Llama3PythonicToolParser::~Llama3PythonicToolParser() = default;
 
-class Llama32JsonToolParser::Llama32JsonToolParserImpl {
+class Llama3JsonToolParser::Llama3JsonToolParserImpl {
 private:
     bool m_keep_original_content;
 public:
-    Llama32JsonToolParserImpl(bool keep_original_content) : m_keep_original_content(keep_original_content) {}
+    Llama3JsonToolParserImpl(bool keep_original_content) : m_keep_original_content(keep_original_content) {}
 
     void parse(JsonContainer& message) {
         // Find JSON in the message
@@ -240,15 +240,15 @@ public:
     }
 };
 
-Llama32JsonToolParser::Llama32JsonToolParser(bool keep_original_content) {
-    m_impl = std::make_unique<Llama32JsonToolParserImpl>(keep_original_content);
+Llama3JsonToolParser::Llama3JsonToolParser(bool keep_original_content) {
+    m_impl = std::make_unique<Llama3JsonToolParserImpl>(keep_original_content);
 }
 
-void Llama32JsonToolParser::parse(JsonContainer& input) {
+void Llama3JsonToolParser::parse(JsonContainer& input) {
     m_impl->parse(input);
 }
 
-Llama32JsonToolParser::~Llama32JsonToolParser() = default;
+Llama3JsonToolParser::~Llama3JsonToolParser() = default;
 
 class BaseReasoningParser::BaseReasoningParserImpl {
 public:

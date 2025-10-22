@@ -63,26 +63,26 @@ public:
     virtual void parse(JsonContainer& text) = 0;
 };
 
-class OPENVINO_GENAI_EXPORTS Llama32PythonicToolParser : public ParserBase {
+class OPENVINO_GENAI_EXPORTS Llama3PythonicToolParser : public ParserBase {
 // Does not modify original content, only extracts and adds tool calls
 public:
-    explicit Llama32PythonicToolParser(bool keep_original_content = true);
-    ~Llama32PythonicToolParser();
+    explicit Llama3PythonicToolParser(bool keep_original_content = true);
+    ~Llama3PythonicToolParser();
     void parse(JsonContainer& input) override;
 private:
-    class Llama32PythonicToolParserImpl;
-    std::unique_ptr<Llama32PythonicToolParserImpl> m_impl;
+    class Llama3PythonicToolParserImpl;
+    std::unique_ptr<Llama3PythonicToolParserImpl> m_impl;
 };
 
-class OPENVINO_GENAI_EXPORTS Llama32JsonToolParser : public ParserBase {
+class OPENVINO_GENAI_EXPORTS Llama3JsonToolParser : public ParserBase {
 // Does not modify original content, only extracts and adds tool calls
 public:
-    explicit Llama32JsonToolParser(bool keep_original_content = true);
-    ~Llama32JsonToolParser();
+    explicit Llama3JsonToolParser(bool keep_original_content = true);
+    ~Llama3JsonToolParser();
     void parse(JsonContainer& input) override;
 private:
-    class Llama32JsonToolParserImpl;
-    std::unique_ptr<Llama32JsonToolParserImpl> m_impl;
+    class Llama3JsonToolParserImpl;
+    std::unique_ptr<Llama3JsonToolParserImpl> m_impl;
 };
 
 class OPENVINO_GENAI_EXPORTS BaseReasoningParser : public ParserBase{
@@ -98,6 +98,8 @@ private:
     class BaseReasoningParserImpl;
     std::unique_ptr<BaseReasoningParserImpl> m_impl;
 };
+
+// TODO: DeepSeekR1ReasoningParser -> DeepSeekR1IncrementalParser
 
 }  // namespace genai
 }  // namespace ov

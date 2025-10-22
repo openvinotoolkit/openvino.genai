@@ -9,7 +9,7 @@
 
 using namespace ov::genai;
 
-TEST(ParserTest, test_llama32_parser_1) {
+TEST(ParserTest, test_llama3_parser_1) {
     std::string prompt = R"(What's the weather in New York today?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n[get_weather(location="New York, NY", unit="celsius")]<|eom_id|>)";
     // By default content should keep original values.
     
@@ -25,7 +25,7 @@ TEST(ParserTest, test_llama32_parser_1) {
     }));
 
 
-    std::shared_ptr<Llama32PythonicToolParser> parser = std::make_shared<Llama32PythonicToolParser>();
+    std::shared_ptr<Llama3PythonicToolParser> parser = std::make_shared<Llama3PythonicToolParser>();
     JsonContainer input;
     input["content"] = prompt;
     parser->parse(input);
@@ -33,7 +33,7 @@ TEST(ParserTest, test_llama32_parser_1) {
     ASSERT_TRUE(expected == input);
 }
 
-TEST(ParserTest, test_llama32_parser_2) {
+TEST(ParserTest, test_llama3_parser_2) {
     std::string prompt = R"(What's the weather in New York today?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n[get_weather(location="New York, NY", unit="celsius")]<|eom_id|>)";
     
     JsonContainer expected;
@@ -47,7 +47,7 @@ TEST(ParserTest, test_llama32_parser_2) {
         }}
     })));
 
-    std::shared_ptr<Llama32PythonicToolParser> parser = std::make_shared<Llama32PythonicToolParser>(/*keep_original_content*/ false);
+    std::shared_ptr<Llama3PythonicToolParser> parser = std::make_shared<Llama3PythonicToolParser>(/*keep_original_content*/ false);
     JsonContainer input;
     input["content"] = prompt;
     parser->parse(input);
