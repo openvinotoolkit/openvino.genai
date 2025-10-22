@@ -164,7 +164,7 @@ Structured output enforcement guarantees correct JSON formatting, but does not e
 - **Main Feature:** Structured tool call generation with LLM using schema enforcement with structural tags.
 - **Run Command:**
   ```bash
-  node structural_tags_generation.js model_dir [--prompt "Your prompt here"]
+  node structural_tags_generation.js model_dir [prompt]
   ```
   After running, the script will print the generated text output with and without structural tags, and display the parsed tool calls.
 

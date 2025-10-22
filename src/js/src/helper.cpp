@@ -97,11 +97,8 @@ ov::AnyMap js_to_cpp<ov::AnyMap>(const Napi::Env& env, const Napi::Value& value)
 
 template <>
 std::string js_to_cpp<std::string>(const Napi::Env& env, const Napi::Value& value) {
-    if (value.IsString()) {
-        return value.As<Napi::String>().Utf8Value();
-    } else {
-        OPENVINO_THROW("Passed argument must be of type String.");
-    }
+    OPENVINO_ASSERT(value.IsString(), "Passed argument must be of type String.");
+    return value.As<Napi::String>().Utf8Value();
 }
 
 template <>
