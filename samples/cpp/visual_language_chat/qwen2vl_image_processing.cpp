@@ -1,10 +1,11 @@
 // Copyright (C) 2024-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "load_image.hpp"
-#include <openvino/genai/visual_language/pipeline.hpp>
 #include <filesystem>
 #include <iostream>
+#include <openvino/genai/visual_language/pipeline.hpp>
+
+#include "load_image.hpp"
 
 bool print_subword(std::string&& subword) {
     return !(std::cout << subword << std::flush);
@@ -37,7 +38,7 @@ int main(int argc, char* argv[]) try {
     // Configure generation parameters
     ov::genai::GenerationConfig generation_config;
     generation_config.max_new_tokens = 256;  // Increased for more detailed descriptions
-    
+
     std::cout << "\n========================================" << std::endl;
     std::cout << "Prompt: " << prompt << std::endl;
     std::cout << "========================================" << std::endl;
@@ -50,7 +51,7 @@ int main(int argc, char* argv[]) try {
                   ov::genai::generation_config(generation_config),
                   ov::genai::streamer(print_subword));
     pipe.finish_chat();
-    
+
     std::cout << "\n========================================" << std::endl;
     std::cout << "Image processing completed successfully." << std::endl;
 
@@ -58,11 +59,13 @@ int main(int argc, char* argv[]) try {
 } catch (const std::exception& error) {
     try {
         std::cerr << "Error: " << error.what() << '\n';
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 } catch (...) {
     try {
         std::cerr << "Non-exception object thrown\n";
-    } catch (const std::ios_base::failure&) {}
+    } catch (const std::ios_base::failure&) {
+    }
     return EXIT_FAILURE;
 }
