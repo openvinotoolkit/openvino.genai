@@ -166,11 +166,14 @@ void init_streamers(py::module_& m) {
             },
             py::arg("message"),
             "Write is called with a dict. Returns StreamingStatus.")
-        .def("_write",
-             py::overload_cast<std::string>(&TextParserStreamer::write),
-             py::arg("message"),
-             "Write is called with a string message. Returns CallbackTypeVariant. This is a private method.")
-        
+        .def("_write", [](TextParserStreamer& self, std::variant<std::vector<int64_t>, std::string> chunk) -> StreamingStatus {
+                if (auto _token = std::get_if<std::vector<int64_t>>(&chunk)) {
+                    return self.write(*_token);
+                } else if (auto _str =  std::get_if<std::string>(&chunk)) {
+                    auto res = self.write(*_str);
+                    return std::get<StreamingStatus>(res);
+                }
+        })
         .def("get_parsed_message", 
             [](TextParserStreamer& self) -> py::dict{
                 return pyutils::json_container_to_py_object(self.get_parsed_message());

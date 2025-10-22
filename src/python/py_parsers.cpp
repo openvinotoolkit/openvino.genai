@@ -129,10 +129,10 @@ void init_parsers(py::module_& m) {
            "Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.");
     
     py::class_<Phi4ReasoningParser, std::shared_ptr<Phi4ReasoningParser>, IncrementalParserBase>(m, "Phi4ReasoningParser")
-        .def(py::init<bool>(), py::arg("expect_open_tag") = false);
+        .def(py::init<bool>(), py::arg("expect_open_tag") = true);
 
     py::class_<DeepSeekR1ReasoningParser, std::shared_ptr<DeepSeekR1ReasoningParser>, IncrementalParserBase>(m, "DeepSeekR1ReasoningParser")
-        .def(py::init<>());
+        .def(py::init<bool>(), py::arg("expect_open_tag") = false);
 
     py::class_<ParserBase, ConstructableParserBase, std::shared_ptr<ParserBase>>(m, "ParserBase")
         .def(py::init<>())
@@ -161,4 +161,11 @@ void init_parsers(py::module_& m) {
 
     py::class_<Llama3PythonicToolParser, std::shared_ptr<Llama3PythonicToolParser>, ParserBase>(m, "Llama3PythonicToolParser")
         .def(py::init<>());
+    
+    py::class_<ReasoningParser, std::shared_ptr<ReasoningParser>, IncrementalParserBase>(m, "ReasoningParser")
+        .def(py::init<bool, bool, const std::string&, const std::string&>(),
+             py::arg("expect_open_tag") = true,
+             py::arg("keep_original_content") = true,
+             py::arg("open_tag") = "<think>",
+             py::arg("close_tag") = "</think>");
 }

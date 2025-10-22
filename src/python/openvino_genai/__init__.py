@@ -29,6 +29,7 @@ from .py_openvino_genai import (
     DeepSeekR1ReasoningParser,
     Llama3JsonToolParser,
     Llama3PythonicToolParser,
+    ReasoningParser
 )
 
 __version__ = get_version()

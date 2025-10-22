@@ -4,7 +4,7 @@ import json
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
 from utils.ov_genai_pipelines import create_ov_pipeline
 import pytest
-from openvino_genai import Tokenizer, IncrementalParserBase, ParserBase, TextParserStreamer, StreamingStatus, Llama3JsonToolParser, Phi4ReasoningParser, DeepSeekR1ReasoningParser, GenerationConfig
+from openvino_genai import Tokenizer, IncrementalParserBase, ParserBase, TextParserStreamer, StreamingStatus, Llama3JsonToolParser, Phi4ReasoningParser, DeepSeekR1ReasoningParser, GenerationConfig, ReasoningParser
 from transformers import AutoTokenizer
 import re
 
@@ -66,6 +66,35 @@ def test_incremental_phi4_reason_parser_1(hf_ov_genai_models, answer):
 @pytest.mark.precommit
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
+    ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
+    indirect=True
+)
+def test_incremental_phi4_reason_integer_token_ids(hf_ov_genai_models):
+    hf_tokenizer, genai_tokenizer = hf_ov_genai_models
+    
+    class CustomStreamer(TextParserStreamer):
+        def write(self, message):
+            msg.update(message)
+            return StreamingStatus.RUNNING
+    streamer = CustomStreamer(genai_tokenizer, parsers=[Phi4ReasoningParser()])
+    
+    msg = {}
+    answer = "<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \boxed{3}."
+    encoded_tokens = genai_tokenizer.encode(answer).input_ids.data.tolist()
+    for token in encoded_tokens:
+        streamer._write(token)
+    streamer.end()
+
+    think_content = answer.split("</think>")[0].replace("<think>", "")
+    content = answer
+    
+    assert msg['reasoning_content'] == think_content
+    assert msg['content'] == content
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize(
+    "hf_ov_genai_models", 
     ["katuni4ka/tiny-random-phi3"],
     indirect=True
 )
@@ -119,6 +148,38 @@ def test_incremental_phi4_reason_parser_nostreamer(answer):
 
     assert msg['reasoning_content'] == think_content
     assert msg['content'] == content
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("keep_original_content", [True, False])
+@pytest.mark.parametrize(
+    "hf_ov_genai_models", 
+    ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
+    indirect=True
+)
+@pytest.mark.parametrize("answer", [
+    "<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \boxed{3}.",
+])
+def test_reasoning_parser_cut_content(hf_ov_genai_models, answer, keep_original_content):
+    hf_tokenizer, genai_tokenizer = hf_ov_genai_models
+    
+    stream_string = re.split(r"(\s+)", answer)
+    
+    class CustomStreamer(TextParserStreamer):
+        def write(self, message):
+            msg.update(message)
+            return StreamingStatus.RUNNING
+    streamer = CustomStreamer(genai_tokenizer, parsers=[ReasoningParser(expect_open_tag=True, keep_original_content=keep_original_content)])
+    
+    msg = {}
+    for subword in stream_string:
+        streamer._write(subword)
+
+    think_content = answer.split("</think>")[0].replace("<think>", "")
+    content = answer
+    
+    assert msg['reasoning_content'] == think_content
+    assert msg['content'] == (content if keep_original_content else "\n\nThe answer to 2 + 1 is \boxed{3}.")
 
 
 def test_incremental_deepseek_parser():
@@ -211,9 +272,6 @@ def test_final_parser_llama_32_json(hf_ov_genai_models):
     assert content_json['tool_calls'][0] == json.loads(json_str)
 
 
-# TODO: add test when several parsers are called.
-
-
 @pytest.mark.parametrize("model_id", ["microsoft/Phi-4-mini-reasoning"])
 @pytest.mark.nightly
 def test_custom_parser(tmp_path, model_id):
@@ -253,8 +311,3 @@ def test_custom_parser(tmp_path, model_id):
     assert 'reasoning_content' in res.parsed[0]
     assert res.parsed[0]['reasoning_content'] != ""
     assert res.parsed[0]['reasoning_content'] == think_text
-
-
-
-
-# TODO: add when streamer accepts integer tokens

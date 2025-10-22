@@ -40,7 +40,7 @@ public:
         if (m_deactivated) {
             return delta_text;
         }
-        if (m_expect_open_tag && m_first_run) {
+        if (!m_expect_open_tag && m_first_run) {
             m_think_tag_opened = true;
         }
         m_first_run = false;
@@ -57,10 +57,11 @@ public:
         auto reason_str = msg["reasoning_content"].get_string();
         auto content_str = msg["content"].get_string();
 
-        if (!m_think_tag_opened && txt_chunk.find(m_open_tag) != std::string::npos && !m_expect_open_tag) {
+        if (!m_think_tag_opened && txt_chunk.find(m_open_tag) != std::string::npos && m_expect_open_tag) {
             // Thinking has started
             auto open_idx = txt_chunk.find(m_open_tag);
-            reason_str += txt_chunk.substr(open_idx + std::string(m_open_tag).size(), txt_chunk.size() - (open_idx + std::string(m_open_tag).size()));
+            
+            reason_str += txt_chunk.substr(open_idx + m_open_tag.size(), txt_chunk.size() - (open_idx + m_open_tag.size()));
             if (!m_keep_original_content) {
                 delta_text = "";
             }
@@ -72,8 +73,8 @@ public:
             if (txt_chunk.find(m_close_tag) != std::string::npos) {
                 // If <think> and </think> are in the same txt_chunk + delta_text
                 auto close_idx = txt_chunk.find(m_close_tag);
-                reason_str = txt_chunk.substr(open_idx + std::string(m_open_tag).size(), close_idx - (open_idx + std::string(m_open_tag).size()));
-                content_str = txt_chunk.substr(close_idx + std::string(m_close_tag).size(), txt_chunk.size() - (close_idx + std::string(m_close_tag).size()));
+                reason_str = txt_chunk.substr(open_idx + m_open_tag.size(), close_idx - (open_idx + m_open_tag.size()));
+                content_str = txt_chunk.substr(close_idx + m_close_tag.size(), txt_chunk.size() - (close_idx + m_close_tag.size()));
                 if (!m_keep_original_content) {
                     delta_text = content_str;
                 }
@@ -91,7 +92,7 @@ public:
                 // Example if m_text_cache + delta_text = "...some text</th" + "ink>Answer is 3" = "...some text</think>Answer is 3"
                 // we want to keep in delta_txt only "Answer is 3". 
                 // We can operate with txt_chunk since final characters closing the tag ("ink>") are always in delta_text.
-                delta_text = txt_chunk.substr(close_idx + std::string(m_close_tag).size(), txt_chunk.size() - (close_idx + std::string(m_close_tag).size()));
+                delta_text = txt_chunk.substr(close_idx + m_close_tag.size(), txt_chunk.size() - (close_idx + m_close_tag.size()));
             }
 
             msg["reasoning_content"] = reason_str;

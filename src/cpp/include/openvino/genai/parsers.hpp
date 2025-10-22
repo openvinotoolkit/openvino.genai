@@ -48,12 +48,12 @@ public:
 
 class OPENVINO_GENAI_EXPORTS DeepSeekR1ReasoningParser : public ReasoningParser {
 public:
-    explicit DeepSeekR1ReasoningParser(bool expect_open_tag = true) : ReasoningParser(expect_open_tag) {};
+    explicit DeepSeekR1ReasoningParser(bool expect_open_tag = false) : ReasoningParser(expect_open_tag) {};
 };
 
 class OPENVINO_GENAI_EXPORTS Phi4ReasoningParser : public ReasoningParser {
 public:
-    explicit Phi4ReasoningParser(bool expect_open_tag = false) : ReasoningParser(expect_open_tag) {};
+    explicit Phi4ReasoningParser(bool expect_open_tag = true) : ReasoningParser(expect_open_tag) {};
 };
 
 class ParserBase {
