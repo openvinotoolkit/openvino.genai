@@ -120,6 +120,11 @@ if(NOT ENABLE_GGUF)
     list(REMOVE_ITEM SOURCE_FILES ${GGUF_SOURCES})
 endif()
 
+if(NOT ENABLE_FFMPEG_VPL)
+    set(FFMPEG_VPL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/video_processing/ffmpeg_vpl_pipeline.cpp)
+    list(REMOVE_ITEM SOURCE_FILES ${FFMPEG_VPL_SOURCES})
+endif()
+
 set(TARGET_NAME openvino_genai)
 set(TARGET_NAME_OBJ ${TARGET_NAME}_obj)
 
@@ -137,6 +142,19 @@ endif()
 if(ENABLE_GGUF)
     target_link_libraries(${TARGET_NAME_OBJ} PRIVATE gguflib)
     target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_GGUF)
+endif()
+
+if(ENABLE_FFMPEG_VPL)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(LIBAV REQUIRED IMPORTED_TARGET
+        libavcodec
+        libavformat
+        libavutil
+    )
+    pkg_check_modules(VPL REQUIRED IMPORTED_TARGET vpl)
+    
+    target_link_libraries(${TARGET_NAME_OBJ} PRIVATE PkgConfig::LIBAV PkgConfig::VPL)
+    target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_FFMPEG_VPL)
 endif()
 
 target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
@@ -175,6 +193,10 @@ endif()
 
 if(ENABLE_GGUF)
   target_link_libraries(${TARGET_NAME} PRIVATE gguflib)
+endif()
+
+if(ENABLE_FFMPEG_VPL)
+  target_link_libraries(${TARGET_NAME} PRIVATE PkgConfig::LIBAV PkgConfig::VPL)
 endif()
 
 target_compile_features(${TARGET_NAME} INTERFACE cxx_std_17)

@@ -10,6 +10,7 @@ option(ENABLE_TESTS "Enable tests build" ON)
 option(ENABLE_TOOLS "Enable tools build" ON)
 option(ENABLE_GGUF "Enable support for GGUF format" ON)
 option(ENABLE_XGRAMMAR "Enable support for structured output generation with xgrammar backend" ON)
+option(ENABLE_FFMPEG_VPL "Enable FFmpeg and oneVPL video processing support" OFF)
 
 # Disable building samples for NPM package
 if(CPACK_GENERATOR STREQUAL "NPM")
