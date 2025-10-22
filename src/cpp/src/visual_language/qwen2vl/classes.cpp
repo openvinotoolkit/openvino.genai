@@ -576,16 +576,6 @@ ov::Tensor concatenate_video_image_embeds(const std::vector<ov::Tensor>& reorder
     return concatenated_embeds;
 }
 
-size_t calculate_product(const std::vector<std::array<size_t, 3>>& data) {
-    size_t total_product = 1;
-    for (const auto& arr : data) {
-        for (size_t element : arr) {
-            total_product *= element;
-        }
-    }
-    return data.size() > 0 ? total_product : 0;
-};
-
 ov::Tensor merge_text_and_video_image_embeddings(
     const ov::Tensor& input_ids,
     const ov::Tensor& text_embeds, 
@@ -936,6 +926,8 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
         });
 
     encode_vision_placeholder_tokens();
+
+    m_merge_length = std::pow(m_vision_encoder->get_processor_config().merge_size, 2);
 }
 
 InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
@@ -968,6 +960,8 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
         });
 
     encode_vision_placeholder_tokens();
+
+    m_merge_length = std::pow(m_vision_encoder->get_processor_config().merge_size, 2);
 }
 
 void InputsEmbedderQwen2VL::encode_vision_placeholder_tokens() {
@@ -978,6 +972,18 @@ void InputsEmbedderQwen2VL::encode_vision_placeholder_tokens() {
     m_vision_token_ids["image_pad"] = encoded_vision_tokens.input_ids.data<int64_t>()[1];
     m_vision_token_ids["video_pad"] = encoded_vision_tokens.input_ids.data<int64_t>()[2];
 }
+
+size_t InputsEmbedderQwen2VL::calc_tokens_num(size_t grid_t, size_t grid_h, size_t grid_w) const {
+    return grid_t * grid_h * grid_w / m_merge_length;
+}
+
+size_t InputsEmbedderQwen2VL::calc_vec_tokens_num(const std::vector<std::array<size_t, 3UL>>& vec_grid_thw) const {
+    size_t token_num = 0;
+    for (auto grid_thw : vec_grid_thw) {
+        token_num += calc_tokens_num(grid_thw[0], grid_thw[1], grid_thw[2]);
+    }
+    return token_num;
+};
 
 NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prompt,
                                                          size_t image_base_id,
@@ -998,8 +1004,7 @@ NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prom
 
     for (size_t new_image_id : images_sequence) {
         auto [grid_t, grid_h, grid_w] = images_grid_thw.at(new_image_id - image_base_id);
-        size_t merge_length = std::pow(m_vision_encoder->get_processor_config().merge_size, 2);
-        size_t num_image_pad_tokens = grid_t * grid_h * grid_w / merge_length;
+        const size_t num_image_pad_tokens = calc_tokens_num(grid_t, grid_h, grid_w);
 
         std::string expanded_tag;
         expanded_tag.reserve(m_vlm_config.vision_start_token.length() +
@@ -1031,8 +1036,7 @@ NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prom
 
     for (size_t new_image_id : videos_sequence) {
         auto [grid_t, grid_h, grid_w] = video_grid_thw.at(new_image_id - video_base_id);
-        size_t merge_length = std::pow(m_vision_encoder->get_processor_config().merge_size, 2);
-        size_t num_video_pad_tokens = grid_t * grid_h * grid_w / merge_length;
+        const size_t num_video_pad_tokens = calc_tokens_num(grid_t, grid_h, grid_w);
 
         std::string expanded_tag;
         expanded_tag.reserve(m_vlm_config.vision_start_token.length() +
@@ -1233,8 +1237,8 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2VL::run_video_image_embeddi
     auto out_vision_shape = processed_vision_embeds.get_shape();
 
     // Split Video and Image's features.
-    auto video_fea_num = qwen2_vl_utils::calculate_product(reordered_videos_grid_thw);
-    auto image_fea_num = qwen2_vl_utils::calculate_product(reordered_images_grid_thw);
+    auto video_fea_num = calc_vec_tokens_num(reordered_videos_grid_thw);
+    auto image_fea_num = calc_vec_tokens_num(reordered_images_grid_thw);
     size_t video_fea_count = 0;
     if ((video_fea_num + image_fea_num) != 0) {
         video_fea_count = out_vision_shape.at(0) * video_fea_num / (video_fea_num + image_fea_num);

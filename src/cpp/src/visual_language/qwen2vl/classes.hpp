@@ -102,6 +102,7 @@ protected:
     ov::Tensor m_merged_image_embeddings;
     ov::Tensor m_merged_video_embeddings;
     std::map<std::string, int64_t> m_vision_token_ids;
+    size_t m_merge_length;
 
     bool m_with_cu_seqlens_input = false;
 
@@ -128,6 +129,10 @@ protected:
     void encode_vision_placeholder_tokens();
 
     void cvt_to_3_chn_image(ov::Tensor& image);
+
+    size_t calc_tokens_num(size_t grid_t, size_t grid_h, size_t grid_w) const;
+
+    size_t calc_vec_tokens_num(const std::vector<std::array<size_t, 3UL>>& vec_grid_thw) const;
 };
 
 namespace qwen2_vl_utils {
@@ -143,8 +148,6 @@ ov::Tensor get_attention_mask(const std::vector<std::array<size_t, 3>>& reordere
 ov::Tensor get_cu_seqlens(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw, const std::vector<std::array<size_t, 3>>& reordered_videos_grid_thw);
 
 ov::Tensor concatenate_video_image_embeds(const std::vector<ov::Tensor>& reordered_video_embeds, const std::vector<ov::Tensor>& reordered_image_embeds);
-
-size_t calculate_product(const std::vector<std::array<size_t, 3>>& data);
 
 } // namespace qwen2vl_utils
 

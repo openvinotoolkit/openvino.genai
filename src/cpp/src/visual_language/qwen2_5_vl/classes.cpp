@@ -155,8 +155,8 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2_5_VL::run_video_image_embe
     auto out_vision_shape = processed_vision_embeds.get_shape();
 
     // Split Video and Image's features.
-    auto video_fea_num = qwen2_vl_utils::calculate_product(reordered_videos_grid_thw);
-    auto image_fea_num = qwen2_vl_utils::calculate_product(reordered_images_grid_thw);
+    auto video_fea_num = calc_vec_tokens_num(reordered_videos_grid_thw);
+    auto image_fea_num = calc_vec_tokens_num(reordered_images_grid_thw);
     size_t video_fea_count = 0;
     if ((video_fea_num + image_fea_num) != 0) {
         video_fea_count = out_vision_shape.at(0) * video_fea_num / (video_fea_num + image_fea_num);
