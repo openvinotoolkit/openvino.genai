@@ -12,7 +12,7 @@ import datasets
 import numpy as np
 
 
-DEFAULT_TOP_K = 5
+DEFAULT_TOP_K = 100
 DEFAULT_MAX_LENGTH = 200
 DEFAULT_MAX_LENGTH_QWEN = 8192
 
@@ -65,7 +65,7 @@ class RerankingEvaluator(BaseEvaluator):
 
         if base_model:
             self.gt_data = self._generate_data(
-                base_model, gen_rerank_fn, os.path.join(self.gt_dir, "reference")
+                base_model, gen_rerank_fn, os.path.join(self.gt_dir, "reference_rerank_qwen")
             )
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
@@ -107,7 +107,7 @@ class RerankingEvaluator(BaseEvaluator):
         res = list(row for idx, row in res.iterrows())
         return res
 
-    def _generate_data(self, model, gen_answer_fn=None, result_dir="reference"):
+    def _generate_data(self, model, gen_answer_fn=None, result_dir="reference_rerank_qwen"):
         def default_gen_answer(model, tokenizer, query, passages):
             device = "cpu"
             if hasattr(model, "device"):
@@ -149,26 +149,29 @@ class RerankingEvaluator(BaseEvaluator):
             with torch.no_grad():
                 outputs = model(**input_data).logits
 
-            if reranking_base_on_causallm_arch(model.config):
-                batch_scores = outputs[:, -1, :]
-                token_false_id = tokenizer.convert_tokens_to_ids("no")
-                token_true_id = tokenizer.convert_tokens_to_ids("yes")
-                true_vector = batch_scores[:, token_true_id]
-                false_vector = batch_scores[:, token_false_id]
-                batch_scores = torch.stack([false_vector, true_vector], dim=1)
-                batch_scores = torch.nn.functional.log_softmax(batch_scores, dim=1)
-                scores = batch_scores[:, 1].exp()
-            else:
-                if outputs.shape[1] > 1:
-                    scores = outputs[:, 1]
-                else:
-                    scores = outputs.flatten()
-                scores = scipy.special.expit(scores)
-            sorted_scores = []
-            for index, (score, _) in enumerate(zip(scores, passages)):
-                sorted_scores.append(np.array([index, score.numpy()]))
-            sorted_scores.sort(key=lambda x: x[1], reverse=True)
-            return np.array(sorted_scores[:DEFAULT_TOP_K])
+            outputs = outputs[:, -1, :]
+
+            # if reranking_base_on_causallm_arch(model.config):
+            #     batch_scores = outputs[:, -1, :]
+            #     token_false_id = tokenizer.convert_tokens_to_ids("no")
+            #     token_true_id = tokenizer.convert_tokens_to_ids("yes")
+            #     true_vector = batch_scores[:, token_true_id]
+            #     false_vector = batch_scores[:, token_false_id]
+            #     batch_scores = torch.stack([false_vector, true_vector], dim=1)
+            #     batch_scores = torch.nn.functional.log_softmax(batch_scores, dim=1)
+            #     scores = batch_scores[:, 1].exp()
+            # else:
+            #     if outputs.shape[1] > 1:
+            #         scores = outputs[:, 1]
+            #     else:
+            #         scores = outputs.flatten()
+            #     scores = scipy.special.expit(scores)
+            # sorted_scores = []
+            # for index, (score, _) in enumerate(zip(outputs, passages)):
+            #     sorted_scores.append(np.array([index, score.numpy()]))
+            # sorted_scores.sort(key=lambda x: x[1], reverse=True)
+            # return np.array(sorted_scores[:DEFAULT_TOP_K])
+            return outputs
 
         gen_answer_fn = gen_answer_fn or default_gen_answer
 
