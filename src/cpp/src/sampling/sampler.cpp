@@ -955,7 +955,7 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
                 m_stop_strings.insert({request_id, processed_stop_string});
                 sequence_group->set_stream_window_size(processed_stop_string.first);
             } else {
-                m_stop_strings.insert({request_id, {0, {}}});
+                m_stop_strings.insert({request_id, {size_t(0), {}}});
             }
         }
         const auto& stop_strings = m_stop_strings.at(request_id);
