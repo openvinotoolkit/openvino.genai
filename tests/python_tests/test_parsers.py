@@ -138,7 +138,7 @@ def test_incremental_phi4_reason_parser_nostreamer(answer):
     stream_string = re.split(r"(\s+)", answer)
     msg = {}
     for subword in stream_string:
-        parser.parse(msg, '', subword)
+        parser.parse(msg, subword)
         # When parser is called from streamer, it is expected that content is accumulated inside streamer.
         # Here we are calling parser manually therefore we need to accumulate content manually.
         msg['content'] += subword  
@@ -199,12 +199,9 @@ def test_incremental_deepseek_parser():
     think_content = full_str.split("</think>")[0]
     content = full_str.split("</think>")[1]
 
-    extended = stream_string[:]
-    extended.insert(0, "")
-
     parser = DeepSeekR1ReasoningIncrementalParser()
-    for (prev_subword, subword) in zip(extended, stream_string):
-        msg = parser.parse(msg, prev_subword, subword)
+    for subword in stream_string:
+        msg = parser.parse(msg, subword)
     
     assert msg['reasoning_content'] == think_content
     assert msg['content'] == content
@@ -222,7 +219,7 @@ def test_custom_incremental_parser(hf_ov_genai_models):
     class CustomParser(IncrementalParser):
         main_part_started: bool = False
 
-        def parse(self, msg: dict, previous_text: str, delta_text: str, prev_tokens = None, delta_tokens = None) -> str:
+        def parse(self, msg: dict, delta_text: str, delta_tokens = None) -> str:
             if 'content' not in msg:
                 msg['content'] = ''
             if 'main_text' not in msg:
@@ -311,3 +308,5 @@ def test_custom_parser(tmp_path, model_id):
     assert 'reasoning_content' in res.parsed[0]
     assert res.parsed[0]['reasoning_content'] != ""
     assert res.parsed[0]['reasoning_content'] == think_text
+
+# TODO; add test for reseting incremental parser at generation start

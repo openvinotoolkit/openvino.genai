@@ -32,9 +32,7 @@ public:
 
     std::string parse(
         JsonContainer&  message,
-        const std::string& previous_text, 
         std::string& delta_text,
-        const std::optional<std::vector<int64_t>>& previous_tokens, 
         const std::optional<std::vector<int64_t>>& delta_tokens
     ) {
         if (m_deactivated) {
@@ -156,19 +154,14 @@ ReasoningIncrementalParser::~ReasoningIncrementalParser() = default;
 
 std::string ReasoningIncrementalParser::parse(
     JsonContainer& message,
-    const std::string& previous_text, 
     std::string& delta_text,
-    const std::optional<std::vector<int64_t>>& previous_tokens, 
     const std::optional<std::vector<int64_t>>& delta_tokens
 ) {
-    return m_impl->parse(message, previous_text, delta_text, previous_tokens, delta_tokens);
+    return m_impl->parse(message, delta_text, delta_tokens);
 }
 
 class Llama3PythonicToolParser::Llama3PythonicToolParserImpl {
 public:
-    Llama3PythonicToolParserImpl(bool keep_original_content) : m_keep_original_content(keep_original_content) {}
-    bool m_keep_original_content;
-
     void parse(JsonContainer& message) {
         // Input example
         // string message = "[get_weather(location='New York, NY', unit='celsius')]<|eom_id|>";
@@ -199,15 +192,11 @@ public:
         // Split function name and arguments
         message["tool_calls"] = JsonContainer::array();
         message["tool_calls"].push_back(JsonContainer({{"name", name}, {"arguments", kv}}));
-        
-        if (!m_keep_original_content) {
-            message["content"] = regex_replace(text, r, "");
-        }
     }
 };
 
-Llama3PythonicToolParser::Llama3PythonicToolParser(bool keep_original_content) {
-    m_impl = std::make_unique<Llama3PythonicToolParserImpl>(keep_original_content);
+Llama3PythonicToolParser::Llama3PythonicToolParser() {
+    m_impl = std::make_unique<Llama3PythonicToolParserImpl>();
 }
 
 void Llama3PythonicToolParser::parse(JsonContainer& message) {
@@ -217,11 +206,7 @@ void Llama3PythonicToolParser::parse(JsonContainer& message) {
 Llama3PythonicToolParser::~Llama3PythonicToolParser() = default;
 
 class Llama3JsonToolParser::Llama3JsonToolParserImpl {
-private:
-    bool m_keep_original_content;
 public:
-    Llama3JsonToolParserImpl(bool keep_original_content) : m_keep_original_content(keep_original_content) {}
-
     void parse(JsonContainer& message) {
         // Find JSON in the message
         std::string msg_content = message["content"].get_string();
@@ -234,15 +219,11 @@ public:
         auto res = JsonContainer::array();
         res.push_back(JsonContainer::from_json_string(msg_content.substr(json_start, json_end - json_start + 1)));
         message["tool_calls"] = res;
-        
-        if (!m_keep_original_content) {
-            message["content"] = msg_content.substr(0, json_start) + msg_content.substr(json_end + 1);
-        }
     }
 };
 
-Llama3JsonToolParser::Llama3JsonToolParser(bool keep_original_content) {
-    m_impl = std::make_unique<Llama3JsonToolParserImpl>(keep_original_content);
+Llama3JsonToolParser::Llama3JsonToolParser() {
+    m_impl = std::make_unique<Llama3JsonToolParserImpl>();
 }
 
 void Llama3JsonToolParser::parse(JsonContainer& message) {

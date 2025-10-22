@@ -36,9 +36,7 @@ public:
     using IncrementalParser::IncrementalParser;
     std::string parse(
         JsonContainer& msg,
-        const std::string& previous_text, 
         std::string& delta_text, 
-        const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt, 
         const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
     ) override {
         // Convert JsonContainer to py::dict
@@ -49,7 +47,7 @@ public:
             OPENVINO_THROW("parse method not implemented in Python subclass");
         }
 
-        auto res = parse_method(py_msg, previous_text, delta_text, previous_tokens, delta_tokens);
+        auto res = parse_method(py_msg, delta_text, delta_tokens);
         msg = pyutils::py_object_to_json_container(py_msg);
         
         return res.cast<std::string>();
@@ -81,12 +79,10 @@ void init_parsers(py::module_& m) {
         .def(py::init<>())
         .def("parse", [](IncrementalParser& self,
                          py::dict& message,
-                         std::string& previous_text,
                          std::string& delta_text,
-                         const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt,
                          const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt) {
             auto msg_cpp = pyutils::py_object_to_json_container(message);
-            auto res = self.parse(msg_cpp, previous_text, delta_text, previous_tokens, delta_tokens);
+            auto res = self.parse(msg_cpp, delta_text, delta_tokens);
             auto json_str = msg_cpp.to_json_string();
             
             // TODO: msg = pyutils::json_container_to_py_object(msg_cpp) does not work properly here,
@@ -98,8 +94,7 @@ void init_parsers(py::module_& m) {
                 message[item.first] = item.second;
             }
             return res;
-        }, py::arg("message"), py::arg("previous_text"), py::arg("delta_text"),
-           py::arg("previous_tokens") = std::nullopt, py::arg("delta_tokens") = std::nullopt,
+        }, py::arg("message"), py::arg("delta_text"), py::arg("delta_tokens") = std::nullopt,
            "Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.");
     
     py::class_<ReasoningIncrementalParser, std::shared_ptr<ReasoningIncrementalParser>, IncrementalParser>(m, "ReasoningIncrementalParser")
@@ -110,10 +105,10 @@ void init_parsers(py::module_& m) {
              py::arg("close_tag") = "</think>");
     
     py::class_<Phi4ReasoningIncrementalParser, std::shared_ptr<Phi4ReasoningIncrementalParser>, IncrementalParser>(m, "Phi4ReasoningIncrementalParser")
-        .def(py::init<bool>(), py::arg("expect_open_tag") = true);
+        .def(py::init<>());
 
     py::class_<DeepSeekR1ReasoningIncrementalParser, std::shared_ptr<DeepSeekR1ReasoningIncrementalParser>, IncrementalParser>(m, "DeepSeekR1ReasoningIncrementalParser")
-        .def(py::init<bool>(), py::arg("expect_open_tag") = false);
+        .def(py::init<>());
 
     py::class_<Parser, ConstructableParser, std::shared_ptr<Parser>>(m, "Parser")
         .def(py::init<>())

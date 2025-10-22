@@ -33,28 +33,6 @@ TEST(ParserTest, test_llama3_parser_1) {
     ASSERT_TRUE(expected == input);
 }
 
-TEST(ParserTest, test_llama3_parser_2) {
-    std::string prompt = R"(What's the weather in New York today?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n[get_weather(location="New York, NY", unit="celsius")]<|eom_id|>)";
-    
-    JsonContainer expected;
-    expected["content"] = std::string(R"(What's the weather in New York today?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n<|eom_id|>)");
-    expected["tool_calls"] = JsonContainer::array();
-    expected["tool_calls"].push_back(JsonContainer(ov::AnyMap({
-        {"name", "get_weather"},
-        {"arguments", ov::AnyMap{
-            {"location", "New York, NY"},
-            {"unit", "celsius"}
-        }}
-    })));
-
-    std::shared_ptr<Llama3PythonicToolParser> parser = std::make_shared<Llama3PythonicToolParser>(/*keep_original_content*/ false);
-    JsonContainer input;
-    input["content"] = prompt;
-    parser->parse(input);
-
-    ASSERT_EQ(input, expected);
-}
-
 TEST(ParserTest, test_reasoning_parser_1) {
     std::string prompt = R"("<｜begin▁of▁sentence｜><｜begin▁of▁sentence｜><｜User｜>What is 2 + 1?<｜Assistant｜><think>\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n</think>\n\n**Solution:**\n\nTo find the sum of 2 and 1, )";
     
@@ -116,9 +94,8 @@ TEST_F(DeepSeekR1ReasoningParserTest, ReasoningContentAccumulatesAcrossCalls) {
     JsonContainer msg;
     
     for (int i = 1; i < input_stream.size(); i++) {
-        std::string previous_text = input_stream[i - 1];
         std::string delta_text = input_stream[i];
-        delta_text = parser.parse(msg, previous_text, delta_text);
+        delta_text = parser.parse(msg, delta_text);
     }
     ASSERT_EQ(msg["reasoning_content"], ref_res);
 }
@@ -173,9 +150,7 @@ TEST(ParserTest, CustomParser_AccumulatesBetweenStartStop) {
         bool main_part_started = false;
 
         std::string parse(JsonContainer& msg,
-                          const std::string& previous_text,
                           std::string& delta_text,
-                          const std::optional<std::vector<int64_t>>& /*previous_tokens*/ = std::nullopt,
                           const std::optional<std::vector<int64_t>>& /*delta_tokens*/ = std::nullopt) override {
             // Ensure fields exist (Python test used dict defaults)
             if (!msg.contains("content")) {
