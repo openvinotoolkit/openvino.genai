@@ -1,6 +1,7 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 #include "speculative_decoding_eagle3_impl.hpp"
+#include "logger.hpp"
 
 namespace ov::genai {
 void share_embedding_weights(std::shared_ptr<ov::Model>& main_model, std::shared_ptr<ov::Model>& draft_model) {
@@ -264,6 +265,16 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
                                                                  const std::vector<int>& hidden_layers)
                                                                  : m_hidden_layers_to_abstract(hidden_layers) {
     auto scheduler_configs = init_speculative_models(main_model_desc, draft_model_desc);
+    // Eagle speculative decoding does not support dynamic_split_fuse mode
+    // because it requires hidden state interaction from main model to draft model
+    // to be implemented future
+    if (scheduler_configs.first.dynamic_split_fuse) {
+        Logger::warn(
+            "Note: disable dynamic split fuse for eagle3 speculative decoding"
+        );
+        scheduler_configs.first.dynamic_split_fuse = false;
+        scheduler_configs.second.dynamic_split_fuse = false;
+    }
     auto main_model = main_model_desc.model;
     auto draft_model = draft_model_desc.model;
 
