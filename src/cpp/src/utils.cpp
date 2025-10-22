@@ -805,6 +805,15 @@ void export_model(ov::CompiledModel& compiled_model, const std::filesystem::path
     out.close();
 }
 
+bool has_input(const std::shared_ptr<Model>& model, const std::string& name) {
+    for (const auto& input : model->inputs()) {
+        if (input.get_any_name() == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

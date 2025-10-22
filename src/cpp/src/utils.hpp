@@ -305,6 +305,11 @@ ov::CompiledModel import_model(const std::filesystem::path& blob_path,
  */
 void export_model(ov::CompiledModel& compiled_model, const std::filesystem::path& blob_path);
 
+/**
+ * @brief Checks if the model has an input with the specified name.
+ */
+bool has_input(const std::shared_ptr<Model>& model, const std::string& name);
+
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
