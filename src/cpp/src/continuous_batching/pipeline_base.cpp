@@ -217,8 +217,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             std::move(decoded_outputs),
             std::move(encoded_result.m_scores),
             encoded_result.m_status,
-            perf_metrics,
-            encoded_result.extended_perf_metrics
+            std::move(perf_metrics),
+            std::move(encoded_result.extended_perf_metrics)
         });
     }
 
