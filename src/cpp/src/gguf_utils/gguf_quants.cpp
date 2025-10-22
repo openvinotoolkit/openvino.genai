@@ -230,7 +230,7 @@ void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
     auto weights_shape = shape;
     weights_shape.back() /= (weights_per_byte * 4);  // means u32 type can store 8 q4 or 4 q8
 
-    ov::Tensor weights(ov::element::u32, std::move(weights_shape));
+    ov::Tensor weights(ov::element::u32, weights_shape);
     // For scales and bias
     shape[shape.size() - 1] = shape[shape.size() - 1] / weights_per_block;
 

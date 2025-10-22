@@ -949,9 +949,13 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
             m_logit_processors.insert({request_id, LogitProcessor(sampling_params, sequence_group->get_prompt_ids(), structured_output_controller)});
         }
         if (!m_stop_strings.count(request_id)) {
-            auto processed_stop_string = process_stop_strings(sampling_params.stop_strings, m_tokenizer);
-            m_stop_strings.insert({request_id, processed_stop_string});
-            sequence_group->set_stream_window_size(processed_stop_string.first);
+            if (m_tokenizer.m_pimpl != nullptr) {
+                auto processed_stop_string = process_stop_strings(sampling_params.stop_strings, m_tokenizer);
+                m_stop_strings.insert({request_id, processed_stop_string});
+                sequence_group->set_stream_window_size(processed_stop_string.first);
+            } else {
+                m_stop_strings.insert({request_id, {0, {}}});
+            }
         }
         const auto& stop_strings = m_stop_strings.at(request_id);
         auto& logit_processor = m_logit_processors.at(request_id);

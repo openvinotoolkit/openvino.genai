@@ -30,6 +30,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
     auto main_model = main_model_desc.model;
     auto draft_model = draft_model_desc.model;
 
+    OPENVINO_ASSERT(main_model != nullptr, "Main model cannot be null");
+    OPENVINO_ASSERT(draft_model != nullptr, "Draft model cannot be null");
+
     auto main_scheduler_config = main_model_desc.scheduler_config;
     auto main_device = main_model_desc.device;
 

@@ -39,6 +39,9 @@ size_t get_available_cpu_memory() {
             if(token == "MemTotal:") {
                 size_t mem;
                 if(file >> mem) {
+                    if (mem > std::numeric_limits<size_t>::max() / 1024) {
+                        return std::numeric_limits<size_t>::max();
+                    }
                     return mem * 1024;
                 } else {
                     return std::numeric_limits<size_t>::max();

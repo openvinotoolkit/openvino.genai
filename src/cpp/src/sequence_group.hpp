@@ -270,6 +270,7 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
         : m_request_id(request_id),
           m_sampling_params(sampling_params),
           m_block_size(block_size),
+          m_sequence_group_type(SequenceGroupType::TOKENS),
           m_generation_stream(GenerationStream::create()) { }
 
     bool out_of_memory() const {

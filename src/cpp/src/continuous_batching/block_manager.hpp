@@ -26,6 +26,7 @@ public:
     explicit KVCacheBlock(int index)
         : m_ref_count(0),
           m_index(index),
+          m_hash(0),
           m_timestamp(std::chrono::steady_clock::now()) { }
 
     int get_index() const {
