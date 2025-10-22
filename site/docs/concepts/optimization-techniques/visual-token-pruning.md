@@ -20,8 +20,7 @@ High-level flow:
 1. Encode image producing N visual tokens (embeddings).
 2. Compute pairwise token similarity and per-token relevance scores.
 3. Relevance and similarity are combined into a conditional kernel. A greedy DPP-based MAP algorithm identifies the least important tokens to discard according to `pruning_ratio`, adjusting scores using `relevance_weight` to control the trade-off between diversity and relevance.
-4. Optionally adjust scores using `relevance_weight` before selecting final kept set.
-5. Build reduced token set; subsequent generation attends only to retained tokens.
+4. Build reduced token set; subsequent generation attends only to retained tokens.
 
 Effect: Pruning less important visual tokens reduces memory usage and can speed up generation; extremely high pruning may degrade answer quality for complex visual queries.
 
