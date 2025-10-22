@@ -248,6 +248,7 @@ DecodedResults StatefulLLMPipeline::generate(
 
     OPENVINO_ASSERT(config.apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
     OPENVINO_ASSERT(!m_tokenizer.get_chat_template().empty(), "Chat template must not be empty when using ChatHistory in generate method.");
+    OPENVINO_ASSERT(!history.empty(), "Chat history must not be empty when using ChatHistory in generate method.");
 
     constexpr bool add_generation_prompt = true;
     auto new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);

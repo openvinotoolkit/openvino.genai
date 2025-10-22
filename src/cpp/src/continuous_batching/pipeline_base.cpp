@@ -173,6 +173,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
     for (size_t i = 0; i < histories.size(); i++) {
         OPENVINO_ASSERT(sampling_params[i].apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
+        OPENVINO_ASSERT(!histories[i].empty(), "Chat history must not be empty when using ChatHistory in generate method.");
         const auto encode_start = std::chrono::steady_clock::now();
         constexpr bool add_generation_prompt = true;
         std::string templated_history = m_tokenizer.apply_chat_template(histories[i], add_generation_prompt);
