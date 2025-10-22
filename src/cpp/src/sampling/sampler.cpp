@@ -949,7 +949,8 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
             m_logit_processors.insert({request_id, LogitProcessor(sampling_params, sequence_group->get_prompt_ids(), structured_output_controller)});
         }
         if (!m_stop_strings.count(request_id)) {
-            if (m_tokenizer.m_pimpl != nullptr) {
+            if (!sampling_params.stop_strings.empty()) {
+                OPENVINO_ASSERT(m_tokenizer.m_pimpl != nullptr, "Stop strings require a valid tokenizer");
                 auto processed_stop_string = process_stop_strings(sampling_params.stop_strings, m_tokenizer);
                 m_stop_strings.insert({request_id, processed_stop_string});
                 sequence_group->set_stream_window_size(processed_stop_string.first);

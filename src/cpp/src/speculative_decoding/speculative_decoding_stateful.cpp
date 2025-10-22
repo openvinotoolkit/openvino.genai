@@ -386,6 +386,7 @@ StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(
         draft_model_desc_copy.properties = main_model_desc.properties;
     }
     m_draft_request = std::make_unique<LLMInferWrapper>(draft_model_desc_copy);
+    OPENVINO_ASSERT(m_draft_request != nullptr, "Failed to create draft model inference wrapper");
 
     // Specifying number candidates to generate
     ensure_num_assistant_tokens_is_set(m_generation_config);
@@ -400,6 +401,7 @@ StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(
         main_model_desc_copy.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = m_max_candidates_num + 1;
     }
     m_main_request = std::make_unique<LLMInferWrapper>(main_model_desc_copy);
+    OPENVINO_ASSERT(m_main_request != nullptr, "Failed to create main model inference wrapper");
    
     m_sd_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
 }
@@ -415,8 +417,8 @@ DecodedResults StatefulSpeculativeLLMPipeline::generate(
     encode_timer.start();
 
     std::string prompt = std::visit(overloaded{
-        [](const std::string& prompt) {
-            return prompt;
+        [](const std::string& prompt_str) {
+            return prompt_str;
         },
         [](std::vector<std::string>& prompts) {
             OPENVINO_ASSERT(prompts.size() == 1u, "Currently only batch size=1 is supported");
