@@ -316,7 +316,8 @@ ov::genai::StructuredOutputConfig js_to_cpp<ov::genai::StructuredOutputConfig>(c
 
     return config;
 }
-    
+
+template <>
 ov::genai::PerfMetrics& unwrap<ov::genai::PerfMetrics>(const Napi::Env& env, const Napi::Value& value) {
     const auto obj = value.As<Napi::Object>();
     const auto& prototype = env.GetInstanceData<AddonData>()->perf_metrics;
