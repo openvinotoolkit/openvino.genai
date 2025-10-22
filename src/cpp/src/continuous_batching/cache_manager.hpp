@@ -44,8 +44,6 @@ public:
         OPENVINO_ASSERT(all_gpu_device || execution_devices.size() == 1,
                         "Continuous batching: execution device is expected to be single CPU / single GPU / multi GPUs");
         m_device = execution_devices[0];
-        // set block_size depending on device
-        const size_t cpu_block_size = 32, gpu_block_size = 16, gpu_block_size_xattn = 256;
 
         if (all_gpu_device) {
             m_context = m_request.get_compiled_model().get_context();
@@ -74,6 +72,8 @@ public:
             }
         }
 
+        // set block_size depending on device
+        const size_t cpu_block_size = 32, gpu_block_size = 16, gpu_block_size_xattn = 256;
         bool has_xattention = false;
         if (all_gpu_device) {
             if (m_value_shapes[0][2].get_length() == gpu_block_size_xattn) {
