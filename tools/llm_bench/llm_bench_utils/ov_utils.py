@@ -724,7 +724,7 @@ def create_langchain_text_embed_model(model_path, device, memory_data_collector,
         memory_data_collector.start()
 
     start = time.perf_counter()
-    pipe = OpenVINOBgeEmbeddings(model_name_or_path=model_path,
+    pipe = OpenVINOBgeEmbeddings(model_name_or_path=str(model_path),
                                  model_kwargs={"device": device.upper()},
                                  encode_kwargs=encode_kwargs)
     pipe.embed_instruction = config.embed_instruction or ""
