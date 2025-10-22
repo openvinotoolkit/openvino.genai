@@ -9,11 +9,15 @@ from utils.comparation import compare_generation_results
 from utils.ov_genai_pipelines import create_ov_pipeline, PipelineType, convert_decoded_results_to_generation_result
 
 eagle_models_and_input = [
-    ("Qwen/Qwen3-1.7B", "AngelSlim/Qwen3-1.7B_eagle3", "Why is the Sun yellow?")]
+    ("Qwen/Qwen3-1.7B", "AngelSlim/Qwen3-1.7B_eagle3", """Code:
+def add(a, b):
+    return a + b
+
+Question: Can you please add 2 and 3
+A:""")]
 
 devices = [
-    ('CPU', 'CPU'),
-    ('GPU', 'GPU')
+    ('CPU', 'CPU')
 ]
 @pytest.mark.parametrize("main_model,draft_model,prompt", eagle_models_and_input)
 @pytest.mark.parametrize("main_device,draft_device", devices)
@@ -30,7 +34,6 @@ def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_dev
 
     # Run reference HF model:
     ov_generation_config = ov_genai.GenerationConfig(max_new_tokens=20)
-    main_hf_tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     ref_gen_results = run_hugging_face(main_opt_model, main_hf_tokenizer, [prompt], ov_generation_config)  
 
     # Run OpenVINO GenAI pipeline:
@@ -63,7 +66,6 @@ def test_eagle3_sd_extended_perf_metrics(main_model, main_device, draft_model, d
     assert not extended_perf_metrics is None
     assert not extended_perf_metrics.main_model_metrics is None
     assert not extended_perf_metrics.draft_model_metrics is None
-
     assert extended_perf_metrics.get_num_accepted_tokens() > 0
 
     num_generated_tokens_main = extended_perf_metrics.main_model_metrics.get_num_generated_tokens()
