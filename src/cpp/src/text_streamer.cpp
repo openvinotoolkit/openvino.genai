@@ -124,21 +124,38 @@ void TextStreamer::end() {
 
 StreamerBase::~StreamerBase() = default;
 
-TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::shared_ptr<IncrementalParser>> parsers) 
-    : TextStreamer(tokenizer, [this](std::string s) -> CallbackTypeVariant {
-                return this->write(s);
-    }), m_parsers{parsers} {}
+class TextParserStreamer::TextParserStreamerImpl {
+public:
 
-CallbackTypeVariant TextParserStreamer::write(std::string message) {
+std::vector<std::shared_ptr<IncrementalParser>> m_parsers;
+JsonContainer m_parsed_message;
+
+TextParserStreamerImpl(std::vector<std::shared_ptr<IncrementalParser>> parsers) : m_parsers{parsers} {}
+
+void parse(std::string message) {
     for (auto& parser: m_parsers) {
-        message = parser->parse(m_parsed_message, m_text_buffer, message);
+        message = parser->parse(m_parsed_message, message);
         // Message can be modified inside parser, if parser for example extracted tool calling from message content
         m_parsed_message["content"] = m_parsed_message["content"].get_string() + message;
     }
-
-    m_text_buffer += message;
-    return write(m_parsed_message);
 }
+};
+
+TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::shared_ptr<IncrementalParser>> parsers) 
+    : TextStreamer(tokenizer, [this](std::string s) -> CallbackTypeVariant {
+                return this->write(s);
+    }), m_pimpl{std::make_unique<TextParserStreamerImpl>(parsers)} {}
+
+CallbackTypeVariant TextParserStreamer::write(std::string message) {
+    m_pimpl->parse(message);
+    return write(m_pimpl->m_parsed_message);
+}
+
+JsonContainer TextParserStreamer::get_parsed_message() const {
+    return m_pimpl->m_parsed_message;
+}
+
+TextParserStreamer::~TextParserStreamer() = default;
 
 }  // namespace genai
 }  // namespace ov
