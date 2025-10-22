@@ -50,7 +50,7 @@ private:
 class OPENVINO_GENAI_EXPORTS TextParserStreamer : public TextStreamer {
 public:
     using TextStreamer::write;
-    TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::shared_ptr<IncrementalParserBase>> parsers = {});
+    TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::shared_ptr<IncrementalParser>> parsers = {});
 
     virtual StreamingStatus write(JsonContainer& message) = 0;
 
@@ -60,7 +60,7 @@ public:
 private:
     JsonContainer m_parsed_message;
     std::string m_text_buffer;
-    std::vector<std::shared_ptr<IncrementalParserBase>> m_parsers;
+    std::vector<std::shared_ptr<IncrementalParser>> m_parsers;
 };
 
 }  // namespace genai

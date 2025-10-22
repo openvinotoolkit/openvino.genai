@@ -10,9 +10,9 @@
 namespace ov {
 namespace genai {
 
-class OPENVINO_GENAI_EXPORTS IncrementalParserBase {
+class OPENVINO_GENAI_EXPORTS IncrementalParser {
 public:
-    IncrementalParserBase() = default;
+    IncrementalParser() = default;
 
     // We return string which with filtered text to be added to content.
     virtual std::string parse(
@@ -23,19 +23,19 @@ public:
         const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
     ) = 0;
 
-    virtual ~IncrementalParserBase() = default;
+    virtual ~IncrementalParser() = default;
 };
 
-class OPENVINO_GENAI_EXPORTS ReasoningParser : public IncrementalParserBase {
+class OPENVINO_GENAI_EXPORTS ReasoningIncrementalParser : public IncrementalParser {
 private:
     class ReasoningParserImpl;
     std::unique_ptr<ReasoningParserImpl> m_impl;
 public:
-    ReasoningParser(bool expect_open_tag = true,
+    ReasoningIncrementalParser(bool expect_open_tag = true,
                     bool keep_original_content = true, 
                     const std::string& open_tag = "<think>", 
                     const std::string& close_tag = "</think>");
-    virtual ~ReasoningParser();
+    virtual ~ReasoningIncrementalParser();
 
     std::string parse(
         JsonContainer& msg,
@@ -46,24 +46,24 @@ public:
     ) override;
 };
 
-class OPENVINO_GENAI_EXPORTS DeepSeekR1ReasoningParser : public ReasoningParser {
+class OPENVINO_GENAI_EXPORTS DeepSeekR1ReasoningIncrementalParser : public ReasoningIncrementalParser {
 public:
-    explicit DeepSeekR1ReasoningParser(bool expect_open_tag = false) : ReasoningParser(expect_open_tag) {};
+    explicit DeepSeekR1ReasoningIncrementalParser(bool expect_open_tag = false) : ReasoningIncrementalParser(expect_open_tag) {};
 };
 
-class OPENVINO_GENAI_EXPORTS Phi4ReasoningParser : public ReasoningParser {
+class OPENVINO_GENAI_EXPORTS Phi4ReasoningIncrementalParser : public ReasoningIncrementalParser {
 public:
-    explicit Phi4ReasoningParser(bool expect_open_tag = true) : ReasoningParser(expect_open_tag) {};
+    explicit Phi4ReasoningIncrementalParser(bool expect_open_tag = true) : ReasoningIncrementalParser(expect_open_tag) {};
 };
 
-class ParserBase {
+class Parser {
 public:
-    ParserBase() = default;
-    virtual ~ParserBase();
+    Parser() = default;
+    virtual ~Parser();
     virtual void parse(JsonContainer& text) = 0;
 };
 
-class OPENVINO_GENAI_EXPORTS Llama3PythonicToolParser : public ParserBase {
+class OPENVINO_GENAI_EXPORTS Llama3PythonicToolParser : public Parser {
 // Does not modify original content, only extracts and adds tool calls
 public:
     explicit Llama3PythonicToolParser(bool keep_original_content = true);
@@ -74,7 +74,7 @@ private:
     std::unique_ptr<Llama3PythonicToolParserImpl> m_impl;
 };
 
-class OPENVINO_GENAI_EXPORTS Llama3JsonToolParser : public ParserBase {
+class OPENVINO_GENAI_EXPORTS Llama3JsonToolParser : public Parser {
 // Does not modify original content, only extracts and adds tool calls
 public:
     explicit Llama3JsonToolParser(bool keep_original_content = true);
@@ -85,7 +85,7 @@ private:
     std::unique_ptr<Llama3JsonToolParserImpl> m_impl;
 };
 
-class OPENVINO_GENAI_EXPORTS BaseReasoningParser : public ParserBase{
+class OPENVINO_GENAI_EXPORTS BaseReasoningParser : public Parser {
 public:
     BaseReasoningParser(
         bool expect_open_tag = true, 
@@ -98,8 +98,6 @@ private:
     class BaseReasoningParserImpl;
     std::unique_ptr<BaseReasoningParserImpl> m_impl;
 };
-
-// TODO: DeepSeekR1ReasoningParser -> DeepSeekR1IncrementalParser
 
 }  // namespace genai
 }  // namespace ov

@@ -19,7 +19,7 @@ using ov::genai::CallbackTypeVariant;
 using ov::genai::StreamingStatus;
 using ov::genai::TextStreamer;
 using ov::genai::TextParserStreamer;
-using ov::genai::IncrementalParserBase;
+using ov::genai::IncrementalParser;
 using ov::genai::JsonContainer;
 using ov::genai::Tokenizer;
 
@@ -148,11 +148,11 @@ void init_streamers(py::module_& m) {
     // TODO: double check/add more relevant docstrings for TextParserStreamer.
     py::class_<TextParserStreamer, ConstructableTextParserStreamer, std::shared_ptr<TextParserStreamer>, TextStreamer>(m, "TextParserStreamer")
         .def(py::init([](const Tokenizer& tokenizer,
-                         std::vector<std::shared_ptr<IncrementalParserBase>> parsers) {
+                         std::vector<std::shared_ptr<IncrementalParser>> parsers) {
                 return std::make_shared<ConstructableTextParserStreamer>(tokenizer, parsers);
             }),
             py::arg("tokenizer"),
-            py::arg("parsers") = std::vector<std::shared_ptr<IncrementalParserBase>>(),
+            py::arg("parsers") = std::vector<std::shared_ptr<IncrementalParser>>(),
             py::keep_alive<1, 3>(),
             "TextParserStreamer is used to decode tokens into text, parse the text and call user-defined incremental parsers.")
         .def("write",

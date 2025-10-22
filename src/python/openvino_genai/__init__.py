@@ -23,13 +23,13 @@ from .py_openvino_genai import (
 )
 
 from .py_openvino_genai import (
-    ParserBase,
-    IncrementalParserBase,
-    Phi4ReasoningParser,
-    DeepSeekR1ReasoningParser,
+    Parser,
+    IncrementalParser,
+    Phi4ReasoningIncrementalParser,
+    DeepSeekR1ReasoningIncrementalParser,
     Llama3JsonToolParser,
     Llama3PythonicToolParser,
-    ReasoningParser
+    ReasoningIncrementalParser
 )
 
 __version__ = get_version()

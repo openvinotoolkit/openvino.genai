@@ -95,7 +95,7 @@ TEST(ParserTest, test_reasoning_parser_2) {
 
 class DeepSeekR1ReasoningParserTest : public ::testing::Test {
 protected:
-    ov::genai::DeepSeekR1ReasoningParser parser;
+    ov::genai::DeepSeekR1ReasoningIncrementalParser parser;
     JsonContainer msg;
 };
 
@@ -124,8 +124,8 @@ TEST_F(DeepSeekR1ReasoningParserTest, ReasoningContentAccumulatesAcrossCalls) {
 }
 
 TEST(ParserTest, test_custom_parser) {
-    // Define a small custom parser derived from ParserBase
-    class CustomParser : public ov::genai::ParserBase {
+    // Define a small custom parser derived from Parser
+    class CustomParser : public ov::genai::Parser {
     public:
         void parse(ov::genai::JsonContainer& msg) override {
             // extract "content"
@@ -168,7 +168,7 @@ TEST(ParserTest, CustomParser_AccumulatesBetweenStartStop) {
     using namespace ov::genai;
 
     // Custom incremental parser: mirrors the Python logic
-    class CustomParser : public IncrementalParserBase {
+    class CustomParser : public IncrementalParser {
     public:
         bool main_part_started = false;
 
@@ -210,7 +210,7 @@ TEST(ParserTest, CustomParser_AccumulatesBetweenStartStop) {
     public:
         using TextParserStreamer::write;
         // Forwarding constructor to base class
-        CustomStreamer(ov::genai::Tokenizer& tok, const std::vector<std::shared_ptr<IncrementalParserBase>>& parsers)
+        CustomStreamer(ov::genai::Tokenizer& tok, const std::vector<std::shared_ptr<IncrementalParser>>& parsers)
             : ov::genai::TextParserStreamer(tok, parsers) {}
 
         JsonContainer final_msg;
@@ -221,7 +221,7 @@ TEST(ParserTest, CustomParser_AccumulatesBetweenStartStop) {
     };
 
     Tokenizer tok;
-    std::shared_ptr<IncrementalParserBase> parser = std::make_shared<CustomParser>();
+    std::shared_ptr<IncrementalParser> parser = std::make_shared<CustomParser>();
     CustomStreamer streamer(tok, {parser});
     
     

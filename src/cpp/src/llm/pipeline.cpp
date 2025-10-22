@@ -265,7 +265,7 @@ DecodedResults LLMPipeline::generate(
         return res;
     }
     
-    std::vector<std::shared_ptr<ParserBase>> parsers = (*generation_config).parsers;
+    std::vector<std::shared_ptr<Parser>> parsers = (*generation_config).parsers;
     res.parsed.resize(res.texts.size());
     // Apply Base parsers sequentially even if IncrementalParser has run.
     for (size_t i = 0; i < res.texts.size(); ++i) {

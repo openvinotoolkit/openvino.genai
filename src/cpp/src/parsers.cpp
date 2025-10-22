@@ -8,7 +8,7 @@
 
 namespace ov::genai {
 
-class ReasoningParser::ReasoningParserImpl {
+class ReasoningIncrementalParser::ReasoningParserImpl {
 private:
     bool m_expect_open_tag;
     bool m_first_run = true;
@@ -148,13 +148,13 @@ public:
     }
 };
 
-ReasoningParser::ReasoningParser(bool expect_open_tag, bool keep_original_content, const std::string& open_tag, const std::string& close_tag) {
+ReasoningIncrementalParser::ReasoningIncrementalParser(bool expect_open_tag, bool keep_original_content, const std::string& open_tag, const std::string& close_tag) {
     m_impl = std::make_unique<ReasoningParserImpl>(expect_open_tag, keep_original_content, open_tag, close_tag);
 }
 
-ReasoningParser::~ReasoningParser() = default;
+ReasoningIncrementalParser::~ReasoningIncrementalParser() = default;
 
-std::string ReasoningParser::parse(
+std::string ReasoningIncrementalParser::parse(
     JsonContainer& msg,
     const std::string& previous_text, 
     std::string& delta_text,
@@ -298,6 +298,6 @@ void BaseReasoningParser::parse(JsonContainer& input) {
 
 BaseReasoningParser::~BaseReasoningParser() = default;
 
-ParserBase::~ParserBase() = default;
+Parser::~Parser() = default;
 
 } // namespace ov::genai

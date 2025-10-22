@@ -4,7 +4,7 @@ import json
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
 from utils.ov_genai_pipelines import create_ov_pipeline
 import pytest
-from openvino_genai import Tokenizer, IncrementalParserBase, ParserBase, TextParserStreamer, StreamingStatus, Llama3JsonToolParser, Phi4ReasoningParser, DeepSeekR1ReasoningParser, GenerationConfig, ReasoningParser
+from openvino_genai import Tokenizer, IncrementalParser, Parser, TextParserStreamer, StreamingStatus, Llama3JsonToolParser, Phi4ReasoningIncrementalParser, DeepSeekR1ReasoningIncrementalParser, GenerationConfig, ReasoningIncrementalParser
 from transformers import AutoTokenizer
 import re
 
@@ -50,7 +50,7 @@ def test_incremental_phi4_reason_parser_1(hf_ov_genai_models, answer):
         def write(self, message):
             msg.update(message)
             return StreamingStatus.RUNNING
-    streamer = CustomStreamer(genai_tokenizer, parsers=[Phi4ReasoningParser()])
+    streamer = CustomStreamer(genai_tokenizer, parsers=[Phi4ReasoningIncrementalParser()])
     
     msg = {}
     for subword in stream_string:
@@ -76,7 +76,7 @@ def test_incremental_phi4_reason_integer_token_ids(hf_ov_genai_models):
         def write(self, message):
             msg.update(message)
             return StreamingStatus.RUNNING
-    streamer = CustomStreamer(genai_tokenizer, parsers=[Phi4ReasoningParser()])
+    streamer = CustomStreamer(genai_tokenizer, parsers=[Phi4ReasoningIncrementalParser()])
     
     msg = {}
     answer = "<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \boxed{3}."
@@ -114,7 +114,7 @@ def test_incremental_phi4_reason_parser_2(hf_ov_genai_models, split_answer):
         def write(self, message):
             msg.update(message)
             return StreamingStatus.RUNNING
-    streamer = CustomStreamer(genai_tokenizer, parsers=[Phi4ReasoningParser()])
+    streamer = CustomStreamer(genai_tokenizer, parsers=[Phi4ReasoningIncrementalParser()])
     
     msg = {}
     for subword in split_answer:
@@ -133,7 +133,7 @@ def test_incremental_phi4_reason_parser_2(hf_ov_genai_models, split_answer):
 ])
 def test_incremental_phi4_reason_parser_nostreamer(answer):
     # In this test we are calling parser directly without streamer
-    parser = Phi4ReasoningParser()
+    parser = Phi4ReasoningIncrementalParser()
     
     stream_string = re.split(r"(\s+)", answer)
     msg = {}
@@ -169,7 +169,7 @@ def test_reasoning_parser_cut_content(hf_ov_genai_models, answer, keep_original_
         def write(self, message):
             msg.update(message)
             return StreamingStatus.RUNNING
-    streamer = CustomStreamer(genai_tokenizer, parsers=[ReasoningParser(expect_open_tag=True, keep_original_content=keep_original_content)])
+    streamer = CustomStreamer(genai_tokenizer, parsers=[ReasoningIncrementalParser(expect_open_tag=True, keep_original_content=keep_original_content)])
     
     msg = {}
     for subword in stream_string:
@@ -202,7 +202,7 @@ def test_incremental_deepseek_parser():
     extended = stream_string[:]
     extended.insert(0, "")
 
-    parser = DeepSeekR1ReasoningParser()
+    parser = DeepSeekR1ReasoningIncrementalParser()
     for (prev_subword, subword) in zip(extended, stream_string):
         msg = parser.parse(msg, prev_subword, subword)
     
@@ -219,7 +219,7 @@ def test_incremental_deepseek_parser():
 def test_custom_incremental_parser(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
 
-    class CustomParser(IncrementalParserBase):
+    class CustomParser(IncrementalParser):
         main_part_started: bool = False
 
         def parse(self, msg: dict, previous_text: str, delta_text: str, prev_tokens = None, delta_tokens = None) -> str:
@@ -279,7 +279,7 @@ def test_custom_parser(tmp_path, model_id):
     pipe = create_ov_pipeline(models_path)
     tok = pipe.get_tokenizer()
     
-    class CustomParser(ParserBase):
+    class CustomParser(Parser):
         def parse(self, msg: dict):
             content = None
             if 'content' in msg:
