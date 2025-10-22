@@ -1462,7 +1462,7 @@ class ImageGenerationPerfMetrics:
 class IncrementalParser:
     def __init__(self) -> None:
         ...
-    def parse(self, msg: dict, previous_text: str, delta_text: str, previous_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
+    def parse(self, message: dict, previous_text: str, delta_text: str, previous_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
         """
         Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.
         """
@@ -1842,7 +1842,7 @@ class MeanStdPair:
 class Parser:
     def __init__(self) -> None:
         ...
-    def parse(self, text: dict) -> None:
+    def parse(self, message: dict) -> None:
         """
         Parse is called with the full text. Returns a dict with parsed content.
         """
@@ -3390,19 +3390,22 @@ class TextEmbeddingPipeline:
         Waits computed embeddings for a query
         """
 class TextParserStreamer(TextStreamer):
+    """
+    
+    Base class for text streamers which works with parsed messages. In order to use inherit from this class and implement write method which takes a dict as input parameter.
+    
+    tokenizer: Tokenizer object to decode tokens into text.
+    parsers: vector of IncrementalParser to process the text stream incrementally.
+    """
     def __init__(self, tokenizer: Tokenizer, parsers: collections.abc.Sequence[IncrementalParser] = []) -> None:
-        """
-        TextParserStreamer is used to decode tokens into text, parse the text and call user-defined incremental parsers.
-        """
-    def _write(self, arg0: collections.abc.Sequence[typing.SupportsInt] | str) -> StreamingStatus:
         ...
+    def _write(self, chunk: collections.abc.Sequence[typing.SupportsInt] | str) -> StreamingStatus:
+        """
+        This is a private method is used to call write with integer tokens or text chunks. Is used for text purposes only.
+        """
     def get_parsed_message(self) -> dict:
         """
-        Get the current parsed message
-        """
-    def write(self, message: dict) -> StreamingStatus:
-        """
-        Write is called with a dict. Returns StreamingStatus.
+        Returns the accumulated message.
         """
 class TextRerankPipeline:
     """

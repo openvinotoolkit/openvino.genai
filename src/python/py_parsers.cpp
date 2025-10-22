@@ -46,28 +46,12 @@ public:
 
         py::function parse_method = py::get_override(static_cast<const IncrementalParser*>(this), "parse");
         if (!parse_method) {
-            throw std::runtime_error("parse method not implemented in Python subclass");
+            OPENVINO_THROW("parse method not implemented in Python subclass");
         }
+
+        auto res = parse_method(py_msg, previous_text, delta_text, previous_tokens, delta_tokens);
+        msg = pyutils::py_object_to_json_container(py_msg);
         
-        auto res = parse_method(
-            py_msg,
-            previous_text,
-            delta_text,
-            previous_tokens,
-            delta_tokens
-        );
-        
-        // iterate throught py_msg and update msg
-        auto msg_anymap = pyutils::py_object_to_any_map(py_msg);
-        for (const auto& [key, value] : msg_anymap) {
-            if (value.is<std::string>()) {
-                msg[key] = value.as<std::string>();
-            } else if (value.is<ov::AnyMap>()) {
-                msg[key] = JsonContainer(value.as<ov::AnyMap>());
-            } else {
-                OPENVINO_THROW("Unsupported type in JsonContainer update from Python dict");
-            }
-        }
         return res.cast<std::string>();
     }
 };
@@ -79,24 +63,13 @@ public:
         
         py::function parse_method = py::get_override(static_cast<const Parser*>(this), "parse");
         if (!parse_method) {
-            throw std::runtime_error("parse method not implemented in Python subclass");
+            OPENVINO_THROW("parse method not implemented in Python subclass");
         }
         
         // Convert JsonContainer to py::dict
-       py::dict py_msg = pyutils::json_container_to_py_object(msg);
-       parse_method(py_msg);
-
-       // iterate throught py_msg and update msg
-       auto msg_anymap = pyutils::py_object_to_any_map(py_msg);
-       for (const auto& [key, value] : msg_anymap) {
-           if (value.is<std::string>()) {
-               msg[key] = value.as<std::string>();
-           } else if (value.is<ov::AnyMap>()) {
-               msg[key] = JsonContainer(value.as<ov::AnyMap>());
-           } else {
-               OPENVINO_THROW("Unsupported type in JsonContainer update from Python dict");
-           }
-       }
+        py::dict py_msg = pyutils::json_container_to_py_object(msg);
+        parse_method(py_msg);
+        msg = pyutils::py_object_to_json_container(py_msg);
     }
 };
 

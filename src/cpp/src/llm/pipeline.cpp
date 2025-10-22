@@ -15,6 +15,41 @@
 #include "speculative_decoding/speculative_decoding_stateful.hpp"
 #include "utils.hpp"
 
+namespace {
+
+void run_parsers(ov::genai::DecodedResults& res, const ov::genai::OptionalGenerationConfig& generation_config, const ov::genai::StreamerVariant& streamer) {
+    // If streamer is of StreamerBase type, and it is TextParserStreamer, get parsed message
+    // Streaming is available only for batch size 1 therefore only parsed[0]
+    if (auto streamer_obj = std::get_if<std::shared_ptr<ov::genai::StreamerBase>>(&streamer)) {
+        if (auto parser_streamer = std::dynamic_pointer_cast<ov::genai::TextParserStreamer>(*streamer_obj)) {
+            res.parsed.resize(1);
+            res.parsed[0] = parser_streamer->get_parsed_message();
+        }
+    }
+
+    if (!generation_config.has_value() || generation_config->parsers.empty()) {
+        return;
+    }
+    
+    std::vector<std::shared_ptr<ov::genai::Parser>> parsers = generation_config->parsers;
+    res.parsed.resize(res.texts.size());
+    // Apply Base parsers sequentially even if IncrementalParser has run.
+    for (size_t i = 0; i < res.texts.size(); ++i) {
+        auto& msg = res.parsed[i];
+        if (!msg.contains("content")) {
+            // Initialize msg with content
+            msg["content"] = res.texts[i];
+        }
+        for (auto& parser: parsers) {
+            // TODO: Check the state of incremental parser and reset if necessary
+            parser->parse(msg);
+        }
+        res.parsed[i] = msg;
+    }
+}
+
+}
+
 namespace ov {
 
 namespace genai {
@@ -251,36 +286,7 @@ DecodedResults LLMPipeline::generate(
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer) {
     auto res = m_pimpl->generate(inputs, generation_config, streamer);
-    
-    // If streamer is of StreamerBase type, and it is TextParserStreamer, get parsed message
-    // Streaming is available only for batch size 1 therefore only parsed[0]
-    if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&streamer)) {
-        if (auto parser_streamer = std::dynamic_pointer_cast<TextParserStreamer>(*streamer_obj)) {
-            res.parsed.resize(1);
-            res.parsed[0] = parser_streamer->get_parsed_message();
-        }
-    }
-
-    if (!generation_config.has_value() || generation_config->parsers.empty()) {
-        return res;
-    }
-    
-    std::vector<std::shared_ptr<Parser>> parsers = (*generation_config).parsers;
-    res.parsed.resize(res.texts.size());
-    // Apply Base parsers sequentially even if IncrementalParser has run.
-    for (size_t i = 0; i < res.texts.size(); ++i) {
-        auto& msg = res.parsed[i];
-        if (!msg.contains("content")) {
-            // Initialize msg with content
-            msg["content"] = res.texts[i];
-        }
-        for (auto& parser: parsers) {
-            // TODO: Check the state of incremental parser and reset if necessary
-            parser->parse(msg);
-        }
-        res.parsed[i] = msg;
-    }
-
+    run_parsers(res, generation_config, streamer);
     return res;
 }
 
@@ -288,8 +294,10 @@ DecodedResults LLMPipeline::generate(StringInputs text, const ov::AnyMap& config
     auto config_arg = utils::get_config_from_map(config_map);
     GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
     config.update_generation_config(config_map);
-
-    return m_pimpl->generate(text, config, utils::get_streamer_from_map(config_map));
+    auto streamer = utils::get_streamer_from_map(config_map);
+    auto res = m_pimpl->generate(text, config, streamer);
+    run_parsers(res, config_arg, streamer);
+    return res;
 }
 
 EncodedResults LLMPipeline::generate(

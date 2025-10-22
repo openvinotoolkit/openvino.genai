@@ -39,6 +39,13 @@ callback: User-defined callback function to process the decoded text, callback s
 detokenization_params: AnyMap with detokenization parameters, e.g. ov::genai::skip_special_tokens(...)
 )";
 
+auto text_parser_streamer_docstring = R"(
+Base class for text streamers which works with parsed messages. In order to use inherit from this class and implement write method which takes a dict as input parameter.
+
+tokenizer: Tokenizer object to decode tokens into text.
+parsers: vector of IncrementalParser to process the text stream incrementally.
+)";
+
 class ConstructableStreamer: public StreamerBase {
     OPENVINO_SUPPRESS_DEPRECATED_START
     bool put(int64_t token) override {
@@ -88,15 +95,6 @@ public:
         
         return res.cast<StreamingStatus>();
     }
-
-    StreamingStatus write(py::dict& message) {
-        PYBIND11_OVERRIDE_PURE(
-            StreamingStatus,
-            TextParserStreamer,
-            "write",
-            message
-        );
-    }
 };
 
 } // namespace
@@ -145,38 +143,34 @@ void init_streamers(py::module_& m) {
             py::arg("token"))
             .def("end", &TextStreamer::end);
         
-    // TODO: double check/add more relevant docstrings for TextParserStreamer.
-    py::class_<TextParserStreamer, ConstructableTextParserStreamer, std::shared_ptr<TextParserStreamer>, TextStreamer>(m, "TextParserStreamer")
+    py::class_<TextParserStreamer, ConstructableTextParserStreamer, std::shared_ptr<TextParserStreamer>, TextStreamer>(m, "TextParserStreamer", text_parser_streamer_docstring)
         .def(py::init([](const Tokenizer& tokenizer,
                          std::vector<std::shared_ptr<IncrementalParser>> parsers) {
                 return std::make_shared<ConstructableTextParserStreamer>(tokenizer, parsers);
             }),
             py::arg("tokenizer"),
             py::arg("parsers") = std::vector<std::shared_ptr<IncrementalParser>>(),
-            py::keep_alive<1, 3>(),
-            "TextParserStreamer is used to decode tokens into text, parse the text and call user-defined incremental parsers.")
-        .def("write",
-            [](TextParserStreamer& self, py::dict& message) {
-                // Downcast to ConstructableTextParserStreamer if needed
-                auto* derived = dynamic_cast<ConstructableTextParserStreamer*>(&self);
-                if (!derived) {
-                    throw std::runtime_error("write(py::dict&) only available for ConstructableTextParserStreamer");
-                }
-                return derived->write(message);
-            },
-            py::arg("message"),
-            "Write is called with a dict. Returns StreamingStatus.")
-        .def("_write", [](TextParserStreamer& self, std::variant<std::vector<int64_t>, std::string> chunk) -> StreamingStatus {
+            py::keep_alive<1, 3>())
+        
+        // If we inherit and implement 'write' in Python and try to call write with text chunks or integer tokens 
+        // then Python implementation will be called since python does not have overloads.
+        // But for texts we need to check that when we call write with strings/integer tokens they are accumulated and stored correctly in py::dict.
+        // Therefore we provide a private method '_write' which is used to call 'write' with correct parameters from C++ side.
+        .def("_write", 
+            [](TextParserStreamer& self, std::variant<std::vector<int64_t>, std::string> chunk) -> StreamingStatus {
                 if (auto _token = std::get_if<std::vector<int64_t>>(&chunk)) {
                     return self.write(*_token);
                 } else if (auto _str =  std::get_if<std::string>(&chunk)) {
                     auto res = self.write(*_str);
                     return std::get<StreamingStatus>(res);
                 }
-        })
-        .def("get_parsed_message", 
+                return StreamingStatus::RUNNING;
+            },
+            py::arg("chunk"), "This is a private method is used to call write with integer tokens or text chunks. Is used for text purposes only.")
+        
+        .def("get_parsed_message",
             [](TextParserStreamer& self) -> py::dict{
                 return pyutils::json_container_to_py_object(self.get_parsed_message());
-                
-            }, "Get the current parsed message");
+
+            }, "Returns the accumulated message.");
 }

@@ -17,8 +17,8 @@ private:
     std::string m_open_tag;
     std::string m_close_tag;
     std::string m_text_cache = "";
-public:
     bool m_deactivated = false;
+public:
     ReasoningParserImpl() = default;
     
     ReasoningParserImpl(bool expect_open_tag,
@@ -189,7 +189,7 @@ public:
         std::string args = call.substr(pos + 1, call.size() - pos - 2); // inside (...)
         
         JsonContainer kv;
-        // Parse arguments of the form key='value'
+        // Parse arguments of the form key="value"
         std::regex arg_re(R"((\w+)\s*=\s*\"([^"]*)\")");
         auto it = std::sregex_iterator(args.begin(), args.end(), arg_re);
         for (; it != std::sregex_iterator(); ++it) {

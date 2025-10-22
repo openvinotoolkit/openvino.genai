@@ -136,7 +136,7 @@ CallbackTypeVariant TextParserStreamer::write(std::string message) {
         m_parsed_message["content"] = m_parsed_message["content"].get_string() + message;
     }
 
-    m_text_buffer = message;
+    m_text_buffer += message;
     return write(m_parsed_message);
 }
 

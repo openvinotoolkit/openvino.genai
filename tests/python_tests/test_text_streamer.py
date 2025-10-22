@@ -71,7 +71,7 @@ def test_text_prompts(tmp_path, prompt, model_id):
     for token in tokens:
         streamer.write(token)
     streamer.end()
-    
+
     assert ''.join(accumulated) == ov_tokenizer.decode(tokens)
 
     for chunk_size in [1,2,3,4,5]:
