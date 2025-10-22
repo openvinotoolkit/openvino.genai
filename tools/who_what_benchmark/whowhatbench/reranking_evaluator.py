@@ -12,6 +12,9 @@ import datasets
 import numpy as np
 
 
+# we would like to evalute score for all documents
+# In GenAI, top_k is set at the pipeline creation stage, but data is collected after the pipeline creation stage
+# let's set potential big top_k(avg amount of documents in default dataset is 10) so that all documents are included in the final ranking
 DEFAULT_TOP_K = 100
 DEFAULT_MAX_LENGTH = 200
 DEFAULT_MAX_LENGTH_QWEN = 8192

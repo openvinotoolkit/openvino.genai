@@ -198,6 +198,8 @@ class EmbedsSimilarity:
 
 
 class RerankingSimilarity:
+    MISSING_DOCUMENT_PENALTY = 1
+
     def evaluate(self, data_gold, data_prediction):
         gold_results = data_gold["top_n_scores_path"].values
         prediction_results = data_prediction["top_n_scores_path"].values
@@ -213,15 +215,15 @@ class RerankingSimilarity:
             with open(prediction, 'rb') as f:
                 prediction_data = np.load(f)
 
+            prediction_scores = {int(pred_info[0]): pred_info[1] for pred_info in prediction_data}
             per_query_text = []
-            for i, score in enumerate(gold_data):
-                document_idx = score[0]
-                pred_i = 0
-                for pred_i, pred_score in enumerate(prediction_data):
-                    if int(pred_score[0]) == int(document_idx):
-                        per_query_text.append(abs(score[1] - pred_score[1]))
-                        break
-                prediction_data = np.delete(prediction_data, pred_i, 0)
+            for document_idx, gold_score in gold_data:
+                # if documents is not presented in ranking list, let's set 1 as max possible score difference
+                scores_diff = self.MISSING_DOCUMENT_PENALTY
+                if document_idx in prediction_scores:
+                    scores_diff = abs(gold_score - prediction_scores[document_idx])
+                per_query_text.append(scores_diff)
+
             metric_per_query.append(per_query_text)
             dist = np.linalg.norm(per_query_text)
             similarity_per_query.append(1 / (1 + dist))
