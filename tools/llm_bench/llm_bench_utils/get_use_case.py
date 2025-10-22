@@ -50,13 +50,13 @@ def safe_json_load(file_path: Path) -> Optional[dict]:
 def resolve_complex_model_types(config):
     model_type = config.get("model_type").lower().replace('_', '-')
     if model_type == "gemma3":
-        return "visual_text_gen", model_type
+        return USE_CASES["visual_text_gen"][0], model_type
     if model_type == "gemma3-text":
-        return "text_gen", model_type
+        return USE_CASES["text_gen"][0], model_type
     if model_type in ["phi4mm", "phi4-multimodal"]:
-        return "visual_text_gen", model_type
+        return USE_CASES["visual_text_gen"][0], model_type
     if model_type == "llama4":
-        return "visual_text_gen", model_type
+        return USE_CASES["visual_text_gen"][0], model_type
     return None, None
 
 
