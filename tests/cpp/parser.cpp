@@ -62,7 +62,7 @@ TEST(ParserTest, test_reasoning_parser_1) {
     expected["content"] = std::string(R"("<｜begin▁of▁sentence｜><｜begin▁of▁sentence｜><｜User｜>What is 2 + 1?<｜Assistant｜>\n\n**Solution:**\n\nTo find the sum of 2 and 1, )");
     expected["reasoning_content"] = std::string(R"(\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n)");
 
-    std::shared_ptr<BaseReasoningParser> parser = std::make_shared<BaseReasoningParser>(
+    std::shared_ptr<ReasoningParser> parser = std::make_shared<ReasoningParser>(
         /*expect_open_tag*/ true,
         /*keep_original_content*/ false
     );
@@ -80,7 +80,7 @@ TEST(ParserTest, test_reasoning_parser_2) {
     expected["content"] = prompt;
     expected["reasoning_content"] = std::string(R"(\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n)");
 
-    std::shared_ptr<BaseReasoningParser> parser = std::make_shared<BaseReasoningParser>(
+    std::shared_ptr<ReasoningParser> parser = std::make_shared<ReasoningParser>(
         /*expect_open_tag*/ true,
         /*keep_original_content*/ true
     );

@@ -15,6 +15,7 @@ namespace py = pybind11;
 
 using ov::genai::IncrementalParser;
 using ov::genai::Parser;
+using ov::genai::ReasoningParser;
 using ov::genai::ReasoningIncrementalParser;
 using ov::genai::Phi4ReasoningIncrementalParser;
 using ov::genai::DeepSeekR1ReasoningIncrementalParser;
@@ -106,12 +107,12 @@ void init_parsers(py::module_& m) {
     py::class_<IncrementalParser, ConstructableIncrementalParser, std::shared_ptr<IncrementalParser>>(m, "IncrementalParser")
         .def(py::init<>())
         .def("parse", [](IncrementalParser& self,
-                         py::dict& msg,
+                         py::dict& message,
                          std::string& previous_text,
                          std::string& delta_text,
                          const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt,
                          const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt) {
-            auto msg_cpp = pyutils::py_object_to_json_container(msg);
+            auto msg_cpp = pyutils::py_object_to_json_container(message);
             auto res = self.parse(msg_cpp, previous_text, delta_text, previous_tokens, delta_tokens);
             auto json_str = msg_cpp.to_json_string();
             
@@ -121,10 +122,10 @@ void init_parsers(py::module_& m) {
             py::dict result = json_mod.attr("loads")(json_str);
             // update msg with result
             for (auto item : result) {
-                msg[item.first] = item.second;
+                message[item.first] = item.second;
             }
             return res;
-        }, py::arg("msg"), py::arg("previous_text"), py::arg("delta_text"),
+        }, py::arg("message"), py::arg("previous_text"), py::arg("delta_text"),
            py::arg("previous_tokens") = std::nullopt, py::arg("delta_tokens") = std::nullopt,
            "Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.");
     
@@ -144,8 +145,8 @@ void init_parsers(py::module_& m) {
     py::class_<Parser, ConstructableParser, std::shared_ptr<Parser>>(m, "Parser")
         .def(py::init<>())
         .def("parse",
-            [](Parser& self, py::dict& msg) {
-                auto msg_cpp = pyutils::py_object_to_json_container(msg);
+            [](Parser& self, py::dict& message) {
+                auto msg_cpp = pyutils::py_object_to_json_container(message);
                 self.parse(msg_cpp);
 
                 // TODO: msg = pyutils::json_container_to_py_object(msg_cpp) does not work properly here,
@@ -157,11 +158,18 @@ void init_parsers(py::module_& m) {
                 
                 // update msg with result
                 for (auto item : result) {
-                    msg[item.first] = item.second;
+                    message[item.first] = item.second;
                 }
             },
-            py::arg("text"),
+            py::arg("message"),
             "Parse is called with the full text. Returns a dict with parsed content.");
+
+    py::class_<ReasoningParser, std::shared_ptr<ReasoningParser>, Parser>(m, "ReasoningParser")
+        .def(py::init<bool, bool, const std::string&, const std::string&>(),
+                py::arg("expect_open_tag") = true,
+                py::arg("keep_original_content") = true,
+                py::arg("open_tag") = "<think>",
+                py::arg("close_tag") = "</think>");
 
     py::class_<Llama3JsonToolParser, std::shared_ptr<Llama3JsonToolParser>, Parser>(m, "Llama3JsonToolParser")
         .def(py::init<>());

@@ -16,7 +16,7 @@ public:
 
     // We return string which with filtered text to be added to content.
     virtual std::string parse(
-        JsonContainer& msg,
+        JsonContainer& message,
         const std::string& previous_text, 
         std::string& delta_text, 
         const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt, 
@@ -38,7 +38,7 @@ public:
     virtual ~ReasoningIncrementalParser();
 
     std::string parse(
-        JsonContainer& msg,
+        JsonContainer& message,
         const std::string& previous_text, 
         std::string& delta_text,
         const std::optional<std::vector<int64_t>>& previous_tokens = std::nullopt, 
@@ -56,11 +56,25 @@ public:
     explicit Phi4ReasoningIncrementalParser(bool expect_open_tag = true) : ReasoningIncrementalParser(expect_open_tag) {};
 };
 
-class Parser {
+class OPENVINO_GENAI_EXPORTS Parser {
 public:
     Parser() = default;
     virtual ~Parser();
     virtual void parse(JsonContainer& text) = 0;
+};
+
+class OPENVINO_GENAI_EXPORTS ReasoningParser : public Parser {
+public:
+    ReasoningParser(
+        bool expect_open_tag = true, 
+        bool keep_original_content = true, 
+        const std::string& open_tag = "<think>", 
+        const std::string& close_tag = "</think>");
+    void parse(JsonContainer& message) override;
+    ~ReasoningParser();
+private:
+    class ReasoningParserImpl;
+    std::unique_ptr<ReasoningParserImpl> m_impl;
 };
 
 class OPENVINO_GENAI_EXPORTS Llama3PythonicToolParser : public Parser {
@@ -68,7 +82,7 @@ class OPENVINO_GENAI_EXPORTS Llama3PythonicToolParser : public Parser {
 public:
     explicit Llama3PythonicToolParser(bool keep_original_content = true);
     ~Llama3PythonicToolParser();
-    void parse(JsonContainer& input) override;
+    void parse(JsonContainer& message) override;
 private:
     class Llama3PythonicToolParserImpl;
     std::unique_ptr<Llama3PythonicToolParserImpl> m_impl;
@@ -79,24 +93,10 @@ class OPENVINO_GENAI_EXPORTS Llama3JsonToolParser : public Parser {
 public:
     explicit Llama3JsonToolParser(bool keep_original_content = true);
     ~Llama3JsonToolParser();
-    void parse(JsonContainer& input) override;
+    void parse(JsonContainer& message) override;
 private:
     class Llama3JsonToolParserImpl;
     std::unique_ptr<Llama3JsonToolParserImpl> m_impl;
-};
-
-class OPENVINO_GENAI_EXPORTS BaseReasoningParser : public Parser {
-public:
-    BaseReasoningParser(
-        bool expect_open_tag = true, 
-        bool keep_original_content = true, 
-        const std::string& open_tag = "<think>", 
-        const std::string& close_tag = "</think>");
-    void parse(JsonContainer& input) override;
-    ~BaseReasoningParser();
-private:
-    class BaseReasoningParserImpl;
-    std::unique_ptr<BaseReasoningParserImpl> m_impl;
 };
 
 }  // namespace genai

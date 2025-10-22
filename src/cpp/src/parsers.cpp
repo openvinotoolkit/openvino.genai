@@ -31,7 +31,7 @@ public:
           m_close_tag(close_tag) {}
 
     std::string parse(
-        JsonContainer&  msg,
+        JsonContainer&  message,
         const std::string& previous_text, 
         std::string& delta_text,
         const std::optional<std::vector<int64_t>>& previous_tokens, 
@@ -45,17 +45,17 @@ public:
         }
         m_first_run = false;
 
-        if (!msg.contains("reasoning_content")) {
-            msg["reasoning_content"] = "";
+        if (!message.contains("reasoning_content")) {
+            message["reasoning_content"] = "";
         }
-        if (!msg.contains("content")) {
-            msg["content"] = "";
+        if (!message.contains("content")) {
+            message["content"] = "";
         }
         
 
         auto txt_chunk = m_text_cache + delta_text;
-        auto reason_str = msg["reasoning_content"].get_string();
-        auto content_str = msg["content"].get_string();
+        auto reason_str = message["reasoning_content"].get_string();
+        auto content_str = message["content"].get_string();
 
         if (!m_think_tag_opened && txt_chunk.find(m_open_tag) != std::string::npos && m_expect_open_tag) {
             // Thinking has started
@@ -67,7 +67,7 @@ public:
             }
             
             m_think_tag_opened = true;
-            msg["reasoning_content"] = reason_str;
+            message["reasoning_content"] = reason_str;
             m_text_cache = "";
 
             if (txt_chunk.find(m_close_tag) != std::string::npos) {
@@ -80,7 +80,7 @@ public:
                 }
                 m_think_tag_opened = false;
                 m_deactivated = true;
-                msg["reasoning_content"] = reason_str;
+                message["reasoning_content"] = reason_str;
             }
         } else if (m_think_tag_opened && txt_chunk.find(m_close_tag) != std::string::npos) {
             // Thinking tag was closed
@@ -95,7 +95,7 @@ public:
                 delta_text = txt_chunk.substr(close_idx + m_close_tag.size(), txt_chunk.size() - (close_idx + m_close_tag.size()));
             }
 
-            msg["reasoning_content"] = reason_str;
+            message["reasoning_content"] = reason_str;
             m_text_cache = "";
             m_think_tag_opened = false;
             m_deactivated = true;
@@ -137,7 +137,7 @@ public:
             if (!m_keep_original_content) {
                 delta_text = "";
             }
-            msg["reasoning_content"] = reason_str;
+            message["reasoning_content"] = reason_str;
         } else {
             // Think tag was not opened yet and not found in the current delta_text.
             // Accumulate text in the cache to detect if <think> is split between several delta_text pieces.
@@ -155,13 +155,13 @@ ReasoningIncrementalParser::ReasoningIncrementalParser(bool expect_open_tag, boo
 ReasoningIncrementalParser::~ReasoningIncrementalParser() = default;
 
 std::string ReasoningIncrementalParser::parse(
-    JsonContainer& msg,
+    JsonContainer& message,
     const std::string& previous_text, 
     std::string& delta_text,
     const std::optional<std::vector<int64_t>>& previous_tokens, 
     const std::optional<std::vector<int64_t>>& delta_tokens
 ) {
-    return m_impl->parse(msg, previous_text, delta_text, previous_tokens, delta_tokens);
+    return m_impl->parse(message, previous_text, delta_text, previous_tokens, delta_tokens);
 }
 
 class Llama3PythonicToolParser::Llama3PythonicToolParserImpl {
@@ -169,13 +169,13 @@ public:
     Llama3PythonicToolParserImpl(bool keep_original_content) : m_keep_original_content(keep_original_content) {}
     bool m_keep_original_content;
 
-    void parse(JsonContainer& input) {
+    void parse(JsonContainer& message) {
         // Input example
-        // string input = "[get_weather(location='New York, NY', unit='celsius')]<|eom_id|>";
+        // string message = "[get_weather(location='New York, NY', unit='celsius')]<|eom_id|>";
 
         // Regex to capture the [...] part
         std::smatch m;
-        const std::string& text = input["content"].get_string();
+        const std::string& text = message["content"].get_string();
         std::regex r(R"(\[.*?\])");
         if (!std::regex_search(text, m, r)) {
             return;
@@ -197,11 +197,11 @@ public:
         }
         
         // Split function name and arguments
-        input["tool_calls"] = JsonContainer::array();
-        input["tool_calls"].push_back(JsonContainer({{"name", name}, {"arguments", kv}}));
+        message["tool_calls"] = JsonContainer::array();
+        message["tool_calls"].push_back(JsonContainer({{"name", name}, {"arguments", kv}}));
         
         if (!m_keep_original_content) {
-            input["content"] = regex_replace(text, r, "");
+            message["content"] = regex_replace(text, r, "");
         }
     }
 };
@@ -210,8 +210,8 @@ Llama3PythonicToolParser::Llama3PythonicToolParser(bool keep_original_content) {
     m_impl = std::make_unique<Llama3PythonicToolParserImpl>(keep_original_content);
 }
 
-void Llama3PythonicToolParser::parse(JsonContainer& input) {
-    m_impl->parse(input);
+void Llama3PythonicToolParser::parse(JsonContainer& message) {
+    m_impl->parse(message);
 }
 
 Llama3PythonicToolParser::~Llama3PythonicToolParser() = default;
@@ -245,15 +245,15 @@ Llama3JsonToolParser::Llama3JsonToolParser(bool keep_original_content) {
     m_impl = std::make_unique<Llama3JsonToolParserImpl>(keep_original_content);
 }
 
-void Llama3JsonToolParser::parse(JsonContainer& input) {
-    m_impl->parse(input);
+void Llama3JsonToolParser::parse(JsonContainer& message) {
+    m_impl->parse(message);
 }
 
 Llama3JsonToolParser::~Llama3JsonToolParser() = default;
 
-class BaseReasoningParser::BaseReasoningParserImpl {
+class ReasoningParser::ReasoningParserImpl {
 public:
-    BaseReasoningParserImpl(bool expect_open_tag,
+    ReasoningParserImpl(bool expect_open_tag,
                             bool keep_original_content,
                             const std::string& open_tag,
                             const std::string& close_tag):
@@ -262,9 +262,9 @@ public:
     m_open_tag(open_tag),
     m_close_tag(close_tag) {};
 
-    void parse(JsonContainer& input) {
+    void parse(JsonContainer& message) {
         std::string reasoning_content;
-        std::string content = input["content"].get_string();
+        std::string content = message["content"].get_string();
 
         size_t start = content.find(m_open_tag);
         size_t end = content.find(m_close_tag);
@@ -273,13 +273,13 @@ public:
             reasoning_content = content.substr(start + m_open_tag.size(), end - (start + m_open_tag.size()));
             if (!m_keep_original_content) {
                 // Remove <think>...</think/> from content
-                input["content"] = content.substr(0, start) + content.substr(end + m_close_tag.size());
+                message["content"] = content.substr(0, start) + content.substr(end + m_close_tag.size());
             }
         } else {
             reasoning_content = "";
         }
 
-        input["reasoning_content"] = reasoning_content;
+        message["reasoning_content"] = reasoning_content;
     }
 private:
     bool m_expect_open_tag;
@@ -288,15 +288,15 @@ private:
     std::string m_close_tag;
 };
 
-BaseReasoningParser::BaseReasoningParser(bool expect_open_tag, bool keep_original_content, const std::string& open_tag, const std::string& close_tag) {
-    m_impl = std::make_unique<BaseReasoningParserImpl>(expect_open_tag, keep_original_content, open_tag, close_tag);
+ReasoningParser::ReasoningParser(bool expect_open_tag, bool keep_original_content, const std::string& open_tag, const std::string& close_tag) {
+    m_impl = std::make_unique<ReasoningParserImpl>(expect_open_tag, keep_original_content, open_tag, close_tag);
 }
 
-void BaseReasoningParser::parse(JsonContainer& input) {
-    m_impl->parse(input);
+void ReasoningParser::parse(JsonContainer& message) {
+    m_impl->parse(message);
 }
 
-BaseReasoningParser::~BaseReasoningParser() = default;
+ReasoningParser::~ReasoningParser() = default;
 
 Parser::~Parser() = default;
 
