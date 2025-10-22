@@ -138,7 +138,7 @@ python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_b
 > **Note:** To use `torch.compile()` with CUDA GPUs, you need to install the nightly version of PyTorch:
 >
 > ```bash
-> pip install --pre torch!=2.9 torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu118
+> pip install --pre torch!=2.9.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu118
 > ```
 
 
