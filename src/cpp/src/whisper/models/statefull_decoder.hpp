@@ -27,5 +27,6 @@ private:
 
 private:
     ov::InferRequest m_request;
+    bool m_has_cache_position = true;
 };
 }  // namespace ov::genai

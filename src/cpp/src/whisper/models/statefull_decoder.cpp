@@ -13,6 +13,8 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
 
     auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
 
+    m_has_cache_position = utils::has_input(model, "cache_position");
+
     utils::apply_slice_before_matmul_transformation(model);
 
     auto compiled_model = core.compile_model(model, device, properties);
@@ -29,7 +31,10 @@ void WhisperStatefullDecoder::start_async(const Tensor& encoder_hidden_state,
 
     _set_encoder_hidden_states_tensor(encoder_hidden_state, batch_size, m_request);
 
-    _set_cache_position_tensor(seq_len);
+    if (m_has_cache_position) {
+        _set_cache_position_tensor(seq_len);
+    }
+
     m_request.set_tensor("input_ids", input_ids);
     m_request.set_tensor("beam_idx", beam_idx);
 
@@ -58,7 +63,10 @@ Tensor WhisperStatefullDecoder::wait() {
 
 void WhisperStatefullDecoder::reset_state() {
     m_request.reset_state();
-    m_request.set_tensor("cache_position", create_host_tensor(ov::element::i64, {0}));
+
+    if (m_has_cache_position) {
+        m_request.set_tensor("cache_position", create_host_tensor(ov::element::i64, {0}));
+    }
 
     Shape encoder_hidden_states_shape{m_request.get_tensor("encoder_hidden_states").get_shape()};
     encoder_hidden_states_shape[0] = 0;
