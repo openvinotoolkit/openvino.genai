@@ -162,8 +162,8 @@ public:
                 std::vector<int64_t> token_id(generated_token_id.begin() + offset, generated_token_id.begin() + offset_back);
                 std::vector<float> log_probs(generated_log_probs.begin() + offset, generated_log_probs.begin() + offset_back);
 
-                output.generated_ids = token_id;
-                output.generated_log_probs = log_probs;
+                output.generated_ids = std::move(token_id);
+                output.generated_log_probs = std::move(log_probs);
                 output.finish_reason = get_finish_reason();
             }
         }

@@ -78,7 +78,7 @@ public:
      */
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const ov::Tensor& input_ids,
-                                         GenerationConfig sampling_params,
+                                         const GenerationConfig& sampling_params,
                                          std::optional<ov::Tensor> token_type_ids = std::nullopt) = 0;
 
     /**
@@ -87,7 +87,7 @@ public:
      */
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const std::string& prompt,
-                                         GenerationConfig sampling_params) = 0;
+                                         const GenerationConfig& sampling_params) = 0;
 
     /**
      * Adds request to running queue based on string input and vector of images

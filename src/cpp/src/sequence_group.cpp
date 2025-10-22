@@ -27,7 +27,7 @@ size_t Sequence::_make_hash(size_t content_length) {
 
         // get tokens corresponding to current block
         if (sequence_group->get_sequence_group_type() == SequenceGroupType::TOKENS) {
-            const auto prompt_ids = sequence_group->get_prompt_ids();
+            const auto& prompt_ids = sequence_group->get_prompt_ids();
             OPENVINO_ASSERT(content_length <= prompt_ids.size() + m_generated_ids.size());
             if (block_start_idx < prompt_ids.size()) {
                 content.insert(content.end(), prompt_ids.begin() + block_start_idx, prompt_ids.begin() + std::min(prompt_ids.size(), content_length));
@@ -40,7 +40,7 @@ size_t Sequence::_make_hash(size_t content_length) {
         }
         else if (sequence_group->get_sequence_group_type() == SequenceGroupType::EMBEDDINGS) {
             const auto& input_embeds = sequence_group->get_input_embeds();
-            const auto generated_embeds = m_generated_ids_embeds;
+            const auto& generated_embeds = m_generated_ids_embeds;
             OPENVINO_ASSERT(content_length <= input_embeds.size() + generated_embeds.size());
 
             // get inputs embeddings
