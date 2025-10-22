@@ -15,7 +15,7 @@ from llm_bench_utils.memory_monitor import MemMonitorWrapper
 from llm_bench_utils.hook_forward import MeanStdPair, RawImGenPerfMetrics
 from llm_bench_utils.model_utils import get_version_in_format_to_pars
 from llm_bench_utils.config_class import (
-    UseCaseTextToSpeech,
+    UseCaseSpeech2Text,
     UseCaseTextGen,
     PA_ATTENTION_BACKEND
 )
@@ -582,7 +582,7 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
         if kwargs.get("genai", True) and is_genai_available(log_msg=True):
-            if model_class not in [UseCaseTextToSpeech.ov_cls]:
+            if model_class not in [UseCaseSpeech2Text.ov_cls]:
                 log.warning("OpenVINO GenAI based benchmarking is not available for required model type. Will be switched to default benchmarking")
             else:
                 log.info("Selected OpenVINO GenAI for benchmarking")
