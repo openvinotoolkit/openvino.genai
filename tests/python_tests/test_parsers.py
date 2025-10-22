@@ -80,9 +80,9 @@ def test_incremental_phi4_reason_integer_token_ids(hf_ov_genai_models):
     
     msg = {}
     answer = "<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \boxed{3}."
-    encoded_tokens = genai_tokenizer.encode(answer).input_ids.data.tolist()
+    encoded_tokens = genai_tokenizer.encode(answer).input_ids.data.tolist()[0]
     for token in encoded_tokens:
-        streamer._write(token)
+        streamer._write([token])
     streamer.end()
 
     think_content = answer.split("</think>")[0].replace("<think>", "")
@@ -90,6 +90,59 @@ def test_incremental_phi4_reason_integer_token_ids(hf_ov_genai_models):
     
     assert msg['reasoning_content'] == think_content
     assert msg['content'] == content
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize(
+    "hf_ov_genai_models", 
+    ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
+    indirect=True
+)
+def test_incremental_integer_token_ids(hf_ov_genai_models):
+    hf_tokenizer, genai_tokenizer = hf_ov_genai_models
+    
+    class CustomIncrementalParser(IncrementalParser):
+        started_reasoning: bool = False
+
+        def parse(self, msg: dict, delta_text: str, delta_tokens = None) -> str:
+            if 'content' not in msg:
+                msg['content'] = ''
+            if 'reasoning_content' not in msg:
+                msg['reasoning_content'] = ''
+
+            if 1 in delta_tokens and not self.started_reasoning:
+                self.started_reasoning = True
+                msg['reasoning_content'] += delta_text
+                delta_text = ''
+            elif 1 in delta_tokens and self.started_reasoning:
+                self.started_reasoning = False
+                delta_text = ''
+            elif self.started_reasoning:
+                msg['reasoning_content'] += delta_text
+                delta_text = ''
+
+            # # Here we are only collecting ordinary text, therefore leave delta_text unchanged.
+            # # msg['content'] += delta_text will happen under the hood
+            return delta_text
+        
+    class CustomStreamer(TextParserStreamer):
+        def write(self, message):
+            msg.update(message)
+            return StreamingStatus.RUNNING
+    streamer = CustomStreamer(genai_tokenizer, parsers=[CustomIncrementalParser()])
+
+    msg = {}
+    # All closing tags </s>, <|/inst|>, <|endoftext|>, ent. in tiny-random-phi3 add strange \x0c\x0c characters 
+    # so we avoid them in this test. 
+    answer = "<s>\nOkay, the user is asking for the answer to 2 + 1.<s>The answer to 2 + 1 is 3."
+    encoded_tokens = genai_tokenizer.encode(answer, add_special_tokens=False).input_ids.data.tolist()[0]
+
+    for token in encoded_tokens:
+        streamer._write([token])
+    streamer.end()
+
+    assert msg['reasoning_content'] == "\nOkay, the user is asking for the answer to 2 + 1"
+    assert msg['content'] == " The answer to 2 + 1 is 3."
 
 
 @pytest.mark.precommit

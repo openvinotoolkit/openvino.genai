@@ -29,7 +29,7 @@ public:
 
     TextStreamer(const Tokenizer& tokenizer, std::function<CallbackTypeVariant(std::string)> callback, const ov::AnyMap& detokenization_params = {});
 
-private:
+protected:
     Tokenizer m_tokenizer;
     std::vector<int64_t> m_tokens_cache;
     std::vector<int64_t> m_decoded_lengths;
@@ -58,7 +58,7 @@ public:
     virtual StreamingStatus write(JsonContainer& message) = 0;
 
     CallbackTypeVariant write(std::string message);
-
+    
     JsonContainer get_parsed_message() const;
 
     void reset();

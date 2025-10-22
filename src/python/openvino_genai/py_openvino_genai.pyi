@@ -578,7 +578,7 @@ class DecodedResults:
     def texts(self) -> list[str]:
         ...
 class DeepSeekR1ReasoningIncrementalParser(IncrementalParser):
-    def __init__(self, expect_open_tag: bool = False) -> None:
+    def __init__(self) -> None:
         ...
 class EncodedGenerationResult:
     """
@@ -1462,9 +1462,13 @@ class ImageGenerationPerfMetrics:
 class IncrementalParser:
     def __init__(self) -> None:
         ...
-    def parse(self, message: dict, previous_text: str, delta_text: str, previous_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
+    def parse(self, message: dict, delta_text: str, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
         """
         Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.
+        """
+    def reset(self) -> None:
+        """
+        Reset the internal state of the parser.
         """
 class InpaintingPipeline:
     """
@@ -1949,7 +1953,7 @@ class PerfMetrics:
     def raw_metrics(self) -> RawPerfMetrics:
         ...
 class Phi4ReasoningIncrementalParser(IncrementalParser):
-    def __init__(self, expect_open_tag: bool = True) -> None:
+    def __init__(self) -> None:
         ...
 class PipelineMetrics:
     """

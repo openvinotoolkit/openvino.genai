@@ -37,8 +37,8 @@ TEST(ParserTest, test_reasoning_parser_1) {
     std::string prompt = R"("<｜begin▁of▁sentence｜><｜begin▁of▁sentence｜><｜User｜>What is 2 + 1?<｜Assistant｜><think>\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n</think>\n\n**Solution:**\n\nTo find the sum of 2 and 1, )";
     
     JsonContainer expected;
-    expected["content"] = std::string(R"("<｜begin▁of▁sentence｜><｜begin▁of▁sentence｜><｜User｜>What is 2 + 1?<｜Assistant｜>\n\n**Solution:**\n\nTo find the sum of 2 and 1, )");
-    expected["reasoning_content"] = std::string(R"(\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n)");
+    expected["content"] = R"("<｜begin▁of▁sentence｜><｜begin▁of▁sentence｜><｜User｜>What is 2 + 1?<｜Assistant｜>\n\n**Solution:**\n\nTo find the sum of 2 and 1, )";
+    expected["reasoning_content"] = R"(\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n)";
 
     std::shared_ptr<ReasoningParser> parser = std::make_shared<ReasoningParser>(
         /*expect_open_tag*/ true,
@@ -56,7 +56,7 @@ TEST(ParserTest, test_reasoning_parser_2) {
     
     JsonContainer expected;
     expected["content"] = prompt;
-    expected["reasoning_content"] = std::string(R"(\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n)");
+    expected["reasoning_content"] = R"(\nI need to determine the sum of 2 and 1.\n\nFirst, I'll identify the two numbers involved in the addition: 2 and 1.\n\nNext, I'll perform the addition by combining these two numbers.\n\nFinally, I'll state the result of the addition, which is 3.\n)";
 
     std::shared_ptr<ReasoningParser> parser = std::make_shared<ReasoningParser>(
         /*expect_open_tag*/ true,
@@ -155,10 +155,10 @@ TEST(ParserTest, CustomParser_AccumulatesBetweenStartStop) {
             // Ensure fields exist (Python test used dict defaults)
             if (!msg.contains("content")) {
                 msg.to_empty_object();
-                msg["content"] = std::string{};
+                msg["content"] = "";
             }
             if (!msg.contains("reasoning_content")) {
-                msg["reasoning_content"] = std::string{};
+                msg["reasoning_content"] = "";
             }
 
             if (!main_part_started && delta_text == "<think>") {
