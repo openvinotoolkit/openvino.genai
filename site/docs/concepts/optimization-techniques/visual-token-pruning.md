@@ -12,7 +12,9 @@ Unlike traditional attention-based or similarity-based pruning techniques, which
 ## Conceptual Model
 CDPruner operates on the sequence of visual token embeddings produced by the vision encoder before they are passed to the language model. Instead of forwarding all tokens, it selects a subset based on conditional diversity, combining token similarity and instruction relevance.
 
-### Token Partitioning The visual tokens are conceptually divided into:
+### Token Partitioning
+
+The visual tokens are conceptually divided into:
 * Retained Tokens: A selected subset that provides diverse and instruction-relevant visual information.
 * Pruned Tokens: Tokens excluded from further processing because they contribute redundant or low-relevance information.
 
