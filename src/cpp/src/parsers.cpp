@@ -10,12 +10,14 @@ namespace ov::genai {
 
 class ReasoningIncrementalParser::ReasoningParserImpl {
 private:
+    // Values initialized from constructor don't need default member initializer.
     bool m_expect_open_tag;
-    bool m_first_run = true;
     bool m_keep_original_content;
-    bool m_think_tag_opened = false;
     std::string m_open_tag;
     std::string m_close_tag;
+    // Values with default member initializers are reset on each reset() call.
+    bool m_first_run = true;
+    bool m_think_tag_opened = false;
     std::string m_text_cache = "";
     bool m_deactivated = false;
 public:
@@ -144,6 +146,13 @@ public:
         
         return delta_text;
     }
+
+    void reset() {
+        m_first_run = true;
+        m_think_tag_opened = false;
+        m_text_cache = "";
+        m_deactivated = false;
+    }
 };
 
 ReasoningIncrementalParser::ReasoningIncrementalParser(bool expect_open_tag, bool keep_original_content, const std::string& open_tag, const std::string& close_tag) {
@@ -158,6 +167,10 @@ std::string ReasoningIncrementalParser::parse(
     const std::optional<std::vector<int64_t>>& delta_tokens
 ) {
     return m_impl->parse(message, delta_text, delta_tokens);
+}
+
+void ReasoningIncrementalParser::reset() {
+    m_impl->reset();
 }
 
 class Llama3PythonicToolParser::Llama3PythonicToolParserImpl {

@@ -36,9 +36,11 @@ ov::genai::DecodedResults run_generate_with_parsers(const ov::genai::OptionalGen
     }
 
     auto res = generate_callable();
-
-    res.parsed.resize(1);
-    res.parsed[0] = parser_streamer->get_parsed_message();
+    
+    if (parser_streamer) {
+        res.parsed.resize(1);
+        res.parsed[0] = parser_streamer->get_parsed_message();
+    }
 
     // If no parsers are defined, return
     if (!generation_config.has_value() || generation_config->parsers.empty()) {

@@ -135,9 +135,14 @@ public:
      */
     virtual std::string parse(
         JsonContainer& message,
-        std::string& delta_text,  // TODO: double check
+        std::string& delta_text,
         const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
     ) = 0;
+
+    /**
+     * @brief Reset the internal state of the parser.
+     */
+    virtual void reset() = 0;
 
     virtual ~IncrementalParser() = default;
 };
@@ -149,9 +154,6 @@ public:
  * The reasoning content is stored in the 'reasoning_content' field of the JsonContainer.
  */
 class OPENVINO_GENAI_EXPORTS ReasoningIncrementalParser : public IncrementalParser {
-private:
-    class ReasoningParserImpl;
-    std::unique_ptr<ReasoningParserImpl> m_impl;
 public:
     /**
      * @brief Constructor for ReasoningIncrementalParser.
@@ -183,6 +185,14 @@ public:
         std::string& delta_text,
         const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
     ) override;
+
+    /**
+     * @brief Reset the internal state of the parser.
+     */
+    void reset() override;
+private:
+    class ReasoningParserImpl;
+    std::unique_ptr<ReasoningParserImpl> m_impl;
 };
 
 /**

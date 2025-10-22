@@ -60,6 +60,8 @@ public:
     CallbackTypeVariant write(std::string message);
 
     JsonContainer get_parsed_message() const;
+
+    void reset();
 private:
     std::unique_ptr<TextParserStreamerImpl> m_pimpl;
 };

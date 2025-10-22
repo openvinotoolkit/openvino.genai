@@ -177,6 +177,10 @@ TEST(ParserTest, CustomParser_AccumulatesBetweenStartStop) {
             return delta_text;
         }
 
+        void reset() override {
+            main_part_started = false;
+        }
+
         // Virtual dtor for safety
         ~CustomParser() override = default;
     };

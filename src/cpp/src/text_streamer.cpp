@@ -155,6 +155,13 @@ JsonContainer TextParserStreamer::get_parsed_message() const {
     return m_pimpl->m_parsed_message;
 }
 
+void TextParserStreamer::reset() {
+    m_pimpl->m_parsed_message = JsonContainer();
+    for (auto& parser : m_pimpl->m_parsers) {
+        parser->reset();
+    }
+}
+
 TextParserStreamer::~TextParserStreamer() = default;
 
 }  // namespace genai
