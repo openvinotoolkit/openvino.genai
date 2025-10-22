@@ -20,7 +20,7 @@ def get_npu_llm_properties_for_test():
     return config
 
 models_and_input = [
-    ("HuggingFaceTB/SmolLM2-360M", "HuggingFaceTB/SmolLM2-135M", "Alan Turing was a")]
+    ("HuggingFaceTB/SmolLM2-360M-Instruct", "HuggingFaceTB/SmolLM2-135M-Instruct", "Alan Turing was a")]
 devices = [
     # FIXME: add 'CPU' and 'GPU' cases in future
     ('CPU', 'NPU'),
@@ -55,10 +55,17 @@ def test_string_inputs(main_model, main_device, draft_model, draft_device, promp
     ov_decoded_results = ov_pipe.generate([prompt], ov_generation_config)
     ov_gen_results = convert_decoded_results_to_generation_result(ov_decoded_results, 1, 1, False)
 
+    # Run OpenVINO GenAI pipeline with ChatHistory:
+    chat_history = ov_genai.ChatHistory([{ "role": "user", "content": prompt }])
+    ov_chat_history_decoded_results = ov_pipe.generate(chat_history, ov_generation_config)
+    ov_chat_history_gen_results = convert_decoded_results_to_generation_result(ov_chat_history_decoded_results, 1, 1, False)
+
     del ov_pipe
 
     # Compare results:
     compare_generation_results([prompt], ref_gen_results, ov_gen_results, ov_generation_config)
+    compare_generation_results([prompt], ref_gen_results, ov_chat_history_gen_results, ov_generation_config)
+
 
 @pytest.mark.precommit
 def test_perf_metrics():

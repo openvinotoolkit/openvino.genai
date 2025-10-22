@@ -45,6 +45,12 @@ public:
         StreamerVariant streamer
     ) = 0;
 
+    virtual DecodedResults generate(
+        const ChatHistory& history,
+        OptionalGenerationConfig generation_config,
+        StreamerVariant streamer
+    ) = 0;
+
     virtual EncodedResults generate(
         const EncodedInputs& inputs,
         OptionalGenerationConfig generation_config,

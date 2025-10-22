@@ -67,6 +67,7 @@ enum class GenerationChatInputsType {
     UNDEF = 0, // Default value, type of inputs is not defined
     STRING = 1, // Type of inputs is StringInputs
     ENCODED_INPUTS = 2, // Type of inputs is EncodedInputs
+    CHAT_HISTORY = 3, // Type of inputs is ChatHistory
 };
 
 struct GenerationFinishInfo
@@ -182,6 +183,8 @@ bool env_setup_for_print_debug_info();
 void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title);
 
 void print_gguf_debug_info(const std::string& debug_info);
+
+void print_scheduler_config_info(const SchedulerConfig &scheduler_config);
 
 struct KVDesc {
     uint32_t max_prompt_len;
