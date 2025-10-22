@@ -242,7 +242,7 @@ public:
     * @return DecodedResults decoded resulting text
     * 
     * Chat template will be applied to the prompt, run `pipe.get_tokenizer().set_chat_template(custom_chat_template)` to update it.
-    * To disable chat tempalte set `generation_config.apply_chat_template` to `false`.
+    * To disable chat template set `generation_config.apply_chat_template` to `false`.
     */
     DecodedResults generate(
         const ChatHistory& history,
@@ -259,7 +259,7 @@ public:
     * @return DecodedResults decoded resulting text
     * 
     * Chat template will be applied to the prompt, run `pipe.get_tokenizer().set_chat_template(custom_chat_template)` to update it.
-    * To disable chat tempalte set `generation_config.apply_chat_template` to `false`.
+    * To disable chat template set `generation_config.apply_chat_template` to `false`.
     */
     template <typename... Properties>
     util::EnableIfAllStringAny<DecodedResults, Properties...> generate(
