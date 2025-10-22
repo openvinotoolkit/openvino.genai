@@ -18,7 +18,6 @@ struct GenerateStrategy {
                        GenerationConfig& draft_cfg,
                        ov::Tensor& main_in,
                        ov::Tensor& draft_in)> prepare_request;
-    std::function<void()> pre_loop;
     std::function<void(const std::shared_ptr<ThreadedStreamerWrapper>&,
                        const std::vector<ov::Tensor>&,
                        const std::vector<GenerationConfig>&)> check_streaming;
@@ -55,7 +54,6 @@ std::vector<EncodedGenerationResult> generate_common(
     auto streamer_ptr = std::make_shared<ThreadedStreamerWrapper>(streamer, self->tokenizer());
 
     strategy.check_streaming(streamer_ptr, input_ids, sampling_params);
-    if (strategy.pre_loop) strategy.pre_loop();
 
     std::vector<GenerationHandle> main_generations;
     {

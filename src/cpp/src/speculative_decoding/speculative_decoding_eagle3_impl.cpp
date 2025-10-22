@@ -304,6 +304,9 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
     m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
     m_draft_pipeline->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
+
+    // specific params update for eagle pipeline
+    update_eagle_pipeline_params();
 }
 
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_ids(const ov::Tensor& original_input_ids) {
@@ -326,16 +329,14 @@ ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_id
 }
 
 void ContinuousBatchingPipeline::Eagle3DecodingImpl::update_eagle_pipeline_params() {
-    std::call_once(m_eagle_params_once, [this]() {
-        auto m_main_eagle_pipeline  = std::dynamic_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_main_pipeline);
-        auto m_draft_eagle_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_draft_pipeline);
-        m_main_eagle_pipeline->set_hidden_state_export_needed(true);
-        m_draft_eagle_pipeline->set_hidden_state_export_needed(true);
-        m_draft_eagle_pipeline->set_hidden_state_import_needed(true);
-        m_draft_eagle_pipeline->set_hidden_state_internal_needed(true);
-        m_draft_eagle_pipeline->set_adjust_factor(
-            m_hidden_layers_to_abstract.size() > 0 ? m_hidden_layers_to_abstract.size() : 1);
-    });
+    auto m_main_eagle_pipeline  = std::dynamic_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_main_pipeline);
+    auto m_draft_eagle_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_draft_pipeline);
+    m_main_eagle_pipeline->set_hidden_state_export_needed(true);
+    m_draft_eagle_pipeline->set_hidden_state_export_needed(true);
+    m_draft_eagle_pipeline->set_hidden_state_import_needed(true);
+    m_draft_eagle_pipeline->set_hidden_state_internal_needed(true);
+    m_draft_eagle_pipeline->set_adjust_factor(
+        m_hidden_layers_to_abstract.size() > 0 ? m_hidden_layers_to_abstract.size() : 1);
 }
 
 GenerationHandle
@@ -347,7 +348,6 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
-    update_eagle_pipeline_params();
     // remove first token from input_ids to create draft_input_ids
     ov::Tensor draft_input_ids = create_draft_input_ids(input_ids);
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params, token_type_ids)});
@@ -362,23 +362,12 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
-    update_eagle_pipeline_params();
     // remove first token from input_ids to create draft_input_ids
-    if (m_model_input_type == ModelInputType::TOKENS) {
-        static ManualTimer timer("tokenize");
-        timer.start();
-        ChatHistory history({{{"role", "user"}, {"content", prompt}}});
-        auto templated_prompt = m_tokenizer.apply_chat_template(history, true);
-        auto input_ids = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false)).input_ids;
-        timer.end();
-        ov::Tensor draft_input_ids = create_draft_input_ids(input_ids);
-        m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params)});
-        return m_main_pipeline->add_request(request_id, input_ids, sampling_params);
-    } else {
-        m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, prompt, draft_sampling_params)});
-        return m_main_pipeline->add_request(request_id, prompt, sampling_params);
-    }
-    
+    // add_special_tokens is false for better compress rate
+    auto input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false)).input_ids;
+    ov::Tensor draft_input_ids = create_draft_input_ids(input_ids);
+    m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params)});
+    return m_main_pipeline->add_request(request_id, input_ids, sampling_params);
 }
 
 std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingImpl::generate(
@@ -404,7 +393,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
         main_in = in_ids;
         draft_in = create_draft_input_ids(in_ids);
     };
-    strategy.pre_loop = [this](){ update_eagle_pipeline_params(); };
+
     strategy.check_streaming = [](const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr,
                                   const std::vector<ov::Tensor>& input_ids,
                                   const std::vector<GenerationConfig>& sampling_params) {

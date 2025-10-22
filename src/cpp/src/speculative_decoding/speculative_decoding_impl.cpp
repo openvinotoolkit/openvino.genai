@@ -254,7 +254,6 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         main_in = in_ids;
         draft_in = in_ids;
     };
-    strategy.pre_loop = nullptr;
     strategy.check_streaming = [](const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr,
                                   const std::vector<ov::Tensor>& input_ids,
                                   const std::vector<GenerationConfig>& sampling_params) {

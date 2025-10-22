@@ -53,8 +53,6 @@ protected:
     void update_eagle_pipeline_params();
     ov::Tensor create_draft_input_ids(const ov::Tensor& original_input_ids);
     std::vector<int> m_hidden_layers_to_abstract;
-private:
-    std::once_flag m_eagle_params_once;
 };
 
 using NodePtr = std::shared_ptr<ov::Node>;
