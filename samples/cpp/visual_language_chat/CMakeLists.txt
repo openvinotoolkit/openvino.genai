@@ -55,3 +55,18 @@ install(TARGETS benchmark_vlm
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
+
+# create qwen2vl image processing sample executable
+
+add_executable(qwen2vl_image_processing qwen2vl_image_processing.cpp load_image.cpp)
+target_include_directories(qwen2vl_image_processing PRIVATE "${CMAKE_BINARY_DIR}")
+target_link_libraries(qwen2vl_image_processing PRIVATE openvino::genai)
+
+set_target_properties(qwen2vl_image_processing PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS qwen2vl_image_processing
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
