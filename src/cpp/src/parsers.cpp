@@ -175,6 +175,7 @@ void ReasoningIncrementalParser::reset() {
 
 class Llama3PythonicToolParser::Llama3PythonicToolParserImpl {
 public:
+    std::regex m_pattern = std::regex(R"(\[(.*?)\])");
     void parse(JsonContainer& message) {
         // Input example
         // string message = "[get_weather(location='New York, NY', unit='celsius')]<|eom_id|>";
@@ -182,8 +183,8 @@ public:
         // Regex to capture the [...] part
         std::smatch m;
         const std::string& text = message["content"].get_string();
-        std::regex r(R"(\[.*?\])");
-        if (!std::regex_search(text, m, r)) {
+
+        if (!std::regex_search(text, m, m_pattern)) {
             return;
         }
 
