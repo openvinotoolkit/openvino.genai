@@ -112,7 +112,7 @@ def get_argprser():
         type=int,
         default=0,
         help='Percentage of visual tokens to prune'
-        'Only support PA model. To switch to PA mode, please, set {"ATTENTION_BACKEND": "PA"} in --load_config.'
+        'Only supports PA model. To switch to PA mode, please, set {"ATTENTION_BACKEND": "PA"} in --load_config.'
     )
     parser.add_argument('--relevance_weight', type=float, help='Relevance weight for the model')
     parser.add_argument(
