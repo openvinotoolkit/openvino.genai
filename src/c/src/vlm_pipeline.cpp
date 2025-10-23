@@ -172,11 +172,6 @@ ov_status_e ov_genai_vlm_pipeline_generate(ov_genai_vlm_pipeline* pipe,
                 : pipe->object->generate(input_str, ov::genai::streamer(callback));
             }
         } 
-        // //Currently, VLM pipeline in GenAI does not support non-streaming mode, but we retain the code support here for future support.
-        // else {
-        //     *(_results->object) = (config && config->object) ? pipe->object->generate(input_str, rgbs_cpp, *(config->object))
-        //                                                      : pipe->object->generate(input_str, rgbs_cpp);
-        // }
         if (results) {
             *results = _results.release();
         }
