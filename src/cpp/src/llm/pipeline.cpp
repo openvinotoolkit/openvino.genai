@@ -324,15 +324,20 @@ DecodedResults LLMPipeline::generate(
         const ChatHistory& history,
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer) {
-    return m_pimpl->generate(history, generation_config, streamer);
+    return run_generate_with_parsers(generation_config, streamer, [&]() -> DecodedResults {
+        return m_pimpl->generate(history, generation_config, streamer);
+    });
 }
 
 DecodedResults LLMPipeline::generate(const ChatHistory& history, const ov::AnyMap& config_map) {
     auto config_arg = utils::get_config_from_map(config_map);
     GenerationConfig config = config_arg.value_or(get_generation_config());
     config.update_generation_config(config_map);
+    auto streamer = utils::get_streamer_from_map(config_map);
 
-    return m_pimpl->generate(history, config, utils::get_streamer_from_map(config_map));
+    return run_generate_with_parsers(config, streamer, [&]() -> DecodedResults {
+        return m_pimpl->generate(history, config, streamer);
+    });
 }
 
 EncodedResults LLMPipeline::generate(
