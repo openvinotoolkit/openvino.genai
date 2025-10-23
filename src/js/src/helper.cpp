@@ -129,9 +129,7 @@ GenerateInputs js_to_cpp<GenerateInputs>(const Napi::Env& env, const Napi::Value
             return value.As<Napi::String>().Utf8Value();
         } else if (value.IsArray()) {
             auto array = value.As<Napi::Array>();
-            if (array.Length() == 0) {
-                OPENVINO_THROW("Passed array must not be empty.");
-            }
+            OPENVINO_ASSERT(array.Length() != 0, "Passed array must not be empty.");
             auto first_element = array.Get(uint32_t{0});
             if (first_element.IsString()) {
                 return js_to_cpp<std::vector<std::string>>(env, value);
