@@ -343,7 +343,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::get_inputs_embeds_with_token_t
     bool recalculate_merged_embeddings,
     const std::vector<size_t>& image_sequence,
     const std::vector<size_t>& videos_sequence,
-    const std::vector<std::pair<std::size_t, std::size_t>> history_vision_count) {
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
     return m_impl->get_inputs_embeds_with_token_type_ids(prompt,
                                                          images,
                                                          videos,
