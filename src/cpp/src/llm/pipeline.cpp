@@ -39,9 +39,6 @@ inline void apply_eagle_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& p
         properties["eagle3_mode"] = true;
         if (model->has_rt_info("hidden_layers_list"))
             properties["hidden_layers_list"] = model->get_rt_info<std::vector<int>>("hidden_layers_list");
-        if (!mapping_path.empty()) {
-            properties["dt_mapping_path"] = mapping_path; // d2t mapping path
-        }
     }
 }
 

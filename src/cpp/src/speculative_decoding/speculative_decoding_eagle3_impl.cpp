@@ -51,6 +51,16 @@ void share_embedding_weights(std::shared_ptr<ov::Model>& main_model, std::shared
     }
 }
 
+std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(std::shared_ptr<ov::Model>& model) {
+    // extract result nodes from model
+    for (const auto& result : model->get_results()) {
+        auto input_node = result->input_value(0).get_node_shared_ptr();
+        if (ov::is_type<ov::op::v0::Constant>(input_node) && input_node->get_friendly_name().find("d2t") != std::string::npos) {
+            return ov::as_type_ptr<ov::op::v0::Constant>(input_node);
+        }
+    }
+    return nullptr;
+}
 void extract_hidden_state_generic(std::shared_ptr<ov::Model>& model,
                                   const std::vector<int>& hidden_layers_to_abstract) {
     ov::pass::Manager pm;
@@ -317,7 +327,9 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     m_draft_pipeline->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
 
     // specific params update for eagle pipeline
-    update_eagle_pipeline_params();
+    // check draft_model, retrieve d2t table if exists
+    auto d2t_tensor = extract_d2t_mapping_table(draft_model);
+    update_eagle_pipeline_params(d2t_tensor);
 }
 
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_ids(const ov::Tensor& original_input_ids) {
@@ -339,7 +351,7 @@ ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_id
     return draft_input_ids;
 }
 
-void ContinuousBatchingPipeline::Eagle3DecodingImpl::update_eagle_pipeline_params() {
+void ContinuousBatchingPipeline::Eagle3DecodingImpl::update_eagle_pipeline_params(std::shared_ptr<ov::op::v0::Constant>& d2t_tensor) {
     auto m_main_eagle_pipeline  = std::dynamic_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_main_pipeline);
     auto m_draft_eagle_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_draft_pipeline);
     m_main_eagle_pipeline->set_hidden_state_export_needed(true);
@@ -348,6 +360,7 @@ void ContinuousBatchingPipeline::Eagle3DecodingImpl::update_eagle_pipeline_param
     m_draft_eagle_pipeline->set_hidden_state_internal_needed(true);
     m_draft_eagle_pipeline->set_adjust_factor(
         m_hidden_layers_to_abstract.size() > 0 ? m_hidden_layers_to_abstract.size() : 1);
+    m_draft_eagle_pipeline->set_d2t_for_draft_decoding(d2t_tensor);
 }
 
 GenerationHandle

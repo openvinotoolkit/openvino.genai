@@ -44,13 +44,8 @@ public:
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
                                  ov::genai::GenerationConfig sampling_params) override;
-
-    void set_d2t_for_draft_decoding(std::shared_ptr<ov::op::v0::Constant>& d2t_tensor) {
-        auto eagle_impl = std::static_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_draft_pipeline);
-        eagle_impl->set_d2t_for_draft_decoding(d2t_tensor);
-    };
 protected:
-    void update_eagle_pipeline_params();
+    void update_eagle_pipeline_params(std::shared_ptr<ov::op::v0::Constant>& d2t_tensor);
     ov::Tensor create_draft_input_ids(const ov::Tensor& original_input_ids);
     std::vector<int> m_hidden_layers_to_abstract;
 };

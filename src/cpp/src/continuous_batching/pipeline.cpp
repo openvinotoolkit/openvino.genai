@@ -16,7 +16,6 @@
 #include "continuous_batching/timer.hpp"
 #include "utils.hpp"
 #include "visual_language/inputs_embedder.hpp"
-#include "safe_tensor_wrapper.hpp"
 #include "json_utils.hpp"
 
 using namespace ov::genai;
@@ -50,11 +49,6 @@ extract_eagle_mode_from_config(ov::AnyMap& config, const std::filesystem::path& 
             read_json_param(data, "num_hidden_layers", num_decoder_layers);
             OPENVINO_ASSERT(num_decoder_layers > 3, "num_decoder_layers is too small to deduce hidden layers for extraction");
             eagle_rt_info.hidden_layers_list = { 2, num_decoder_layers / 2, num_decoder_layers - 3 };
-        }
-        if (config.find("dt_mapping_path") != config.end()) {
-            eagle_rt_info.dt_mapping_table = config.at("dt_mapping_path").as<std::filesystem::path>();
-            eagle_rt_info.dt_mapping_table = eagle_rt_info.dt_mapping_table / "eagle3.safetensors";
-            config.erase("dt_mapping_path");
         }
     }
     return eagle_rt_info;
@@ -107,13 +101,6 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
         OPENVINO_ASSERT(embedder == nullptr, "Eagle speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_desr, eagle_rt_info.hidden_layers_list);
-        // parse d2t from safe tensors
-        if (std::filesystem::exists(eagle_rt_info.dt_mapping_table)) {
-            ConstantMap constant_tensors = safetensor_to_constant_map(ov::read_tensor_data(eagle_rt_info.dt_mapping_table));
-            if (constant_tensors.find("d2t") != constant_tensors.end()) { // d2t map can be optional
-                std::dynamic_pointer_cast<Eagle3DecodingImpl>(m_impl)->set_d2t_for_draft_decoding(constant_tensors["d2t"]);
-            }
-        }
     } else if (draft_model_desr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
@@ -160,13 +147,6 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         // to be implemented future
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_desr, eagle_rt_info.hidden_layers_list);
-        // parse d2t from safe tensors
-        if (std::filesystem::exists(eagle_rt_info.dt_mapping_table)) {
-            ConstantMap constant_tensors = safetensor_to_constant_map(ov::read_tensor_data(eagle_rt_info.dt_mapping_table));
-            if (constant_tensors.find("d2t") != constant_tensors.end()) { // d2t map can be optional
-                std::dynamic_pointer_cast<Eagle3DecodingImpl>(m_impl)->set_d2t_for_draft_decoding(constant_tensors["d2t"]);
-            }
-        }
     } else if (draft_model_desr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
@@ -215,13 +195,6 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
         OPENVINO_ASSERT(embedder == nullptr, "Eagle speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);
         m_impl = std::make_shared<Eagle3DecodingImpl>(main_model_descr, draft_model_desr, eagle_rt_info.hidden_layers_list);
-         // parse d2t from safe tensors
-        if (std::filesystem::exists(eagle_rt_info.dt_mapping_table)) {
-            ConstantMap constant_tensors = safetensor_to_constant_map(ov::read_tensor_data(eagle_rt_info.dt_mapping_table));
-            if (constant_tensors.find("d2t") != constant_tensors.end()) { // d2t map can be optional
-                std::dynamic_pointer_cast<Eagle3DecodingImpl>(m_impl)->set_d2t_for_draft_decoding(constant_tensors["d2t"]);
-            }
-        }
     } else if (draft_model_desr.model != nullptr) {
         OPENVINO_ASSERT(embedder == nullptr, "Speculative decoding is not supported for models with embeddings");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, scheduler_config, generation_config);

@@ -22,7 +22,6 @@ devices = [
 @pytest.mark.parametrize("main_model,draft_model,prompt", eagle_models_and_input)
 @pytest.mark.parametrize("main_device,draft_device", devices)
 @pytest.mark.precommit
-@pytest.mark.skip(reason="CVS-174959 enable model conversion for eagle3 and enable the test")
 def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_device, prompt):
     # Download and convert model:
     main_opt_model, main_hf_tokenizer, main_model_path = download_and_convert_model(main_model)
@@ -48,7 +47,6 @@ def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_dev
 @pytest.mark.parametrize("main_model,draft_model,prompt", eagle_models_and_input)
 @pytest.mark.parametrize("main_device,draft_device", devices)
 @pytest.mark.precommit
-@pytest.mark.skip(reason="CVS-174959 enable model conversion for eagle3 and enable the test")
 def test_eagle3_sd_extended_perf_metrics(main_model, main_device, draft_model, draft_device, prompt):
     import time
     extended_perf_metrics = None
