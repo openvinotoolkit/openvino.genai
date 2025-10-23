@@ -157,10 +157,6 @@ NPU_UNSUPPORTED_MODELS = {
 }
 
 
-# On macOS, transformers<4.52 is required, but this causes gemma3 to fail
-GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transformers"
-
-
 def _setup_generation_config(
     pipeline: VLMPipeline, 
     max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS, 
@@ -727,26 +723,6 @@ def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
     run_chat(npu_pipe, system_message, iteration_images_npu)
 
 
-@pytest.fixture(scope="module", params=[
-    pytest.param(
-        [[[], [], []], [[], [ "synthetic_video_32x32_tensor"], []]],
-        id="Video on second iteration"
-    ),
-    pytest.param(
-        [[["cat_tensor"], [], []], [["synthetic_video_32x32_tensor"], [], ["synthetic_video_32x32_tensor"]]],
-        id="Image + video on first iteration, image on third iteration"
-    ),
-    pytest.param(
-        [[["cat_tensor", "car_tensor", "handwritten_tensor"], []], [["synthetic_video_32x32_tensor"], ["synthetic_video_32x32_tensor"]]],
-        id="3 images + video on first iteration, video on second iteration"
-    ),
-])
-def iteration_images_and_videos(request):
-    params = []
-    for param in request.param:
-        params.append([[request.getfixturevalue(image) for image in bundle] for bundle in param])
-    return params
-
 @pytest.mark.precommit
 @parametrize_all_models_with_video
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
@@ -899,7 +875,7 @@ def test_perf_metrics(
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
 def test_vlm_npu_no_exception(model_id, backend, cat_tensor, handwritten_tensor, car_tensor):
-    if model_id in npu_unsupported_models:
+    if model_id in NPU_UNSUPPORTED_MODELS:
         pytest.skip(f"{model_id} is not supported")
 
     models_path = _get_ov_model(model_id)
