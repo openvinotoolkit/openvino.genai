@@ -112,12 +112,10 @@ void WhisperWithPastDecoder::start_async(const Tensor& encoder_hidden_state,
     _set_encoder_hidden_states_tensor(encoder_hidden_state, batch_size, request);
     request.set_tensor("input_ids", input_ids);
 
-    if (!is_initial_step) {
-        if (m_past_decoder_has_cache_position) {
-            ov::Tensor cache_position_tensor = request.get_tensor("cache_position");
-            cache_position_tensor.set_shape({1});
-            cache_position_tensor.data<int64_t>()[0] = m_cache_position;
-        }
+    if (!is_initial_step && m_past_decoder_has_cache_position) {
+        ov::Tensor cache_position_tensor = request.get_tensor("cache_position");
+        cache_position_tensor.set_shape({1});
+        cache_position_tensor.data<int64_t>()[0] = m_cache_position;
     }
 
     _set_past_key_value(beam_idx);

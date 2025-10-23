@@ -580,7 +580,7 @@ void add_cache_position_input(std::shared_ptr<ov::Model> model) {
                 cache_position->set_friendly_name("cache_position");
                 model->add_parameters({cache_position});
                 std::shared_ptr<ov::Node> cache_pos_unsqueeze_arg;
-                if (unsqueeze_node->input(0).get_element_type() == ov::element::f32) {
+                if (matched_unsqueeze->input(0).get_element_type() == ov::element::f32) {
                     cache_pos_unsqueeze_arg = std::make_shared<v0::Convert>(cache_position, ov::element::f32);
                 } else {
                     cache_pos_unsqueeze_arg = cache_position;
