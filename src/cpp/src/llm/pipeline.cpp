@@ -271,10 +271,25 @@ DecodedResults LLMPipeline::generate(
 
 DecodedResults LLMPipeline::generate(StringInputs text, const ov::AnyMap& config_map) {
     auto config_arg = utils::get_config_from_map(config_map);
-    GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
+    GenerationConfig config = config_arg.value_or(get_generation_config());
     config.update_generation_config(config_map);
 
     return m_pimpl->generate(text, config, utils::get_streamer_from_map(config_map));
+}
+
+DecodedResults LLMPipeline::generate(
+        const ChatHistory& history,
+        OptionalGenerationConfig generation_config,
+        StreamerVariant streamer) {
+    return m_pimpl->generate(history, generation_config, streamer);
+}
+
+DecodedResults LLMPipeline::generate(const ChatHistory& history, const ov::AnyMap& config_map) {
+    auto config_arg = utils::get_config_from_map(config_map);
+    GenerationConfig config = config_arg.value_or(get_generation_config());
+    config.update_generation_config(config_map);
+
+    return m_pimpl->generate(history, config, utils::get_streamer_from_map(config_map));
 }
 
 EncodedResults LLMPipeline::generate(
@@ -286,7 +301,7 @@ EncodedResults LLMPipeline::generate(
 
 EncodedResults LLMPipeline::generate(const EncodedInputs& inputs, const ov::AnyMap& config_map) {
     auto config_arg = utils::get_config_from_map(config_map);
-    GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
+    GenerationConfig config = config_arg.value_or(get_generation_config());
     config.update_generation_config(config_map);
 
     return m_pimpl->generate(inputs, config, utils::get_streamer_from_map(config_map));

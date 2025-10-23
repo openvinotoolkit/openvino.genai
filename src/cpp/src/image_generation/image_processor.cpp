@@ -47,7 +47,7 @@ ImageProcessor::ImageProcessor(const std::string& device, bool do_normalize, boo
     auto image_processor_model = create_empty_model();
     merge_image_preprocessing(image_processor_model, do_normalize, do_binarize, gray_scale_source);
 
-    compile(image_processor_model);
+    compile(std::move(image_processor_model));
 }
 
 void ImageProcessor::merge_image_preprocessing(std::shared_ptr<ov::Model> model, bool do_normalize, bool do_binarize, bool gray_scale_source) {
