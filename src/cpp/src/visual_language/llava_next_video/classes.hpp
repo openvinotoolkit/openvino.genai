@@ -66,7 +66,7 @@ public:
         bool recalculate_merged_embeddings,
         const std::vector<size_t>& images_sequence,
         const std::vector<size_t>& videos_sequence,
-        const std::vector<std::pair<std::size_t, std::size_t>> history_vision_count) override;
+        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) override;
 
     std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos) override;
 

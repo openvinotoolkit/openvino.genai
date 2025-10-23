@@ -184,7 +184,7 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
     bool recalculate_merged_embeddings,
     const std::vector<size_t>& images_sequence,
     const std::vector<size_t>& videos_sequence,
-    const std::vector<std::pair<std::size_t, std::size_t>> history_vision_count) {
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
     if (!videos.size()) {
         return get_inputs_embeds(prompt, images, metrics, recalculate_merged_embeddings, images_sequence);
     }
@@ -227,7 +227,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_em
     bool recalculate_merged_embeddings,
     const std::vector<size_t>& image_sequence,
     const std::vector<size_t>& videos_sequence,
-    const std::vector<std::pair<std::size_t, std::size_t>> history_vision_count) {
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
     OPENVINO_ASSERT(videos.size() == 0U, "The model doesn't support 'videos' preprocessing yet. Please use 'images' instead.");
 
     return get_inputs_embeds_with_token_type_ids(prompt, images, metrics, recalculate_merged_embeddings, image_sequence);
@@ -314,7 +314,7 @@ ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt,
                                              bool recalculate_merged_embeddings,
                                              const std::vector<size_t>& images_sequence,
                                              const std::vector<size_t>& videos_sequence,
-                                             const std::vector<std::pair<std::size_t, std::size_t>> history_vision_count) {
+                                             const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
     return m_impl->get_inputs_embeds(prompt,
                                      images,
                                      videos,
