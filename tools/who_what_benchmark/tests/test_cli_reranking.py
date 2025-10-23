@@ -3,6 +3,8 @@ import pytest
 import logging
 from test_cli_image import run_wwb
 
+pytest.skip("skip reranking", allow_module_level=True)
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

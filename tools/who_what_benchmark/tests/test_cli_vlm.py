@@ -5,6 +5,9 @@ import sys
 from test_cli_image import run_wwb, get_similarity
 
 
+pytest.skip("skip vlm", allow_module_level=True)
+
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 

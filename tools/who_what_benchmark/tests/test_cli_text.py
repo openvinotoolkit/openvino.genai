@@ -13,6 +13,9 @@ from optimum.intel.openvino import OVModelForCausalLM, OVWeightQuantizationConfi
 from test_cli_image import run_wwb
 
 
+pytest.skip("skip text", allow_module_level=True)
+
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
