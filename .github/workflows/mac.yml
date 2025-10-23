@@ -25,6 +25,7 @@ env:
   OV_CACHE: ~/.cache/ov_cache/194c936
   CLEANUP_CACHE: 1
   OPENVINO_LOG_LEVEL: 4
+  CMAKE_BUILD_PARALLEL_LEVEL: 9
 
 jobs:
   smart_ci:

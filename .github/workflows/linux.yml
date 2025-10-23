@@ -33,6 +33,7 @@ env:
   BASE_PRODUCT_TYPE: public_linux_ubuntu_22_04_x86_64
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
   GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_archive'
+  CMAKE_BUILD_PARALLEL_LEVEL: 9
 
 jobs:
   smart_ci:
