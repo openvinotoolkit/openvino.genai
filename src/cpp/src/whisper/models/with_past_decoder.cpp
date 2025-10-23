@@ -93,7 +93,7 @@ WhisperWithPastDecoder::WhisperWithPastDecoder(const std::filesystem::path& mode
     utils::print_compiled_model_properties(compiled_model, "whisper decoder model");
     m_request_decoder = compiled_model.create_infer_request();
 
-    m_has_cache_position =
+    m_past_decoder_has_cache_position =
         utils::has_input(core.read_model(models_path / "openvino_decoder_with_past_model.xml"), "cache_position");
     compiled_model = core.compile_model(models_path / "openvino_decoder_with_past_model.xml", device, properties);
     utils::print_compiled_model_properties(compiled_model, "whisper decoder with past model");
@@ -113,7 +113,7 @@ void WhisperWithPastDecoder::start_async(const Tensor& encoder_hidden_state,
     request.set_tensor("input_ids", input_ids);
 
     if (!is_initial_step) {
-        if (m_has_cache_position) {
+        if (m_past_decoder_has_cache_position) {
             ov::Tensor cache_position_tensor = request.get_tensor("cache_position");
             cache_position_tensor.set_shape({1});
             cache_position_tensor.data<int64_t>()[0] = m_cache_position;
