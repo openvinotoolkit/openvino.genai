@@ -939,7 +939,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_windows
-    needs: [smart_ci, openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_tests_wheel, genai_tools_tests, genai_samples_tests]
+    needs: [smart_ci, openvino_download, genai_build_cpack, genai_build_wheel, store_artifacts, genai_build_samples, genai_tests_wheel, genai_tools_tests, genai_samples_tests, genai_build_nodejs, genai_nodejs_tests]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
