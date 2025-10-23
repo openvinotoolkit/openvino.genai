@@ -11,7 +11,7 @@ namespace ov::genai::cdpruner {
 
 /// @brief Configuration structure for CDPruner algorithm
 struct Config {
-    /// @brief Percentage of visual tokens to retain after pruning (0-100)
+    /// @brief Percentage of visual tokens to prune (0-100)
     size_t pruning_ratio = 0;
 
     /// @brief Weight for balancing relevance vs diversity (0.0 to 1.0)
@@ -21,7 +21,7 @@ struct Config {
      * @brief Update configuration parameters from environment variables.
      *
      * The following environment variables are read:
-     *   - CDPRUNER_PRUNING_RATIO: Percentage of visual tokens to retain after pruning (integer, 0-100).
+     *   - CDPRUNER_PRUNING_RATIO: Percentage of visual tokens to prune (integer, 0-100).
      *   - CDPRUNER_DEBUG_MODE: Enable debug output (boolean, "0" or "1").
      *   - CDPRUNER_USE_CL_KERNEL: Use OpenCL kernel for DPP computation (boolean, "0" or "1").
      *   - CDPRUNER_SPLIT_THRESHOLD: Threshold for splitting large kernel matrices (integer).

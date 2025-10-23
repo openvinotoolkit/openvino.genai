@@ -146,8 +146,8 @@ def analyze_args(args):
     model_args["apply_chat_template"] = args.apply_chat_template
 
     # CDPruner config
-    model_args['pruning_ratio'] = args.pruning_ratio if args.pruning_ratio is not None else 0
-    model_args['relevance_weight'] = args.relevance_weight if args.relevance_weight is not None else 0.5
+    model_args['pruning_ratio'] = args.pruning_ratio
+    model_args['relevance_weight'] = args.relevance_weight
 
     optimum = args.optimum
 
