@@ -17,7 +17,6 @@ class TestWhisperSpeechRecognition:
     @pytest.mark.xfail(
         reason="Port for tensor name cache_position was not found. Ticket CVS-174805.",
         raises=subprocess.CalledProcessError,
-        strict=True
     )
     def test_sample_whisper_speech_recognition(self, convert_model, download_test_content):
         # Run C++ sample

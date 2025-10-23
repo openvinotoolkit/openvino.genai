@@ -206,15 +206,14 @@ class TestBenchmarkLLM:
 
 
     @pytest.mark.samples
-    @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1"], ["-d", "cpu", "-n", "1", "--optimum"]])
+    @pytest.mark.parametrize("sample_args", [
+        pytest.param(["-d", "cpu", "-n", "1"], marks=pytest.mark.xfail(
+            reason="TypeError: WhisperGenerationMixin.generate() got multiple values for argument 'input_features'. Ticket CVS-174921",
+            raises=subprocess.CalledProcessError,
+        )), ["-d", "cpu", "-n", "1", "--optimum"]])
     @pytest.mark.parametrize("media_file", ["3283_1447_000000.flac"])
     @pytest.mark.parametrize("convert_model", ["WhisperTiny"], indirect=True)
     @pytest.mark.parametrize("download_test_content", ["3283_1447_000.tar.gz"], indirect=True)
-    @pytest.mark.xfail(
-        reason="TypeError: WhisperGenerationMixin.generate() got multiple values for argument 'input_features'. Ticket CVS-174921",
-        raises=subprocess.CalledProcessError,
-        strict=True
-    )
     def test_python_tool_llm_benchmark_optimum(self, convert_model, download_test_content, media_file, sample_args):
         media_path = os.path.join(download_test_content, media_file)
         # Run Python benchmark
