@@ -36,6 +36,7 @@ class TestTextToSpeechSample:
     @pytest.mark.parametrize("convert_model", ["tiny-random-SpeechT5ForTextToSpeech"], indirect=True)
     @pytest.mark.parametrize("input_prompt", ["Hello everyone"])
     @pytest.mark.xfail(
+        sys.platform =="win32",
         reason="Missing config.json",
         raises=subprocess.CalledProcessError,
     )

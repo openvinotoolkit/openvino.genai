@@ -206,7 +206,6 @@ def test_image_model_genai(model_id, model_type, tmp_path):
         ("hf-internal-testing/tiny-stable-diffusion-torch", "text-to-image", "hf"),
     ],
 )
-@pytest.mark.xfail(reason="Hang", run=False)
 def test_image_custom_dataset(model_id, model_type, backend, tmp_path):
     GT_FILE = tmp_path / "test_sd.csv"
     wwb_args = [
