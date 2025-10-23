@@ -26,6 +26,7 @@ private:
     size_t m_cache_position = 0;
     bool m_initial_past_key_value_set = false;
     bool m_past_key_value_linked = false;
+    bool m_has_cache_position = true;
 
     void _set_past_key_value(const Tensor& beam_idx);
 };

@@ -1006,7 +1006,7 @@ std::shared_ptr<ov::Model> prepare_decoder_model(std::shared_ptr<ov::Model>& mod
     // 3) Expose all states that requires initialization on the first run as outputs
     expose_runtime_states_as_outputs(decoder_model);
     // 4) Remove cache_position input if it exists
-    if (ov::genai::utils::input_exists(decoder_model, "cache_position")) {
+    if (ov::genai::utils::has_input(decoder_model, "cache_position")) {
         remove_cache_position(decoder_model);
     }
     // 5) Normalize output names - should be done in stateful_to_stateless_transformation
@@ -1022,10 +1022,6 @@ std::shared_ptr<ov::Model> prepare_decoder_with_past_model(std::shared_ptr<ov::M
     normalize_input_key_value_names(decoder_with_past_model);
     normalize_output_key_value_names(decoder_with_past_model);
     expose_runtime_states_as_inputs(decoder_with_past_model);
-
-    if (!ov::genai::utils::input_exists(decoder_with_past_model, "cache_position")) {
-        add_cache_position_input(decoder_with_past_model);
-    }
 
     decoder_with_past_model->reshape({{"input_ids", ov::PartialShape({-1, 1})}});
     decoder_with_past_model->set_friendly_name("Model6");
@@ -1065,6 +1061,10 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
 
     if (!decoder_model || !decoder_with_past_model)
         OPENVINO_THROW("Decoder/decoder_with_past model is not valid !");
+
+    if (!ov::genai::utils::has_input(decoder_with_past_model, "cache_position")) {
+        add_cache_position_input(decoder_with_past_model);
+    }
 
     add_attention_mask_input(decoder_model, true /* transform_cross_attn */, last_hidden_state_shape[1].get_length());
     // NB: Note, there is no need to transform cross attention for decoder_with_past_model

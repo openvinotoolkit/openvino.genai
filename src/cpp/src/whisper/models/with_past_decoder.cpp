@@ -86,7 +86,10 @@ WhisperWithPastDecoder::WhisperWithPastDecoder(const std::filesystem::path& mode
                  "To obtain stateful decoder model use latest `optimum-intel` package:\n"
                  "pip install optimum-intel@git+https://github.com/huggingface/optimum-intel.git@main\n"
                  "optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny");
+
     ov::Core core = utils::singleton_core();
+
+    m_has_cache_position = utils::has_input(core.read_model(models_path / "openvino_decoder_model.xml"), "cache_position");
 
     auto compiled_model = core.compile_model(models_path / "openvino_decoder_model.xml", device, properties);
     utils::print_compiled_model_properties(compiled_model, "whisper decoder model");
@@ -110,9 +113,11 @@ void WhisperWithPastDecoder::start_async(const Tensor& encoder_hidden_state,
     request.set_tensor("input_ids", input_ids);
 
     if (!is_initial_step) {
-        ov::Tensor cache_position_tensor = request.get_tensor("cache_position");
-        cache_position_tensor.set_shape({1});
-        cache_position_tensor.data<int64_t>()[0] = m_cache_position;
+        if (m_has_cache_position) {
+            ov::Tensor cache_position_tensor = request.get_tensor("cache_position");
+            cache_position_tensor.set_shape({1});
+            cache_position_tensor.data<int64_t>()[0] = m_cache_position;
+        }
     }
 
     _set_past_key_value(beam_idx);

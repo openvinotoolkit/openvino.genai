@@ -4,7 +4,6 @@
 #include "statefull_decoder.hpp"
 
 #include "utils.hpp"
-#include "whisper/whisper_utils.hpp"
 
 namespace {
 void reshape_hidden_states_to_static(std::shared_ptr<ov::Model> model, const ov::PartialShape& lhstates_shape) {
@@ -26,7 +25,7 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
 
     auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
 
-    m_has_cache_position = ov::genai::utils::input_exists(model, "cache_position");
+    m_has_cache_position = utils::has_input(model, "cache_position");
 
     ov::CompiledModel compiled_model;
     if (device == "NPU") {

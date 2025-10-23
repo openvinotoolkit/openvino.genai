@@ -19,8 +19,6 @@ void filter_non_segment_metrics(ov::genai::RawPerfMetrics& raw_metrics,
 
 int64_t argmax(const ov::Tensor& logits, const size_t batch_idx);
 
-bool input_exists(const std::shared_ptr<ov::Model>& model, const std::string& name);
-
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
