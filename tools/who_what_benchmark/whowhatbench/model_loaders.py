@@ -53,6 +53,17 @@ def get_scheduler_config_genai(cb_config):
         for param, value in scheduler_params.items():
             if param == "cache_eviction_config":
                 value = openvino_genai.CacheEvictionConfig(aggregation_mode=openvino_genai.AggregationMode.NORM_SUM, **value)
+            elif param == "sparse_attention_config":
+                sp_att_config = {}
+                for sa_param, sa_value in value.items():
+                    if sa_param == "mode":
+                        # Convert mode string to enum
+                        sp_att_config[sa_param] = getattr(openvino_genai.SparseAttentionMode, sa_value)
+                    elif sa_param == "xattention_threshold":
+                        sp_att_config[sa_param] = float(sa_value)
+                    else:
+                        sp_att_config[sa_param] = sa_value
+                value = openvino_genai.SparseAttentionConfig(**sp_att_config)
             setattr(scheduler_config, param, value)
 
     return scheduler_config
