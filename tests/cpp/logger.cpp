@@ -79,6 +79,7 @@ TEST_F(LoggerTests, NoOutputWhenLevelIsNo) {
 
 TEST_F(LoggerTests, RespectsLogLevelFiltering) {
     testing::internal::CaptureStdout();
+    testing::internal::CaptureStderr();
 
     GenAILogger->set_log_level(ov::log::Level::WARNING);
     GenAILogPrint(ov::log::Level::DEBUG, "debug message");
@@ -87,9 +88,39 @@ TEST_F(LoggerTests, RespectsLogLevelFiltering) {
     GenAILogPrint(ov::log::Level::ERR, "error message");
 
     std::string output = testing::internal::GetCapturedStdout();
+    std::string error_output = testing::internal::GetCapturedStderr();
 
     EXPECT_EQ(output.find("debug message"), std::string::npos);
     EXPECT_EQ(output.find("info message"), std::string::npos);
     expect_contains(output, "[WARNING] warn message");
-    expect_contains(output, "[ERROR] error message");
+    EXPECT_EQ(error_output.find("debug message"), std::string::npos);
+    EXPECT_EQ(error_output.find("info message"), std::string::npos);
+    EXPECT_TRUE(error_output.find("[WARNING]") == std::string::npos);
+    expect_contains(error_output, "[ERROR] error message");
+}
+
+TEST_F(LoggerTests, EmitsAllLogLevelsWithoutErrors) {
+    GenAILogger->set_log_level(ov::log::Level::DEBUG);
+
+    testing::internal::CaptureStdout();
+    testing::internal::CaptureStderr();
+
+    GenAILogPrint(ov::log::Level::DEBUG, "debug level message");
+    GenAILogPrint(ov::log::Level::INFO, "info level message");
+    GenAILogPrint(ov::log::Level::WARNING, "warning level message");
+    GenAILogPrint(ov::log::Level::ERR, "error level message");
+
+    std::string std_output = testing::internal::GetCapturedStdout();
+    std::string err_output = testing::internal::GetCapturedStderr();
+
+    expect_contains(std_output, "[DEBUG][");
+    expect_contains(std_output, ":");
+    expect_contains(std_output, "debug level message");
+    expect_contains(std_output, "[INFO] info level message");
+    expect_contains(std_output, "[WARNING] warning level message");
+
+    EXPECT_TRUE(err_output.find("debug level message") == std::string::npos);
+    EXPECT_TRUE(err_output.find("info level message") == std::string::npos);
+    EXPECT_TRUE(err_output.find("warning level message") == std::string::npos);
+    expect_contains(err_output, "[ERROR] error level message");
 }
