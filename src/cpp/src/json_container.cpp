@@ -20,11 +20,15 @@ public:
     explicit JsonContainerImpl(nlohmann::ordered_json json) : m_json(std::move(json)) {}
 
     nlohmann::ordered_json* get_json_value_ptr(const std::string& path, AccessMode mode) {
-        auto json_pointer = nlohmann::ordered_json::json_pointer(path);
-        if (mode == AccessMode::Read && !m_json.contains(json_pointer)) {
-            OPENVINO_THROW("Path '", path, "' does not exist in the JsonContainer.");
+        try {
+            auto json_pointer = nlohmann::ordered_json::json_pointer(path);
+            if (mode == AccessMode::Read && !m_json.contains(json_pointer)) {
+                OPENVINO_THROW("Path '", path, "' does not exist in the JsonContainer.");
+            }
+            return &m_json[json_pointer];
+        } catch (const nlohmann::json::exception& e) {
+            OPENVINO_THROW("Invalid JSON path '", path, "': ", e.what());
         }
-        return &m_json[json_pointer];
     }
     
     const nlohmann::ordered_json* get_json_value_ptr(const std::string& path, AccessMode mode) const {
@@ -234,7 +238,11 @@ bool JsonContainer::get_bool() const {
         OPENVINO_THROW("JsonContainer expected boolean at path '", m_path, "' but found ",
             json_value_ptr->type_name(), " with value: ", json_value_ptr->dump());
     }
-    return json_value_ptr->get<bool>();
+    try {
+        return json_value_ptr->get<bool>();
+    } catch (const nlohmann::json::exception& e) {
+        OPENVINO_THROW("Failed to get boolean value at path '", m_path, "': ", e.what());
+    }
 }
 
 int64_t JsonContainer::get_int() const {
@@ -243,7 +251,11 @@ int64_t JsonContainer::get_int() const {
         OPENVINO_THROW("JsonContainer expected integer number at path '", m_path, "' but found ",
             json_value_ptr->type_name(), " with value: ", json_value_ptr->dump());
     }
-    return json_value_ptr->get<int64_t>();
+    try {
+        return json_value_ptr->get<int64_t>();
+    } catch (const nlohmann::json::exception& e) {
+        OPENVINO_THROW("Failed to get integer value at path '", m_path, "': ", e.what());
+    }
 }
 
 double JsonContainer::get_double() const {
@@ -252,7 +264,11 @@ double JsonContainer::get_double() const {
         OPENVINO_THROW("JsonContainer expected floating-point number at path '", m_path, "' but found ",
             json_value_ptr->type_name(), " with value: ", json_value_ptr->dump());
     }
-    return json_value_ptr->get<double>();
+    try {
+        return json_value_ptr->get<double>();
+    } catch (const nlohmann::json::exception& e) {
+        OPENVINO_THROW("Failed to get double value at path '", m_path, "': ", e.what());
+    }
 }
 
 std::string JsonContainer::get_string() const {
@@ -261,7 +277,11 @@ std::string JsonContainer::get_string() const {
         OPENVINO_THROW("JsonContainer expected string at path '", m_path, "' but found ",
             json_value_ptr->type_name(), " with value: ", json_value_ptr->dump());
     }
-    return json_value_ptr->get<std::string>();
+    try {
+        return json_value_ptr->get<std::string>();
+    } catch (const nlohmann::json::exception& e) {
+        OPENVINO_THROW("Failed to get string value at path '", m_path, "': ", e.what());
+    }
 }
 
 JsonContainer& JsonContainer::to_empty_object() {
