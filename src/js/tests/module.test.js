@@ -112,7 +112,7 @@ describe("generation parameters validation", () => {
   it("should throw an error if temperature is not a number", async () => {
     await assert.rejects(async () => await pipeline.generate(), {
       name: "Error",
-      message: "Prompt must be a string or string[]",
+      message: "Inputs must be a string, string[], or ChatHistory",
     });
   });
 
