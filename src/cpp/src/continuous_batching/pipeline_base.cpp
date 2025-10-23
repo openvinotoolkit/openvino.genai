@@ -105,6 +105,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         timer.end();
     }
 
+    // TODO Consider moving to method and reuse
     std::vector<EncodedGenerationResult> encoded = generate(input_ids, sampling_params, streamer);
 
     std::vector<GenerationResult> decoded;
@@ -148,6 +149,81 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         m_history.pop_back();
 
     return decoded;
+}
+
+std::vector<GenerationResult>
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
+    const std::vector<ChatHistory>& histories,
+    const std::vector<ov::genai::GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    // TODO Enable chat history input for embeddings models.
+    OPENVINO_ASSERT(m_model_input_type == ModelInputType::TOKENS, "Chat history input is not supported for embeddings models.");
+    
+    OPENVINO_ASSERT(histories.size() == sampling_params.size(), "Number of histories must match sampling params");
+    OPENVINO_ASSERT(!m_tokenizer.get_chat_template().empty(), "Chat template must not be empty when using ChatHistory in generate method.");
+    
+    auto start_time = std::chrono::steady_clock::now();
+
+    std::vector<ov::Tensor> input_ids;
+    input_ids.reserve(histories.size());
+
+    std::vector<MicroSeconds> tokenization_durations;
+    static ManualTimer timer("tokenize");
+    timer.start();
+
+    for (size_t i = 0; i < histories.size(); i++) {
+        OPENVINO_ASSERT(sampling_params[i].apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
+        OPENVINO_ASSERT(!histories[i].empty(), "Chat history must not be empty when using ChatHistory in generate method.");
+        const auto encode_start = std::chrono::steady_clock::now();
+        constexpr bool add_generation_prompt = true;
+        std::string templated_history = m_tokenizer.apply_chat_template(histories[i], add_generation_prompt);
+        input_ids.push_back(
+            m_tokenizer.encode(templated_history, add_special_tokens(false)).input_ids
+        );
+        tokenization_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - encode_start));
+    }
+    
+    timer.end();
+
+    std::vector<EncodedGenerationResult> encoded_results = generate(input_ids, sampling_params, streamer);
+
+    std::vector<GenerationResult> decoded_results;
+    decoded_results.reserve(encoded_results.size());
+    for (size_t i = 0; i < encoded_results.size(); ++i) {
+        EncodedGenerationResult encoded_result = encoded_results[i];
+
+        auto& perf_metrics = encoded_result.perf_metrics;
+        auto& raw_counters = perf_metrics.raw_metrics;
+        raw_counters.tokenization_durations.emplace_back(tokenization_durations[i]);
+
+        std::vector<std::string> decoded_outputs;
+        decoded_outputs.reserve(encoded_result.m_generation_ids.size());
+        for (size_t idx = 0; idx < encoded_result.m_generation_ids.size(); ++idx) {
+            const auto decode_start = std::chrono::steady_clock::now();
+            decoded_outputs.push_back(m_tokenizer.decode(encoded_result.m_generation_ids.at(idx)));
+
+            raw_counters.detokenization_durations.emplace_back(std::chrono::steady_clock::now() - decode_start);
+        }
+
+        // The same perf metrics for each sequence, only tokenization/detokenization will differ.
+        perf_metrics.raw_metrics.generate_durations.clear();
+        perf_metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
+        // Reevaluate taking into accound tokenization/detokenization times.
+        perf_metrics.m_evaluated = false;
+        perf_metrics.evaluate_statistics(start_time);
+
+        decoded_results.push_back(GenerationResult{
+            encoded_result.m_request_id,
+            std::move(decoded_outputs),
+            std::move(encoded_result.m_scores),
+            encoded_result.m_status,
+            std::move(perf_metrics),
+            std::move(encoded_result.extended_perf_metrics)
+        });
+    }
+
+    return decoded_results;
 }
 
 std::vector<VLMDecodedResults>

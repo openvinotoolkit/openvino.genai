@@ -57,6 +57,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
         embedder = std::make_shared<InputsEmbedder>(models_path, device, vision_encoder_properties);
     }
 
+    utils::print_scheduler_config_info(scheduler_config);
+
     if (is_prompt_lookup_enabled) {
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
         OPENVINO_ASSERT(embedder == nullptr, "Prompt lookup decoding is not supported for models with embeddings");
@@ -96,6 +98,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
         embedder = std::make_shared<InputsEmbedder>(models_path, device, properties_without_draft_model_without_gguf);
     }
+
+    utils::print_scheduler_config_info(scheduler_config);
 
     if (is_prompt_lookup_enabled) {
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
@@ -139,6 +143,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
             embedder = std::make_shared<InputsEmbedder>(directory, device, properties_without_draft_model);
         }
     }
+
+    utils::print_scheduler_config_info(scheduler_config);
 
     if (is_prompt_lookup_enabled) {
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
@@ -187,6 +193,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
             embedder = std::make_shared<InputsEmbedder>(directory, device, properties_without_draft_model);
         }
     }
+
+    utils::print_scheduler_config_info(scheduler_config);
 
     if (is_prompt_lookup_enabled) {
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
@@ -257,6 +265,21 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::generate(const 
 
 std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::vector<std::string>& prompts, const std::vector<ov::genai::GenerationConfig>& sampling_params, const StreamerVariant& streamer) {
     auto decoded_results = m_impl->generate(prompts, sampling_params, streamer);
+
+    for (auto& decoded_result : decoded_results) {
+        decoded_result.perf_metrics.load_time = m_impl->m_load_time_ms;
+    }
+
+    return decoded_results;
+}
+
+std::vector<GenerationResult> ContinuousBatchingPipeline::generate(
+    const std::vector<ChatHistory>& histories,
+    const std::vector<ov::genai::GenerationConfig>&
+    sampling_params,
+    const StreamerVariant& streamer
+) {
+    auto decoded_results = m_impl->generate(histories, sampling_params, streamer);
 
     for (auto& decoded_result : decoded_results) {
         decoded_result.perf_metrics.load_time = m_impl->m_load_time_ms;
