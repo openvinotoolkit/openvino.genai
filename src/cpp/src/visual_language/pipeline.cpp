@@ -66,7 +66,6 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     bool m_use_full_chat_history = false;
     // It stores encoded images in case when m_use_full_chat_history is true
     std::vector<ov::genai::EncodedImage> m_encoded_images;
-    // Is used when m_use_full_chat_history is true
     std::string m_system_message;
 public:
     VLMPipelineImpl(
