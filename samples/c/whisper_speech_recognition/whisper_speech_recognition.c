@@ -25,7 +25,6 @@ int main(int argc, char* argv[]) {
     ov_genai_whisper_generation_config* config = NULL;
     ov_genai_whisper_decoded_results* results = NULL;
     float* audio_data = NULL;
-    float* resampled_audio = NULL;
     size_t audio_length = 0;
     char* output = NULL;
     size_t output_size = 0;
@@ -38,7 +37,7 @@ int main(int argc, char* argv[]) {
 
     if (file_sample_rate != 16000.0f) {
         size_t resampled_length;
-        resampled_audio = resample_audio(audio_data, audio_length, file_sample_rate, 16000.0f, &resampled_length);
+        float* resampled_audio = resample_audio(audio_data, audio_length, file_sample_rate, 16000.0f, &resampled_length);
         if (!resampled_audio) {
             fprintf(stderr, "Error: Failed to resample audio\n");
             exit_code = EXIT_FAILURE;
@@ -47,7 +46,6 @@ int main(int argc, char* argv[]) {
         free(audio_data);
         audio_data = resampled_audio;
         audio_length = resampled_length;
-        resampled_audio = NULL;
     }
 
     ov_status_e status = ov_genai_whisper_pipeline_create(model_path, device, 0, &pipeline);
@@ -123,8 +121,6 @@ err:
         free(output);
     if (audio_data)
         free(audio_data);
-    if (resampled_audio)
-        free(resampled_audio);
 
     return exit_code;
 }
