@@ -25,7 +25,7 @@ ov::log::Level get_openvino_env_log_level() {
     try {
         std::string env_str(env);
         size_t idx = 0;
-        int env_var_value = std::stoi(env_str, &idx);
+        const auto env_var_value = std::stoi(env_str, &idx);
         if (idx != env_str.size()) {
             return ov::log::Level::NO;
         }
