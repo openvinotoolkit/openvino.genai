@@ -88,18 +88,8 @@ void init_parsers(py::module_& m) {
             [](Parser& self, py::dict& message) {
                 auto msg_cpp = pyutils::py_object_to_json_container(message);
                 self.parse(msg_cpp);
-
-                // TODO: msg = pyutils::json_container_to_py_object(msg_cpp) does not work properly here,
-                py::object json_mod = py::module_::import("json");
-                
-                // since it create a new object instead of updating existing dict.
-                auto json_str = msg_cpp.to_json_string();
-                py::dict result = json_mod.attr("loads")(json_str);
-                
-                // update msg with result
-                for (auto item : result) {
-                    message[item.first] = item.second;
-                }
+                py::dict result = pyutils::json_container_to_py_object(msg_cpp);
+                message.attr("update")(result);
             },
             py::arg("message"),
             "Parse is called with the full text. Returns a dict with parsed content.");
@@ -125,16 +115,8 @@ void init_parsers(py::module_& m) {
                          const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt) {
             auto msg_cpp = pyutils::py_object_to_json_container(message);
             auto res = self.parse(msg_cpp, delta_text, delta_tokens);
-            auto json_str = msg_cpp.to_json_string();
-            
-            // TODO: msg = pyutils::json_container_to_py_object(msg_cpp) does not work properly here,
-            // since it create a new object instead of updating existing dict.
-            py::object json_mod = py::module_::import("json");
-            py::dict result = json_mod.attr("loads")(json_str);
-            // update msg with result
-            for (auto item : result) {
-                message[item.first] = item.second;
-            }
+            auto result = pyutils::json_container_to_py_object(msg_cpp);
+            message.attr("update")(result);
             return res;
         }, py::arg("message"), py::arg("delta_text"), py::arg("delta_tokens") = std::nullopt,
            "Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.")
