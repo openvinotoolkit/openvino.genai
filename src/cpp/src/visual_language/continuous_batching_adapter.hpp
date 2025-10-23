@@ -58,9 +58,7 @@ public:
         const StreamerVariant& streamer
     ) override {
         auto start_time = std::chrono::steady_clock::now();
-        auto images_vec = images.size() == 0u ? std::vector<std::vector<ov::Tensor>>{} : std::vector<std::vector<ov::Tensor>>{images};
-        auto video_vec = videos.size() == 0u ? std::vector<std::vector<ov::Tensor>>{} : std::vector<std::vector<ov::Tensor>>{videos};
-        auto result = m_impl.generate({prompt}, images_vec, video_vec, {generation_config}, streamer)[0];
+        auto result = m_impl.generate({prompt}, {images}, {videos}, {generation_config}, streamer)[0];
         auto stop_time = std::chrono::steady_clock::now();
 
         VLMDecodedResults decoded;
