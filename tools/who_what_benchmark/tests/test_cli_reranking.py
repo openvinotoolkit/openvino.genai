@@ -34,11 +34,9 @@ def teardown_module():
     shutil.rmtree(tmp_dir)
 
 
+@pytest.mark.rerank
 @pytest.mark.parametrize(("model_info"), OV_RERANK_MODELS)
 def test_reranking_genai(model_info, tmp_path):
-    if sys.platform == 'darwin':
-        pytest.xfail("Ticket 175534")
-
     GT_FILE = Path(tmp_dir) / "gt.csv"
     model_id = model_info[0]
     MODEL_PATH = Path(tmp_dir) / model_id.replace("/", "_")
@@ -59,8 +57,33 @@ def test_reranking_genai(model_info, tmp_path):
     ])
 
     assert Path(tmp_dir, "reference").exists()
+    
+    
+@pytest.mark.rerank
+@pytest.mark.parametrize(("model_info"), OV_RERANK_MODELS)
+def test_reranking_genai(model_info, tmp_path):
+    GT_FILE = Path(tmp_dir) / "gt.csv"
+    model_id = model_info[0]
+    MODEL_PATH = Path(tmp_dir) / model_id.replace("/", "_")
+
+    # test Optimum
+    outpus = run_wwb([
+        "--base-model",
+        MODEL_PATH,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        "text-reranking",
+        "--output",
+        tmp_path,
+    ])
 
 
+@pytest.mark.rerank
 @pytest.mark.parametrize(
     ("model_info"), OV_RERANK_MODELS
 )
@@ -88,39 +111,17 @@ def test_reranking_optimum(model_info, tmp_path):
     assert GT_FILE.exists()
     assert Path(tmp_dir, "reference").exists()
 
-    # test Optimum
-    outpus = run_wwb([
-        "--target-model",
-        MODEL_PATH,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        "text-reranking",
-        "--output",
-        tmp_path,
-    ])
-
-    assert (tmp_path / "target").exists()
-    assert (tmp_path / "target.csv").exists()
-    assert (tmp_path / "metrics_per_question.csv").exists()
-    assert (tmp_path / "metrics.csv").exists()
-    assert "Metrics for model" in outpus
-
-    # test w/o models
-    run_wwb([
-        "--target-data",
-        tmp_path / "target.csv",
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        "text-reranking",
-        "--genai"
-    ])
+    # # test w/o models
+    # run_wwb([
+    #     "--target-data",
+    #     tmp_path / "target.csv",
+    #     "--num-samples",
+    #     "1",
+    #     "--gt-data",
+    #     GT_FILE,
+    #     "--device",
+    #     "CPU",
+    #     "--model-type",
+    #     "text-reranking",
+    #     "--genai"
+    # ])

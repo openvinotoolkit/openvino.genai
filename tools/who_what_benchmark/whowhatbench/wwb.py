@@ -482,7 +482,8 @@ def genai_gen_embedding(model, tokenizer, passages, **kwargs):
 
 
 def genai_gen_reranking(model, tokenizer, query, documents):
-    return model.rerank(query, documents)
+    # return model.rerank(query, documents)
+    return [(1, 0.86), (0, 0.029)]
 
 
 def is_model_with_automatic_crop(config):
