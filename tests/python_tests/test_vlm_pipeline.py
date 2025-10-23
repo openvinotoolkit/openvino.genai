@@ -685,22 +685,10 @@ def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
 
         ov_pipe.start_chat(system_message)
 
-        images = iteration_images[0]
-        result = []
-
-        res = ov_pipe.generate(
-            prompts[0],
-            images=images,
-            generation_config=generation_config,
-            streamer=streamer,
-        )
-        assert res.texts[0] == "".join(result_from_streamer)
-        result += []
-
-        for i, image_set in enumerate(iteration_images[1:]):
+        for i, image_set in enumerate(iteration_images):
             result_from_streamer = []
             res = ov_pipe.generate(
-                prompts[i % len(prompts)],
+                PROMPTS[i % len(PROMPTS)],
                 images=image_set,
                 generation_config=generation_config,
                 streamer=streamer,
@@ -709,7 +697,7 @@ def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
 
         ov_pipe.finish_chat()
 
-    if model_id in NPU_UNSUPPORTED_MODELS or model_in VIDEO_MODEL_IDS:
+    if model_id in NPU_UNSUPPORTED_MODELS or model_id in VIDEO_MODEL_IDS:
         pytest.skip(f"{model_id} is not supported")
 
     models_path = _get_ov_model(model_id)
