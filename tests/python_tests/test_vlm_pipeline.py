@@ -673,6 +673,9 @@ def iteration_images_npu(request):
 @pytest.mark.parametrize("model_id", MODEL_IDS)
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
+    if model_id in NPU_UNSUPPORTED_MODELS or model_id in VIDEO_MODEL_IDS:
+        pytest.skip(f"{model_id} is not supported")
+
     def run_chat(ov_pipe, system_message, iteration_images):
         result_from_streamer = []
         def streamer(word: str) -> bool:
@@ -696,9 +699,6 @@ def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
             assert res.texts[0] == "".join(result_from_streamer)
 
         ov_pipe.finish_chat()
-
-    if model_id in NPU_UNSUPPORTED_MODELS or model_id in VIDEO_MODEL_IDS:
-        pytest.skip(f"{model_id} is not supported")
 
     models_path = _get_ov_model(model_id)
     properties = {
