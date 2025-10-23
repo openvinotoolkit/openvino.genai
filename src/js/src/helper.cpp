@@ -7,26 +7,9 @@ namespace {
 constexpr const char* JS_SCHEDULER_CONFIG_KEY = "schedulerConfig";
 constexpr const char* CPP_SCHEDULER_CONFIG_KEY = "scheduler_config";
 constexpr const char* POOLING_TYPE_KEY = "pooling_type";
+constexpr const char* STRUCTURED_OUTPUT_CONFIG_KEY = "structured_output_config";
+
 }  // namespace
-
-ov::AnyMap to_anyMap(const Napi::Env& env, const Napi::Value& val) {
-    ov::AnyMap properties;
-    if (!val.IsObject()) {
-        OPENVINO_THROW("Passed Napi::Value must be an object.");
-    }
-    const auto& parameters = val.ToObject();
-    const auto& keys = parameters.GetPropertyNames();
-
-    for (uint32_t i = 0; i < keys.Length(); ++i) {
-        const auto& property_name = static_cast<Napi::Value>(keys[i]).ToString().Utf8Value();
-
-        const auto& any_value = js_to_cpp<ov::Any>(env, parameters.Get(property_name));
-
-        properties.insert(std::make_pair(property_name, any_value));
-    }
-
-    return properties;
-}
 
 template <>
 ov::Any js_to_cpp<ov::Any>(const Napi::Env& env, const Napi::Value& value) {
@@ -82,22 +65,40 @@ ov::Any js_to_cpp<ov::Any>(const Napi::Env& env, const Napi::Value& value) {
 template <>
 ov::AnyMap js_to_cpp<ov::AnyMap>(const Napi::Env& env, const Napi::Value& value) {
     std::map<std::string, ov::Any> result_map;
+    if(value.IsUndefined() || value.IsNull()) {
+        return result_map;
+    }
+    if (!value.IsObject()) {
+        OPENVINO_THROW("Passed Napi::Value must be an object.");
+    }
     const auto& object = value.ToObject();
     const auto& keys = object.GetPropertyNames();
 
     for (uint32_t i = 0; i < keys.Length(); ++i) {
         const std::string& key_name = keys.Get(i).ToString();
+        auto value_by_key = object.Get(key_name);
+        if (value_by_key.IsUndefined() || value_by_key.IsNull()) {
+            continue;
+        }
         if (key_name == JS_SCHEDULER_CONFIG_KEY) {
-            result_map[CPP_SCHEDULER_CONFIG_KEY] = js_to_cpp<ov::genai::SchedulerConfig>(env, object.Get(key_name));
+            result_map[CPP_SCHEDULER_CONFIG_KEY] = js_to_cpp<ov::genai::SchedulerConfig>(env, value_by_key);
         } else if (key_name == POOLING_TYPE_KEY) {
             result_map[key_name] =
-                ov::genai::TextEmbeddingPipeline::PoolingType(object.Get(key_name).ToNumber().Int32Value());
+                ov::genai::TextEmbeddingPipeline::PoolingType(value_by_key.ToNumber().Int32Value());
+        } else if (key_name == STRUCTURED_OUTPUT_CONFIG_KEY) {
+            result_map[key_name] = js_to_cpp<ov::genai::StructuredOutputConfig>(env, value_by_key);
         } else {
-            result_map[key_name] = js_to_cpp<ov::Any>(env, object.Get(key_name));
+            result_map[key_name] = js_to_cpp<ov::Any>(env, value_by_key);
         }
     }
 
     return result_map;
+}
+
+template <>
+std::string js_to_cpp<std::string>(const Napi::Env& env, const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsString(), "Passed argument must be of type String.");
+    return value.As<Napi::String>().Utf8Value();
 }
 
 template <>
@@ -171,6 +172,146 @@ ov::genai::SchedulerConfig js_to_cpp<ov::genai::SchedulerConfig>(const Napi::Env
     }
     if (obj.Has("dynamic_split_fuse")) {
         config.dynamic_split_fuse = obj.Get("dynamic_split_fuse").ToBoolean().Value();
+    }
+
+    return config;
+}
+
+template <>
+ov::genai::StructuredOutputConfig::Tag js_to_cpp<ov::genai::StructuredOutputConfig::Tag>(const Napi::Env& env, const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsObject(), "Tag must be a JS object");
+    auto obj = value.As<Napi::Object>();
+
+    return ov::genai::StructuredOutputConfig::Tag(
+        js_to_cpp<std::string>(env, obj.Get("begin")),
+        js_to_cpp<ov::genai::StructuredOutputConfig::StructuralTag>(env, obj.Get("content")),
+        js_to_cpp<std::string>(env, obj.Get("end"))
+    );
+}
+
+template <>
+ov::genai::StructuredOutputConfig::StructuralTag js_to_cpp<ov::genai::StructuredOutputConfig::StructuralTag>(const Napi::Env& env, const Napi::Value& value) {
+    if (value.IsString()) {
+        return js_to_cpp<std::string>(env, value);
+    }
+    
+    OPENVINO_ASSERT(value.IsObject(), "StructuralTag must be a JS object or string");
+    auto obj = value.As<Napi::Object>();
+
+    std::string tag_type = obj.Get("structuralTagType").ToString().Utf8Value();
+
+    if (tag_type == "Regex") {
+        return ov::genai::StructuredOutputConfig::Regex(
+            js_to_cpp<std::string>(env, obj.Get("value"))
+        );
+    } else if (tag_type == "JSONSchema") {
+        return ov::genai::StructuredOutputConfig::JSONSchema(
+            js_to_cpp<std::string>(env, obj.Get("value"))
+        );
+    } else if (tag_type == "EBNF") {
+        return ov::genai::StructuredOutputConfig::EBNF(
+            js_to_cpp<std::string>(env, obj.Get("value"))
+        );
+    } else if (tag_type == "ConstString") {
+        return ov::genai::StructuredOutputConfig::ConstString(
+            js_to_cpp<std::string>(env, obj.Get("value"))
+        );
+    } else if (tag_type == "AnyText") {
+        return ov::genai::StructuredOutputConfig::AnyText();
+    } else if (tag_type == "QwenXMLParametersFormat") {
+        return ov::genai::StructuredOutputConfig::QwenXMLParametersFormat(
+            js_to_cpp<std::string>(env, obj.Get("jsonSchema"))
+        );
+    } else if (tag_type == "Concat") {
+        std::vector<ov::genai::StructuredOutputConfig::StructuralTag> elements;
+        auto js_elements = obj.Get("elements");
+        OPENVINO_ASSERT(js_elements.IsArray(), "Concat StructuralTag 'elements' must be an array");
+        auto js_array = js_elements.As<Napi::Array>();
+        size_t arrayLength = js_array.Length();
+        for (uint32_t i = 0; i < arrayLength; ++i) {
+            elements.push_back(js_to_cpp<ov::genai::StructuredOutputConfig::StructuralTag>(env, js_array[i]));
+        }
+        return std::make_shared<ov::genai::StructuredOutputConfig::Concat>(elements);
+    } else if (tag_type == "Union") {
+        std::vector<ov::genai::StructuredOutputConfig::StructuralTag> elements;
+        auto js_elements = obj.Get("elements");
+        OPENVINO_ASSERT(js_elements.IsArray(), "Union StructuralTag 'elements' must be an array");
+        auto js_array = js_elements.As<Napi::Array>();
+        size_t arrayLength = js_array.Length();
+        for (uint32_t i = 0; i < arrayLength; ++i) {
+            elements.push_back(js_to_cpp<ov::genai::StructuredOutputConfig::StructuralTag>(env, js_array[i]));
+        }
+        return std::make_shared<ov::genai::StructuredOutputConfig::Union>(elements);
+    } else if (tag_type == "Tag") {
+        return  std::make_shared<ov::genai::StructuredOutputConfig::Tag>(js_to_cpp<ov::genai::StructuredOutputConfig::Tag>(env, obj));
+    } else if (tag_type == "TriggeredTags") {
+        std::vector<ov::genai::StructuredOutputConfig::Tag> tags;
+        auto js_tags = obj.Get("tags");
+        auto triggers = js_to_cpp<std::vector<std::string>>(env, obj.Get("triggers"));
+        auto at_least_one = obj.Get("atLeastOne");
+        auto stop_after_first = obj.Get("stopAfterFirst");
+        OPENVINO_ASSERT(
+            at_least_one.IsBoolean() && stop_after_first.IsBoolean(),
+            "TriggeredTags 'atLeastOne', and 'stopAfterFirst' must be booleans"
+        );
+        OPENVINO_ASSERT(js_tags.IsArray(), "TriggeredTags 'tags' must be an array");
+        auto js_array = js_tags.As<Napi::Array>();
+        size_t arrayLength = js_array.Length();
+        for (uint32_t i = 0; i < arrayLength; ++i) {
+            tags.push_back(js_to_cpp<ov::genai::StructuredOutputConfig::Tag>(env, js_array[i]));
+        }
+        return std::make_shared<ov::genai::StructuredOutputConfig::TriggeredTags>(
+            triggers,
+            tags,
+            at_least_one.As<Napi::Boolean>().Value(),
+            stop_after_first.As<Napi::Boolean>().Value()
+        );
+    } else if (tag_type == "TagsWithSeparator") {
+        std::vector<ov::genai::StructuredOutputConfig::Tag> tags;
+        auto separator = js_to_cpp<std::string>(env, obj.Get("separator"));
+        auto at_least_one = obj.Get("atLeastOne");
+        auto stop_after_first = obj.Get("stopAfterFirst");
+        OPENVINO_ASSERT(
+            at_least_one.IsBoolean() && stop_after_first.IsBoolean(),
+            "TagsWithSeparator 'atLeastOne', and 'stopAfterFirst' must be booleans"
+        );
+
+        auto js_tags = obj.Get("tags");
+        OPENVINO_ASSERT(js_tags.IsArray(), "TagsWithSeparator 'tags' must be an array");
+        auto js_array = js_tags.As<Napi::Array>();
+        size_t arrayLength = js_array.Length();
+        for (uint32_t i = 0; i < arrayLength; ++i) {
+            tags.push_back(js_to_cpp<ov::genai::StructuredOutputConfig::Tag>(env, js_array[i]));
+        }
+
+        return std::make_shared<ov::genai::StructuredOutputConfig::TagsWithSeparator>(
+            tags,
+            separator,
+            at_least_one.As<Napi::Boolean>().Value(),
+            stop_after_first.As<Napi::Boolean>().Value()
+        );
+    } else {
+        OPENVINO_THROW("Unknown StructuralTag type: " + tag_type);
+    }
+}
+
+template <>
+ov::genai::StructuredOutputConfig js_to_cpp<ov::genai::StructuredOutputConfig>(const Napi::Env& env, const Napi::Value& value) {
+    ov::genai::StructuredOutputConfig config;
+    OPENVINO_ASSERT(value.IsObject(), "StructuredOutputConfig must be a JS object");
+    auto obj = value.As<Napi::Object>();
+
+    if (obj.Has("json_schema") && !obj.Get("json_schema").IsUndefined()) {
+        config.json_schema = js_to_cpp<std::string>(env, obj.Get("json_schema"));
+    }
+    if (obj.Has("regex") && !obj.Get("regex").IsUndefined()) {
+        config.regex = js_to_cpp<std::string>(env, obj.Get("regex"));
+    }
+    if (obj.Has("grammar") && !obj.Get("grammar").IsUndefined()) {
+        config.grammar = js_to_cpp<std::string>(env, obj.Get("grammar"));
+    }
+    if (obj.Has("structural_tags_config") && !obj.Get("structural_tags_config").IsUndefined()) {
+        config.structural_tags_config = js_to_cpp<ov::genai::StructuredOutputConfig::StructuralTag>(env, obj.Get("structural_tags_config"));
     }
 
     return config;
