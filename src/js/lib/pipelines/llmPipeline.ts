@@ -205,7 +205,7 @@ export class LLMPipeline {
     if (!this.isInitialized) throw new Error("Pipeline is not initialized");
 
     if (typeof inputs !== "string" && !Array.isArray(inputs))
-      throw new Error("Prompt must be a string, string[], or ChatHistory");
+      throw new Error("Inputs must be a string, string[], or ChatHistory");
     if (typeof generationConfig !== "object") throw new Error("Options must be an object");
 
     let streamingStatus: StreamingStatus = StreamingStatus.RUNNING;
@@ -259,7 +259,7 @@ export class LLMPipeline {
     callback: (chunk: string) => void | undefined,
   ) {
     if (typeof inputs !== "string" && !Array.isArray(inputs))
-      throw new Error("Prompt must be a string, string[], or ChatHistory");
+      throw new Error("Inputs must be a string, string[], or ChatHistory");
     if (typeof generationConfig !== "object") throw new Error("Options must be an object");
     if (callback !== undefined && typeof callback !== "function")
       throw new Error("Callback must be a function");
