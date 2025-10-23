@@ -228,11 +228,9 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_em
     const std::vector<size_t>& image_sequence,
     const std::vector<size_t>& videos_sequence,
     const std::vector<std::pair<std::size_t, std::size_t>> history_vision_count) {
-    if (videos.size() > 0) {
-        OPENVINO_THROW("The model doesn't support 'videos' preprocessing yet. Please use 'images' instead.");
-    } else {
-        return get_inputs_embeds_with_token_type_ids(prompt, images, metrics, recalculate_merged_embeddings, image_sequence);
-    }
+    OPENVINO_ASSERT(videos.size() == 0U, "The model doesn't support 'videos' preprocessing yet. Please use 'images' instead.");
+
+    return get_inputs_embeds_with_token_type_ids(prompt, images, metrics, recalculate_merged_embeddings, image_sequence);
 }
 
 bool InputsEmbedder::IInputsEmbedder::has_token_type_ids() const { return false; }
