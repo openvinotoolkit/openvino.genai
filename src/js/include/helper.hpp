@@ -16,8 +16,6 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
         return info.Env().Undefined();                                                         \
     }
 
-ov::AnyMap to_anyMap(const Napi::Env&, const Napi::Value&);
-
 /**
  * @brief  Template function to convert Javascript data types into C++ data types
  * @tparam TargetType destinated C++ data type
@@ -34,6 +32,9 @@ ov::Any js_to_cpp<ov::Any>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType ov::AnyMap */
 template <>
 ov::AnyMap js_to_cpp<ov::AnyMap>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType std::string */
+template <>
+std::string js_to_cpp<std::string>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType std::vector<std::string> */
 template <>
 std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& env, const Napi::Value& value);
@@ -46,7 +47,15 @@ ov::genai::ChatHistory js_to_cpp<ov::genai::ChatHistory>(const Napi::Env& env, c
 /** @brief  A template specialization for TargetType ov::genai::SchedulerConfig */
 template <>
 ov::genai::SchedulerConfig js_to_cpp<ov::genai::SchedulerConfig>(const Napi::Env& env, const Napi::Value& value);
-
+/** @brief  A template specialization for TargetType ov::genai::StructuredOutputConfig */
+template <>
+ov::genai::StructuredOutputConfig js_to_cpp<ov::genai::StructuredOutputConfig>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType ov::genai::StructuredOutputConfig::Tag */
+template <>
+ov::genai::StructuredOutputConfig::Tag js_to_cpp<ov::genai::StructuredOutputConfig::Tag>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType ov::genai::StructuredOutputConfig::StructuralTag */
+template <>
+ov::genai::StructuredOutputConfig::StructuralTag js_to_cpp<ov::genai::StructuredOutputConfig::StructuralTag>(const Napi::Env& env, const Napi::Value& value);
 /**
  * @brief  Unwraps a C++ object from a JavaScript wrapper.
  * @tparam TargetType The C++ class type to extract.
