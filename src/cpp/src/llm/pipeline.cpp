@@ -17,7 +17,7 @@
 
 namespace {
 
-// This is an decorator function that wraps a generation callable to apply parsers and reset them before generation if needed.
+// This is a decorator function that wraps a generation callable to apply parsers and reset them before generation if needed.
 ov::genai::DecodedResults run_generate_with_parsers(const ov::genai::OptionalGenerationConfig& generation_config,
                  const ov::genai::StreamerVariant& streamer,
                 std::function<ov::genai::DecodedResults(void)> generate_callable) {

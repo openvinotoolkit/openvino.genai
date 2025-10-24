@@ -45,14 +45,14 @@ private:
      */
     size_t find_close_tag_prefix_length(std::string_view text) const {
         const size_t max_check = std::min(text.size(), m_close_tag.size());
-        
-        for (size_t i = max_check; i >= 1; --i) {
+        size_t longest_match = 0;
+        for (size_t i = 1; i <= max_check; ++i) {
             // Compare the last i characters of text with the first i characters of m_close_tag
             if (text.compare(text.size() - i, i, m_close_tag, 0, i) == 0) {
-                return i;
+                longest_match = i;
             }
         }
-        return 0;
+        return longest_match;
     }
 
     /**
