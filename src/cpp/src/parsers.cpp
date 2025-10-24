@@ -18,7 +18,7 @@ private:
     // Values with default member initializers are reset on each reset() call.
     bool m_first_run = true;
     bool m_think_tag_opened = false;
-    std::string m_text_cache = "";
+    std::string m_text_cache;
     bool m_deactivated = false;
 public:
     ReasoningParserImpl() = default;
@@ -30,7 +30,9 @@ public:
         : m_expect_open_tag(expect_open_tag),
           m_keep_original_content(keep_original_content),
           m_open_tag(open_tag),
-          m_close_tag(close_tag) {}
+          m_close_tag(close_tag) {
+        m_text_cache.reserve(close_tag.size());
+    }
 
     std::string parse(
         JsonContainer&  message,
@@ -40,11 +42,15 @@ public:
         if (m_deactivated) {
             return delta_text;
         }
-        if (!m_expect_open_tag && m_first_run) {
-            m_think_tag_opened = true;
+        
+        if (m_first_run) {
+            m_first_run = false;
+            if (!m_expect_open_tag) {
+                m_think_tag_opened = true;
+            }
         }
-        m_first_run = false;
 
+        // Initialize message fields if needed
         if (!message.contains("reasoning_content")) {
             message["reasoning_content"] = "";
         }
@@ -52,105 +58,108 @@ public:
             message["content"] = "";
         }
         
-
-        auto txt_chunk = m_text_cache + delta_text;
+        // Combine cached text with new delta
+        m_text_cache += delta_text;
+        const std::string& txt_chunk = m_text_cache;
+        
         auto reason_str = message["reasoning_content"].get_string();
-        auto content_str = message["content"].get_string();
 
-        if (!m_think_tag_opened && txt_chunk.find(m_open_tag) != std::string::npos && m_expect_open_tag) {
-            // Thinking has started
-            auto open_idx = txt_chunk.find(m_open_tag);
-            
-            reason_str += txt_chunk.substr(open_idx + m_open_tag.size(), txt_chunk.size() - (open_idx + m_open_tag.size()));
-            if (!m_keep_original_content) {
-                delta_text = "";
-            }
-            
-            m_think_tag_opened = true;
-            message["reasoning_content"] = reason_str;
-            m_text_cache = "";
-
-            if (txt_chunk.find(m_close_tag) != std::string::npos) {
-                // If <think> and </think> are in the same txt_chunk + delta_text
-                auto close_idx = txt_chunk.find(m_close_tag);
-                reason_str = txt_chunk.substr(open_idx + m_open_tag.size(), close_idx - (open_idx + m_open_tag.size()));
-                content_str = txt_chunk.substr(close_idx + m_close_tag.size(), txt_chunk.size() - (close_idx + m_close_tag.size()));
-                if (!m_keep_original_content) {
-                    delta_text = content_str;
+        if (!m_think_tag_opened && m_expect_open_tag) {
+            // Look for opening tag
+            size_t open_idx = txt_chunk.find(m_open_tag);
+            if (open_idx != std::string::npos) {
+                // Thinking has started
+                m_think_tag_opened = true;
+                size_t content_start = open_idx + m_open_tag.size();
+                
+                // Check if closing tag is also present
+                size_t close_idx = txt_chunk.find(m_close_tag, content_start);
+                if (close_idx != std::string::npos) {
+                    // Both tags in same chunk
+                    reason_str = txt_chunk.substr(content_start, close_idx - content_start);
+                    message["reasoning_content"] = reason_str;
+                    
+                    if (!m_keep_original_content) {
+                        delta_text = txt_chunk.substr(close_idx + m_close_tag.size());
+                    }
+                    
+                    m_think_tag_opened = false;
+                    m_deactivated = true;
+                    m_text_cache.clear();
+                } else {
+                    // Only opening tag found
+                    reason_str += txt_chunk.substr(content_start);
+                    message["reasoning_content"] = reason_str;
+                    
+                    if (!m_keep_original_content) {
+                        delta_text.clear();
+                    }
+                    m_text_cache.clear();
                 }
+                return delta_text;
+            }
+            // Opening tag not found, keep accumulating
+            return delta_text;
+        } 
+        
+        if (m_think_tag_opened) {
+            // Look for closing tag
+            size_t close_idx = txt_chunk.find(m_close_tag);
+            if (close_idx != std::string::npos) {
+                // Thinking tag was closed
+                reason_str += txt_chunk.substr(0, close_idx);
+                message["reasoning_content"] = reason_str;
+                
+                if (!m_keep_original_content) {
+                    delta_text = txt_chunk.substr(close_idx + m_close_tag.size());
+                }
+                
+                m_text_cache.clear();
                 m_think_tag_opened = false;
                 m_deactivated = true;
-                message["reasoning_content"] = reason_str;
+                return delta_text;
             }
-        } else if (m_think_tag_opened && txt_chunk.find(m_close_tag) != std::string::npos) {
-            // Thinking tag was closed
-            auto close_idx = txt_chunk.find(m_close_tag);
-
-            reason_str += txt_chunk.substr(0, close_idx);
-            if (!m_keep_original_content) {
-                // Cut from the txt_chunk which is before </think> and leave only what is after </think>.
-                // Example if m_text_cache + delta_text = "...some text</th" + "ink>Answer is 3" = "...some text</think>Answer is 3"
-                // we want to keep in delta_txt only "Answer is 3". 
-                // We can operate with txt_chunk since final characters closing the tag ("ink>") are always in delta_text.
-                delta_text = txt_chunk.substr(close_idx + m_close_tag.size(), txt_chunk.size() - (close_idx + m_close_tag.size()));
-            }
-
-            message["reasoning_content"] = reason_str;
-            m_text_cache = "";
-            m_think_tag_opened = false;
-            m_deactivated = true;
-        } else if (m_think_tag_opened) {
-            // Thinking tag was already opened and not closed yet
             
-            // If we have subsequently "sdf</th", "i", "nk> The"
-            // Then we put "sdf" to reason_str and "</th" to m_text_cache since it's a substring of close tag "</think>"
-            // then we put "i" to m_text_cache since m_text_cache + delta_text = "</thi" is a substring of "</think>"
-            // then (in the closing tag IF-block) we leave only " The" in delta_text.
-
-            // If we have "ing. <", " 20 ", "40>"
-            // Then we put "ing. " to reason_str and "<" to m_text_cache since it's a substring of close tag "</think>"
-            // but since continuation " 20 " is not a substring of "</think>", we will end up in this IF-block again
-            // and put " 20 " to reason_str and clear m_text_cache.
-
-            // number of characters from the end of txt_chunk which can be part of the closing tag
-            size_t num_chars_to_keep = 0; 
-            // We must be sure that no chunks with the closing tag are included to reason_str.
-            for (size_t i = txt_chunk.size(); i >= 1; --i) {
-                // Get the substring of the i last characters of txt_chunk
-                auto suffix = txt_chunk.substr(txt_chunk.size() - i, i);
-                // If this suffix is a prefix of m_close_tag, we need to keep it in the cache.
-                if (m_close_tag.find(suffix) == 0) {
-                    num_chars_to_keep = i;
-                    break;
-                }
-            }
-
-            // If the suffix is a prefix of m_close_tag, we store it in the cache to detect if </think> is split between several delta_text pieces.
+            // Closing tag not found - check if end might be partial match
+            size_t num_chars_to_keep = find_prefix_match_length(txt_chunk, m_close_tag);
+            
             if (num_chars_to_keep > 0) {
-                m_text_cache = txt_chunk.substr(txt_chunk.size() - num_chars_to_keep, num_chars_to_keep);
+                // Keep potential partial match in cache
                 reason_str += txt_chunk.substr(0, txt_chunk.size() - num_chars_to_keep);
+                message["reasoning_content"] = reason_str;
+                m_text_cache = txt_chunk.substr(txt_chunk.size() - num_chars_to_keep);
             } else {
+                // No partial match - add all to reasoning
                 reason_str += txt_chunk;
-                m_text_cache = "";
+                message["reasoning_content"] = reason_str;
+                m_text_cache.clear();
             }
-
+            
             if (!m_keep_original_content) {
-                delta_text = "";
+                delta_text.clear();
             }
-            message["reasoning_content"] = reason_str;
-        } else {
-            // Think tag was not opened yet and not found in the current delta_text.
-            // Accumulate text in the cache to detect if <think> is split between several delta_text pieces.
-            m_text_cache += delta_text;
         }
+        // else: accumulating text before opening tag
         
         return delta_text;
     }
 
+    // Find the longest suffix of txt that is a prefix of close_tag
+    size_t find_prefix_match_length(const std::string& txt, const std::string& close_tag) const {
+        size_t max_check = std::min(txt.size(), close_tag.size() - 1);
+        for (size_t len = max_check; len >= 1; --len) {
+            if (txt.compare(txt.size() - len, len, close_tag, 0, len) == 0) {
+                return len;
+            }
+        }
+        return 0;
+    }
+
+public:
     void reset() {
         m_first_run = true;
         m_think_tag_opened = false;
-        m_text_cache = "";
+        m_text_cache.clear();
         m_deactivated = false;
     }
 };
