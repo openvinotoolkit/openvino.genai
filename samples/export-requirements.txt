@@ -9,7 +9,7 @@ transformers_stream_generator==0.0.5  # For Qwen
 diffusers==0.35.2 # For image generation pipelines
 timm==1.0.20  # For exporting InternVL2
 # torchvision for visual language models
-torch==2.8.0
+torch==2.9.0+cpu
 torchvision==0.17.2; platform_system == "Darwin" and platform_machine == "x86_64"
 torchvision==0.23.0; platform_system != "Darwin" or platform_machine != "x86_64"
 transformers==4.53.3 # For Whisper
