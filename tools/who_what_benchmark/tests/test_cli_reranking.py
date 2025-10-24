@@ -4,9 +4,6 @@ import logging
 from test_cli_image import run_wwb
 
 
-pytest.skip("skip rerank", allow_module_level=True)
-
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -17,6 +14,7 @@ logger = logging.getLogger(__name__)
         ("cross-encoder/ms-marco-TinyBERT-L2-v2", "text-reranking"),
     ],
 )
+@pytest.mark.skip("skip rerank test")
 def test_reranking_basic(model_id, model_type, tmp_path):
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = tmp_path / model_id.replace("/", "--")
