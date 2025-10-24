@@ -26,9 +26,7 @@ public:
     static std::shared_ptr<Logger>& get_instance() {
         static std::shared_ptr<Logger> instance;
         std::call_once(init_flag, [&]() {
-            auto* obj_ptr = new Logger();
-            OPENVINO_ASSERT(obj_ptr != nullptr);
-            instance.reset(obj_ptr);
+            instance = std::make_shared<Logger>();
         });
         return instance;
     }
