@@ -1,4 +1,4 @@
-<!-- Keep you pull requests (PRs) as atomic as possible. That increases the likelihood that an individual PR won't be stuck because of adjacent problems, merge conflicts, or code review.
+<!-- Keep your pull requests (PRs) as atomic as possible. That increases the likelihood that an individual PR won't be stuck because of adjacent problems, merge conflicts, or code review.
 Your merged PR is going to appear in the automatically generated release notes on GitHub. So the clearer the title the better. -->
 ## Description
 <!-- Please include a summary of the change. Also include relevant motivation and context. -->
