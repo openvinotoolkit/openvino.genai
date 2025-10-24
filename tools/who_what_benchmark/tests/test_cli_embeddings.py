@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 )
 def test_embeddings_basic(model_id, model_type, tmp_path):
     GT_FILE = tmp_path / "gt.csv"
-    MODEL_PATH = tmp_path / model_id.replace("/", "--")
+    MODEL_PATH = tmp_path / model_id.replace("/", "_")
 
     result = subprocess.run(["optimum-cli", "export",
                              "openvino", "-m", model_id,
