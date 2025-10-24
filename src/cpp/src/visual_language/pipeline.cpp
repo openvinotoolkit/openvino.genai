@@ -214,6 +214,8 @@ public:
                 "Currently only greedy and multinomial decoding are supported for NPU device!");
             OPENVINO_ASSERT(generation_config.num_return_sequences == 1u,
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
+            OPENVINO_ASSERT(!m_is_chat_conversation || (m_is_chat_conversation && videos.empty()),
+                "Chat mode is currently not supported with video input for NPU device!");
         }
         auto encoded_images = m_inputs_embedder->encode_images(images);
         OPENVINO_ASSERT(images.size() == encoded_images.size(), "Input images size and encoded images size mismatch!");
