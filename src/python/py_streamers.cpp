@@ -85,8 +85,9 @@ public:
     StreamingStatus write(JsonContainer& message) override {
         // Since c++ calls function with JsonContainer while python override expects py::dict, 
         // this function is a wrapper to call Python implementation of 'write' with py::dict
-        py::dict message_py;
-        message_py = pyutils::json_container_to_py_object(message);
+        py::gil_scoped_acquire acquire;
+
+        py::dict message_py = pyutils::json_container_to_py_object(message);
         
         // Call python implementation which accepts py::dict instead of JsonContainer
         // And convert back the resulting message back to JsonContainer
@@ -172,5 +173,7 @@ void init_streamers(py::module_& m) {
             [](TextParserStreamer& self) -> py::dict{
                 return pyutils::json_container_to_py_object(self.get_parsed_message());
 
-            }, "Returns the accumulated message.");
+            }, "Returns the accumulated message.")
+        
+        .def("reset", &TextParserStreamer::reset, "Resets the internal state of the parser streamer.");
 }

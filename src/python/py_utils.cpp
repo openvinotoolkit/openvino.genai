@@ -149,6 +149,17 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                 }
             }
             return structural_tags;
+        } else if (property_name == "parsers") {
+            auto property_list = py_obj.cast<py::list>();
+            std::vector<std::shared_ptr<ov::genai::Parser>> parsers;
+            for (const auto& item : property_list) {
+                if (py::isinstance<ov::genai::Parser>(item)) {
+                    parsers.push_back(item.cast<std::shared_ptr<ov::genai::Parser>>());
+                } else {
+                    OPENVINO_THROW("Incorrect value in \"", property_name, "\". Expected Parser.");
+                }
+            }
+            return parsers;
         } else {
             auto _list = py_obj.cast<py::list>();
             enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE, TENSOR, DICT};

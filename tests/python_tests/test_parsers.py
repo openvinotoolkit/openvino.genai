@@ -4,7 +4,7 @@ import json
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
 from utils.ov_genai_pipelines import create_ov_pipeline
 import pytest
-from openvino_genai import Tokenizer, IncrementalParser, Parser, TextParserStreamer, StreamingStatus, Llama3JsonToolParser, Phi4ReasoningIncrementalParser, DeepSeekR1ReasoningIncrementalParser, GenerationConfig, ReasoningIncrementalParser
+from openvino_genai import Tokenizer, IncrementalParser, Parser, TextParserStreamer, StreamingStatus, Llama3JsonToolParser, Phi4ReasoningParser, Phi4ReasoningIncrementalParser, DeepSeekR1ReasoningIncrementalParser, GenerationConfig, ReasoningIncrementalParser
 from transformers import AutoTokenizer
 import re
 
@@ -205,6 +205,7 @@ def test_incremental_phi4_reason_parser_nostreamer(answer):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("keep_original_content", [True, False])
+@pytest.mark.parametrize("do_reset", [True, False])
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
     ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
@@ -213,7 +214,7 @@ def test_incremental_phi4_reason_parser_nostreamer(answer):
 @pytest.mark.parametrize("answer", [
     "<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \boxed{3}.",
 ])
-def test_reasoning_parser_cut_content(hf_ov_genai_models, answer, keep_original_content):
+def test_reasoning_parser_cut_content(hf_ov_genai_models, answer, keep_original_content, do_reset):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
     
     stream_string = re.split(r"(\s+)", answer)
@@ -223,16 +224,26 @@ def test_reasoning_parser_cut_content(hf_ov_genai_models, answer, keep_original_
             msg.update(message)
             return StreamingStatus.RUNNING
     streamer = CustomStreamer(genai_tokenizer, parsers=[ReasoningIncrementalParser(expect_open_tag=True, keep_original_content=keep_original_content)])
-    
-    msg = {}
-    for subword in stream_string:
-        streamer._write(subword)
 
-    think_content = answer.split("</think>")[0].replace("<think>", "")
-    content = answer
-    
-    assert msg['reasoning_content'] == think_content
-    assert msg['content'] == (content if keep_original_content else "\n\nThe answer to 2 + 1 is \boxed{3}.")
+    num_runs = 2
+    for i in range(num_runs):
+        if do_reset:
+            streamer.reset()
+        
+        msg = {}
+        for subword in stream_string:
+            streamer._write(subword)
+
+        think_content = answer.split("</think>")[0].replace("<think>", "")
+        content = answer
+        
+        if do_reset:
+            # If has been reset, check that content is parsed correctly
+            assert msg['reasoning_content'] == think_content
+            assert msg['content'] == (content if keep_original_content else "\n\nThe answer to 2 + 1 is \boxed{3}.")
+        else:
+            # If has not been reset(), then content will contine to accumulate thinking parts from the next runs
+            msg['content'].find("<think>")
 
 
 def test_incremental_deepseek_parser():
@@ -362,4 +373,37 @@ def test_custom_parser(tmp_path, model_id):
     assert res.parsed[0]['reasoning_content'] != ""
     assert res.parsed[0]['reasoning_content'] == think_text
 
-# TODO; add test for reseting incremental parser at generation start
+
+@pytest.mark.parametrize("model_id", ["microsoft/Phi-4-mini-reasoning"])
+@pytest.mark.nightly
+def test_reset_incremental_parser(tmp_path, model_id):
+    _, _, models_path = download_and_convert_model(model_id, padding_side="left")
+    pipe = create_ov_pipeline(models_path)
+    tok = pipe.get_tokenizer()
+    
+    class CustomStreamer(TextParserStreamer):
+        def write(self, message):
+            return StreamingStatus.RUNNING
+    streamer = CustomStreamer(tok, parsers=[Phi4ReasoningIncrementalParser()])
+
+    prompt = "Please say \"hello\""
+    res = pipe.generate([prompt], max_new_tokens=600, parsers=[Phi4ReasoningParser()])
+    
+    # extract manually reasoning content from the parsed result
+    content = res.texts[0]
+    think_start = content.find("<think>")
+    think_end = content.find("</think>")
+    if think_start != -1 and think_end != -1 and think_end > think_start:
+        think_text = content[think_start + len("<think>"):think_end]
+    
+    assert 'reasoning_content' in res.parsed[0]
+    assert res.parsed[0]['reasoning_content'] != ""
+    assert res.parsed[0]['reasoning_content'] == think_text
+    
+    res_streamer_1 = pipe.generate([prompt], max_new_tokens=600, streamer=streamer)
+    res_streamer_2 = pipe.generate([prompt], max_new_tokens=600, streamer=streamer)
+    # Check that results from streamer generation are the same as from non-streamer generation.
+    assert res_streamer_1.parsed == res.parsed
+    
+    # Also asserts that resetting streamer between generations works correctly.
+    assert res_streamer_2.parsed == res.parsed

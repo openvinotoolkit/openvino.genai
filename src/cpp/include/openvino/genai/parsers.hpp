@@ -63,6 +63,26 @@ private:
 };
 
 /**
+ * @brief Parser for DeepSeek R1 model reasoning format.
+ *
+ * DeepSeekR1ReasoningParser is configured for the DeepSeek R1 model's reasoning format, which doesn't expect an opening tag.
+ */
+class OPENVINO_GENAI_EXPORTS DeepSeekR1ReasoningParser : public ReasoningParser {
+public:
+    DeepSeekR1ReasoningParser() : ReasoningParser(/*expect_open_tag=*/false) {};
+};
+
+/**
+ * @brief Parser for Phi-4 model reasoning format.
+ *
+ * Phi4ReasoningParser is configured specifically for the Phi-4 model's reasoning format, which expects an opening tag by default.
+ */
+class OPENVINO_GENAI_EXPORTS Phi4ReasoningParser : public ReasoningParser {
+public:
+   Phi4ReasoningParser() : ReasoningParser(/*expect_open_tag=*/true) {};
+};
+
+/**
  * @brief Parser for Llama 3 Pythonic tool calls format.
  *
  * Llama3PythonicToolParser extracts tool calls from text content formatted
@@ -72,7 +92,7 @@ private:
  */
 class OPENVINO_GENAI_EXPORTS Llama3PythonicToolParser : public Parser {
 public:
-    explicit Llama3PythonicToolParser();
+    Llama3PythonicToolParser();
     ~Llama3PythonicToolParser();
     
     /**
@@ -98,7 +118,7 @@ private:
  */
 class OPENVINO_GENAI_EXPORTS Llama3JsonToolParser : public Parser {
 public:
-    explicit Llama3JsonToolParser();
+    Llama3JsonToolParser();
     ~Llama3JsonToolParser();
     
     /**
@@ -196,26 +216,23 @@ private:
 };
 
 /**
- * @brief Specialized incremental parser for DeepSeek R1 model reasoning format.
+ * @brief Incremental parser for DeepSeek R1 model reasoning format.
  *
- * DeepSeekR1ReasoningIncrementalParser is a specialized version of ReasoningIncrementalParser
- * configured specifically for the DeepSeek R1 model's reasoning format, which doesn't expect an opening tag.
+ * DeepSeekR1ReasoningIncrementalParser is configured for the DeepSeek R1 model's reasoning format, which doesn't expect an opening tag.
  */
 class OPENVINO_GENAI_EXPORTS DeepSeekR1ReasoningIncrementalParser : public ReasoningIncrementalParser {
 public:
-    explicit DeepSeekR1ReasoningIncrementalParser() : ReasoningIncrementalParser(/*expect_open_tag=*/false) {};
+    DeepSeekR1ReasoningIncrementalParser() : ReasoningIncrementalParser(/*expect_open_tag=*/false) {};
 };
 
 /**
- * @brief Specialized incremental parser for Phi-4 model reasoning format.
+ * @brief Incremental parser for Phi-4 model reasoning format.
  *
- * Phi4ReasoningIncrementalParser is a specialized version of ReasoningIncrementalParser
- * configured specifically for the Phi-4 model's reasoning format, which typically
- * expects an opening tag by default.
+ * Phi4ReasoningIncrementalParser is configured specifically for the Phi-4 model's reasoning format, which expects an opening tag by default.
  */
 class OPENVINO_GENAI_EXPORTS Phi4ReasoningIncrementalParser : public ReasoningIncrementalParser {
 public:
-    explicit Phi4ReasoningIncrementalParser() : ReasoningIncrementalParser(/*expect_open_tag=*/true) {};
+    Phi4ReasoningIncrementalParser() : ReasoningIncrementalParser(/*expect_open_tag=*/true) {};
 };
 
 }  // namespace genai

@@ -17,8 +17,10 @@ using ov::genai::IncrementalParser;
 using ov::genai::Parser;
 using ov::genai::ReasoningParser;
 using ov::genai::ReasoningIncrementalParser;
-using ov::genai::Phi4ReasoningIncrementalParser;
+using ov::genai::DeepSeekR1ReasoningParser;
 using ov::genai::DeepSeekR1ReasoningIncrementalParser;
+using ov::genai::Phi4ReasoningIncrementalParser;
+using ov::genai::Phi4ReasoningParser;
 using ov::genai::JsonContainer;
 using ov::genai::Llama3JsonToolParser;
 using ov::genai::Llama3PythonicToolParser;
@@ -101,6 +103,12 @@ void init_parsers(py::module_& m) {
                 py::arg("open_tag") = "<think>",
                 py::arg("close_tag") = "</think>");
 
+    py::class_<DeepSeekR1ReasoningParser, std::shared_ptr<DeepSeekR1ReasoningParser>, ReasoningParser>(m, "DeepSeekR1ReasoningParser")
+        .def(py::init<>());
+    
+    py::class_<Phi4ReasoningParser, std::shared_ptr<Phi4ReasoningParser>, ReasoningParser>(m, "Phi4ReasoningParser")
+        .def(py::init<>());
+    
     py::class_<Llama3JsonToolParser, std::shared_ptr<Llama3JsonToolParser>, Parser>(m, "Llama3JsonToolParser")
         .def(py::init<>());
 
