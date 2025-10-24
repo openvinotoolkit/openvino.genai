@@ -747,6 +747,7 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
     EncodedImage encoded_image;
     encoded_image.resized_source = img_features_with_separators;
     encoded_image.images_features_projection = ov::Tensor{ov::element::f32, {}};
+    encoded_image.num_image_tokens = num_img_tokens;
     {
         CircularBufferQueueElementGuard<ov::InferRequest> lock{m_ireq_queue_vision_projection.get()};
         ov::InferRequest& projector = lock.get();

@@ -75,7 +75,7 @@ void ov::genai::SDPerfMetrics::evaluate_statistics(std::optional<TimePoint> star
     m_evaluated = true;
 }
 
-ov::genai::SDPerModelsPerfMetrics::SDPerModelsPerfMetrics() {
+ov::genai::SDPerModelsPerfMetrics::SDPerModelsPerfMetrics() : num_accepted_tokens(0) {
     raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
     main_model_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
     draft_model_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
