@@ -656,7 +656,7 @@ jobs:
             cmd: |
               python -m pip install git+https://github.com/xufang-lisa/optimum-intel.git@e67abb1a20fb190b39c1dc0216cddb65b300210f
               python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "eagle3"
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).eagle3_speculative_decoding.test }}
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speculative_decoding.test }}
             timeout: 90
     defaults:
       run:
