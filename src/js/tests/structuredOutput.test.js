@@ -287,9 +287,10 @@ Please, only use the following format for tool calling in your responses:
 <function="function_name">{"argument1": "value1", ...}</function>
 Use the tool name and arguments as defined in the tool schema.
 If you don't know the answer, just say that you don't know, but try to call the tool if it helps to answer the question.`;
-//
+
     const prompt =
       "What is the weather in London today and in Paris yesterday with metric units, and how many pounds can I get for 100 euros?";
+    // asdf
     await pipeline.startChat(sysMessage);
     try {
       const res = await pipeline.generate(prompt, generationConfig);
