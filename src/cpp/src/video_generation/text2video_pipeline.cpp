@@ -12,6 +12,16 @@
 #include <nlohmann/json.hpp>
 #include <fstream>
 
+#include <openvino/op/transpose.hpp>
+#include <openvino/op/multiply.hpp>
+#include <openvino/op/add.hpp>
+#include <openvino/op/divide.hpp>
+#include <openvino/op/maximum.hpp>
+#include <openvino/op/minimum.hpp>
+#include <openvino/op/convert.hpp>
+#include <openvino/op/convert.hpp>
+#include <openvino/op/round.hpp>
+
 using namespace ov::genai;
 
 namespace {
@@ -224,8 +234,8 @@ ov::Tensor loadTensorFromFile(const std::string& filename) {
 ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_config, size_t num_channels_latents, size_t spatial_compression_ratio, size_t temporal_compression_ratio, size_t transformer_spatial_patch_size, size_t transformer_temporal_patch_size) {
     size_t height = generation_config.height / spatial_compression_ratio;
     size_t width = generation_config.width / spatial_compression_ratio;
-    size_t num_frames = (generation_config.num_frames - 1) / temporal_compression_ratio + 1;
-    ov::Shape shape{generation_config.num_images_per_prompt, num_channels_latents, num_frames, height, width};
+    size_t latent_num_frames = (generation_config.num_frames - 1) / temporal_compression_ratio + 1;
+    ov::Shape shape{generation_config.num_images_per_prompt, num_channels_latents, latent_num_frames, height, width};
     // ov::Tensor latents = generation_config.generator->randn_tensor(shape);
     ov::Tensor latents = loadTensorFromFile("../latents_before_pack.txt");
     return pack_latents(latents, transformer_spatial_patch_size, transformer_temporal_patch_size);
@@ -303,6 +313,14 @@ public:
                 if (i + 1 < std::min(size, limit))
                     std::cout << ", ";
             }
+        } 
+        else if (tensor.get_element_type() == ov::element::u8) {
+            const uint8_t* data = tensor.data<const uint8_t>();
+            for (size_t i = 0; i < std::min(size, limit); ++i) {
+                std::cout << static_cast<int>(data[i]);
+                if (i + 1 < std::min(size, limit))
+                    std::cout << ", ";
+            }
         } else {
             std::cout << "<unsupported type>";
         }
@@ -341,6 +359,65 @@ public:
     bool do_classifier_free_guidance(float guidance_scale) const {
         return guidance_scale > 1.0;
     }
+
+    // x = (images * 0.5 + 0.5).clamp(0, 1)
+    inline ov::Tensor denormalize_01(const ov::Tensor& images) {
+        const auto et = images.get_element_type();
+        const auto shape = images.get_shape();
+
+        std::vector<ov::Tensor> out{ov::Tensor(et, shape)};
+        std::vector<ov::Tensor> in;
+
+        // x = images * 0.5
+        in = {images, make_scalar(et, 0.5f)};
+        ov::op::v1::Multiply{}.evaluate(out, in);
+
+        // x = x + 0.5
+        in = {out[0], make_scalar(et, 0.5f)};
+        ov::op::v1::Add{}.evaluate(out, in);
+
+        // x = min(x, 1.0)
+        in = {out[0], make_scalar(et, 1.0f)};
+        ov::op::v1::Minimum{}.evaluate(out, in);
+
+        // x = max(x, 0.0)
+        in = {out[0], make_scalar(et, 0.0f)};
+        ov::op::v1::Maximum{}.evaluate(out, in);
+
+        return out[0];
+    }
+
+    // inp:  [B, C, F, H, W], out: [B, F, H, W, C] uint8
+    inline ov::Tensor postprocess_video(const ov::Tensor& video) {
+        const auto& shape = video.get_shape();
+        OPENVINO_ASSERT(shape.size() == 5, "postprocess_video expects [B, C, F, H, W]");
+        const auto et = video.get_element_type();
+
+        // [B, C, F, H, W] to [B, F, H, W, C]
+        const std::array<int64_t, 5> order = {0, 2, 3, 4, 1};
+        ov::Tensor perm_order(ov::element::i64, {order.size()}, const_cast<int64_t*>(order.data()));
+
+        std::vector<ov::Tensor> trans_out{ov::Tensor(et, shape)};
+        ov::op::v1::Transpose{}.evaluate(trans_out, {video, perm_order});
+        ov::Tensor transposed = trans_out[0];
+
+        // (x * 0.5 + 0.5).clamp(0, 1)
+        ov::Tensor normalized = denormalize_01(transposed);
+
+        // (x * 255)
+        std::vector<ov::Tensor> scaled{ov::Tensor(et, normalized.get_shape())};
+        ov::op::v1::Multiply{}.evaluate(scaled, {normalized, make_scalar(et, 255.0f)});
+
+        // round()
+        std::vector<ov::Tensor> rounded{ov::Tensor(et, scaled[0].get_shape())};
+        ov::op::v5::Round{}.evaluate(rounded, {scaled[0]});
+
+        // to uint8
+        std::vector<ov::Tensor> out_vec{ov::Tensor(ov::element::u8, rounded[0].get_shape())};
+        ov::op::v0::Convert{}.evaluate(out_vec, {rounded[0]});
+
+        return out_vec[0];  // [B, F, H, W, C]
+}
 
     ov::Tensor generate(const std::string& positive_prompt, const std::string& negative_prompt, const ov::AnyMap& properties = {}) {
         const auto gen_start = std::chrono::steady_clock::now();
@@ -473,6 +550,8 @@ public:
             print_ov_tensor(latent, "latents after step");
         }
 
+        // latent = loadTensorFromFile("/home/alikh/projects/openvino.genai/transformer_output.txt");
+
         latent = unpack_latents(latent,
                                 latent_num_frames,
                                 latent_height,
@@ -495,6 +574,20 @@ public:
                                     m_vae->get_config().scaling_factor);
         print_ov_tensor(latent, "denormalize_latents");
         saveTensorToFile(latent, "denormalize_latents.txt");
+
+        // TODO: if not self.vae.config.timestep_conditioning: ... else: ...
+
+        const auto decode_start = std::chrono::steady_clock::now();
+        ov::Tensor video = m_vae->decode(latent);
+        print_ov_tensor(video, "video");
+        m_perf_metrics.vae_decoder_inference_duration =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
+                .count();
+        m_perf_metrics.generate_duration =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start).count();
+
+        video = postprocess_video(video);
+        print_ov_tensor(video, "postprocess_video");
 
         //     if (callback && callback(inference_step, timesteps.size(), latents)) {
         //         auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
@@ -519,7 +612,7 @@ public:
         // m_perf_metrics.generate_duration =
         //     std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start).count();
         // return image;
-        return {};
+        return video;
     }
 };
 
