@@ -8,6 +8,8 @@
 
 #include "progress_bar.hpp"
 
+#include "imwrite_video.hpp"
+
 #include <openvino/genai/video_generation/text2video_pipeline.hpp>
 
 int main(int32_t argc, char* argv[]) {
@@ -51,19 +53,23 @@ int main(int32_t argc, char* argv[]) {
 
     ov::genai::Text2VideoPipeline pipe(models_dir, device);
     ov::genai::VideoGenerationConfig config = pipe.get_generation_config();
-    config.num_frames = 1;
+    config.num_frames = 9;
     pipe.set_generation_config(config);
     ov::Tensor video = pipe.generate(
-        prompt,
+        "Will Smith eating spaghetti",
         "worst quality, inconsistent motion, blurry, jittery, distorted",
+        // "",
         ov::genai::height(512),  // OVLTXPipeline's default
         ov::genai::width(704),  // OVLTXPipeline's default
-        ov::genai::num_inference_steps(2),
+        ov::genai::num_inference_steps(10),
         ov::genai::num_images_per_prompt(1),
         ov::genai::callback(progress_bar)
         // num_frames: int = 161,
         // frame_rate: int = 25,
     );
+
+    imwrite_video("video_mjpeg.avi", video);
+
     return EXIT_SUCCESS;
 // } catch (const std::exception& error) {
 //     try {
@@ -76,3 +82,6 @@ int main(int32_t argc, char* argv[]) {
 //     } catch (const std::ios_base::failure&) {}
 //     return EXIT_FAILURE;
 }
+
+
+
