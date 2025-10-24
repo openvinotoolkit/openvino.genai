@@ -30,6 +30,7 @@ ov::genai::DecodedResults run_generate_with_parsers(const ov::genai::OptionalGen
     }
 
     // determine from generation config when 'need_to_reset_parser' will be available
+    // TODO: Determine 'need_to_reset_parser' from generation_config when available.
     bool need_to_reset_parser = true;
     if (parser_streamer && need_to_reset_parser) {
         parser_streamer->reset();

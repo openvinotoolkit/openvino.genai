@@ -83,7 +83,7 @@ public:
     using TextParserStreamer::TextParserStreamer;  // inherit base constructors
 
     StreamingStatus write(JsonContainer& message) override {
-        // Since c++ calls function with JsonContainer while python override expects py::dict, 
+        // Since C++ calls function with JsonContainer while python override expects py::dict, 
         // this function is a wrapper to call Python implementation of 'write' with py::dict
         py::gil_scoped_acquire acquire;
 

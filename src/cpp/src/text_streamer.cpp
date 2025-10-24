@@ -34,7 +34,6 @@ StreamingStatus TextStreamer::write(int64_t token) {
     if (!text.empty() && '\n' == text.back() && text.size() > m_printed_len) {
         // Flush the cache after the new line symbol
         res << std::string_view{text.data() + m_printed_len, text.size() - m_printed_len};
-        // Get the list of tokens decoded for this chunk or rest of text.
 
         auto res_status = run_callback_if_needed(res.str());
         m_tokens_cache.clear();
@@ -62,7 +61,7 @@ StreamingStatus TextStreamer::write(int64_t token) {
 
     if (print_until > -1 && print_until > m_printed_len) {
         // It is possible to have a shorter text after adding new token.
-        // Print to output only if text length is increaesed.
+        // Print to output only if text length is increased.
         res << std::string_view{text.data() + m_printed_len, print_until - m_printed_len} << std::flush;
     }
     
@@ -150,11 +149,11 @@ TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<s
     }), m_pimpl{std::make_unique<TextParserStreamerImpl>(parsers)} {}
 
 CallbackTypeVariant TextParserStreamer::write(std::string message) {
-    // When 'write' is called with string, it means new chunck of tokens is decoded into text
+    // When 'write' is called with string, it means new chunk of tokens is decoded into text
 
     auto flushed_tokens = std::vector<int64_t>();
     if (message.back() == '\n') {
-        // Flush all tokens // TODO: m_decoded_lengths[m_decoded_lengths.size() - 1] = -1;
+        // Flush all tokens
         flushed_tokens.assign(m_tokens_cache.begin(), m_tokens_cache.end());
     } else if (m_decoded_lengths.size() >= delay_n_tokens) {
         // prompt          = "I was waiting for the bus.\n"

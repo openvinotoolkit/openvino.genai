@@ -137,6 +137,27 @@ private:
 
 /**
  * @brief Abstract base class for incremental parsers that process text during streaming.
+ *
+ * Derived classes must implement both the `parse()` and `reset()` methods, as these are pure virtual.
+ *
+ * Use `IncrementalParser` when you need to process text as it is generated (e.g., in streaming scenarios),
+ * handling partial content and maintaining internal state between increments. Use `Parser` when you only
+ * need to process the complete text after generation has finished.
+ *
+ * Example:
+ * @code
+ * class MyIncrementalParser : public ov::genai::IncrementalParser {
+ * public:
+ *     std::string parse(JsonContainer& message, std::string& delta_text,
+ *                       const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt) override {
+ *         // Implement incremental parsing logic here
+ *         return delta_text; // Example: simply return the input
+ *     }
+ *     void reset() override {
+ *         // Reset internal state here
+ *     }
+ * };
+ * @endcode
  */
 class OPENVINO_GENAI_EXPORTS IncrementalParser {
 public:
