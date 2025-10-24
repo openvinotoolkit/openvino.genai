@@ -359,8 +359,11 @@ StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(
     const ov::genai::ModelDesc& main_model_desc, 
     const ov::genai::ModelDesc& draft_model_desc
 ) : LLMPipelineImplBase(main_model_desc.tokenizer, main_model_desc.generation_config) {
-    auto draft_model = draft_model_desc.model;
 
+    OPENVINO_ASSERT(main_model_desc.model != nullptr, "Draft model cannot be null");
+    OPENVINO_ASSERT(draft_model_desc.model != nullptr, "Main model cannot be null");
+
+    auto draft_model = draft_model_desc.model;
     // FIXME: slicing produces incorrect results for some models on NPU.
     // On NPU, applying slice the safe way is done by the underlying plugin
     if (draft_model_desc.device != "NPU") {
