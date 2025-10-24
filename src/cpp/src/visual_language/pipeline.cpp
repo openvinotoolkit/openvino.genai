@@ -209,13 +209,13 @@ public:
         generation_config.validate();
 
         if (m_is_npu) {
-            OPENVINO_ASSERT(images.size() <= 1u, "Currently only batch size equal to 1 is supported for NPU device!");
+            OPENVINO_ASSERT(images.size() <= 1u && videos.size() <= 1u, "Currently only batch size equal to 1 is supported for NPU device!");
             OPENVINO_ASSERT(generation_config.is_greedy_decoding() || generation_config.is_multinomial(),
                 "Currently only greedy and multinomial decoding are supported for NPU device!");
             OPENVINO_ASSERT(generation_config.num_return_sequences == 1u,
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
-            OPENVINO_ASSERT(!m_is_chat_conversation || (m_is_chat_conversation && videos.empty()),
-                "Chat mode is currently not supported with video input for NPU device!");
+            if (m_is_chat_conversation)
+                OPENVINO_ASSERT(videos.empty(), "Chat mode is currently not supported with video input for NPU device!");
         }
         auto encoded_images = m_inputs_embedder->encode_images(images);
         OPENVINO_ASSERT(images.size() == encoded_images.size(), "Input images size and encoded images size mismatch!");
@@ -227,8 +227,8 @@ public:
             unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
 
             if (m_use_full_chat_history) {
-                for (auto&& encoded_image : encoded_images)
-                    m_encoded_images.push_back(encoded_image);
+                m_encoded_images.reserve(m_encoded_images.size() + encoded_images.size());
+                m_encoded_images.insert(m_encoded_images.end(), encoded_images.begin(), encoded_images.end());
                 image_sequence.resize(m_encoded_images.size());
                 std::iota(image_sequence.begin(), image_sequence.end(), 0);
                 encoded_images = m_encoded_images;
@@ -334,7 +334,7 @@ public:
             } else {
                 m_history.pop_back();
                 if (m_use_full_chat_history) {
-                    OPENVINO_ASSERT(images.size() <= encoded_images.size(), "Number of images to remove is more than stored images!");
+                    OPENVINO_ASSERT(images.size() <= m_encoded_images.size(), "Number of images to remove is more than stored images!");
                     m_encoded_images.resize(m_encoded_images.size() - images.size());
                 }
             }
