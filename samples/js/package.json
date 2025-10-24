@@ -5,7 +5,8 @@
   "type": "module",
   "devDependencies": {
     "openvino-genai-node": "^2025.4.0",
-    "yargs": "^18.0.0"
+    "yargs": "^18.0.0",
+    "zod": "^4.1.12"
   },
   "engines": {
     "node": ">=21.0.0"

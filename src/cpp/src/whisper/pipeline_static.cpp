@@ -756,8 +756,8 @@ void remove_input_kv_tensors(std::shared_ptr<ov::Model>& model) {
                 auto result_to_add    = std::make_shared<ov::op::v0::Result>(concat_node->inputs()[CONCAT_CURR_KV_PORT].get_source_output());
                 set_name(result_to_add, result_to_remove->get_friendly_name());
 
-                results_to_remove.push_back(result_to_remove);
-                results_to_add.push_back(result_to_add);
+                results_to_remove.push_back(std::move(result_to_remove));
+                results_to_add.push_back(std::move(result_to_add));
             }
             if (strstr(cat_reader.get_node()->get_type_name(), "ScaledDotProductAttention") != nullptr || strstr(cat_reader.get_node()->get_type_name(), "FakeConvert") != nullptr) {
                 auto sdpa_in = cat_reader;
