@@ -87,7 +87,12 @@ ov::genai::RawSpeechInput read_wav(const std::string& filename) {
     }
 
     const uint64_t n =
-        wav_data.empty() ? wav.totalPCMFrameCount : wav_data.size() / (wav.channels * wav.bitsPerSample / 8ul);
+        wav_data.empty() 
+        ? wav.totalPCMFrameCount 
+        : (
+            wav_data.size() / 
+            (static_cast<uint64_t>(wav.channels) * static_cast<uint64_t>(wav.bitsPerSample) / 8ul)
+        );
 
     std::vector<int16_t> pcm16;
     pcm16.resize(n * wav.channels);

@@ -289,6 +289,28 @@ describe("LLMPipeline.generate()", () => {
     assert.ok(perfMetrics.rawMetrics.inferenceDurations.length > 0);
     assert.ok(perfMetrics.rawMetrics.grammarCompileTimes.length === 0);
   });
+
+  it("test perfMetrics.add()", async () => {
+    const config = {
+      max_new_tokens: 5,
+      return_decoded_results: true,
+    };
+    const res1 = await pipeline.generate("prompt1", config);
+    const res2 = await pipeline.generate("prompt2", config);
+
+    const perfMetrics1 = res1.perfMetrics;
+    const perfMetrics2 = res2.perfMetrics;
+
+    const totalNumGeneratedTokens =
+      perfMetrics1.getNumGeneratedTokens() + perfMetrics2.getNumGeneratedTokens();
+
+    perfMetrics1.add(perfMetrics2);
+    assert.strictEqual(perfMetrics1.getNumGeneratedTokens(), totalNumGeneratedTokens);
+
+    assert.throws(() => perfMetrics1.add({}), {
+      message: /Passed argument is not of type PerfMetrics/,
+    });
+  });
 });
 
 describe("stream()", () => {
