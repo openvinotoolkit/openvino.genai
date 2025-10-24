@@ -135,7 +135,9 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                 py::gil_scoped_acquire acquire;
                 return (*py_decrypt)(py::bytes(in_str)).cast<std::string>();
             };
-            ov::EncryptionCallbacks encryption_callbacks{encrypt_func, decrypt_func};
+            ov::EncryptionCallbacks encryption_callbacks{
+                std::move(encrypt_func), std::move(decrypt_func)
+            };
             return encryption_callbacks;
         } else if (property_name == "structural_tags") {
             // this impl is based on OpenVINO python bindings impl.

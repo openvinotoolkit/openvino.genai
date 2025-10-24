@@ -315,7 +315,7 @@ private:
         input_name_to_shape["attention_mask"] = target_shape;
 
         if (has_token_type_ids_input(model->inputs())) {
-            input_name_to_shape["token_type_ids"] = target_shape;
+            input_name_to_shape["token_type_ids"] = std::move(target_shape);
         }
 
         model->reshape(input_name_to_shape);
