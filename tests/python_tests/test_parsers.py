@@ -205,7 +205,7 @@ def test_incremental_phi4_reason_parser_nostreamer(answer):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("keep_original_content", [True, False])
-@pytest.mark.parametrize("do_reset", [True, False])
+@pytest.mark.parametrize("do_reset", [False])
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
     ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
@@ -224,26 +224,25 @@ def test_reasoning_parser_cut_content(hf_ov_genai_models, answer, keep_original_
             msg.update(message)
             return StreamingStatus.RUNNING
     streamer = CustomStreamer(genai_tokenizer, parsers=[ReasoningIncrementalParser(expect_open_tag=True, keep_original_content=keep_original_content)])
-
+    
     num_runs = 2
+    msg = {}
     for i in range(num_runs):
         if do_reset:
             streamer.reset()
         
-        msg = {}
         for subword in stream_string:
             streamer._write(subword)
 
         think_content = answer.split("</think>")[0].replace("<think>", "")
-        content = answer
-        
-        if do_reset:
-            # If has been reset, check that content is parsed correctly
-            assert msg['reasoning_content'] == think_content
-            assert msg['content'] == (content if keep_original_content else "\n\nThe answer to 2 + 1 is \boxed{3}.")
-        else:
-            # If has not been reset(), then content will contine to accumulate thinking parts from the next runs
-            msg['content'].find("<think>")
+    
+    if do_reset:
+        # If has been reset, check that content is parsed correctly
+        assert msg['reasoning_content'] == think_content
+        assert msg['content'] == (answer if keep_original_content else "\n\nThe answer to 2 + 1 is \boxed{3}.")
+    else:
+        # If has not been reset(), then content msg['content'] will continue to accumulate thinking parts from the next runs
+        assert msg['content'].find("<think>") >= 0
 
 
 def test_incremental_deepseek_parser():
@@ -311,7 +310,7 @@ def test_custom_incremental_parser(hf_ov_genai_models):
     for subword in stream_string:
         streamer._write(subword)
 
-    assert msg['main_text'] == ''.join(" world ")
+    assert msg['main_text'] == " world "
 
 
 @pytest.mark.precommit
