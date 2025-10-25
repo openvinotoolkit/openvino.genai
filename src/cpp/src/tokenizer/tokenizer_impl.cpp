@@ -273,9 +273,11 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
     std::filesystem::path ov_tokenizer_filesystem_path;
 #ifdef _WIN32
     const wchar_t* ov_tokenizer_path_w = _wgetenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME_W);
+    OPENVINO_ASSERT(ov_tokenizer_path_w != nullptr, "Environment variable for tokenizer path is not set");
     ov_tokenizer_filesystem_path = std::filesystem::path(std::wstring(ov_tokenizer_path_w));
 #else
     const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
+    OPENVINO_ASSERT(ov_tokenizer_path != nullptr, "Environment variable for tokenizer path is not set");
     ov_tokenizer_filesystem_path = std::filesystem::path(ov_tokenizer_path);
 #endif
     m_shared_object_ov_tokenizers = load_shared_object(ov_tokenizer_filesystem_path);
