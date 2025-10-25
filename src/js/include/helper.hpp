@@ -9,6 +9,8 @@
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
 template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
+using GenerateInputs = std::variant<ov::genai::StringInputs, ov::genai::ChatHistory>;
+
 #define VALIDATE_ARGS_COUNT(info, expected_count, method_name)                                 \
     if (info.Length() != expected_count) {                                                     \
         Napi::TypeError::New(info.Env(), method_name " expects " #expected_count " arguments") \
@@ -38,9 +40,9 @@ std::string js_to_cpp<std::string>(const Napi::Env& env, const Napi::Value& valu
 /** @brief  A template specialization for TargetType std::vector<std::string> */
 template <>
 std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& env, const Napi::Value& value);
-/** @brief  A template specialization for TargetType ov::genai::StringInputs */
+/** @brief  A template specialization for TargetType GenerateInputs */
 template <>
-ov::genai::StringInputs js_to_cpp<ov::genai::StringInputs>(const Napi::Env& env, const Napi::Value& value);
+GenerateInputs js_to_cpp<GenerateInputs>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType ov::genai::ChatHistory */
 template <>
 ov::genai::ChatHistory js_to_cpp<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value);
