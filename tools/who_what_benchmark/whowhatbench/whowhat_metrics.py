@@ -203,10 +203,39 @@ class RerankingSimilarity:
         gold_results = data_gold["top_n_scores_path"].values
         prediction_results = data_prediction["top_n_scores_path"].values
 
-        metric_per_query = []
-        similarity_per_query = []
+        # metric_per_query = []
+        # similarity_per_query = []
+        # for gold, prediction in tqdm(
+        #     zip(gold_results, prediction_results), desc="Reranking Similarity evaluation"
+        # ):
+        #     with open(gold, 'rb') as f:
+        #         gold_data = np.load(f)
+
+        #     with open(prediction, 'rb') as f:
+        #         prediction_data = np.load(f)
+
+        #     per_query_text = []
+        #     for i, score in enumerate(gold_data):
+        #         # documets on the same position of top_n is different
+        #         if i >= len(prediction_data) or int(score[0]) != int(prediction_data[i][0]):
+        #             per_query_text.append(math.inf)
+        #         else:
+        #             per_query_text.append(abs(score[1] - prediction_data[i][1]))
+        #     metric_per_query.append(per_query_text)
+
+        #     if math.inf in per_query_text:
+        #         similarity_per_query.append(0)
+        #     else:
+        #         dist = np.linalg.norm(per_query_text)
+        #         similarity_per_query.append(1 / (1 + dist))
+
+        # metric_dict = {"similarity": np.mean(similarity_per_query)}
+        # return metric_dict, {"similarity": similarity_per_query, "per_text_score_list": metric_per_query}
+
+        metric_per_gen = []
+        metric_per_passages = []
         for gold, prediction in tqdm(
-            zip(gold_results, prediction_results), desc="Reranking Similarity evaluation"
+            zip(gold_results, prediction_results), desc="Rerank Similarity evaluation"
         ):
             with open(gold, 'rb') as f:
                 gold_data = np.load(f)
@@ -214,20 +243,9 @@ class RerankingSimilarity:
             with open(prediction, 'rb') as f:
                 prediction_data = np.load(f)
 
-            per_query_text = []
-            for i, score in enumerate(gold_data):
-                # documets on the same position of top_n is different
-                if i >= len(prediction_data) or int(score[0]) != int(prediction_data[i][0]):
-                    per_query_text.append(math.inf)
-                else:
-                    per_query_text.append(abs(score[1] - prediction_data[i][1]))
-            metric_per_query.append(per_query_text)
+            cos_sim = F.cosine_similarity(torch.from_numpy(gold_data), torch.from_numpy(prediction_data))
+            metric_per_passages.append(cos_sim.detach().numpy())
+            metric_per_gen.append(torch.mean(cos_sim).item())
 
-            if math.inf in per_query_text:
-                similarity_per_query.append(0)
-            else:
-                dist = np.linalg.norm(per_query_text)
-                similarity_per_query.append(1 / (1 + dist))
-
-        metric_dict = {"similarity": np.mean(similarity_per_query)}
-        return metric_dict, {"similarity": similarity_per_query, "per_text_score_list": metric_per_query}
+        metric_dict = {"similarity": np.mean(metric_per_gen)}
+        return metric_dict, {"similarity": metric_per_gen, "similarity_per_passages": metric_per_passages}
