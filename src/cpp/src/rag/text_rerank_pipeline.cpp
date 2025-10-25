@@ -46,15 +46,6 @@ std::optional<std::string> read_model_type(const std::filesystem::path& models_p
     return model_type;
 }
 
-bool has_input(const std::shared_ptr<Model>& model, const std::string& name) {
-    for (const auto& input : model->inputs()) {
-        if (input.get_any_name() == name) {
-            return true;
-        }
-    }
-    return false;
-}
-
 std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model) {
     PartialShape output_shape = model->get_output_partial_shape(0);
 
@@ -161,8 +152,8 @@ public:
 
         auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);
 
-        m_has_position_ids = has_input(model, "position_ids");
-        m_has_beam_idx = has_input(model, "beam_idx");
+        m_has_position_ids = utils::has_input(model, "position_ids");
+        m_has_beam_idx = utils::has_input(model, "beam_idx");
 
         if (is_qwen3) {
             const auto vocab = m_tokenizer.get_vocab();
