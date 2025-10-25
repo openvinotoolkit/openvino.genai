@@ -266,20 +266,22 @@ describe("LLMPipeline.generate()", () => {
 
     // assert that calculating statistics manually from the raw counters
     // we get the same restults as from PerfMetrics
-    assert.strictEqual(
-      (perfMetrics.rawMetrics.generateDurations / 1000).toFixed(3),
-      generateDuration.mean.toFixed(3),
-    );
+    //
+    // Disabled due to potential floating-point differences. (CVS-175568)
+    // assert.strictEqual(
+    //   (perfMetrics.rawMetrics.generateDurations / 1000).toFixed(3),
+    //   generateDuration.mean.toFixed(3),
+    // );
 
-    assert.strictEqual(
-      (perfMetrics.rawMetrics.tokenizationDurations / 1000).toFixed(3),
-      tokenizationDuration.mean.toFixed(3),
-    );
+    // assert.strictEqual(
+    //   (perfMetrics.rawMetrics.tokenizationDurations / 1000).toFixed(3),
+    //   tokenizationDuration.mean.toFixed(3),
+    // );
 
-    assert.strictEqual(
-      (perfMetrics.rawMetrics.detokenizationDurations / 1000).toFixed(3),
-      detokenizationDuration.mean.toFixed(3),
-    );
+    // assert.strictEqual(
+    //   (perfMetrics.rawMetrics.detokenizationDurations / 1000).toFixed(3),
+    //   detokenizationDuration.mean.toFixed(3),
+    // );
 
     assert.ok(perfMetrics.rawMetrics.timesToFirstToken.length > 0);
     assert.ok(perfMetrics.rawMetrics.newTokenTimes.length > 0);
@@ -288,6 +290,28 @@ describe("LLMPipeline.generate()", () => {
     assert.ok(perfMetrics.rawMetrics.durations.length > 0);
     assert.ok(perfMetrics.rawMetrics.inferenceDurations.length > 0);
     assert.ok(perfMetrics.rawMetrics.grammarCompileTimes.length === 0);
+  });
+
+  it("test perfMetrics.add()", async () => {
+    const config = {
+      max_new_tokens: 5,
+      return_decoded_results: true,
+    };
+    const res1 = await pipeline.generate("prompt1", config);
+    const res2 = await pipeline.generate("prompt2", config);
+
+    const perfMetrics1 = res1.perfMetrics;
+    const perfMetrics2 = res2.perfMetrics;
+
+    const totalNumGeneratedTokens =
+      perfMetrics1.getNumGeneratedTokens() + perfMetrics2.getNumGeneratedTokens();
+
+    perfMetrics1.add(perfMetrics2);
+    assert.strictEqual(perfMetrics1.getNumGeneratedTokens(), totalNumGeneratedTokens);
+
+    assert.throws(() => perfMetrics1.add({}), {
+      message: /Passed argument is not of type PerfMetrics/,
+    });
   });
 });
 

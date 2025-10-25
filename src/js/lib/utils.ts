@@ -18,6 +18,204 @@ export enum StopCriteria {
   NEVER,
 }
 
+export declare namespace StructuredOutputConfig {
+  export type StructuralTag =
+    | string
+    | Regex
+    | JSONSchema
+    | EBNF
+    | ConstString
+    | AnyText
+    | QwenXMLParametersFormat
+    | Concat
+    | Union
+    | Tag
+    | TriggeredTags
+    | TagsWithSeparator;
+  /** Regex structural tag constrains output using a regular expression. */
+  export type Regex = {
+    structuralTagType: "Regex";
+    value: string;
+  };
+  /** JSONSchema structural tag constrains output to a JSON document that
+   * must conform to the provided JSON Schema string. */
+  export type JSONSchema = {
+    structuralTagType: "JSONSchema";
+    value: string;
+  };
+  /** EBNF structural tag constrains output using an EBNF grammar. */
+  export type EBNF = {
+    structuralTagType: "EBNF";
+    value: string;
+  };
+  /** ConstString structural tag forces the generator to produce exactly
+   * the provided constant string value. */
+  export type ConstString = {
+    structuralTagType: "ConstString";
+    value: string;
+  };
+  /** AnyText structural tag allows any text for the portion
+   * of output covered by this tag. */
+  export type AnyText = {
+    structuralTagType: "AnyText";
+  };
+  /** QwenXMLParametersFormat instructs the generator to output an XML
+   * parameters block derived from the provided JSON schema. This is a
+   * specialized helper for Qwen-style XML parameter formatting. */
+  export type QwenXMLParametersFormat = {
+    structuralTagType: "QwenXMLParametersFormat";
+    jsonSchema: string;
+  };
+  /** Concat composes multiple structural tags in sequence. Each element
+   * must be produced in the given order.
+   *
+   * Example: Concat(ConstString("a"), ConstString("b")) produces "ab".*/
+  export type Concat = {
+    structuralTagType: "Concat";
+    elements: StructuralTag[];
+  };
+  /** Union composes multiple structural tags as alternatives. The
+   * model may produce any one of the provided elements. */
+  export type Union = {
+    structuralTagType: "Union";
+    elements: StructuralTag[];
+  };
+  /** Tag defines a begin/end wrapper with constrained inner content.
+   *
+   * The generator will output `begin`, then the `content` (a StructuralTag),
+   * and finally `end`.
+   *
+   * Example: Tag("<think>", AnyText(), "</think>") represents thinking portion of the model output. */
+  export type Tag = {
+    structuralTagType: "Tag";
+    begin: string;
+    content: StructuralTag;
+    end: string;
+  };
+  /** TriggeredTags associates a set of `triggers` with multiple `tags`.
+   *
+   * When the model generates any of the trigger strings the structured generation
+   * activates to produce configured tags. Flags allow requiring
+   * at least one tag and stopping structured generation after the first tag. */
+  export type TriggeredTags = {
+    structuralTagType: "TriggeredTags";
+    triggers: string[];
+    tags: Tag[];
+    atLeastOne: boolean;
+    stopAfterFirst: boolean;
+  };
+  /** TagsWithSeparator configures generation of a sequence of tags
+   *        separated by a fixed `separator` string.
+   *
+   * Can be used to produce repeated tagged elements like
+   * "<f>A</f>;<f>B</f>" where `separator`=";". */
+  export type TagsWithSeparator = {
+    structuralTagType: "TagsWithSeparator";
+    tags: Tag[];
+    separator: string;
+    atLeastOne: boolean;
+    stopAfterFirst: boolean;
+  };
+}
+
+/** This object is used to store the configuration for structured generation, which includes
+ * the JSON schema and other related parameters. */
+export class StructuredOutputConfig {
+  /** if set, the output will be a JSON string constraint by the specified json-schema. */
+  json_schema?: string;
+  /** if set, the output will be constraint by specified regex.*/
+  regex?: string;
+  /** if set, the output will be constraint by specified EBNF grammar. */
+  grammar?: string;
+  /** if set, the output will be constraint by specified structural tags configuration. */
+  structural_tags_config?: StructuredOutputConfig.StructuralTag;
+
+  constructor(params: {
+    json_schema?: string;
+    regex?: string;
+    grammar?: string;
+    structural_tags_config?: StructuredOutputConfig.StructuralTag;
+  }) {
+    const { json_schema, regex, grammar, structural_tags_config } = params;
+    this.json_schema = json_schema;
+    this.regex = regex;
+    this.grammar = grammar;
+    this.structural_tags_config = structural_tags_config;
+  }
+
+  static JSONSchema(value: string): StructuredOutputConfig.JSONSchema {
+    return { structuralTagType: "JSONSchema", value };
+  }
+
+  static Regex(value: string): StructuredOutputConfig.Regex {
+    return { structuralTagType: "Regex", value };
+  }
+
+  static EBNF(value: string): StructuredOutputConfig.EBNF {
+    return { structuralTagType: "EBNF", value };
+  }
+
+  static ConstString(value: string): StructuredOutputConfig.ConstString {
+    return { structuralTagType: "ConstString", value };
+  }
+
+  static AnyText(): StructuredOutputConfig.AnyText {
+    return { structuralTagType: "AnyText" };
+  }
+
+  static QwenXMLParametersFormat(
+    jsonSchema: string,
+  ): StructuredOutputConfig.QwenXMLParametersFormat {
+    return { structuralTagType: "QwenXMLParametersFormat", jsonSchema };
+  }
+
+  static Concat(
+    ...elements: StructuredOutputConfig.StructuralTag[]
+  ): StructuredOutputConfig.Concat {
+    return { structuralTagType: "Concat", elements };
+  }
+
+  static Union(...elements: StructuredOutputConfig.StructuralTag[]): StructuredOutputConfig.Union {
+    return { structuralTagType: "Union", elements };
+  }
+
+  static Tag(params: {
+    begin: string;
+    content: StructuredOutputConfig.StructuralTag;
+    end: string;
+  }): StructuredOutputConfig.Tag {
+    return { structuralTagType: "Tag", ...params };
+  }
+
+  static TriggeredTags(params: {
+    triggers: string[];
+    tags: StructuredOutputConfig.Tag[];
+    atLeastOne?: boolean;
+    stopAfterFirst?: boolean;
+  }): StructuredOutputConfig.TriggeredTags {
+    return {
+      structuralTagType: "TriggeredTags",
+      ...params,
+      atLeastOne: params.atLeastOne ?? false,
+      stopAfterFirst: params.stopAfterFirst ?? false,
+    };
+  }
+
+  static TagsWithSeparator(params: {
+    tags: StructuredOutputConfig.Tag[];
+    separator: string;
+    atLeastOne?: boolean;
+    stopAfterFirst?: boolean;
+  }): StructuredOutputConfig.TagsWithSeparator {
+    return {
+      structuralTagType: "TagsWithSeparator",
+      ...params,
+      atLeastOne: params.atLeastOne ?? false,
+      stopAfterFirst: params.stopAfterFirst ?? false,
+    };
+  }
+}
+
 export type BeamSearchGenerationConfig = {
   /** number of beams for beam search. 1 disables beam search. */
   num_beams?: number;
@@ -102,6 +300,12 @@ export type GenericGenerationConfig = {
   stop_token_ids?: Set<number>;
 };
 
+export type StructuredOutputGenerationConfig = {
+  /** This object is used to store the configuration for structured generation, which includes
+   * the JSON schema and other related parameters. */
+  structured_output_config?: StructuredOutputConfig;
+};
+
 export type DecodedResultsConfig = {
   /** a helper option to get DecodedResult from LLMPipeline and keep backward compability.
    * If set to true, LLMPipeline.generate() will return DecodedResults object instead of string.
@@ -118,6 +322,7 @@ export type GenerationConfig = GenericGenerationConfig &
   BeamSearchGenerationConfig &
   RandomSamplingsGenerationConfig &
   AssistingGenerationConfig &
+  StructuredOutputGenerationConfig &
   DecodedResultsConfig;
 
 export type SchedulerConfig = {

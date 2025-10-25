@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 from shutil import rmtree
 
-from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig, draft_model, GenerationFinishReason
+from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig, draft_model, GenerationFinishReason, ChatHistory
 
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
 
@@ -17,7 +17,7 @@ from utils.generation_config import get_greedy, get_beam_search, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
 from utils.hugging_face import download_and_convert_model
-from utils.ov_genai_pipelines import create_ov_pipeline, create_ov_cb_pipeline, PipelineType, dict_to_scheduler_config, generate_and_compare, prepare_generation_config_by_pipe_type
+from utils.ov_genai_pipelines import create_ov_pipeline, create_ov_cb_pipeline, PipelineType, dict_to_scheduler_config, generate_and_compare, prepare_generation_config_by_pipe_type, GenerationChatInputsType
 from data.models import get_chat_models_list
 from data.test_dataset import get_test_dataset
 
@@ -121,15 +121,15 @@ questions = [
 @pytest.mark.parametrize("generation_config_kwargs", generation_configs[1:])
 @pytest.mark.parametrize("model_id", get_chat_models_list())
 @pytest.mark.parametrize("pipeline_type", [PipelineType.PAGED_ATTENTION, PipelineType.PROMPT_LOOKUP_DECODING, PipelineType.SPECULATIVE_DECODING] )
+@pytest.mark.parametrize("input_type", [
+    GenerationChatInputsType.STRING,
+    GenerationChatInputsType.CHAT_HISTORY])
 @pytest.mark.precommit
-def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: dict, pipeline_type):
+def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: dict, pipeline_type, input_type: GenerationChatInputsType):
     _, _, models_path = download_and_convert_model(model_id)
 
     ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
     cb_pipe = create_ov_pipeline(models_path, pipeline_type=pipeline_type)
-
-    ov_pipe.start_chat()
-    cb_pipe.start_chat()
 
     generation_config = GenerationConfig(**generation_config_kwargs)
     # assisted generation is not supported for beam search
@@ -139,14 +139,28 @@ def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: dict, pip
     generation_config = prepare_generation_config_by_pipe_type(generation_config=generation_config, pipeline_type=pipeline_type)
 
     ov_pipe.set_generation_config(generation_config)
-    
-    for question in questions:
-        generated = cb_pipe.generate(question, generation_config=generation_config)
-        reference = ov_pipe.generate(question)
-        assert generated == reference
 
-    # Test that finish_chat() doesn't fail just in case.
-    cb_pipe.finish_chat()
+    if input_type == GenerationChatInputsType.STRING:
+        ov_pipe.start_chat()
+        cb_pipe.start_chat()
+    
+        for question in questions:
+            generated = cb_pipe.generate(question, generation_config=generation_config)
+            reference = ov_pipe.generate(question)
+            assert generated == reference
+
+        # Test that finish_chat() doesn't fail just in case.
+        cb_pipe.finish_chat()
+    elif input_type == GenerationChatInputsType.CHAT_HISTORY:
+        chat_history = ChatHistory()
+        for question in questions:
+            chat_history.append({"role": "user", "content": question})
+            cb_decoded_results = cb_pipe.generate(chat_history, generation_config=generation_config)
+            generated = cb_decoded_results.texts[0]
+            stateful_decoded_results = ov_pipe.generate(chat_history)
+            reference = stateful_decoded_results.texts[0]
+            chat_history.append({"role": "assistant", "content": generated})
+            assert generated == reference
 
 
 generation_configs = [
