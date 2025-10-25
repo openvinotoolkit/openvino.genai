@@ -12,6 +12,7 @@ There are several sample files:
  - [`inpainting.cpp`](./inpainting.cpp) demonstrates basic usage of the inpainting pipeline
  - [`benchmark_image_gen.cpp`](./benchmark_image_gen.cpp) demonstrates how to benchmark the text to image / image to image / inpainting pipeline
  - [`stable_diffusion_export_import.cpp`](./stable_diffusion_export_import.cpp) demonstrates how to export and import compiled models from/to the text to image pipeline. Only the Stable Diffusion XL model is supported.
+ - [`decode_intermediate_result_concurrency.cpp`](./decode_intermediate_result_concurrency.cpp) demonstrates how to run with callback function to decode intermediate latent result in parallel based on heterogeneous pipeline. Recommend to run Unet and VAE in different execution device.
 
 Users can change the sample code and play with the following generation parameters:
 
@@ -73,6 +74,9 @@ ov::Tensor image = pipe.generate(prompt,
    ov::genai::callback(callback)
 );
 ```
+
+> [!NOTE]
+> If you want to run Unet inference and get intermediate image tensor in parallel, please check [`decode_intermediate_result_concurrency.cpp`](./decode_intermediate_result_concurrency.cpp) sample and run Unet and VAE in different execution device.
 
 ## Run with optional LoRA adapters
 

@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+# Copyright (C) 2024 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+import queue
+import argparse
+import threading
+
+import openvino_genai
+
+from PIL import Image
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('model_dir')
+    parser.add_argument('prompt')
+
+    # Set devices to command-line args if specified, otherwise default to CPU.
+    # Note that these can be set to CPU, GPU, or NPU.
+    parser.add_argument('text_encoder_device', nargs='?', default='CPU')
+    parser.add_argument('unet_device', nargs='?', default='CPU')
+    parser.add_argument('vae_decoder_device', nargs='?', default='CPU')
+
+    args = parser.parse_args()
+
+    width = 512
+    height = 512
+    number_of_images_to_generate = 1
+    number_of_inference_steps_per_image = 20
+
+    print(f"text_encoder_device = {args.text_encoder_device}")
+    print(f"unet_device = {args.unet_device}")
+    print(f"vae_decoder_device = {args.vae_decoder_device}")
+
+    # this is the path to where compiled models will get cached
+    # (so that the 'compile' method run much faster 2nd+ time)
+    ov_cache_dir = "./cache"
+
+    #
+    # Step 1: Create the initial Text2ImagePipeline, given the model path
+    #
+    pipe = openvino_genai.Text2ImagePipeline(args.model_dir)
+
+    #
+    # Step 2: Reshape the pipeline given number of images, height, width, and guidance scale.
+    #
+    pipe.reshape(1, height, width, pipe.get_generation_config().guidance_scale)
+
+    #
+    # Step 3: Compile the pipeline given the specified devices, and properties (like cache dir)
+    #
+    properties = {"CACHE_DIR": ov_cache_dir}
+
+    # Note that if there are device-specific properties that are needed, they can
+    # be added using a "DEVICE_PROPERTIES" entry, like this:
+    #properties = {
+    #    "DEVICE_PROPERTIES":
+    #    {
+    #        "CPU": {"CACHE_DIR": "cpu_cache"},
+    #        "GPU": {"CACHE_DIR": "gpu_cache"},
+    #        "NPU": {"CACHE_DIR": "npu_cache"}
+    #    }
+    #}
+
+    pipe.compile(args.text_encoder_device, args.unet_device, args.vae_decoder_device, config=properties)
+
+    #
+    # Step 4: Use the queue.Queue() to handle intermediate latent result
+    #
+
+    intermediate_latent = queue.Queue()
+
+    #
+    # Step 5: Initial funtion for decode intermediate latent in parallel
+    #
+
+    def decode_latent(intermediate_latent, decoder, num_steps):
+        i = 0
+        while i < num_steps:
+            try:
+                latent = intermediate_latent.get_nowait()
+                image_tensor = decoder(latent)
+                image = Image.fromarray(image_tensor.data[0])
+                image.save("image_{}.bmp".format(i + 1))
+                i = i + 1
+            except queue.Empty:
+                continue
+
+    #
+    # Step 6: Initial thread for decode intermediate latent and save as image
+    #
+
+    thread = threading.Thread(
+        target=decode_latent,
+        args=(intermediate_latent, pipe.decode, number_of_inference_steps_per_image - 1)  # Pass "Task1" as name and 3 as delay
+    )
+
+
+    #
+    # Step 7: Callback function for add lantent into intermediate latent queue
+    #
+
+    def callback(step, num_steps, latent):
+        print(f"Image generation step: {step + 1} / {num_steps}")
+        if step < num_steps - 1:
+            print("Add latent into intermediate latent buffer.")
+            intermediate_latent.put(latent)
+        else:
+            thread.join()
+        return False
+    
+    #
+    # Step 8: Use the Text2ImagePipeline to generate 'number_of_images_to_generate' images.
+    #
+
+    for imagei in range(0, number_of_images_to_generate):
+        image_tensor = pipe.generate(
+            args.prompt,
+            num_inference_steps=number_of_inference_steps_per_image,
+            callback = callback,
+        )
+
+        image = Image.fromarray(image_tensor.data[0])
+        image.save("image_" + str(imagei) + ".bmp")
+
+
+if '__main__' == __name__:
+    main()
