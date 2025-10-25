@@ -3,7 +3,8 @@ from packaging.version import Version
 import torch
 import transformers
 from contextlib import contextmanager
-
+import json
+from pathlib import Path
 
 def new_randn_tensor(
     shape: Union[tuple, list],
@@ -105,3 +106,19 @@ def get_ignore_parameters_flag():
     if transformers_version >= Version("4.51.0"):
         return {"use_model_defaults": False}
     return {}
+
+def get_json_config(config):
+    json_config = {}
+    if Path(config).is_file():
+        with open(config, 'r') as f:
+            try:
+                json_config = json.load(f)
+            except Exception:
+                raise RuntimeError(f'==Parse file:{config} failure, json format is incorrect ==')
+    else:
+        try:
+            json_config = json.loads(config)
+        except Exception:
+            raise RuntimeError(f'==Parse config:{config} failure, json format is incorrect ==')
+ 
+    return json_config

@@ -14,6 +14,7 @@ from PIL import Image
 from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.visualtext_evaluator import fix_phi3_v_eos_token_id
+from whowhatbench.utils import get_json_config
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -655,22 +656,6 @@ def print_embeds_results(evaluator):
         logger.info("## Passages num:\n%s\n", len(e["passages"]))
         logger.info("## Similarity:\n%s\n", e["similarity"])
 
-
-def read_cb_config(path):
-    import json
-
-    try:
-        with open(path, 'r') as f:
-            config = json.load(f)
-        return config
-    except FileNotFoundError:
-        logger.error(f"Configuration file not found at: {path}")
-        return {}
-    except json.JSONDecodeError:
-        logger.error(f"Invalid JSON format in configuration file: {path}")
-        return {}
-
-
 def print_rag_results(evaluator):
     metric_of_interest = "similarity"
     worst_examples = evaluator.worst_examples(
@@ -703,7 +688,7 @@ def main():
 
     kwargs = {}
     if args.cb_config:
-        kwargs["cb_config"] = read_cb_config(args.cb_config)
+        kwargs["cb_config"] = get_json_config(args.cb_config)
     if args.from_onnx:
         kwargs["from_onnx"] = args.from_onnx
         kwargs["use_cache"] = False
