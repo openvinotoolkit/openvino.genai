@@ -55,15 +55,15 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         // but embedding model is available => compute embeddings first, then pass to LLM
         std::vector<std::vector<ov::Tensor>> images(prompts.size());
         auto results_vlm = generate(prompts, images, sampling_params, streamer);
-        std::vector<GenerationResult> resutls;
+        std::vector<GenerationResult> results;
         for (auto& vlm_result : results_vlm) {
             GenerationResult result;
             result.m_generation_ids = std::move(vlm_result.texts);
             result.m_scores = std::move(vlm_result.scores);
             result.perf_metrics = std::move(vlm_result.perf_metrics);
-            resutls.push_back(result);
+            results.push_back(result);
         }
-        return resutls;
+        return results;
     }
     std::vector<ov::Tensor> input_ids;
     auto start_time = std::chrono::steady_clock::now();
@@ -129,7 +129,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         // The same perf metrics for each sequence, only tokenization/detokenization will differ.
         perf_metrics.raw_metrics.generate_durations.clear();
         perf_metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
-        // Reevaluate taking into accound tokenization/detokenization times.
+        // Reevaluate taking into account tokenization/detokenization times.
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
 

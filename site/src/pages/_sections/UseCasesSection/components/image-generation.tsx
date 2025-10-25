@@ -15,7 +15,7 @@ export const ImageGeneration = () => (
     </UseCaseCard.Description>
     <UseCaseCard.Features>
       <li>Support for text-to-image, image-to-image, and inpainting pipelines</li>
-      <li>Control image generation by adjusting parameters (dimentions, iterations, etc.)</li>
+      <li>Control image generation by adjusting parameters (dimensions, iterations, etc.)</li>
       <li>
         Apply LoRA adapters and dynamically switch between them for artistic styles and
         modifications

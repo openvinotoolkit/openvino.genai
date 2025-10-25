@@ -80,7 +80,7 @@ public:
         // map of src -> dst blocks copies, which need to be performed by CacheManager
         std::map<size_t, std::list<size_t>> block_copy_map;
 
-        // free some blocks taken by non-confirmed condidates in SD / prompt look-up
+        // free some blocks taken by non-confirmed candidates in SD / prompt look-up
         clean_empty_blocks(sequence_groups);
 
         if (m_block_manager->get_total_number_of_kv_blocks() == 0) {

@@ -20,7 +20,7 @@ namespace ov {
 namespace genai {
 
 // Return flag corresponds whether generation should be stopped. It could be:
-// ov::genai::StreamingStatus flag, RUNNING means continue generation, STOP means stop generation, CANCEL means stop generation and remove last propmt and answer from history
+// ov::genai::StreamingStatus flag, RUNNING means continue generation, STOP means stop generation, CANCEL means stop generation and remove last prompt and answer from history
 // *DEPRECATED* bool flag, false means continue generation, true means stop. Please, use `ov::genai::StreamingStatus` instead.
 using StreamerVariant = std::variant<std::function<bool(std::string)>, std::function<StreamingStatus(std::string)>, std::shared_ptr<StreamerBase>, std::monostate>;
 using OptionalGenerationConfig = std::optional<GenerationConfig>;

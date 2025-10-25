@@ -425,7 +425,7 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
             parent_2_num_childs_map[candidate.m_sequence->get_id()] += 1;
             child_beams_per_group[group_id].push_back(candidate);
 
-            // if num childs are enough
+            // if num children are enough
             if (child_beams_per_group[group_id].size() == group_size) {
                 break;
             }

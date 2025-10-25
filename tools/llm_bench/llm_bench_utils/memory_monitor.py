@@ -111,7 +111,7 @@ class MemoryMonitor:
         """
         Start memory monitoring.
 
-        :param at_exit_fn: A callable to execute at program exit. Useful fot providing logs saving routine, e.g.
+        :param at_exit_fn: A callable to execute at program exit. Useful for providing logs saving routine, e.g.
             ```
                 at_exit_fn = lambda: memory_monitor.save_memory_logs(*memory_monitor.get_data(), save_dir)
                 memory_monitor.start(at_exit_fn=at_exit_fn)

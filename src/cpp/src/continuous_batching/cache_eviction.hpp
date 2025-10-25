@@ -34,7 +34,7 @@ public:
      * be disregarded and never aggregated.
      * @param snapkv_window_size Window size for the SnapKV algorithm in effect. If non-zero, then by the start of the generation phase
      * for the tracked sequence (when the total number of `num_snapkv_scores` passed to each `register_new_token_scores` call reaches
-     * the `snapkv_window_size`) the internal occurence counters will be:
+     * the `snapkv_window_size`) the internal occurrence counters will be:
      * `| S | S | ... | S | S - 1 | S - 2 | ... | 2 | 1 |`,
      * where `S` is equal to `snapkv_window_size`. In contrast, if this is set to 0, then the initial counter state would be
      * `| L | L - 1 | ... | 2 | 1 |`,
@@ -86,7 +86,7 @@ public:
     const std::vector<std::vector<double>>& get_scores() const;
 
     /**
-     * @return Current token occurence counters for all decoder layers (0-th dimension) and tokens (1-st dimension).
+     * @return Current token occurrence counters for all decoder layers (0-th dimension) and tokens (1-st dimension).
      */
     const std::vector<std::vector<size_t>>& get_counters() const;
 

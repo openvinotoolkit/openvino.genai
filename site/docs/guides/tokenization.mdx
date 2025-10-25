@@ -71,7 +71,7 @@ If `pad_to_max_length` is set to true, then instead of padding to the longest se
         tokenizer = ov_genai.Tokenizer(models_path)
         prompts = ["The Sun is yellow because", "The"]
 
-        # Since prompt is defenitely shorter than maximal length (which is taken from IR) will not affect shape.
+        # Since prompt is definitely shorter than maximal length (which is taken from IR) will not affect shape.
         # Resulting shape is defined by length of the longest tokens sequence.
         # Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="longest", truncation=True)
         tokens = tokenizer.encode(["The Sun is yellow because", "The"])
@@ -101,7 +101,7 @@ If `pad_to_max_length` is set to true, then instead of padding to the longest se
         auto tokenizer = ov::genai::Tokenizer(models_path);
         std::vector<std::string> prompts = {"The Sun is yellow because", "The"};
 
-        // Since prompt is defenitely shorter than maximal length (which is taken from IR) will not affect shape.
+        // Since prompt is definitely shorter than maximal length (which is taken from IR) will not affect shape.
         // Resulting shape is defined by length of the longest tokens sequence.
         // Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="longest", truncation=True)
         tokens = tokenizer.encode({"The Sun is yellow because", "The"})

@@ -18,9 +18,9 @@ namespace ov::genai {
  * The second token is presented separately as for some plugins this can be expected to take longer than next tokens.
  * In case of GPU plugin: Async compilation of some opt kernels can be completed after second token.
  *                        Also, additional memory manipulation can happen at second token time.
- * @param avg_latency Mean and standard deviation of the latency from the third token in milliseconds per inference, which includs also prev and post processing.
+ * @param avg_latency Mean and standard deviation of the latency from the third token in milliseconds per inference, which includes also prev and post processing.
  * The latency of first and second tokens can be obtained with methods get_ttft() and get_ttst().
- * First and second tokens take longer than next tokens, since the first token includes promt analysis,
+ * First and second tokens take longer than next tokens, since the first token includes prompt analysis,
  * and they both can include additional memory and compilation manipulations,
  * so let's exclude it from total statistic.
  * 

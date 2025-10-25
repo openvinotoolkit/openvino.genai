@@ -188,7 +188,7 @@ def get_argprser():
     parser.add_argument(
         "--static_reshape",
         action="store_true",
-        help="Reshape image generation pipeline to specific width & height at pipline creation time. Applicable for Image Generation.")
+        help="Reshape image generation pipeline to specific width & height at pipeline creation time. Applicable for Image Generation.")
     parser.add_argument('-mi', '--mask_image', default=None,
                         help='Mask image for Inpainting pipelines. Can be directory or path to single image. Applicable for Image Generation.')
     parser.add_argument('-t', '--task', default=None,

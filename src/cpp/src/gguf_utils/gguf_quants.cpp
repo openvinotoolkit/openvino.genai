@@ -257,7 +257,7 @@ void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
         OPENVINO_ASSERT(inserted.second,
                         "[load_gguf] Duplicate parameter name ",
                         inserted.first->second.data(),
-                        ". This can happend when loading quantized tensors");
+                        ". This can happen when loading quantized tensors");
     };
 
     constexpr std::string_view weight_suffix = ".weight";
