@@ -302,6 +302,64 @@ The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other mode
   This sample is ideal for scenarios requiring strict control over LLM outputs, such as building agents that interact with APIs or require validated structured responses. It showcases how to combine regex triggers and JSON schema enforcement for robust output generation.
   The sample is verified with `microsoft/Phi-4-mini-instruct` model. Other models may not produce the expected results or might require different system prompt.
 
+### 14. Function Calling Sample (`function_calling`)
+- **Description:**
+  This sample provides an interactive agent-style chat that performs on-demand function ("tool") calls for weather lookup and currency conversion. The model emits structured blocks:
+  ```
+  <function="function_name">{"arg": "value", ...}</function>
+  ```
+  Structural tags (enabled by default) enforce strict JSON schema for each tool. Tool calls are parsed, executed locally (mock implementations), optionally cached, and the results are fed back to the model to produce a grounded answer.
+
+  Run without `--prompt` to enter an interactive chat loop with streaming token output, automatic follow‑up suggestions, prompt pack shortcuts, and transparent tool result caching.
+
+  Recommended models: `meta-llama/Llama-3.2-3B-Instruct`, `microsoft/Phi-4-mini-instruct`, `Qwen/Qwen2.5-3B-Instruct`.
+- **Key Features:**
+  - Interactive chat loop (multi-turn)
+  - Streaming token output (disable with `--no-stream`)
+  - Structural tag enforcement of function call syntax
+  - Tool result caching to avoid redundant execution (`:cache`, `:clearcache`)
+  - Prompt pack with quick selection (`--list-prompts`, `--prompt-id`, `:prompts`, `:id <n>`)
+  - Automatic follow-up suggestion hints (disable with `--no-suggestions`)
+  - Pydantic validation + graceful fallback
+- **Basic Commands (inside chat):**
+  - `:prompts` list predefined prompts
+  - `:id 3` use prompt #3 directly
+  - `:cache` show cached tool results
+  - `:clearcache` clear cache
+  - `:help` show commands
+  - `quit` / `exit` / `bye` end session
+- **Run (Interactive Mode – default):**
+  ```bash
+  python function_calling.py model_dir
+  ```
+  You will see a greeting and can start asking questions, e.g.:
+  `What is the weather in London today and how many USD for 75 EUR?`
+- **Single-Shot Mode:**
+  ```bash
+  python function_calling.py model_dir --prompt "How many USD can I get for 100 EUR?"
+  ```
+- **Select Prompt from Pack:**
+  ```bash
+  python function_calling.py model_dir --prompt-id 2
+  python function_calling.py model_dir --list-prompts
+  ```
+- **Disable Structural Tags / Streaming / Suggestions:**
+  ```bash
+  python function_calling.py model_dir --no-structural-tags --no-stream --no-suggestions
+  ```
+- **Other Useful Flags:**
+  - `--max-rounds N` limit follow-up tool integration turns per question (default 2)
+  - `--device GPU` choose device
+  - `--verbose` detailed logs (single-shot only)
+
+**Example prompts:**
+`What is the weather in Dublin today?`
+`Tell me yesterday's weather in Paris and convert 200 EUR to JPY.`
+`Compare today's weather in Oslo and Helsinki, then convert 40 EUR to GBP.`
+
+**Notes:**
+If no `<function=` blocks are produced, try a more explicit request (e.g. *"Use the appropriate tools to answer: ..."*) or disable structural tags. Mock tool outputs are deterministic / illustrative and not real data.
+
 
 ## Troubleshooting
 
