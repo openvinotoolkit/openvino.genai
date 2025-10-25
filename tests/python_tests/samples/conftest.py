@@ -143,6 +143,14 @@ MODELS = {
     "tiny-random-SpeechT5ForTextToSpeech": {
         "name": "hf-internal-testing/tiny-random-SpeechT5ForTextToSpeech",
         "convert_args": ["--model-kwargs",  json.dumps({"vocoder": "fxmarty/speecht5-hifigan-tiny"})]
+    },
+    "Qwen3-1.7B": {
+        "name": "Qwen/Qwen3-1.7B",
+        "convert_args": ["--task", "text-generation-with-past", '--trust-remote-code']
+    },
+    "qwen3_1.7b_eagle3": {
+        "name": "AngelSlim/Qwen3-1.7B_eagle3",
+        "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code", "--eagle3"]
     }
 }
 
