@@ -270,49 +270,38 @@ def load_visual_text_model(
         logger.info("Using HF Transformers API")
         trust_remote_code = False
         try:
-            config = AutoConfig.from_pretrained(model_id, trust_remote_code=False)
-        except Exception:
-            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-            trust_remote_code = True
-
-        try:
-            model = AutoModelForVision2Seq.from_pretrained(
+            model = AutoModel.from_pretrained(
                 model_id, trust_remote_code=trust_remote_code, device_map=device.lower()
             )
         except ValueError:
-            try:
-                model = AutoModel.from_pretrained(
-                    model_id, trust_remote_code=trust_remote_code, device_map=device.lower()
-                )
-            except ValueError:
-                if config.model_type == "phi4mm" or config.model_type == "llava-qwen2":
-                    if hasattr(config, "audio_processor") and "activation_checkpointing" in config.audio_processor["config"]:
-                        config.audio_processor["config"]["activation_checkpointing"] = ""
-                    config._attn_implementation = "sdpa"
-                    from_pretrained_kwargs = {"config": config}
-                else:
-                    from_pretrained_kwargs = {"_attn_implementation": "eager", "use_flash_attention_2": False}
+            if config.model_type == "phi4mm" or config.model_type == "llava-qwen2":
+                if hasattr(config, "audio_processor") and "activation_checkpointing" in config.audio_processor["config"]:
+                    config.audio_processor["config"]["activation_checkpointing"] = ""
+                config._attn_implementation = "sdpa"
+                from_pretrained_kwargs = {"config": config}
+            else:
+                from_pretrained_kwargs = {"_attn_implementation": "eager", "use_flash_attention_2": False}
 
-                model = AutoModelForCausalLM.from_pretrained(
-                    model_id,
-                    trust_remote_code=trust_remote_code,
-                    device_map=device.lower(),
-                    **from_pretrained_kwargs,
-                )
+            model = AutoModelForCausalLM.from_pretrained(
+                model_id,
+                trust_remote_code=trust_remote_code,
+                device_map=device.lower(),
+                **from_pretrained_kwargs,
+            )
 
-                if config.model_type == "phi4mm":
-                    use_lora = False
-                    if hasattr(config, "vision_lora") and config.vision_lora is not None:
-                        model.set_lora_adapter("vision")
-                        use_lora = True
-                    if hasattr(config, "speech_lora") and config.speech_lora is not None:
-                        model.set_lora_adapter("speech")
-                        use_lora = True
-                    if use_lora:
-                        model.unset_lora_adapter = lambda: None
-                        model.set_lora_adapter = lambda _: None
-                    if hasattr(model.model, "_require_grads_hook"):
-                        model.model.disable_input_require_grads()
+            if config.model_type == "phi4mm":
+                use_lora = False
+                if hasattr(config, "vision_lora") and config.vision_lora is not None:
+                    model.set_lora_adapter("vision")
+                    use_lora = True
+                if hasattr(config, "speech_lora") and config.speech_lora is not None:
+                    model.set_lora_adapter("speech")
+                    use_lora = True
+                if use_lora:
+                    model.unset_lora_adapter = lambda: None
+                    model.set_lora_adapter = lambda _: None
+                if hasattr(model.model, "_require_grads_hook"):
+                    model.model.disable_input_require_grads()
 
         model.eval()
         try:
