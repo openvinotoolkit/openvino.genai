@@ -29,24 +29,24 @@ class TestGreedyCausalLM:
         prompt = sample_args
         
         # C++ test
-        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'greedy_causal_lm')
+        cpp_sample = (SAMPLES_CPP_DIR / 'greedy_causal_lm').as_posix()
         cpp_command = [cpp_sample, convert_model, prompt]
         cpp_result = run_sample(cpp_command)
         cpp_predictions = cpp_result.stdout
 
         # Python test
-        py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/greedy_causal_lm.py")
+        py_script = (SAMPLES_PY_DIR / "text_generation/greedy_causal_lm.py").as_posix()
         py_command = [sys.executable, py_script, convert_model, prompt]
         py_result = run_sample(py_command)
         py_predictions = py_result.stdout
 
         # Test C sample
-        c_sample = os.path.join(SAMPLES_C_DIR, "greedy_causal_lm_c")
+        c_sample = (SAMPLES_C_DIR / "greedy_causal_lm_c").as_posix()
         c_command =[c_sample, convert_model, sample_args]
         c_result = run_sample(c_command)
 
         # Test JS sample
-        js_sample = os.path.join(SAMPLES_JS_DIR, "text_generation/greedy_causal_lm.js")
+        js_sample = (SAMPLES_JS_DIR / "text_generation/greedy_causal_lm.js").as_posix()
         js_command =['node', js_sample, convert_model, sample_args]
         js_result = run_sample(js_command)
 
