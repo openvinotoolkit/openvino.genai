@@ -7,7 +7,7 @@
 #include <list>
 
 #include "openvino/runtime/tensor.hpp"
-
+#include "utils.hpp"
 namespace ov::genai {
 
 class CacheManager {
@@ -44,9 +44,6 @@ public:
         OPENVINO_ASSERT(all_gpu_device || execution_devices.size() == 1,
                         "Continuous batching: execution device is expected to be single CPU / single GPU / multi GPUs");
         m_device = execution_devices[0];
-        // set block_size depending on device
-        const size_t cpu_block_size = 32, gpu_block_size = 16;
-        m_block_size = all_gpu_device ? gpu_block_size : cpu_block_size;
 
         if (all_gpu_device) {
             m_context = m_request.get_compiled_model().get_context();
@@ -75,6 +72,21 @@ public:
             }
         }
 
+        // set block_size depending on device
+        const size_t cpu_block_size = 32, gpu_block_size = 16, gpu_block_size_xattn = 256;
+        bool has_xattention = false;
+        if (all_gpu_device) {
+            if (m_value_shapes[0][2].get_length() == gpu_block_size_xattn) {
+                has_xattention = true;
+            }
+            if (utils::env_setup_for_print_debug_info()) {
+                if (has_xattention)
+                    std::cout << "[XAttention]: ENABLED on GPU device." << std::endl;
+                else
+                    std::cout << "[XAttention]: DISABLED on GPU device." << std::endl;
+            }
+        }
+        m_block_size = all_gpu_device ? ( has_xattention ? gpu_block_size_xattn : gpu_block_size ) : cpu_block_size;
         m_num_decoder_layers = m_value_precisions.size();
         OPENVINO_ASSERT(m_num_decoder_layers == m_key_precisions.size(), "Invalid case: a different number of K and V caches in a LLM model");
     }
