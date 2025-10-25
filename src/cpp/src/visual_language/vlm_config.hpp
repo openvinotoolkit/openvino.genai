@@ -77,11 +77,15 @@ public:
     std::string vision_start_token = "<|vision_start|>";
     /// @brief A placeholder for image embeddings in text for Qwen2VL model.
     std::string image_pad_token = "<|image_pad|>";
+    std::string video_pad_token = "<|video_pad|>";
     /// @brief A string token denoting end of vision embeddings for Qwen2VL model.
     std::string vision_end_token = "<|vision_end|>";
     
     /// @brief A size of a window for Qwen2.5VL model, used in window attention.
     size_t vision_config_window_size = 112;
+
+    /// @brief A token id per second for Qwen2.5VL model, used in calc position_ids.
+    size_t vision_config_tokens_per_second = 2;
 
     /// @brief A string token denoting start of vision embeddings for gemma3-4b-it model.
     std::string start_of_image = "<start_of_image>";

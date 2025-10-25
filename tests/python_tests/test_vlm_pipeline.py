@@ -80,6 +80,8 @@ PROMPTS: list[str] = [
 
 VIDEO_MODEL_IDS = [
     "katuni4ka/tiny-random-llava-next-video",
+    "katuni4ka/tiny-random-qwen2vl",
+    "katuni4ka/tiny-random-qwen2.5-vl"
 ]
 
 
@@ -90,8 +92,6 @@ MODEL_IDS: list[str] = [
     "katuni4ka/tiny-random-llava",
     "katuni4ka/tiny-random-llava-next",
     "katuni4ka/tiny-random-internvl2",
-    "katuni4ka/tiny-random-qwen2vl",
-    "katuni4ka/tiny-random-qwen2.5-vl",
     "katuni4ka/tiny-random-gemma3",
     "qnguyen3/nanoLLaVA",
     *VIDEO_MODEL_IDS,
@@ -1372,18 +1372,24 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
             ],
         }
     ]
+
+    media_content = []
     is_video_model = ov_pipe_model.model_id in VIDEO_MODEL_IDS
     if is_video_model:
         prompt = "Describe this video."
         resized_video = request.getfixturevalue("synthetic_video_32x32")
-        conversation[0]["content"] = [{"type": "video"}] + conversation[0]["content"]
+        media_content.append({"type": "video"})
 
     resized_image = request.getfixturevalue(f"cat_image_{resolution}x{resolution}")
     if is_video_model:
         prompt = "Describe this image and video."
     else:
         prompt = "Describe this image."
-    conversation[0]["content"] = [{"type": "image"}] + conversation[0]["content"]
+
+    media_content.append({"type": "image"})
+    if model_id not in ["katuni4ka/tiny-random-qwen2.5-vl", "katuni4ka/tiny-random-qwen2vl"]:
+        media_content.reverse()
+    conversation[0]["content"] = media_content + conversation[0]["content"]
 
     conversation[0]["content"][-1]["text"] = prompt
 
