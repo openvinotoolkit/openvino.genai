@@ -22,7 +22,7 @@ env:
   BASE_PRODUCT_TYPE: public_macos_arm64
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: ~/.cache/hf
-  OV_CACHE: ~/.cache/ov_cache/194c936
+  OV_CACHE: ~/.cache/ov_cache/
   CLEANUP_CACHE: 1
   OPENVINO_LOG_LEVEL: 4
 

@@ -25,7 +25,7 @@ env:
   SCCACHE_CACHE_SIZE: 30G
   SCCACHE_AZURE_KEY_PREFIX: genai/manylinux_2_28
   HF_HOME: /mount/caches/huggingface/lin
-  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/8aceb1b1df148ece37afd0416eb355469e8eed37/
+  OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/
   OPENVINO_LOG_LEVEL: 4
   GENAI_ARCHIVE_NAME: genai.tar.gz
   GENAI_SAMPLES_NAME: genai_samples.tar.gz
