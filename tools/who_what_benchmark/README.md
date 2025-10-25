@@ -89,6 +89,32 @@ wwb --base-model black-forest-labs/FLUX.1-dev --gt-data flux.1-dev/gt.csv --mode
 wwb --target-model FLUX.1-dev-fp --gt-data flux.1-dev/gt.csv --model-type text-to-image --adapters flux-schnell-lora.safetensors FLUX-dev-lora-add_details.safetensors --alphas 0.1 0.9 --genai
 ```
 
+### Compare Text Rerank models
+```sh
+# Export model to OpenVINO
+optimum-cli export openvino -m BAAI/bge-reranker-v2-m3 bge-reranker-v2-m3 --task text-classification
+
+# Collect the references and save the mappling in the .csv file.
+# Reference images will be stored in the "reference" subfolder under the same path with .csv.
+wwb --base-model BAAI/bge-reranker-v2-m3 --gt-data rerank_test/gt.csv --model-type text-reranking --hf
+# Compute the metric
+# Target images will be stored in the "target" subfolder under the same path with .csv.
+wwb --target-model ./bge-reranker-v2-m3 --gt-data rerank_test/gt.csv --model-type text-reranking --genai
+```
+
+### Compare Text Embeddings models
+```sh
+# Export FP16 model to OpenVINO
+optimum-cli export openvino -m BAAI/bge-small-en-v1.5 bge-small-en-v1.5 --task feature-extraction
+
+# Collect the references and save the mappling in the .csv file.
+# Reference images will be stored in the "reference" subfolder under the same path with .csv.
+wwb --base-model BAAI/bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling mean --embeds_normalize --embeds_padding_side "left" --hf
+# Compute the metric
+# Target images will be stored in the "target" subfolder under the same path with .csv.
+wwb --target-model ./bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling mean --embeds_normalize --embeds_padding_side "left" --genai
+```
+
 ### API
 The API provides a way to access to investigate the worst generated text examples.
 
