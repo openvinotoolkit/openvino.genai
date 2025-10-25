@@ -143,7 +143,7 @@ def get_argprser():
         help='if the value is True, input prompts are processed in subsequent manner'
         'if the value is False (default), input prompts are processed in interleave manner'
     )
-    parser.add_argument('-od', '--output_dir', help='Save the input text and generated text, images to files')
+    parser.add_argument('-od', '--output_dir', help='Save the input text and generated text, images to files. If this is set, input text will not show in log')
     parser.add_argument("--genai", action="store_true", help="[DEPRECATED] Use OpenVINO GenAI optimized pipelines for benchmarking. Enabled by default")
     parser.add_argument("--optimum", action="store_true", help="Use Optimum Intel pipelines for benchmarking")
     parser.add_argument("--from_onnx", action="store_true", help="Allow initialize Optimum OpenVINO model using ONNX")
