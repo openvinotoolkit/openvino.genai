@@ -13,7 +13,8 @@ class WhisperDecoder {
 public:
     static std::shared_ptr<WhisperDecoder> from_path(const std::filesystem::path& models_path,
                                                      const std::string& device,
-                                                     const ov::AnyMap& properties);
+                                                     const ov::AnyMap& properties,
+                                                     const ov::PartialShape& lhs_shape);
 
     std::pair<int64_t, float> detect_language(const Tensor& encoder_hidden_state, const int64_t decoder_start_token_id);
 
