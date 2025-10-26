@@ -193,7 +193,8 @@ struct KVDesc {
 
 std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
                                                              const ov::AnyMap& config,
-                                                             const KVAxesPosition& kv_pos);
+                                                             const KVAxesPosition& kv_pos,
+                                                             const bool is_whisper = false);
 
 /// @brief SharedOptional is a wrapper around a reference to an existing object and an optional shared alternative value.
 /// The difference from std::optional is that the default state is not empty and contains a reference to an existing object outside the class.
@@ -307,6 +308,11 @@ ov::CompiledModel import_model(const std::filesystem::path& blob_path,
  * @brief Exports a compiled model to a blob file for later use with import_model.
  */
 void export_model(ov::CompiledModel& compiled_model, const std::filesystem::path& blob_path);
+
+/**
+ * @brief Checks if the model has an input with the specified name.
+ */
+bool has_input(const std::shared_ptr<Model>& model, const std::string& name);
 
 }  // namespace utils
 }  // namespace genai
