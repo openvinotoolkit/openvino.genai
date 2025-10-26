@@ -747,6 +747,7 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
     EncodedImage encoded_image;
     encoded_image.resized_source = img_features_with_separators;
     encoded_image.images_features_projection = ov::Tensor{ov::element::f32, {}};
+    encoded_image.num_image_tokens = num_img_tokens;
     {
         CircularBufferQueueElementGuard<ov::InferRequest> lock{m_ireq_queue_vision_projection.get()};
         ov::InferRequest& projector = lock.get();
@@ -803,11 +804,11 @@ ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(
     } else {
         std::string templated_prompt;
         if (m_apply_chat_template) {
-            ChatHistory history({{{"role", "user"}, {"content", std::move(image_prompt)}}});
+            ChatHistory history({{{"role", "user"}, {"content", image_prompt}}});
             constexpr bool add_generation_prompt = true;
             templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
         } else {
-            templated_prompt = std::move(image_prompt);
+            templated_prompt = image_prompt;
         }
         auto start_tokenizer_time = std::chrono::steady_clock::now();
         new_chat_tokens = phi_utils::split_tokenize(templated_prompt, m_tokenizer, NATIVE_PATTERN);

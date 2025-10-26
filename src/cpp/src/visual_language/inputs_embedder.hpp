@@ -285,8 +285,8 @@ void verify_ids(const std::vector<size_t>& image_ids, size_t base_id, size_t n_i
 /// 4. If no tags were found, prepend native tags and assume incremental
 /// ordering.
 /// @param automatic_tag MiniCPM-V-2_6 inserts
-/// (<image>./</image>)\n per image but it only replaces
-/// <image>./</image> leaving ()\n untouched.
+/// <image>./</image>\n per image but it only replaces
+/// <image>./</image> leaving \n untouched.
 /// automatic_tag allows to handle this by being separated
 /// from native_tag param.
 std::pair<std::string, std::vector<size_t>> normalize_prompt(

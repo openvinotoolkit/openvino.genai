@@ -34,21 +34,6 @@ describe("tokenizer", async () => {
     assert.strictEqual(typeof template, "string");
   });
 
-  it("applyChatTemplate with unknown property", async () => {
-    const testValue = "1234567890";
-    const template = tokenizer.applyChatTemplate(
-      [
-        {
-          role: "user",
-          content: "continue: 1 2 3",
-          unknownProp: testValue,
-        },
-      ],
-      false,
-    );
-    assert.ok(!template.includes(testValue));
-  });
-
   it("applyChatTemplate with true addGenerationPrompt", async () => {
     const template = tokenizer.applyChatTemplate(
       [
@@ -62,32 +47,6 @@ describe("tokenizer", async () => {
     assert.ok(template.includes("assistant"));
   });
 
-  it("applyChatTemplate with missed role", async () => {
-    assert.throws(() =>
-      tokenizer.applyChatTemplate(
-        [
-          {
-            content: "continue: 1 2 3",
-          },
-        ],
-        false,
-      ),
-    );
-  });
-
-  it("applyChatTemplate with missed content", async () => {
-    assert.throws(() =>
-      tokenizer.applyChatTemplate(
-        [
-          {
-            role: "user",
-          },
-        ],
-        false,
-      ),
-    );
-  });
-
   it("applyChatTemplate with missed addGenerationPrompt", async () => {
     assert.throws(() =>
       tokenizer.applyChatTemplate([
@@ -99,8 +58,12 @@ describe("tokenizer", async () => {
     );
   });
 
-  it("applyChatTemplate with incorrect type of  history", async () => {
+  it("applyChatTemplate with incorrect type of history", async () => {
     assert.throws(() => tokenizer.applyChatTemplate("prompt", false));
+    assert.throws(() => tokenizer.applyChatTemplate(["prompt"], false));
+    assert.throws(() =>
+      tokenizer.applyChatTemplate([{ role: "user", content: "prompt" }, "not an object"], false),
+    );
   });
 
   it("applyChatTemplate with unknown property", async () => {
@@ -134,6 +97,49 @@ describe("tokenizer", async () => {
       chatTemplate,
     );
     assert.strictEqual(template, `${prompt}\n`);
+  });
+
+  it("applyChatTemplate use tools", async () => {
+    const prompt = "question";
+    const chatHistory = [
+      {
+        role: "user",
+        content: prompt,
+      },
+    ];
+    const chatTemplate = `{% for message in messages %}
+{{ message['content'] }}
+{% for tool in tools %}{{ tool | tojson }}{% endfor %}
+{% endfor %}`;
+    const tools = [{ type: "function", function: { name: "test" } }];
+    const templatedHistory = tokenizer.applyChatTemplate(chatHistory, false, chatTemplate, tools);
+    const expected = `${prompt}\n{"type": "function", "function": {"name": "test"}}`;
+    assert.strictEqual(templatedHistory, expected);
+  });
+
+  it("applyChatTemplate use extra_context", async () => {
+    const prompt = "question";
+    const chatHistory = [
+      {
+        role: "user",
+        content: prompt,
+      },
+    ];
+    const chatTemplate = `{% for message in messages %}
+{{ message['content'] }}
+{% if enable_thinking is defined and enable_thinking is false %}No thinking{% endif %}
+{% endfor %}`;
+    const tools = [];
+    const extraContext = { enable_thinking: false }; // eslint-disable-line camelcase
+    const templatedHistory = tokenizer.applyChatTemplate(
+      chatHistory,
+      false,
+      chatTemplate,
+      tools,
+      extraContext,
+    );
+    const expected = `${prompt}\nNo thinking`;
+    assert.strictEqual(templatedHistory, expected);
   });
 
   it("getBosToken return string", async () => {

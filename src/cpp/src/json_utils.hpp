@@ -15,6 +15,22 @@
 
 #include "openvino/genai/json_container.hpp"
 
+namespace nlohmann {
+
+template<>
+struct adl_serializer<ov::genai::JsonContainer> {
+    static void to_json(ordered_json& json, const ov::genai::JsonContainer& container) {
+        auto json_value_ptr = static_cast<const ordered_json*>(container._get_json_value_ptr());
+        json = *json_value_ptr;
+    }
+    
+    static ov::genai::JsonContainer from_json(const ordered_json& json) {
+        return ov::genai::JsonContainer::from_json_string(json.dump());
+    }
+};
+
+} // namespace nlohmann
+
 namespace ov {
 namespace genai {
 namespace utils {
@@ -109,7 +125,7 @@ inline nlohmann::ordered_json any_to_json(const ov::Any& value) {
         }
         return array_json;
     } else if (value.is<ov::genai::JsonContainer>()) {
-        return value.as<ov::genai::JsonContainer>().to_json();
+        return value.as<ov::genai::JsonContainer>();
     } else {
         OPENVINO_THROW("Failed to convert Any to JSON, unsupported type: ", value.type_info().name());
     }

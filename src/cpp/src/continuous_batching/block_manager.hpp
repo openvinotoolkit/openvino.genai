@@ -26,6 +26,7 @@ public:
     explicit KVCacheBlock(int index)
         : m_ref_count(0),
           m_index(index),
+          m_hash(0),
           m_timestamp(std::chrono::steady_clock::now()) { }
 
     int get_index() const {
@@ -713,7 +714,7 @@ public:
 
         if (!m_enable_prefix_caching) {
             for (size_t layer_idx = 0; layer_idx < m_block_table[sequence_id].size(); layer_idx++) {
-                auto block_table = m_block_table[sequence_id][layer_idx];
+                auto& block_table = m_block_table[sequence_id][layer_idx];
                 for (size_t i = 0; i < num_blocks; ++i) {
                     ov::genai::KVCacheBlock::Ptr block = m_allocator.allocate_block(layer_idx);
                     OPENVINO_ASSERT(block != nullptr);

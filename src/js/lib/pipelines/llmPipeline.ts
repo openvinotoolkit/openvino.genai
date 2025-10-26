@@ -10,18 +10,13 @@ export type Options = {
 
 interface Tokenizer {
   /** Applies a chat template to format chat history into a prompt string. */
-  // TODO Update bindings for new ChatHistory type, tools and extra context
-  // applyChatTemplate(
-  //   chatHistory: Record<string, any>[],
-  //   addGenerationPrompt: boolean,
-  //   chatTemplate?: string,
-  //   tools?: Record<string, any>[],
-  //   extraContext?: Record<string, any>,
-  // ): string;
+  // TODO Consider adding bindings for ChatHistory and JsonContainer classes
   applyChatTemplate(
-    chatHistory: { role: string; content: string }[],
+    chatHistory: Record<string, any>[],
     addGenerationPrompt: boolean,
     chatTemplate?: string,
+    tools?: Record<string, any>[],
+    extraContext?: Record<string, any>,
   ): string;
   getBosToken(): string;
   getBosTokenId(): number;
@@ -118,6 +113,11 @@ export interface PerfMetrics {
   getGrammarCompileTime(): SummaryStats;
   /** A structure of RawPerfMetrics type that holds raw metrics. */
   rawMetrics: RawMetrics;
+
+  /** Adds the metrics from another PerfMetrics object to this one.
+   * @returns The current PerfMetrics instance.
+   */
+  add(other: PerfMetrics): this;
 }
 
 export class DecodedResults {
@@ -178,11 +178,11 @@ export class LLMPipeline {
     return result;
   }
 
-  async startChat() {
+  async startChat(systemMessage: string = "") {
     if (this.isChatStarted) throw new Error("Chat is already started");
 
     const startChatPromise = util.promisify(this.pipeline.startChat.bind(this.pipeline));
-    const result = await startChatPromise();
+    const result = await startChatPromise(systemMessage);
 
     this.isChatStarted = true;
 

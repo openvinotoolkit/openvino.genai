@@ -29,27 +29,6 @@ from llm_bench_utils.ov_model_classes import OVMPTModel, OVLDMSuperResolutionPip
 from dataclasses import dataclass, field
 
 
-def normalize_model_ids(model_ids_list):
-    return [m_id[:-1] if m_id.endswith('_') else m_id for m_id in model_ids_list]
-
-
-def get_use_case_by_model_id(model_type, task=None):
-    possible_use_cases = sum(list(USE_CASES.values()), [])
-    if task:
-        if task in list(UseCaseImageGen.TASK.keys()):
-            possible_use_cases = USE_CASES["image_gen"]
-        else:
-            possible_use_cases = USE_CASES[task]
-    for use_case in possible_use_cases:
-        for m_type in normalize_model_ids(use_case.model_types):
-            # TODO go to equality and raise error if use_cases is already found, as it will mean that
-            # model with that task can be applicable to execute with different pipelines and user doesn't specify one
-            if model_type.startswith(m_type):
-                return use_case, m_type
-
-    return None, None
-
-
 @dataclass
 class UseCase:
     task = ''
@@ -155,18 +134,15 @@ USE_CASES = {
     'code_gen': [UseCaseCodeGen(["codegen", "codegen2", "stable-code"]),
                  UseCaseCodeGen(['replit'], ov_cls=OVMPTModel),
                  UseCaseCodeGen(['codet5'], ov_cls=OVModelForSeq2SeqLM)],
-    'text_gen': [UseCaseTextGen(['arcee', "decoder", "falcon", "glm", "aquila", "gpt2", "open-llama", "openchat", "neural-chat", "llama",
+    'text_gen': [UseCaseTextGen(['arcee', "decoder", "falcon", "glm", "aquila", "gpt", "gpt-", "gpt2", "open-llama", "openchat", "neural-chat", "llama",
                                  "tiny-llama", "tinyllama", "opt", "opt-", "pythia", "pythia-", "stablelm", "stablelm-", "stable-zephyr-", "rocket-",
                                  "vicuna", "dolly", "bloom", "red-pajama", "xgen", "longchat", "jais", "orca-mini", "baichuan", "qwen", "zephyr",
-                                 "mistral", "mixtral", "phi2-", "minicpm", "gemma", "deci", "phi3", "deci", "internlm", "olmo", "starcoder", "instruct-gpt",
-                                 "granite", "granitemoe", "gptj"]),
+                                 "mistral", "mixtral", "phi", "phi2-", "minicpm", "gemma", "deci", "phi3", "internlm", "olmo", "starcoder", "instruct-gpt",
+                                 "granite", "granitemoe", "gptj", "yi-"]),
                  UseCaseTextGen(['t5'], ov_cls=OVModelForSeq2SeqLM, pt_cls=T5ForConditionalGeneration),
-                 UseCaseTextGen(["gpt", "gpt-"], ov_cls=OVModelForSeq2SeqLM),
                  UseCaseTextGen(['mpt'], OVMPTModel),
                  UseCaseTextGen(['blenderbot'], ov_cls=OVModelForSeq2SeqLM, pt_cls=BlenderbotForConditionalGeneration),
-                 UseCaseTextGen(['chatglm'], ov_cls=OVChatGLMModel, pt_cls=AutoModel),
-                 UseCaseTextGen(['yi-'], ov_cls=OVModelForSeq2SeqLM),
-                 UseCaseTextGen(["phi", "phi-"], ov_cls=OVModelForSeq2SeqLM)],
+                 UseCaseTextGen(['chatglm'], ov_cls=OVChatGLMModel, pt_cls=AutoModel)],
     'ldm_super_resolution': [UseCaseLDMSuperResolution(['ldm-super-resolution'])],
     'text_embed': [UseCaseTextEmbeddings(["qwen3", "bge", "bert", "albert", "roberta", "xlm-roberta"])],
     'text_rerank': [UseCaseTextReranker(["qwen3", "bge", "bert", "albert", "roberta", "xlm-roberta"])],

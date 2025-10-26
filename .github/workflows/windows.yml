@@ -24,7 +24,7 @@ env:
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: C:/mount/caches/huggingface/win
   OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/
-  OPENVINO_LOG_LEVEL: 5
+  OPENVINO_LOG_LEVEL: 2  # Windows fails with out of memory because of too verbose logging
   ARTIFACTS_SHARE: '/mount/build-artifacts'
   BASE_PRODUCT_TYPE: public_windows_vs2022
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
@@ -90,6 +90,9 @@ jobs:
         platform: windows
         commit_packages_to_provide: wheels,openvino_node_npm_package.zip
         revision: latest_available_commit
+        # Set specific revision and uncomment to use OV from its PR build:
+        # branch_name: master
+        # event_name: pull_request
 
   genai_build_cpack:
     name: genai cpack (${{ matrix.build-type }})
@@ -176,7 +179,7 @@ jobs:
 
       - name: Setup ccache
         id: ccache-restore
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-${{ matrix.build-type }}-cpack-${{ github.sha }}
           restore-keys: |
@@ -249,7 +252,7 @@ jobs:
 
       - name: Save ccache
         if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
-        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
           path: ${{ env.CCACHE_DIR }}
@@ -339,7 +342,7 @@ jobs:
 
       - name: Setup ccache
         id: ccache-restore
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           key: ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-Release-wheel-${{ github.sha }}
           restore-keys: |
@@ -429,7 +432,7 @@ jobs:
 
       - name: Save ccache
         if: always() && steps.ccache-restore.outputs.cache-hit != 'true' && github.event_name == 'push'
-        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           key: ${{ steps.ccache-restore.outputs.cache-primary-key }}
           path: ${{ env.CCACHE_DIR }}
@@ -608,35 +611,45 @@ jobs:
         test:
           - name: 'Whisper'
             # TODO: skip some tests temporary untill https://github.com/huggingface/datasets/issues/7647 dataset is fixed
-            cmd: 'tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"'
+            cmd: 'python -m pytest -s -v tests/python_tests/test_whisper_pipeline.py tests/python_tests/test_whisper_pipeline_static.py -k "not test_smoke[sample_from_dataset0 and not test_whisper_constructors[sample_from_dataset0 and not test_max_new_tokens[sample_from_dataset0 and not test_language_mode[language and not test_task_mode[sample_from_dataset0 and not test_language_autodetect[sample_from_dataset0 and not test_whisper_config_constructor and not test_language_autodetect[sample_from_dataset1 and not test_language_autodetect[sample_from_dataset2 and not test_initial_prompt_hotwords[sample_from_dataset0 and not test_random_sampling[sample_from_dataset0"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
             timeout: 120
-          - name: 'Cacheopt E2E'
-            cmd: 'tests/python_tests/test_kv_cache_eviction.py'
+          - name: 'Cacheopt E2E (Part 1)'
+            cmd: 'python -m pytest -s -v tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
-            timeout: 360
+            timeout: 180
+          - name: 'Cacheopt E2E (Part 2)'
+            cmd: 'python -m pytest -s -v tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_2.py'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
+            timeout: 240
           - name: 'LLM & VLM'
-            cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py --override-ini cache_dir=/mount/caches/pytest/'
+            cmd: 'python -m pytest -s -v tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py --override-ini cache_dir=/mount/caches/pytest/'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
             timeout: 180
           - name: 'GGUF Reader tests'
-            cmd: 'tests/python_tests/test_gguf_reader.py'
+            cmd: 'python -m pytest -s -v tests/python_tests/test_gguf_reader.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
             timeout: 360
           - name: 'Tokenizer tests'
-            cmd: 'tests/python_tests/test_tokenizer.py'
+            cmd: 'python -m pytest -s -v tests/python_tests/test_tokenizer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
             timeout: 60
           - name: 'API tests'
-            cmd: 'tests/python_tests/test_continuous_batching.py tests/python_tests/test_generation_config.py tests/python_tests/test_sampling.py tests/python_tests/test_text_streamer.py'
+            cmd: 'python -m pytest -s -v tests/python_tests/test_continuous_batching.py tests/python_tests/test_generation_config.py tests/python_tests/test_sampling.py tests/python_tests/test_text_streamer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test || fromJSON(needs.smart_ci.outputs.affected_components).sampling.test || fromJSON(needs.smart_ci.outputs.affected_components).text_streamer.test }}
             timeout: 60
           - name: 'Rag tests'
-            cmd: 'tests/python_tests/test_rag.py'
+            cmd: 'python -m pytest -s -v tests/python_tests/test_rag.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
             timeout: 30
           - name: 'WWB tests'
-            cmd: 'tools/who_what_benchmark/tests -m "not nanollava"'
+            cmd: 'python -m pytest -s -v tools/who_what_benchmark/tests -m "not nanollava"'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+            timeout: 180
+          - name: 'WWB tests (nanollava)'
+            cmd: |
+              python -m pip install transformers==4.48.0
+              python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 90
     defaults:
@@ -681,14 +694,7 @@ jobs:
 
       - name: Tests
         if: ${{ matrix.test.run_condition }}
-        run: python -m pytest -s -v ${{ matrix.test.cmd }}
-        working-directory: ${{ env.SRC_DIR }}
-
-      - name: Test nanoLLaVA
-        if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
-        run: |
-          python -m pip install transformers==4.48.0
-          python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
+        run: ${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
 
   genai_samples_tests:
@@ -787,7 +793,7 @@ jobs:
 
       - name: Setup NodeJS
         if: ${{ matrix.test.run_condition }}
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
           node-version: 21
 
@@ -912,7 +918,7 @@ jobs:
           merge-multiple: true
 
       - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 

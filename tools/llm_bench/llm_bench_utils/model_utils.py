@@ -8,11 +8,8 @@ import numpy as np
 import logging as log
 from pathlib import Path
 from llm_bench_utils.config_class import (
-    USE_CASES,
     PA_ATTENTION_BACKEND,
     SDPA_ATTENTION_BACKEND,
-    get_use_case_by_model_id,
-    UseCaseImageGen
 )
 import librosa
 
@@ -25,12 +22,6 @@ KNOWN_PRECISIONS = [
     'GPTQ_INT4-FP32', 'GPTQ_INT4-FP16', 'INT4',
     'OV_FP16-INT4_SYM', 'OV_FP16-INT4_ASYM', 'OV_FP32-INT4_SYM', 'OV_FP32-INT4_ASYM',
     'OV_FP32-4BIT_DEFAULT', 'OV_FP16-4BIT_DEFAULT', 'OV_FP32-4BIT_MAXIMUM', 'OV_FP16-4BIT_MAXIMUM']
-
-
-KNOWN_FRAMEWORKS = ['pytorch', 'ov', 'dldt']
-
-
-OTHER_IGNORE_MODEL_PATH_PARTS = ['compressed_weights']
 
 
 def get_param_from_file(args, input_key):
@@ -188,7 +179,8 @@ def analyze_args(args):
     use_case = None
     model_name = None
     if model_framework in ('ov', 'pt'):
-        use_case, model_name = get_use_case(args.model, args.task)
+        from llm_bench_utils.get_use_case import get_use_case
+        use_case, model_type, model_name = get_use_case(Path(args.model), args.task)
     model_args['use_case'] = use_case
     if use_case.task == 'code_gen' and not model_args['prompt'] and not model_args['prompt_file']:
         model_args['prompt'] = 'def print_hello_world():'
@@ -213,9 +205,10 @@ def analyze_args(args):
     if args.cb_config:
         cb_config = get_config(args.cb_config)
     model_args["cb_config"] = cb_config
-    if args.draft_model and (args.device == "NPU" or model_args['config']['ATTENTION_BACKEND'] != PA_ATTENTION_BACKEND):
-        log.warning("Speculative Decoding is supported only with Page Attention Backend and not supported for NPU device")
-        args.draft_model = None
+    if args.draft_model:
+        if (args.draft_device != "NPU" and args.device != "NPU" and model_args['config']['ATTENTION_BACKEND'] != PA_ATTENTION_BACKEND):
+            log.warning("Speculative Decoding is supported only with Paged Attention Backend for non-NPU devices")
+            args.draft_model = None
     model_args['draft_model'] = args.draft_model
     model_args['draft_device'] = args.draft_device
     draft_cb_config = None
@@ -232,90 +225,7 @@ def analyze_args(args):
     model_args['vocoder_path'] = args.vocoder_path
     if model_args['vocoder_path'] and not Path(model_args['vocoder_path']).exists():
         raise RuntimeError(f'==Failure FOUND==: Incorrect vocoder path:{model_args["vocoder_path"]}')
-
-    return model_path, model_framework, model_args, model_name
-
-
-def get_use_case(model_name_or_path: str | Path, task: str | None = None):
-    if (Path(model_name_or_path) / "model_index.json").exists():
-        diffusers_config = json.loads((Path(model_name_or_path) / "model_index.json").read_text())
-        pipe_type = diffusers_config.get("_class_name")
-        if pipe_type in ["StableDiffusionPipeline", "StableDiffusionXLPipeline", "StableDiffusion3Pipeline", "StableDiffusionInpaintPipeline",
-                         "StableDiffusionXLInpaintPipeline", "FluxPipeline", "LatentConsistencyModelPipeline"]:
-            return USE_CASES["image_gen"][0], pipe_type.replace("Pipeline", "")
-
-    model_id = None
-    config_file = Path(model_name_or_path) / "config.json"
-    if config_file.exists():
-        config = json.loads(config_file.read_text())
-        if config is not None:
-            case, model_name = resolve_complex_model_types(config)
-            if case is not None:
-                log.info(f'==SUCCESS FOUND==: use_case: {case}, model_type: {model_name}')
-                return case, model_name
-            model_id = config.get("model_type").lower().replace('_', '-')
-    elif Path(model_name_or_path).suffix in '.gguf':
-        import gguf_parser
-        parser = gguf_parser.GGUFParser(model_name_or_path)
-        parser.parse()
-        if parser.metadata and parser.metadata.get('general.architecture'):
-            model_id = parser.metadata.get('general.architecture').lower()
-
-    if model_id is not None:
-        case, model_id = get_use_case_by_model_id(model_id, task)
-        if case:
-            log.info(f'==SUCCESS FOUND==: use_case: {case.task}, model_name: {model_id}')
-            return case, model_id
-
-    case, model_name = get_model_name(model_name_or_path)
-    if case is None:
-        raise RuntimeError('==Failure FOUND==: no use_case found')
-    else:
-        log.info(f'==SUCCESS FOUND==: use_case: {case}, model_Name: {model_name}')
-    return case, model_name
-
-
-def resolve_complex_model_types(config):
-    model_type = config.get("model_type").lower().replace('_', '-')
-    if model_type == "gemma3":
-        return "visual_text_gen", model_type
-    if model_type == "gemma3-text":
-        return "text_gen", model_type
-    if model_type in ["phi4mm", "phi4-multimodal"]:
-        return "visual_text_gen", model_type
-    if model_type == "llama4":
-        return "visual_text_gen", model_type
-    return None, None
-
-
-def get_model_name(model_name_or_path, task=None):
-    # try to get use_case from model name
-    path = os.path.abspath(model_name_or_path)
-    model_names = path.split(os.sep)
-    possible_use_cases = sum(list(USE_CASES.values()), [])
-    if task:
-        if task in list(UseCaseImageGen.TASK.keys()):
-            possible_use_cases = USE_CASES["image_gen"]
-        else:
-            possible_use_cases = USE_CASES[task]
-    for model_name in reversed(model_names):
-        for use_case in possible_use_cases:
-            for m_type in use_case.model_types:
-                if model_name.lower().startswith(m_type):
-                    return use_case, m_type
-
-    return None, None
-
-
-def get_model_name_with_path_part(model_name_or_path):
-    IGNORE_MODEL_PATH_PARTS = [x.lower() for x in (KNOWN_FRAMEWORKS + KNOWN_PRECISIONS + OTHER_IGNORE_MODEL_PATH_PARTS)]
-    model_path = Path(model_name_or_path)
-    model_name = None
-    for path_part in reversed(model_path.parts):
-        if not path_part.lower() in IGNORE_MODEL_PATH_PARTS:
-            model_name = path_part
-            break
-    return model_name
+    return model_path, model_framework, model_args
 
 
 def get_config(config):
