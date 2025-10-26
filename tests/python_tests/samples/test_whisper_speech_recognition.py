@@ -3,7 +3,6 @@
 
 import os
 import pytest
-import subprocess  # nosec B404
 import sys
 
 from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR
@@ -14,10 +13,6 @@ class TestWhisperSpeechRecognition:
     @pytest.mark.samples
     @pytest.mark.parametrize("convert_model", ["WhisperTiny"], indirect=True)
     @pytest.mark.parametrize("download_test_content", ["how_are_you_doing_today.wav"], indirect=True)
-    @pytest.mark.xfail(
-        reason="Port for tensor name cache_position was not found. Ticket CVS-174805.",
-        raises=subprocess.CalledProcessError,
-    )
     def test_sample_whisper_speech_recognition(self, convert_model, download_test_content):
         # Run C++ sample
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'whisper_speech_recognition')

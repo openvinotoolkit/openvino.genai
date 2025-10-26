@@ -3,7 +3,6 @@
 
 import os
 import pytest
-import subprocess  # nosec B404
 import sys
 
 from test_utils import run_sample
@@ -206,11 +205,7 @@ class TestBenchmarkLLM:
 
 
     @pytest.mark.samples
-    @pytest.mark.parametrize("sample_args", [
-        pytest.param(["-d", "cpu", "-n", "1"], marks=pytest.mark.xfail(
-            reason="TypeError: WhisperGenerationMixin.generate() got multiple values for argument 'input_features'. Ticket CVS-174921",
-            raises=subprocess.CalledProcessError,
-        )), ["-d", "cpu", "-n", "1", "--optimum"]])
+    @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1"], ["-d", "cpu", "-n", "1", "--optimum"]])
     @pytest.mark.parametrize("media_file", ["3283_1447_000000.flac"])
     @pytest.mark.parametrize("convert_model", ["WhisperTiny"], indirect=True)
     @pytest.mark.parametrize("download_test_content", ["3283_1447_000.tar.gz"], indirect=True)
