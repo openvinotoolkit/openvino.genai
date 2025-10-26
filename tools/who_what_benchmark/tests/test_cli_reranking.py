@@ -64,6 +64,7 @@ def test_reranking_genai(model_info, tmp_path):
 @pytest.mark.parametrize(
     ("model_info"), OV_RERANK_MODELS
 )
+@pytest.mark.xfail(sys.platform == 'darwin', reason="Hangs. Ticket 175534", run=False)
 def test_reranking_optimum(model_info, tmp_path):
     GT_FILE = Path(tmp_dir) / "gt.csv"
     model_id = model_info[0]
