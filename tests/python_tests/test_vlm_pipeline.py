@@ -178,6 +178,10 @@ def _setup_generation_config(
 
 
 def _get_ov_model(model_id: str) -> str:
+    if model_id in {"katuni4ka/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
+        pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
+    if "katuni4ka/tiny-random-phi3-vision" == model_id:
+        pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
     ov_cache_models_dir = get_ov_cache_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
     model_dir = ov_cache_models_dir / dir_name
@@ -198,7 +202,13 @@ def _get_ov_model(model_id: str) -> str:
             device="CPU",
             export=True,
             load_in_8bit=False,
-            trust_remote_code=True,
+            trust_remote_code=model_id in {
+                "katuni4ka/tiny-random-minicpmv-2_6",
+                "katuni4ka/tiny-random-internvl2",
+                "katuni4ka/tiny-random-phi3-vision",
+                "katuni4ka/tiny-random-phi-4-multimodal",
+                "qnguyen3/nanoLLaVA",
+            },
         )
     )
     if model.config.model_type == "llava-qwen2":
