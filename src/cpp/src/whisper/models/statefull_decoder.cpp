@@ -1,21 +1,45 @@
-// Copyright (C) 2024 Intel Corporation
+// Copyright (C) 2024-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "statefull_decoder.hpp"
 
 #include "utils.hpp"
 
+namespace {
+void reshape_hidden_states_to_static(std::shared_ptr<ov::Model> model, const ov::PartialShape& lhstates_shape) {
+    ov::PartialShape new_shape = model->input("encoder_hidden_states").get_partial_shape();
+    OPENVINO_ASSERT(new_shape.size() > 1 && lhstates_shape.size() > 1);
+    new_shape[1] = lhstates_shape[1];
+    std::map<std::string, ov::PartialShape> name_to_shape{{"encoder_hidden_states", new_shape}};
+    model->reshape(name_to_shape);
+}
+
+} // anonymous
+
 namespace ov::genai {
 WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& models_path,
                                                  const std::string& device,
-                                                 const ov::AnyMap& properties) {
+                                                 const ov::AnyMap& properties,
+                                                 const ov::PartialShape& lhs_shape) {
     ov::Core core = utils::singleton_core();
 
     auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
 
-    utils::apply_slice_before_matmul_transformation(model);
+    m_has_cache_position = utils::has_input(model, "cache_position");
 
-    auto compiled_model = core.compile_model(model, device, properties);
+    ov::CompiledModel compiled_model;
+    if (device == "NPU") {
+        auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
+
+        reshape_hidden_states_to_static(model, lhs_shape);
+
+        utils::KVDesc kv_desc;
+        std::tie(compiled_model, kv_desc) = utils::compile_decoder_for_npu(model, properties, kv_pos, true);
+    } else {
+        utils::apply_slice_before_matmul_transformation(model);
+
+        compiled_model = core.compile_model(model, device, properties);
+    }
 
     utils::print_compiled_model_properties(compiled_model, "whisper decoder model");
     m_request = compiled_model.create_infer_request();
@@ -29,7 +53,9 @@ void WhisperStatefullDecoder::start_async(const Tensor& encoder_hidden_state,
 
     _set_encoder_hidden_states_tensor(encoder_hidden_state, batch_size, m_request);
 
-    _set_cache_position_tensor(seq_len);
+    if (m_has_cache_position) {
+        _set_cache_position_tensor(seq_len);
+    }
     m_request.set_tensor("input_ids", input_ids);
     m_request.set_tensor("beam_idx", beam_idx);
 
@@ -58,7 +84,9 @@ Tensor WhisperStatefullDecoder::wait() {
 
 void WhisperStatefullDecoder::reset_state() {
     m_request.reset_state();
-    m_request.set_tensor("cache_position", create_host_tensor(ov::element::i64, {0}));
+    if (m_has_cache_position) {
+        m_request.set_tensor("cache_position", create_host_tensor(ov::element::i64, {0}));
+    }
 
     Shape encoder_hidden_states_shape{m_request.get_tensor("encoder_hidden_states").get_shape()};
     encoder_hidden_states_shape[0] = 0;
