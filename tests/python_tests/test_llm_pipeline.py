@@ -645,37 +645,43 @@ def test_pipeline_validates_generation_config(model_id):
 # Work with Unicode in Python API
 #
 
+# Model, prompt and max_new_tokens that generates unfinished utf-8 string.
+UNICODE_PYBIND_DECODING_TEST_CASES: list[tuple[str, str, int]] = [
+    ("optimum-intel-internal-testing/tiny-random-PhiForCausalLM", ",", 3)
+]
+
+
 @pytest.mark.precommit
-@pytest.mark.parametrize("model_id", get_models_list())
-def test_unicode_pybind_decoding_one_string(model_id):
+@pytest.mark.parametrize("model_id,prompt,max_new_tokens", UNICODE_PYBIND_DECODING_TEST_CASES)
+def test_unicode_pybind_decoding_one_string(model_id: str, prompt: str, max_new_tokens: int):
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
     _, _, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
-    res_str = ov_pipe.generate(',', max_new_tokens=4, apply_chat_template=False)
+    res_str = ov_pipe.generate(prompt, max_new_tokens=max_new_tokens, apply_chat_template=False)
     assert '�' == res_str[-1]
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("model_id", get_models_list())
-def test_unicode_pybind_decoding_batched(model_id):
+@pytest.mark.parametrize("model_id,prompt,max_new_tokens", UNICODE_PYBIND_DECODING_TEST_CASES)
+def test_unicode_pybind_decoding_batched(model_id: str, prompt: str, max_new_tokens: int):
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
     _, _, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
-    res_str = ov_pipe.generate([","], max_new_tokens=4, apply_chat_template=False)
+    res_str = ov_pipe.generate([prompt], max_new_tokens=max_new_tokens, apply_chat_template=False)
     assert '�' == res_str.texts[0][-1]
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("model_id", get_models_list())
-def test_unicode_pybind_decoding_one_string_streamer(model_id):
+@pytest.mark.parametrize("model_id,prompt,max_new_tokens", UNICODE_PYBIND_DECODING_TEST_CASES)
+def test_unicode_pybind_decoding_one_string_streamer(model_id: str, prompt: str, max_new_tokens: int):
     # On this model this prompt generates unfinished utf-8 string
     # and streams it. Test that pybind will not fail while we pass string to python.
     _, _, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     res_str = []
-    ov_pipe.generate(",", max_new_tokens=4, apply_chat_template=False, streamer=lambda x: res_str.append(x))
+    ov_pipe.generate(prompt, max_new_tokens=max_new_tokens, apply_chat_template=False, streamer=lambda x: res_str.append(x))
     assert '�' == ''.join(res_str)[-1]
 
 #
