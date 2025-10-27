@@ -2,7 +2,6 @@ name: Deploy Docs to GitHub Pages
 
 on:
   workflow_dispatch:
-  pull_request:
   push:
     branches:
       - master
@@ -15,7 +14,6 @@ concurrency:
 
 permissions:
   contents: read
-  pull-requests: read
 
 jobs:
   build_assets:
