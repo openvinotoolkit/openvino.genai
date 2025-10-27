@@ -97,7 +97,7 @@ MODELS = {
         "convert_args": []
     },
     "tiny-random-minicpmv-2_6": {
-        "name": "katuni4ka/tiny-random-minicpmv-2_6",
+        "name": "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
         "convert_args": ['--trust-remote-code', "--task", "image-text-to-text"]
     },
     "InternVL2-1B": {
@@ -121,7 +121,7 @@ MODELS = {
         "convert_args": ["--task", "text-generation-with-past", "--weight-format", "int8"]
     },
     "tiny-random-latent-consistency": {
-        "name": "echarlaix/tiny-random-latent-consistency",
+        "name": "optimum-intel-internal-testing/tiny-random-latent-consistency",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
     "tiny-random-latent-consistency-lora": {
@@ -129,7 +129,7 @@ MODELS = {
         "convert_args": []
     },
     "tiny-random-llava": {
-        "name": "katuni4ka/tiny-random-llava",
+        "name": "optimum-intel-internal-testing/tiny-random-llava",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
     },
     "bge-small-en-v1.5": {

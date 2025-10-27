@@ -80,20 +80,20 @@ PROMPTS: list[str] = [
 
 
 VIDEO_MODEL_IDS = [
-    "katuni4ka/tiny-random-llava-next-video",
+    "optimum-intel-internal-testing/tiny-random-llava-next-video",
 ]
 
 
 MODEL_IDS: list[str] = [
-    "katuni4ka/tiny-random-minicpmv-2_6",
-    "katuni4ka/tiny-random-phi3-vision",
-    "katuni4ka/tiny-random-phi-4-multimodal",
-    "katuni4ka/tiny-random-llava",
-    "katuni4ka/tiny-random-llava-next",
-    "katuni4ka/tiny-random-internvl2",
-    "katuni4ka/tiny-random-qwen2vl",
-    "katuni4ka/tiny-random-qwen2.5-vl",
-    "katuni4ka/tiny-random-gemma3",
+    "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
+    "optimum-intel-internal-testing/tiny-random-phi3-vision",
+    "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
+    "optimum-intel-internal-testing/tiny-random-llava",
+    "optimum-intel-internal-testing/tiny-random-llava-next",
+    "optimum-intel-internal-testing/tiny-random-internvl2",
+    "optimum-intel-internal-testing/tiny-random-qwen2vl",
+    "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
+    "optimum-intel-internal-testing/tiny-random-gemma3",
     "qnguyen3/nanoLLaVA",
     *VIDEO_MODEL_IDS,
 ]
@@ -106,28 +106,28 @@ ADD_REQUEST_MODEL_IDS = [
 
 
 TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
-    "katuni4ka/tiny-random-llava": lambda idx: "<image>",
-    "katuni4ka/tiny-random-llava-next": lambda idx: "<image>",
-    "katuni4ka/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
-    "katuni4ka/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
-    "katuni4ka/tiny-random-gemma3": lambda idx: "<start_of_image>",
-    "katuni4ka/tiny-random-internvl2": lambda idx: "<image>\n",
-    "katuni4ka/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
-    "katuni4ka/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
-    "katuni4ka/tiny-random-llava-next-video": lambda idx: "<image>\n",
+    "optimum-intel-internal-testing/tiny-random-llava": lambda idx: "<image>",
+    "optimum-intel-internal-testing/tiny-random-llava-next": lambda idx: "<image>",
+    "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
+    "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
+    "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
+    "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
+    "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
+    "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
+    "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
 }
 
 
 RESOLUTION_BY_MODEL: dict[str, int | None] = {
-    "katuni4ka/tiny-random-gemma3": 32,
+    "optimum-intel-internal-testing/tiny-random-gemma3": 32,
     "qnguyen3/nanoLLaVA": 384,
-    "katuni4ka/tiny-random-llava-next-video": 336,
+    "optimum-intel-internal-testing/tiny-random-llava-next-video": 336,
 }
 
 
 RESOLUTION_BY_VIDEO_MODEL: dict[str, int | None] = {
-    "katuni4ka/tiny-random-llava-next-video": 32,
+    "optimum-intel-internal-testing/tiny-random-llava-next-video": 32,
 }
 
 
@@ -152,8 +152,8 @@ TEST_IMAGE_URLS = {
 
 
 NPU_UNSUPPORTED_MODELS = {
-    "katuni4ka/tiny-random-internvl2",
-    "katuni4ka/tiny-random-gemma3",
+    "optimum-intel-internal-testing/tiny-random-internvl2",
+    "optimum-intel-internal-testing/tiny-random-gemma3",
 }
 
 
@@ -178,9 +178,9 @@ def _setup_generation_config(
 
 
 def _get_ov_model(model_id: str) -> str:
-    if model_id in {"katuni4ka/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
+    if model_id in {"optimum-intel-internal-testing/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
         pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
-    if "katuni4ka/tiny-random-phi3-vision" == model_id:
+    if "optimum-intel-internal-testing/tiny-random-phi3-vision" == model_id:
         pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
     ov_cache_models_dir = get_ov_cache_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
@@ -203,10 +203,10 @@ def _get_ov_model(model_id: str) -> str:
             export=True,
             load_in_8bit=False,
             trust_remote_code=model_id in {
-                "katuni4ka/tiny-random-minicpmv-2_6",
-                "katuni4ka/tiny-random-internvl2",
-                "katuni4ka/tiny-random-phi3-vision",
-                "katuni4ka/tiny-random-phi-4-multimodal",
+                "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
+                "optimum-intel-internal-testing/tiny-random-internvl2",
+                "optimum-intel-internal-testing/tiny-random-phi3-vision",
+                "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
                 "qnguyen3/nanoLLaVA",
             },
         )
@@ -809,7 +809,7 @@ def test_perf_metrics(
     max_new_tokens = DEFAULT_MAX_NEW_TOKENS
 
     # Using non-cached model to get more accurate load time
-    model_path = _get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
+    model_path = _get_ov_model("optimum-intel-internal-testing/tiny-random-minicpmv-2_6")
     start_time = perf_counter_ns()
     pipe = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
     start_generate = perf_counter_ns()
@@ -1147,24 +1147,24 @@ def conversation_requests(
 
 
 TAG_INSERTED_BY_TEMPLATE = [
-    ("katuni4ka/tiny-random-llava", "PA"),
-    ("katuni4ka/tiny-random-llava-next", "PA"),
-    ("katuni4ka/tiny-random-qwen2vl", "PA"),
-    ("katuni4ka/tiny-random-qwen2.5-vl", "PA"),
-    ("katuni4ka/tiny-random-gemma3", "SDPA"),
+    ("optimum-intel-internal-testing/tiny-random-llava", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-llava-next", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
     ("qnguyen3/nanoLLaVA", "PA"),
-    ("katuni4ka/tiny-random-llava-next-video", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
 ]
 
 
 IMAGE_ID_IGNORANT_MODELS_TO_TAG = TAG_INSERTED_BY_TEMPLATE + [
-    ("katuni4ka/tiny-random-internvl2", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-internvl2", "PA"),
 ]
 
 
 MODELS_TO_TAG = IMAGE_ID_IGNORANT_MODELS_TO_TAG + [
-    ("katuni4ka/tiny-random-minicpmv-2_6", "PA"),
-    ("katuni4ka/tiny-random-phi3-vision", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-minicpmv-2_6", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-phi3-vision", "PA"),
 ]
 
 
@@ -1395,20 +1395,20 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
 @pytest.mark.parametrize(
     "ov_pipe_model",
     [
-        pytest.param(("katuni4ka/tiny-random-qwen2vl","SDPA")),
-        pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA")),
-        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "SDPA")),
-        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "PA"), marks=pytest.mark.xfail(reason="CVS-167316")),
+        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl","SDPA")),
+        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA")),
+        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA")),
+        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"), marks=pytest.mark.xfail(reason="CVS-167316")),
         (
-            pytest.param(("katuni4ka/tiny-random-gemma3", "SDPA"), marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) 
+            pytest.param(("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"), marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) 
             if sys.platform == "darwin" 
-            else pytest.param(("katuni4ka/tiny-random-gemma3",  "SDPA"))
+            else pytest.param(("optimum-intel-internal-testing/tiny-random-gemma3",  "SDPA"))
         ),
-        pytest.param(("katuni4ka/tiny-random-gemma3", "PA"), marks=pytest.mark.xfail(reason="CVS-171180")),
+        pytest.param(("optimum-intel-internal-testing/tiny-random-gemma3", "PA"), marks=pytest.mark.xfail(reason="CVS-171180")),
         pytest.param(("qnguyen3/nanoLLaVA", "SDPA")),
         pytest.param(("qnguyen3/nanoLLaVA", "PA")),
-        pytest.param(("katuni4ka/tiny-random-llava-next-video", "SDPA")),
-        pytest.param(("katuni4ka/tiny-random-llava-next-video", "PA")),
+        pytest.param(("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA")),
+        pytest.param(("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA")),
     ],
     ids=lambda p: f"{p[0]}/{p[1]}",
     indirect=["ov_pipe_model"],

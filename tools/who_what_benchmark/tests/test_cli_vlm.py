@@ -96,7 +96,7 @@ def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [
-        ("katuni4ka/tiny-random-llava", "visual-text"),
+        ("optimum-intel-internal-testing/tiny-random-llava", "visual-text"),
     ],
 )
 def test_vlm_basic(model_id, model_type, tmp_path):

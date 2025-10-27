@@ -670,7 +670,7 @@ def get_tokenizer_configs():
             "unk_token": "<unk>",
             "chat_template": "{% for message in messages %}{% if message['role'] == 'system' %}{{'<|system|>'+ '\n' + message['content'] + '\n'}}{% elif message['role'] == 'user' %}{{'<|user|>' + '\n' + message['content'] + '\n'}}{% elif message['role'] == 'assistant' %}{{'<|assistant|>' + '\n' + message['content'] + '<|endoftext|>' + ('' if loop.last else '\n')}}{% endif %}{% endfor %}"
         },
-        "katuni4ka/tiny-random-phi3": {
+        "optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM": {
             "bos_token": "<s>",
             "eos_token": "<|endoftext|>",
             "pad_token": "<|endoftext|>",
@@ -712,7 +712,7 @@ def get_tokenizer_configs():
             "unk_token": "<unk>",
             "chat_template": "{% for message in messages %}\n{% if message['role'] == 'user' %}\n{{ '### User:\n' + message['content'] }}\n{% elif message['role'] == 'system' %}\n{{ '### System:\n' + message['content'] }}\n{% elif message['role'] == 'assistant' %}\n{{ '### Assistant:\n'  + message['content'] }}\n{% endif %}\n{% if loop.last and add_generation_prompt %}\n{{ '### Assistant:' }}\n{% endif %}\n{% endfor %}"
         },
-        "katuni4ka/tiny-random-minicpm": {
+        "optimum-intel-internal-testing/tiny-random-minicpm": {
             "bos_token": "<s>",
             "eos_token": "</s>",
             "pad_token": None,
