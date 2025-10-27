@@ -7,7 +7,7 @@
 
 # New feature contribution
 For the full new feature contribution the list above is extended with
-1. Proof of Concept (PoC) pipeline including model preparation step using `optimum-intel` and `GenAi` inference implementation.
+1. Proof of Concept (PoC) pipeline including model preparation step using `optimum-intel` and `GenAI` inference implementation.
 2. Pass architectural review with
     1. API proposal for `optimum-intel` and `GenAI`
     2. Working PoC
