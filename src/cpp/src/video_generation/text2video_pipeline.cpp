@@ -53,9 +53,9 @@ void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_sca
     );
 }
 
-// Unpacked latents of shape are [B, C, F, H, W] are patched into tokens of shape [B, C, F // p_t, p_t, H // p, p, W // p, p].
+// Unpacked latents of shape [B, C, F, H, W] are patched into tokens of shape [B, C, F // p_t, p_t, H // p, p, W // p, p].
 // The patch dimensions are then permuted and collapsed into the channel dimension of shape:
-// [B, F // p_t * H // p * W // p, C * p_t * p * p] (an ndim=3 tensor).
+// [B, F // p_t * H // p * W // p, C * p_t * p * p] (a 3 dimensional tensor).
 // dim=0 is the batch size, dim=1 is the effective video sequence length, dim=2 is the effective number of input features
 ov::Tensor pack_latents(ov::Tensor& latents, size_t patch_size, size_t patch_size_t) {
     ov::Shape latents_shape = latents.get_shape();
