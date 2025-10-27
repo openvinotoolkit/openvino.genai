@@ -472,7 +472,7 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
             timeout: 60
           - name: 'API tests'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_continuous_batching.py ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "not eagle3" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test || fromJSON(needs.smart_ci.outputs.affected_components).sampling.test || fromJSON(needs.smart_ci.outputs.affected_components).text_streamer.test }}
             timeout: 60
           - name: 'Rag tests'
@@ -488,6 +488,12 @@ jobs:
               python -m pip install transformers==4.48.0
               python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+            timeout: 90
+          - name: 'EAGLE3 speculative decoding tests'
+            cmd: |
+              python -m pip install git+https://github.com/xufang-lisa/optimum-intel.git@ea9607daf32919024cdd4390deec9693a7b64d23
+              python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "eagle3"
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speculative_decoding.test }}
             timeout: 90
     defaults:
       run:
