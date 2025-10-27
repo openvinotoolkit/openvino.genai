@@ -73,8 +73,9 @@ class VlmModelInfo:
 
 
 PROMPTS: list[str] = [
-    "What is on the image?",
+    "What is in the image?",
     "What is special about this image?",
+    "Describe the image"
 ]
 
 
@@ -150,6 +151,12 @@ TEST_IMAGE_URLS = {
 }
 
 
+NPU_UNSUPPORTED_MODELS = {
+    "katuni4ka/tiny-random-internvl2",
+    "katuni4ka/tiny-random-gemma3",
+}
+
+
 def _setup_generation_config(
     pipeline: VLMPipeline, 
     max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS, 
@@ -171,6 +178,10 @@ def _setup_generation_config(
 
 
 def _get_ov_model(model_id: str) -> str:
+    if model_id in {"katuni4ka/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
+        pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
+    if "katuni4ka/tiny-random-phi3-vision" == model_id:
+        pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
     ov_cache_models_dir = get_ov_cache_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
     model_dir = ov_cache_models_dir / dir_name
@@ -191,7 +202,13 @@ def _get_ov_model(model_id: str) -> str:
             device="CPU",
             export=True,
             load_in_8bit=False,
-            trust_remote_code=True,
+            trust_remote_code=model_id in {
+                "katuni4ka/tiny-random-minicpmv-2_6",
+                "katuni4ka/tiny-random-internvl2",
+                "katuni4ka/tiny-random-phi3-vision",
+                "katuni4ka/tiny-random-phi-4-multimodal",
+                "qnguyen3/nanoLLaVA",
+            },
         )
     )
     if model.config.model_type == "llava-qwen2":
@@ -383,7 +400,7 @@ def cat_tensor(cat_image) -> openvino.Tensor:
 def car_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
     return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['car'], "car.jpg"))
 
-
+ 
 @pytest.fixture(scope="module")
 def synthetic_video_32x32_tensor(synthetic_video_32x32):
     return openvino.Tensor(synthetic_video_32x32)
@@ -642,6 +659,68 @@ def test_vlm_pipeline_chat(
 
     ov_pipe.finish_chat()
 
+
+@pytest.fixture(scope="module", params=[
+    pytest.param([[], []], id="generation with text input only"),
+    pytest.param(
+        [[], ["cat_tensor"], ["car_tensor"], ["handwritten_tensor"], []],
+        id="combination of generations with text input and text + image input, empty image first"
+    ),
+    pytest.param(
+        [["cat_tensor"], ["car_tensor"], ["handwritten_tensor"]],
+        id="generation with text + image input"
+    ),
+    pytest.param(
+        [["cat_tensor"], ["car_tensor"], [], ["handwritten_tensor"]],
+        id="combination of generations with text input and text + image input, image input first"
+    ),
+])
+def iteration_images_npu(request):
+    return [[request.getfixturevalue(image) for image in bundle] for bundle in request.param]
+
+
+@pytest.mark.precommit
+@pytest.mark.parametrize("model_id", MODEL_IDS)
+@pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
+def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
+    if model_id in NPU_UNSUPPORTED_MODELS or model_id in VIDEO_MODEL_IDS:
+        pytest.skip(f"{model_id} is not supported")
+
+    def run_chat(ov_pipe, system_message, iteration_images):
+        result_from_streamer = []
+        def streamer(word: str) -> bool:
+            result_from_streamer.append(word)
+            return False
+
+        generation_config = ov_pipe.get_generation_config()
+        generation_config.max_new_tokens = 30
+        generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
+
+        ov_pipe.start_chat(system_message)
+
+        for i, image_set in enumerate(iteration_images):
+            result_from_streamer = []
+            res = ov_pipe.generate(
+                PROMPTS[i % len(PROMPTS)],
+                images=image_set,
+                generation_config=generation_config,
+                streamer=streamer,
+            )
+            assert res.texts[0] == "".join(result_from_streamer)
+
+        ov_pipe.finish_chat()
+
+    models_path = _get_ov_model(model_id)
+    properties = {
+        "DEVICE_PROPERTIES": {
+            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 4096}
+        }
+    }
+    npu_pipe = VLMPipeline(models_path, "NPU", config=properties)
+
+    run_chat(npu_pipe, system_message, iteration_images_npu)
+
+
 @pytest.mark.precommit
 @parametrize_all_models_with_video
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
@@ -794,12 +873,7 @@ def test_perf_metrics(
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
 def test_vlm_npu_no_exception(model_id, backend, cat_tensor, handwritten_tensor, car_tensor):
-    unsupported_models = {
-        "katuni4ka/tiny-random-internvl2",
-        "katuni4ka/tiny-random-gemma3",
-    }
-
-    if model_id in unsupported_models:
+    if model_id in NPU_UNSUPPORTED_MODELS:
         pytest.skip(f"{model_id} is not supported")
 
     models_path = _get_ov_model(model_id)
