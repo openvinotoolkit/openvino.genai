@@ -33,7 +33,7 @@ class Text2VideoPipeline::LTXPipeline {
     std::shared_ptr<AutoencoderKLLTXVideo> m_vae;
     VideoGenerationPerfMetrics m_perf_metrics;
     double m_latent_timestep = -1.0;  // TODO: float?
-    float m_load_time_ms;
+    Ms m_load_time;
 
     void compute_hidden_states(const std::string& positive_prompt, const std::string& negative_prompt, const VideoGenerationConfig& generation_config) {
         auto infer_start = std::chrono::steady_clock::now();
@@ -135,7 +135,7 @@ public:
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
         OPENVINO_ASSERT("LTXPipeline" == nlohmann::json::parse(file)["_class_name"].get<std::string>());
-        m_load_time_ms = Ms{std::chrono::steady_clock::now() - start_time}.count();
+        m_load_time = Ms{std::chrono::steady_clock::now() - start_time};
     }
 
     bool do_classifier_free_guidance(float guidance_scale) const {
