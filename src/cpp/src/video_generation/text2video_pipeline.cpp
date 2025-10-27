@@ -45,9 +45,6 @@ void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_sca
     OPENVINO_ASSERT(!generation_config.negative_prompt_3.has_value(), "Negative prompt 3 is not used by LTXPipeline.");
     OPENVINO_ASSERT(generation_config.max_sequence_length <= 512, "T5's 'max_sequence_length' must be less or equal to 512");
     OPENVINO_ASSERT(generation_config.strength == 1.0f, "'Strength' generation parameter must be 1.0f for Text 2 image pipeline");
-    // TODO:
-    // if height % 32 != 0 or width % 32 != 0:
-    //     raise ValueError(f"`height` and `width` have to be divisible by 32 but are {height} and {width}.")
     OPENVINO_ASSERT(
         (generation_config.height % vae_scale_factor == 0 || generation_config.height < 0)
             && (generation_config.width % vae_scale_factor == 0 || generation_config.width < 0),
