@@ -34,6 +34,8 @@ std::shared_ptr<IScheduler> cast_scheduler(std::shared_ptr<Scheduler> scheduler)
 
 void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_scale_factor) {
     OPENVINO_ASSERT(generation_config.height > 0, "Height must be positive");
+    OPENVINO_ASSERT(generation_config.height % 32 == 0, "Height have to be divisible by 32 but got ", generation_config.height);
+    OPENVINO_ASSERT(generation_config.width % 32 == 0, "Width have to be divisible by 32 but got ", generation_config.width);
     OPENVINO_ASSERT(generation_config.width > 0, "Width must be positive");
     OPENVINO_ASSERT(1.0f == generation_config.strength, "Strength isn't applicable. Must be set to the default 1.0");
 
