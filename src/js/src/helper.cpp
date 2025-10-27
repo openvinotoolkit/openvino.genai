@@ -328,7 +328,7 @@ ov::genai::ChatHistory& unwrap<ov::genai::ChatHistory>(const Napi::Env& env, con
 
 template <>
 Napi::Value cpp_to_js<ov::genai::EmbeddingResult, Napi::Value>(const Napi::Env& env,
-                                                               const ov::genai::EmbeddingResult embedding_result) {
+                                                               const ov::genai::EmbeddingResult& embedding_result) {
     return std::visit(overloaded{[env](std::vector<float> embed_vector) -> Napi::Value {
                                      auto vector_size = embed_vector.size();
                                      auto buffer = Napi::ArrayBuffer::New(env, vector_size * sizeof(float));
@@ -358,7 +358,7 @@ Napi::Value cpp_to_js<ov::genai::EmbeddingResult, Napi::Value>(const Napi::Env& 
 
 template <>
 Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(const Napi::Env& env,
-                                                                const ov::genai::EmbeddingResults embedding_result) {
+                                                                const ov::genai::EmbeddingResults& embedding_result) {
     return std::visit(
         [env](auto& embed_vector) {
             auto js_result = Napi::Array::New(env, embed_vector.size());
@@ -372,7 +372,7 @@ Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(const Napi::Env&
 
 template <>
 Napi::Value cpp_to_js<std::vector<std::string>, Napi::Value>(const Napi::Env& env,
-                                                             const std::vector<std::string> value) {
+                                                             const std::vector<std::string>& value) {
     auto js_array = Napi::Array::New(env, value.size());
     for (auto i = 0; i < value.size(); i++) {
         js_array[i] = Napi::String::New(env, value[i]);
@@ -381,7 +381,7 @@ Napi::Value cpp_to_js<std::vector<std::string>, Napi::Value>(const Napi::Env& en
 }
 
 template <>
-Napi::Value cpp_to_js<std::vector<float>, Napi::Value>(const Napi::Env& env, const std::vector<float> value) {
+Napi::Value cpp_to_js<std::vector<float>, Napi::Value>(const Napi::Env& env, const std::vector<float>& value) {
     auto js_array = Napi::Array::New(env, value.size());
     for (auto i = 0; i < value.size(); i++) {
         js_array[i] = Napi::Number::New(env, value[i]);
@@ -390,7 +390,7 @@ Napi::Value cpp_to_js<std::vector<float>, Napi::Value>(const Napi::Env& env, con
 }
 
 template <>
-Napi::Value cpp_to_js<std::vector<double>, Napi::Value>(const Napi::Env& env, const std::vector<double> value) {
+Napi::Value cpp_to_js<std::vector<double>, Napi::Value>(const Napi::Env& env, const std::vector<double>& value) {
     auto js_array = Napi::Array::New(env, value.size());
     for (auto i = 0; i < value.size(); i++) {
         js_array[i] = Napi::Number::New(env, value[i]);
@@ -399,7 +399,7 @@ Napi::Value cpp_to_js<std::vector<double>, Napi::Value>(const Napi::Env& env, co
 }
 
 template <>
-Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env, const std::vector<size_t> value) {
+Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env, const std::vector<size_t>& value) {
     auto js_array = Napi::Array::New(env, value.size());
     for (auto i = 0; i < value.size(); i++) {
         js_array[i] = Napi::Number::New(env, value[i]);
@@ -408,7 +408,7 @@ Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env, co
 }
 
 template <>
-Napi::Value cpp_to_js<ov::genai::JsonContainer, Napi::Value>(const Napi::Env& env, const ov::genai::JsonContainer json_container) {
+Napi::Value cpp_to_js<ov::genai::JsonContainer, Napi::Value>(const Napi::Env& env, const ov::genai::JsonContainer& json_container) {
     return json_parse(env, json_container.to_json_string());
 }
 
