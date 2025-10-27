@@ -56,7 +56,7 @@ public:
     std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
 
     bool has_token_type_ids() const;
-    
+
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
     std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos);
@@ -82,7 +82,7 @@ public:
     // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
     void set_apply_chat_template_status(bool apply_chat_template);
 
-    // finishes chat and clears a chat history 
+    // finishes chat and clears a chat history
     void finish_chat();
 
     // set CDPruner setting
@@ -151,19 +151,18 @@ private:
         virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
         virtual std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos);
-    
+
         virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
-    
+
         EmbeddingsModel::Ptr get_embedding_model() const {
             return m_embedding;
         }
-    
+
         Tokenizer get_tokenizer() const {
             return m_tokenizer;
         }
 
-        virtual void set_visual_token_pruning_config(size_t pruning_ratio,
-                                                     float relevance_weight) {
+        virtual void set_visual_token_pruning_config(size_t pruning_ratio, float relevance_weight) {
             if (!m_vision_encoder)
                 return;
             auto pruner_config = m_vision_encoder->get_pruning_config();
@@ -172,10 +171,10 @@ private:
             m_vision_encoder->set_pruning_config(pruner_config.value());
         }
 
-        virtual utils::KVCacheState& get_kv_cache_state() {
+        utils::KVCacheState& get_kv_cache_state() {
             return m_kv_cache_state;
         }
-    
+
         void set_apply_chat_template_status(bool apply_chat_template) {
             m_apply_chat_template = apply_chat_template;
         }
@@ -184,11 +183,11 @@ private:
             m_add_special_tokens = value;
             m_add_special_tokens_is_set = true;
         }
-    
+
         virtual void start_chat(const std::string& system_message);
-    
+
         virtual void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
-    
+
         virtual void finish_chat();
 
         virtual NormlizedPrompt normalize_prompt(
@@ -196,21 +195,21 @@ private:
             size_t base_id,
             const std::vector<EncodedImage>& images
         ) const = 0;
-    
+
         virtual NormlizedPrompt normalize_prompt(
             const std::string& prompt,
             size_t base_image_id,
             size_t base_video_id,
             const std::vector<EncodedImage>& images,
             const std::vector<EncodedVideo>& videos) const;
-    
+
     protected:
         IInputsEmbedder(
             const VLMConfig& vlm_config,
             const std::filesystem::path& model_dir,
             const std::string& device,
             const ov::AnyMap device_config);
-        
+
         IInputsEmbedder(
             const VLMConfig& vlm_config,
             const ModelsMap& models_map,
@@ -218,9 +217,9 @@ private:
             const std::filesystem::path& config_dir_path,
             const std::string& device,
             const ov::AnyMap device_config);
-    
+
         virtual ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
-    
+
         ov::Tensor update_history(const ov::Tensor& new_chat_tokens);
 
         ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
