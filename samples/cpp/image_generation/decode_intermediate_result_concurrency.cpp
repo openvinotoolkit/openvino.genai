@@ -87,7 +87,7 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     std::function<ov::Tensor(const ov::Tensor)> decoder_func = 
         [&](const ov::Tensor& latent) {
-            return t2i_pipeline.decode(latent);
+            return pipe.decode(latent);
         };
 
     //
