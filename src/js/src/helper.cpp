@@ -1,6 +1,7 @@
 #include "include/helper.hpp"
 
 #include "include/addon.hpp"
+#include "include/chat_history.hpp"
 #include "include/perf_metrics.hpp"
 
 namespace {
@@ -134,25 +135,10 @@ ov::genai::StringInputs js_to_cpp<ov::genai::StringInputs>(const Napi::Env& env,
 }
 
 template <>
-ov::genai::ChatHistory js_to_cpp<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value) {
-    auto incorrect_argument_message = "Chat history must be an array of JS objects";
-    if (!value.IsArray()) {
-        OPENVINO_THROW(incorrect_argument_message);
-    }
-
-    auto array = value.As<Napi::Array>();
-    size_t arrayLength = array.Length();
-
-    for (uint32_t i = 0; i < arrayLength; ++i) {
-        Napi::Value arrayItem = array[i];
-        if (!arrayItem.IsObject()) {
-            OPENVINO_THROW(incorrect_argument_message);
-        }
-    }
-
+ov::genai::JsonContainer js_to_cpp<ov::genai::JsonContainer>(const Napi::Env& env, const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsObject() || value.IsArray(), "JsonContainer must be a JS object or an array but got " + std::string(value.ToString().Utf8Value()));
     // TODO Consider using direct native JsonContainer conversion instead of string serialization
-    auto messages = ov::genai::JsonContainer::from_json_string(json_stringify(env, value));
-    return ov::genai::ChatHistory(messages);
+    return ov::genai::JsonContainer::from_json_string(json_stringify(env, value));
 }
 
 template <>
@@ -331,6 +317,16 @@ ov::genai::PerfMetrics& unwrap<ov::genai::PerfMetrics>(const Napi::Env& env, con
 }
 
 template <>
+ov::genai::ChatHistory& unwrap<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsObject(), "Passed argument must be an object.");
+    const auto obj = value.As<Napi::Object>();
+    OPENVINO_ASSERT(is_chat_history(env, value), "Passed argument is not of type ChatHistory");
+
+    const auto chat_history = Napi::ObjectWrap<ChatHistoryWrap>::Unwrap(obj);
+    return chat_history->get_value();
+}
+
+template <>
 Napi::Value cpp_to_js<ov::genai::EmbeddingResult, Napi::Value>(const Napi::Env& env,
                                                                const ov::genai::EmbeddingResult embedding_result) {
     return std::visit(overloaded{[env](std::vector<float> embed_vector) -> Napi::Value {
@@ -411,8 +407,22 @@ Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env, co
     return js_array;
 }
 
+template <>
+Napi::Value cpp_to_js<ov::genai::JsonContainer, Napi::Value>(const Napi::Env& env, const ov::genai::JsonContainer json_container) {
+    return json_parse(env, json_container.to_json_string());
+}
+
 bool is_napi_value_int(const Napi::Env& env, const Napi::Value& num) {
     return env.Global().Get("Number").ToObject().Get("isInteger").As<Napi::Function>().Call({num}).ToBoolean().Value();
+}
+
+bool is_chat_history(const Napi::Env& env, const Napi::Value& value) {
+    const auto obj = value.As<Napi::Object>();
+    const auto& prototype = env.GetInstanceData<AddonData>()->chat_history;
+
+    OPENVINO_ASSERT(prototype, "Invalid pointer to ChatHistory prototype.");
+
+    return obj.InstanceOf(prototype.Value().As<Napi::Function>());
 }
 
 std::string json_stringify(const Napi::Env& env, const Napi::Value& value) {
@@ -424,4 +434,13 @@ std::string json_stringify(const Napi::Env& env, const Napi::Value& value) {
         .Call({ value })
         .ToString()
         .Utf8Value();
+}
+
+Napi::Value json_parse(const Napi::Env& env, const std::string& value) {
+    return env.Global()
+        .Get("JSON")
+        .ToObject()
+        .Get("parse")
+        .As<Napi::Function>()
+        .Call({ Napi::String::New(env, value) });
 }
