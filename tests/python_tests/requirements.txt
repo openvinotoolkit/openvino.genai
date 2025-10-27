@@ -10,7 +10,7 @@ gguf==0.17.1
 torch==2.8.0
 
 # rag requirements
-langchain_community==0.3.31
+langchain_community==0.4
 langchain-core==1.0.1
 
 # requirements for specific models
