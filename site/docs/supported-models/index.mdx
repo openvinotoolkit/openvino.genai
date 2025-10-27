@@ -80,13 +80,21 @@ Apply https://huggingface.co/microsoft/Phi-4-multimodal-instruct/discussions/78/
 
 <WhisperModelsTable />
 
+## Speech Generation Models
+
+<SpeechGenerationModelsTable />
+
 ## Text Embeddings Models
 
 <TextEmbeddingsModelsTable />
 
-## Speech Generation Models
+:::info
+LoRA adapters are not supported.
+:::
 
-<SpeechGenerationModelsTable />
+:::info
+Qwen3 Embedding models require `--task feature-extraction` during the conversion with `optimum-cli`.
+:::
 
 ## Text Rerank Models
 
