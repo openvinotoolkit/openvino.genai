@@ -4,6 +4,8 @@
 #pragma once
 
 #include <cstddef>
+#include <unordered_map>
+#include <sstream>
 
 #include "openvino/core/except.hpp"
 
@@ -66,6 +68,26 @@ public:
     std::size_t get_budget() const {
         return budget;
     }
+
+    std::string to_string() const {
+        static const std::unordered_map<KVCrushAnchorPointMode, std::string> kv_crush_anchor_point_mode_to_string = {
+            {KVCrushAnchorPointMode::RANDOM, "RANDOM"},
+            {KVCrushAnchorPointMode::ZEROS, "ZEROS"},
+            {KVCrushAnchorPointMode::ONES, "ONES"},
+            {KVCrushAnchorPointMode::MEAN, "MEAN"},
+            {KVCrushAnchorPointMode::ALTERNATE, "ALTERNATE"},
+        };
+
+        std::ostringstream oss;
+        oss << "KVCrushConfig { " << "\n";
+        oss << "  budget: " << budget << "\n";
+        oss << "  rng_seed: " << rng_seed << "\n";
+        if (kv_crush_anchor_point_mode_to_string.count(anchor_point_mode) > 0) {
+            oss << "  anchor_point_mode: " << kv_crush_anchor_point_mode_to_string.at(anchor_point_mode) << "\n";
+        }
+        oss << " }";
+        return oss.str();
+    }
 };
 
 /**
@@ -120,6 +142,28 @@ public:
      * will be considered for eviction. */
     std::size_t get_evictable_size() const {
         return m_evictable_size;
+    }
+
+    std::string to_string() const {
+        static const std::unordered_map<AggregationMode, std::string> aggregation_mode_to_string = {
+            {AggregationMode::SUM, "SUM"},
+            {AggregationMode::NORM_SUM, "NORM_SUM"},
+        };
+
+        std::ostringstream oss;
+        oss << "CacheEvictionConfig { " << "\n";
+        oss << "  start_size: " << m_start_size << "\n";
+        oss << "  recent_size: " << m_recent_size << "\n";
+        oss << "  max_cache_size: " << m_max_cache_size << "\n";
+        oss << "  evictable_size: " << m_evictable_size << "\n";
+        if (aggregation_mode_to_string.count(aggregation_mode) > 0) {
+            oss << "  aggregation_mode: " << aggregation_mode_to_string.at(aggregation_mode) << "\n";
+        }
+        oss << "  apply_rotation: " << std::boolalpha << apply_rotation << "\n";
+        oss << "  snapkv_window_size: " << snapkv_window_size << "\n";
+        oss << kvcrush_config.to_string() << "\n";
+        oss << " }";
+        return oss.str();
     }
 
     /** The mode used to compute the importance of tokens for eviction */

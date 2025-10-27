@@ -273,9 +273,11 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
     std::filesystem::path ov_tokenizer_filesystem_path;
 #ifdef _WIN32
     const wchar_t* ov_tokenizer_path_w = _wgetenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME_W);
+    OPENVINO_ASSERT(ov_tokenizer_path_w != nullptr, "Environment variable for tokenizer path is not set");
     ov_tokenizer_filesystem_path = std::filesystem::path(std::wstring(ov_tokenizer_path_w));
 #else
     const char* ov_tokenizer_path = getenv(ScopedVar::ENVIRONMENT_VARIABLE_NAME);
+    OPENVINO_ASSERT(ov_tokenizer_path != nullptr, "Environment variable for tokenizer path is not set");
     ov_tokenizer_filesystem_path = std::filesystem::path(ov_tokenizer_path);
 #endif
     m_shared_object_ov_tokenizers = load_shared_object(ov_tokenizer_filesystem_path);
@@ -739,46 +741,40 @@ std::vector<std::string> Tokenizer::TokenizerImpl::decode(const std::vector<std:
 }
 
 std::string Tokenizer::TokenizerImpl::apply_chat_template(
-    ChatHistory history,
+    const ChatHistory& history,
     bool add_generation_prompt,
     const std::string& chat_template,
-    const ToolDefinitions& tools,
-    const ov::AnyMap& extra_context
+    const std::optional<JsonContainer>& tools,
+    const std::optional<JsonContainer>& extra_context
 ) const {
     std::string chat_tpl = chat_template.empty() ? m_chat_template : remap_template(chat_template);
     OPENVINO_ASSERT(!chat_tpl.empty(),
                     "Chat template wasn't found. This may indicate that the model wasn't trained for chat scenario."
                     " Please add 'chat_template' to tokenizer_config.json to use the model in chat scenario."
                     " For more information see the section Troubleshooting in README.md");
-    
-    nlohmann::ordered_json messages_json = nlohmann::ordered_json::array();
-    for (const auto& message : history) {
-        nlohmann::ordered_json message_json = ov::genai::utils::any_map_to_json(message);
-        messages_json.push_back(message_json);
-    }
 
-    nlohmann::ordered_json tools_json = nlohmann::ordered_json::array();
-    for (const auto& tool : tools) {
-        nlohmann::ordered_json tool_json = ov::genai::utils::any_map_to_json(tool);
-        tools_json.push_back(tool_json);
-    }
+    auto resolved_tools = tools.value_or(history.get_tools());
+    auto resolved_extra_context = extra_context.value_or(history.get_extra_context());
+
+    OPENVINO_ASSERT(resolved_tools.is_array(),
+                    "Tools should be an array-like JsonContainer, got: ", resolved_tools.type_name());
+    OPENVINO_ASSERT(resolved_extra_context.is_object(),
+                    "Extra context should be an object-like JsonContainer, got: ", resolved_extra_context.type_name());
 
     minja::chat_template minja_template(chat_tpl, m_bos_token, m_eos_token);
     
     minja::chat_template_inputs minja_inputs;
-    minja_inputs.messages = messages_json;
-    if (!tools_json.empty()) {
-        minja_inputs.tools = tools_json;
+    minja_inputs.messages = history.get_messages();
+    if (!resolved_tools.empty()) {
+        minja_inputs.tools = resolved_tools;
     }
     minja_inputs.add_generation_prompt = add_generation_prompt;
     minja_inputs.extra_context = nlohmann::ordered_json::object();
     minja_inputs.extra_context["bos_token"] = m_bos_token;
     minja_inputs.extra_context["eos_token"] = m_eos_token;
     minja_inputs.extra_context["pad_token"] = m_pad_token;
-
-    if (!extra_context.empty()) {
-        auto extra_context_json = ov::genai::utils::any_map_to_json(extra_context);
-        minja_inputs.extra_context.update(extra_context_json);
+    if (!resolved_extra_context.empty()) {
+        minja_inputs.extra_context.update(resolved_extra_context);
     }
     
     std::string result;

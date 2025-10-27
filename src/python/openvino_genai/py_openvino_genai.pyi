@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__: list[str] = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -384,12 +384,87 @@ class CacheEvictionConfig:
         ...
     def get_start_size(self) -> int:
         ...
+    def to_string(self) -> str:
+        ...
     @property
     def snapkv_window_size(self) -> int:
         ...
     @snapkv_window_size.setter
     def snapkv_window_size(self, arg0: typing.SupportsInt) -> None:
         ...
+class ChatHistory:
+    """
+    
+        ChatHistory stores conversation messages and optional metadata for chat templates.
+    
+        Manages:
+        - Message history (array of message objects)
+        - Optional tools definitions array (for function calling)
+        - Optional extra context object (for custom template variables)
+    
+        Messages are stored as JSON-like structures but accessed as Python dicts.
+        Use get_messages() to retrieve the list of all messages, modify them,
+        and set_messages() to update the history.
+    
+        Example:
+            ```python
+            history = ChatHistory()
+            history.append({"role": "user", "content": "Hello"})
+            
+            # Modify messages
+            messages = history.get_messages()
+            messages[0]["content"] = "Updated"
+            history.set_messages(messages)
+            ```
+    """
+    def __bool__(self) -> bool:
+        ...
+    @typing.overload
+    def __init__(self) -> None:
+        """
+        Create an empty chat history.
+        """
+    @typing.overload
+    def __init__(self, messages: list) -> None:
+        """
+        Create chat history from a list of message dicts.
+        """
+    def __len__(self) -> int:
+        ...
+    def append(self, message: dict) -> None:
+        """
+        Add a message to the end of chat history.
+        """
+    def clear(self) -> None:
+        ...
+    def get_extra_context(self) -> dict:
+        """
+        Get the extra context object.
+        """
+    def get_messages(self) -> list:
+        """
+        Get all messages as a list of dicts (deep copy).
+        """
+    def get_tools(self) -> list:
+        """
+        Get the tools definitions array.
+        """
+    def pop(self) -> dict:
+        """
+        Remove and return the last message.
+        """
+    def set_extra_context(self, extra_context: dict) -> None:
+        """
+        Set the extra context object.
+        """
+    def set_messages(self, messages: list) -> None:
+        """
+        Replace all messages with a new list.
+        """
+    def set_tools(self, tools: list) -> None:
+        """
+        Set the tools definitions array.
+        """
 class ChunkStreamerBase(StreamerBase):
     """
     
@@ -441,6 +516,9 @@ class ContinuousBatchingPipeline:
         ...
     @typing.overload
     def generate(self, prompt: str, generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
+        ...
+    @typing.overload
+    def generate(self, prompts: collections.abc.Sequence[ChatHistory], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
     @typing.overload
     def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
@@ -1544,6 +1622,8 @@ class KVCrushConfig:
         """
         Constructor with budget, anchor point mode, and RNG seed
         """
+    def to_string(self) -> str:
+        ...
     @property
     def budget(self) -> int:
         ...
@@ -1560,11 +1640,11 @@ class LLMPipeline:
     """
     This class is used for generation with LLMs
     """
-    def __call__(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str], generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
+    def __call__(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str] | openvino_genai.py_openvino_genai.ChatHistory, generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
         """
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
-            :param inputs: inputs in the form of string, list of strings or tokenized input_ids
+            :param inputs: inputs in the form of string, list of strings, chat history or tokenized input_ids
             :type inputs: str, list[str], ov.genai.TokenizedInputs, or ov.Tensor
         
             :param generation_config: generation_config
@@ -1657,11 +1737,11 @@ class LLMPipeline:
         """
     def finish_chat(self) -> None:
         ...
-    def generate(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str], generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
+    def generate(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str] | openvino_genai.py_openvino_genai.ChatHistory, generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
         """
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
-            :param inputs: inputs in the form of string, list of strings or tokenized input_ids
+            :param inputs: inputs in the form of string, list of strings, chat history or tokenized input_ids
             :type inputs: str, list[str], ov.genai.TokenizedInputs, or ov.Tensor
         
             :param generation_config: generation_config
@@ -2191,6 +2271,8 @@ class SchedulerConfig:
     use_sparse_attention: bool
     def __init__(self) -> None:
         ...
+    def to_string(self) -> str:
+        ...
     @property
     def cache_size(self) -> int:
         ...
@@ -2259,6 +2341,8 @@ class SparseAttentionConfig:
     """
     mode: SparseAttentionMode
     def __init__(self, mode: SparseAttentionMode = ..., num_last_dense_tokens_in_prefill: typing.SupportsInt = 100, num_retained_start_tokens_in_cache: typing.SupportsInt = 128, num_retained_recent_tokens_in_cache: typing.SupportsInt = 1920, xattention_threshold: typing.SupportsFloat = 0.8, xattention_block_size: typing.SupportsInt = 64, xattention_stride: typing.SupportsInt = 8) -> None:
+        ...
+    def to_string(self) -> str:
         ...
     @property
     def num_last_dense_tokens_in_prefill(self) -> int:
@@ -3368,7 +3452,7 @@ class Tokenizer:
     @typing.overload
     def __init__(self, tokenizer_model: str, tokenizer_weights: openvino._pyopenvino.Tensor, detokenizer_model: str, detokenizer_weights: openvino._pyopenvino.Tensor, **kwargs) -> None:
         ...
-    def apply_chat_template(self, history: collections.abc.Sequence[typing.Any], add_generation_prompt: bool, chat_template: str = '', tools: collections.abc.Sequence[typing.Any] = [], extra_context: typing.Any = {}) -> str:
+    def apply_chat_template(self, history: openvino_genai.py_openvino_genai.ChatHistory | collections.abc.Sequence[dict], add_generation_prompt: bool, chat_template: str = '', tools: collections.abc.Sequence[dict] | None = None, extra_context: dict | None = None) -> str:
         """
         Applies a chat template to format chat history into a prompt string.
         """

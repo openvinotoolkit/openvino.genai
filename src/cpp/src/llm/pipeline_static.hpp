@@ -47,6 +47,12 @@ public:
         StreamerVariant streamer
     ) override;
 
+    DecodedResults generate(
+        const ChatHistory& history,
+        OptionalGenerationConfig generation_config,
+        StreamerVariant streamer
+    ) override;
+
     EncodedResults generate(
         const EncodedInputs& inputs,
         OptionalGenerationConfig generation_config,
