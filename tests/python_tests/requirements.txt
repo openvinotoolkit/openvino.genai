@@ -1,17 +1,17 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 diffusers==0.35.2
-optimum-intel @ git+https://github.com/huggingface/optimum-intel.git@04db016571d1a19c14918553365ee4c05c8b4697
+optimum-intel==1.26.0
 numpy==1.26.4; platform_system == "Darwin" and platform_machine == "x86_64"
 safetensors==0.6.2; platform_system == "Darwin" and platform_machine == "x86_64"
 pytest==8.4.2
-transformers==4.53.3
+transformers==4.55.4
 hf_transfer==0.1.9
 gguf==0.17.1
 torch==2.8.0
 
 # rag requirements
-langchain_community==0.3.31
-langchain-core==0.3.79
+langchain_community==0.4
+langchain-core==1.0.1
 
 # requirements for specific models
 # - Qwen/Qwen-7B
