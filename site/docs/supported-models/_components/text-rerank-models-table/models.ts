@@ -54,5 +54,5 @@ export const TEXT_RERANK_MODELS: TextRerankModelType[] = [
         ],
       },
     ],
-  }
+  },
 ];
