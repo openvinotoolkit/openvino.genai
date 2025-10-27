@@ -11,7 +11,7 @@ torch==2.8.0
 
 # rag requirements
 langchain_community==0.3.31
-langchain-core==0.3.79
+langchain-core==1.0.1
 
 # requirements for specific models
 # - Qwen/Qwen-7B
