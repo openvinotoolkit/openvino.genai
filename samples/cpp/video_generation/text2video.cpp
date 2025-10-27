@@ -56,9 +56,8 @@ int main(int32_t argc, char* argv[]) {
     config.num_frames = 9;
     pipe.set_generation_config(config);
     ov::Tensor video = pipe.generate(
-        "Will Smith eating spaghetti",
+        prompt,
         "worst quality, inconsistent motion, blurry, jittery, distorted",
-        // "",
         ov::genai::height(512),  // OVLTXPipeline's default
         ov::genai::width(704),  // OVLTXPipeline's default
         ov::genai::num_inference_steps(10),
