@@ -55,6 +55,7 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::GenerationConfig config;
     config.max_new_tokens = result["max_new_tokens"].as<size_t>();
+    config.apply_chat_template = false;
 
     ov::genai::SchedulerConfig scheduler_config;
     scheduler_config.enable_prefix_caching = false;

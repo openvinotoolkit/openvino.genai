@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__: list[str] = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -241,6 +241,13 @@ class AutoencoderKL:
         ...
     def encode(self, image: openvino._pyopenvino.Tensor, generator: Generator) -> openvino._pyopenvino.Tensor:
         ...
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
+        """
+                        Exports compiled models to a specified directory. Can significantly reduce model load time, especially for large models.
+                        export_path (os.PathLike): A path to a directory to export compiled models to.
+        
+                        Use `blob_path` property to load previously exported models.
+        """
     def get_config(self) -> AutoencoderKL.Config:
         ...
     def get_vae_scale_factor(self) -> int:
@@ -295,6 +302,13 @@ class CLIPTextModel:
                         Compiles the model.
                         device (str): Device to run the model on (e.g., CPU, GPU).
                         kwargs: Device properties.
+        """
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
+        """
+                        Exports compiled model to a specified directory. Can significantly reduce model load time, especially for large models.
+                        export_path (os.PathLike): A path to a directory to export compiled model to.
+        
+                        Use `blob_path` property to load previously exported models.
         """
     def get_config(self) -> CLIPTextModel.Config:
         ...
@@ -370,12 +384,87 @@ class CacheEvictionConfig:
         ...
     def get_start_size(self) -> int:
         ...
+    def to_string(self) -> str:
+        ...
     @property
     def snapkv_window_size(self) -> int:
         ...
     @snapkv_window_size.setter
     def snapkv_window_size(self, arg0: typing.SupportsInt) -> None:
         ...
+class ChatHistory:
+    """
+    
+        ChatHistory stores conversation messages and optional metadata for chat templates.
+    
+        Manages:
+        - Message history (array of message objects)
+        - Optional tools definitions array (for function calling)
+        - Optional extra context object (for custom template variables)
+    
+        Messages are stored as JSON-like structures but accessed as Python dicts.
+        Use get_messages() to retrieve the list of all messages, modify them,
+        and set_messages() to update the history.
+    
+        Example:
+            ```python
+            history = ChatHistory()
+            history.append({"role": "user", "content": "Hello"})
+            
+            # Modify messages
+            messages = history.get_messages()
+            messages[0]["content"] = "Updated"
+            history.set_messages(messages)
+            ```
+    """
+    def __bool__(self) -> bool:
+        ...
+    @typing.overload
+    def __init__(self) -> None:
+        """
+        Create an empty chat history.
+        """
+    @typing.overload
+    def __init__(self, messages: list) -> None:
+        """
+        Create chat history from a list of message dicts.
+        """
+    def __len__(self) -> int:
+        ...
+    def append(self, message: dict) -> None:
+        """
+        Add a message to the end of chat history.
+        """
+    def clear(self) -> None:
+        ...
+    def get_extra_context(self) -> dict:
+        """
+        Get the extra context object.
+        """
+    def get_messages(self) -> list:
+        """
+        Get all messages as a list of dicts (deep copy).
+        """
+    def get_tools(self) -> list:
+        """
+        Get the tools definitions array.
+        """
+    def pop(self) -> dict:
+        """
+        Remove and return the last message.
+        """
+    def set_extra_context(self, extra_context: dict) -> None:
+        """
+        Set the extra context object.
+        """
+    def set_messages(self, messages: list) -> None:
+        """
+        Replace all messages with a new list.
+        """
+    def set_tools(self, tools: list) -> None:
+        """
+        Set the tools definitions array.
+        """
 class ChunkStreamerBase(StreamerBase):
     """
     
@@ -412,6 +501,9 @@ class ContinuousBatchingPipeline:
     def add_request(self, request_id: typing.SupportsInt, prompt: str, generation_config: GenerationConfig) -> GenerationHandle:
         ...
     @typing.overload
+    def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig) -> GenerationHandle:
+        ...
+    @typing.overload
     def add_request(self, request_id: typing.SupportsInt, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig) -> GenerationHandle:
         ...
     def finish_chat(self) -> None:
@@ -424,6 +516,12 @@ class ContinuousBatchingPipeline:
         ...
     @typing.overload
     def generate(self, prompt: str, generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
+        ...
+    @typing.overload
+    def generate(self, prompts: collections.abc.Sequence[ChatHistory], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
+        ...
+    @typing.overload
+    def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
     @typing.overload
     def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
@@ -1524,6 +1622,8 @@ class KVCrushConfig:
         """
         Constructor with budget, anchor point mode, and RNG seed
         """
+    def to_string(self) -> str:
+        ...
     @property
     def budget(self) -> int:
         ...
@@ -1540,11 +1640,11 @@ class LLMPipeline:
     """
     This class is used for generation with LLMs
     """
-    def __call__(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str], generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
+    def __call__(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str] | openvino_genai.py_openvino_genai.ChatHistory, generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
         """
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
-            :param inputs: inputs in the form of string, list of strings or tokenized input_ids
+            :param inputs: inputs in the form of string, list of strings, chat history or tokenized input_ids
             :type inputs: str, list[str], ov.genai.TokenizedInputs, or ov.Tensor
         
             :param generation_config: generation_config
@@ -1637,11 +1737,11 @@ class LLMPipeline:
         """
     def finish_chat(self) -> None:
         ...
-    def generate(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str], generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
+    def generate(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str] | openvino_genai.py_openvino_genai.ChatHistory, generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
         """
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
-            :param inputs: inputs in the form of string, list of strings or tokenized input_ids
+            :param inputs: inputs in the form of string, list of strings, chat history or tokenized input_ids
             :type inputs: str, list[str], ov.genai.TokenizedInputs, or ov.Tensor
         
             :param generation_config: generation_config
@@ -2171,6 +2271,8 @@ class SchedulerConfig:
     use_sparse_attention: bool
     def __init__(self) -> None:
         ...
+    def to_string(self) -> str:
+        ...
     @property
     def cache_size(self) -> int:
         ...
@@ -2239,6 +2341,8 @@ class SparseAttentionConfig:
     """
     mode: SparseAttentionMode
     def __init__(self, mode: SparseAttentionMode = ..., num_last_dense_tokens_in_prefill: typing.SupportsInt = 100, num_retained_start_tokens_in_cache: typing.SupportsInt = 128, num_retained_recent_tokens_in_cache: typing.SupportsInt = 1920, xattention_threshold: typing.SupportsFloat = 0.8, xattention_block_size: typing.SupportsInt = 64, xattention_stride: typing.SupportsInt = 8) -> None:
+        ...
+    def to_string(self) -> str:
         ...
     @property
     def num_last_dense_tokens_in_prefill(self) -> int:
@@ -2505,14 +2609,10 @@ class StructuralTagItem:
     """
     @typing.overload
     def __init__(self) -> None:
-        """
-        Default constructor for StructuralTagItem
-        """
+        ...
     @typing.overload
     def __init__(self, **kwargs) -> None:
-        """
-        Constructor that initializes the structured tags configuration with kwargs.
-        """
+        ...
     def __repr__(self) -> str:
         ...
     @property
@@ -2562,14 +2662,10 @@ class StructuralTagsConfig:
     """
     @typing.overload
     def __init__(self) -> None:
-        """
-        Default constructor for StructuralTagsConfig
-        """
+        ...
     @typing.overload
     def __init__(self, **kwargs) -> None:
-        """
-        Constructor that initializes the structured tags configuration with kwargs.
-        """
+        ...
     def __repr__(self) -> str:
         ...
     @property
@@ -2606,89 +2702,239 @@ class StructuredOutputConfig:
             It allows for more complex and flexible structured output generation.
             The compound grammar a Union or Concat of several grammars, where each grammar can be a JSON schema, regex, EBNF, Union or Concat.
     """
-    class Concat:
-        left: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
-        right: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
-        @staticmethod
-        def __new__(arg0: typing.Any, arg1: typing.Any, arg2: typing.Any) -> StructuredOutputConfig.Concat:
-            """
-            Concat combines two grammars sequentially, e.g. "A B" means A followed by B
-            """
+    class AnyText:
+        """
+        
+            AnyText structural tag allows any text for the portion of output
+            covered by this tag.
+        """
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self) -> None:
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+    class Concat:
+        """
+        
+            Concat composes multiple structural tags in sequence. Each element
+            must be produced in the given order. Can be used indirectly with + operator.
+        
+            Example: Concat(ConstString("a"), ConstString("b")) produces "ab".
+            ConstString("a") + ConstString("b") is equivalent.
+        """
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        @typing.overload
+        def __init__(self, elements: collections.abc.Iterable) -> None:
+            ...
+        @typing.overload
+        def __init__(self, *args) -> None:
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+        @property
+        def elements(self) -> list[str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator]:
+            ...
+        @elements.setter
+        def elements(self, arg0: collections.abc.Sequence[str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator]) -> None:
+            ...
+    class ConstString:
+        """
+        
+            ConstString structural tag forces the generator to produce exactly
+            the provided constant string value.
+        """
+        value: str
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self, arg0: str) -> None:
             ...
         def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
             ...
     class EBNF:
+        """
+        
+            EBNF structural tag constrains output using an EBNF grammar.
+        """
         value: str
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
         def __init__(self, arg0: str) -> None:
-            """
-            EBNF grammar building block for compound grammar configuration.
-            """
+            ...
         def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
             ...
     class JSONSchema:
+        """
+        
+            JSONSchema structural tag constrains output to a JSON document that
+            must conform to the provided JSON Schema string.
+        """
         value: str
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
         def __init__(self, arg0: str) -> None:
-            """
-            JSON schema building block for compound grammar configuration.
-            """
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+    class QwenXMLParametersFormat:
+        """
+        
+            QwenXMLParametersFormat instructs the generator to output an XML
+            parameters block derived from the provided JSON schema. This is a
+            specialized helper for Qwen-style XML parameter formatting.
+        """
+        json_schema: str
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self, arg0: str) -> None:
+            ...
         def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
             ...
     class Regex:
+        """
+        
+            Regex structural tag constrains output using a regular expression.
+        """
         value: str
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
         def __init__(self, arg0: str) -> None:
-            """
-            Regex building block for compound grammar configuration.
-            """
+            ...
         def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
             ...
-    class Union:
-        left: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
-        right: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union
-        @staticmethod
-        def __new__(arg0: typing.Any, arg1: typing.Any, arg2: typing.Any) -> StructuredOutputConfig.Union:
-            """
-            Union combines two grammars in parallel, e.g. "A | B" means either A or B
-            """
+    class Tag:
+        """
+        
+            Tag defines a begin/end wrapper with constrained inner content.
+        
+            The generator will output `begin`, then the `content` (a StructuralTag),
+            and finally `end`.
+        
+            Example: Tag("<think>", AnyText(), "</think>") represents thinking portion of the model output.
+        """
+        begin: str
+        content: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator
+        end: str
         def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
             ...
+        def __init__(self, begin: str, content: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator, end: str) -> None:
+            ...
         def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
             ...
         def __repr__(self) -> str:
+            ...
+    class TagsWithSeparator:
+        """
+        
+            TagsWithSeparator configures generation of a sequence of tags
+            separated by a fixed separator string.
+        
+            Can be used to produce repeated tagged elements like "<f>A</f>;<f>B</f>"
+            where `separator`=";".
+        """
+        at_least_one: bool
+        separator: str
+        stop_after_first: bool
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self, tags: collections.abc.Sequence[StructuredOutputConfig.Tag], separator: str, at_least_one: bool = False, stop_after_first: bool = False) -> None:
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+        @property
+        def tags(self) -> list[StructuredOutputConfig.Tag]:
+            ...
+        @tags.setter
+        def tags(self, arg0: collections.abc.Sequence[StructuredOutputConfig.Tag]) -> None:
+            ...
+    class TriggeredTags:
+        """
+        
+            TriggeredTags associates a set of `triggers` with multiple `tags`.
+        
+            When the model generates any of the trigger strings the structured
+            generation activates to produce configured tags. Flags allow requiring
+            at least one tag and stopping structured generation after the first tag.
+        """
+        at_least_one: bool
+        stop_after_first: bool
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        def __init__(self, triggers: collections.abc.Sequence[str], tags: collections.abc.Sequence[StructuredOutputConfig.Tag], at_least_one: bool = False, stop_after_first: bool = False) -> None:
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+        @property
+        def tags(self) -> list[StructuredOutputConfig.Tag]:
+            ...
+        @tags.setter
+        def tags(self, arg0: collections.abc.Sequence[StructuredOutputConfig.Tag]) -> None:
+            ...
+        @property
+        def triggers(self) -> list[str]:
+            ...
+        @triggers.setter
+        def triggers(self, arg0: collections.abc.Sequence[str]) -> None:
+            ...
+    class Union:
+        """
+        
+            Union composes multiple structural tags as alternatives. The
+            model may produce any one of the provided elements. Can be used indirectly
+            with | operator.
+        """
+        def __add__(self, arg0: typing.Any) -> StructuredOutputConfig.Concat:
+            ...
+        @typing.overload
+        def __init__(self, elements: collections.abc.Iterable) -> None:
+            ...
+        @typing.overload
+        def __init__(self, *args) -> None:
+            ...
+        def __or__(self, arg0: typing.Any) -> StructuredOutputConfig.Union:
+            ...
+        def __repr__(self) -> str:
+            ...
+        @property
+        def elements(self) -> list[str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator]:
+            ...
+        @elements.setter
+        def elements(self, arg0: collections.abc.Sequence[str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator]) -> None:
             ...
     @typing.overload
     def __init__(self) -> None:
-        """
-        Default constructor for StructuredOutputConfig
-        """
+        ...
     @typing.overload
     def __init__(self, **kwargs) -> None:
-        """
-        Constructor that initializes the structured output configuration with kwargs.
-        """
+        ...
     def __repr__(self) -> str:
         ...
     @property
-    def compound_grammar(self) -> openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | None:
+    def compound_grammar(self) -> str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | None:
         """
         Compound grammar for structured output generation
         """
     @compound_grammar.setter
-    def compound_grammar(self, arg0: openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | None) -> None:
+    def compound_grammar(self, arg0: str | openvino_genai.py_openvino_genai.StructuredOutputConfig.Regex | openvino_genai.py_openvino_genai.StructuredOutputConfig.JSONSchema | openvino_genai.py_openvino_genai.StructuredOutputConfig.EBNF | openvino_genai.py_openvino_genai.StructuredOutputConfig.ConstString | openvino_genai.py_openvino_genai.StructuredOutputConfig.AnyText | openvino_genai.py_openvino_genai.StructuredOutputConfig.QwenXMLParametersFormat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Concat | openvino_genai.py_openvino_genai.StructuredOutputConfig.Union | openvino_genai.py_openvino_genai.StructuredOutputConfig.Tag | openvino_genai.py_openvino_genai.StructuredOutputConfig.TriggeredTags | openvino_genai.py_openvino_genai.StructuredOutputConfig.TagsWithSeparator | None) -> None:
         ...
     @property
     def grammar(self) -> str | None:
@@ -2715,12 +2961,12 @@ class StructuredOutputConfig:
     def regex(self, arg0: str | None) -> None:
         ...
     @property
-    def structural_tags_config(self) -> openvino_genai.py_openvino_genai.StructuralTagsConfig | None:
+    def structural_tags_config(self) -> typing.Any:
         """
-        Configuration for structural tags in structured output generation
+        Configuration for structural tags in structured output generation (can be StructuralTagsConfig or StructuralTag)
         """
     @structural_tags_config.setter
-    def structural_tags_config(self, arg0: openvino_genai.py_openvino_genai.StructuralTagsConfig | None) -> None:
+    def structural_tags_config(self, arg1: typing.Any) -> None:
         ...
 class SummaryStats:
     def __init__(self) -> None:
@@ -2838,6 +3084,13 @@ class Text2ImagePipeline:
         """
     def decode(self, latent: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
         ...
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
+        """
+                        Exports compiled models to a specified directory. Can significantly reduce model load time, especially for large models.
+                        export_path (os.PathLike): A path to a directory to export compiled models to.
+        
+                        Use `blob_path` property to load previously exported models.
+        """
     def generate(self, prompt: str, **kwargs) -> openvino._pyopenvino.Tensor:
         """
             Generates images for text-to-image models.
@@ -3003,10 +3256,13 @@ class TextEmbeddingPipeline:
                 Instruction to use for embedding a query.
             embed_instruction (str, optional):
                 Instruction to use for embedding a document.
+            padding_side (str, optional):
+                Side to use for padding "left" or "right"
         """
         embed_instruction: str | None
         normalize: bool
         pad_to_max_length: bool | None
+        padding_side: str | None
         pooling_type: TextEmbeddingPipeline.PoolingType
         query_instruction: str | None
         @typing.overload
@@ -3038,10 +3294,13 @@ class TextEmbeddingPipeline:
           CLS : First token embeddings
         
           MEAN : The average of all token embeddings
+        
+          LAST_TOKEN : Last token embeddings
         """
         CLS: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.CLS: 0>
+        LAST_TOKEN: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.LAST_TOKEN: 2>
         MEAN: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.MEAN: 1>
-        __members__: typing.ClassVar[dict[str, TextEmbeddingPipeline.PoolingType]]  # value = {'CLS': <PoolingType.CLS: 0>, 'MEAN': <PoolingType.MEAN: 1>}
+        __members__: typing.ClassVar[dict[str, TextEmbeddingPipeline.PoolingType]]  # value = {'CLS': <PoolingType.CLS: 0>, 'MEAN': <PoolingType.MEAN: 1>, 'LAST_TOKEN': <PoolingType.LAST_TOKEN: 2>}
         def __eq__(self, other: typing.Any) -> bool:
             ...
         def __getstate__(self) -> int:
@@ -3193,9 +3452,9 @@ class Tokenizer:
     @typing.overload
     def __init__(self, tokenizer_model: str, tokenizer_weights: openvino._pyopenvino.Tensor, detokenizer_model: str, detokenizer_weights: openvino._pyopenvino.Tensor, **kwargs) -> None:
         ...
-    def apply_chat_template(self, history: collections.abc.Sequence[collections.abc.Mapping[str, str]], add_generation_prompt: bool, chat_template: str = '') -> str:
+    def apply_chat_template(self, history: openvino_genai.py_openvino_genai.ChatHistory | collections.abc.Sequence[dict], add_generation_prompt: bool, chat_template: str = '', tools: collections.abc.Sequence[dict] | None = None, extra_context: dict | None = None) -> str:
         """
-        Embeds input prompts with special tags for a chat scenario.
+        Applies a chat template to format chat history into a prompt string.
         """
     @typing.overload
     def decode(self, tokens: collections.abc.Sequence[typing.SupportsInt], skip_special_tokens: bool = True) -> str:
@@ -3273,6 +3532,8 @@ class Tokenizer:
     def get_eos_token(self) -> str:
         ...
     def get_eos_token_id(self) -> int:
+        ...
+    def get_original_chat_template(self) -> str:
         ...
     def get_pad_token(self) -> str:
         ...
@@ -3364,6 +3625,13 @@ class UNet2DConditionModel:
         """
     def do_classifier_free_guidance(self, guidance_scale: typing.SupportsFloat) -> bool:
         ...
+    def export_model(self, export_path: os.PathLike | str | bytes) -> None:
+        """
+                        Exports compiled model to a specified directory. Can significantly reduce model load time, especially for large models.
+                        export_path (os.PathLike): A path to a directory to export compiled model to.
+        
+                        Use `blob_path` property to load previously exported models.
+        """
     def get_config(self) -> UNet2DConditionModel.Config:
         ...
     def infer(self, sample: openvino._pyopenvino.Tensor, timestep: openvino._pyopenvino.Tensor) -> openvino._pyopenvino.Tensor:
@@ -3442,6 +3710,51 @@ class VLMPipeline:
     def finish_chat(self) -> None:
         ...
     @typing.overload
+    def generate(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
+        """
+            Generates sequences for VLMs.
+        
+            :param prompt: input prompt
+            :type prompt: str
+            The prompt can contain <ov_genai_image_i> with i replaced with
+            an actual zero based index to refer to an image. Reference to
+            images used in previous prompts isn't implemented.
+            A model's native image tag can be used instead of
+            <ov_genai_image_i>. These tags are:
+            InternVL2: <image>\\n
+            llava-1.5-7b-hf: <image>
+            LLaVA-NeXT: <image>
+            LLaVa-NeXT-Video: <image>
+            nanoLLaVA: <image>\\n
+            nanoLLaVA-1.5: <image>\\n
+            MiniCPM-o-2_6: <image>./</image>\\n
+            MiniCPM-V-2_6: <image>./</image>\\n
+            Phi-3-vision: <|image_i|>\\n - the index starts with one
+            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
+            Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
+            Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
+            gemma-3-4b-it: <start_of_image>
+            Model's native video tag can be used to refer to a video:
+            LLaVa-NeXT-Video: <video>
+            If the prompt doesn't contain image or video tags, but images or videos are
+            provided, the tags are prepended to the prompt.
+        
+            :param images: image or list of images
+            :type images: list[ov.Tensor] or ov.Tensor
+        
+            :param generation_config: generation_config
+            :type generation_config: GenerationConfig or a dict
+        
+            :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
+            :type : Callable[[str], bool], ov.genai.StreamerBase
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
+            :type : dict
+        
+            :return: return results in decoded form
+            :rtype: VLMDecodedResults
+        """
+    @typing.overload
     def generate(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
@@ -3456,13 +3769,19 @@ class VLMPipeline:
             InternVL2: <image>\\n
             llava-1.5-7b-hf: <image>
             LLaVA-NeXT: <image>
-            MiniCPM-V-2_6: (<image>./</image>)\\n
+            LLaVa-NeXT-Video: <image>
+            nanoLLaVA: <image>\\n
+            nanoLLaVA-1.5: <image>\\n
+            MiniCPM-o-2_6: <image>./</image>\\n
+            MiniCPM-V-2_6: <image>./</image>\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             gemma-3-4b-it: <start_of_image>
-            If the prompt doesn't contain image tags, but images are
+            Model's native video tag can be used to refer to a video:
+            LLaVa-NeXT-Video: <video>
+            If the prompt doesn't contain image or video tags, but images or videos are
             provided, the tags are prepended to the prompt.
         
             :param images: image or list of images
@@ -3495,13 +3814,19 @@ class VLMPipeline:
             InternVL2: <image>\\n
             llava-1.5-7b-hf: <image>
             LLaVA-NeXT: <image>
-            MiniCPM-V-2_6: (<image>./</image>)\\n
+            LLaVa-NeXT-Video: <image>
+            nanoLLaVA: <image>\\n
+            nanoLLaVA-1.5: <image>\\n
+            MiniCPM-o-2_6: <image>./</image>\\n
+            MiniCPM-V-2_6: <image>./</image>\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             gemma-3-4b-it: <start_of_image>
-            If the prompt doesn't contain image tags, but images are
+            Model's native video tag can be used to refer to a video:
+            LLaVa-NeXT-Video: <video>
+            If the prompt doesn't contain image or video tags, but images or videos are
             provided, the tags are prepended to the prompt.
         
             :param images: image or list of images
@@ -3533,13 +3858,19 @@ class VLMPipeline:
             InternVL2: <image>\\n
             llava-1.5-7b-hf: <image>
             LLaVA-NeXT: <image>
-            MiniCPM-V-2_6: (<image>./</image>)\\n
+            LLaVa-NeXT-Video: <image>
+            nanoLLaVA: <image>\\n
+            nanoLLaVA-1.5: <image>\\n
+            MiniCPM-o-2_6: <image>./</image>\\n
+            MiniCPM-V-2_6: <image>./</image>\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
             Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
             gemma-3-4b-it: <start_of_image>
-            If the prompt doesn't contain image tags, but images are
+            Model's native video tag can be used to refer to a video:
+            LLaVa-NeXT-Video: <video>
+            If the prompt doesn't contain image or video tags, but images or videos are
             provided, the tags are prepended to the prompt.
         
             :type prompt: str

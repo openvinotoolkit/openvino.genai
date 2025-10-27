@@ -12,9 +12,10 @@
 #include "openvino/runtime/core.hpp"
 
 #include "openvino/genai/generation_handle.hpp"
+#include "openvino/genai/scheduler_config.hpp"
+#include "openvino/genai/generation_config.hpp"
 #include "visual_language/processor_config.hpp"
 
-#include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/streamer_base.hpp"
 
 namespace ov {
@@ -23,6 +24,29 @@ namespace genai {
 extern const std::string PA_BACKEND;
 extern const std::string SDPA_BACKEND;
 
+struct ModelDesc {
+    std::string device;
+    ov::genai::SchedulerConfig scheduler_config;
+    ov::AnyMap properties;
+    ov::genai::GenerationConfig generation_config;
+    std::shared_ptr<ov::Model> model = nullptr;
+    ov::genai::Tokenizer tokenizer;
+
+    ModelDesc(const std::shared_ptr<ov::Model>& model,
+              const ov::genai::Tokenizer& tokenizer,
+              const std::string& device = {},
+              const ov::AnyMap& properties = {},
+              const ov::genai::SchedulerConfig& scheduler_config = {},
+              const ov::genai::GenerationConfig& generation_config = {}) :
+        model(model),
+        tokenizer(tokenizer),
+        device(device),
+        properties(properties),
+        scheduler_config(scheduler_config),
+        generation_config(generation_config) {}
+    
+    ModelDesc() = default;
+};
 }  // namespace genai
 }  // namespace ov
 
@@ -43,6 +67,7 @@ enum class GenerationChatInputsType {
     UNDEF = 0, // Default value, type of inputs is not defined
     STRING = 1, // Type of inputs is StringInputs
     ENCODED_INPUTS = 2, // Type of inputs is EncodedInputs
+    CHAT_HISTORY = 3, // Type of inputs is ChatHistory
 };
 
 struct GenerationFinishInfo
@@ -93,6 +118,12 @@ ProcessorConfig from_any_map(
     const ov::AnyMap& config_map,
     const ProcessorConfig& initial
 );
+
+ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config);
+
+ov::genai::ModelDesc extract_draft_model_from_config(ov::AnyMap& config);
+
+bool is_npu_requested(const std::string& device, const ov::AnyMap& properties);
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend);
 
@@ -153,6 +184,8 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
 
 void print_gguf_debug_info(const std::string& debug_info);
 
+void print_scheduler_config_info(const SchedulerConfig &scheduler_config);
+
 struct KVDesc {
     uint32_t max_prompt_len;
     uint32_t min_response_len;
@@ -160,7 +193,8 @@ struct KVDesc {
 
 std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
                                                              const ov::AnyMap& config,
-                                                             const KVAxesPosition& kv_pos);
+                                                             const KVAxesPosition& kv_pos,
+                                                             const bool is_whisper = false);
 
 /// @brief SharedOptional is a wrapper around a reference to an existing object and an optional shared alternative value.
 /// The difference from std::optional is that the default state is not empty and contains a reference to an existing object outside the class.
@@ -248,15 +282,37 @@ std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap
 
 SchedulerConfig get_latency_oriented_scheduler_config();
 
-bool explicitly_requires_paged_attention(const ov::AnyMap& properties);
+bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_npu_requested = false);
 
-std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties);
+std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties, bool is_npu_requested = false);
 
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
 
 ov::Tensor merge_text_and_image_embeddings_llava(const ov::Tensor& input_ids, ov::Tensor& text_embeds, const std::vector<ov::Tensor>& image_embeds, int64_t image_token_id);
 
 size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_layers);
+
+/**
+ * @brief Extracts and removes blob import/export related properties from the provided map.
+ */
+std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_properties(const ov::AnyMap& external_properties);
+
+/**
+ * @brief Imports a compiled model from a blob file previously exported using export_model.
+ */
+ov::CompiledModel import_model(const std::filesystem::path& blob_path,
+                               const std::string& device,
+                               const ov::AnyMap& properties);
+
+/**
+ * @brief Exports a compiled model to a blob file for later use with import_model.
+ */
+void export_model(ov::CompiledModel& compiled_model, const std::filesystem::path& blob_path);
+
+/**
+ * @brief Checks if the model has an input with the specified name.
+ */
+bool has_input(const std::shared_ptr<Model>& model, const std::string& name);
 
 }  // namespace utils
 }  // namespace genai

@@ -166,8 +166,8 @@ def run_hugging_face(
 
 # download HF model or read converted model
 def get_huggingface_models(model_id: str | Path, model_class: Type[OVModel], local_files_only=False):
-    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True, local_files_only=local_files_only))
-    opt_model = retry_request(lambda: model_class.from_pretrained(model_id, export=isinstance(model_id, str), compile=False, load_in_8bit=False, trust_remote_code=isinstance(model_id, str), ov_config=get_default_llm_properties(), local_files_only=local_files_only))
+    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, local_files_only=local_files_only))
+    opt_model = retry_request(lambda: model_class.from_pretrained(model_id, export=isinstance(model_id, str), compile=False, load_in_8bit=False, ov_config=get_default_llm_properties(), local_files_only=local_files_only))
     return opt_model, hf_tokenizer
 
 
@@ -194,7 +194,7 @@ def convert_models(opt_model : OVModelForCausalLM,
     # to store tokenizer config jsons with special tokens
     hf_tokenizer.save_pretrained(models_path)
     # convert tokenizers as well
-    convert_and_save_tokenizer(hf_tokenizer, models_path)
+    convert_and_save_tokenizer(hf_tokenizer, models_path, **tokenizer_kwargs)
 
 
 def download_and_convert_model(model_id: str, **tokenizer_kwargs):
@@ -212,6 +212,15 @@ def download_and_convert_rerank_model(request):
     return _download_and_convert_model(model_id, OVModelForSequenceClassification)
 
 
+@pytest.fixture()
+def download_and_convert_model_fixture(request):
+    model_id = request.param
+    tokenizer_kwargs = {
+        "padding_side": "left"
+    }
+    return _download_and_convert_model(model_id, OVModelForCausalLM, **tokenizer_kwargs)
+
+
 def _download_and_convert_model(model_id: str, model_class: Type[OVModel], **tokenizer_kwargs):
     dir_name = str(model_id).replace(sep, "_")
     ov_cache_models_dir = get_ov_cache_models_dir()
@@ -222,6 +231,9 @@ def _download_and_convert_model(model_id: str, model_class: Type[OVModel], **tok
         opt_model, hf_tokenizer = get_huggingface_models(models_path, model_class, local_files_only=True)
     else:
         opt_model, hf_tokenizer = get_huggingface_models(model_id, model_class, local_files_only=False)
+        if "padding_side" in tokenizer_kwargs:
+            hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
+        # ov tokenizer padding side alignes with hf tokenizer during conversion
         convert_models(opt_model, hf_tokenizer, models_path)
 
     if "padding_side" in tokenizer_kwargs:

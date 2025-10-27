@@ -245,7 +245,7 @@ After setting up your environment, use the following commands to configure addit
     ```
 - **Disable Python bindings to reduce build size:**
     ```sh
-    cmake -DENABLE_PYTHON_BINDINGS=OFF -S ./ -B ./build/
+    cmake -DENABLE_PYTHON=OFF -S ./ -B ./build/
     ```
 - **Experimental free threaded Python build:**
     To build the Python bindings with experimental free threaded Python support, add the following flag to your `cmake` command:
