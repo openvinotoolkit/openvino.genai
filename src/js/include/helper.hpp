@@ -43,8 +43,6 @@ std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& en
 /** @brief  A template specialization for TargetType GenerateInputs */
 template <>
 GenerateInputs js_to_cpp<GenerateInputs>(const Napi::Env& env, const Napi::Value& value);
-/** @brief  A template specialization for TargetType ov::genai::ChatHistory */
-ov::genai::StringInputs js_to_cpp<ov::genai::StringInputs>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType ov::genai::JsonContainer */
 template <>
 ov::genai::JsonContainer js_to_cpp<ov::genai::JsonContainer>(const Napi::Env& env, const Napi::Value& value);

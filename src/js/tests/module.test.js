@@ -1,4 +1,4 @@
-import { LLMPipeline } from "../dist/index.js";
+import { ChatHistory, LLMPipeline } from "../dist/index.js";
 
 import assert from "node:assert/strict";
 import { describe, it, before, after } from "node:test";
@@ -110,9 +110,9 @@ describe("generation parameters validation", () => {
   });
 
   it("should throw an error if temperature is not a number", async () => {
-    await assert.rejects(async () => await pipeline.generate(), {
-      name: "Error",
-      message: "Inputs must be a string, string[], or ChatHistory",
+    await assert.rejects(async () => {
+      (await pipeline.generate(),
+        /Passed argument must be a string, ChatHistory or an array of strings./);
     });
   });
 
@@ -200,11 +200,11 @@ describe("LLMPipeline.generate()", () => {
   });
 
   it("generate(chatHistory, config)", async () => {
-    const chatHistory = [
+    const chatHistory = new ChatHistory([
       { role: "user", content: "Hello!" },
       { role: "assistant", content: "Hi! How can I help you?" },
       { role: "user", content: "Tell me a joke." },
-    ];
+    ]);
     const config = {
       max_new_tokens: 10,
       return_decoded_results: true,

@@ -1,5 +1,5 @@
 import util from "node:util";
-import addon from "../addon.js";
+import addon, { ChatHistory } from "../addon.js";
 import { GenerationConfig, StreamingStatus, LLMPipelineProperties } from "../utils.js";
 
 export type ResolveFunction = (arg: { value: string; done: boolean }) => void;
@@ -7,8 +7,6 @@ export type Options = {
   disableStreamer?: boolean;
   max_new_tokens?: number;
 };
-
-type ChatHistory = Record<string, any>[];
 
 interface Tokenizer {
   /** Applies a chat template to format chat history into a prompt string. */
@@ -258,8 +256,6 @@ export class LLMPipeline {
     generationConfig: GenerationConfig = {},
     callback: (chunk: string) => void | undefined,
   ) {
-    if (typeof inputs !== "string" && !Array.isArray(inputs))
-      throw new Error("Inputs must be a string, string[], or ChatHistory");
     if (typeof generationConfig !== "object") throw new Error("Options must be an object");
     if (callback !== undefined && typeof callback !== "function")
       throw new Error("Callback must be a function");
