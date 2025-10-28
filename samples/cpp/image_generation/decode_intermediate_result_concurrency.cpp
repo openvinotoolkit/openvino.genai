@@ -1,31 +1,9 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <queue>
-#include <thread>
-
 #include "openvino/genai/image_generation/text2image_pipeline.hpp"
 
 #include "imwrite.hpp"
-#include "progress_bar.hpp"
-
-
-void decode_latent(std::queue<ov::Tensor>* intermediate_latent, 
-                   std::function<ov::Tensor(const ov::Tensor)>& decoder, int32_t num_steps) {
-    int i = 0;
-    //
-    // Callback doesn't decode latest latent which let image generation pipeline handle. 
-    //
-    while (i < (num_steps - 1)) {
-        if (!intermediate_latent->empty()) {
-            ov::Tensor intermediate_image = decoder(intermediate_latent->front());
-            imwrite("intermediate_image_" + std::to_string(i+1) + ".bmp", intermediate_image, true);
-            intermediate_latent->pop();
-            i++;
-        }
-    }
-}
-
 
 int32_t main(int32_t argc, char* argv[]) try {
     OPENVINO_ASSERT(argc >= 3 && argc <= 6,
@@ -80,37 +58,20 @@ int32_t main(int32_t argc, char* argv[]) try {
     pipe.compile(text_encoder_device, unet_device, vae_decoder_device, properties);
 
     //
-    // Step 4: Use the std::queue to handle intermediate latent result
+    // Step 4: Callback function for decode intermediate latent and save it as an image.
     //
 
-    std::queue<ov::Tensor>* intermediate_latent = new std::queue<ov::Tensor>();
-
-    std::function<ov::Tensor(const ov::Tensor)> decoder_func = 
-        [&](const ov::Tensor& latent) {
-            return pipe.decode(latent);
-        };
-
-    //
-    // Step 5: Initial thread for decode intermediate latent and save as image
-    //
-    std::thread decode_thread(decode_latent, std::ref(intermediate_latent), decoder_func, number_of_inference_steps_per_image);
-
-    //
-    // Step 6: Callback function for add lantent into intermediate latent queue
-    //
     auto callback = [&](size_t step, size_t num_steps, ov::Tensor& latent) -> bool {
         std::cout << "Image generation step: " << step + 1 << " / " << num_steps << std::endl;
         if (step < num_steps - 1) {
-            std::cout << "Add latent into intermediate latent queue." << std::endl;
-            intermediate_latent->push(latent);
-        } else if (step == num_steps - 1) {
-            decode_thread.join();
+            ov::Tensor img = pipe.decode(latent); // get intermediate image tensor
+            imwrite("__intermediate_image_" + std::to_string(step + 1) + ".bmp", img, true);
         }
         return false;
     };
 
     //
-    // Step 7: Use the Text2ImagePipeline to generate 'number_of_images_to_generate' images.
+    // Step 5: Use the Text2ImagePipeline to generate 'number_of_images_to_generate' images.
     //
     for (int imagei = 0; imagei < number_of_images_to_generate; imagei++) {
         std::cout << "Generating image " << imagei << std::endl;
