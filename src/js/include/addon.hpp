@@ -11,6 +11,7 @@ struct AddonData {
     Napi::FunctionReference core;
     Napi::FunctionReference tokenizer;
     Napi::FunctionReference perf_metrics;
+    Napi::FunctionReference chat_history;
 };
 
 void init_class(Napi::Env env,
