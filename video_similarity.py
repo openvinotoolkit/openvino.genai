@@ -2,6 +2,7 @@
 import argparse
 import av
 import numpy as np
+import sklearn
 import torch
 import transformers
 
@@ -79,6 +80,7 @@ def main():
     assert (left_embedding == right_embedding).all()
 
     similarity = torch.nn.functional.cosine_similarity(left_embedding, right_embedding, dim=0)
+    print(sklearn.metrics.pairwise.cosine_similarity(left_embedding.numpy(), right_embedding.numpy()))
     print(similarity.item())
 
 
