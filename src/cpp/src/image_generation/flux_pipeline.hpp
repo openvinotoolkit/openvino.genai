@@ -547,7 +547,7 @@ public:
             m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
         }
 
-        if (callback_ptr->has_callback()) {
+        if (callback_ptr != nullptr) {
             callback_ptr->end();
         }
 

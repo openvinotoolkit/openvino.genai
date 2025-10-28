@@ -623,7 +623,8 @@ public:
             auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
             m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
         }
-        if (callback_ptr->has_callback()) {
+
+        if (callback_ptr != nullptr) {
             callback_ptr->end();
         }
         auto decode_start = std::chrono::steady_clock::now();
