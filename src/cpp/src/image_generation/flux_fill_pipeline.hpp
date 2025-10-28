@@ -181,7 +181,7 @@ public:
             auto scheduler_step_result = m_scheduler->step(noise_pred_tensor, latents, inference_step, m_custom_generation_config.generator);
             latents = scheduler_step_result["latent"];
 
-            if (callback_ptr->has_callback() && callback_ptr->write(inference_step, timesteps.size(), denoised)) {
+            if (callback_ptr->has_callback() && callback_ptr->write(inference_step, timesteps.size(), latents)) {
                 callback_ptr->end();
                 auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
                 m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
