@@ -18,20 +18,32 @@ def main():
     args = parser.parse_args()
 
     device = args.device
-    pipe = openvino_genai.LLMPipeline(args.model_dir, device)
+    pipe = openvino_genai.LLMPipeline(args.model_dir, device, {"ATTENTION_BACKEND" : "SDPA"})
 
     config = openvino_genai.GenerationConfig()
-    config.max_new_tokens = 100
+    config.max_new_tokens = 150
+    config.do_sample = False
+    config.apply_chat_template = True
 
-    pipe.start_chat()
+    # pipe.start_chat()
     while True:
         try:
             prompt = input('question:\n')
         except EOFError:
             break
-        pipe.generate(prompt, config, streamer)
+        res = pipe.generate([prompt], config, streamer)
+        print()
+        perf_metrics = res.perf_metrics
+        print(f"Stateful pipeline" )
+        print(f"  Generate time: {perf_metrics.get_generate_duration().mean:.2f} ms" )
+        print(f"  TTFT: {perf_metrics.get_ttft().mean:.2f} ms")
+        print(f"  TPOT: {perf_metrics.get_tpot().mean:.2f} ± {perf_metrics.get_tpot().std:.2f} ms/token")
+        print(f"  Throughput: {(1000.0 / perf_metrics.get_tpot().mean):.2f}")
+        print(f"  Num generated token: {perf_metrics.get_num_generated_tokens()} tokens")
+        print(f"  Total iteration number: {len(perf_metrics.raw_metrics.m_durations)}")
+        print()
         print('\n----------')
-    pipe.finish_chat()
+    # pipe.finish_chat()
 
 
 if '__main__' == __name__:
