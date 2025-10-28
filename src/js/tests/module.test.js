@@ -110,10 +110,10 @@ describe("generation parameters validation", () => {
   });
 
   it("should throw an error if temperature is not a number", async () => {
-    await assert.rejects(async () => {
-      (await pipeline.generate(),
-        /Passed argument must be a string, ChatHistory or an array of strings./);
-    });
+    await assert.rejects(
+      async () => await pipeline.generate(),
+      /Passed argument must be a string, ChatHistory or an array of strings./
+    );
   });
 
   it("should throw an error if generationCallback is not a function", async () => {
@@ -222,7 +222,7 @@ describe("LLMPipeline.generate()", () => {
       max_new_tokens: 10,
       return_decoded_results: true,
     };
-    assert.rejects(async () => {
+    await assert.rejects(async () => {
       await pipeline.generate(chatHistory, config);
     }, /An incorrect input value has been passed./);
   });
