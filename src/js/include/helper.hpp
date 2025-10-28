@@ -44,8 +44,10 @@ std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& en
 template <>
 GenerateInputs js_to_cpp<GenerateInputs>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType ov::genai::ChatHistory */
+ov::genai::StringInputs js_to_cpp<ov::genai::StringInputs>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType ov::genai::JsonContainer */
 template <>
-ov::genai::ChatHistory js_to_cpp<ov::genai::ChatHistory>(const Napi::Env& env, const Napi::Value& value);
+ov::genai::JsonContainer js_to_cpp<ov::genai::JsonContainer>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType ov::genai::SchedulerConfig */
 template <>
 ov::genai::SchedulerConfig js_to_cpp<ov::genai::SchedulerConfig>(const Napi::Env& env, const Napi::Value& value);
@@ -77,37 +79,39 @@ ov::genai::PerfMetrics& unwrap<ov::genai::PerfMetrics>(const Napi::Env& env, con
  * @return SourceType converted to a TargetType.
  */
 template <typename SourceType, typename TargetType>
-TargetType cpp_to_js(const Napi::Env& env, SourceType);
+TargetType cpp_to_js(const Napi::Env& env, const SourceType& value);
 
 /** @brief  A template specialization for TargetType Napi::Value and SourceType ov::genai::EmbeddingResult */
 template <>
 Napi::Value cpp_to_js<ov::genai::EmbeddingResult, Napi::Value>(
     const Napi::Env& env,
-    const ov::genai::EmbeddingResult embedding_result
+    const ov::genai::EmbeddingResult& embedding_result
 );
 
 /** @brief  A template specialization for TargetType Napi::Value and SourceType ov::genai::EmbeddingResults */
 template <>
 Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(
     const Napi::Env& env,
-    const ov::genai::EmbeddingResults embedding_result
+    const ov::genai::EmbeddingResults& embedding_result
 );
 
 /** @brief  A template specialization for TargetType Napi::Value and SourceType std::vector<std::string> */
 template <>
 Napi::Value cpp_to_js<std::vector<std::string>, Napi::Value>(const Napi::Env& env,
-                                                             const std::vector<std::string> value);
+                                                             const std::vector<std::string>& value);
 
 /** @brief  A template specialization for TargetType Napi::Value and SourceType std::vector<float> */
 template <>
-Napi::Value cpp_to_js<std::vector<float>, Napi::Value>(const Napi::Env& env, const std::vector<float> value);
+Napi::Value cpp_to_js<std::vector<float>, Napi::Value>(const Napi::Env& env, const std::vector<float>& value);
 
 template <>
-Napi::Value cpp_to_js<std::vector<double>, Napi::Value>(const Napi::Env& env, const std::vector<double> value);
+Napi::Value cpp_to_js<std::vector<double>, Napi::Value>(const Napi::Env& env, const std::vector<double>& value);
 
 template <>
-Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env, const std::vector<size_t> value);
+Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env, const std::vector<size_t>& value);
 
+template <>
+Napi::Value cpp_to_js<ov::genai::JsonContainer, Napi::Value>(const Napi::Env& env, const ov::genai::JsonContainer& json_container);
 /**
  * @brief  Template function to convert C++ map into Javascript Object. Map key must be std::string.
  * @tparam MapElementType C++ data type of map elements.
@@ -123,4 +127,8 @@ Napi::Object cpp_map_to_js_object(const Napi::Env& env, const std::map<std::stri
 
 bool is_napi_value_int(const Napi::Env& env, const Napi::Value& num);
 
+bool is_chat_history(const Napi::Env& env, const Napi::Value& value);
+
 std::string json_stringify(const Napi::Env& env, const Napi::Value& value);
+
+Napi::Value json_parse(const Napi::Env& env, const std::string& value);

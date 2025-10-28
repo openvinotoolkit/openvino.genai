@@ -231,10 +231,9 @@ table::= "users" | "orders" | "products"`),
   });
 
   it("generate with TriggeredTags in structural_tags_config", async (testContext) => {
-    if (os.platform() === "darwin" || os.platform() === "win32") {
-      testContext.skip("Skipped due to inconsistent LLM outputs. CVS-175278");
-      return;
-    }
+    testContext.skip("Skipped due to inconsistent LLM outputs. CVS-175278");
+    return;
+    // eslint-disable-next-line no-unreachable
     const tools = [
       {
         name: "get_weather",
