@@ -104,7 +104,8 @@ protected:
                                               size_t original_visual_tokens,
                                               size_t pruned_visual_tokens,
                                               int64_t vision_start_token_id,
-                                              int64_t image_pad_token_id);
+                                              int64_t image_pad_token_id,
+                                              size_t image_count);
 
     // [CDPruner] Create merged embeddings for pruned visual tokens
     ov::Tensor merge_text_and_image_embeddings_with_pruning(const ov::Tensor& input_ids,

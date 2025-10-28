@@ -850,17 +850,14 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
                                                              original_visual_tokens,
                                                              pruned_visual_tokens,
                                                              vision_start_token_id,
-                                                             image_pad_token_id);
+                                                             image_pad_token_id,
+                                                             images.size());
 
-            // Recalculate rope_delta based on adjusted position_ids
+            const int64_t* pos_data_begin = m_position_ids.data<const int64_t>();
             int64_t position_ids_max_element =
-                *std::max_element(m_position_ids.data<int64_t>(),
-                                  m_position_ids.data<int64_t>() + m_position_ids.get_size());
+                *std::max_element(pos_data_begin, pos_data_begin + m_position_ids.get_size());
 
-            // Calculate new sequence length after pruning
-            size_t tokens_removed = original_visual_tokens - pruned_visual_tokens;
-            size_t new_sequence_length = input_ids.get_shape().at(1) - tokens_removed;
-
+            size_t new_sequence_length = m_position_ids.get_shape().at(2);
             m_rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(new_sequence_length);
         }
     }
@@ -911,48 +908,6 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
 
         OPENVINO_ASSERT(write_idx == new_sequence_length,
                         "Pruned input ids length mismatch after visual token pruning");
-
-        // Rebuild position ids to match pruned sequence length.
-        ov::Tensor pruned_position_ids(ov::element::i64, {3, 1, new_sequence_length});
-        const int64_t* src_pos = m_position_ids.data<const int64_t>();
-        int64_t* dst_pos = pruned_position_ids.data<int64_t>();
-
-        // Since m_position_ids is shaped [3, batch, seq_len], copy while skipping removed tokens.
-        // Use same logic as tokens to keep dimensions aligned.
-        size_t pos_write_idx = 0;
-        size_t pos_pad_count = 0;
-        for (size_t seq_idx = 0; seq_idx < input_ids.get_shape().at(1); ++seq_idx) {
-            bool copy_token = true;
-            int64_t token_id = input_data[seq_idx];
-            if (token_id == image_pad_token_id && original_per_image > 0) {
-                copy_token = pos_pad_count < pruned_per_image;
-                pos_pad_count++;
-                if (pos_pad_count == original_per_image) {
-                    pos_pad_count = 0;
-                }
-            } else if (token_id == vision_start_token_id) {
-                pos_pad_count = 0;
-            }
-
-            if (!copy_token) {
-                continue;
-            }
-
-            OPENVINO_ASSERT(pos_write_idx < new_sequence_length,
-                            "Pruned position ids index exceeds expected sequence length");
-            for (size_t dim = 0; dim < 3; ++dim) {
-                dst_pos[dim * new_sequence_length + pos_write_idx] =
-                    src_pos[dim * input_ids.get_shape().at(1) + seq_idx];
-            }
-            pos_write_idx++;
-        }
-
-        OPENVINO_ASSERT(pos_write_idx == new_sequence_length,
-                        "Pruned position ids length mismatch after visual token pruning");
-
-        m_position_ids = pruned_position_ids;
-        int64_t position_ids_max_element = *std::max_element(dst_pos, dst_pos + pruned_position_ids.get_size());
-        m_rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(new_sequence_length);
 
         auto& kv_history = m_kv_cache_state.get_state();
         OPENVINO_ASSERT(kv_history.size() >= input_ids.get_size(),
@@ -1299,80 +1254,123 @@ ov::Tensor InputsEmbedderQwen2VL::adjust_position_ids_for_pruning(const ov::Tens
                                                                   size_t original_visual_tokens,
                                                                   size_t pruned_visual_tokens,
                                                                   int64_t vision_start_token_id,
-                                                                  int64_t image_pad_token_id) {
-    // If no pruning occurred, return original position_ids
+                                                                  int64_t image_pad_token_id,
+                                                                  size_t image_count) {
     if (original_visual_tokens == pruned_visual_tokens) {
         return original_position_ids;
     }
 
-    // Calculate the reduction in visual tokens
-    size_t tokens_removed = original_visual_tokens - pruned_visual_tokens;
+    OPENVINO_ASSERT(image_count > 0, "Image count must be positive when pruning visual tokens");
+    OPENVINO_ASSERT(original_visual_tokens % image_count == 0,
+                    "Original visual tokens are not divisible by image count");
+    OPENVINO_ASSERT(pruned_visual_tokens % image_count == 0, "Pruned visual tokens are not divisible by image count");
 
-    // Get input_ids data and dimensions
+    size_t tokens_removed = original_visual_tokens - pruned_visual_tokens;
     const int64_t* input_ids_data = input_ids.data<const int64_t>();
     size_t batch_size = input_ids.get_shape().at(0);
     size_t seq_len = input_ids.get_shape().at(1);
 
-    // Get original position_ids data and create new position_ids
-    const int64_t* orig_pos_data = original_position_ids.data<const int64_t>();
-    ov::Tensor adjusted_position_ids(original_position_ids.get_element_type(), original_position_ids.get_shape());
-    int64_t* adj_pos_data = adjusted_position_ids.data<int64_t>();
+    ov::Tensor adjusted_full(original_position_ids.get_element_type(), original_position_ids.get_shape());
+    std::memcpy(adjusted_full.data<int64_t>(),
+                original_position_ids.data<const int64_t>(),
+                original_position_ids.get_byte_size());
 
-    // Process each batch
+    int64_t* adj_pos_data = adjusted_full.data<int64_t>();
+    const size_t src_dim_stride = batch_size * seq_len;
+    const size_t src_batch_stride = seq_len;
+
     for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-        // Find vision regions in this batch (image_pad_token sequences)
-        std::vector<std::pair<size_t, size_t>> vision_regions;  // [start_idx, end_idx)
+        std::vector<std::pair<size_t, size_t>> vision_regions;
         bool in_vision_region = false;
-        size_t vision_start_idx = 0;
+        size_t vision_region_start = 0;
 
         for (size_t i = 0; i < seq_len; ++i) {
             size_t input_idx = batch_idx * seq_len + i;
+            int64_t token_id = input_ids_data[input_idx];
 
-            if (input_ids_data[input_idx] == vision_start_token_id) {
+            if (token_id == vision_start_token_id) {
                 in_vision_region = true;
-                vision_start_idx = i + 1;  // Start after vision_start_token
-            } else if (in_vision_region && input_ids_data[input_idx] != image_pad_token_id) {
-                // End of vision region (found non-image_pad token)
+                vision_region_start = i + 1;
+            } else if (in_vision_region && token_id != image_pad_token_id) {
                 in_vision_region = false;
-                vision_regions.push_back({vision_start_idx, i});
+                vision_regions.push_back({vision_region_start, i});
             }
         }
 
-        // Handle case where vision region extends to end of sequence
         if (in_vision_region) {
-            vision_regions.push_back({vision_start_idx, seq_len});
+            vision_regions.push_back({vision_region_start, seq_len});
         }
 
-        // Copy and adjust position_ids for each dimension (temporal, height, width)
         for (size_t dim = 0; dim < 3; ++dim) {
-            size_t dim_offset = dim * batch_size * seq_len + batch_idx * seq_len;
+            size_t dim_offset = dim * src_dim_stride + batch_idx * src_batch_stride;
 
             for (size_t i = 0; i < seq_len; ++i) {
                 size_t pos_idx = dim_offset + i;
-                int64_t original_pos = orig_pos_data[pos_idx];
+                int64_t original_pos = adj_pos_data[pos_idx];
 
-                // Check if this position is after any vision region
                 bool is_after_vision = false;
                 for (const auto& region : vision_regions) {
-                    if (i >= region.second) {  // Position is after this vision region
+                    if (i >= region.second) {
                         is_after_vision = true;
                         break;
                     }
                 }
 
-                // Adjust position if it's after vision regions
-                // For text tokens after vision, subtract the number of removed visual tokens
                 if (is_after_vision) {
                     adj_pos_data[pos_idx] = original_pos - static_cast<int64_t>(tokens_removed);
-                } else {
-                    // For tokens before or within vision regions, keep original position
-                    adj_pos_data[pos_idx] = original_pos;
                 }
             }
         }
     }
 
-    return adjusted_position_ids;
+    size_t new_sequence_length = seq_len - tokens_removed;
+    ov::Tensor trimmed_position_ids(original_position_ids.get_element_type(), {3, batch_size, new_sequence_length});
+    int64_t* trimmed_data = trimmed_position_ids.data<int64_t>();
+
+    size_t original_per_image = original_visual_tokens / image_count;
+    size_t pruned_per_image = pruned_visual_tokens / image_count;
+    const size_t dst_dim_stride = batch_size * new_sequence_length;
+    const size_t dst_batch_stride = new_sequence_length;
+
+    for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+        size_t pad_count_within_image = 0;
+        size_t write_idx = 0;
+
+        for (size_t seq_idx = 0; seq_idx < seq_len; ++seq_idx) {
+            size_t input_idx = batch_idx * seq_len + seq_idx;
+            int64_t token_id = input_ids_data[input_idx];
+
+            bool keep_token = true;
+            if (token_id == image_pad_token_id && original_per_image > 0) {
+                keep_token = pad_count_within_image < pruned_per_image;
+                pad_count_within_image++;
+                if (pad_count_within_image == original_per_image) {
+                    pad_count_within_image = 0;
+                }
+            } else if (token_id == vision_start_token_id) {
+                pad_count_within_image = 0;
+            }
+
+            if (!keep_token) {
+                continue;
+            }
+
+            OPENVINO_ASSERT(write_idx < new_sequence_length,
+                            "Pruned position ids index exceeds expected sequence length");
+
+            for (size_t dim = 0; dim < 3; ++dim) {
+                size_t src_idx = dim * src_dim_stride + batch_idx * src_batch_stride + seq_idx;
+                size_t dst_idx = dim * dst_dim_stride + batch_idx * dst_batch_stride + write_idx;
+                trimmed_data[dst_idx] = adj_pos_data[src_idx];
+            }
+            write_idx++;
+        }
+
+        OPENVINO_ASSERT(write_idx == new_sequence_length,
+                        "Pruned position ids length mismatch after visual token pruning");
+    }
+
+    return trimmed_position_ids;
 }
 
 std::vector<ov::Tensor> InputsEmbedderQwen2VL::convert_visual_features_for_cdpruner(
