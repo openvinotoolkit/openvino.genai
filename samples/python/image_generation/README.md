@@ -89,9 +89,6 @@ image = pipe.generate(
 )
 ```
 
-> [!NOTE]
-> If you want to run Unet inference and get intermediate image tensor in parallel, please check [`decode_intermediate_result_concurrency.py`](./decode_intermediate_result_concurrency.py) sample.
-
 ## Run with optional LoRA adapters
 
 LoRA adapters can be connected to the pipeline and modify generated images to have certain style, details or quality. Adapters are supported in Safetensors format and can be downloaded from public sources like [Civitai](https://civitai.com) or [HuggingFace](https://huggingface.co/models) or trained by the user. Adapters compatible with a base model should be used only. A weighted blend of multiple adapters can be applied by specifying multiple adapter files with corresponding alpha parameters in command line. Check `lora_text2image.py` source code to learn how to enable adapters and specify them in each `generate` call.
