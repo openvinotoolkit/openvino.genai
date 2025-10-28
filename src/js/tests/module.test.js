@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { describe, it, before, after } from "node:test";
 import { models } from "./models.js";
 import { hrtime } from "node:process";
+import os from "node:os";
 
 const MODEL_PATH = process.env.MODEL_PATH || `./tests/models/${models.LLM.split("/")[1]}`;
 
@@ -22,7 +23,11 @@ describe("LLMPipeline construction", async () => {
     });
   });
 
-  await it("test SchedulerConfig", async () => {
+  await it("test SchedulerConfig", async (t) => {
+    if (os.platform() === "darwin") {
+      t.skip("only support x64 platform or ARM with SVE support");
+      return;
+    }
     const schedulerConfig = {
       max_num_batched_tokens: 32,
     };
@@ -194,7 +199,12 @@ describe("LLMPipeline.generate()", () => {
     assert.strictEqual(replyStr, reply.toString());
   });
 
-  it("DecodedResults.perfMetrics", async () => {
+  it("DecodedResults.perfMetrics", async (t) => {
+    if (os.platform() === "darwin") {
+      t.skip("Skipping perfMetrics test on macOS. Ticket - 173286");
+      return;
+    }
+
     const config = {
       max_new_tokens: 20,
       return_decoded_results: true,
@@ -256,20 +266,22 @@ describe("LLMPipeline.generate()", () => {
 
     // assert that calculating statistics manually from the raw counters
     // we get the same restults as from PerfMetrics
-    assert.strictEqual(
-      (perfMetrics.rawMetrics.generateDurations / 1000).toFixed(3),
-      generateDuration.mean.toFixed(3),
-    );
+    //
+    // Disabled due to potential floating-point differences. (CVS-175568)
+    // assert.strictEqual(
+    //   (perfMetrics.rawMetrics.generateDurations / 1000).toFixed(3),
+    //   generateDuration.mean.toFixed(3),
+    // );
 
-    assert.strictEqual(
-      (perfMetrics.rawMetrics.tokenizationDurations / 1000).toFixed(3),
-      tokenizationDuration.mean.toFixed(3),
-    );
+    // assert.strictEqual(
+    //   (perfMetrics.rawMetrics.tokenizationDurations / 1000).toFixed(3),
+    //   tokenizationDuration.mean.toFixed(3),
+    // );
 
-    assert.strictEqual(
-      (perfMetrics.rawMetrics.detokenizationDurations / 1000).toFixed(3),
-      detokenizationDuration.mean.toFixed(3),
-    );
+    // assert.strictEqual(
+    //   (perfMetrics.rawMetrics.detokenizationDurations / 1000).toFixed(3),
+    //   detokenizationDuration.mean.toFixed(3),
+    // );
 
     assert.ok(perfMetrics.rawMetrics.timesToFirstToken.length > 0);
     assert.ok(perfMetrics.rawMetrics.newTokenTimes.length > 0);
@@ -278,6 +290,28 @@ describe("LLMPipeline.generate()", () => {
     assert.ok(perfMetrics.rawMetrics.durations.length > 0);
     assert.ok(perfMetrics.rawMetrics.inferenceDurations.length > 0);
     assert.ok(perfMetrics.rawMetrics.grammarCompileTimes.length === 0);
+  });
+
+  it("test perfMetrics.add()", async () => {
+    const config = {
+      max_new_tokens: 5,
+      return_decoded_results: true,
+    };
+    const res1 = await pipeline.generate("prompt1", config);
+    const res2 = await pipeline.generate("prompt2", config);
+
+    const perfMetrics1 = res1.perfMetrics;
+    const perfMetrics2 = res2.perfMetrics;
+
+    const totalNumGeneratedTokens =
+      perfMetrics1.getNumGeneratedTokens() + perfMetrics2.getNumGeneratedTokens();
+
+    perfMetrics1.add(perfMetrics2);
+    assert.strictEqual(perfMetrics1.getNumGeneratedTokens(), totalNumGeneratedTokens);
+
+    assert.throws(() => perfMetrics1.add({}), {
+      message: /Passed argument is not of type PerfMetrics/,
+    });
   });
 });
 

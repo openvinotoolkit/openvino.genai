@@ -74,7 +74,6 @@ std::optional<uint32_t> pop_int_and_cast(ov::AnyMap& config, const std::string& 
 }
 
 void update_npu_config(ov::AnyMap& config,
-                       const std::shared_ptr<ov::Model>& model,
                        const ov::genai::utils::KVAxesPosition& kv_pos,
                        const ov::genai::utils::KVDesc& kv_desc) {
     update_config(config, {"NPU_USE_NPUW", "YES"});
@@ -95,6 +94,26 @@ void update_npu_config(ov::AnyMap& config,
     rename_key(config, "++PREFILL_CONFIG", "++NPUW_LLM_PREFILL_CONFIG");
     rename_key(config, "++GENERATE_CONFIG", "++NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "++SHARED_HEAD_CONFIG", "++NPUW_LLM_SHARED_HEAD_CONFIG");
+}
+
+void update_npu_config_whisper(ov::AnyMap& config,
+                               const ov::genai::utils::KVAxesPosition& kv_pos,
+                               const ov::genai::utils::KVDesc& kv_desc) {
+    update_config(config, {"NPU_USE_NPUW", "YES"});
+    update_config(config, {"NPUW_ONLINE_PIPELINE", "NONE"});
+    update_config(config, {"NPUW_FUNCALL_FOR_ALL", "NO"});
+    update_config(config, {"NPUW_FOLD", "NO"});
+    update_config(config, {"NPUW_LLM", "YES"});
+    update_config(config, {"NPUW_WHISPER", "YES"});
+
+    update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
+    update_config(config, {"NPUW_LLM_SEQ_LEN_DIM", kv_pos.seq_len});
+
+    update_config(config, {"NPUW_LLM_MAX_PROMPT_LEN", kv_desc.max_prompt_len});
+    update_config(config, {"NPUW_LLM_MIN_RESPONSE_LEN", kv_desc.min_response_len});
+
+    // To disable chunking
+    update_config(config, {"NPUW_LLM_PREFILL_HINT", "STATIC"});
 }
 
 inline bool is_paged_attention_available() {
@@ -203,6 +222,36 @@ ProcessorConfig from_any_map(
     read_anymap_param(config_map, "norm_mean", extracted_config.norm_mean);
     read_anymap_param(config_map, "norm_std", extracted_config.norm_std);
     return extracted_config;
+}
+
+ov::genai::ModelDesc get_draft_model_from_config(const ov::AnyMap& config) {
+    ov::genai::ModelDesc draft_model;
+    if (config.find(utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
+        draft_model = config.at(utils::DRAFT_MODEL_ARG_NAME).as<ov::genai::ModelDesc>();
+    }
+    return draft_model;
+}
+
+ov::genai::ModelDesc extract_draft_model_from_config(ov::AnyMap& config) {
+    ov::genai::ModelDesc draft_model;
+    if (config.find(ov::genai::utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
+        draft_model = config.at(ov::genai::utils::DRAFT_MODEL_ARG_NAME).as<ov::genai::ModelDesc>();
+        config.erase(ov::genai::utils::DRAFT_MODEL_ARG_NAME);
+    }
+    return draft_model;
+}
+
+bool is_npu_requested(const std::string& device, const ov::AnyMap& properties) {
+    if (device == "NPU") {
+        return true;
+    }
+
+    auto draft_model_descr = get_draft_model_from_config(properties);
+    if (draft_model_descr.model != nullptr) {
+        return draft_model_descr.device == "NPU";
+    }
+
+    return false;
 }
 
 ov::genai::TokenizedInputs subtract_chat_tokenized_inputs(const ov::genai::TokenizedInputs& minuend, const ov::genai::TokenizedInputs& subtrahend) {
@@ -513,10 +562,19 @@ void print_gguf_debug_info(const std::string &debug_info) {
     std::cout << "[GGUF Reader]: " << debug_info << std::endl;
 }
 
+void print_scheduler_config_info(const SchedulerConfig &scheduler_config) {
+    if (!env_setup_for_print_debug_info()) {
+        return;
+    }
+
+    std::cout << scheduler_config.to_string() << std::endl;
+}
+
 std::pair<ov::CompiledModel, KVDesc>
 compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
                         const ov::AnyMap& config,
-                        const KVAxesPosition& kv_pos) {
+                        const KVAxesPosition& kv_pos,
+                        const bool is_whisper) {
     ov::CompiledModel compiled;
     ov::AnyMap properties = config;
     KVDesc kv_desc;
@@ -537,9 +595,16 @@ compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
         kv_desc.max_prompt_len = compiled.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
         kv_desc.min_response_len = compiled.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
     } else {
-        kv_desc.max_prompt_len = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u);
-        kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
-        update_npu_config(properties, model, kv_pos, kv_desc);
+        if (is_whisper) {
+            kv_desc.max_prompt_len = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(4u);
+            // kvcache size for Whisper = 448u (MAX_PROMPT_LEN + MIN_RESPONSE_LEN)
+            kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(444u);
+            update_npu_config_whisper(properties, kv_pos, kv_desc);
+        } else {
+            kv_desc.max_prompt_len = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u);
+            kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
+            update_npu_config(properties, kv_pos, kv_desc);
+        }
         compiled = ov::genai::utils::singleton_core().compile_model(model, "NPU", properties);
         // Also export compiled model if required
         if (export_blob) {
@@ -601,7 +666,7 @@ SchedulerConfig get_latency_oriented_scheduler_config() {
     return default_config;
 }
 
-bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
+bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_npu_requested) {
     auto attention_backend_it = properties.find("ATTENTION_BACKEND");
 
     if (properties.find(ov::genai::scheduler_config.name()) != properties.end() ||
@@ -612,11 +677,12 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
             OPENVINO_THROW("Continuous batching backend requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
         }
     }
-    if (properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end()) {
+
+    if (properties.find(utils::DRAFT_MODEL_ARG_NAME) != properties.end() && !is_npu_requested) {
         if (is_paged_attention_available()) {
             return true;
         } else {
-            OPENVINO_THROW("Speculative decoding requires PagedAttention operation support, which is available on x86_64 or ARM64 platforms only");
+            OPENVINO_THROW("Speculative decoding requires PagedAttention operation support on non-NPU devices, which is available on x86_64 or ARM64 platforms only");
         }
     }
 
@@ -631,7 +697,8 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties) {
     return false;
 }
 
-std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties) {
+std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties,
+                                                             bool is_npu_requested) {
     std::string attention_backend = PA_BACKEND;
     ov::AnyMap properties = external_properties;
 
@@ -643,7 +710,7 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
         properties.erase(it);
     }
 
-    if (explicitly_requires_paged_attention(external_properties)) {
+    if (explicitly_requires_paged_attention(external_properties, is_npu_requested)) {
         OPENVINO_ASSERT(attention_backend == PA_BACKEND,
             "User properties are conflicting: some of them requires PagedAttention backend, while 'ATTENTION_BACKEND' is set to 'SDPA'");
     }
@@ -738,6 +805,47 @@ size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_la
     auto max_allocatable_kv_cache = max_alloc_memory_size * num_decoder_layers * 2;
 
     return std::min(total_device_memory - used_device_mem, max_allocatable_kv_cache);
+}
+
+std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_properties(const ov::AnyMap& external_properties) {
+    ov::AnyMap properties = external_properties;
+    std::optional<std::filesystem::path> blob_path;
+
+    auto blob_path_it = properties.find(ov::genai::blob_path.name());
+    if (blob_path_it != properties.end()) {
+        blob_path = blob_path_it->second.as<std::filesystem::path>();
+        OPENVINO_ASSERT(!blob_path->empty(), ov::genai::blob_path.name(), " property is empty");
+        properties.erase(blob_path_it);
+    }
+
+    return {properties, blob_path};
+}
+
+ov::CompiledModel import_model(const std::filesystem::path& blob_path,
+                               const std::string& device,
+                               const ov::AnyMap& properties) {
+    OPENVINO_ASSERT(!blob_path.empty(), "blob path is empty");
+    ov::Tensor blob_tensor = ov::read_tensor_data(blob_path);
+    return ov::genai::utils::singleton_core().import_model(blob_tensor, device, properties);
+}
+
+void export_model(ov::CompiledModel& compiled_model, const std::filesystem::path& blob_path) {
+    OPENVINO_ASSERT(!blob_path.empty(), "blob path is empty");
+
+    std::filesystem::create_directories(blob_path.parent_path());
+
+    std::ofstream out(blob_path, std::ios::out | std::ios::binary);
+    OPENVINO_ASSERT(out.is_open(), "Cannot open file to write: " + blob_path.string());
+    compiled_model.export_model(out);
+    out.close();
+}
+
+bool has_input(const std::shared_ptr<ov::Model>& model, const std::string& name) {
+    auto inputs = model->inputs();
+    auto it = std::find_if(inputs.begin(), inputs.end(), [&](const auto& port) {
+        return port.get_names().count(name) != 0;
+    });
+    return it != inputs.end();
 }
 
 }  // namespace utils

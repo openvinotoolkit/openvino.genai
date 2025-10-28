@@ -53,7 +53,10 @@ protected:
     ChatHistory m_history;
     std::vector<ov::genai::EncodedImage> m_history_images;
     std::vector<size_t> m_history_image_ids;
+    std::vector<ov::genai::EncodedVideo> m_history_videos;
+    std::vector<size_t> m_history_video_ids;
     size_t m_image_id = 0;
+    size_t m_video_id = 0;
 
     float m_load_time_ms = 0.0f;
     // to access m_load_time_ms
@@ -75,7 +78,7 @@ public:
      */
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const ov::Tensor& input_ids,
-                                         GenerationConfig sampling_params,
+                                         const GenerationConfig& sampling_params,
                                          std::optional<ov::Tensor> token_type_ids = std::nullopt) = 0;
 
     /**
@@ -84,7 +87,7 @@ public:
      */
     virtual GenerationHandle add_request(uint64_t request_id,
                                          const std::string& prompt,
-                                         GenerationConfig sampling_params) = 0;
+                                         const GenerationConfig& sampling_params) = 0;
 
     /**
      * Adds request to running queue based on string input and vector of images
@@ -92,7 +95,17 @@ public:
      */
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
-                                 const std::vector<ov::Tensor>& rgbs,
+                                 const std::vector<ov::Tensor>& images,
+                                 GenerationConfig sampling_params);
+
+    /**
+     * Adds request to running queue based on string input and vector of images and videos
+     * This step also performs tokenization's encode
+     */
+    GenerationHandle add_request(uint64_t request_id,
+                                 const std::string& prompt,
+                                 const std::vector<ov::Tensor>& images,
+                                 const std::vector<ov::Tensor>& videos,
                                  GenerationConfig sampling_params);
 
     /**
@@ -126,6 +139,21 @@ public:
     generate(
              const std::vector<std::string>& prompts,
              const std::vector<std::vector<ov::Tensor>>& rgbs,
+             const std::vector<GenerationConfig>& sampling_params,
+             const StreamerVariant& streamer);
+
+    virtual std::vector<VLMDecodedResults> generate(const std::vector<std::string>& prompts,
+                                                    const std::vector<std::vector<ov::Tensor>>& images,
+                                                    const std::vector<std::vector<ov::Tensor>>& video,
+                                                    const std::vector<GenerationConfig>& sampling_params,
+                                                    const StreamerVariant& streamer);
+
+    
+    /**
+     * Performs monolitic generation based on ChatHistory objects
+     */
+    std::vector<GenerationResult>
+    generate(const std::vector<ChatHistory>& histories,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer);
 

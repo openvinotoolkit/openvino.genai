@@ -14,9 +14,9 @@ namespace ov::genai {
 /// @brief A pair describing image size.
 struct ImageSize {
     /// @brief Height of a corresponding image.
-    size_t height;
+    size_t height = 0;
     /// @brief Width of a corresponding image.
-    size_t width;
+    size_t width = 0;
 };
 
 
@@ -55,6 +55,18 @@ struct EncodedImage {
   
     /// @brief Resampled image, used only by MiniCPM.
     ResampledImage resampled_image;
+
+    /// @brief Number of image tokens required to append to a normalized prompt
+    size_t num_image_tokens;
+};
+
+/// @brief Embeddings of a given video. 
+struct EncodedVideo {
+    /// @brief Embeddings of a given video obtained by appling preprocessing to frames and feature extracting models (resampler, mm_projector, etc.)
+    ov::Tensor video_feautures;
+
+    /// @brief Number of video tokens required to append to a normalized prompt
+    size_t num_video_tokens;
 };
 
 /// @brief A class used to infer embeddings of an image using

@@ -34,7 +34,9 @@ std::shared_ptr<IScheduler> cast_scheduler(std::shared_ptr<Scheduler> scheduler)
 
 void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_scale_factor) {
     OPENVINO_ASSERT(generation_config.height > 0, "Height must be positive");
+    OPENVINO_ASSERT(generation_config.height % 32 == 0, "Height have to be divisible by 32 but got ", generation_config.height);
     OPENVINO_ASSERT(generation_config.width > 0, "Width must be positive");
+    OPENVINO_ASSERT(generation_config.width % 32 == 0, "Width have to be divisible by 32 but got ", generation_config.width);
     OPENVINO_ASSERT(1.0f == generation_config.strength, "Strength isn't applicable. Must be set to the default 1.0");
 
     OPENVINO_ASSERT(!generation_config.prompt_2.has_value(), "Prompt 2 is not used by LTXPipeline.");
@@ -43,9 +45,6 @@ void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_sca
     OPENVINO_ASSERT(!generation_config.negative_prompt_3.has_value(), "Negative prompt 3 is not used by LTXPipeline.");
     OPENVINO_ASSERT(generation_config.max_sequence_length <= 512, "T5's 'max_sequence_length' must be less or equal to 512");
     OPENVINO_ASSERT(generation_config.strength == 1.0f, "'Strength' generation parameter must be 1.0f for Text 2 image pipeline");
-    // TODO:
-    // if height % 32 != 0 or width % 32 != 0:
-    //     raise ValueError(f"`height` and `width` have to be divisible by 32 but are {height} and {width}.")
     OPENVINO_ASSERT(
         (generation_config.height % vae_scale_factor == 0 || generation_config.height < 0)
             && (generation_config.width % vae_scale_factor == 0 || generation_config.width < 0),
@@ -54,9 +53,9 @@ void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_sca
     );
 }
 
-// Unpacked latents of shape are [B, C, F, H, W] are patched into tokens of shape [B, C, F // p_t, p_t, H // p, p, W // p, p].
+// Unpacked latents of shape [B, C, F, H, W] are patched into tokens of shape [B, C, F // p_t, p_t, H // p, p, W // p, p].
 // The patch dimensions are then permuted and collapsed into the channel dimension of shape:
-// [B, F // p_t * H // p * W // p, C * p_t * p * p] (an ndim=3 tensor).
+// [B, F // p_t * H // p * W // p, C * p_t * p * p] (a 3 dimensional tensor).
 // dim=0 is the batch size, dim=1 is the effective video sequence length, dim=2 is the effective number of input features
 ov::Tensor pack_latents(ov::Tensor& latents, size_t patch_size, size_t patch_size_t) {
     ov::Shape latents_shape = latents.get_shape();
@@ -251,7 +250,7 @@ class Text2VideoPipeline::LTXPipeline {
     std::shared_ptr<AutoencoderKLLTXVideo> m_vae;
     VideoGenerationPerfMetrics m_perf_metrics;
     double m_latent_timestep = -1.0;  // TODO: float?
-    float m_load_time_ms;
+    Ms m_load_time;
 
     void compute_hidden_states(const std::string& positive_prompt, const std::string& negative_prompt, const VideoGenerationConfig& generation_config) {
         auto infer_start = std::chrono::steady_clock::now();
@@ -353,7 +352,7 @@ public:
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
         OPENVINO_ASSERT("LTXPipeline" == nlohmann::json::parse(file)["_class_name"].get<std::string>());
-        m_load_time_ms = Ms{std::chrono::steady_clock::now() - start_time}.count();
+        m_load_time = Ms{std::chrono::steady_clock::now() - start_time};
     }
 
     bool do_classifier_free_guidance(float guidance_scale) const {

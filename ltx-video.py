@@ -1,3 +1,4 @@
+import argparse
 import torch
 import openvino
 import numpy as np
@@ -27,10 +28,13 @@ def generate(pipeline, frame_rate):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('model_dir', help='Path to the model directory')
+    args = parser.parse_args()
     frame_rate = 25
 
     ov_pipe = OVLTXPipeline.from_pretrained(
-        '/home/alikh/projects/openvino.genai/video_models/Lightricks/LTX-Video',
+        args.model_dir,
         device='CPU',
         load_in_8bit=False,
         ov_config={openvino.properties.hint.inference_precision: openvino.Type.f32},
