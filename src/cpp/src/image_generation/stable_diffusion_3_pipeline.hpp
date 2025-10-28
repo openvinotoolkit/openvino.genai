@@ -609,7 +609,7 @@ public:
                 blend_latents(image_latent, noise, mask, latent, inference_step);
             }
 
-            if (callback_ptr->has_callback() && callback_ptr->write(inference_step, timesteps.size(), latent)) {
+            if (callback_ptr && callback_ptr->has_callback() && callback_ptr->write(inference_step, timesteps.size(), latent)) {
                 callback_ptr->end();
                 auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
                 m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
