@@ -14,10 +14,15 @@
 namespace ov {
 namespace genai {
 
+enum class CallbackStatus {
+    RUNNING = 0, // Continue to run callback
+    STOP = 1 // Stop callback
+};
+
 class ThreadedCallbackWrapper {
 public:
     ThreadedCallbackWrapper(std::function<bool(size_t, size_t, ov::Tensor&)> callback, const size_t num_steps)
-        : m_callback{callback}, m_num_steps{num_steps}, m_step{0} {}
+        : m_callback{callback} {}
 
     void start() {
         if (!m_callback) {
@@ -28,7 +33,7 @@ public:
     }
 
     bool write(const size_t step, const size_t num_steps, const ov::Tensor& latent) {
-        if (!m_callback) {
+        if (!m_callback || m_status == CallbackStatus::STOP) {
             return true;
         }
 
@@ -56,17 +61,16 @@ private:
     std::shared_ptr<std::thread> m_worker_thread = nullptr;
     SynchronizedQueue<std::tuple<size_t, size_t, ov::Tensor>> m_squeue;
 
-    size_t m_num_steps;
-    size_t m_step;
+    std::atomic<CallbackStatus> m_status = CallbackStatus::RUNNING;
 
     void _worker() {
-        while (m_step + 1  < m_num_steps) {
+        while (m_status == CallbackStatus::RUNNING) {
             // wait for queue pull
             std::tuple<size_t, size_t, ov::Tensor> intermediate_latent = m_squeue.pull();
 
-            m_callback(std::get<0>(intermediate_latent), std::get<1>(intermediate_latent), std::get<2>(intermediate_latent));
-            // Update steps
-            m_step = std::get<0>(intermediate_latent);
+            if (m_callback(std::get<0>(intermediate_latent), std::get<1>(intermediate_latent), std::get<2>(intermediate_latent))) {
+                m_status == CallbackStatus::STOP;
+            }
         }
     }
 };
