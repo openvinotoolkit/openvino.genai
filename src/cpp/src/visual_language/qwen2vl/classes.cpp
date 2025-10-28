@@ -1290,7 +1290,7 @@ std::vector<ov::Tensor> InputsEmbedderQwen2VL::convert_visual_features_for_cdpru
     size_t num_patches = original_shape[0];
     size_t embedding_dim = original_shape[1];
     size_t new_patches = num_patches / image_num;
-    OPENVINO_ASSERT(original_shape[0] == new_patches * image_num, "Inconsistent number of patches per image");
+    OPENVINO_ASSERT(num_patches % image_num == 0, "Number of patches must be evenly divisible by number of images");
 
     std::vector<ov::Tensor> visual_features;
     const float* src_data = merged_image_embeddings.data<const float>();
