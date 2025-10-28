@@ -74,7 +74,7 @@ namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 
 using ov::genai::ChatHistory;
-using ov::genai::ToolDefinitions;
+using ov::genai::JsonContainer;
 using ov::genai::TokenizedInputs;
 using ov::genai::Tokenizer;
 
@@ -251,29 +251,38 @@ void init_tokenizer(py::module_& m) {
             R"(Decode a batch of tokens into a list of string prompt.)")
 
         .def("apply_chat_template", [](Tokenizer& tok,
-                                        const std::vector<py::object>& history,
+                                        const std::variant<ChatHistory, std::vector<py::dict>>& history,
                                         bool add_generation_prompt,
                                         const std::string& chat_template,
-                                        const std::vector<py::object>& tools,
-                                        const py::object& extra_context) {
-            auto history_anymap = ChatHistory{};
-            for (const auto& message : history) {
-                ov::AnyMap message_anymap = pyutils::py_object_to_any_map(message);
-                history_anymap.push_back(message_anymap);
+                                        const std::optional<std::vector<py::dict>>& tools,
+                                        const std::optional<py::dict>& extra_context) {
+            ChatHistory chat_history;
+            std::visit(pyutils::overloaded {
+                [&](ChatHistory chat_history_obj) {
+                    chat_history = chat_history_obj;
+                },
+                [&](const std::vector<py::dict>& list_of_dicts) {
+                    chat_history = ChatHistory(pyutils::py_object_to_json_container(py::cast(list_of_dicts)));
+                }
+            }, history);
+
+            std::optional<JsonContainer> tools_jc;
+            if (tools.has_value()) {
+                tools_jc = pyutils::py_object_to_json_container(py::cast(tools.value()));
             }
-            auto tools_anymap = ToolDefinitions{};
-            for (const auto& tool : tools) {
-                ov::AnyMap tool_anymap = pyutils::py_object_to_any_map(tool);
-                tools_anymap.push_back(tool_anymap);
+
+            std::optional<JsonContainer> extra_context_jc;
+            if (extra_context.has_value()) {
+                extra_context_jc = pyutils::py_object_to_json_container(extra_context.value());
             }
-            ov::AnyMap extra_context_anymap = pyutils::py_object_to_any_map(extra_context);
-            return tok.apply_chat_template(history_anymap, add_generation_prompt, chat_template, tools_anymap, extra_context_anymap);
+
+            return tok.apply_chat_template(chat_history, add_generation_prompt, chat_template, tools_jc, extra_context_jc);
         },
             py::arg("history"),
             py::arg("add_generation_prompt"),
             py::arg("chat_template") = "",
-            py::arg("tools") = std::vector<ov::AnyMap>(),
-            py::arg("extra_context") = ov::AnyMap({}),
+            py::arg("tools") = py::none(),
+            py::arg("extra_context") = py::none(),
             R"(Applies a chat template to format chat history into a prompt string.)")
 
         .def(
@@ -288,6 +297,7 @@ void init_tokenizer(py::module_& m) {
             &Tokenizer::set_chat_template
         )
 
+        .def("get_original_chat_template", &Tokenizer::get_original_chat_template)
         .def("get_pad_token_id", &Tokenizer::get_pad_token_id)
         .def("get_bos_token_id", &Tokenizer::get_bos_token_id)
         .def("get_eos_token_id", &Tokenizer::get_eos_token_id)

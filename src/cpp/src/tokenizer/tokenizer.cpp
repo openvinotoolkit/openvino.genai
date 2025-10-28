@@ -57,7 +57,7 @@ TokenizedInputs Tokenizer::encode(const std::string& prompt, const ov::AnyMap& t
                                           ov::genai::max_length.name(),
                                           ov::genai::pad_to_max_length.name(),
                                           ov::genai::padding_side.name()});
-    return m_pimpl->encode(std::move(prompt), tokenization_params);
+    return m_pimpl->encode(prompt, tokenization_params);
 }
 
 TokenizedInputs Tokenizer::encode(const std::vector<std::pair<std::string, std::string>>& prompts, const ov::AnyMap& tokenization_params) {
@@ -131,16 +131,20 @@ std::string Tokenizer::get_eos_token() const {
     return m_pimpl->m_eos_token;
 }
 
-std::string Tokenizer::apply_chat_template(ChatHistory history,
+std::string Tokenizer::apply_chat_template(const ChatHistory& history,
                                            bool add_generation_prompt,
                                            const std::string& chat_template,
-                                           const ToolDefinitions& tools,
-                                           const ov::AnyMap& extra_context) const {
+                                           const std::optional<JsonContainer>& tools,
+                                           const std::optional<JsonContainer>& extra_context) const {
     return m_pimpl->apply_chat_template(history, add_generation_prompt, chat_template, tools, extra_context);
 }
 
 std::string Tokenizer::get_chat_template() const {
     return m_pimpl->get_chat_template();
+}
+
+std::string Tokenizer::get_original_chat_template() const {
+    return m_pimpl->get_original_chat_template();
 }
 
 void Tokenizer::set_chat_template(const std::string& chat_template) {

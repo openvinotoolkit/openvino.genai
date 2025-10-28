@@ -60,6 +60,11 @@ To convert InternVL2 models, `timm` and `einops` are required:
 ```bash
 pip install timm einops
 ```
+#### MiniCPMO {#minicpm-o-notes}
+
+1. `openbmb/MiniCPM-o-2_6` doesn't support transformers>=4.52 which is required for `optimum-cli` export.
+2. `--task image-text-to-text` is required for `optimum-cli export openvino --trust-remote-code` because `image-text-to-text` isn't `MiniCPM-o-2_6`'s native task.
+
 #### phi3_v {#phi3_v-notes}
 
 Models' configs aren't consistent. It's required to override the default `eos_token_id` with the one from a tokenizer:
@@ -75,13 +80,21 @@ Apply https://huggingface.co/microsoft/Phi-4-multimodal-instruct/discussions/78/
 
 <WhisperModelsTable />
 
+## Speech Generation Models
+
+<SpeechGenerationModelsTable />
+
 ## Text Embeddings Models
 
 <TextEmbeddingsModelsTable />
 
-## Speech Generation Models
+:::info
+LoRA adapters are not supported.
+:::
 
-<SpeechGenerationModelsTable />
+:::info
+Qwen3 Embedding models require `--task feature-extraction` during the conversion with `optimum-cli`.
+:::
 
 ## Text Rerank Models
 
@@ -89,6 +102,10 @@ Apply https://huggingface.co/microsoft/Phi-4-multimodal-instruct/discussions/78/
 
 :::info
 LoRA adapters are not supported.
+:::
+
+:::info
+Qwen3 Rerank models require `--task text-generation-with-past` during the conversion with `optimum-cli`.
 :::
 
 :::info

@@ -8,8 +8,6 @@
 #include <optional>
 #include <initializer_list>
 
-#include <nlohmann/json.hpp>
-
 #include "openvino/core/any.hpp"
 #include "openvino/genai/visibility.hpp"
 
@@ -17,21 +15,6 @@ namespace ov {
 namespace genai {
 
 class OPENVINO_GENAI_EXPORTS JsonContainer {
-private:
-    template<typename T>
-    struct is_json_primitive {
-        using type = typename std::decay<T>::type;
-        static constexpr bool value = 
-            std::is_same<type, bool>::value ||
-            std::is_same<type, int64_t>::value ||
-            std::is_same<type, int>::value ||
-            std::is_same<type, double>::value ||
-            std::is_same<type, float>::value ||
-            std::is_same<type, std::string>::value ||
-            std::is_same<type, const char*>::value ||
-            std::is_same<type, std::nullptr_t>::value;
-    };
-
 public:
     /**
      * @brief Default constructor creates an empty JSON object.
@@ -41,9 +24,14 @@ public:
     /**
      * @brief Construct from JSON primitive types (bool, int64_t, double, string, etc.).
      */
-    template<typename T>
-    JsonContainer(T&& value, typename std::enable_if<is_json_primitive<T>::value, int>::type = 0) :
-        JsonContainer(nlohmann::ordered_json(std::forward<T>(value))) {}
+    JsonContainer(bool value);
+    JsonContainer(int value);
+    JsonContainer(int64_t value);
+    JsonContainer(double value);
+    JsonContainer(float value);
+    JsonContainer(const std::string& value);
+    JsonContainer(const char* value);
+    JsonContainer(std::nullptr_t);
 
     /**
      * @brief Construct from initializer list of key-value pairs.
@@ -105,13 +93,14 @@ public:
     /**
      * @brief Assignment operator for JSON primitive types (bool, int64_t, double, string, etc.).
      */
-    template<typename T>
-    typename std::enable_if<is_json_primitive<T>::value, JsonContainer&>::type
-    operator=(T&& value) {
-        auto json_value_ptr = get_json_value_ptr(AccessMode::Write);
-        *json_value_ptr = nlohmann::ordered_json(std::forward<T>(value));
-        return *this;
-    }
+    JsonContainer& operator=(bool value);
+    JsonContainer& operator=(int value);
+    JsonContainer& operator=(int64_t value);
+    JsonContainer& operator=(double value);
+    JsonContainer& operator=(float value);
+    JsonContainer& operator=(const std::string& value);
+    JsonContainer& operator=(const char* value);
+    JsonContainer& operator=(std::nullptr_t);
 
     /**
      * @brief Copy assignment operator.
@@ -156,7 +145,7 @@ public:
      * @param value JsonContainer to append
      * @return Reference to this container for chaining
      */
-    JsonContainer& push_back(const JsonContainer& value);
+    JsonContainer& push_back(const JsonContainer& item);
 
     /**
      * @brief Add JSON primitive to end of array.
@@ -164,16 +153,14 @@ public:
      * @param value JSON primitive to append (bool, int64_t, double, string, etc.)
      * @return Reference to this container for chaining
      */
-    template<typename T>
-    typename std::enable_if<is_json_primitive<T>::value, JsonContainer&>::type
-    push_back(T&& value) {
-        auto json_value_ptr = get_json_value_ptr(AccessMode::Write);
-        if (!json_value_ptr->is_array()) {
-            *json_value_ptr = nlohmann::ordered_json::array();
-        }
-        json_value_ptr->push_back(nlohmann::ordered_json(std::forward<T>(value)));
-        return *this;
-    }
+    JsonContainer& push_back(bool value);
+    JsonContainer& push_back(int value);
+    JsonContainer& push_back(int64_t value);
+    JsonContainer& push_back(double value);
+    JsonContainer& push_back(float value);
+    JsonContainer& push_back(const std::string& value);
+    JsonContainer& push_back(const char* value);
+    JsonContainer& push_back(std::nullptr_t);
 
     /**
      * @brief Convert this container to an empty object.
@@ -231,28 +218,26 @@ public:
     std::string to_json_string(int indent = -1) const;
 
     /**
-     * @brief Convert to nlohmann::ordered_json for internal use.
-     * @return nlohmann::ordered_json representation
-     */
-    nlohmann::ordered_json to_json() const;
-
-    /**
      * @brief Get string representation of the JSON type.
      * @return Type name: "null", "boolean", "number", "string", "array", "object" or "unknown"
      */
     std::string type_name() const;
 
-private:
-    JsonContainer(std::shared_ptr<nlohmann::ordered_json> json_ptr, const std::string& path);
-    JsonContainer(nlohmann::ordered_json json);
+    /**
+     * @internal
+     * @brief Internal use only - get pointer to underlying JSON for serialization.
+     * @return Opaque pointer to internal JSON representation
+     */
+    void* _get_json_value_ptr() const;
 
-    std::shared_ptr<nlohmann::ordered_json> m_json;
+private:
+    class JsonContainerImpl;
+
+    JsonContainer(std::shared_ptr<JsonContainerImpl> impl, const std::string& path = "");
+
+    std::shared_ptr<JsonContainerImpl> m_impl;
 
     std::string m_path = "";
-
-    enum class AccessMode { Read, Write };
-    
-    nlohmann::ordered_json* get_json_value_ptr(AccessMode mode) const;
 };
 
 } // namespace genai

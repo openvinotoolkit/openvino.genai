@@ -88,6 +88,11 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
 
     py::object float_32_type = py::module_::import("numpy").attr("float32");
     if (py::isinstance<py::str>(py_obj)) {
+        if (property_name == "structural_tags_config") {
+            std::variant<ov::genai::StructuralTagsConfig, ov::genai::StructuredOutputConfig::StructuralTag> variant_value =
+                py_obj.cast<std::string>();
+            return variant_value;
+        }
         return py_obj.cast<std::string>();
     } else if (py::isinstance<py::bool_>(py_obj)) {
         return py_obj.cast<bool>();
@@ -144,6 +149,17 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                 }
             }
             return structural_tags;
+        } else if (property_name == "parsers") {
+            auto property_list = py_obj.cast<py::list>();
+            std::vector<std::shared_ptr<ov::genai::Parser>> parsers;
+            for (const auto& item : property_list) {
+                if (py::isinstance<ov::genai::Parser>(item)) {
+                    parsers.push_back(item.cast<std::shared_ptr<ov::genai::Parser>>());
+                } else {
+                    OPENVINO_THROW("Incorrect value in \"", property_name, "\". Expected Parser.");
+                }
+            }
+            return parsers;
         } else {
             auto _list = py_obj.cast<py::list>();
             enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE, TENSOR, DICT};
@@ -316,14 +332,32 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     } else if (py::isinstance<ov::genai::StructuralTagItem>(py_obj)) {
         return py::cast<ov::genai::StructuralTagItem>(py_obj);
     } else if (py::isinstance<ov::genai::StructuralTagsConfig>(py_obj)) {
+        // For structural_tags_config property, wrap in variant
+        if (property_name == "structural_tags_config") {
+            std::variant<ov::genai::StructuralTagsConfig, ov::genai::StructuredOutputConfig::StructuralTag> variant_value = 
+                py::cast<ov::genai::StructuralTagsConfig>(py_obj);
+            return variant_value;
+        }
         return py::cast<ov::genai::StructuralTagsConfig>(py_obj);
     } else if (py::isinstance<ov::genai::StructuredOutputConfig::Regex>(py_obj)
                || py::isinstance<ov::genai::StructuredOutputConfig::EBNF>(py_obj)
                || py::isinstance<ov::genai::StructuredOutputConfig::JSONSchema>(py_obj)
+               || py::isinstance<ov::genai::StructuredOutputConfig::ConstString>(py_obj)
+               || py::isinstance<ov::genai::StructuredOutputConfig::AnyText>(py_obj)
+               || py::isinstance<ov::genai::StructuredOutputConfig::QwenXMLParametersFormat>(py_obj)
                // python does not use std::shared_ptr to obj
                || py::isinstance<ov::genai::StructuredOutputConfig::Union>(py_obj)
-               || py::isinstance<ov::genai::StructuredOutputConfig::Concat>(py_obj)) {
-        return py_obj_to_compound_grammar(py_obj);
+               || py::isinstance<ov::genai::StructuredOutputConfig::Concat>(py_obj)
+               || py::isinstance<ov::genai::StructuredOutputConfig::Tag>(py_obj)
+               || py::isinstance<ov::genai::StructuredOutputConfig::TriggeredTags>(py_obj)
+               || py::isinstance<ov::genai::StructuredOutputConfig::TagsWithSeparator>(py_obj)) {
+        // For structural_tags_config property, wrap in variant
+        if (property_name == "structural_tags_config") {
+            std::variant<ov::genai::StructuralTagsConfig, ov::genai::StructuredOutputConfig::StructuralTag> variant_value = 
+                py_obj_to_structural_tag(py_obj);
+            return variant_value;
+        }
+        return py_obj_to_structural_tag(py_obj);
     } else if (py::isinstance<ov::genai::GenerationConfig>(py_obj)) {
         return py::cast<ov::genai::GenerationConfig>(py_obj);
     } else if (py::isinstance<ov::genai::ImageGenerationConfig>(py_obj)) {
@@ -428,25 +462,56 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
     return streamer;
 }
 
-StructuredOutputConfig::CompoundGrammar py_obj_to_compound_grammar(const py::object& py_obj) {
+StructuredOutputConfig::StructuralTag py_obj_to_structural_tag(const py::object& py_obj) {
     if (py::isinstance<ov::genai::StructuredOutputConfig::Regex>(py_obj)) {
         return py::cast<ov::genai::StructuredOutputConfig::Regex>(py_obj);
     } else if (py::isinstance<ov::genai::StructuredOutputConfig::JSONSchema>(py_obj)) {
         return py::cast<ov::genai::StructuredOutputConfig::JSONSchema>(py_obj);
     } else if (py::isinstance<ov::genai::StructuredOutputConfig::EBNF>(py_obj)) {
         return py::cast<ov::genai::StructuredOutputConfig::EBNF>(py_obj);
+    } else if (py::isinstance<ov::genai::StructuredOutputConfig::ConstString>(py_obj)) {
+        return py::cast<ov::genai::StructuredOutputConfig::ConstString>(py_obj);
+    } else if (py::isinstance<ov::genai::StructuredOutputConfig::AnyText>(py_obj)) {
+        return py::cast<ov::genai::StructuredOutputConfig::AnyText>(py_obj);
+    } else if (py::isinstance<ov::genai::StructuredOutputConfig::QwenXMLParametersFormat>(py_obj)) {
+        return py::cast<ov::genai::StructuredOutputConfig::QwenXMLParametersFormat>(py_obj);
+    } else if (py::isinstance<py::str>(py_obj)) {
+        return py::cast<std::string>(py_obj);
     } else if (py::isinstance<ov::genai::StructuredOutputConfig::Concat>(py_obj)) {
         return py::cast<std::shared_ptr<ov::genai::StructuredOutputConfig::Concat>>(py_obj);
     } else if (py::isinstance<ov::genai::StructuredOutputConfig::Union>(py_obj)) {
         return py::cast<std::shared_ptr<ov::genai::StructuredOutputConfig::Union>>(py_obj);
+    } else if (py::isinstance<ov::genai::StructuredOutputConfig::Tag>(py_obj)) {
+        return py::cast<std::shared_ptr<ov::genai::StructuredOutputConfig::Tag>>(py_obj);
+    } else if (py::isinstance<ov::genai::StructuredOutputConfig::TriggeredTags>(py_obj)) {
+        return py::cast<std::shared_ptr<ov::genai::StructuredOutputConfig::TriggeredTags>>(py_obj);
+    } else if (py::isinstance<ov::genai::StructuredOutputConfig::TagsWithSeparator>(py_obj)) {
+        return py::cast<std::shared_ptr<ov::genai::StructuredOutputConfig::TagsWithSeparator>>(py_obj);
     } else {
-        OPENVINO_THROW(py_obj.get_type(), " type isn't supported for StructuredOutputConfig compound grammar: ", py::str(py_obj));
+        OPENVINO_THROW(py_obj.get_type(), " type isn't supported for StructuralTag: ", py::str(py_obj));
     }
 }
 
 ov::genai::GenerationConfig update_config_from_kwargs(ov::genai::GenerationConfig config, const py::kwargs& kwargs) {
     config.update_generation_config(kwargs_to_any_map(kwargs));
     return config;
+}
+
+ov::genai::JsonContainer py_object_to_json_container(const py::object& obj) {
+    if (obj.is_none()) {
+        return JsonContainer();
+    }
+    // TODO Consider using direct native JsonContainer conversion instead of string serialization
+    py::module_ json_module = py::module_::import("json");
+    std::string json_string = py::cast<std::string>(json_module.attr("dumps")(obj));
+    return JsonContainer::from_json_string(json_string);
+}
+
+py::object json_container_to_py_object(const ov::genai::JsonContainer& container) {
+    // TODO Consider using direct native JsonContainer conversion instead of string serialization
+    std::string json_string = container.to_json_string();
+    py::module_ json_module = py::module_::import("json");
+    return json_module.attr("loads")(json_string);
 }
 
 }  // namespace ov::genai::pybind::utils

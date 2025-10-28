@@ -50,18 +50,18 @@ struct OPENVINO_GENAI_EXPORTS RawPerfMetrics {
 * @brief Structure to store mean and standard deviation values.
 */
 struct OPENVINO_GENAI_EXPORTS MeanStdPair {
-    float mean;
-    float std;
+    float mean = 0;
+    float std = 0;
 };
 
 /**
 * @brief Structure to store list of durations in milliseconds.
 */
 struct OPENVINO_GENAI_EXPORTS SummaryStats {
-    float mean;
-    float std;
-    float min;
-    float max;
+    float mean = 0;
+    float std = 0;
+    float min = 0;
+    float max = 0;
 };
 
 /**
@@ -118,23 +118,23 @@ struct OPENVINO_GENAI_EXPORTS SummaryStats {
  * @param num_input_tokens Number of tokens in the input prompt.
  */
 struct OPENVINO_GENAI_EXPORTS PerfMetrics {
-    float load_time;   // Load time in ms.
-    MeanStdPair ttft;  // Time to the first token (in ms) (TTFT).
-    MeanStdPair tpot;  // Time (in ms) per output token (TPOT).
-    MeanStdPair ipot;  // Inference time (in ms) per output token.
-    MeanStdPair throughput;  // Tokens per second.
+    float load_time = 0;   // Load time in ms.
+    MeanStdPair ttft = {0, 0};  // Time to the first token (in ms) (TTFT).
+    MeanStdPair tpot = {0, 0};  // Time (in ms) per output token (TPOT).
+    MeanStdPair ipot = {0, 0};  // Inference time (in ms) per output token.
+    MeanStdPair throughput = {0, 0};  // Tokens per second.
 
     // Time to initialize grammar compiler for each backend in ms.
     std::map<std::string, float> grammar_compiler_init_times;     
     SummaryStats grammar_compile_time;    // Time to compile grammar in ms.
 
-    MeanStdPair generate_duration;
-    MeanStdPair inference_duration;
+    MeanStdPair generate_duration = {0, 0};
+    MeanStdPair inference_duration = {0, 0};
     MeanStdPair tokenization_duration = {-1.0f, -1.0f};
     MeanStdPair detokenization_duration = {-1.0f, -1.0f};
 
-    size_t num_generated_tokens;
-    size_t num_input_tokens;
+    size_t num_generated_tokens = 0;
+    size_t num_input_tokens = 0;
 
     float get_load_time();         // Load time in ms.
     size_t get_num_generated_tokens();

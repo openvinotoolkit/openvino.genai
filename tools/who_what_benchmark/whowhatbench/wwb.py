@@ -185,7 +185,7 @@ def parse_args():
         type=str,
         nargs='*',
         default=None,
-        help="LoRA adapters.",
+        help="LoRA adapters. Supported for Text Generation and Image Generation pipelines.",
     )
     parser.add_argument(
         "--alphas",
@@ -416,10 +416,22 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
     return "".join(output)
 
 
-def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, num_assistant_tokens=0,
-                   assistant_confidence_threshold=0.0):
-    return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens, apply_chat_template=use_chat_template,
-                          num_assistant_tokens=num_assistant_tokens, assistant_confidence_threshold=assistant_confidence_threshold)
+def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, empty_adapters=False,
+                   num_assistant_tokens=0, assistant_confidence_threshold=0.0):
+    kwargs = {}
+    if empty_adapters:
+        import openvino_genai
+        kwargs["adapters"] = openvino_genai.AdapterConfig()
+
+    return model.generate(
+        question,
+        do_sample=False,
+        max_new_tokens=max_new_tokens,
+        apply_chat_template=use_chat_template,
+        num_assistant_tokens=num_assistant_tokens,
+        assistant_confidence_threshold=assistant_confidence_threshold,
+        **kwargs,
+    )
 
 
 def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, num_assistant_tokens=0,

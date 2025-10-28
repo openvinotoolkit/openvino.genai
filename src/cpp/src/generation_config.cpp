@@ -153,6 +153,7 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
 
     // Structured output
     read_anymap_param(properties, "structured_output_config", structured_output_config);
+    read_anymap_param(properties, "parsers", parsers);
 }
 
 
@@ -208,6 +209,15 @@ std::string StructuralTagsConfig::to_string() const {
 
     return "StructuralTagsConfig(structural_tags=" + tags_repr.str() +
            ", triggers=" + triggers_repr.str() + ")";
+}
+
+std::string StructuralTagsConfig::to_json() const {
+    std::vector<StructuredOutputConfig::Tag> tags;
+    tags.reserve(structural_tags.size());
+    for (const auto& tag : structural_tags) {
+        tags.emplace_back(tag.begin, StructuredOutputConfig::JSONSchema{tag.schema}, tag.end);
+    }
+    return StructuredOutputConfig::TriggeredTags(triggers, tags, false, false).to_json();
 }
 
 StructuredOutputConfig::StructuredOutputConfig(const ov::AnyMap& properties) {
@@ -367,16 +377,15 @@ void StructuredOutputConfig::validate() const {
         (json_schema.has_value() ? "json=" + *json_schema +", " : ""),
         (regex.has_value() ? "regex=" + *regex + ", " : ""),
         (grammar.has_value() ? "grammar=" + *grammar : ""),
-        (structural_tags_config.has_value() ? "structural_tags_config=" + structural_tags_config->to_string() : ""),
-        (compound_grammar.has_value() ? "compound_grammar=" + std::visit([](const auto& g) -> std::string {
-            if constexpr (
-                std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<ov::genai::StructuredOutputConfig::Concat>> ||
-                std::is_same_v<std::decay_t<decltype(g)>, std::shared_ptr<ov::genai::StructuredOutputConfig::Union>>
-            ) {
-                return g ? g->to_string() : "null";
+        (structural_tags_config.has_value() ? "structural_tags_config=" + std::visit([](const auto& config) -> std::string {
+            if constexpr (std::is_same_v<std::decay_t<decltype(config)>, StructuralTagsConfig>) {
+                return config.to_string();
             } else {
-                return g.to_string();
+                return StructuredOutputConfig::structural_tag_to_string(config);
             }
+        }, *structural_tags_config) : ""),
+        (compound_grammar.has_value() ? "compound_grammar=" + std::visit([](const auto& g) -> std::string {
+            return StructuredOutputConfig::structural_tag_to_string(g);
         }, *compound_grammar) : "")
     );
 }
@@ -389,15 +398,66 @@ void StructuredOutputConfig::validate(Tokenizer& tokenizer) const {
 
 
 std::shared_ptr<ov::genai::StructuredOutputConfig::Concat>
-operator+(const ov::genai::StructuredOutputConfig::CompoundGrammar& lhs,
-          const ov::genai::StructuredOutputConfig::CompoundGrammar& rhs) {
-    return std::make_shared<ov::genai::StructuredOutputConfig::Concat>(lhs, rhs);
+operator+(const ov::genai::StructuredOutputConfig::StructuralTag& lhs,
+          const ov::genai::StructuredOutputConfig::StructuralTag& rhs) {
+    using SOC = ov::genai::StructuredOutputConfig;
+    const auto lhs_concat = std::get_if<std::shared_ptr<SOC::Concat>>(&lhs);
+    const auto rhs_concat = std::get_if<std::shared_ptr<SOC::Concat>>(&rhs);
+
+    if (lhs_concat && *lhs_concat) {
+        // lhs is a Concat
+        if (rhs_concat && *rhs_concat) {
+            // both are Concat: combine elements
+            std::vector<SOC::StructuralTag> elems = (*lhs_concat)->elements;
+            elems.insert(elems.end(), (*rhs_concat)->elements.begin(), (*rhs_concat)->elements.end());
+            return std::make_shared<SOC::Concat>(elems);
+        } else {
+            // only lhs is Concat: append rhs
+            std::vector<SOC::StructuralTag> elems = (*lhs_concat)->elements;
+            elems.push_back(rhs);
+            return std::make_shared<SOC::Concat>(elems);
+        }
+    } else if (rhs_concat && *rhs_concat) {
+        // only rhs is Concat: prepend lhs
+        std::vector<SOC::StructuralTag> elems;
+        elems.push_back(lhs);
+        elems.insert(elems.end(), (*rhs_concat)->elements.begin(), (*rhs_concat)->elements.end());
+        return std::make_shared<SOC::Concat>(elems);
+    } else {
+        // neither is Concat: create binary Concat
+        return std::make_shared<SOC::Concat>(lhs, rhs);
+    }
 }
 
 std::shared_ptr<ov::genai::StructuredOutputConfig::Union>
-operator|(const ov::genai::StructuredOutputConfig::CompoundGrammar& lhs,
-          const ov::genai::StructuredOutputConfig::CompoundGrammar& rhs) {
-    return std::make_shared<ov::genai::StructuredOutputConfig::Union>(lhs, rhs);
+operator|(const ov::genai::StructuredOutputConfig::StructuralTag& lhs,
+          const ov::genai::StructuredOutputConfig::StructuralTag& rhs) {
+    using SOC = ov::genai::StructuredOutputConfig;
+    const auto lhs_union = std::get_if<std::shared_ptr<SOC::Union>>(&lhs);
+    const auto rhs_union = std::get_if<std::shared_ptr<SOC::Union>>(&rhs);
+
+    if (lhs_union && *lhs_union) {
+        if (rhs_union && *rhs_union) {
+            // both are Union: combine elements
+            std::vector<SOC::StructuralTag> elems = (*lhs_union)->elements;
+            elems.insert(elems.end(), (*rhs_union)->elements.begin(), (*rhs_union)->elements.end());
+            return std::make_shared<SOC::Union>(elems);
+        } else {
+            // only lhs is Union: append rhs
+            std::vector<SOC::StructuralTag> elems = (*lhs_union)->elements;
+            elems.push_back(rhs);
+            return std::make_shared<SOC::Union>(elems);
+        }
+    } else if (rhs_union && *rhs_union) {
+        // only rhs is Union: prepend lhs
+        std::vector<SOC::StructuralTag> elems;
+        elems.push_back(lhs);
+        elems.insert(elems.end(), (*rhs_union)->elements.begin(), (*rhs_union)->elements.end());
+        return std::make_shared<SOC::Union>(elems);
+    } else {
+        // neither is Union: create binary Union
+        return std::make_shared<SOC::Union>(lhs, rhs);
+    }
 }
 
 GenerationConfig beam_search() {

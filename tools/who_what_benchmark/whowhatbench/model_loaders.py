@@ -71,6 +71,12 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     if kwargs.get('gguf_file'):
         pipeline_path = os.path.join(model_dir, kwargs['gguf_file'])
 
+    adapter_config = openvino_genai.AdapterConfig()
+    if kwargs.get("adapters") is not None:
+        for adapter, alpha in zip(kwargs['adapters'], kwargs['alphas']):
+            ov_adapter = openvino_genai.Adapter(adapter)
+            adapter_config.add(ov_adapter, alpha)
+
     draft_model_path = kwargs.get("draft_model", '')
     if draft_model_path:
         if not Path(draft_model_path).exists():
@@ -87,10 +93,10 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
     if is_continuous_batching:
         logger.info("Using OpenVINO GenAI Continuous Batching API")
         scheduler_config = get_scheduler_config_genai(kwargs["cb_config"])
-        pipeline = openvino_genai.LLMPipeline(pipeline_path, device=device, scheduler_config=scheduler_config, **ov_config)
+        pipeline = openvino_genai.LLMPipeline(pipeline_path, device=device, adapters=adapter_config, scheduler_config=scheduler_config, **ov_config)
     else:
         logger.info("Using OpenVINO GenAI LLMPipeline API")
-        pipeline = openvino_genai.LLMPipeline(pipeline_path, device=device, **ov_config)
+        pipeline = openvino_genai.LLMPipeline(pipeline_path, device=device, adapters=adapter_config, **ov_config)
 
     return GenAIModelWrapper(pipeline, model_dir, "text")
 
@@ -140,6 +146,25 @@ def load_text_hf_pipeline(model_id, device, **kwargs):
             model = AutoModelForCausalLM.from_pretrained(
                 model_id, trust_remote_code=True, device_map=device.lower(), **model_kwargs
             )
+
+    if kwargs.get("adapters") is not None:
+        adapters = kwargs["adapters"]
+        alphas = kwargs.get("alphas", None)
+
+        from peft import PeftModel
+        adapter_names = ["adapter_0"]
+        model = PeftModel.from_pretrained(model, adapters[0], adapter_name=adapter_names[0])
+
+        for idx, adapter in enumerate(adapters[1:], start=1):
+            model.load_adapter(adapter, adapter_name=f"adapter_{idx}")
+            adapter_names.append(f"adapter_{idx}")
+
+        print('alphas', alphas)
+
+        assert len(alphas) == len(adapter_names), "`alphas` must be the same length as `adapters`"
+        model.add_weighted_adapter(adapter_names, alphas, "merged_lora")
+
+        model.set_adapter("merged_lora")
 
     model.eval()
     return model

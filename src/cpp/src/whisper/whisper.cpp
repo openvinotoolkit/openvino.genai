@@ -202,7 +202,6 @@ ov::Tensor encode(ov::InferRequest& request,
                     ". Actual size: ",
                     mel_data.size(),
                     ".");
-
     ov::Tensor input_tensor(ov::element::f32, {1, feature_size, nb_max_frames}, mel_data.data());
 
     request.set_tensor("input_features", input_tensor);
@@ -213,7 +212,10 @@ ov::Tensor encode(ov::InferRequest& request,
     raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
 
     // reset input tensor
-    request.set_tensor("input_features", ov::Tensor(ov::element::f32, {0, feature_size, nb_max_frames}));
+    auto devices = request.get_compiled_model().get_property(ov::execution_devices);
+    OPENVINO_ASSERT(devices.size() > 0, "No execution devices found!");
+    size_t batch_size = (devices[0] == "NPU") ? 1 : 0;
+    request.set_tensor("input_features", ov::Tensor(ov::element::f32, {batch_size, feature_size, nb_max_frames}));
 
     return request.get_tensor("last_hidden_state");
 }
@@ -231,7 +233,7 @@ std::vector<int64_t> prepare_init_tokens(ov::Tensor& encoder_hidden_state,
         }
     }
 
-    int64_t language_token_id;
+    int64_t language_token_id = 0;
     if (config.language.has_value()) {
         std::string language = *config.language;
         if (config.lang_to_id.count(language)) {

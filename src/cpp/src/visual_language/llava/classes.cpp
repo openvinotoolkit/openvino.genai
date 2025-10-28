@@ -19,24 +19,7 @@ clip_image_f32 preprocess_clip_image_llava(const clip_image_u8& image, const Pro
     bicubic_resize(image, resized_image, new_width, new_height);
 
     // Center crop
-    clip_image_u8 cropped_image;
-    int crop_height = config.crop_size_height;
-    int crop_width = config.crop_size_width;
-    int start_x = (resized_image.nx - crop_width) / 2;
-    int start_y = (resized_image.ny - crop_height) / 2;
-
-    cropped_image.nx = crop_width;
-    cropped_image.ny = crop_height;
-    cropped_image.buf.resize(3 * crop_width * crop_height);
-
-    for (int y = 0; y < crop_height; ++y) {
-        for (int x = 0; x < crop_width; ++x) {
-            for (int c = 0; c < 3; ++c) {
-                cropped_image.buf[(y * crop_width + x) * 3 + c] =
-                    resized_image.buf[((start_y + y) * resized_image.nx + (start_x + x)) * 3 + c];
-            }
-        }
-    }
+    clip_image_u8 cropped_image = center_crop(resized_image, config.crop_size_height, config.crop_size_width);
 
     // Normalize
     clip_ctx ctx;
@@ -103,7 +86,7 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVA::encode_images(const st
     return embeds;
 }
 
-std::pair<std::string, std::vector<size_t>> InputsEmbedderLLaVA::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormlizedPrompt InputsEmbedderLLaVA::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     std::string image_token = m_vlm_config.im_start;
     auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size());
 
@@ -123,7 +106,7 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedderLLaVA::normalize_promp
         unified_prompt.replace(searched_pos, image_token.length(), expanded_tag);
         searched_pos += expanded_tag.length();
     }
-    return {std::move(unified_prompt), std::move(images_sequence)};
+    return {std::move(unified_prompt), std::move(images_sequence), {}};
 }
 
 ov::Tensor InputsEmbedderLLaVA::get_inputs_embeds(const std::string& unified_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& images_sequence) {

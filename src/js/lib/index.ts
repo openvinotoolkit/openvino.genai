@@ -28,8 +28,8 @@ class PipelineFactory {
     await pipeline.init();
     return pipeline;
   }
-  static async TextEmbeddingPipeline(modelPath: string, device = "CPU") {
-    const pipeline = new Embedding(modelPath, device);
+  static async TextEmbeddingPipeline(modelPath: string, device = "CPU", config = {}) {
+    const pipeline = new Embedding(modelPath, device, config);
     await pipeline.init();
 
     return pipeline;
