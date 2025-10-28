@@ -68,10 +68,10 @@ def main():
 
     def callback(step, num_steps, latent):
         print(f"Image generation step: {step + 1} / {num_steps}")
-        if step < num_steps - 1:
+        if step + 1 < num_steps:
             image_tensor = pipe.decode(latent)
             image = Image.fromarray(image_tensor.data[0])
-            image.save("image_{}.bmp".format(step + 1))
+            image.save("intermediate_image_{}.bmp".format(step + 1))
         return False
     
     #

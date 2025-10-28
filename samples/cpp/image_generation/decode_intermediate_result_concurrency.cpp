@@ -63,7 +63,7 @@ int32_t main(int32_t argc, char* argv[]) try {
 
     auto callback = [&](size_t step, size_t num_steps, ov::Tensor& latent) -> bool {
         std::cout << "Image generation step: " << step + 1 << " / " << num_steps << std::endl;
-        if (step < num_steps - 1) {
+        if (step + 1 < num_steps) {
             ov::Tensor img = pipe.decode(latent); // get intermediate image tensor
             imwrite("intermediate_image_" + std::to_string(step + 1) + ".bmp", img, true);
         }

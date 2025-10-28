@@ -60,7 +60,7 @@ private:
     size_t m_step;
 
     void _worker() {
-        while (m_step < (m_num_steps - 1)) {
+        while (m_step + 1  < m_num_steps) {
             // wait for queue pull
             std::tuple<size_t, size_t, ov::Tensor> intermediate_latent = m_squeue.pull();
 
