@@ -112,7 +112,7 @@ describe("generation parameters validation", () => {
   it("should throw an error if temperature is not a number", async () => {
     await assert.rejects(
       async () => await pipeline.generate(),
-      /Passed argument must be a string, ChatHistory or an array of strings./
+      /Passed argument must be a string, ChatHistory or an array of strings./,
     );
   });
 
