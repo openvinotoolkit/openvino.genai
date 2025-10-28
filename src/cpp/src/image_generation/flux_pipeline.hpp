@@ -7,6 +7,8 @@
 
 #include "image_generation/diffusion_pipeline.hpp"
 #include "image_generation/numpy_utils.hpp"
+#include "image_generation/threaded_callback.hpp"
+
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 #include "utils.hpp"

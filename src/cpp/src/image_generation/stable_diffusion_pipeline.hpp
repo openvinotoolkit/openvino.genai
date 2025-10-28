@@ -9,6 +9,7 @@
 #include <filesystem>
 
 #include "image_generation/diffusion_pipeline.hpp"
+#include "image_generation/threaded_callback.hpp"
 
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 #include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
