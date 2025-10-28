@@ -9,6 +9,7 @@
 #include <filesystem>
 
 #include "image_generation/diffusion_pipeline.hpp"
+#include "image_generation/threaded_callback.hpp"
 
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 #include "openvino/genai/image_generation/clip_text_model_with_projection.hpp"
@@ -301,13 +302,6 @@ public:
         ImageGenerationConfig generation_config = m_generation_config;
         generation_config.update_generation_config(properties);
 
-        // use callback if defined
-        std::function<bool(size_t, size_t, ov::Tensor&)> callback = nullptr;
-        auto callback_iter = properties.find(ov::genai::callback.name());
-        if (callback_iter != properties.end()) {
-            callback = callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>();
-        }
-
         // Stable Diffusion pipeline
         // see https://huggingface.co/docs/diffusers/using-diffusers/write_own_pipeline#deconstruct-the-stable-diffusion-pipeline
 
@@ -326,6 +320,17 @@ public:
 
         m_scheduler->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
         std::vector<std::int64_t> timesteps = m_scheduler->get_timesteps();
+
+        // use callback if defined
+        std::shared_ptr<ThreadedCallbackWrapper> callback_ptr = nullptr;
+        auto callback_iter = properties.find(ov::genai::callback.name());
+        if (callback_iter != properties.end()) {
+            callback_ptr = std::make_shared<ThreadedCallbackWrapper>(
+                callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>(), 
+                generation_config.num_inference_steps
+            );
+            callback_ptr->start();
+        }
 
         // compute text encoders and set hidden states
         compute_hidden_states(positive_prompt, generation_config);
@@ -394,7 +399,8 @@ public:
             const auto it = scheduler_step_result.find("denoised");
             denoised = it != scheduler_step_result.end() ? it->second : latent;
 
-            if (callback && callback(inference_step, timesteps.size(), denoised)) {
+            if (callback_ptr->has_callback() && callback_ptr->write(inference_step, timesteps.size(), denoised)) {
+                callback_ptr->end();
                 auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
                 m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
 
@@ -407,6 +413,9 @@ public:
 
             auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
             m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
+        }
+        if (callback_ptr->has_callback()) {
+            callback_ptr->end();
         }
         auto decode_start = std::chrono::steady_clock::now();
         auto image = decode(denoised);
