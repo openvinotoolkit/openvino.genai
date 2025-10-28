@@ -6,7 +6,7 @@
 6. Branching policy is aligned with  [OpenVINO's policy](https://github.com/openvinotoolkit/openvino/blob/71ee9cc42ec63b3affb2801dbbc4a77e6d8003f6/CONTRIBUTING_PR.md#branching-policy).
 
 # New feature contribution
-For the full new feature contribution the list above is extended with
+In order to get accepted PR with new features, the following list of items MUST be completed. Otherwise, PR will be rejected.
 1. Proof of Concept (PoC) pipeline including model preparation step using `optimum-intel` and `GenAI` inference implementation.
 2. Pass architectural review with
     1. API proposal for `optimum-intel` and `GenAI`
