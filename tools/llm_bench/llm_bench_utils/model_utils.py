@@ -136,10 +136,6 @@ def analyze_args(args):
     model_args["rerank_texts_file"] = args.texts_file
     model_args["apply_chat_template"] = args.apply_chat_template
 
-    # CDPruner config
-    model_args['pruning_ratio'] = args.pruning_ratio
-    model_args['relevance_weight'] = args.relevance_weight
-
     optimum = args.optimum
 
     if optimum and args.genai:

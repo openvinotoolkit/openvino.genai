@@ -112,14 +112,6 @@ def get_argprser():
     parser.add_argument('-bs', '--batch_size', type=int, default=1, required=False, help='Batch size value')
     parser.add_argument('--num_beams', type=int, default=1, help='Number of beams in the decoding strategy, activates beam_search if greater than 1')
     parser.add_argument(
-        '--pruning_ratio',
-        type=int,
-        default=0,
-        help='Percentage of visual tokens to prune'
-        'Only supports PA model. To switch to PA mode, please, set {"ATTENTION_BACKEND": "PA"} in --load_config.'
-    )
-    parser.add_argument('--relevance_weight', type=float, help='Relevance weight for the model')
-    parser.add_argument(
         '--torch_compile_backend',
         default=None,
         required=False,
