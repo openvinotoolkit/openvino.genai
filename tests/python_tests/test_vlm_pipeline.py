@@ -1393,27 +1393,38 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize(
-    "ov_pipe_model",
+    "ov_pipe_model,has_image,has_video",
     [
-        pytest.param(("katuni4ka/tiny-random-qwen2vl","SDPA")),
-        pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA")),
-        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "SDPA")),
-        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "PA"), marks=pytest.mark.xfail(reason="CVS-167316")),
+        pytest.param(("katuni4ka/tiny-random-qwen2vl","SDPA"), True, False, id="qwen2vl/SDPA/image"),
+        pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA"), True, False, id="qwen2vl/PA/image"),
+        pytest.param(("katuni4ka/tiny-random-qwen2vl","SDPA"), False, True, id="qwen2vl/SDPA/video"),
+        pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA"), False, True, id="qwen2vl/PA/video"),
+        pytest.param(("katuni4ka/tiny-random-qwen2vl", "SDPA"), True, True, id="qwen2vl/PA/image+video"),
+        pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA"), True, True, id="qwen2vl/PA/image+video"),
+        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "SDPA"), True, False, id="qwen2.5-vl/SDPA/image"),
+        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "PA"), True, False, id="qwen2.5-vl/PA/image", marks=pytest.mark.xfail(reason="CVS-167316")),
+        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "SDPA"), False, True, id="qwen2.5-vl/SDPA/video"),
+        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "PA"), False, True, id="qwen2.5-vl/PA/video", marks=pytest.mark.xfail(reason="CVS-167316")),
+        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "SDPA"), True, True, id="qwen2.5-vl/SDPA/image+video"),
+        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "PA"), True, True, id="qwen2.5-vl/PA/image+video", marks=pytest.mark.xfail(reason="CVS-167316")),
         (
-            pytest.param(("katuni4ka/tiny-random-gemma3", "SDPA"), marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) 
+            pytest.param(("katuni4ka/tiny-random-gemma3", "SDPA"), True, False, id="gemma3/SDPA/image", marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) 
             if sys.platform == "darwin" 
-            else pytest.param(("katuni4ka/tiny-random-gemma3",  "SDPA"))
+            else pytest.param(("katuni4ka/tiny-random-gemma3",  "SDPA"), True, False, id="gemma3/SDPA/image")
         ),
-        pytest.param(("katuni4ka/tiny-random-gemma3", "PA"), marks=pytest.mark.xfail(reason="CVS-171180")),
-        pytest.param(("qnguyen3/nanoLLaVA", "SDPA")),
-        pytest.param(("qnguyen3/nanoLLaVA", "PA")),
-        pytest.param(("katuni4ka/tiny-random-llava-next-video", "SDPA")),
-        pytest.param(("katuni4ka/tiny-random-llava-next-video", "PA")),
+        pytest.param(("katuni4ka/tiny-random-gemma3", "PA"), True, False, id="gemma3/PA/image", marks=pytest.mark.xfail(reason="CVS-171180")),
+        pytest.param(("qnguyen3/nanoLLaVA", "SDPA"), True, False, id="nanoLLaVA/SDPA/image"),
+        pytest.param(("qnguyen3/nanoLLaVA", "PA"), True, False, id="nanoLLaVA/PA/image"),
+        pytest.param(("katuni4ka/tiny-random-llava-next-video", "SDPA"), True, False, id="llava-next-video/SDPA/image"),
+        pytest.param(("katuni4ka/tiny-random-llava-next-video", "PA"), True, False, id="llava-next-video/PA/image"),
+        pytest.param(("katuni4ka/tiny-random-llava-next-video", "SDPA"), False, True, id="llava-next-video/SDPA/video"),
+        pytest.param(("katuni4ka/tiny-random-llava-next-video", "PA"), False, True, id="llava-next-video/PA/video"),
+        pytest.param(("katuni4ka/tiny-random-llava-next-video", "SDPA"), True, True, id="llava-next-video/SDPA/image+video"),
+        pytest.param(("katuni4ka/tiny-random-llava-next-video", "PA"), True, True, id="llava-next-video/PA/image+video"),
     ],
-    ids=lambda p: f"{p[0]}/{p[1]}",
     indirect=["ov_pipe_model"],
 )
-def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelInfo):
+def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool):
     class NanollavaProcessorWrapper:
         def __init__(self, processor, config, model_dtype):
             self.processor = processor
@@ -1434,8 +1445,6 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
     model_id = ov_pipe_model.model_id
     resolution = ov_pipe_model.resolution
     
-
-    prompt = "Describe this image."
     resized_image = None
     resized_video = None
     conversation = [
@@ -1446,25 +1455,33 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
             ],
         }
     ]
-
+    
+    prompt_parts = []
     media_content = []
-    is_video_model = ov_pipe_model.model_id in VIDEO_MODEL_IDS
-    if is_video_model:
-        prompt = "Describe this video."
+    if has_image:
+        resized_image = request.getfixturevalue(f"cat_image_{resolution}x{resolution}")
+        media_content.append({"type": "image"})
+        prompt_parts.append("image")        
+    
+    if has_video:
         resized_video = request.getfixturevalue("synthetic_video_32x32")
         media_content.append({"type": "video"})
-
-    resized_image = request.getfixturevalue(f"cat_image_{resolution}x{resolution}")
-    if is_video_model:
-        prompt = "Describe this image and video."
-    else:
-        prompt = "Describe this image."
-
-    media_content.append({"type": "image"})
-    if model_id not in ["katuni4ka/tiny-random-qwen2.5-vl", "katuni4ka/tiny-random-qwen2vl"]:
+        prompt_parts.append("video")
+    
+    # For QWen-VL series models, in GenAI VLM implementation, video is placed before image in chat template, 
+    # but in Optimum, this order depends only on the image and video order in the "conversation".
+    # So just reverse here in order to keep align.
+    if has_image and has_video and model_id in ["katuni4ka/tiny-random-qwen2.5-vl", "katuni4ka/tiny-random-qwen2vl"]:
         media_content.reverse()
     conversation[0]["content"] = media_content + conversation[0]["content"]
-
+    
+    if len(prompt_parts) == 1:
+        prompt = f"Describe this {prompt_parts[0]}."
+    elif len(prompt_parts) == 2:
+        prompt = f"Describe this {prompt_parts[0]} and {prompt_parts[1]}."
+    else:
+        prompt = "Describe."
+    
     conversation[0]["content"][-1]["text"] = prompt
 
     model_path = _get_ov_model(model_id)
