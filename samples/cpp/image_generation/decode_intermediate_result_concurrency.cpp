@@ -65,7 +65,7 @@ int32_t main(int32_t argc, char* argv[]) try {
         std::cout << "Image generation step: " << step + 1 << " / " << num_steps << std::endl;
         if (step < num_steps - 1) {
             ov::Tensor img = pipe.decode(latent); // get intermediate image tensor
-            imwrite("__intermediate_image_" + std::to_string(step + 1) + ".bmp", img, true);
+            imwrite("intermediate_image_" + std::to_string(step + 1) + ".bmp", img, true);
         }
         return false;
     };

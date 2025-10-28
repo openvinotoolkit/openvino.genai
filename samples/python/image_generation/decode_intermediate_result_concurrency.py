@@ -2,9 +2,7 @@
 # Copyright (C) 2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import queue
 import argparse
-import threading
 
 import openvino_genai
 
@@ -65,52 +63,19 @@ def main():
     pipe.compile(args.text_encoder_device, args.unet_device, args.vae_decoder_device, config=properties)
 
     #
-    # Step 4: Use the queue.Queue() to handle intermediate latent result
-    #
-
-    intermediate_latent = queue.Queue()
-
-    #
-    # Step 5: Initial funtion for decode intermediate latent in parallel
-    #
-
-    def decode_latent(intermediate_latent, decoder, num_steps):
-        i = 0
-        while i < num_steps:
-            try:
-                latent = intermediate_latent.get_nowait()
-                image_tensor = decoder(latent)
-                image = Image.fromarray(image_tensor.data[0])
-                image.save("image_{}.bmp".format(i + 1))
-                i = i + 1
-            except queue.Empty:
-                continue
-
-    #
-    # Step 6: Initial thread for decode intermediate latent and save as image
-    #
-
-    thread = threading.Thread(
-        target=decode_latent,
-        args=(intermediate_latent, pipe.decode, number_of_inference_steps_per_image - 1)  # Pass "Task1" as name and 3 as delay
-    )
-
-
-    #
-    # Step 7: Callback function for add lantent into intermediate latent queue
+    # Step 4: Callback function for decode intermediate latent and save it as an image.
     #
 
     def callback(step, num_steps, latent):
         print(f"Image generation step: {step + 1} / {num_steps}")
         if step < num_steps - 1:
-            print("Add latent into intermediate latent buffer.")
-            intermediate_latent.put(latent)
-        else:
-            thread.join()
+            image_tensor = pipe.decode(latent)
+            image = Image.fromarray(image_tensor.data[0])
+            image.save("image_{}.bmp".format(step + 1))
         return False
     
     #
-    # Step 8: Use the Text2ImagePipeline to generate 'number_of_images_to_generate' images.
+    # Step 5: Use the Text2ImagePipeline to generate 'number_of_images_to_generate' images.
     #
 
     for imagei in range(0, number_of_images_to_generate):
