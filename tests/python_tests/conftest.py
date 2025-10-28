@@ -53,5 +53,4 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config: pytest.Config):
-    pytest.run_marker = None
     pytest.selected_model_ids = config.getoption("--model_ids", default=None)
