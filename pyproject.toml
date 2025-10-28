@@ -63,5 +63,4 @@ build-backend = "py_build_cmake.build"
 
 [tool.pytest.ini_options]
 markers = [
-    "precommit: (deselect with '-m \"precommit\"')",
 ]

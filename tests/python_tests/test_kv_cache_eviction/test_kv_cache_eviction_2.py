@@ -33,7 +33,6 @@ OPTIMAL_KVCRUSH_CONFIGS = {
 }
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("subset", ["samsum", "trec", "qasper"])
 def test_kvcrush_vs_snapkv_baseline_longbench(subset):
     """Test that KVCrush performs equal or better than SnapKV baseline on LongBench datasets."""

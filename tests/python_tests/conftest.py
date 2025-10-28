@@ -53,6 +53,5 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config: pytest.Config):
-    marker = "precommit" if config.getoption("-m") == "precommit" else None
-    pytest.run_marker = marker
+    pytest.run_marker = None
     pytest.selected_model_ids = config.getoption("--model_ids", default=None)
