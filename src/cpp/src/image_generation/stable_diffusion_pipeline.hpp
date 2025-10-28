@@ -318,19 +318,19 @@ public:
 
         set_lora_adapters(generation_config.adapters);
 
-        m_scheduler->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
-        std::vector<std::int64_t> timesteps = m_scheduler->get_timesteps();
-
         // use callback if defined
         std::shared_ptr<ThreadedCallbackWrapper> callback_ptr = nullptr;
         auto callback_iter = properties.find(ov::genai::callback.name());
         if (callback_iter != properties.end()) {
             callback_ptr = std::make_shared<ThreadedCallbackWrapper>(
-                callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>(), 
+                callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>(),
                 generation_config.num_inference_steps
             );
             callback_ptr->start();
         }
+
+        m_scheduler->set_timesteps(generation_config.num_inference_steps, generation_config.strength);
+        std::vector<std::int64_t> timesteps = m_scheduler->get_timesteps();
 
         // compute text encoders and set hidden states
         compute_hidden_states(positive_prompt, generation_config);

@@ -125,13 +125,6 @@ public:
         m_custom_generation_config = m_generation_config;
         m_custom_generation_config.update_generation_config(properties);
 
-        // Use callback if defined
-        std::function<bool(size_t, size_t, ov::Tensor&)> callback = nullptr;
-        auto callback_iter = properties.find(ov::genai::callback.name());
-        if (callback_iter != properties.end()) {
-            callback = callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>();
-        }
-
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const auto& transformer_config = m_transformer->get_config();
 
@@ -141,6 +134,17 @@ public:
             compute_dim(m_custom_generation_config.width, initial_image, 2 /* assume NHWC */);
 
         check_inputs(m_custom_generation_config, initial_image);
+
+        // use callback if defined
+        std::shared_ptr<ThreadedCallbackWrapper> callback_ptr = nullptr;
+        auto callback_iter = properties.find(ov::genai::callback.name());
+        if (callback_iter != properties.end()) {
+            callback_ptr = std::make_shared<ThreadedCallbackWrapper>(
+                callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>(),
+                m_custom_generation_config.num_inference_steps
+            );
+            callback_ptr->start();
+        }
 
         compute_hidden_states(positive_prompt, m_custom_generation_config);
 
@@ -177,7 +181,8 @@ public:
             auto scheduler_step_result = m_scheduler->step(noise_pred_tensor, latents, inference_step, m_custom_generation_config.generator);
             latents = scheduler_step_result["latent"];
 
-            if (callback && callback(inference_step, timesteps.size(), latents)) {
+            if (callback_ptr->has_callback() && callback_ptr->write(inference_step, timesteps.size(), denoised)) {
+                callback_ptr->end();
                 auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
                 m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
 
@@ -190,6 +195,9 @@ public:
 
             auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
             m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
+        }
+        if (callback_ptr->has_callback()) {
+            callback_ptr->end();
         }
 
         latents = unpack_latents(latents, m_custom_generation_config.height, m_custom_generation_config.width, vae_scale_factor);
