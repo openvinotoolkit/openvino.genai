@@ -606,9 +606,8 @@ def iteration_images(request) -> list[list[PIL.Image]]:
         [[["cat_tensor"], [], []], [["synthetic_video_32x32_tensor"], [], ["synthetic_video_32x32_tensor"]]],
         id="Image + video on first iteration, image on third iteration"
     ),
-    pytest.param(
-        [[["cat_tensor", "car_tensor", "handwritten_tensor"], []], [["synthetic_video_32x32_tensor"], ["synthetic_video_32x32_tensor"]]],
-        id="3 images + video on first iteration, video on second iteration"
+        [[["cat_tensor", "car_tensor", "handwritten_tensor"], []], [["synthetic_video_32x32_tensor", "synthetic_video_32x32_tensor"], ["synthetic_video_32x32_tensor"]]],
+        id="3 images + 2 videos on first iteration, video on second iteration"
     ),
 ])
 def iteration_images_and_videos(request):
