@@ -10,9 +10,8 @@ export type Options = {
 
 interface Tokenizer {
   /** Applies a chat template to format chat history into a prompt string. */
-  // TODO Consider adding bindings for ChatHistory and JsonContainer classes
   applyChatTemplate(
-    chatHistory: ChatHistory,
+    chatHistory: Record<string, any>[] | ChatHistory,
     addGenerationPrompt: boolean,
     chatTemplate?: string,
     tools?: Record<string, any>[],
@@ -202,8 +201,10 @@ export class LLMPipeline {
   stream(inputs: string | ChatHistory, generationConfig: GenerationConfig = {}) {
     if (!this.isInitialized) throw new Error("Pipeline is not initialized");
 
-    if (typeof inputs !== "string" && !Array.isArray(inputs))
-      throw new Error("Inputs must be a string, string[], or ChatHistory");
+    if (Array.isArray(inputs))
+      throw new Error(
+        "Streaming is not supported for array of inputs. Please use LLMPipeline.generate() method.",
+      );
     if (typeof generationConfig !== "object") throw new Error("Options must be an object");
 
     let streamingStatus: StreamingStatus = StreamingStatus.RUNNING;

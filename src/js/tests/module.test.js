@@ -384,4 +384,10 @@ describe("stream()", () => {
     }
     assert.equal(chunks.length, 5);
   });
+
+  it("stream() with array of strings", async () => {
+    assert.throws(() => {
+      pipeline.stream(["prompt1", "prompt2", "prompt3"]);
+    }, /Streaming is not supported for array of inputs/);
+  });
 });
