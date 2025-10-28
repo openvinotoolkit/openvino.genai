@@ -51,7 +51,7 @@ void share_embedding_weights(std::shared_ptr<ov::Model>& main_model, std::shared
     }
 }
 
-std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(std::shared_ptr<ov::Model>& model) {
+std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(const std::shared_ptr<ov::Model>& model) {
     // extract result nodes from model
     for (const auto& result : model->get_results()) {
         auto input_node = result->input_value(0).get_node_shared_ptr();
@@ -61,6 +61,26 @@ std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(std::shared_ptr<
     }
     return nullptr;
 }
+
+void remove_d2t_result_node(std::shared_ptr<ov::Model>& model) {
+    // Find and remove the d2t Result node
+    std::shared_ptr<ov::op::v0::Result> d2t_result_to_remove = nullptr;
+    
+    for (const auto& result : model->get_results()) {
+        auto input_node = result->input_value(0).get_node_shared_ptr();
+        if (ov::is_type<ov::op::v0::Constant>(input_node) && 
+            input_node->get_friendly_name().find("d2t") != std::string::npos) {
+            d2t_result_to_remove = result;
+            break;
+        }
+    }
+    
+    if (d2t_result_to_remove) {
+        model->remove_result(d2t_result_to_remove);
+        model->validate_nodes_and_infer_types();
+    }
+}
+
 void extract_hidden_state_generic(std::shared_ptr<ov::Model>& model,
                                   const std::vector<int>& hidden_layers_to_abstract) {
     ov::pass::Manager pm;
