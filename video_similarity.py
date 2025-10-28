@@ -77,11 +77,9 @@ def main():
     left_embedding = encode_video(args.left_video, processor, model)
     right_embedding = encode_video(args.right_video, processor, model)
 
-    assert (left_embedding == right_embedding).all()
-
-    similarity = torch.nn.functional.cosine_similarity(left_embedding, right_embedding, dim=0)
-    print(sklearn.metrics.pairwise.cosine_similarity(left_embedding.numpy(), right_embedding.numpy()))
-    print(similarity.item())
+    # torch.nn.functional.cosine_similarity(left_embedding, right_embedding, dim=0) doesn't return 1 for identical inputs so use sklearn.
+    similarity = sklearn.metrics.pairwise.cosine_similarity(left_embedding.numpy().reshape(1, -1), right_embedding.numpy().reshape(1, -1))
+    print(similarity)
 
 
 if "__main__" == __name__:
