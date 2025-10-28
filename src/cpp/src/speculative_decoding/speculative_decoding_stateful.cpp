@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "speculative_decoding_stateful.hpp"
+#include "speculative_decoding_eagle_utils.hpp"
 #include "continuous_batching/timer.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/core/parallel.hpp"
@@ -42,18 +43,6 @@ void update_perf_stat_by_infer_duration(ov::genai::RawPerfMetrics& raw_perf_coun
     raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
 }
 
-void ensure_num_assistant_tokens_is_set(ov::genai::GenerationConfig& generation_config) {
-    auto assistant_confidence_threshold = generation_config.assistant_confidence_threshold;
-    OPENVINO_ASSERT(assistant_confidence_threshold == 0.f,
-        "Stateful (non Continuous Batching) Speculative Decoding pipeline only supports `num_assistant_tokens` "
-        "as parameter in GenerationConfig and doesn't work with `assistant_confidence_threshold`.\nPlease "
-        "remove its specification or set it to 0.f.");
-
-    constexpr std::size_t default_num_assistant_tokens = 5;
-    if (generation_config.num_assistant_tokens == 0) {
-        generation_config.num_assistant_tokens = default_num_assistant_tokens;
-    }
-}
 }// anonymous namespace
 
 namespace ov {
@@ -392,7 +381,7 @@ StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(
     OPENVINO_ASSERT(m_draft_request != nullptr, "Failed to create draft model inference wrapper");
 
     // Specifying number candidates to generate
-    ensure_num_assistant_tokens_is_set(m_generation_config);
+    ov::genai::speculative_decoding::ensure_num_assistant_tokens_is_set(m_generation_config);
     m_candidates_num = m_generation_config.num_assistant_tokens;
     // We set the upper limit for candidates number as two times the number requested
     // by user.
@@ -412,7 +401,7 @@ StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(
 GenerationConfig StatefulSpeculativeLLMPipeline::resolve_generation_config(OptionalGenerationConfig generation_config) {
     GenerationConfig config = generation_config.value_or(m_generation_config);
     
-    ensure_num_assistant_tokens_is_set(config);
+    ov::genai::speculative_decoding::ensure_num_assistant_tokens_is_set(config);
     m_candidates_num = config.num_assistant_tokens;
     // We set the upper limit for candidates number as two times the number
     // requested by user.
