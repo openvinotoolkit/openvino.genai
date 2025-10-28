@@ -72,7 +72,7 @@ def get_scheduler_config_genai(cb_config):
     scheduler_params = cb_config or default_cb_config
     if scheduler_params:
         logger.info(f"Scheduler parameters for:\n{scheduler_params}")
-        configure_sparse_attention(scheduler_params, scheduler_config) 
+        configure_sparse_attention(scheduler_params, scheduler_config)
         for param, value in scheduler_params.items():
             if param == "cache_eviction_config":
                 value = openvino_genai.CacheEvictionConfig(aggregation_mode=openvino_genai.AggregationMode.NORM_SUM, **value)
