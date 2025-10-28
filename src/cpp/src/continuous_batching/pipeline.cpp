@@ -12,6 +12,7 @@
 #include "continuous_batching/pipeline_impl.hpp"
 #include "speculative_decoding/speculative_decoding_impl.hpp"
 #include "speculative_decoding/speculative_decoding_eagle3_impl.hpp"
+#include "speculative_decoding/speculative_decoding_utils.hpp"
 #include "prompt_lookup/prompt_lookup_impl.hpp"
 #include "continuous_batching/timer.hpp"
 #include "utils.hpp"
@@ -85,7 +86,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     auto properties_without_draft_model = properties;
     auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
-    auto eagle_rt_info = extract_eagle_mode_from_config(draft_model_desr.properties, models_path);
+    auto eagle_rt_info = speculative_decoding::extract_eagle_mode_from_config(draft_model_desr.properties, models_path);
 
     auto model = utils::read_model(models_path, properties);
     auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
@@ -132,7 +133,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto properties_without_draft_model = properties;
     auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
-    auto eagle_rt_info = extract_eagle_mode_from_config(draft_model_desr.properties, models_path);
+    auto eagle_rt_info = speculative_decoding::extract_eagle_mode_from_config(draft_model_desr.properties, models_path);
     auto model = utils::read_model(models_path, properties_without_draft_model);
     auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
@@ -182,7 +183,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto properties_without_draft_model = properties;
     auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
-    auto eagle_rt_info = extract_eagle_mode_from_config(draft_model_desr.properties, std::filesystem::path(model_str));
+    auto eagle_rt_info = speculative_decoding::extract_eagle_mode_from_config(draft_model_desr.properties, std::filesystem::path(model_str));
     auto model = utils::singleton_core().read_model(model_str, weights_tensor);
 
     auto rt_info = model->get_rt_info();

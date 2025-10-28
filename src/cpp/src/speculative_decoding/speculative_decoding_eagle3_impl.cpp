@@ -52,7 +52,7 @@ void share_embedding_weights(std::shared_ptr<ov::Model>& main_model, std::shared
     }
 }
 
-std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(std::shared_ptr<ov::Model>& model) {
+std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(const std::shared_ptr<ov::Model>& model) {
     // extract result nodes from model
     for (const auto& result : model->get_results()) {
         auto input_node = result->input_value(0).get_node_shared_ptr();
@@ -62,14 +62,36 @@ std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(std::shared_ptr<
     }
     return nullptr;
 }
+
+void remove_d2t_result_node(std::shared_ptr<ov::Model>& model) {
+    // Find and remove the d2t Result node
+    std::shared_ptr<ov::op::v0::Result> d2t_result_to_remove = nullptr;
+    
+    for (const auto& result : model->get_results()) {
+        auto input_node = result->input_value(0).get_node_shared_ptr();
+        if (ov::is_type<ov::op::v0::Constant>(input_node) && 
+            input_node->get_friendly_name().find("d2t") != std::string::npos) {
+            d2t_result_to_remove = result;
+            break;
+        }
+    }
+    
+    if (d2t_result_to_remove) {
+        model->remove_result(d2t_result_to_remove);
+        model->validate_nodes_and_infer_types();
+    }
+}
+
 void extract_hidden_state_generic(std::shared_ptr<ov::Model>& model,
-                                  const std::vector<int>& hidden_layers_to_abstract) {
+                                  const std::vector<int>& hidden_layers_to_abstract,
+                                  const std::string& device) {
     ov::pass::Manager pm;
-    pm.register_pass<EagleModelTransform>(hidden_layers_to_abstract);
+    pm.register_pass<EagleModelTransform>(hidden_layers_to_abstract, device);
     pm.run_passes(model);
 }
 
-EagleModelTransform::EagleModelTransform(const std::vector<int>& layers) : m_layer_ids(layers) {
+EagleModelTransform::EagleModelTransform(const std::vector<int>& layers, const std::string& device) 
+    : m_layer_ids(layers), m_device(device) {
 }
 
 bool EagleModelTransform::run_on_model(const std::shared_ptr<ov::Model>& model) {
@@ -82,7 +104,7 @@ bool EagleModelTransform::run_on_model(const std::shared_ptr<ov::Model>& model) 
         manager.register_pass<EagleBaseTransform>(m_new_results);
         // input transform for draft
         // here we apply a trick for the fc layer in draft model
-        manager.register_pass<EagleInputTransform>(m_new_parameters);
+        manager.register_pass<EagleInputTransform>(m_new_parameters, m_device);
         manager.run_passes(model);
 
         model->add_parameters(m_new_parameters);
@@ -109,7 +131,8 @@ bool EagleModelTransform::run_on_model(const std::shared_ptr<ov::Model>& model) 
     return false;
 }
 
-EagleInputTransform::EagleInputTransform(std::vector<std::shared_ptr<v0::Parameter>>& params) {
+EagleInputTransform::EagleInputTransform(std::vector<std::shared_ptr<v0::Parameter>>& params, const std::string& device) 
+    : m_device(device) {
     register_matcher(
         std::make_shared<ov::pass::pattern::Matcher>(ov::pass::pattern::wrap_type<v0::MatMul>(), this->get_type_info().name),
         ([&params, this](ov::pass::pattern::Matcher& m) {
@@ -126,6 +149,7 @@ EagleInputTransform::EagleInputTransform(std::vector<std::shared_ptr<v0::Paramet
         })
     );
 }
+
 bool EagleInputTransform::apply(NodePtr node, std::vector<std::shared_ptr<v0::Parameter>>& params) {
     if (ov::is_type<v0::MatMul>(node)) {
         auto matmul_node = ov::as_type_ptr<v0::MatMul>(node);
@@ -135,16 +159,56 @@ bool EagleInputTransform::apply(NodePtr node, std::vector<std::shared_ptr<v0::Pa
             return false;
         }
 
+        auto matmul_input0 = matmul_node->input_value(0);
+        auto matmul_input1 = matmul_node->input_value(1);
+        
+        std::shared_ptr<ov::Node> matmul_output_node;
+        
+        // Apply scaling optimization for NPU devices to prevent FP16 overflow
+        if (m_device.find("NPU") != std::string::npos) {
+            // Scale input down by 100x before MatMul to avoid FP16 overflow, then scale result back up
+            // The factor 100 (0.01 and 100.0) is an empirical value
+            auto scale_down_const = std::make_shared<v0::Constant>(matmul_input0.get_element_type(), ov::Shape{}, 0.01f);
+            auto multiply_scale_down = std::make_shared<v1::Multiply>(matmul_input0, scale_down_const);
+            multiply_scale_down->set_friendly_name(matmul_node->get_friendly_name() + "/multiply_scale_down");
+            
+            // Create new MatMul with scaled input
+            auto new_matmul = std::make_shared<v0::MatMul>(multiply_scale_down, matmul_input1,
+                                                            matmul_node->get_transpose_a(), 
+                                                            matmul_node->get_transpose_b());
+            new_matmul->set_friendly_name(matmul_node->get_friendly_name() + "/matmul");
+            
+            // Scale result back up to maintain numerical equivalence
+            auto scale_up_const = std::make_shared<v0::Constant>(new_matmul->get_element_type(), ov::Shape{}, 100.0f);
+            auto multiply_scale_up = std::make_shared<v1::Multiply>(new_matmul->output(0), scale_up_const);
+            multiply_scale_up->set_friendly_name(matmul_node->get_friendly_name() + "/multiply_scale_up");
+            
+            matmul_output_node = multiply_scale_up;
+        } else {
+            // Default behavior: Use MatMul directly without scaling
+            auto new_matmul = std::make_shared<v0::MatMul>(matmul_input0, matmul_input1,
+                                                            matmul_node->get_transpose_a(), 
+                                                            matmul_node->get_transpose_b());
+            new_matmul->set_friendly_name(matmul_node->get_friendly_name() + "/matmul");
+            
+            matmul_output_node = new_matmul;
+        }
+
         auto shape = node->get_output_partial_shape(0);
         auto internal_hidden_state = std::make_shared<v0::Parameter>(node->get_element_type(), node->get_output_partial_shape(0));
         internal_hidden_state->output(0).set_names({"internal_hidden_states"});
         internal_hidden_state->set_friendly_name("internal_hidden_states");
-        // create new eltwise node to add output of MatMul node and internal hidden state input from last cycle of itself
-        auto new_eltwise = std::make_shared<v1::Add>(internal_hidden_state, matmul_node->output(0));
+        
+        // Create new Add node (MatMul output + internal_hidden_state)
+        auto new_eltwise = std::make_shared<v1::Add>(internal_hidden_state, matmul_output_node->output(0));
+        new_eltwise->set_friendly_name(matmul_node->get_friendly_name() + "/add");
+        
+        // Replace the original MatMul node with the new Add
         ov::replace_node(matmul_node, new_eltwise);
         params.push_back(internal_hidden_state);
         return true;
     }
+    return false;
 }
 
 EagleBaseTransform::EagleBaseTransform(std::vector<std::shared_ptr<v0::Result>>& results) {
@@ -303,8 +367,8 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     // target model: hidden state extraction, draft model: hidden state import , hidden state extraction
     // eagle3 specific : dt importing
     share_embedding_weights(main_model, draft_model);
-    extract_hidden_state_generic(main_model, hidden_layers);
-    extract_hidden_state_generic(draft_model, { -1 });
+    extract_hidden_state_generic(main_model, hidden_layers, main_device);
+    extract_hidden_state_generic(draft_model, { -1 }, draft_device);
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
     m_main_pipeline = std::make_shared<ContinuousBatchingForEagle3DecodingImpl>(main_model,
