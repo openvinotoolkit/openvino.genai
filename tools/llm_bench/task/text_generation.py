@@ -294,7 +294,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
             "Enabled input prompt permutations. It means that generated results may vary on different steps. "
             "If it is not expected, please specify --disable_prompt_permutation in your benchmarking command to disable this behavior"
         )
-        from openvino_genai import TokenizedInputs
+        from openvino_genai import TokenizedInputs, GenerationConfig
         import openvino as ov
 
         input_ids = input_data.input_ids.data
@@ -315,7 +315,6 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         if args['infer_count'] is not None:
             out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
         log.info(out_str)
-    from openvino_genai import GenerationConfig
     gen_config = model.get_generation_config() if hasattr(model, 'get_generation_config') else GenerationConfig()
     gen_config.max_new_tokens = max_gen_tokens
     # llama-3-8b-instruct's generation_config.json has 4096 max_length.
