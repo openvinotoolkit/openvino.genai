@@ -135,7 +135,6 @@ If you decide to call functions:
     * follow the provided JSON schema. Do not hallucinate arguments or values. Do not blindly copy values from the provided samples
     * respect the argument type formatting. E.g., if the type is number and format is float, write value 7 as 7.0
     * make sure you pick the right functions that match the user intent
-    * please generate several json calls if needed to answer the user question
 """
 
 
