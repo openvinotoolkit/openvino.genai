@@ -12,7 +12,6 @@ import numpy as np
 from sentence_transformers import SentenceTransformer, util
 from transformers import CLIPImageProcessor, CLIPModel
 from tqdm import tqdm
-import math
 
 
 def evaluate_similarity(model, data_gold, data_prediction):
@@ -199,6 +198,8 @@ class EmbedsSimilarity:
 
 
 class RerankingSimilarity:
+    MISSING_DOCUMENT_PENALTY = 1
+
     def evaluate(self, data_gold, data_prediction):
         gold_results = data_gold["top_n_scores_path"].values
         prediction_results = data_prediction["top_n_scores_path"].values
@@ -214,20 +215,18 @@ class RerankingSimilarity:
             with open(prediction, 'rb') as f:
                 prediction_data = np.load(f)
 
+            prediction_scores = {int(pred_info[0]): pred_info[1] for pred_info in prediction_data}
             per_query_text = []
-            for i, score in enumerate(gold_data):
-                # documents on the same position of top_n is different
-                if i >= len(prediction_data) or int(score[0]) != int(prediction_data[i][0]):
-                    per_query_text.append(math.inf)
-                else:
-                    per_query_text.append(abs(score[1] - prediction_data[i][1]))
-            metric_per_query.append(per_query_text)
+            for document_idx, gold_score in gold_data:
+                # if documents is not presented in ranking list, let's set 1 as max possible score difference
+                scores_diff = self.MISSING_DOCUMENT_PENALTY
+                if document_idx in prediction_scores:
+                    scores_diff = abs(gold_score - prediction_scores[document_idx])
+                per_query_text.append(scores_diff)
 
-            if math.inf in per_query_text:
-                similarity_per_query.append(0)
-            else:
-                dist = np.linalg.norm(per_query_text)
-                similarity_per_query.append(1 / (1 + dist))
+            metric_per_query.append(per_query_text)
+            dist = np.linalg.norm(per_query_text)
+            similarity_per_query.append(1 / (1 + dist))
 
         metric_dict = {"similarity": np.mean(similarity_per_query)}
         return metric_dict, {"similarity": similarity_per_query, "per_text_score_list": metric_per_query}

@@ -45,9 +45,10 @@ LCMScheduler::LCMScheduler(const std::filesystem::path& scheduler_config_path) :
 }
 
 LCMScheduler::LCMScheduler(const Config& scheduler_config)
-    : m_config(scheduler_config) {
-    m_sigma_data = 0.5f; // Default: 0.5
-
+    : m_config(scheduler_config),
+      m_final_alpha_cumprod(0.0f),
+      m_num_inference_steps(0),
+      m_sigma_data(0.5f) {
     std::vector<float> alphas, betas;
 
     if (!m_config.trained_betas.empty()) {

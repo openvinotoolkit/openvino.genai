@@ -197,8 +197,8 @@ def get_argprser():
                         help='The task to setup the pipeline type')
     parser.add_argument(
         '--strength', type=float, default=None,
-        help='Applicable for Image to imaage/Inpainting pipelines. Indicates extent to transform the reference `image`. Must be between 0 and 1.')
-    parser.add_argument("--disable_prompt_permutation", action="store_true", help="Disable modification prompt from run to run for avoid prefix caching")
+        help='Applicable for Image to image/Inpainting pipelines. Indicates extent to transform the reference `image`. Must be between 0 and 1.')
+    parser.add_argument("--disable_prompt_permutation", action="store_true", help="Disable modification prompt from run to run to allow prefix caching")
     parser.add_argument("--embedding_pooling", choices=["cls", "mean", "last_token"], default=None,
                         help="Pooling type CLS or MEAN for encoders, LAST_TOKEN for decoders. "
                              "Different post-processing is applied depending on the padding side. Applicable only for text embeddings")
