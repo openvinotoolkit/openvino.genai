@@ -12,7 +12,7 @@ from openvino_genai import (
     StreamingStatus,
     Parser,
     IncrementalParser,
-    TextParserStreamer
+    TextParserStreamer,
 )
 
 from openvino_genai import (
@@ -66,11 +66,6 @@ def tool_to_dict(tool: BaseModel, with_description: bool = True) -> dict[str, An
         },
         "required": ["name", "arguments"],
     }
-
-
-def generate_system_prompt_tools(*tools: BaseModel) -> str:
-    """Generate part of the system prompt with available tools"""
-    return f"<|tool|>{json.dumps([tool_to_dict(tool) for tool in tools])}</|tool|>"
 
 
 def tools_to_array_schema(*tools: BaseModel) -> str:
@@ -140,8 +135,8 @@ If you decide to call functions:
     * follow the provided JSON schema. Do not hallucinate arguments or values. Do not blindly copy values from the provided samples
     * respect the argument type formatting. E.g., if the type is number and format is float, write value 7 as 7.0
     * make sure you pick the right functions that match the user intent
+    * please generate several json calls if needed to answer the user question
 """
-sys_message += generate_system_prompt_tools(book_flight_ticket, book_hotel)
 
 
 def main():
@@ -155,6 +150,7 @@ def main():
     pipe = LLMPipeline(args.model_dir, "CPU")
     tokenizer = pipe.get_tokenizer()
     chat_history = [{"role": "system", "content": sys_message}]
+    tools = [tool_to_dict(tool) for tool in [book_flight_ticket, book_hotel]]
 
     generation_config = GenerationConfig()
     generation_config.max_new_tokens = 300
@@ -163,7 +159,8 @@ def main():
     user_text_1 = "Do dolphins have fingers?"
     print("User: ", user_text_1)
     chat_history.append({"role": "user", "content": user_text_1})
-    model_input = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True)
+    
+    model_input = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True, tools=tools)
     # same as SOC.Union(SOC.ConstString("yes"), SOC.ConstString("no"))
     yes_or_no_grammar = SOC.ConstString("yes") | SOC.ConstString("no")
     generation_config.structured_output_config = SOC(structural_tags_config=yes_or_no_grammar)
@@ -178,7 +175,7 @@ def main():
     )
     print("User: ", user_text_2)
     chat_history.append({"role": "user", "content": user_text_2})
-    model_input = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True)
+    model_input = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True, tools=tools)
 
     start_tool_call_tag = SOC.ConstString(r"functools")
     tools_json = SOC.JSONSchema(tools_to_array_schema(book_flight_ticket, book_hotel))
