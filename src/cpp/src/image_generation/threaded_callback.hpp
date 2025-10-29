@@ -47,6 +47,8 @@ public:
             return;
         }
 
+        m_status = CallbackStatus::STOP;
+
         if (m_worker_thread && m_worker_thread->joinable()) {
             m_worker_thread->join();
         }
@@ -66,10 +68,10 @@ private:
     void _worker() {
         while (m_status == CallbackStatus::RUNNING) {
             // wait for queue pull
-            std::tuple<size_t, size_t, ov::Tensor> intermediate_latent = m_squeue.pull();
+            auto [step, num_steps, latent] = m_squeue.pull();
 
-            if (m_callback(std::get<0>(intermediate_latent), std::get<1>(intermediate_latent), std::get<2>(intermediate_latent))) {
-                m_status == CallbackStatus::STOP;
+            if (m_callback(step, num_steps, latent)) {
+                m_status = CallbackStatus::STOP;
             }
         }
     }
