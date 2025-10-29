@@ -12,7 +12,7 @@ namespace genai {
 
 struct ExtractedSegments {
     std::vector<ov::genai::Segment> segments;
-    size_t last_offset;
+    size_t last_offset = 0;
     std::vector<int64_t> non_timestamp_tokens;
     std::vector<std::pair<size_t, size_t>> segment_ranges;
 };

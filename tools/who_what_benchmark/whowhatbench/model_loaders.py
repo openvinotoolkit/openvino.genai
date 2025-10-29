@@ -7,6 +7,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelF
 from .embeddings_evaluator import DEFAULT_MAX_LENGTH as EMBED_DEFAULT_MAX_LENGTH
 from .reranking_evaluator import DEFAULT_MAX_LENGTH as RERANK_DEFAULT_MAX_LENGTH, DEFAULT_TOP_K as RERANK_DEFAULT_TOP_K, reranking_base_on_causallm_arch
 from .utils import mock_torch_cuda_is_available, mock_AwqQuantizer_validate_environment
+import os
 
 
 logging.basicConfig(level=logging.INFO)
@@ -41,6 +42,28 @@ class GenAIModelWrapper:
             return getattr(self.model, attr)
 
 
+def configure_sparse_attention(scheduler_params, scheduler_config):
+    """
+    Configures sparse attention settings based on scheduler parameters.
+    """
+    import openvino_genai
+    sparse_attention_kwargs = scheduler_params.pop('sparse_attention_config', None)
+
+    if sparse_attention_kwargs:
+        # Convert mode string to enum if present
+        mode = sparse_attention_kwargs.get("mode")
+        if mode:
+            sparse_attention_kwargs["mode"] = getattr(openvino_genai.SparseAttentionMode, mode)
+
+        # Check if sparse attention is enabled
+        if scheduler_params.pop('use_sparse_attention', True):
+            scheduler_config.use_sparse_attention = True
+            scheduler_config.sparse_attention_config = openvino_genai.SparseAttentionConfig(**sparse_attention_kwargs)
+            logger.info("Sparse Attention mode ON")
+        else:
+            raise RuntimeError("==Failure==: sparse_attention_config value can't be used with use_sparse_attention=False")
+
+
 def get_scheduler_config_genai(cb_config):
     import openvino_genai
 
@@ -49,6 +72,7 @@ def get_scheduler_config_genai(cb_config):
     scheduler_params = cb_config or default_cb_config
     if scheduler_params:
         logger.info(f"Scheduler parameters for:\n{scheduler_params}")
+        configure_sparse_attention(scheduler_params, scheduler_config)
         for param, value in scheduler_params.items():
             if param == "cache_eviction_config":
                 value = openvino_genai.CacheEvictionConfig(aggregation_mode=openvino_genai.AggregationMode.NORM_SUM, **value)
@@ -65,15 +89,25 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
             "Failed to import openvino_genai package. Please install it.")
         exit(-1)
 
+    pipeline_path = model_dir
+    if kwargs.get('gguf_file'):
+        pipeline_path = os.path.join(model_dir, kwargs['gguf_file'])
+
+    adapter_config = openvino_genai.AdapterConfig()
+    if kwargs.get("adapters") is not None:
+        for adapter, alpha in zip(kwargs['adapters'], kwargs['alphas']):
+            ov_adapter = openvino_genai.Adapter(adapter)
+            adapter_config.add(ov_adapter, alpha)
+
     is_continuous_batching = kwargs.get("cb_config", None) is not None
 
     if is_continuous_batching:
         logger.info("Using OpenVINO GenAI Continuous Batching API")
         scheduler_config = get_scheduler_config_genai(kwargs["cb_config"])
-        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, scheduler_config=scheduler_config, **ov_config)
+        pipeline = openvino_genai.LLMPipeline(pipeline_path, device=device, adapters=adapter_config, scheduler_config=scheduler_config, **ov_config)
     else:
         logger.info("Using OpenVINO GenAI LLMPipeline API")
-        pipeline = openvino_genai.LLMPipeline(model_dir, device=device, **ov_config)
+        pipeline = openvino_genai.LLMPipeline(pipeline_path, device=device, adapters=adapter_config, **ov_config)
 
     return GenAIModelWrapper(pipeline, model_dir, "text")
 
@@ -89,21 +123,24 @@ def load_text_llamacpp_pipeline(model_dir):
     return model
 
 
-def load_text_hf_pipeline(model_id, device):
+def load_text_hf_pipeline(model_id, device, **kwargs):
     model_kwargs = {}
-
+    if kwargs.get('gguf_file'):
+        model_kwargs['gguf_file'] = kwargs['gguf_file']
     if not torch.cuda.is_available or device.lower() == "cpu":
         trust_remote_code = False
-        try:
-            config = AutoConfig.from_pretrained(model_id)
-        except Exception:
-            config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
-            trust_remote_code = True
         is_gptq = False
         is_awq = False
-        if getattr(config, "quantization_config", None):
-            is_gptq = config.quantization_config["quant_method"] == "gptq"
-            is_awq = config.quantization_config["quant_method"] == "awq"
+        if not kwargs.get('gguf_file'):
+            try:
+                config = AutoConfig.from_pretrained(model_id)
+            except Exception:
+                config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
+                trust_remote_code = True
+
+            if getattr(config, "quantization_config", None):
+                is_gptq = config.quantization_config["quant_method"] == "gptq"
+                is_awq = config.quantization_config["quant_method"] == "awq"
         if is_gptq or is_awq:
             # infer in FP32
             model_kwargs["torch_dtype"] = torch.float32
@@ -121,6 +158,25 @@ def load_text_hf_pipeline(model_id, device):
                 model_id, trust_remote_code=True, device_map=device.lower(), **model_kwargs
             )
 
+    if kwargs.get("adapters") is not None:
+        adapters = kwargs["adapters"]
+        alphas = kwargs.get("alphas", None)
+
+        from peft import PeftModel
+        adapter_names = ["adapter_0"]
+        model = PeftModel.from_pretrained(model, adapters[0], adapter_name=adapter_names[0])
+
+        for idx, adapter in enumerate(adapters[1:], start=1):
+            model.load_adapter(adapter, adapter_name=f"adapter_{idx}")
+            adapter_names.append(f"adapter_{idx}")
+
+        print('alphas', alphas)
+
+        assert len(alphas) == len(adapter_names), "`alphas` must be the same length as `adapters`"
+        model.add_weighted_adapter(adapter_names, alphas, "merged_lora")
+
+        model.set_adapter("merged_lora")
+
     model.eval()
     return model
 
@@ -130,7 +186,7 @@ def load_text_model(
 ):
     if use_hf:
         logger.info("Using HF Transformers API")
-        model = load_text_hf_pipeline(model_id, device)
+        model = load_text_hf_pipeline(model_id, device, **kwargs)
     elif use_genai:
         model = load_text_genai_pipeline(model_id, device, ov_config, **kwargs)
     elif use_llamacpp:

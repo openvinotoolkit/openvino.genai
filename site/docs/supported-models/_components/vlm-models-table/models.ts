@@ -74,6 +74,29 @@ export const VLM_MODELS: VLMModelType[] = [
     ],
   },
   {
+    architecture: 'LLaVA-NeXT-Video',
+    models: [
+      {
+        name: 'LLaVA-Next-Video',
+        loraSupport: false,
+        links: [
+          'https://huggingface.co/llava-hf/LLaVA-NeXT-Video-7B-hf',
+        ],
+      },
+    ],
+  },
+  {
+    architecture: 'MiniCPMO',
+    models: [
+      {
+        name: 'MiniCPM-o-2_6',
+        loraSupport: false,
+        links: ['https://huggingface.co/openbmb/MiniCPM-o-2_6'],
+        notesLink: '#minicpm-o-notes',
+      },
+    ],
+  },
+  {
     architecture: 'MiniCPMV',
     models: [
       {

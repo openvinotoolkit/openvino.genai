@@ -8,6 +8,7 @@ from importlib.resources import files
 from .registry import register_evaluator, BaseEvaluator
 from .whowhat_metrics import TextDivergency, TextSimilarity
 from .utils import patch_awq_for_inference, get_ignore_parameters_flag
+import inspect
 
 PROMPTS_FILE = 'text_prompts.yaml'
 LONG_PROMPTS_FILE = 'text_long_prompts.yaml'
@@ -34,7 +35,8 @@ class TextEvaluator(BaseEvaluator):
         generation_config_base=None,
         seqs_per_request=None,
         use_chat_template=None,
-        long_prompt=False
+        long_prompt=False,
+        empty_adapters=False
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -53,6 +55,7 @@ class TextEvaluator(BaseEvaluator):
         self.use_chat_template = use_chat_template
         if self.generation_config is not None:
             assert self.seqs_per_request is not None
+        self.empty_adapters = empty_adapters
 
         # Take language from the base model if provided
         self.language = language
@@ -132,7 +135,7 @@ class TextEvaluator(BaseEvaluator):
         return res
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
-        def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question, use_chat_template=False):
+        def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question, use_chat_template=False, empty_adapters=False):
             is_awq = getattr(model, "is_awq", None) is not None
             device = "cpu"
             if hasattr(model, "device"):
@@ -143,6 +146,9 @@ class TextEvaluator(BaseEvaluator):
                 inputs = tokenizer.apply_chat_template(message, tokenize=True, add_generation_prompt=True, return_tensors="pt", return_dict=True).to(device)
             else:
                 inputs = self.tokenizer(prompt, return_tensors="pt").to(device)
+
+            if 'token_type_ids' in inputs and 'token_type_ids' not in list(inspect.signature(model.forward).parameters.keys()):
+                inputs.pop('token_type_ids')
 
             if is_awq:
                 with patch_awq_for_inference(is_awq):
@@ -189,7 +195,8 @@ class TextEvaluator(BaseEvaluator):
                         p,
                         self.max_new_tokens,
                         self._crop_question,
-                        self.use_chat_template
+                        self.use_chat_template,
+                        empty_adapters=self.empty_adapters
                     )
                 )
         else:

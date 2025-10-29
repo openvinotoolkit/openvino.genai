@@ -39,6 +39,9 @@ size_t get_available_cpu_memory() {
             if(token == "MemTotal:") {
                 size_t mem;
                 if(file >> mem) {
+                    if (mem > std::numeric_limits<size_t>::max() / 1024) {
+                        return std::numeric_limits<size_t>::max();
+                    }
                     return mem * 1024;
                 } else {
                     return std::numeric_limits<size_t>::max();
@@ -249,38 +252,38 @@ GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
-    ov::genai::GenerationConfig sampling_params,
+    const ov::genai::GenerationConfig& sampling_params,
     std::optional<ov::Tensor> token_type_ids) {
+    auto sampling_params_copy = sampling_params;
     // If stop_token_ids were not provided, take value from default m_generation_config
-    if (sampling_params.stop_token_ids.empty())
-        sampling_params.stop_token_ids = m_generation_config.stop_token_ids;
+    if (sampling_params_copy.stop_token_ids.empty())
+        sampling_params_copy.stop_token_ids = m_generation_config.stop_token_ids;
     // If eos_token_id was not provided, take value from default m_generation_config
-    if (sampling_params.eos_token_id == -1)
-        sampling_params.set_eos_token_id(m_generation_config.eos_token_id);
-    sampling_params.validate();
+    if (sampling_params_copy.eos_token_id == -1)
+        sampling_params_copy.set_eos_token_id(m_generation_config.eos_token_id);
+    sampling_params_copy.validate();
     size_t prompt_len;
     if (input_ids.get_shape().size() > 1) {
         prompt_len = input_ids.get_shape()[1];
     } else {
         prompt_len = input_ids.get_size();
     }
-    OPENVINO_ASSERT(sampling_params.max_length > prompt_len, "'max_length' must be greater than the number of prompt tokens");
+    OPENVINO_ASSERT(sampling_params_copy.max_length > prompt_len, "'max_length' must be greater than the number of prompt tokens");
 
     std::shared_ptr<SequenceGroup> sequence_group;
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
         auto position_ids_rope_delta = m_inputs_embedder->get_position_ids(input_ids.get_shape()[1], 0);
         sequence_group = std::make_shared<SequenceGroup>(request_id, 
                                                          input_ids, 
-                                                         sampling_params, 
+                                                         sampling_params_copy, 
                                                          m_block_size, 
                                                          token_type_ids, 
                                                          position_ids_rope_delta.first, 
                                                          position_ids_rope_delta.second);
     }
     else {
-        sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size, token_type_ids);
+        sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params_copy, m_block_size, token_type_ids);
     }
-
 
     if (m_scheduler->get_config().enable_prefix_caching) {
         m_scheduler->restore_cached_blocks(sequence_group);
@@ -291,13 +294,13 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
         m_awaiting_requests.push_back(sequence_group);
     }
 
-    return std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params);
+    return std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params_copy);
 }
 
 GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
                                                                 const std::string& prompt,
-                                                                ov::genai::GenerationConfig sampling_params) {
+                                                                const ov::genai::GenerationConfig& sampling_params) {
     ov::Tensor inputs;
     ov::genai::VLMPerfMetrics metrics;
     if (m_model_input_type == ModelInputType::TOKENS) {

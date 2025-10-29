@@ -12,7 +12,10 @@ import datasets
 import numpy as np
 
 
-DEFAULT_TOP_K = 5
+# we would like to evalute score for all documents
+# In GenAI, top_k is set at the pipeline creation stage, but data is collected after the pipeline creation stage
+# let's set potential big top_k(avg amount of documents in default dataset is 10) so that all documents are included in the final ranking
+DEFAULT_TOP_K = 100
 DEFAULT_MAX_LENGTH = 200
 DEFAULT_MAX_LENGTH_QWEN = 8192
 
@@ -64,7 +67,9 @@ class RerankingEvaluator(BaseEvaluator):
         self.gt_dir = os.path.dirname(gt_data)
 
         if base_model:
-            self.gt_data = self._generate_data(base_model, gen_rerank_fn)
+            self.gt_data = self._generate_data(
+                base_model, gen_rerank_fn, os.path.join(self.gt_dir, "reference")
+            )
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
@@ -162,11 +167,10 @@ class RerankingEvaluator(BaseEvaluator):
                 else:
                     scores = outputs.flatten()
                 scores = scipy.special.expit(scores)
-            sorted_scores = []
+            ordered_scores = []
             for index, (score, _) in enumerate(zip(scores, passages)):
-                sorted_scores.append(np.array([index, score.numpy()]))
-            sorted_scores.sort(key=lambda x: x[1], reverse=True)
-            return np.array(sorted_scores[:DEFAULT_TOP_K])
+                ordered_scores.append(np.array([index, score.numpy()]))
+            return np.array(ordered_scores[:DEFAULT_TOP_K])
 
         gen_answer_fn = gen_answer_fn or default_gen_answer
 
