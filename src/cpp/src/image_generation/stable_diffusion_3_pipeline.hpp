@@ -534,10 +534,7 @@ public:
         std::shared_ptr<ThreadedCallbackWrapper> callback_ptr = nullptr;
         auto callback_iter = properties.find(ov::genai::callback.name());
         if (callback_iter != properties.end()) {
-            callback_ptr = std::make_shared<ThreadedCallbackWrapper>(
-                callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>(),
-                generation_config.num_inference_steps
-            );
+            callback_ptr = std::make_shared<ThreadedCallbackWrapper>(callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>());
             callback_ptr->start();
         }
 

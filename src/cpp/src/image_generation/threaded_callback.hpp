@@ -21,7 +21,7 @@ enum class CallbackStatus {
 
 class ThreadedCallbackWrapper {
 public:
-    ThreadedCallbackWrapper(std::function<bool(size_t, size_t, ov::Tensor&)> callback, const size_t num_steps)
+    ThreadedCallbackWrapper(std::function<bool(size_t, size_t, ov::Tensor&)> callback)
         : m_callback{callback} {}
 
     void start() {
