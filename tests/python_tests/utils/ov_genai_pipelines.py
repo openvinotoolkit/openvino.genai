@@ -274,3 +274,9 @@ def generate_and_compare(model: str,
             compare_generation_results(current_it_prompts, ref_results, ov_results, current_it_gen_config)
         else:
             compare_generation_results_vs_ref(ov_prompts[i], ref[i], ov_results)
+
+
+class GenerationChatInputsType(Enum):
+    STRING = 1,
+    ENCODED_INPUTS = 2,
+    CHAT_HISTORY = 3
