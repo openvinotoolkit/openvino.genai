@@ -490,7 +490,7 @@ def get_data_by_pipeline_type(model_path: Path, pipeline_type: str, generation_c
     return pipe, prompt, generation_config
 
 
-def run_extended_perf_metrics_collection(model_id, generation_config: GenerationConfig, prompt: str, pipeline_type: PipelineType, draft_model_id):
+def run_extended_perf_metrics_collection(model_id, generation_config: GenerationConfig, prompt: str, pipeline_type: PipelineType, draft_model_id: str):
     _, _, model_path = download_and_convert_model(model_id)
     draft_model_path = None
     if draft_model_id is not None:

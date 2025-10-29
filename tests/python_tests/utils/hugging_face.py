@@ -166,13 +166,13 @@ def run_hugging_face(
 
 # download HF model or read converted model
 def get_huggingface_models(model_id: str | Path, model_class: Type[OVModel], local_files_only=False):
-    if (not "eagle3" in str(model_id).lower()):
+    if "eagle3" not in str(model_id).lower():
         hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, local_files_only=local_files_only))
         opt_model = retry_request(lambda: model_class.from_pretrained(model_id, export=isinstance(model_id, str), compile=False, load_in_8bit=False, ov_config=get_default_llm_properties(), local_files_only=local_files_only))
         return opt_model, hf_tokenizer
-    else :
+    else:
         hf_tokenizer = None
-        opt_model = retry_request(lambda: model_class.from_pretrained(model_id, eagle3 = True, export=isinstance(model_id, str), compile=False, load_in_8bit=False, ov_config=get_default_llm_properties(), local_files_only=local_files_only))
+        opt_model = retry_request(lambda: model_class.from_pretrained(model_id, eagle3=True, export=isinstance(model_id, str), compile=False, load_in_8bit=False, ov_config=get_default_llm_properties(), local_files_only=local_files_only))
         return opt_model, hf_tokenizer
 
 
