@@ -239,3 +239,28 @@ def test_text_genai_cb_model(tmp_path):
     ])
     assert "Metrics for model" in output
     assert "## Reference text" not in output
+
+def test_text_genai_json_string_config():
+    if sys.platform == 'darwin':
+        pytest.xfail("Ticket 173169")
+
+    cb_json_string = "{\"max_num_batched_tokens\": 4096}"
+    ov_json_string = "{\"KEY_CACHE_QUANT_MODE\":\"BY_TOKEN\"}"
+
+    output = run_wwb([
+        "--base-model",
+        base_model_path,
+        "--target-model",
+        target_model_path,
+        "--num-samples",
+        "2",
+        "--device",
+        "CPU",
+        "--genai",
+        "--cb-config",
+        cb_json_string,
+        "--ov-config",
+        ov_json_string
+    ])
+    assert "max_num_batched_tokens" in output
+    assert "KEY_CACHE_QUANT_MODE" not in output
