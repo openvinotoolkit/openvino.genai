@@ -113,12 +113,12 @@ def get_json_config(config):
         with open(config, 'r') as f:
             try:
                 json_config = json.load(f)
-            except Exception:
+            except json.JSONDecodeError:
                 raise RuntimeError(f'==Parse file:{config} failure, json format is incorrect ==')
     else:
         try:
             json_config = json.loads(config)
-        except Exception:
+        except json.JSONDecodeError:
             raise RuntimeError(f'==Parse config:{config} failure, json format is incorrect ==')
  
     return json_config
