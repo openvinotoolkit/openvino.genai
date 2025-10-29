@@ -1,7 +1,7 @@
 import { ChatHistory, LLMPipeline } from "../dist/index.js";
 
 import assert from "node:assert/strict";
-import { describe, it, before, after } from "node:test";
+import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import { models } from "./models.js";
 import { hrtime } from "node:process";
 import os from "node:os";
@@ -172,10 +172,13 @@ describe("LLMPipeline.generate()", () => {
 
   before(async () => {
     pipeline = await LLMPipeline(MODEL_PATH, "CPU");
+  });
+
+  beforeEach(async () => {
     await pipeline.startChat();
   });
 
-  after(async () => {
+  afterEach(async () => {
     await pipeline.finishChat();
   });
 
