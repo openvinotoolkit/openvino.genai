@@ -246,7 +246,7 @@ def test_text_genai_json_string_config():
         pytest.xfail("Ticket 173169")
 
     cb_json_string = "{\"max_num_batched_tokens\": 4096}"
-    ov_json_string = "{\"KEY_CACHE_QUANT_MODE\":\"BY_TOKEN\"}"
+    ov_json_string = "{\"KV_CACHE_PRECISION\":\"f16\"}"
 
     output = run_wwb([
         "--base-model",
@@ -262,6 +262,6 @@ def test_text_genai_json_string_config():
         cb_json_string,
         "--ov-config",
         ov_json_string
-    ])
-    assert "max_num_batched_tokens" in output
-    assert "KEY_CACHE_QUANT_MODE" not in output
+    ], env={"OPENVINO_LOG_LEVEL":"5"})
+    assert "'max_num_batched_tokens': 4096" in output
+    assert "KV_CACHE_PRECISION: f16" in output
