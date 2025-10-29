@@ -259,7 +259,7 @@ jobs:
 
       - name: Upload cpack package
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: genai_cpack_${{ matrix.build-type }}
           path: ${{ env.BUILD_DIR }}/*.zip
@@ -267,7 +267,7 @@ jobs:
 
       - name: Upload Tools
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: genai_tools_${{ matrix.build-type }}
           path: ${{ env.INSTALL_TOOLS_DIR }}
@@ -275,7 +275,7 @@ jobs:
 
       - name: Upload Tests
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: genai_tests_${{ matrix.build-type }}
           path: ${{ env.INSTALL_TESTS_DIR }}
@@ -283,7 +283,7 @@ jobs:
 
       - name: Upload manifest
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: manifest_${{ matrix.build-type }}
           path: ${{ env.MANIFEST_PATH }}
@@ -439,7 +439,7 @@ jobs:
 
       - name: Upload wheels
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: genai_wheels
           path: ${{ env.INSTALL_DIR }}
@@ -542,7 +542,7 @@ jobs:
 
       - name: Upload Samples Build Package
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: genai_samples_${{ matrix.build-type }}
           path: ${{ env.INSTALL_DIR }}
@@ -595,7 +595,7 @@ jobs:
 
       - name: Upload Node.js bindings Build Package
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: genai_nodejs_bindings
           path: ${{ env.INSTALL_DIR }}
