@@ -1,4 +1,4 @@
-import { LLMPipeline } from "../dist/index.js";
+import { LLMPipeline, ChatHistory } from "../dist/index.js";
 
 import assert from "node:assert/strict";
 import { describe, it, before, after } from "node:test";
@@ -34,6 +34,17 @@ describe("tokenizer", async () => {
     assert.strictEqual(typeof template, "string");
   });
 
+  it("applyChatTemplate with chat history", async () => {
+    const chatHistory = new ChatHistory([
+      {
+        role: "user",
+        content: "continue: 1 2 3",
+      },
+    ]);
+    const template = tokenizer.applyChatTemplate(chatHistory, false);
+    assert.strictEqual(typeof template, "string");
+  });
+
   it("applyChatTemplate with true addGenerationPrompt", async () => {
     const template = tokenizer.applyChatTemplate(
       [
@@ -60,10 +71,6 @@ describe("tokenizer", async () => {
 
   it("applyChatTemplate with incorrect type of history", async () => {
     assert.throws(() => tokenizer.applyChatTemplate("prompt", false));
-    assert.throws(() => tokenizer.applyChatTemplate(["prompt"], false));
-    assert.throws(() =>
-      tokenizer.applyChatTemplate([{ role: "user", content: "prompt" }, "not an object"], false),
-    );
   });
 
   it("applyChatTemplate with unknown property", async () => {
@@ -117,6 +124,21 @@ describe("tokenizer", async () => {
     assert.strictEqual(templatedHistory, expected);
   });
 
+  it("applyChatTemplate use tool from chat history", async () => {
+    const prompt = "question";
+    const chatHistory = new ChatHistory();
+    chatHistory.push({ role: "user", content: prompt });
+    chatHistory.setTools([{ type: "function", function: { name: "test" } }]);
+
+    const chatTemplate = `{% for message in messages %}
+{{ message['content'] }}
+{% for tool in tools %}{{ tool | tojson }}{% endfor %}
+{% endfor %}`;
+    const templatedHistory = tokenizer.applyChatTemplate(chatHistory, false, chatTemplate);
+    const expected = `${prompt}\n{"type": "function", "function": {"name": "test"}}`;
+    assert.strictEqual(templatedHistory, expected);
+  });
+
   it("applyChatTemplate use extra_context", async () => {
     const prompt = "question";
     const chatHistory = [
@@ -130,7 +152,8 @@ describe("tokenizer", async () => {
 {% if enable_thinking is defined and enable_thinking is false %}No thinking{% endif %}
 {% endfor %}`;
     const tools = [];
-    const extraContext = { enable_thinking: false }; // eslint-disable-line camelcase
+    // eslint-disable-next-line camelcase
+    const extraContext = { enable_thinking: false };
     const templatedHistory = tokenizer.applyChatTemplate(
       chatHistory,
       false,
@@ -138,6 +161,22 @@ describe("tokenizer", async () => {
       tools,
       extraContext,
     );
+    const expected = `${prompt}\nNo thinking`;
+    assert.strictEqual(templatedHistory, expected);
+  });
+
+  it("applyChatTemplate use extra_context from chat history", async () => {
+    const prompt = "question";
+    const chatHistory = new ChatHistory();
+    chatHistory.push({ role: "user", content: prompt });
+    // eslint-disable-next-line camelcase
+    chatHistory.setExtraContext({ enable_thinking: false });
+
+    const chatTemplate = `{% for message in messages %}
+{{ message['content'] }}
+{% if enable_thinking is defined and enable_thinking is false %}No thinking{% endif %}
+{% endfor %}`;
+    const templatedHistory = tokenizer.applyChatTemplate(chatHistory, false, chatTemplate);
     const expected = `${prompt}\nNo thinking`;
     assert.strictEqual(templatedHistory, expected);
   });

@@ -43,4 +43,16 @@ export const TEXT_RERANK_MODELS: TextRerankModelType[] = [
       },
     ],
   },
+  {
+    architecture: 'Qwen3ForCausalLM',
+    models: [
+      {
+        links: [
+          'https://huggingface.co/Qwen/Qwen3-Reranker-0.6B',
+          'https://huggingface.co/Qwen/Qwen3-Reranker-4B',
+          'https://huggingface.co/Qwen/Qwen3-Reranker-8B'
+        ],
+      },
+    ],
+  },
 ];

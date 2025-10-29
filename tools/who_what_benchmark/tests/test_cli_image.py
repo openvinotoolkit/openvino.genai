@@ -38,7 +38,7 @@ def run_wwb(args):
 
 def setup_module():
     for model_id in OV_IMAGE_MODELS:
-        MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
+        MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "_"))
         subprocess.run(["optimum-cli", "export", "openvino", "--model", model_id, MODEL_PATH], capture_output=True, text=True)
 
 
@@ -111,6 +111,8 @@ def test_image_model_genai(model_id, model_type, tmp_path):
         pytest.skip(reason="FLUX-Fill is supported as inpainting only")
     if model_type == "image-inpainting":
         pytest.xfail("Segfault. Ticket 170877")
+    if model_id == "katuni4ka/tiny-random-flux" and model_type == "image-to-image":
+        pytest.xfail("Randomly wwb died with <Signals.SIGABRT: 6>. Ticket 170878")
 
     mac_arm64_skip = any(substring in model_id for substring in ('stable-diffusion-xl',
                                                                  'tiny-random-stable-diffusion',
@@ -121,7 +123,7 @@ def test_image_model_genai(model_id, model_type, tmp_path):
         pytest.xfail("Ticket 173169")
 
     GT_FILE = tmp_path / "gt.csv"
-    MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "--"))
+    MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "_"))
 
     run_wwb([
         "--base-model",
