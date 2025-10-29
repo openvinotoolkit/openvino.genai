@@ -184,7 +184,8 @@ def run_text_embddings_benchmark(model_path, framework, device, args, num_iters,
             for idx, input_text in enumerate(text_list):
                 p_idx = prompt_idx_list[idx]
                 if num == 0:
-                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text', max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
+                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
+                                                max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 text_emb_fn(input_text, num, model, tokenizer, args, iter_data_list, p_idx, bench_hook, proc_id, mem_consumption)
                 iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
@@ -195,7 +196,8 @@ def run_text_embddings_benchmark(model_path, framework, device, args, num_iters,
             p_idx = prompt_idx_list[idx]
             for num in range(num_iters + 1):
                 if num == 0:
-                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text', max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
+                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
+                                                max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 text_emb_fn(input_text, num, model, tokenizer, args, iter_data_list,
                             prompt_idx_list[idx], bench_hook, proc_id, mem_consumption)
