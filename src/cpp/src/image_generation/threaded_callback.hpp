@@ -48,6 +48,7 @@ public:
         }
 
         m_status = CallbackStatus::STOP;
+        m_squeue.empty();
 
         if (m_worker_thread && m_worker_thread->joinable()) {
             m_worker_thread->join();
@@ -72,6 +73,7 @@ private:
 
             if (m_callback(step, num_steps, latent)) {
                 m_status = CallbackStatus::STOP;
+                m_squeue.empty();
             }
         }
     }
