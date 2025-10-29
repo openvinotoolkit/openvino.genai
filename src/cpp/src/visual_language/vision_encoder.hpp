@@ -3,14 +3,11 @@
 
 #pragma once
 #include <memory>
-#include <optional>
 #include "openvino/runtime/infer_request.hpp"
 
 #include "openvino/genai/common_types.hpp"
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/processor_config.hpp"
-#include "visual_language/cdpruner/cdpruner.hpp"
-#include "visual_language/cdpruner/cdpruner_config.hpp"
 #include "circular_buffer_queue.hpp"
 
 namespace ov::genai {
@@ -115,30 +112,9 @@ public:
     /// its slices.
     virtual EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map = {}) = 0;
 
-    /// @brief Apply pruning to visual features based on text features.
-    /// @param visual_features
-    /// @param text_features
-    /// @return
-    virtual ov::Tensor apply_pruning(const std::vector<ov::Tensor>& visual_features, const ov::Tensor& text_features);
     /// @brief Gets processor config
     /// @return Processor config
     ProcessorConfig get_processor_config() const;
-
-    /// @brief Configure CDPruner parameters for visual token pruning.
-    /// This method enables dynamic configuration of CDPruner settings at runtime.
-    /// @param config CDPruner configuration structure
-    /// @return true if configuration was successful, false if CDPruner is not available.
-    virtual std::optional<cdpruner::Config> set_pruning_config(const cdpruner::Config& config);
-
-    /// @brief Get current CDPruner configuration.
-    /// @return CDPruner configuration if available, nullptr if CDPruner is not supported.
-    virtual std::optional<cdpruner::Config> get_pruning_config() const;
-
-    std::optional<cdpruner::PruningStatistics> get_last_pruning_statistics() const;
-
-    /// @brief Check if CDPruner functionality is available in this VisionEncoder.
-    /// @return true if CDPruner is supported and configured, false otherwise.
-    virtual bool is_pruning_available();
 
 protected:
     /// @brief  Infer requests queue for image encoding model.
@@ -146,9 +122,6 @@ protected:
 
     /// @brief A config to follow.
     ProcessorConfig m_processor_config;
-
-    /// @brief CDPruner instance for token pruning
-    std::unique_ptr<ov::genai::cdpruner::CDPruner> m_cdpruner;
 
 public:
     VisionEncoder(

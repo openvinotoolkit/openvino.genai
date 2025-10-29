@@ -4,7 +4,6 @@
 #pragma once
 
 #include "openvino/genai/visual_language/pipeline.hpp"
-#include "openvino/genai/generation_config.hpp"
 #include "utils.hpp"
 
 using namespace ov::genai;
@@ -44,7 +43,7 @@ public:
         auto images = config_map.find(ov::genai::images.name());
         auto videos = config_map.find(ov::genai::videos.name());
 
-        ov::genai::OptionalGenerationConfig config_arg = ov::genai::utils::get_config_from_map(config_map);
+        ov::genai::OptionalGenerationConfig config_arg = utils::get_config_from_map(config_map);
         GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
         config.update_generation_config(config_map);
 
