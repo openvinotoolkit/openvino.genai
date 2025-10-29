@@ -29,7 +29,7 @@ public:
     };
 
     /// @brief write is called every time new token is decoded
-    /// @return StreamingStatus flag to indicate whether generation should continue to run or stopped or cancelled
+    /// @return StreamingStatus flag to indicate whether generation should continue to run, be stopped, or be cancelled
     virtual StreamingStatus write(int64_t token) {
         OPENVINO_SUPPRESS_DEPRECATED_START
         return put(token) ? StreamingStatus::STOP : StreamingStatus::RUNNING;
@@ -37,7 +37,7 @@ public:
     };
 
     /// @brief write is called every time new vector of tokens is decoded, in case of assisting or prompt lookup decoding
-    /// @return StreamingStatus flag to indicate whether generation should continue to run or stopped or cancelled
+    /// @return StreamingStatus flag to indicate whether generation should continue to run, be stopped, or be cancelled
     virtual StreamingStatus write(const std::vector<int64_t>& tokens) {
         for (const auto token : tokens) {
             const auto status = write(token);
