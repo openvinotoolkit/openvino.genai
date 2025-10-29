@@ -217,15 +217,6 @@ public:
             if (m_is_chat_conversation)
                 OPENVINO_ASSERT(videos.empty(), "Chat mode is currently not supported with video input for NPU device!");
         }
-
-        // Add text prompt to vision config for CDPruner
-        if (generation_config.pruning_ratio != 0) {
-            std::cout << "[CDPruner] Warning: Pruning is disabled. It is only supported when using PA as the attention "
-                         "backend."
-                      << std::endl;
-            // Disable CDPruner
-            generation_config.pruning_ratio = 0;
-        }
         auto encoded_images = m_inputs_embedder->encode_images(images);
         OPENVINO_ASSERT(images.size() == encoded_images.size(), "Input images size and encoded images size mismatch!");
         const auto encoded_videos = m_inputs_embedder->encode_videos(videos);
