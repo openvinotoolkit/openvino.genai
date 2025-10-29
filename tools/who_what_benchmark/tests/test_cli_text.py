@@ -240,6 +240,7 @@ def test_text_genai_cb_model(tmp_path):
     assert "Metrics for model" in output
     assert "## Reference text" not in output
 
+
 def test_text_genai_json_string_config():
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")

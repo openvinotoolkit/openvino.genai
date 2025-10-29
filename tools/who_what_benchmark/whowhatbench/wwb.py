@@ -656,6 +656,7 @@ def print_embeds_results(evaluator):
         logger.info("## Passages num:\n%s\n", len(e["passages"]))
         logger.info("## Similarity:\n%s\n", e["similarity"])
 
+
 def print_rag_results(evaluator):
     metric_of_interest = "similarity"
     worst_examples = evaluator.worst_examples(

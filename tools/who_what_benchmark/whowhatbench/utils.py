@@ -6,6 +6,7 @@ from contextlib import contextmanager
 import json
 from pathlib import Path
 
+
 def new_randn_tensor(
     shape: Union[tuple, list],
     generator: Optional[Union[list["torch.Generator"],
@@ -107,6 +108,7 @@ def get_ignore_parameters_flag():
         return {"use_model_defaults": False}
     return {}
 
+
 def get_json_config(config):
     json_config = {}
     if Path(config).is_file():
@@ -120,5 +122,5 @@ def get_json_config(config):
             json_config = json.loads(config)
         except json.JSONDecodeError:
             raise RuntimeError(f'==Parse config:{config} failure, json format is incorrect ==')
- 
+
     return json_config
