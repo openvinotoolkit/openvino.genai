@@ -5,7 +5,6 @@
 import argparse
 import json
 from typing import Any
-from xxlimited import foo
 
 from openvino_genai import (
     GenerationConfig,
@@ -82,24 +81,12 @@ def tools_to_array_schema(*tools: BaseModel) -> str:
         }
     )
 
-class ToolCallParser(Parser):
-    """Parser to extract tool calls from the generated text."""
-    
-    def parse(self, msg: str) -> Any:
-        content = msg['content']
-        start_tag = "functools"
-        start_index = content.find(start_tag)
-        if start_index == -1:
-            raise ValueError("No function call found in the text.")
-        json_part = content[start_index + len(start_tag) :]
-        try:
-            tool_calls = json.loads(json_part)
-            msg['tool_calls'] = tool_calls
-        except json.JSONDecodeError as e:
-            raise ValueError("Failed to parse function call JSON.") from e
-
 
 class IncrementalToolCallParser(IncrementalParser):
+    """Incremental parser to extract tool calls from the model output.
+
+    Custom parser should be inherited from IncrementalParser and implement 'parse' and 'reset' methods.
+    """
     def parse(self, msg: dict, delta_text: str, delta_tokens: list) -> str:
         if 'content' not in msg:
             msg['content'] = ''
@@ -127,6 +114,8 @@ class IncrementalToolCallParser(IncrementalParser):
             return delta_text
     
     def reset(self):
+        # This method should be implemented in inherited classes.
+        # No states were set so do nothing.
         pass
 
 class CurrentTextParserStreamer(TextParserStreamer):
