@@ -49,7 +49,7 @@ class ModelRunner {
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
 
-    //std::shared_ptr<InputsEmbedder> m_inputs_embedder = nullptr;
+    std::shared_ptr<InputsEmbedder> m_inputs_embedder;
 
     // Cached pre-allocated tensors to avoid CPU->GPU copy
     ov::Tensor m_cached_input_ids;
@@ -61,7 +61,6 @@ class ModelRunner {
     ov::Tensor m_cached_max_context_len;
     ov::Tensor m_cached_score_aggregation_window;
     ov::Tensor m_cached_token_type_ids;
-    
 public:
     /**
      * Constructs the ModelRunner.
@@ -109,7 +108,7 @@ public:
     }
 
     void set_inputs_embedder(std::shared_ptr<InputsEmbedder> inputs_embedder) {
-       // m_inputs_embedder = inputs_embedder;
+        m_inputs_embedder = inputs_embedder;
         m_embedding = inputs_embedder->get_embedding_model();
     }
 
@@ -167,9 +166,6 @@ public:
             max_context_len_val = std::max(max_context_len_val, sequence_group->get_context_len());
         }
 
-        ov::Tensor position_ids = _get_or_resize_tensor(m_cached_position_ids, "position_ids",
-            {total_num_tokens}, ov::element::i64);
-
         // Use cached pre-allocated tensors instead of creating new ones
         ov::Tensor input_ids = _get_or_resize_tensor(m_cached_input_ids, "input_ids", {total_num_tokens}, ov::element::i64);
         ov::Tensor inputs_embeds = _get_or_resize_tensor(m_cached_inputs_embeds, "inputs_embeds",
@@ -191,7 +187,7 @@ public:
 
         ov::Tensor generated_ids_embeds;
         float *generated_ids_embeds_data = nullptr;
-        //ov::Tensor position_ids;
+        ov::Tensor position_ids;
 
         max_context_len.data<int32_t>()[0] = max_context_len_val;
 
@@ -203,18 +199,18 @@ public:
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             inputs_embeds_data = inputs_embeds.data<float>();
             token_type_ids_data = token_type_ids.data<int64_t>();
-            // auto position_ids_elem = sequence_groups[0]->get_running_sequences()[0]->get_position_ids();
-            // ov::Shape position_ids_shape = position_ids_elem[0].get_shape();
-            // if (position_ids_shape.size() == 3) {
-            //     position_ids_shape[2] = total_num_tokens;
-            // }
-            // else {
-            //     position_ids_shape = {total_num_tokens};
-            // }
-         //   position_ids = _get_or_resize_tensor(m_cached_position_ids, "position_ids", position_ids_shape, ov::element::i64);
+            auto position_ids_elem = sequence_groups[0]->get_running_sequences()[0]->get_position_ids();
+            ov::Shape position_ids_shape = position_ids_elem[0].get_shape();
+            if (position_ids_shape.size() == 3) {
+                position_ids_shape[2] = total_num_tokens;
+            }
+            else {
+                position_ids_shape = {total_num_tokens};
+            }
+            position_ids = _get_or_resize_tensor(m_cached_position_ids, "position_ids", position_ids_shape, ov::element::i64);
         } else if (sequence_group_type == SequenceGroupType::TOKENS) {
             input_ids_data = input_ids.data<int64_t>();
-         //   position_ids = _get_or_resize_tensor(m_cached_position_ids, "position_ids", {total_num_tokens}, ov::element::i64);
+            position_ids = _get_or_resize_tensor(m_cached_position_ids, "position_ids", {total_num_tokens}, ov::element::i64);
         }
 
         int64_t
@@ -275,30 +271,29 @@ public:
                         input_ids_data[token_id] = position_id < prompt_len ?
                             sequence_group->get_prompt_ids()[position_id] :
                             sequence->get_generated_ids()[position_id - prompt_len];
-                       // position_ids_data[token_id] = position_id;
+                        position_ids_data[token_id] = position_id;
                     } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
                         const auto& generated_embeds = sequence->get_generated_ids_embeds();
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
                         std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
-                        // const auto& position_ids_elem = sequence->get_position_ids()[position_id];
+                        const auto& position_ids_elem = sequence->get_position_ids()[position_id];
 
-                        // ov::Coordinate begin;
-                        // ov::Coordinate end;
-                        // if (position_ids_elem.get_shape().size() == 3) {
-                        //     begin = ov::Coordinate{0, 0, position_idx};
-                        //     end = ov::Coordinate{3, 1, position_idx + 1};
-                        // }
-                        // else {
-                        //     begin = ov::Coordinate{position_idx};
-                        //     end = ov::Coordinate{position_idx + 1};
-                        // }
+                        ov::Coordinate begin;
+                        ov::Coordinate end;
+                        if (position_ids_elem.get_shape().size() == 3) {
+                            begin = ov::Coordinate{0, 0, position_idx};
+                            end = ov::Coordinate{3, 1, position_idx + 1};
+                        }
+                        else {
+                            begin = ov::Coordinate{position_idx};
+                            end = ov::Coordinate{position_idx + 1};
+                        }
 
-                        // ov::Tensor dst_roi(position_ids, begin, end);
-                        // position_ids_elem.copy_to(dst_roi);
+                        ov::Tensor dst_roi(position_ids, begin, end);
+                        position_ids_elem.copy_to(dst_roi);
                     } else {
                         OPENVINO_THROW("Unknown model inputs type.");
                     }
-                    position_ids_data[token_id] = position_id;
                     if (sequence_group_type == SequenceGroupType::TOKENS) {
                         position_ids_data[token_id] = position_id;
                         position_ids_data++;
@@ -386,10 +381,10 @@ public:
                 m_request.set_tensor("token_type_ids", token_type_ids);
             }
         }
-        // if (position_ids.get_shape().size() > 2) {
-        //     // flatten positions ids for 3D position ids case
-        //     position_ids.set_shape({ov::shape_size(position_ids.get_shape())});
-        // }
+        if (position_ids.get_shape().size() > 2) {
+            // flatten positions ids for 3D position ids case
+            position_ids.set_shape({ov::shape_size(position_ids.get_shape())});
+        }
         // typical LLM parameters
         if (!m_cached_position_ids) {
             m_request.set_tensor("position_ids", position_ids);
@@ -481,8 +476,8 @@ public:
                     pos++;
 
                     size_t position_id = token_idx + sequence_group->get_prompt_len();
-                    // auto appended_pos_id = m_inputs_embedder->get_generation_phase_position_ids(1, position_id, seq->get_rope_delta()).first;
-                    // seq->append_position_ids(m_inputs_embedder->get_generation_phase_position_ids(1, position_id, seq->get_rope_delta()).first);
+                    auto appended_pos_id = m_inputs_embedder->get_generation_phase_position_ids(1, position_id, seq->get_rope_delta()).first;
+                    seq->append_position_ids(m_inputs_embedder->get_generation_phase_position_ids(1, position_id, seq->get_rope_delta()).first);
                 }
             }
         }

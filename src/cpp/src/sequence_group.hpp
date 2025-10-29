@@ -53,7 +53,7 @@ class Sequence {
     std::vector<std::vector<float>> m_generated_ids_embeds;
     SequenceGroupType m_type;
     size_t m_hidden_size;
-   // std::vector<ov:: Tensor> m_position_ids;
+    std::vector<ov:: Tensor> m_position_ids;
     int64_t m_rope_delta;
 
     // Embeddings hash calculation params
@@ -77,7 +77,7 @@ class Sequence {
         m_hidden_size(seq.m_hidden_size),
         m_prefix_hashes(seq.m_prefix_hashes),
         m_generated_ids_embeds(seq.m_generated_ids_embeds),
-      //  m_position_ids(seq.m_position_ids),
+        m_position_ids(seq.m_position_ids),
         m_rope_delta(seq.m_rope_delta)
          {
         OPENVINO_ASSERT(seq.m_id != m_id);
@@ -234,7 +234,7 @@ public:
         size_t seq_len_shape_idx = position_ids.get_shape().size() == 3 ? 2 : 1;
         size_t position_ids_len = position_ids.get_shape()[seq_len_shape_idx];
         if (position_ids_len == 1) {
-           // m_position_ids.emplace_back(position_ids);
+            m_position_ids.emplace_back(position_ids);
             return;
         }
         int64_t* position_ids_data = position_ids.data<int64_t>();
@@ -257,7 +257,7 @@ public:
 
             ov::Tensor src_roi(position_ids, begin, end);
             src_roi.copy_to(position_ids_elem);
-        //    m_position_ids.emplace_back(position_ids_elem);
+            m_position_ids.emplace_back(position_ids_elem);
         }
     }
 
@@ -265,10 +265,10 @@ public:
         m_rope_delta = rope_delta;
     }
 
-    // const std::vector<ov::Tensor>& get_position_ids() const {
-    //     OPENVINO_ASSERT(m_type == ov::genai::SequenceGroupType::EMBEDDINGS);
-    //     return m_position_ids;
-    // }
+    const std::vector<ov::Tensor>& get_position_ids() const {
+        OPENVINO_ASSERT(m_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        return m_position_ids;
+    }
 
     const int64_t get_rope_delta() const {
         return m_rope_delta;
