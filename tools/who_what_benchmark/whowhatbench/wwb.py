@@ -127,7 +127,7 @@ def parse_args():
         "--ov-config",
         type=str,
         default=None,
-        help="Path to the JSON file that contains OpenVINO Runtime configuration.",
+        help="Path to the JSON file that contains OpenVINO Runtime configuration. Or a JSON string of the configuration.",
     )
     parser.add_argument(
         "--language",
@@ -151,7 +151,7 @@ def parse_args():
         type=str,
         default=None,
         help="Path to the JSON file that contains SchedulerConfig for Continuous Batching Pipeline"
-        "of OpenVINO GenAI API.",
+        "of OpenVINO GenAI API. Or a JSON string of SchedulerConfig.",
     )
     parser.add_argument(
         "--llamacpp",
