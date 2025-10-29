@@ -153,12 +153,6 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
     const auto infer_start = std::chrono::steady_clock::now();
     m_llm.infer();
-    const auto infer_end = std::chrono::steady_clock::now();
-    const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
-    raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
-    raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
-    raw_perf_counters.m_new_token_times.emplace_back(infer_end);
-    raw_perf_counters.m_batch_sizes.emplace_back(batch_size);
 
     auto logits = m_llm.get_tensor("logits");
 
@@ -174,6 +168,13 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
     SamplerOutput sampler_output = sampler.sample(sequence_groups, logits);
     free_non_running_requests(); // handle sampler output
+
+    const auto infer_end = std::chrono::steady_clock::now();
+    const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
+    raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
+    raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
+    raw_perf_counters.m_new_token_times.emplace_back(infer_end);
+    raw_perf_counters.m_batch_sizes.emplace_back(sampler_output.num_generated_tokens);
 
     // "Generation" phase
 
@@ -267,15 +268,15 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 
         m_llm.wait();
 
+        sampler_output = sampler.sample(active_sequence_groups, m_llm.get_tensor("logits"));
+        free_non_running_requests(); // handle sampler output
+        
         const auto infer_end = std::chrono::steady_clock::now();
         const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
         raw_perf_counters.m_inference_durations[0] += MicroSeconds(infer_ms);
         raw_perf_counters.m_token_infer_durations.emplace_back(infer_ms);
         raw_perf_counters.m_new_token_times.emplace_back(infer_end);
-        raw_perf_counters.m_batch_sizes.emplace_back(current_batch_size);
-
-        sampler_output = sampler.sample(active_sequence_groups, m_llm.get_tensor("logits"));
-        free_non_running_requests(); // handle sampler output
+        raw_perf_counters.m_batch_sizes.emplace_back(sampler_output.num_generated_tokens);
     }
 
     stream_generated_tokens();
