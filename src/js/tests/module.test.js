@@ -1,7 +1,7 @@
 import { ChatHistory, LLMPipeline } from "../dist/index.js";
 
 import assert from "node:assert/strict";
-import { describe, it, before, after, beforeEach, afterEach } from "node:test";
+import { describe, it, before, after } from "node:test";
 import { models } from "./models.js";
 import { hrtime } from "node:process";
 import os from "node:os";
@@ -109,7 +109,7 @@ describe("generation parameters validation", () => {
     await pipeline.finishChat();
   });
 
-  it("should throw an error if temperature is not a number", async () => {
+  it("should throw an error if no arguments passed to generate", async () => {
     await assert.rejects(
       async () => await pipeline.generate(),
       /Passed argument must be a string, ChatHistory or an array of strings./,
@@ -172,13 +172,10 @@ describe("LLMPipeline.generate()", () => {
 
   before(async () => {
     pipeline = await LLMPipeline(MODEL_PATH, "CPU");
-  });
-
-  beforeEach(async () => {
     await pipeline.startChat();
   });
 
-  afterEach(async () => {
+  after(async () => {
     await pipeline.finishChat();
   });
 
@@ -200,34 +197,6 @@ describe("LLMPipeline.generate()", () => {
     const replyStr = await pipeline.generate("prompt", configStr);
     assert.strictEqual(typeof replyStr, "string");
     assert.strictEqual(replyStr, reply.toString());
-  });
-
-  it("generate(chatHistory, config)", async () => {
-    const chatHistory = new ChatHistory([
-      { role: "user", content: "Hello!" },
-      { role: "assistant", content: "Hi! How can I help you?" },
-      { role: "user", content: "Tell me a joke." },
-    ]);
-    const config = {
-      max_new_tokens: 10,
-      return_decoded_results: true,
-    };
-    const reply = await pipeline.generate(chatHistory, config);
-    assert.strictEqual(typeof reply, "object");
-    assert.ok(Array.isArray(reply.texts));
-    assert.ok(reply.texts.every((text) => typeof text === "string"));
-    assert.ok(reply.perfMetrics !== undefined);
-  });
-
-  it("generate(chatHistory, config) with invalid chat history", async () => {
-    const chatHistory = [1, "assistant", null];
-    const config = {
-      max_new_tokens: 10,
-      return_decoded_results: true,
-    };
-    await assert.rejects(async () => {
-      await pipeline.generate(chatHistory, config);
-    }, /An incorrect input value has been passed./);
   });
 
   it("DecodedResults.perfMetrics", async (t) => {
@@ -392,5 +361,59 @@ describe("stream()", () => {
     assert.throws(() => {
       pipeline.stream(["prompt1", "prompt2", "prompt3"]);
     }, /Streaming is not supported for array of inputs/);
+  });
+});
+
+describe("LLMPipeline with chat history", () => {
+  let pipeline = null;
+
+  before(async () => {
+    pipeline = await LLMPipeline(MODEL_PATH, "CPU");
+  });
+
+  it("generate(chatHistory, config)", async () => {
+    const chatHistory = new ChatHistory([
+      { role: "user", content: "Hello!" },
+      { role: "assistant", content: "Hi! How can I help you?" },
+      { role: "user", content: "Tell me a joke." },
+    ]);
+    const config = {
+      max_new_tokens: 10,
+      return_decoded_results: true,
+    };
+    await pipeline.generate("prompt", config);
+    const reply = await pipeline.generate(chatHistory, config);
+    assert.ok(Array.isArray(reply.texts));
+    assert.equal(reply.texts.length, 1);
+    assert.ok(typeof reply.texts[0] === "string");
+    console.log("Reply:", reply.toString());
+  });
+
+  it("generate(chatHistory, config) with invalid chat history", async () => {
+    const chatHistory = [1, "assistant", null];
+    const config = {
+      max_new_tokens: 10,
+      return_decoded_results: true,
+    };
+    await assert.rejects(async () => {
+      await pipeline.generate(chatHistory, config);
+    }, /An incorrect input value has been passed./);
+  });
+
+  it("stram(chatHistory, config)", async () => {
+    const chatHistory = new ChatHistory([
+      { role: "user", content: "Hello!" },
+      { role: "assistant", content: "Hi! How can I help you?" },
+      { role: "user", content: "Tell me a joke." },
+    ]);
+    const config = {
+      max_new_tokens: 10,
+    };
+    const streamer = pipeline.stream(chatHistory, config);
+    const chunks = [];
+    for await (const chunk of streamer) {
+      chunks.push(chunk);
+    }
+    assert.ok(chunks.length > 0);
   });
 });
