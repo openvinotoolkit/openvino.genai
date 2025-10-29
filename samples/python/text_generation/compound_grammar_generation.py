@@ -5,12 +5,17 @@
 import argparse
 import json
 from typing import Any
+from xxlimited import foo
 
 from openvino_genai import (
     GenerationConfig,
     LLMPipeline,
     StreamingStatus,
+    Parser,
+    IncrementalParser,
+    TextParserStreamer
 )
+
 from openvino_genai import (
     StructuredOutputConfig as SOC,
 )
@@ -22,7 +27,7 @@ def streamer(subword):
     return StreamingStatus.RUNNING
 
 
-class booking_flight_tickets(BaseModel):
+class book_flight_ticket(BaseModel):
     """booking flights"""
 
     origin_airport_code: str = Field(description="The name of Departure airport code")
@@ -31,7 +36,7 @@ class booking_flight_tickets(BaseModel):
     return_date: str = Field(description="The date of return flight")
 
 
-class booking_hotels(BaseModel):
+class book_hotel(BaseModel):
     """booking hotel"""
 
     destination: str = Field(description="The name of the city")
@@ -77,6 +82,59 @@ def tools_to_array_schema(*tools: BaseModel) -> str:
         }
     )
 
+class ToolCallParser(Parser):
+    """Parser to extract tool calls from the generated text."""
+    
+    def parse(self, msg: str) -> Any:
+        content = msg['content']
+        start_tag = "functools"
+        start_index = content.find(start_tag)
+        if start_index == -1:
+            raise ValueError("No function call found in the text.")
+        json_part = content[start_index + len(start_tag) :]
+        try:
+            tool_calls = json.loads(json_part)
+            msg['tool_calls'] = tool_calls
+        except json.JSONDecodeError as e:
+            raise ValueError("Failed to parse function call JSON.") from e
+
+
+class IncrementalToolCallParser(IncrementalParser):
+    def parse(self, msg: dict, delta_text: str, delta_tokens: list) -> str:
+        if 'content' not in msg:
+            msg['content'] = ''
+        msg['delta_text'] = delta_text
+
+        # Join the previous content with the new delta_text for searching.
+        # Do not modify msg['content'] yet, as it will be updated automatically by the streamer.
+        content = msg['content'] + delta_text
+        
+        start_tag = "functools"
+        start_index = content.find(start_tag)
+        if start_index == -1:
+            return delta_text
+
+        msg['generates_tool_call'] = True
+        if not content.endswith("}]"):
+            return delta_text
+        json_part = content[start_index + len(start_tag) :]
+        try:
+            tool_calls = json.loads(json_part)
+            msg['tool_calls'] = tool_calls
+            msg['generates_tool_call'] = False
+            return delta_text
+        except json.JSONDecodeError as e:
+            return delta_text
+    
+    def reset(self):
+        pass
+
+class CurrentTextParserStreamer(TextParserStreamer):
+    def write(self, msg: dict):
+        # If the tool call is not yet complete, continue streaming
+        print(msg['delta_text'], end="", flush=True)
+        return StreamingStatus.RUNNING
+    
 
 # modified system message from:
 # https://github.com/vllm-project/vllm/blob/main/examples/tool_chat_template_phi4_mini.jinja
@@ -94,7 +152,7 @@ If you decide to call functions:
     * respect the argument type formatting. E.g., if the type is number and format is float, write value 7 as 7.0
     * make sure you pick the right functions that match the user intent
 """
-sys_message += generate_system_prompt_tools(booking_flight_tickets, booking_hotels)
+sys_message += generate_system_prompt_tools(book_flight_ticket, book_hotel)
 
 
 def main():
@@ -134,12 +192,22 @@ def main():
     model_input = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True)
 
     start_tool_call_tag = SOC.ConstString(r"functools")
-    tools_json = SOC.JSONSchema(tools_to_array_schema(booking_flight_tickets, booking_hotels))
+    tools_json = SOC.JSONSchema(tools_to_array_schema(book_flight_ticket, book_hotel))
     tool_call_grammar = start_tool_call_tag + tools_json  # SOC.Concat(start_tool_call_tag, tools_json)
     generation_config.structured_output_config.structural_tags_config = tool_call_grammar
 
     print("Assistant: ", end="")
-    pipe.generate(model_input, generation_config, streamer=streamer)
+    custom_streamer = CurrentTextParserStreamer(pipe.get_tokenizer(), [IncrementalToolCallParser()])
+    answer = pipe.generate([model_input], generation_config, streamer=custom_streamer)
+    print()
+    
+    print("\nThe following tool calls were generated:")
+    def print_tool_call(tool_call: dict):
+        print(tool_call['name'] + '(' + ', '.join(f'{key}="{value}"' for key,value in tool_call['arguments'].items()) + ')')
+    
+    for tool_call in answer.parsed[0]['tool_calls']:
+        print_tool_call(tool_call)
+
     print()
 
 
