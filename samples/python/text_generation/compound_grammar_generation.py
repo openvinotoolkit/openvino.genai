@@ -158,7 +158,6 @@ def main():
     user_text_1 = "Do dolphins have fingers?"
     print("User: ", user_text_1)
     chat_history.append({"role": "user", "content": user_text_1})
-    
     model_input = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True, tools=tools)
     # same as SOC.Union(SOC.ConstString("yes"), SOC.ConstString("no"))
     yes_or_no_grammar = SOC.ConstString("yes") | SOC.ConstString("no")
