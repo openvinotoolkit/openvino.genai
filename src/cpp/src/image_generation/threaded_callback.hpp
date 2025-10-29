@@ -32,14 +32,14 @@ public:
         m_worker_thread = std::make_shared<std::thread>(&ThreadedCallbackWrapper::_worker, this);
     }
 
-    bool write(const size_t step, const size_t num_steps, const ov::Tensor& latent) {
+    CallbackStatus write(const size_t step, const size_t num_steps, const ov::Tensor& latent) {
         if (!m_callback || m_status == CallbackStatus::STOP) {
-            return true;
+            return CallbackStatus::STOP;
         }
 
         m_squeue.push({step, num_steps, latent});
 
-        return false;
+        return CallbackStatus::RUNNING;
     }
 
     void end() {
