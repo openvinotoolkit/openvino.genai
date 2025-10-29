@@ -104,7 +104,7 @@ class IncrementalToolCallParser(IncrementalParser):
         msg['generates_tool_call'] = True
         if not content.endswith("}]"):
             return delta_text
-        json_part = content[start_index + len(start_tag) :]
+        json_part = content[start_index + len(start_tag):]
         try:
             tool_calls = json.loads(json_part)
             msg['tool_calls'] = tool_calls
@@ -192,7 +192,7 @@ def main():
     
     print("\nThe following tool calls were generated:")
     def print_tool_call(tool_call: dict):
-        print(tool_call['name'] + '(' + ', '.join(f'{key}="{value}"' for key,value in tool_call['arguments'].items()) + ')')
+        print(f"{tool_call['name']}({', '.join(f'{key}=\"{value}\"' for key, value in tool_call['arguments'].items())})")
     
     for tool_call in answer.parsed[0]['tool_calls']:
         print_tool_call(tool_call)
