@@ -44,7 +44,7 @@ def num_infer_count_type(x):
 
 def get_argprser():
     parser = argparse.ArgumentParser('LLM benchmarking tool', add_help=True, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-m', '--model', help='model folder including IR files or Pytorch files or path to GGUF model', required=TabError, default=argparse.SUPPRESS)
+    parser.add_argument('-m', '--model', help='model folder including IR files or Pytorch files or path to GGUF model', required=True, default=argparse.SUPPRESS)
     parser.add_argument('-d', '--device', default='cpu', help='inference device')
     parser.add_argument('-r', '--report', help='report csv')
     parser.add_argument('-rj', '--report_json', help='report json')
