@@ -18,7 +18,7 @@ void print_array(T* array, size_t size) {
 }
 
 template <typename T>
-void print_tensor(ov::Tensor tensor) {
+void print_tensor(ov::Tensor tensor, bool print_full = false) {
     const auto shape = tensor.get_shape();
     const size_t rank = shape.size();
     const auto* data = tensor.data<T>();
@@ -37,7 +37,8 @@ void print_tensor(ov::Tensor tensor) {
         const size_t batch_offset = batch * seq_length;
 
         if (rank == 2) {
-            for (size_t j = 0; j < std::min(seq_length, size_t(10)); ++j) {
+            size_t max_length = print_full ? seq_length : std::min(seq_length, size_t(10));
+            for (size_t j = 0; j < max_length; ++j) {
                 std::cout << data[batch_offset + j] << " ";
             }
             std::cout << "]\n";
@@ -60,19 +61,19 @@ void print_tensor(ov::Tensor tensor) {
     std::cout << " ]" << std::endl;
 }
 
-inline void print_tensor(std::string name, ov::Tensor tensor) {
+inline void print_tensor(std::string name, ov::Tensor tensor, bool print_full = false) {
     std::cout << name;
     std::cout << " " << tensor.get_shape().to_string();
     if (tensor.get_element_type() == ov::element::i32) {
-        print_tensor<int>(tensor);
+        print_tensor<int>(tensor, print_full);
     } else if (tensor.get_element_type() == ov::element::i64) {
-        print_tensor<int64_t>(tensor);
+        print_tensor<int64_t>(tensor, print_full);
     } else if (tensor.get_element_type() == ov::element::f32) {
-        print_tensor<float>(tensor);
+        print_tensor<float>(tensor, print_full);
     } else if (tensor.get_element_type() == ov::element::boolean) {
-        print_tensor<bool>(tensor);
+        print_tensor<bool>(tensor, print_full);
     } else if (tensor.get_element_type() == ov::element::f16) {
-        print_tensor<ov::float16>(tensor);
+        print_tensor<ov::float16>(tensor, print_full);
     }
 }
 

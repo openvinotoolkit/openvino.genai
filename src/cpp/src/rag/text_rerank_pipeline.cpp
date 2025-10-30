@@ -185,10 +185,19 @@ public:
     }
 
     void start_rerank_async(const std::string& query, const std::vector<std::string>& texts) {
+        std::cout << "Start reranking..." << std::endl;
+        std::cout << "Query: " << query << std::endl;
+        for (size_t i = 0; i < texts.size(); i++) {
+            std::cout << "Text[" << i << "]: " << texts[i] << std::endl;
+        }
+
         const TokenizedInputs& encoded = tokenize(query, texts);
 
         m_request.set_tensor("input_ids", encoded.input_ids);
         m_request.set_tensor("attention_mask", encoded.attention_mask);
+
+        print_tensor("input_ids", encoded.input_ids, true);
+        print_tensor("attention_mask", encoded.attention_mask, true);
 
         if (encoded.token_type_ids.has_value()) {
             m_request.set_tensor("token_type_ids", *encoded.token_type_ids);
@@ -219,6 +228,8 @@ public:
         const size_t batch_size = scores_tensor_shape[0];
 
         auto scores_data = scores_tensor.data<float>();
+
+        print_tensor("scores", scores_tensor);
 
         std::vector<std::pair<size_t, float>> results;
         results.reserve(batch_size);
