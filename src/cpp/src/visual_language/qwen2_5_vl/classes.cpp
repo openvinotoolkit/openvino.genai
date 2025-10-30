@@ -164,10 +164,13 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2_5_VL::run_video_image_embe
 
     ov::Shape video_fea_shape = ov::Shape({video_fea_count, out_vision_shape.at(1)});
     ov::Tensor res_video = ov::Tensor(processed_vision_embeds.get_element_type(), video_fea_shape);
+    OPENVINO_ASSERT(processed_vision_embeds.get_byte_size() >= res_video.get_byte_size(), "Vision embeds size should >= video embeds size.");
     std::memcpy(res_video.data(), processed_vision_embeds.data(), res_video.get_byte_size());
 
     ov::Shape image_fea_shape = ov::Shape({out_vision_shape.at(0) - video_fea_count, out_vision_shape.at(1)});
     ov::Tensor res_image = ov::Tensor(processed_vision_embeds.get_element_type(), image_fea_shape);
+    OPENVINO_ASSERT(processed_vision_embeds.get_byte_size() == res_image.get_byte_size() + res_video.get_byte_size(),
+                    "Vision embeds size should == image + video embeds size.");
     std::memcpy(res_image.data(),
                 reinterpret_cast<uint8_t*>(processed_vision_embeds.data()) + res_video.get_byte_size(),
                 res_image.get_byte_size());
