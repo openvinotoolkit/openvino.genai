@@ -273,7 +273,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         }
         main_generations.push_back(m_main_pipeline->add_request(request_id, input_ids[request_id], main_sampling_params));
 
-        auto draft_sampling_params = std::move(main_sampling_params);
+        auto draft_sampling_params = main_sampling_params;
         // set the parameters do not stop draft generation without stopping of the same request for main pipeline
         draft_sampling_params.ignore_eos = true;
         draft_sampling_params.stop_strings = {};

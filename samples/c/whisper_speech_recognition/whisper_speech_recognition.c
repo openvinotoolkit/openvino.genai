@@ -10,6 +10,8 @@
 #include "openvino/genai/c/whisper_pipeline.h"
 #include "whisper_utils.h"
 
+#define SAMPLE_RATE_TOLERANCE 0.5f
+
 int main(int argc, char* argv[]) {
     if (argc != 3 && argc != 4) {
         fprintf(stderr, "Usage: %s <MODEL_DIR> \"<WAV_FILE_PATH>\" [DEVICE]\n", argv[0]);
@@ -42,7 +44,7 @@ int main(int argc, char* argv[]) {
         goto err;
     }
 
-    if (fabsf(file_sample_rate - 16000.0f) > 0.5f) {
+    if (fabsf(file_sample_rate - 16000.0f) > SAMPLE_RATE_TOLERANCE) {
         size_t resampled_length;
         float* resampled_audio = resample_audio(audio_data, audio_length, file_sample_rate, 16000.0f, &resampled_length);
         if (!resampled_audio) {
