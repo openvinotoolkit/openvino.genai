@@ -1311,6 +1311,7 @@ ov::Tensor InputsEmbedderQwen2VL::adjust_position_ids_for_pruning(const ov::Tens
     }
 
     std::vector<int64_t> pruned_token_ids;
+    std::vector<std::array<size_t, 4>> removed_tokens;
 
     ov::Tensor updated_position_ids = update_position_ids(original_position_ids,
                                                           input_ids,
@@ -1319,7 +1320,8 @@ ov::Tensor InputsEmbedderQwen2VL::adjust_position_ids_for_pruning(const ov::Tens
                                                           reordered_images_grid_thw,
                                                           kept_indices_per_image,
                                                           spatial_merge_size,
-                                                          &pruned_token_ids);
+                                                          &pruned_token_ids,
+                                                          &removed_tokens);
 
     std::vector<int64_t> original_token_ids;
     const ov::Shape& original_shape = original_position_ids.get_shape();
@@ -1337,6 +1339,17 @@ ov::Tensor InputsEmbedderQwen2VL::adjust_position_ids_for_pruning(const ov::Tens
                            updated_position_ids,
                            pruned_token_ids);
 
+    if (!removed_tokens.empty()) {
+        std::cout << "[CDPruner] Removed visual tokens (first batch):" << std::endl;
+        std::cout << "image\tindex\trow\tcol" << std::endl;
+        for (const auto& token_info : removed_tokens) {
+            std::cout << token_info[0] << "\t"
+                      << token_info[1] << "\t"
+                      << token_info[2] << "\t"
+                      << token_info[3] << std::endl;
+        }
+    }
+
     return updated_position_ids;
 }
 
@@ -1347,7 +1360,8 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(const ov::Tensor& original
                                                       const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw,
                                                       const std::vector<std::vector<size_t>>& kept_indices_per_image,
                                                       size_t spatial_merge_size,
-                                                      std::vector<int64_t>* pruned_token_ids_out) {
+                                                      std::vector<int64_t>* pruned_token_ids_out,
+                                                      std::vector<std::array<size_t, 4>>* removed_tokens_out) {
     const ov::Shape& pos_shape = original_position_ids.get_shape();
     OPENVINO_ASSERT(pos_shape.size() == 3, "Position ids tensor must have 3 dimensions");
 
@@ -1413,6 +1427,10 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(const ov::Tensor& original
         pruned_token_ids_out->clear();
         pruned_token_ids_out->reserve(new_seq_len);
     }
+    if (removed_tokens_out) {
+        removed_tokens_out->clear();
+        removed_tokens_out->reserve(total_removed);
+    }
 
     for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
         size_t seq_idx = 0;
@@ -1420,7 +1438,6 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(const ov::Tensor& original
         size_t image_idx = 0;
         bool inside_vision = false;
         size_t visual_index = 0;
-        size_t kept_rank = 0;
         size_t batch_offset_in = batch_idx * seq_len;
         size_t batch_offset_out = batch_idx * batch_stride_out;
         int64_t next_pos = seq_len > 0 ? original_data[batch_offset_in] : 0;
@@ -1433,14 +1450,15 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(const ov::Tensor& original
             int64_t token_id = input_ids_data[batch_offset_in + seq_idx];
 
             if (inside_vision && token_id == image_pad_token_id) {
+                size_t grid_width = (image_idx < grid_widths.size() && grid_widths[image_idx] > 0)
+                                        ? grid_widths[image_idx]
+                                        : 1;
                 bool keep_token = (image_idx < keep_flags.size() && visual_index < keep_flags[image_idx].size())
                                       ? keep_flags[image_idx][visual_index]
                                       : false;
+                size_t row = visual_index / grid_width;
+                size_t col = visual_index % grid_width;
                 if (keep_token) {
-                    size_t grid_width = (image_idx < grid_widths.size()) ? grid_widths[image_idx] : 1;
-                    size_t row = kept_rank / grid_width;
-                    size_t col = kept_rank % grid_width;
-
                     int64_t temporal_value = grid_temporal_value;
                     int64_t height_value = grid_base_value + static_cast<int64_t>(row);
                     int64_t width_value = grid_base_value + static_cast<int64_t>(col);
@@ -1456,8 +1474,9 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(const ov::Tensor& original
                         pruned_token_ids_out->push_back(token_id);
                     }
 
-                    ++kept_rank;
                     ++write_idx;
+                } else if (removed_tokens_out && batch_idx == 0) {
+                    removed_tokens_out->push_back({image_idx, visual_index, row, col});
                 }
 
                 ++visual_index;
@@ -1471,7 +1490,6 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(const ov::Tensor& original
                 next_pos = region_max + 1;
                 ++image_idx;
                 visual_index = 0;
-                kept_rank = 0;
                 max_height = next_pos - 1;
                 max_width = next_pos - 1;
             }
@@ -1492,7 +1510,6 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(const ov::Tensor& original
             if (token_id == vision_start_token_id) {
                 inside_vision = true;
                 visual_index = 0;
-                kept_rank = 0;
                 grid_temporal_value = next_pos;
                 grid_base_value = next_pos;
                 max_height = grid_base_value - 1;
