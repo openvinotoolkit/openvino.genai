@@ -105,7 +105,19 @@ protected:
                                               size_t pruned_visual_tokens,
                                               int64_t vision_start_token_id,
                                               int64_t image_pad_token_id,
-                                              size_t image_count);
+                                              const std::vector<std::array<size_t, 3>>& images_grid_thw,
+                                              const std::vector<size_t>& images_sequence,
+                                              size_t image_id,
+                                              const std::vector<std::vector<size_t>>& kept_indices_per_image);
+
+    ov::Tensor update_position_ids(const ov::Tensor& original_position_ids,
+                                   const ov::Tensor& input_ids,
+                                   int64_t vision_start_token_id,
+                                   int64_t image_pad_token_id,
+                                   const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw,
+                                   const std::vector<std::vector<size_t>>& kept_indices_per_image,
+                                   size_t spatial_merge_size,
+                                   std::vector<int64_t>* pruned_token_ids_out);
 
     // [CDPruner] Create merged embeddings for pruned visual tokens
     ov::Tensor merge_text_and_image_embeddings_with_pruning(const ov::Tensor& input_ids,

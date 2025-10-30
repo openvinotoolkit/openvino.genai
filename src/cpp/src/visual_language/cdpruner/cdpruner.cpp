@@ -244,6 +244,7 @@ ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features, const ov::
                                               m_config.relevance_weight);
 
     auto selected_tokens = select_tokens(visual_features, text_features, silent);
+    m_last_selected_tokens = selected_tokens;
 
     // Determine actual number of selected tokens (may differ from num_tokens_to_keep due to odd->even adjustment)
     size_t actual_selected_tokens = selected_tokens.empty() ? 0 : selected_tokens[0].size();
@@ -329,6 +330,9 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
     // Apply pruning to each visual feature and collect results (using silent mode)
     std::vector<ov::Tensor> pruned_features_list;
     pruned_features_list.reserve(visual_features_list.size());
+    std::vector<std::vector<size_t>> aggregated_selected;
+
+    size_t global_offset = 0;
 
     auto overall_start = std::chrono::high_resolution_clock::now();
     std::chrono::microseconds total_kernel_duration{0};
@@ -337,6 +341,18 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
     for (size_t frame_idx = 0; frame_idx < visual_features_list.size(); ++frame_idx) {
         const auto& visual_feature = visual_features_list[frame_idx];
         ov::Tensor pruned_feature = apply_pruning(visual_feature, text_features, true);
+        const auto& frame_selected = m_last_selected_tokens;
+        if (aggregated_selected.empty()) {
+            aggregated_selected.resize(frame_selected.size());
+        }
+        for (size_t batch_idx = 0; batch_idx < frame_selected.size(); ++batch_idx) {
+            auto& aggregated = aggregated_selected[batch_idx];
+            const auto& frame_indices = frame_selected[batch_idx];
+            aggregated.reserve(aggregated.size() + frame_indices.size());
+            for (size_t index : frame_indices) {
+                aggregated.push_back(index + global_offset);
+            }
+        }
         if (m_config.pruning_debug_mode) {
             auto shape = visual_feature.get_shape();
             auto pruned_shape = pruned_feature.get_shape();
@@ -344,7 +360,10 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
                       << std::endl;
         }
         pruned_features_list.push_back(std::move(pruned_feature));
+        global_offset += visual_feature.get_shape()[1];
     }
+
+    m_last_selected_tokens = aggregated_selected;
 
     const auto& first_pruned_feature = pruned_features_list[0];
     const size_t actual_batch_size = first_pruned_feature.get_shape()[0];

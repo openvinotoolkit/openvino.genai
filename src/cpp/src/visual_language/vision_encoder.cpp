@@ -151,6 +151,19 @@ std::optional<cdpruner::PruningStatistics> VisionEncoder::get_last_pruning_stati
     }
 }
 
+std::vector<std::vector<size_t>> VisionEncoder::get_last_selected_token_indices() const {
+    if (!m_cdpruner) {
+        return {};
+    }
+
+    try {
+        return m_cdpruner->get_last_selected_tokens();
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to get selected token indices: " << e.what() << std::endl;
+        return {};
+    }
+}
+
 std::optional<cdpruner::Config> VisionEncoder::set_pruning_config(const cdpruner::Config& config) {
     if (!m_cdpruner || m_cdpruner->get_config() != config)
         m_cdpruner = std::make_unique<cdpruner::CDPruner>(config);
