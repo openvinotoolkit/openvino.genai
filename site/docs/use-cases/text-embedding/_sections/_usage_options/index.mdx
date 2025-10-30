@@ -36,7 +36,11 @@ The `batch_size` parameter is useful for optimizing performance during database 
 
 ### Fixed Shape Optimization
 
-Setting `batch_size`, `max_length`, and `pad_to_max_length=true` together will fix the model shape for optimal inference performance. Fixed shapes are also required for NPU device inference.
+Setting `batch_size`, `max_length`, and `pad_to_max_length=true` together will fix the model shape for optimal inference performance.
+
+:::info
+Fixed shapes are required for NPU device inference.
+:::
 
 ### Query and Embed Instructions
 
