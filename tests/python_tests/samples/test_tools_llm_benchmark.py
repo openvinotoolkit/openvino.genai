@@ -9,7 +9,8 @@ from test_utils import run_sample
 from data.models import get_gguf_model_list
 from utils.hugging_face import download_gguf_model
 from conftest import SAMPLES_PY_DIR, convert_model, download_test_content
-from utils.hugging_face import download_and_convert_embeddings_models, download_and_convert_model
+from utils.hugging_face import download_and_convert_model_class, download_and_convert_model
+from optimum.intel import OVModelForFeatureExtraction
 
 convert_draft_model = convert_model
 download_mask_image = download_test_content
@@ -38,7 +39,7 @@ class TestBenchmarkLLM:
     )
     def test_python_tool_llm_benchmark_download_model(self, download_model, sample_args):
         # Run Python benchmark
-        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        benchmark_script = (SAMPLES_PY_DIR / 'llm_bench/benchmark.py').as_posix()
         benchmark_py_command = [sys.executable, benchmark_script, "-m" , download_model] + sample_args
         run_sample(benchmark_py_command)
         
@@ -50,8 +51,8 @@ class TestBenchmarkLLM:
             pytest.param("tiny-random-qwen2", ["-d", "cpu", "-n", "1", "-ic", "10", "--optimum"]),
             pytest.param("tiny-random-qwen2", ["-d", "cpu", "-n", "1", "-ic", "10", "--optimum", "--num_beams", "2"]),
             pytest.param("tiny-random-qwen2", ["-d", "cpu", "-n", "1", "-ic", "20", "--max_ngram_size", "3", "--num_assistant_tokens", "5", "-p", "'Why is the Sun yellow?'"]),
-            pytest.param("tiny-random-llava", [ "-ic", "4", "-pf", os.path.join(SAMPLES_PY_DIR, "llm_bench/prompts/llava-1.5-7b.jsonl")]),
-            pytest.param("tiny-random-llava", [ "-ic", "4", "--optimum", "-pf", os.path.join(SAMPLES_PY_DIR, "llm_bench/prompts/llava-1.5-7b.jsonl")]),
+            pytest.param("tiny-random-llava", [ "-ic", "4", "-pf", (SAMPLES_PY_DIR / "llm_bench/prompts/llava-1.5-7b.jsonl").as_posix()]),
+            pytest.param("tiny-random-llava", [ "-ic", "4", "--optimum", "-pf", (SAMPLES_PY_DIR / "llm_bench/prompts/llava-1.5-7b.jsonl").as_posix()]),
             pytest.param("tiny-random-latent-consistency", [ "-d", "cpu", "-n", "1", "--num_steps", "4", "--static_reshape", "-p", "'an astronaut riding a horse on mars'"]),
             pytest.param("tiny-random-latent-consistency", [ "-d", "cpu", "-n", "1", "--num_steps", "4", "--static_reshape", "-p", "'an astronaut riding a horse on mars'", "--optimum"]),
         ],
@@ -59,7 +60,7 @@ class TestBenchmarkLLM:
     )
     def test_python_tool_llm_benchmark_convert_model(self, convert_model, sample_args):
         # Run Python benchmark
-        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        benchmark_script = (SAMPLES_PY_DIR / 'llm_bench/benchmark.py').as_posix()
         benchmark_py_command = [sys.executable, benchmark_script, "-m" , convert_model] + sample_args
         run_sample(benchmark_py_command)       
         
@@ -76,7 +77,7 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize("download_test_content", ["cat"], indirect=True)
     def test_python_tool_llm_benchmark_convert_model_media(self, convert_model, download_test_content, sample_args):
         # Run Python benchmark
-        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        benchmark_script = (SAMPLES_PY_DIR / 'llm_bench/benchmark.py').as_posix()
         benchmark_py_command = [sys.executable, benchmark_script, "-m" , convert_model, "--media", download_test_content] + sample_args
         run_sample(benchmark_py_command)      
 
@@ -96,7 +97,7 @@ class TestBenchmarkLLM:
         Test Speculative Decoding via GenAI
         """
         # Run Python benchmark
-        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        benchmark_script = (SAMPLES_PY_DIR / 'llm_bench/benchmark.py').as_posix()
         benchmark_py_command = [sys.executable, benchmark_script, "-m" , convert_model, "--draft_model", convert_draft_model, "-p", prompt] + sample_args
         run_sample(benchmark_py_command)
 
@@ -115,7 +116,7 @@ class TestBenchmarkLLM:
         Test Speculative Decoding via GenAI with JSONL input
         """
         # Run Python benchmark
-        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        benchmark_script = (SAMPLES_PY_DIR / 'llm_bench/benchmark.py').as_posix()
         benchmark_py_command = [
             sys.executable, 
             benchmark_script, 
@@ -134,7 +135,7 @@ class TestBenchmarkLLM:
         model_name = request.node.callspec.params['download_model']
         
         # Run Python benchmark
-        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        benchmark_script = (SAMPLES_PY_DIR / 'llm_bench/benchmark.py').as_posix()
         benchmark_py_command = [
             sys.executable, 
             benchmark_script, 
@@ -157,7 +158,7 @@ class TestBenchmarkLLM:
         os.chdir(os.path.dirname(download_test_content))
 
         # Run Python benchmark
-        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        benchmark_script = (SAMPLES_PY_DIR / 'llm_bench/benchmark.py').as_posix()
         benchmark_py_command = [
             sys.executable, 
             benchmark_script, 
@@ -178,7 +179,7 @@ class TestBenchmarkLLM:
         os.chdir(os.path.dirname(download_test_content))
 
         # Run Python benchmark
-        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        benchmark_script = (SAMPLES_PY_DIR / 'llm_bench/benchmark.py').as_posix()
         benchmark_py_command = [
             sys.executable, 
             benchmark_script, 
@@ -194,7 +195,7 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize("download_test_content", ["cmu_us_awb_arctic-wav-arctic_a0001.bin"], indirect=True)
     def test_python_tool_llm_benchmark_tts(self, convert_model, download_test_content, sample_args):
         # Run Python benchmark
-        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        benchmark_script = (SAMPLES_PY_DIR / 'llm_bench/benchmark.py').as_posix()
         benchmark_py_command = [
             sys.executable, 
             benchmark_script, 
@@ -210,9 +211,10 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize("convert_model", ["WhisperTiny"], indirect=True)
     @pytest.mark.parametrize("download_test_content", ["3283_1447_000.tar.gz"], indirect=True)
     def test_python_tool_llm_benchmark_optimum(self, convert_model, download_test_content, media_file, sample_args):
-        media_path = os.path.join(download_test_content, media_file)
+        from pathlib import Path
+        media_path = (Path(download_test_content) / media_file).as_posix()
         # Run Python benchmark
-        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        benchmark_script = (SAMPLES_PY_DIR / 'llm_bench/benchmark.py').as_posix()
         benchmark_py_command = [
             sys.executable, 
             benchmark_script, 
@@ -230,7 +232,7 @@ class TestBenchmarkLLM:
         ["-d", "cpu", "-n", "1", "--embedding_max_length", "128", "--embedding_normalize", "--embedding_pooling", "mean", "--optimum", "--task", "text_embed"],
     ])
     def test_python_tool_llm_benchmark_text_embeddings(self, convert_model, sample_args):
-        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        benchmark_script = (SAMPLES_PY_DIR / 'llm_bench/benchmark.py').as_posix()
         benchmark_py_command = [
             sys.executable, 
             benchmark_script, 
@@ -240,14 +242,14 @@ class TestBenchmarkLLM:
 
 
     @pytest.mark.samples
-    @pytest.mark.parametrize("download_and_convert_embeddings_models", ["Qwen/Qwen3-Embedding-0.6B"], indirect=True)
+    @pytest.mark.parametrize("model_id", ["Qwen/Qwen3-Embedding-0.6B"], indirect=True)
     @pytest.mark.parametrize("sample_args", [
         ["-d", "cpu", "-n", "2", "--task", "text_embed", "--embedding_padding_side", "left", "--embedding_pooling", "last_token"],
         ["-d", "cpu", "-n", "2", "--task", "text_embed", "--embedding_padding_side", "left", "--embedding_pooling", "last_token", "--optimum"],
     ])
-    def test_python_tool_llm_benchmark_text_embeddings_qwen3(self, download_and_convert_embeddings_models, sample_args):
-        convert_model, hf_tokenizer, models_path = download_and_convert_embeddings_models
-        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+    def test_python_tool_llm_benchmark_text_reranking(self, model_id, sample_args):
+        _, _, models_path = download_and_convert_model_class(model_id, OVModelForFeatureExtraction)
+        benchmark_script = (SAMPLES_PY_DIR / 'llm_bench/benchmark.py').as_posix()
         benchmark_py_command = [
             sys.executable, 
             benchmark_script, 
@@ -280,12 +282,13 @@ class TestBenchmarkLLM:
         ["-d", "cpu", "-n", "1", "--task", "text_rerank", "--optimum"],
     ])
     def test_python_tool_llm_benchmark_text_reranking_qwen3(self, model_id, sample_args):
-        model, hf_tokenizer, models_path = download_and_convert_model(model_id)
+        model_schema = download_and_convert_model(model_id)
         benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
         benchmark_py_command = [
             sys.executable, 
             benchmark_script, 
-            "-m", models_path,
+            "-m", 
+            model_schema.models_path,
         ] + sample_args
         run_sample(benchmark_py_command)
 
