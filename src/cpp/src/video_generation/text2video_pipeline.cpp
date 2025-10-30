@@ -33,6 +33,7 @@ std::shared_ptr<IScheduler> cast_scheduler(std::shared_ptr<Scheduler> scheduler)
 }
 
 void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_scale_factor) {
+    generation_config.validate();
     OPENVINO_ASSERT(generation_config.height > 0, "Height must be positive");
     OPENVINO_ASSERT(generation_config.height % 32 == 0, "Height have to be divisible by 32 but got ", generation_config.height);
     OPENVINO_ASSERT(generation_config.width > 0, "Width must be positive");
@@ -240,6 +241,20 @@ ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_co
     return pack_latents(latents, transformer_spatial_patch_size, transformer_temporal_patch_size);
 }
 }  // anonymous namespace
+
+void VideoGenerationConfig::validate() const {
+    ImageGenerationConfig::validate();
+    OPENVINO_ASSERT(num_frames > 0, "num_frames must be positive but got 0");
+    OPENVINO_ASSERT(frame_rate > 0, "frame_rate must be positive but got ", frame_rate);
+}
+
+void VideoGenerationConfig::update_generation_config(const ov::AnyMap& properties) {
+    ImageGenerationConfig::update_generation_config(properties);
+    using ov::genai::utils::read_anymap_param;
+    read_anymap_param(properties, "guidance_rescale", guidance_rescale);
+    read_anymap_param(properties, "num_frames", num_frames);
+    read_anymap_param(properties, "frame_rate", frame_rate);
+}
 
 class Text2VideoPipeline::LTXPipeline {
     using Ms = std::chrono::duration<float, std::ratio<1, 1000>>;
@@ -636,6 +651,7 @@ const VideoGenerationConfig& Text2VideoPipeline::get_generation_config() const {
 }
 
 void Text2VideoPipeline::set_generation_config(const VideoGenerationConfig& generation_config) {
+    generation_config.validate();
     m_impl->m_generation_config = generation_config;
 }
 
