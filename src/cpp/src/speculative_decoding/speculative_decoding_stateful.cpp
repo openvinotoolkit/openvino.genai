@@ -360,8 +360,8 @@ StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(
     const ov::genai::ModelDesc& draft_model_desc
 ) : LLMPipelineImplBase(main_model_desc.tokenizer, main_model_desc.generation_config) {
 
-    OPENVINO_ASSERT(main_model_desc.model != nullptr, "Draft model cannot be null");
-    OPENVINO_ASSERT(draft_model_desc.model != nullptr, "Main model cannot be null");
+    OPENVINO_ASSERT(main_model_desc.model != nullptr, "Main model cannot be null");
+    OPENVINO_ASSERT(draft_model_desc.model != nullptr, "Draft model cannot be null");
 
     auto draft_model = draft_model_desc.model;
     // FIXME: slicing produces incorrect results for some models on NPU.
@@ -584,7 +584,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
     // will be utilized.
     draft_config.max_new_tokens = config.get_max_new_tokens();
     draft_config.validate();
-    m_draft_request->set_generation_config(draft_config);
+    m_draft_request->set_generation_config(std::move(draft_config));
 
     std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
     ov::genai::EncodedResults results;
