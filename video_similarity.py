@@ -47,14 +47,6 @@ def sample_frame_indices(clip_len, frame_sample_rate, seg_len):
     return indices
 
 
-def sample_video(path):
-    container = av.open(path)
-    # Sample 8 frames. The paper evaluated the model on 8 and 16 frames.
-    indices = sample_frame_indices(clip_len=8, frame_sample_rate=1, seg_len=container.streams.video[0].frames)
-    video = read_video_pyav(container, indices)
-    return video
-
-
 def encode_video(path, processor, model):
     container = av.open(path)
     # Sample 8 frames. The paper evaluated the model on 8 and 16 frames.
