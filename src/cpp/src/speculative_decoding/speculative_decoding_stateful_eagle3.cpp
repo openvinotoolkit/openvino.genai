@@ -453,9 +453,58 @@ ov::Tensor Eagle3InferWrapper::get_logits() const {
 
 ov::Tensor Eagle3InferWrapper::get_hidden_features() const {
     try {
-        return m_request.get_tensor("last_hidden_state");
+        auto hidden_state = m_request.get_tensor("last_hidden_state");
+        
+        // For NPU, the hidden state may be padded to a fixed length (e.g., 1024)
+        // We need to trim the padding from the beginning to match actual token length
+        if (m_device == "NPU" && hidden_state && hidden_state.get_size() > 0) {
+            auto shape = hidden_state.get_shape();
+            
+            // Expected shape: [batch=1, padded_seq_len, hidden_size]
+            if (shape.size() == 3 && shape[0] == 1) {
+                size_t padded_seq_len = shape[1];
+                size_t hidden_size = shape[2];
+                
+                // Get actual sequence length from current input_ids tensor
+                auto input_ids = m_request.get_tensor("input_ids");
+                size_t actual_seq_len = input_ids.get_shape()[1]; // Real input sequence length
+                
+                if (actual_seq_len < padded_seq_len) {
+                    // Calculate padding amount (at the beginning)
+                    size_t padding_len = padded_seq_len - actual_seq_len;
+                    
+                    log_debug("Trimming NPU hidden state padding: padded_len=" + std::to_string(padded_seq_len) + 
+                              ", actual_len=" + std::to_string(actual_seq_len) + 
+                              ", removing " + std::to_string(padding_len) + " padding tokens from start");
+                    
+                    // Create trimmed tensor with actual sequence length
+                    ov::Tensor trimmed_hidden(ov::element::f32, {1, actual_seq_len, hidden_size});
+                    
+                    if (hidden_state.get_element_type() == ov::element::f32) {
+                        const float* src = hidden_state.data<const float>();
+                        float* dst = trimmed_hidden.data<float>();
+                        
+                        // Copy from [padding_len:] to remove padding at the beginning
+                        size_t offset = padding_len * hidden_size;
+                        size_t copy_size = actual_seq_len * hidden_size;
+                        std::copy_n(src + offset, copy_size, dst);
+                        
+                        if (m_verbose) {
+                            log_debug("NPU hidden state trimmed: [1, " + std::to_string(padded_seq_len) + 
+                                      ", " + std::to_string(hidden_size) + "] -> [1, " + 
+                                      std::to_string(actual_seq_len) + ", " + std::to_string(hidden_size) + "]");
+                        }
+                        
+                        return trimmed_hidden;
+                    }
+                }
+            }
+        }
+        
+        return hidden_state;
     } catch (const std::exception&) {
         log_debug("No hidden features tensor found");
+        return ov::Tensor{};
     }
 }
 
@@ -565,8 +614,17 @@ void Eagle3InferWrapper::log_model_outputs(const ov::Tensor& logits, const ov::T
             std::size_t seq_len = logits_shape[1];
             std::size_t vocab_size = logits_shape[2];
             
-            // Show top 10 logit values for each position
-            for (std::size_t pos = 0; pos < seq_len; ++pos) {
+            // If seq_len > 5, only show last 5 positions
+            std::size_t start_pos = (seq_len > 5) ? (seq_len - 5) : 0;
+            std::size_t positions_to_show = seq_len - start_pos;
+            
+            if (start_pos > 0) {
+                std::cout << "[EAGLE3-WRAPPER] Showing only last " << positions_to_show 
+                          << " positions (total seq_len: " << seq_len << ")" << std::endl;
+            }
+            
+            // Show top 10 logit values for each position (only last 5 if seq_len > 5)
+            for (std::size_t pos = start_pos; pos < seq_len; ++pos) {
                 const float* logits_data = logits.data<const float>() + pos * vocab_size;
                 std::vector<std::pair<float, int64_t>> top_logits;
                 
@@ -676,6 +734,7 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
 
     auto draft_desc = draft_model_desc;
     if (draft_desc.device == "NPU") {
+        draft_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = MAX_CANDIDATES + 1;
         draft_desc.properties["NPUW_DEVICES"] = "CPU";
         draft_desc.properties["NPUW_ONLINE_PIPELINE"] = "NONE";
     }
@@ -879,7 +938,7 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
     
     // Debug override - overwrite input_ids and attention_mask
     // {
-    //     static const int64_t debug_tokens[] = {151644, 872, 198, 12555, 374, 279, 1102, 315, 220, 18, 17, 488, 220, 17, 353, 220, 18, 151645, 198, 151644, 77091, 198};
+    //     static const int64_t debug_tokens[] = {151644, 872, 198, 40451, 752, 2494, 911, 6864, 30, 151645};
     //     constexpr size_t token_count = sizeof(debug_tokens) / sizeof(debug_tokens[0]);
         
     //     input_ids = ov::Tensor(ov::element::i64, {1, token_count});
@@ -1204,7 +1263,6 @@ StatefulEagle3LLMPipeline::run_speculative_iteration(const ov::Tensor& hidden_wi
         
         // Trim KV cache for both models to match the truncated sequences
         // m_main_model->trim_kv_cache(tokens_to_remove);
-        m_draft_model->trim_kv_cache(tokens_to_remove-1);
         
         // If we have a future token, append it back
         if (future_token != -1) {
@@ -1223,12 +1281,14 @@ StatefulEagle3LLMPipeline::run_speculative_iteration(const ov::Tensor& hidden_wi
         }
         log_debug("All " + std::to_string(draft_tokens_added) + " draft tokens accepted");
     }
+
+    m_draft_model->trim_kv_cache(tokens_to_remove-1+tokens_to_keep);
     
     auto validation_end = std::chrono::steady_clock::now();
     m_perf_summary.validation_time_us += 
         std::chrono::duration_cast<std::chrono::microseconds>(validation_end - validation_start).count();
     
-    // Build next hidden window - only need future token's hidden state for next iteration
+    // Build next hidden window - includes accepted draft tokens + future token's hidden states
     ov::Tensor next_hidden;
     auto current_hidden = m_main_model->get_hidden_features();
     if (current_hidden && current_hidden.get_size() > 0) {
@@ -1237,22 +1297,26 @@ StatefulEagle3LLMPipeline::run_speculative_iteration(const ov::Tensor& hidden_wi
             std::size_t seq_len = h_shape[1];
             std::size_t hidden_dim = h_shape[2];
             
-            if (future_token != -1 && seq_len > 0) {
-                // Create single-token hidden window for future token
-                next_hidden = ov::Tensor(ov::element::f32, {1, 1, hidden_dim});
+            // Calculate window size: accepted tokens + future token
+            std::size_t next_window_len = accepted_count + (future_token != -1 ? 1 : 0);
+            
+            if (next_window_len > 0 && seq_len >= next_window_len) {
+                // Create hidden window containing accepted tokens + future token
+                next_hidden = ov::Tensor(ov::element::f32, {1, next_window_len, hidden_dim});
                 const float* src_data = current_hidden.data<const float>();
                 float* dst_data = next_hidden.data<float>();
                 
-                // Get future token's hidden state position
-                // The future token was just added, so it should be at the last position
-                std::size_t future_pos = seq_len - 1;
-                std::copy_n(src_data + future_pos * hidden_dim, hidden_dim, dst_data);
+                // Copy hidden states from the last next_window_len positions
+                std::size_t start_pos = 0;
+                std::copy_n(src_data + start_pos * hidden_dim, next_window_len * hidden_dim, dst_data);
                 
                 if (m_verbose) {
-                    log_debug("Built next hidden window for future token at position " + std::to_string(future_pos));
+                    log_debug("Built next hidden window: " + std::to_string(accepted_count) + 
+                              " accepted tokens + " + (future_token != -1 ? "1" : "0") + 
+                              " future token (total window size: " + std::to_string(next_window_len) + ")");
                 }
             } else {
-                // Fallback: use last available hidden state if no future token
+                // Fallback: use last available hidden state if calculation failed
                 if (seq_len > 0) {
                     next_hidden = ov::Tensor(ov::element::f32, {1, 1, hidden_dim});
                     const float* src_data = current_hidden.data<const float>();
@@ -1275,15 +1339,15 @@ StatefulEagle3LLMPipeline::run_speculative_iteration(const ov::Tensor& hidden_wi
         log_debug("EOS token detected: " + std::to_string(future_token));
     }
     
-    // Set result fields - always use window size 1 for next iteration
+    // Set result fields - window size = accepted draft tokens + future token
     result.accepted_tokens_count = accepted_count;
-    result.next_window_size = 1;  // Always 1 token for next iteration
+    result.next_window_size = accepted_count + (future_token != -1 ? 1 : 0);  // Accepted tokens + future token
     result.new_token = future_token;
-    result.next_hidden_window = next_hidden;  // Only future token's hidden state
+    result.next_hidden_window = next_hidden;  // Hidden states for accepted tokens + future token
     
     log_debug("Speculative iteration completed - accepted: " + std::to_string(accepted_count) + 
               ", next_window_size: " + std::to_string(result.next_window_size) + 
-              " (always 1 for Eagle3)");
+              " (accepted tokens + future token)");
     
     return result;
 }
