@@ -13,6 +13,8 @@ from sentence_transformers import SentenceTransformer, util
 from transformers import CLIPImageProcessor, CLIPModel
 from tqdm import tqdm
 
+import sklearn
+
 
 def evaluate_similarity(model, data_gold, data_prediction):
     answers_gold = data_gold["answers"].values
@@ -172,11 +174,28 @@ class ImageSimilarity:
     def evaluate(self, gt, prediction):
         return evaluate_image_similarity(self.processor, self.model, gt, prediction)
 
+from sklearn.linear_model import LogisticRegression
+
+def pairwise_dot_score(a, b):
+    """Computes the pairwise dot-product dot_prod(a[i], b[i]).
+
+    Args:
+        a: The first tensor.
+        b: The second tensor.
+
+    Returns:
+        Tensor: Vector with res[i] = dot_prod(a[i], b[i])
+    """
+    a = torch.nn.functional.normalize(a, p=2, dim=1)
+    b = torch.nn.functional.normalize(b, p=2, dim=1)
+    return (a * b).sum(dim=-1)
 
 class EmbedsSimilarity:
     def evaluate(self, data_gold, data_prediction):
         embeds_gold = data_gold["embeds_path"].values
         embeds_prediction = data_prediction["embeds_path"].values
+        
+        evaluator_model = LogisticRegression(n_jobs=-1, max_iter=100)
 
         metric_per_gen = []
         metric_per_passages = []
@@ -188,8 +207,35 @@ class EmbedsSimilarity:
 
             with open(prediction, 'rb') as f:
                 prediction_data = np.load(f)
+                
+            print(gold_data)
+            
+            # y_pred = evaluator_model.predict(torch.from_numpy(gold_data))
+            # y_test = evaluator_model.predict(torch.from_numpy(prediction_data)
+            data = torch.from_numpy(prediction_data)
+            
+            print(data.size())
 
             cos_sim = F.cosine_similarity(torch.from_numpy(gold_data), torch.from_numpy(prediction_data))
+            
+            # accuracy = sklearn.metrics.accuracy_score(y_pred, y_test)
+            # f1_score_macro = sklearn.metrics.f1_score(y_pred, y_test, average="macro")
+            # f1_score_weighted = sklearn.metrics.f1_score(y_pred, y_test, average="weighted")
+            # precision_score_macro = sklearn.metrics.precision_score(y_pred, y_test, average="macro")
+            # precision_score_weighted = sklearn.metrics.precision_score(y_pred, y_test, average="weighted")
+            # recall_score_macro = sklearn.metrics.recall_score(y_pred, y_test, average="macro")
+            # recall_score_weighted = sklearn.metrics.recall_score(y_pred, y_test, average="weighted")
+            
+            cosine_similarity_sklearn = sklearn.metrics.pairwise.cosine_similarity(torch.from_numpy(gold_data), torch.from_numpy(prediction_data))
+            cosine3 = pairwise_dot_score(torch.from_numpy(gold_data), torch.from_numpy(prediction_data))
+            
+            # print("torch cossim {cos_sim} , cosine_similarity_sklearn {cosine_similarity_sklearn}, \
+            #        accuracy {accuracy}, f1_score_macro {f1_score_macro}, f1_score_weighted {f1_score_weighted}, \
+            #        precision_score_macro {precision_score_macro}, precision_score_weighted {precision_score_weighted}, \
+            #        recall_score_macro {recall_score_macro}, recall_score_weighted {recall_score_weighted} ")
+            
+            print(f"torch cossim {cos_sim} , cosine_similarity_sklearn {cosine_similarity_sklearn} cosine3 {cosine3} ")
+
             metric_per_passages.append(cos_sim.detach().numpy())
             metric_per_gen.append(torch.mean(cos_sim).item())
 
