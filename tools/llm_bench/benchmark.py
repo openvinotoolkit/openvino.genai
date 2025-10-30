@@ -47,7 +47,7 @@ def get_argprser():
     parser.add_argument(
         '-m',
         '--model',
-        help='model folder including IR files or Pytorch files or path to GGUF model',
+        help='model folder including IR files or PyTorch files or path to GGUF model',
         required=True,
         default=argparse.SUPPRESS
     )
