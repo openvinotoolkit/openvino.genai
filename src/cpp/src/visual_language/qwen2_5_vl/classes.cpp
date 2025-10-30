@@ -161,7 +161,6 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2_5_VL::run_video_image_embe
     if ((video_fea_num + image_fea_num) != 0) {
         video_fea_count = out_vision_shape.at(0) * video_fea_num / (video_fea_num + image_fea_num);
     }
-    size_t fea_size = out_vision_shape.at(1);
 
     ov::Shape video_fea_shape = ov::Shape({video_fea_count, out_vision_shape.at(1)});
     ov::Tensor res_video = ov::Tensor(processed_vision_embeds.get_element_type(), video_fea_shape);
