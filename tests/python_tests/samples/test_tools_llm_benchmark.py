@@ -248,7 +248,7 @@ class TestBenchmarkLLM:
         ["-d", "cpu", "-n", "2", "--task", "text_embed", "--embedding_padding_side", "left", "--embedding_pooling", "last_token", "--optimum"],
     ])
     def test_python_tool_llm_benchmark_text_reranking(self, model_id, sample_args):
-        _, _, models_path = download_and_convert_model_class(model_id, OVModelForFeatureExtraction)
+        models_path = download_and_convert_model_class(model_id, OVModelForFeatureExtraction).models_path
         benchmark_script = (SAMPLES_PY_DIR / 'llm_bench/benchmark.py').as_posix()
         benchmark_py_command = [
             sys.executable, 
