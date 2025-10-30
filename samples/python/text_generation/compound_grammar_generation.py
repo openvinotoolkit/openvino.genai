@@ -13,6 +13,7 @@ from openvino_genai import (
     Parser,
     IncrementalParser,
     TextParserStreamer,
+    DecodedResults
 )
 
 from openvino_genai import (
@@ -110,15 +111,27 @@ class IncrementalToolCallParser(IncrementalParser):
     
     def reset(self):
         # This method should be implemented in inherited classes.
-        # No states were set so do nothing.
-        pass
+        # e.g. self.text_cache = ""
+        # But since in this implementation no states were used so do nothing.
+        print('Parser state has been reset.')
 
 class CurrentTextParserStreamer(TextParserStreamer):
+    """
+    A TextParserStreamer that receives parsed dictionary every time new text is generated.
+
+    In order to get get parsed dictionary from the model output, a custom implementation of TextParserStreamer 
+    with defined 'write' methods is needed.
+    """
     def write(self, msg: dict):
         # If the tool call is not yet complete, continue streaming
         print(msg['delta_text'], end="", flush=True)
         return StreamingStatus.RUNNING
-    
+
+
+def print_tool_call(answer: DecodedResults):
+    for tool_call in answer.parsed[0]['tool_calls']:
+        print(f"{tool_call['name']}({', '.join(f'{key}=\"{value}\"' for key, value in tool_call['arguments'].items())})")
+
 
 # modified system message from:
 # https://github.com/vllm-project/vllm/blob/main/examples/tool_chat_template_phi4_mini.jinja
@@ -183,14 +196,9 @@ def main():
     print("Assistant: ", end="")
     custom_streamer = CurrentTextParserStreamer(pipe.get_tokenizer(), [IncrementalToolCallParser()])
     answer = pipe.generate([model_input], generation_config, streamer=custom_streamer)
-    print()
     
-    print("\nThe following tool calls were generated:")
-    def print_tool_call(tool_call: dict):
-        print(f"{tool_call['name']}({', '.join(f'{key}=\"{value}\"' for key, value in tool_call['arguments'].items())})")
-    
-    for tool_call in answer.parsed[0]['tool_calls']:
-        print_tool_call(tool_call)
+    print("\n\nThe following tool calls were generated:")
+    print_tool_call(answer)
 
     print()
 
