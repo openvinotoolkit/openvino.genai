@@ -135,7 +135,7 @@ And then run the sample:
 
 `./image2mage ./dreamlike_anime_1_0_ov/FP16 'cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k' cat.png`
 
-The resuling image is:
+The resulting image is:
 
    ![](./imageimage.bmp)
 
@@ -143,7 +143,7 @@ Note, that LoRA, heterogeneous execution and other features of `Text2ImagePipeli
 
 ## Run inpainting pipeline
 
-The `inpainting.cpp` sample demonstrates usage of inpainting pipeline, which can inpaint initial image by a given mask. Inpainting pipeline can work on typical text to image models as well as on specialized models which are oftenly named `space/model-inpainting`, e.g. `stabilityai/stable-diffusion-2-inpainting`. 
+The `inpainting.cpp` sample demonstrates usage of inpainting pipeline, which can inpaint initial image by a given mask. Inpainting pipeline can work on typical text to image models as well as on specialized models which are often named `space/model-inpainting`, e.g. `stabilityai/stable-diffusion-2-inpainting`. 
 
 Such models can be converted in the same way as regular ones via `optimum-cli`:
 
@@ -159,7 +159,7 @@ And run the sample:
 
 `./inpainting ./stable-diffusion-2-inpainting 'Face of a yellow cat, high resolution, sitting on a park bench' image.png mask_image.png`
 
-The resuling image is:
+The resulting image is:
 
    ![](./inpainting.bmp)
 
