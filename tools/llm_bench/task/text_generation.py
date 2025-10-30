@@ -284,11 +284,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
             )
 
     tokenization_start = time.perf_counter()
-    if args.get("eagle3_mode"):
-        # eagle3 needs to disable special tokens to ensure compress rate
-        input_data = tokenizer.encode(input_text_list, add_special_tokens=False)
-    else:
-        input_data = tokenizer.encode(input_text_list)
+    input_data = tokenizer.encode(input_text_list)
     tokenization_end = time.perf_counter()
     tokenization_time = [(tokenization_end - tokenization_start) * 1000]
 
@@ -455,11 +451,7 @@ def run_text_generation_genai_with_stream(input_text, num, model, tokenizer, arg
                 "If it is not expected, please specify --disable_prompt_permutation in your benchmarking command to disable this behavior"
             )
     tok_encode_start = time.perf_counter()
-    if args.get("eagle3_mode"):
-        # eagle3 needs to disable special tokens to ensure compress rate
-        input_data = pipe_tokenizer.encode(input_text_list, add_special_tokens=False)
-    else:
-        input_data = pipe_tokenizer.encode(input_text_list)
+    input_data = pipe_tokenizer.encode(input_text_list)
     tok_encode_end = time.perf_counter()
     input_token_size = input_data.input_ids.shape[1]
     tok_encode_time = (tok_encode_end - tok_encode_start) * 1000

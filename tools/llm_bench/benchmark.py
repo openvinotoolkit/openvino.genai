@@ -170,8 +170,6 @@ def get_argprser():
                         help="Path to file with Continuous Batching Scheduler settings or dict for Speculative decoding of draft model")
     parser.add_argument("--num_assistant_tokens", required=False, default=None,
                         help="Config option num_assistant_tokens for Speculative decoding and Prompt Lookup decoding", type=int)
-    parser.add_argument("--eagle3_mode", action="store_true",
-                        help="flag to indicate whether to use eagle3 for speculative decoding")
     parser.add_argument("--assistant_confidence_threshold", required=False, default=None,
                         help="Config option assistant_confidence_threshold for Speculative decoding", type=float)
     parser.add_argument("--max_ngram_size", required=False, default=None,
