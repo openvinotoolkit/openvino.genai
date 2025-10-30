@@ -87,7 +87,7 @@ ov::genai::GenerationConfig LLMInferWrapper::get_generation_config() const {
 }
 
 void LLMInferWrapper::set_generation_config(ov::genai::GenerationConfig config) {
-    m_generation_config = config;
+    m_generation_config = std::move(config);
 }
 
 int64_t LLMInferWrapper::get_kvcache_capacity() const {
@@ -170,7 +170,7 @@ bool LLMInferWrapper::can_infer(const std::size_t prompt_len) {
     if (!m_generation_config.ignore_eos && (last_token == m_generation_config.eos_token_id)) {
         return false;
     }
-    auto stop_token_ids = m_generation_config.stop_token_ids;
+    const auto& stop_token_ids = m_generation_config.stop_token_ids;
     if (std::find(stop_token_ids.begin(), stop_token_ids.end(), last_token) != stop_token_ids.end()) {
         return false;
     }
@@ -369,7 +369,7 @@ StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(
     if (draft_model_desc.device != "NPU") {
         // As draft_model_desc contains std::shared_ptr<ov::Model>,
         // this model update will be reflected in draft_model_desc
-        utils::apply_slice_before_matmul_transformation(draft_model);
+        utils::apply_slice_before_matmul_transformation(std::move(draft_model));
     }
 
     // Main and Draft model can have different tokenizers
@@ -461,7 +461,7 @@ DecodedResults StatefulSpeculativeLLMPipeline::generate(
         if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
             ChatHistory history({{{"role", "user"}, {"content", prompt}}});
             constexpr bool add_generation_prompt = true;
-            auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            const auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
             tokenized_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
         } else {
             // in case when chat_template was not found in tokenizer_config.json or set
@@ -478,7 +478,7 @@ DecodedResults StatefulSpeculativeLLMPipeline::generate(
     decode_timer.end();
 
     if (m_is_chat_conversation) {
-        auto answer = decoded_results.texts[0];
+        const auto& answer = decoded_results.texts[0];
         if (m_streaming_was_cancelled)
             // If generation process was cancelled by user, let's rollback to previous state of history
             m_history.pop_back();
