@@ -1443,8 +1443,8 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(const ov::Tensor& original
         int64_t next_pos = seq_len > 0 ? original_data[batch_offset_in] : 0;
         int64_t grid_temporal_value = 0;
         int64_t grid_base_value = 0;
-        int64_t max_height = next_pos - 1;
-        int64_t max_width = next_pos - 1;
+    int64_t last_height_value = next_pos - 1;
+    int64_t last_width_value = next_pos - 1;
 
         while (seq_idx < seq_len) {
             int64_t token_id = input_ids_data[batch_offset_in + seq_idx];
@@ -1467,8 +1467,8 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(const ov::Tensor& original
                     height_out[batch_offset_out + write_idx] = height_value;
                     width_out[batch_offset_out + write_idx] = width_value;
 
-                    max_height = std::max(max_height, height_value);
-                    max_width = std::max(max_width, width_value);
+                    last_height_value = height_value;
+                    last_width_value = width_value;
 
                     if (pruned_token_ids_out && batch_idx == 0) {
                         pruned_token_ids_out->push_back(token_id);
@@ -1486,12 +1486,12 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(const ov::Tensor& original
 
             if (inside_vision) {
                 inside_vision = false;
-                int64_t region_max = std::max(max_height, max_width);
+                int64_t region_max = std::max(last_height_value, last_width_value);
                 next_pos = region_max + 1;
                 ++image_idx;
                 visual_index = 0;
-                max_height = next_pos - 1;
-                max_width = next_pos - 1;
+                last_height_value = next_pos - 1;
+                last_width_value = next_pos - 1;
             }
 
             int64_t temporal_value = next_pos;
@@ -1512,8 +1512,6 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(const ov::Tensor& original
                 visual_index = 0;
                 grid_temporal_value = next_pos;
                 grid_base_value = next_pos;
-                max_height = grid_base_value - 1;
-                max_width = grid_base_value - 1;
             }
         }
 
