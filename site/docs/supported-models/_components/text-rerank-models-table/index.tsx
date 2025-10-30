@@ -3,7 +3,7 @@ import { TEXT_RERANK_MODELS } from './models';
 import { BaseModelsTable, LinksCell } from '../base-models-table';
 
 export default function TextRerankModelsTable(): React.JSX.Element {
-  const headers = ['Architecture', 'optimum-cli task', 'Example HuggingFace Models'];
+  const headers = ['Architecture', '`optimum-cli` task', 'Example HuggingFace Models'];
 
   const rows = TEXT_RERANK_MODELS.map(({ architecture, optimumIntelTask, models }) => (
     <>
