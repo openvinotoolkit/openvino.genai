@@ -252,7 +252,6 @@ public:
             const size_t tokens_to_sample_per_sequence = 1 + sequence_group->get_num_tokens_to_validate();
 
             for (size_t seq_idx = 0; seq_idx < num_running_sequences; ++seq_idx) {
-                size_t num_incrementions = 0;
                 // compute token_type_ids for current sequence
                 if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
                     if (auto token_type_ids = sequence_group->get_token_type_ids()) {
