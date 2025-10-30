@@ -17,12 +17,12 @@ class TestReactSample:
         if sys.platform == 'darwin':
             pytest.xfail("Ticket 173586")
         # Python test
-        py_script = (SAMPLES_PY_DIR / "text_generation/react_sample.py").as_posix()
+        py_script = SAMPLES_PY_DIR / "text_generation/react_sample.py"
         py_command = [sys.executable, py_script, convert_model]
         py_result = run_sample(py_command)
 
         # Test JS sample
-        js_sample = (SAMPLES_JS_DIR / "text_generation/react_sample.js").as_posix()
+        js_sample = SAMPLES_JS_DIR / "text_generation/react_sample.js"
         js_command =['node', js_sample, convert_model]
         js_result = run_sample(js_command)
 

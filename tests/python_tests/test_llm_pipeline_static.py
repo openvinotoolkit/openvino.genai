@@ -386,4 +386,4 @@ def test_chat_generation(
     ]
 
     chat_history_stateful = generate_chat_history(ov_model, questions)
-    chat_history_static   = generate_chat_history(npu_model, questions)
+    chat_history_static = generate_chat_history(npu_model, questions)

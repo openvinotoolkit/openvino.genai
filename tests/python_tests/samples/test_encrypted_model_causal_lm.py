@@ -16,12 +16,12 @@ class TestEncryptedLM:
 
     def test_sample_encrypted_lm(self, convert_model, prompt):
         # Test CPP sample
-        cpp_sample = (SAMPLES_CPP_DIR / 'encrypted_model_causal_lm').as_posix()
+        cpp_sample = SAMPLES_CPP_DIR / 'encrypted_model_causal_lm'
         cpp_command =[cpp_sample, convert_model, prompt]
         cpp_result = run_sample(cpp_command)
 
         # Test Python sample
-        py_script = (SAMPLES_PY_DIR / "text_generation/encrypted_model_causal_lm.py").as_posix()
+        py_script = SAMPLES_PY_DIR / "text_generation/encrypted_model_causal_lm.py"
         py_command = [sys.executable, py_script, convert_model, prompt]
         py_result = run_sample(py_command)
 

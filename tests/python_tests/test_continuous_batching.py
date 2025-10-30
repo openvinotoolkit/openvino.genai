@@ -25,7 +25,7 @@ from data.test_dataset import get_test_dataset
 # e2e tests on random and real models
 #
 
-CURRENT_DIR_NAME = Path(__file__).parent
+FILE_DIR_NAME = Path(__file__).parent
 
 COMMON_QUESTIONS = [
     '1+1=',
@@ -65,7 +65,7 @@ def model_facebook_opt_125m() -> OVConvertedModelSchema:
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("llm_model", read_models_list(CURRENT_DIR_NAME / "models" / "precommit"), indirect=True)
+@pytest.mark.parametrize("llm_model", read_models_list(FILE_DIR_NAME / "models" / "precommit"), indirect=True)
 def test_e2e_precommit(llm_model: OVConvertedModelSchema):
     prompts, generation_configs = get_test_dataset()
     generate_and_compare(
@@ -77,7 +77,7 @@ def test_e2e_precommit(llm_model: OVConvertedModelSchema):
 
 
 @pytest.mark.real_models
-@pytest.mark.parametrize("llm_model", read_models_list(CURRENT_DIR_NAME / "models" / "real_models"), indirect=True)
+@pytest.mark.parametrize("llm_model", read_models_list(FILE_DIR_NAME / "models" / "real_models"), indirect=True)
 def test_e2e_real_models(llm_model: OVConvertedModelSchema):
     prompts, generation_config = get_test_dataset()
     generate_and_compare(

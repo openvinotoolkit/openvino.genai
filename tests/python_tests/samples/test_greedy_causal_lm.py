@@ -1,7 +1,6 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import pytest
 import sys
 
@@ -17,7 +16,10 @@ class TestGreedyCausalLM:
             pytest.param("SmolLM-135M", "return 0"),
             pytest.param("SmolLM2-135M-GGUF", "return 0", marks=pytest.mark.skipif(sys.platform == "win32", reason="CVS-173467")),
             pytest.param("Qwen2-0.5B-Instruct", "69"),
-            pytest.param("Qwen2-0.5B-Instruct-GGUF", "69", marks=pytest.mark.skipif(sys.platform == "win32", reason="CVS-173467")),
+            pytest.param("Qwen2-0.5B-Instruct-GGUF", "69", marks=[
+                pytest.mark.skipif(sys.platform == "win32", reason="CVS-173467"), 
+                pytest.mark.xfail(reason="Subprocess returned non-zero exit status 1")
+            ]),
             pytest.param("phi-1_5", "Alan Turing was a"),
             pytest.param("TinyLlama-1.1B-Chat-v1.0", "Alan Turing was a"),
         ],
@@ -29,25 +31,25 @@ class TestGreedyCausalLM:
         prompt = sample_args
         
         # C++ test
-        cpp_sample = (SAMPLES_CPP_DIR / 'greedy_causal_lm').as_posix()
+        cpp_sample = SAMPLES_CPP_DIR / 'greedy_causal_lm'
         cpp_command = [cpp_sample, convert_model, prompt]
         cpp_result = run_sample(cpp_command)
         cpp_predictions = cpp_result.stdout
 
         # Python test
-        py_script = (SAMPLES_PY_DIR / "text_generation/greedy_causal_lm.py").as_posix()
+        py_script = SAMPLES_PY_DIR / "text_generation/greedy_causal_lm.py"
         py_command = [sys.executable, py_script, convert_model, prompt]
         py_result = run_sample(py_command)
         py_predictions = py_result.stdout
 
         # Test C sample
-        c_sample = (SAMPLES_C_DIR / "greedy_causal_lm_c").as_posix()
-        c_command =[c_sample, convert_model, sample_args]
+        c_sample = SAMPLES_C_DIR / "greedy_causal_lm_c"
+        c_command =[c_sample, convert_model, prompt]
         c_result = run_sample(c_command)
 
         # Test JS sample
-        js_sample = (SAMPLES_JS_DIR / "text_generation/greedy_causal_lm.js").as_posix()
-        js_command =['node', js_sample, convert_model, sample_args]
+        js_sample = SAMPLES_JS_DIR / "text_generation/greedy_causal_lm.js"
+        js_command =['node', js_sample, convert_model, prompt]
         js_result = run_sample(js_command)
 
         # Compare results

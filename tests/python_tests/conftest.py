@@ -2,7 +2,6 @@ import os
 import pytest
 import shutil
 import logging
-from pathlib import Path
 from utils.constants import get_ov_cache_models_dir
 
 # Configure logging
@@ -14,7 +13,7 @@ logger = logging.getLogger(__name__)
 def setup_and_teardown():
     """Fixture to set up and tear down the temporary directories."""
 
-    ov_cache_models_dir = Path(get_ov_cache_models_dir())
+    ov_cache_models_dir = get_ov_cache_models_dir()
 
     logger.info(f"Creating directory: {ov_cache_models_dir}")
     ov_cache_models_dir.mkdir(exist_ok=True, parents=True)
