@@ -54,7 +54,7 @@ def get_argprser():
     parser.add_argument('-d', '--device', default='cpu', help='inference device')
     parser.add_argument('-r', '--report', help='report csv')
     parser.add_argument('-rj', '--report_json', help='report json')
-    parser.add_argument('-f', '--framework', default='ov', choices={"ov", "pt"}, help='inference framework, ov: OpenVINO, pt: Pytorch')
+    parser.add_argument('-f', '--framework', default='ov', choices={"ov", "pt"}, help='inference framework, ov: OpenVINO, pt: PyTorch')
     parser.add_argument('-p', '--prompt', default=None, help='one prompt')
     parser.add_argument('-pf', '--prompt_file', nargs='+', default=None,
                         help='Prompt file(s) in jsonl format. Multiple prompt files should be separated with space(s).')
