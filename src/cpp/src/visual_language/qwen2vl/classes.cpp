@@ -472,25 +472,26 @@ std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_v
     return {reordered_video_embeds, reordered_videos_grid_thw};
 }
 
+static void calc_cu_seqlens(const std::vector<std::array<size_t, 3>>& reordered_grid_thw,
+                            int32_t& cumsum,
+                            std::vector<int32_t>& cu_seqlens) {
+    for (const auto& grid_thw : reordered_grid_thw) {
+        size_t slice_len = grid_thw.at(1) * grid_thw.at(2);
+        for (size_t t = 0; t < grid_thw.at(0); ++t) {
+            cumsum += slice_len;
+            cu_seqlens.push_back(cumsum);
+        }
+    }
+}
+
 ov::Tensor get_attention_mask(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw, const std::vector<std::array<size_t, 3>>& reordered_videos_grid_thw) {
     // Calculate cumulative sequence lengths for attention mask
     std::vector<int32_t> cu_seqlens;
     cu_seqlens.push_back(0);
     int32_t cumsum = 0;
-    for (const auto& grid_thw : reordered_videos_grid_thw) {
-        size_t slice_len = grid_thw.at(1) * grid_thw.at(2);
-        for (size_t t = 0; t < grid_thw.at(0); ++t) {
-            cumsum += slice_len;
-            cu_seqlens.push_back(cumsum);
-        }
-    }
-    for (const auto& grid_thw : reordered_images_grid_thw) {
-        size_t slice_len = grid_thw.at(1) * grid_thw.at(2);
-        for (size_t t = 0; t < grid_thw.at(0); ++t) {
-            cumsum += slice_len;
-            cu_seqlens.push_back(cumsum);
-        }
-    }
+
+    calc_cu_seqlens(reordered_videos_grid_thw, cumsum, cu_seqlens);
+    calc_cu_seqlens(reordered_images_grid_thw, cumsum, cu_seqlens);
 
     // Create attention mask for vision embeddings merger model
     size_t hidden_states_size = cumsum;
@@ -515,20 +516,8 @@ ov::Tensor get_cu_seqlens(const std::vector<std::array<size_t, 3>>& reordered_im
     std::vector<int32_t> cu_seqlens;
     cu_seqlens.push_back(0);
     int32_t cumsum = 0;
-    for (const auto& grid_thw : reordered_videos_grid_thw) {
-        size_t slice_len = grid_thw.at(1) * grid_thw.at(2);
-        for (size_t t = 0; t < grid_thw.at(0); ++t) {
-            cumsum += slice_len;
-            cu_seqlens.push_back(cumsum);
-        }
-    }
-    for (const auto& grid_thw : reordered_images_grid_thw) {
-        size_t slice_len = grid_thw.at(1) * grid_thw.at(2);
-        for (size_t t = 0; t < grid_thw.at(0); ++t) {
-            cumsum += slice_len;
-            cu_seqlens.push_back(cumsum);
-        }
-    }
+    calc_cu_seqlens(reordered_videos_grid_thw, cumsum, cu_seqlens);
+    calc_cu_seqlens(reordered_images_grid_thw, cumsum, cu_seqlens);
 
     ov::Tensor t_cu_seqlens(ov::element::i32, {cu_seqlens.size()});
     std::memcpy(t_cu_seqlens.data<int32_t>(), cu_seqlens.data(), cu_seqlens.size() * sizeof(int32_t));
@@ -868,8 +857,7 @@ EncodedImage VisionEncoderQwen2VL::encode(const ov::Tensor& image, const ov::Any
     return encoded_img;
 }
 
-EncodedVideo VisionEncoderQwen2VL::encode_frames(const std::vector<ov::Tensor>& frames,
-                                                              const ov::AnyMap& config_map) {
+EncodedVideo VisionEncoderQwen2VL::encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) {
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
     EncodedVideo encoded_video;
     size_t i = 0;
