@@ -186,7 +186,6 @@ def get_huggingface_models(
     def auto_tokenizer_from_pretrained() -> AutoTokenizer:
         return AutoTokenizer.from_pretrained(
             model_id, 
-            trust_remote_code=True, 
             local_files_only=local_files_only,
         )
 
@@ -196,7 +195,6 @@ def get_huggingface_models(
             export=isinstance(model_id, str), 
             compile=False, 
             load_in_8bit=False, 
-            trust_remote_code=isinstance(model_id, str), 
             ov_config=get_default_llm_properties(), 
             local_files_only=local_files_only,
         )
