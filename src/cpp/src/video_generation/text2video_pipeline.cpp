@@ -273,8 +273,8 @@ ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_co
     size_t width = generation_config.width / spatial_compression_ratio;
     size_t latent_num_frames = (generation_config.num_frames - 1) / temporal_compression_ratio + 1;
     ov::Shape shape{generation_config.num_images_per_prompt, num_channels_latents, latent_num_frames, height, width};
-    // ov::Tensor latents = generation_config.generator->randn_tensor(shape);
-    ov::Tensor latents = loadTensorFromFile("../latents_before_pack.txt");
+    ov::Tensor latents = generation_config.generator->randn_tensor(shape);
+    // ov::Tensor latents = loadTensorFromFile("../latents_before_pack.txt");
     return pack_latents(latents, transformer_spatial_patch_size, transformer_temporal_patch_size);
 }
 }  // anonymous namespace
@@ -309,6 +309,7 @@ class Text2VideoPipeline::LTXPipeline {
 
         // torch.cat([negative_prompt_embeds, prompt_embeds], dim=0)
         // genai m_t5_text_encoder->infer retuns the same tensor [negative_prompt_embeds, prompt_embeds]
+        infer_start = std::chrono::steady_clock::now();
         ov::Tensor prompt_embeds = m_t5_text_encoder->infer(
             positive_prompt,
             negative_prompt,
@@ -319,9 +320,10 @@ class Text2VideoPipeline::LTXPipeline {
                 ov::genai::add_special_tokens(true)
             }
         );
-        ov::Tensor prompt_attention_mask = m_t5_text_encoder->get_prompt_attention_mask();
         auto infer_end = std::chrono::steady_clock::now();
         m_perf_metrics.encoder_inference_duration["text_encoder"] = Ms{infer_end - infer_start}.count();
+
+        ov::Tensor prompt_attention_mask = m_t5_text_encoder->get_prompt_attention_mask();
 
         prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
         prompt_attention_mask = numpy_utils::repeat(prompt_attention_mask, generation_config.num_images_per_prompt);
@@ -462,16 +464,16 @@ public:
         return out_vec[0];  // [B, F, H, W, C]
 }
 
-    ov::Tensor generate(const std::string& positive_prompt, const std::string& negative_prompt, const ov::AnyMap& properties = {}) {
+    VideoGenerationResult generate(const std::string& positive_prompt, const std::string& negative_prompt, const ov::AnyMap& properties = {}) {
         const auto gen_start = std::chrono::steady_clock::now();
         m_perf_metrics.clean_up();
+
         VideoGenerationConfig merged_generation_config = m_generation_config;
         merged_generation_config.update_generation_config(properties);
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const auto& transformer_config = m_transformer->get_config();
         const size_t batch_size_multiplier = do_classifier_free_guidance(merged_generation_config.guidance_scale) ? 2 : 1;  // Transformer accepts 2x batch in case of CFG
-
 
         check_inputs(merged_generation_config, vae_scale_factor);
 
@@ -514,7 +516,7 @@ public:
         rope_interpolation_scale.data<float>()[1] = spatial_compression_ratio;
         rope_interpolation_scale.data<float>()[2] = spatial_compression_ratio;
         m_transformer->set_hidden_states("rope_interpolation_scale", rope_interpolation_scale);
-        print_ov_tensor(rope_interpolation_scale, "rope_interpolation_scale");
+        // print_ov_tensor(rope_interpolation_scale, "rope_interpolation_scale");
 
         auto make_scalar_tensor = [](size_t value) {
             ov::Tensor scalar(ov::element::i64, {});
@@ -526,6 +528,7 @@ public:
         m_transformer->set_hidden_states("width", make_scalar_tensor(latent_width));
 
         // // Prepare timesteps
+        // TODO: ov::Tensor timestep(ov::element::f32, {1}); is enough
         ov::Tensor timestep(ov::element::f32, {2});
         float* timestep_data = timestep.data<float>();
 
@@ -549,16 +552,17 @@ public:
             timestep_data[0] = timesteps[inference_step];
             timestep_data[1] = timesteps[inference_step];
 
-            auto infer_start = std::chrono::steady_clock::now();
-            print_ov_tensor(latent_cfg, "latent input");
-            saveTensorToFile(latent_cfg, "latent_cfg_" + std::to_string(timestep_data[0]) +".txt");
-            saveTensorToFile(timestep, "timestep_" + std::to_string(timestep_data[0]) +".txt");
+            // print_ov_tensor(latent_cfg, "latent input");
+            // saveTensorToFile(latent_cfg, "latent_cfg_" + std::to_string(timestep_data[0]) +".txt");
+            // saveTensorToFile(timestep, "timestep_" + std::to_string(timestep_data[0]) +".txt");
+            // std::cout << "timestep " << timestep_data[0] << std::endl;
 
-            std::cout << "timestep " << timestep_data[0] << std::endl;
+            auto infer_start = std::chrono::steady_clock::now();
             ov::Tensor noise_pred_tensor = m_transformer->infer(latent_cfg, timestep);
-            print_ov_tensor(noise_pred_tensor, "noise_pred");
-            // saveTensorToFile(noise_pred_tensor, "noise_pred_tensor_" + std::to_string(timestep_data[0]) +".txt");
             auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
+            m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
+            // print_ov_tensor(noise_pred_tensor, "noise_pred");
+            // saveTensorToFile(noise_pred_tensor, "noise_pred_tensor_" + std::to_string(timestep_data[0]) +".txt");
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
             noise_pred_shape[0] /= batch_size_multiplier;
@@ -580,17 +584,17 @@ public:
             }
 
             // print_ov_tensor(noisy_residual_tensor, "noise_pred 2");
-
-            print_ov_tensor(latent, "latents before step");
-
+            // print_ov_tensor(latent, "latents before step");
             // saveTensorToFile(latent, "latents_before_step_" + std::to_string(timestep_data[0]) +".txt");
 
             auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, merged_generation_config.generator);
             latent = scheduler_step_result["latent"];
 
-            // saveTensorToFile(latent, "latents_after_step_" + std::to_string(timestep_data[0]) +".txt");
+            auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
+            m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
 
-            print_ov_tensor(latent, "latents after step");
+            // saveTensorToFile(latent, "latents_after_step_" + std::to_string(timestep_data[0]) +".txt");
+            // print_ov_tensor(latent, "latents after step");
         }
 
         // latent = loadTensorFromFile("/home/alikh/projects/openvino.genai/transformer_output.txt");
@@ -601,7 +605,7 @@ public:
                                 latent_width,
                                 transformer_spatial_patch_size,
                                 transformer_temporal_patch_size);
-        print_ov_tensor(latent, "unpack_latents");
+        // print_ov_tensor(latent, "unpack_latents");
 
         auto tensor_from_vector = [](const std::vector<float>& data) -> ov::Tensor {
             ov::Tensor t{ov::element::f32, ov::Shape{data.size()}};
@@ -615,47 +619,22 @@ public:
                                     tensor_from_vector(m_vae->get_config().latents_mean_data),
                                     tensor_from_vector(m_vae->get_config().latents_std_data),
                                     m_vae->get_config().scaling_factor);
-        print_ov_tensor(latent, "denormalize_latents");
-        saveTensorToFile(latent, "denormalize_latents.txt");
+        // print_ov_tensor(latent, "denormalize_latents");
+        // saveTensorToFile(latent, "denormalize_latents.txt");
 
         // TODO: if not self.vae.config.timestep_conditioning: ... else: ...
 
         const auto decode_start = std::chrono::steady_clock::now();
         ov::Tensor video = m_vae->decode(latent);
-        print_ov_tensor(video, "video");
+        // print_ov_tensor(video, "video");
         m_perf_metrics.vae_decoder_inference_duration =
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
-                .count();
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start).count();
+        video = postprocess_video(video);
+
         m_perf_metrics.generate_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start).count();
 
-        video = postprocess_video(video);
-        print_ov_tensor(video, "postprocess_video");
-
-        //     if (callback && callback(inference_step, timesteps.size(), latents)) {
-        //         auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
-        //         m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
-
-        //         auto image = ov::Tensor(ov::element::u8, {});
-        //         m_perf_metrics.generate_duration =
-        //             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start)
-        //                 .count();
-        //         return image;
-        //     }
-
-        //     auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
-        //     m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
-
-        // latents = unpack_latents(latents, custom_generation_config.height, custom_generation_config.width, vae_scale_factor);
-        // const auto decode_start = std::chrono::steady_clock::now();
-        // auto image = m_vae->decode(latents);
-        // m_perf_metrics.vae_decoder_inference_duration =
-        //     std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
-        //         .count();
-        // m_perf_metrics.generate_duration =
-        //     std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start).count();
-        // return image;
-        return video;
+        return VideoGenerationResult{video, m_perf_metrics};
     }
 };
 
@@ -667,7 +646,7 @@ Text2VideoPipeline::Text2VideoPipeline(
     models_dir, device, properties
 )} {}
 
-ov::Tensor Text2VideoPipeline::generate(
+VideoGenerationResult Text2VideoPipeline::generate(
     const std::string& positive_prompt,
     const std::string& negative_prompt,
     const ov::AnyMap& properties
