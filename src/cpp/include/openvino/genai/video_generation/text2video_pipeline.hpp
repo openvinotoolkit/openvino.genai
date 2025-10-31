@@ -54,6 +54,11 @@ struct VideoGenerationConfig : public ImageGenerationConfig {
     }
 };
 
+struct VideoGenerationResult {
+    ov::Tensor video;
+    ov::genai::VideoGenerationPerfMetrics perfomance_stat;
+};
+
 class OPENVINO_GENAI_EXPORTS Text2VideoPipeline {
 public:
     static Text2VideoPipeline ltx_video();
@@ -69,14 +74,14 @@ public:
      * @param properties Image generation parameters specified as properties. Values in 'properties' override default value for generation parameters.
      * @returns A tensor which has dimensions [num_images_per_prompt, height, width, 3]
      */
-    ov::Tensor generate(
+    VideoGenerationResult generate(
         const std::string& positive_prompt,
         const std::string& negative_prompt = "",
         const ov::AnyMap& properties = {}
     );
 
     template <typename... Properties>
-    ov::util::EnableIfAllStringAny<ov::Tensor, Properties...> generate(
+    ov::util::EnableIfAllStringAny<VideoGenerationResult, Properties...> generate(
         const std::string& positive_prompt,
         const std::string& negative_prompt,
         Properties&&... properties
