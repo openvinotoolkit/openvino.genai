@@ -187,7 +187,6 @@ public:
 
         ov::Tensor generated_ids_embeds;
         float *generated_ids_embeds_data = nullptr;
-        ov::Tensor position_ids;
 
         max_context_len.data<int32_t>()[0] = max_context_len_val;
 
@@ -196,6 +195,7 @@ public:
         int64_t *input_ids_data = nullptr;
         int64_t *token_type_ids_data = nullptr;
 
+        ov::Tensor position_ids;
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             inputs_embeds_data = inputs_embeds.data<float>();
             token_type_ids_data = token_type_ids.data<int64_t>();
@@ -271,7 +271,7 @@ public:
                         input_ids_data[token_id] = position_id < prompt_len ?
                             sequence_group->get_prompt_ids()[position_id] :
                             sequence->get_generated_ids()[position_id - prompt_len];
-                        position_ids_data[token_id] = position_id;
+                        position_ids_data[position_idx] = position_id;
                     } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
                         const auto& generated_embeds = sequence->get_generated_ids_embeds();
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
@@ -352,9 +352,6 @@ public:
                         // or the sequence is in the generation stage already
                         *score_aggregation_window_data = 1;
                     }
-                }
-                if (sequence_group_type == SequenceGroupType::TOKENS) {
-                    position_ids_data += num_scheduled_tokens;
                 }
                 past_lens_data += 1;
                 subsequence_begins_data += 1;
