@@ -14,7 +14,8 @@ from utils.hugging_face import download_and_convert_model
 @pytest.fixture(scope="module")
 def model_tmp_path(tmpdir_factory):
     model_id = get_models_list()[0]
-    _, _, models_path = download_and_convert_model(model_id)
+    model_schema = download_and_convert_model(model_id)
+    models_path = model_schema.models_path
 
     temp_path = tmpdir_factory.mktemp(model_id.replace("/", "_"))
 

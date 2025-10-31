@@ -4,7 +4,6 @@ import json
 import pytest
 import shutil
 import logging
-import gc
 import requests
 from pathlib import Path
 
@@ -162,10 +161,20 @@ TEST_FILES = {
     "cmu_us_awb_arctic-wav-arctic_a0001.bin": "https://huggingface.co/datasets/Xenova/cmu-arctic-xvectors-extracted/resolve/main/cmu_us_awb_arctic-wav-arctic_a0001.bin"
 }
 
-SAMPLES_PY_DIR = Path(os.environ.get("SAMPLES_PY_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/python"))))
-SAMPLES_CPP_DIR = Path(os.environ.get("SAMPLES_CPP_DIR", os.getcwd()))
-SAMPLES_C_DIR = os.environ.get("SAMPLES_C_DIR", os.getcwd())
-SAMPLES_JS_DIR = os.environ.get("SAMPLES_JS_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/js")))
+SAMPLES_PY_DIR = Path(
+    os.environ.get(
+        "SAMPLES_PY_DIR",
+        Path(__file__).parent.joinpath("../../../samples/python").resolve(),
+    )
+)
+SAMPLES_CPP_DIR = Path(os.environ.get("SAMPLES_CPP_DIR", Path.cwd()))
+SAMPLES_C_DIR = Path(os.environ.get("SAMPLES_C_DIR", Path.cwd()))
+SAMPLES_JS_DIR = Path(
+    os.environ.get(
+        "SAMPLES_JS_DIR",
+        Path(__file__).parent.joinpath("../../../samples/js").resolve(),
+    )
+)
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_and_teardown(request, tmp_path_factory):
@@ -233,19 +242,20 @@ def convert_model(request):
     model = MODELS[model_id]
     model_name = model["name"]
     model_cache = os.path.join(models_cache, model_id)
-    model_path = os.path.join(model_cache, model_name)
-    logger.info(f"Preparing model: {model_name}")
-    if not os.path.exists(model_path):
-        if "gguf_filename" in model:
-            # Download the GGUF model if not already downloaded
-            download_gguf_model(model, model_path)
-        else:
-            # Convert the model if not already converted
-            optimum_cli_convert(model, model_path)
-
+    
     if "gguf_filename" in model:
-        model_path = os.path.join(model_path, model["gguf_filename"])
-    yield model_path
+        model_path = model_cache
+        gguf_file_path = os.path.join(model_path, model["gguf_filename"])
+        logger.info(f"Preparing GGUF model: {model_name}")
+        if not os.path.exists(gguf_file_path):
+            download_gguf_model(model, model_path)
+        yield gguf_file_path
+    else:
+        model_path = os.path.join(model_cache, model_name)
+        logger.info(f"Preparing model: {model_name}")
+        if not os.path.exists(model_path):
+            optimum_cli_convert(model, model_path)
+        yield model_path
 
     # Cleanup the model after tests
     if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
@@ -378,12 +388,3 @@ def generate_image_generation_jsonl(request):
         if os.path.exists(file_path):
             logger.info(f"Removing JSONL file: {file_path}")
             os.remove(file_path)
-
-@pytest.fixture(scope="module", autouse=True)
-def run_gc_after_test():
-    """
-    Fixture to run garbage collection after each test module.
-    This is a workaround to minimize memory consumption during tests and allow the use of less powerful CI runners.
-    """
-    yield
-    gc.collect()
