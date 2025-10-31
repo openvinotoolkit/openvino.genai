@@ -6,7 +6,7 @@ import pytest
 import sys
 import json
 
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
+from conftest import SAMPLES_JS_DIR, SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 from test_utils import run_sample
 from pydantic import BaseModel, Field
 from typing import Literal
@@ -49,7 +49,7 @@ def test_python_structured_output_sample(convert_model, prompt, expected_quantit
     py_output = py_result.stdout
 
     # JS test
-    js_script = os.path.join(SAMPLES_CPP_DIR, "text_generation/structured_output_generation_js")
+    js_script = os.path.join(SAMPLES_JS_DIR, "text_generation/structured_output_generation.js")
     js_command = ["node", js_script, convert_model]
     js_result = run_sample(js_command, user_input)
     js_output = js_result.stdout

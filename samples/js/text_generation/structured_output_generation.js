@@ -97,9 +97,10 @@ async function main() {
                 });
                 for (let i = 0; i < quantity; i++) {
                     generateHasRun = true;
-                    const jsonStr = await pipe.generate(prompt, config);
-                    JSON.parse(jsonStr);
-                    console.log(jsonStr.toString());
+                    const result = await pipe.generate(prompt, config);
+                    // validate JSON
+                    JSON.parse(result.toString());
+                    console.log(result.toString());
                 }
             }
 
