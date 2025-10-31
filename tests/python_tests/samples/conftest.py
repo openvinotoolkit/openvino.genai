@@ -242,19 +242,20 @@ def convert_model(request):
     model = MODELS[model_id]
     model_name = model["name"]
     model_cache = os.path.join(models_cache, model_id)
-    model_path = os.path.join(model_cache, model_name)
-    logger.info(f"Preparing model: {model_name}")
-    if not os.path.exists(model_path):
-        if "gguf_filename" in model:
-            # Download the GGUF model if not already downloaded
-            download_gguf_model(model, model_path)
-        else:
-            # Convert the model if not already converted
-            optimum_cli_convert(model, model_path)
-
+    
     if "gguf_filename" in model:
-        model_path = os.path.join(model_path, model["gguf_filename"])
-    yield model_path
+        model_path = model_cache
+        gguf_file_path = os.path.join(model_path, model["gguf_filename"])
+        logger.info(f"Preparing GGUF model: {model_name}")
+        if not os.path.exists(gguf_file_path):
+            download_gguf_model(model, model_path)
+        yield gguf_file_path
+    else:
+        model_path = os.path.join(model_cache, model_name)
+        logger.info(f"Preparing model: {model_name}")
+        if not os.path.exists(model_path):
+            optimum_cli_convert(model, model_path)
+        yield model_path
 
     # Cleanup the model after tests
     if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
