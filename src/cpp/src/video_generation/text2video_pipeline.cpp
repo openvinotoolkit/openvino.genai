@@ -26,8 +26,45 @@ using namespace ov::genai;
 
 namespace {
 
-std::shared_ptr<IScheduler> cast_scheduler(std::shared_ptr<Scheduler> scheduler) {
-    auto casted = std::dynamic_pointer_cast<IScheduler>(scheduler);
+VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
+    ImageGenerationConfig{
+        .guidance_scale = 3.0f,
+        .height = 512,
+        .width = 704,
+        .num_inference_steps = 50,
+        .max_sequence_length = 128,
+        .strength = 1.0f,
+    },
+    .guidance_rescale = 0.0,
+    .num_frames = 161,
+    .frame_rate = 25.0f
+};
+
+// Some defaults aren't special values so it's not possible to distinguish
+// whether user set them or not. Replace only special values.
+void replace_defaults(VideoGenerationConfig& config) {
+    if (-1 == config.height) {
+        config.height = LTX_VIDEO_DEFAULT_CONFIG.height;
+    }
+    if (-1 == config.width) {
+        config.width = LTX_VIDEO_DEFAULT_CONFIG.width;
+    }
+    if (-1 == config.max_sequence_length) {
+        config.max_sequence_length = LTX_VIDEO_DEFAULT_CONFIG.max_sequence_length;
+    }
+    if (std::isnan(config.guidance_rescale)) {
+        config.guidance_rescale = LTX_VIDEO_DEFAULT_CONFIG.guidance_rescale;
+    }
+    if (0 == config.num_frames) {
+        config.num_frames = LTX_VIDEO_DEFAULT_CONFIG.num_frames;
+    }
+    if (std::isnan(config.frame_rate)) {
+        config.frame_rate = LTX_VIDEO_DEFAULT_CONFIG.frame_rate;
+    }
+}
+
+std::shared_ptr<IScheduler> cast_scheduler(std::shared_ptr<Scheduler>&& scheduler) {
+    auto casted = std::dynamic_pointer_cast<IScheduler>(std::move(scheduler));
     OPENVINO_ASSERT(casted != nullptr, "Passed incorrect scheduler type");
     return casted;
 }
@@ -244,8 +281,7 @@ ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_co
 
 void VideoGenerationConfig::validate() const {
     ImageGenerationConfig::validate();
-    OPENVINO_ASSERT(num_frames > 0, "num_frames must be positive but got 0");
-    OPENVINO_ASSERT(frame_rate > 0, "frame_rate must be positive but got ", frame_rate);
+    OPENVINO_ASSERT(std::isnan(frame_rate) || frame_rate > 0, "frame_rate must be positive or NaN but got ", frame_rate);
 }
 
 void VideoGenerationConfig::update_generation_config(const ov::AnyMap& properties) {
@@ -254,6 +290,7 @@ void VideoGenerationConfig::update_generation_config(const ov::AnyMap& propertie
     read_anymap_param(properties, "guidance_rescale", guidance_rescale);
     read_anymap_param(properties, "num_frames", num_frames);
     read_anymap_param(properties, "frame_rate", frame_rate);
+    replace_defaults(*this);
 }
 
 class Text2VideoPipeline::LTXPipeline {
@@ -355,14 +392,7 @@ public:
             m_t5_text_encoder{std::make_shared<T5EncoderModel>(models_dir / "text_encoder", device, properties)},
             m_transformer{std::make_shared<LTXVideoTransformer3DModel>(models_dir / "transformer", device, properties)},
             m_vae{std::make_shared<AutoencoderKLLTXVideo>(models_dir / "vae_decoder", device, properties)},
-            m_generation_config{VideoGenerationConfig{ImageGenerationConfig{
-                .guidance_scale = 3.0f,
-                .height = 512,
-                .width = 704,
-                .num_inference_steps = 50,
-                .max_sequence_length = 128,
-                .strength = 1.0f,
-            }}} {
+            m_generation_config{LTX_VIDEO_DEFAULT_CONFIG} {
         const std::filesystem::path model_index_path = models_dir / "model_index.json";
         std::ifstream file(model_index_path);
         OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
@@ -653,6 +683,7 @@ const VideoGenerationConfig& Text2VideoPipeline::get_generation_config() const {
 void Text2VideoPipeline::set_generation_config(const VideoGenerationConfig& generation_config) {
     generation_config.validate();
     m_impl->m_generation_config = generation_config;
+    replace_defaults(m_impl->m_generation_config);
 }
 
 Text2VideoPipeline::~Text2VideoPipeline() = default;
