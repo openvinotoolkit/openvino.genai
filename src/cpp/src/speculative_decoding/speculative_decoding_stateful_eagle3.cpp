@@ -743,6 +743,7 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
     
     auto main_desc = main_model_desc;
     if (main_desc.device == "NPU") {
+        main_model->set_rt_info("true", "eagle3_mode");
         main_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = MAX_CANDIDATES + 1;
         main_desc.properties["NPUW_DEVICES"] = "CPU";
     }
