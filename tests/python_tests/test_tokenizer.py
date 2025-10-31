@@ -397,7 +397,7 @@ prompts = [
     "What is the previous answers? " * 1000,
     # check that short sentence is padded to long
     "what",
-    # check that large batch with multilangual data is correctly padded
+    # check that large batch with multilingual data is correctly padded
     [
         "1+1=",
         "What is the previous answer?",

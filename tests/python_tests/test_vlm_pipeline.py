@@ -961,7 +961,7 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     results_with_cancel += ov_pipe.generate(
         callback_questions[0], **images_and_videos, generation_config=generation_config
     ).texts[0]
-    # doesn't add to results_with_cancel as it should be complitely removed from the history
+    # doesn't add to results_with_cancel as it should be completely removed from the history
     ov_pipe.generate(
         callback_questions[1],
         images=image_sequence,
