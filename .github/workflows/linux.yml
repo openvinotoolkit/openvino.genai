@@ -538,7 +538,7 @@ jobs:
           #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test || fromJSON(needs.smart_ci.outputs.affected_components).sampling.test || fromJSON(needs.smart_ci.outputs.affected_components).text_streamer.test }}
           #   timeout: 60
           - name: 'Rag tests'
-            cmd: 'pip list && python -m pytest -v ./tests/python_tests/test_rag.py -k test_qwen3_rerank_documents'
+            cmd: 'pip list && python -m pytest -s -v ./tests/python_tests/test_rag.py -k test_qwen3_rerank_documents'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
             timeout: 30
           # - name: 'WWB tests'
