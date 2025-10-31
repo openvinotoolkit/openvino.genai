@@ -52,7 +52,6 @@ unicode_prompts = [*map(lambda x: str.encode(x, 'unicode_escape'), [
 ])]
 
 @pytest.mark.parametrize("model_id", tokenizer_model_ids)
-@pytest.mark.precommit
 @pytest.mark.parametrize("prompt", [*eng_prompts, *unicode_prompts])
 def test_text_prompts(tmp_path, prompt, model_id):
     prompt = prompt.decode('unicode_escape') if isinstance(prompt, bytes) else prompt
@@ -93,7 +92,6 @@ encoded_prompts = [
     [167, 96, 227, 169, 232, 250, 167, 96, 227, 169, 232, 250, 167]
 ]
 @pytest.mark.parametrize("model_id", tokenizer_model_ids)
-@pytest.mark.precommit
 @pytest.mark.parametrize("encoded_prompt", encoded_prompts)
 def test_encoded_prompts(tmp_path, encoded_prompt, model_id):
     model_id, hf_tok_load_params = (model_id[0], model_id[1]) if isinstance(model_id, tuple) else (model_id, {})

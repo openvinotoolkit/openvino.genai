@@ -59,8 +59,3 @@ requires = [
     "cmake~=3.24.0; platform_system == 'Darwin' and platform_machine == 'arm64'",
 ]
 build-backend = "py_build_cmake.build"
-
-[tool.pytest.ini_options]
-markers = [
-    "precommit: (deselect with '-m \"precommit\"')",
-]
