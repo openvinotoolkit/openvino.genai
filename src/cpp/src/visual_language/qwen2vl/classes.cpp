@@ -878,6 +878,8 @@ EncodedVideo VisionEncoderQwen2VL::encode_frames(const std::vector<ov::Tensor>& 
         };
     }
 
+    // Regarding Qwen-VL's video processing, it needs to merge `config.temporal_patch_size` adjacent frames for processing.
+    // For video frames that are fewer than `config.temporal_patch_size`, they will be processed like images.
     for (; i + config.temporal_patch_size <= image_num; i += config.temporal_patch_size) {
         encode_func(std::vector<ov::Tensor>(frames.begin() + i, frames.begin() + i + config.temporal_patch_size),
                     config_map, encoded_video, encoded_video.frame_num, frame_id);
