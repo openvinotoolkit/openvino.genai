@@ -77,7 +77,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     bool is_need_per_layer_cache_control = scheduler_config.use_cache_eviction;
     bool allow_cache_rotation = scheduler_config.cache_eviction_config.apply_rotation;
     bool allow_xattention = scheduler_config.use_sparse_attention && scheduler_config.sparse_attention_config.mode == SparseAttentionMode::XATTENTION;
-    ov::pass::SDPAToPagedAttention(is_need_per_layer_cache_control, is_need_per_layer_cache_control, /* allow_score_aggregation = */ true, allow_cache_rotation, allow_xattention).run_on_model(model);
+    bool allow_score_aggregation = true;
+    ov::pass::SDPAToPagedAttention(is_need_per_layer_cache_control, is_need_per_layer_cache_control, allow_score_aggregation, allow_cache_rotation, allow_xattention).run_on_model(model);
     utils::apply_gather_before_matmul_transformation(model);
 
     initialize_pipeline(model, scheduler_config, device, properties);
