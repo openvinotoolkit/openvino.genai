@@ -158,7 +158,7 @@ EncodedImage VisionEncoderLLaVANextVideo::encode(const ov::Tensor& image, const 
 }
 
 
-NormlizedPrompt InputsEmbedderLLaVANextVideo::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormalizedPrompt InputsEmbedderLLaVANextVideo::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     std::string image_token = m_vlm_config.im_start;
     auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size());
     size_t searched_pos = 0;
@@ -202,7 +202,8 @@ ov::Tensor InputsEmbedderLLaVANextVideo::get_inputs_embeds(
     ov::genai::VLMPerfMetrics& metrics,
     bool recalculate_merged_embeddings,
     const std::vector<size_t>& images_sequence,
-    const std::vector<size_t>& videos_sequence) {
+    const std::vector<size_t>& videos_sequence,
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
     
     ov::Tensor image_newline;
     size_t searched_pos = 0;
@@ -221,7 +222,7 @@ ov::Tensor InputsEmbedderLLaVANextVideo::get_inputs_embeds(
     std::vector<ov::Tensor> video_embeds;
     for (size_t video_id : videos_sequence) {
         const EncodedVideo& encoded_video = videos.at(video_id);
-        video_embeds.push_back(encoded_video.video_feautures);
+        video_embeds.push_back(encoded_video.video_features);
     }
 
     // llava-next-video tokenizer always adds special tokens in pytorch
@@ -317,14 +318,14 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderLLaVANextVideo::encode_videos
         EncodedVideo encoded_video;
         ov::Shape new_shape = {1, video_features.get_shape()[0] * video_features.get_shape()[1], video_features.get_shape()[2]};
         video_features.set_shape(new_shape);
-        encoded_video.video_feautures = std::move(video_features);
+        encoded_video.video_features = std::move(video_features);
         encoded_video.num_video_tokens = num_video_tokens;
         encoded_videos.push_back(encoded_video);
     }
     return encoded_videos;
 }
 
-NormlizedPrompt InputsEmbedderLLaVANextVideo::normalize_prompt(const std::string& prompt,
+NormalizedPrompt InputsEmbedderLLaVANextVideo::normalize_prompt(const std::string& prompt,
     size_t base_image_id,
     size_t base_video_id,
     const std::vector<EncodedImage>& images,

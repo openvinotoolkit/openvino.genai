@@ -188,7 +188,6 @@ public:
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
-
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
@@ -246,12 +245,20 @@ public:
         }
         ov::Tensor inputs_embeds;
         std::optional<ov::Tensor> token_type_ids;
+        bool recalculate_merged_embeddings = encoded_images.size() > 0 || encoded_videos.size() > 0;
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         if (m_inputs_embedder->has_token_type_ids()) {
-            std::tie(inputs_embeds, token_type_ids) = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
+            std::tie(inputs_embeds, token_type_ids) =
+                m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt,
+                                                                         encoded_images,
+                                                                         encoded_videos,
+                                                                         perf_metrics,
+                                                                         recalculate_merged_embeddings,
+                                                                         image_sequence,
+                                                                         video_sequence);
         } else {
-            inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, perf_metrics, encoded_images.size() > 0, image_sequence, video_sequence);
+            inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, perf_metrics, recalculate_merged_embeddings, image_sequence, video_sequence);
         }
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
