@@ -399,7 +399,7 @@ For more examples of how metrics are used, please refer to the Python [benchmark
 
 
 ### Structured Output generation
-OpenVINO™ GenAI supports structured output generation, which allows you to generate outputs in a structured format such as JSON, regex, or accoring to EBNF (Extended Backus–Naur form) grammar.
+OpenVINO™ GenAI supports structured output generation, which allows you to generate outputs in a structured format such as JSON, regex, or according to EBNF (Extended Backus–Naur form) grammar.
 
 Below is a minimal example that demonstrates how to use OpenVINO™ GenAI to generate structured JSON output for a single item type (e.g., `person`). This example uses a Pydantic schema to define the structure and constraints of the generated output.
 
@@ -467,7 +467,7 @@ tokenizer = pipe.get_tokenizer()
 
 `Tokenizer` has `encode` and `decode` methods which support the following arguments: `add_special_tokens`, `skip_special_tokens`, `pad_to_max_length`, `max_length` arguments.
 
-In order to disable adding special tokens do the followings, in C++:
+In order to disable adding special tokens do the following, in C++:
 ```cpp
 auto tokens = tokenizer.encode("The Sun is yellow because", ov::genai::add_special_tokens(false));
 ```
@@ -486,7 +486,7 @@ Below are example how padding can be controlled, in C++:
 auto tokenizer = ov::genai::Tokenizer(models_path);
 std::vector<std::string> prompts = {"The Sun is yellow because", "The"};
 
-// Since prompt is defenitely shorter than maximal length (which is taken from IR) will not affect shape.
+// Since prompt is definitely shorter than maximal length (which is taken from IR) will not affect shape.
 // Resulting shape is defined by length of the longest tokens sequence.
 // Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="longest", truncation=True)
 tokens = tokenizer.encode({"The Sun is yellow because", "The"})
@@ -513,7 +513,7 @@ import openvino_genai as ov_genai
 tokenizer = ov_genai.Tokenizer(models_path)
 prompts = ["The Sun is yellow because", "The"]
 
-# Since prompt is defenitely shorter than maximal length (which is taken from IR) will not affect shape.
+# Since prompt is definitely shorter than maximal length (which is taken from IR) will not affect shape.
 # Resulting shape is defined by length of the longest tokens sequence.
 # Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="longest", truncation=True)
 tokens = tokenizer.encode(["The Sun is yellow because", "The"])
