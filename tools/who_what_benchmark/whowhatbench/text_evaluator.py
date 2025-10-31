@@ -36,7 +36,9 @@ class TextEvaluator(BaseEvaluator):
         seqs_per_request=None,
         use_chat_template=None,
         long_prompt=False,
-        empty_adapters=False
+        empty_adapters=False,
+        num_assistant_tokens=0,
+        assistant_confidence_threshold=0.0
     ) -> None:
         assert (
             base_model is not None or gt_data is not None
@@ -53,6 +55,8 @@ class TextEvaluator(BaseEvaluator):
         self.seqs_per_request = seqs_per_request
         self.generation_fn = gen_answer_fn
         self.use_chat_template = use_chat_template
+        self.num_assistant_tokens = num_assistant_tokens
+        self.assistant_confidence_threshold = assistant_confidence_threshold
         if self.generation_config is not None:
             assert self.seqs_per_request is not None
         self.empty_adapters = empty_adapters
@@ -135,7 +139,8 @@ class TextEvaluator(BaseEvaluator):
         return res
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
-        def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question, use_chat_template=False, empty_adapters=False):
+        def default_gen_answer(model, tokenizer, prompt, max_new_tokens, crop_question, use_chat_template=False, empty_adapters=False,
+                               num_assistant_tokens=0, assistant_confidence_threshold=0.0):
             is_awq = getattr(model, "is_awq", None) is not None
             device = "cpu"
             if hasattr(model, "device"):
@@ -196,7 +201,9 @@ class TextEvaluator(BaseEvaluator):
                         self.max_new_tokens,
                         self._crop_question,
                         self.use_chat_template,
-                        empty_adapters=self.empty_adapters
+                        self.empty_adapters,
+                        self.num_assistant_tokens,
+                        self.assistant_confidence_threshold
                     )
                 )
         else:

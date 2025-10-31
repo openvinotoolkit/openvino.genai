@@ -1,3 +1,4 @@
+from pathlib import Path
 import logging
 import json
 import torch
@@ -98,6 +99,17 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
         for adapter, alpha in zip(kwargs['adapters'], kwargs['alphas']):
             ov_adapter = openvino_genai.Adapter(adapter)
             adapter_config.add(ov_adapter, alpha)
+
+    draft_model_path = kwargs.get("draft_model", '')
+    if draft_model_path:
+        if not Path(draft_model_path).exists():
+            raise RuntimeError(f"Error: Draft model path does not exist: {draft_model_path}")
+        draft_device = kwargs.get("draft_device", None) or device
+        draft_model_load_kwargs = (
+            {"scheduler_config": get_scheduler_config_genai(kwargs["draft_cb_config"])}
+            if kwargs["draft_cb_config"] is not None else {}
+        )
+        ov_config["draft_model"] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
 
     is_continuous_batching = kwargs.get("cb_config", None) is not None
 
