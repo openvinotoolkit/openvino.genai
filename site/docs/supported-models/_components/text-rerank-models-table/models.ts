@@ -1,5 +1,6 @@
 type TextRerankModelType = {
   architecture: string;
+  optimumIntelTask: string;
   models: Array<{
     links: string[];
   }>;
@@ -8,6 +9,7 @@ type TextRerankModelType = {
 export const TEXT_RERANK_MODELS: TextRerankModelType[] = [
   {
     architecture: 'BertForSequenceClassification',
+    optimumIntelTask: 'text-classification',
     models: [
       {
         links: [
@@ -23,6 +25,7 @@ export const TEXT_RERANK_MODELS: TextRerankModelType[] = [
   },
   {
     architecture: 'XLMRobertaForSequenceClassification',
+    optimumIntelTask: 'text-classification',
     models: [
       {
         links: [
@@ -33,6 +36,7 @@ export const TEXT_RERANK_MODELS: TextRerankModelType[] = [
   },
   {
     architecture: 'ModernBertForSequenceClassification',
+    optimumIntelTask: 'text-classification',
     models: [
       {
         links: [
@@ -45,6 +49,7 @@ export const TEXT_RERANK_MODELS: TextRerankModelType[] = [
   },
   {
     architecture: 'Qwen3ForCausalLM',
+    optimumIntelTask: 'text-generation-with-past',
     models: [
       {
         links: [
