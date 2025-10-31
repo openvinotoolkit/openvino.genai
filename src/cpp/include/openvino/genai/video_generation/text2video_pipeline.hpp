@@ -25,12 +25,12 @@ struct VideoGenerationConfig : public ImageGenerationConfig {
     /// [Common Diffusion Noise Schedules and Sample Steps are Flawed](https://arxiv.org/pdf/2305.08891.pdf).
     /// Guidance rescale factor should fix overexposure when using zero terminal SNR.
     /// Mixes with the original results from guidance by factor guidance_rescale to avoid "plain looking" images.
-    /// 0.0 disables rescaling.
-    double guidance_rescale = 0.0;
-    /// The number of video frames to generate.
-    size_t num_frames = 161;
-    /// Video frame rate.
-    float frame_rate = 25.0f;
+    /// negative or 0.0 disables rescaling. NaN corresponds to model default which is 0.0 for LTX-Video thus disabled.
+    double guidance_rescale = std::numeric_limits<double>::quiet_NaN();
+    /// The number of video frames to generate. 0 corresponds to model default which is 161 for LTX-Video.
+    size_t num_frames = 0;
+    /// Video frame rate. NaN corresponds to model default which is 25.0f for LTX-Video.
+    float frame_rate = std::numeric_limits<float>::quiet_NaN();
 
     /**
      * Checks whether video generation config is valid, otherwise throws an exception.
