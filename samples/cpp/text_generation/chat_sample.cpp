@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/llm_pipeline.hpp"
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 
 int main(int argc, char* argv[]) try {
     if (argc < 2 || argc > 3) {
