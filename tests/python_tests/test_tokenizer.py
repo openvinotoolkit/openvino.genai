@@ -308,7 +308,7 @@ unicode_prompts = [
 @pytest.mark.parametrize(
     "ov_hf_tokenizers",
     [
-        "katuni4ka/tiny-random-phi3",
+        "optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM",
         "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
         # ("black-forest-labs/FLUX.1-dev", dict(subfolder="tokenizer")),  # FLUX.1-dev has tokenizer in subfolder
     ],
@@ -420,10 +420,10 @@ prompts = [
 @pytest.mark.parametrize(
     "hf_ov_genai_models",
     [
-        ("katuni4ka/tiny-random-phi3", {"padding_side": None}),
+        ("optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM", {"padding_side": None}),
         ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", {"padding_side": None}),
-        ("katuni4ka/tiny-random-llava-next", {"padding_side": "right"}),
-        ("katuni4ka/tiny-random-llava-next", {"padding_side": "left"}),
+        ("optimum-intel-internal-testing/tiny-random-llava-next", {"padding_side": "right"}),
+        ("optimum-intel-internal-testing/tiny-random-llava-next", {"padding_side": "left"}),
         (
             "BAAI/bge-small-en-v1.5",
             {"padding_side": None},
@@ -485,8 +485,8 @@ def test_padding(
 base_models_for_paired_input_test = [
     ("answerdotai/ModernBERT-base", {"padding_side": None}),
     ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", {"padding_side": None}),
-    ("katuni4ka/tiny-random-llava-next", {"padding_side": "right"}),
-    ("katuni4ka/tiny-random-llava-next", {"padding_side": "left"}),
+    ("optimum-intel-internal-testing/tiny-random-llava-next", {"padding_side": "right"}),
+    ("optimum-intel-internal-testing/tiny-random-llava-next", {"padding_side": "left"}),
 ]
 
 def make_model_params():
