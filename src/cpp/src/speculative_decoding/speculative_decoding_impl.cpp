@@ -297,7 +297,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         stream_tokens(streamer_ptr, generation);
     }
 
-    // waiting for competion of streaming
+    // waiting for completion of streaming
     streamer_ptr->end();
 
     OPENVINO_ASSERT(is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");

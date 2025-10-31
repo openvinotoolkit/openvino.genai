@@ -48,7 +48,7 @@ public:
 
     /// @brief write is called every time new vector of tokens is decoded, in case of assisting or prompt lookup
     /// decoding
-    /// @return StreamingStatus flag to indicate whether generation should be countinue to run or stopped or cancelled
+    /// @return StreamingStatus flag to indicate whether generation should continue to run, be stopped, or be cancelled
     OPENVINO_DEPRECATED(
         "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
     StreamingStatus write(const std::vector<int64_t>& tokens) override {
@@ -58,7 +58,7 @@ public:
     };
 
     /// @brief write is called every time new token is decoded
-    /// @return StreamingStatus flag to indicate whether generation should be countinue to run or stopped or cancelled
+    /// @return StreamingStatus flag to indicate whether generation should continue to run, be stopped, or be cancelled
     OPENVINO_DEPRECATED(
         "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
     StreamingStatus write(int64_t token) override {

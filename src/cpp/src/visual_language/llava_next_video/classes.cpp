@@ -295,7 +295,7 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderLLaVANextVideo::encode_videos
             frames_data+=ov::shape_size(prepprocessed_frames[i].get_shape());
         }
 
-        // infer video feature extration models
+        // infer video feature extraction models
         CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(vision_encoder->get_vision_encoder());
         ov::InferRequest& encoder = infer_request_guard.get();
         CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard_mm_projector(vision_encoder->get_multi_modal_projector());

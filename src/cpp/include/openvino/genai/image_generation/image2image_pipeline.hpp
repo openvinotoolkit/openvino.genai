@@ -124,7 +124,7 @@ public:
     }
 
     /**
-     * Peforms initial image editing conditioned on a text prompt.
+     * Performs initial image editing conditioned on a text prompt.
      * @param positive_prompt Prompt to generate image(s) from
      * @param initial_image RGB/BGR image of [1, height, width, 3] shape used to initialize latent image
      * @param properties Image generation parameters specified as properties. Values in 'properties' override default value for generation parameters.
