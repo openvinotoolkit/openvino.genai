@@ -10,7 +10,12 @@ from openvino_genai import (
     GenerationConfig,
     LLMPipeline,
     StreamingStatus,
+    Parser,
+    IncrementalParser,
+    TextParserStreamer,
+    DecodedResults
 )
+
 from openvino_genai import (
     StructuredOutputConfig as SOC,
 )
@@ -22,7 +27,7 @@ def streamer(subword):
     return StreamingStatus.RUNNING
 
 
-class booking_flight_tickets(BaseModel):
+class book_flight_ticket(BaseModel):
     """booking flights"""
 
     origin_airport_code: str = Field(description="The name of Departure airport code")
@@ -31,7 +36,7 @@ class booking_flight_tickets(BaseModel):
     return_date: str = Field(description="The date of return flight")
 
 
-class booking_hotels(BaseModel):
+class book_hotel(BaseModel):
     """booking hotel"""
 
     destination: str = Field(description="The name of the city")
@@ -64,11 +69,6 @@ def tool_to_dict(tool: BaseModel, with_description: bool = True) -> dict[str, An
     }
 
 
-def generate_system_prompt_tools(*tools: BaseModel) -> str:
-    """Generate part of the system prompt with available tools"""
-    return f"<|tool|>{json.dumps([tool_to_dict(tool) for tool in tools])}</|tool|>"
-
-
 def tools_to_array_schema(*tools: BaseModel) -> str:
     return json.dumps(
         {
@@ -76,6 +76,61 @@ def tools_to_array_schema(*tools: BaseModel) -> str:
             "items": {"anyOf": [tool_to_dict(tool, with_description=False) for tool in tools]},
         }
     )
+
+
+class IncrementalToolCallParser(IncrementalParser):
+    """Incremental parser to extract tool calls from the model output.
+
+    Custom parser should be inherited from IncrementalParser and implement 'parse' and 'reset' methods.
+    """
+    def parse(self, msg: dict, delta_text: str, delta_tokens: list) -> str:
+        if 'content' not in msg:
+            msg['content'] = ''
+        msg['delta_text'] = delta_text
+
+        # Join the previous content with the new delta_text for searching.
+        # Do not modify msg['content'] yet, as it will be updated automatically by the streamer.
+        content = msg['content'] + delta_text
+        
+        start_tag = "functools"
+        start_index = content.find(start_tag)
+        if start_index == -1:
+            return delta_text
+
+        msg['generates_tool_call'] = True
+        if not content.endswith("}]"):
+            return delta_text
+        json_part = content[start_index + len(start_tag):]
+        try:
+            tool_calls = json.loads(json_part)
+            msg['tool_calls'] = tool_calls
+            msg['generates_tool_call'] = False
+            return delta_text
+        except json.JSONDecodeError as e:
+            return delta_text
+    
+    def reset(self):
+        # This method should be implemented in inherited classes.
+        # e.g. self.text_cache = ""
+        # But since in this implementation no states were used so do nothing.
+        print('Parser state has been reset.')
+
+class CurrentTextParserStreamer(TextParserStreamer):
+    """
+    A TextParserStreamer that receives parsed dictionary every time new text is generated.
+
+    In order to get get parsed dictionary from the model output, a custom implementation of TextParserStreamer 
+    with defined 'write' methods is needed.
+    """
+    def write(self, msg: dict):
+        # If the tool call is not yet complete, continue streaming
+        print(msg['delta_text'], end="", flush=True)
+        return StreamingStatus.RUNNING
+
+
+def print_tool_call(answer: DecodedResults):
+    for tool_call in answer.parsed[0]['tool_calls']:
+        print(f"{tool_call['name']}({', '.join(f'{key}=\"{value}\"' for key, value in tool_call['arguments'].items())})")
 
 
 # modified system message from:
@@ -94,7 +149,6 @@ If you decide to call functions:
     * respect the argument type formatting. E.g., if the type is number and format is float, write value 7 as 7.0
     * make sure you pick the right functions that match the user intent
 """
-sys_message += generate_system_prompt_tools(booking_flight_tickets, booking_hotels)
 
 
 def main():
@@ -108,6 +162,7 @@ def main():
     pipe = LLMPipeline(args.model_dir, "CPU")
     tokenizer = pipe.get_tokenizer()
     chat_history = [{"role": "system", "content": sys_message}]
+    tools = [tool_to_dict(tool) for tool in [book_flight_ticket, book_hotel]]
 
     generation_config = GenerationConfig()
     generation_config.max_new_tokens = 300
@@ -116,7 +171,7 @@ def main():
     user_text_1 = "Do dolphins have fingers?"
     print("User: ", user_text_1)
     chat_history.append({"role": "user", "content": user_text_1})
-    model_input = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True)
+    model_input = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True, tools=tools)
     # same as SOC.Union(SOC.ConstString("yes"), SOC.ConstString("no"))
     yes_or_no_grammar = SOC.ConstString("yes") | SOC.ConstString("no")
     generation_config.structured_output_config = SOC(structural_tags_config=yes_or_no_grammar)
@@ -131,15 +186,20 @@ def main():
     )
     print("User: ", user_text_2)
     chat_history.append({"role": "user", "content": user_text_2})
-    model_input = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True)
+    model_input = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True, tools=tools)
 
     start_tool_call_tag = SOC.ConstString(r"functools")
-    tools_json = SOC.JSONSchema(tools_to_array_schema(booking_flight_tickets, booking_hotels))
+    tools_json = SOC.JSONSchema(tools_to_array_schema(book_flight_ticket, book_hotel))
     tool_call_grammar = start_tool_call_tag + tools_json  # SOC.Concat(start_tool_call_tag, tools_json)
     generation_config.structured_output_config.structural_tags_config = tool_call_grammar
 
     print("Assistant: ", end="")
-    pipe.generate(model_input, generation_config, streamer=streamer)
+    custom_streamer = CurrentTextParserStreamer(pipe.get_tokenizer(), [IncrementalToolCallParser()])
+    answer = pipe.generate([model_input], generation_config, streamer=custom_streamer)
+    
+    print("\n\nThe following tool calls were generated:")
+    print_tool_call(answer)
+
     print()
 
 
