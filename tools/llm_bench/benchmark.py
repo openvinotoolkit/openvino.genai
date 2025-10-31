@@ -161,7 +161,7 @@ def get_argprser():
         help="Path to LoRA adapters for using OpenVINO GenAI optimized pipelines with LoRA for benchmarking")
     parser.add_argument('--lora_alphas', nargs='*', help='Alphas params for LoRA adapters.', required=False, default=[])
     parser.add_argument("--lora_mode", choices=["auto", "fuse", "static", "static_rank", "dynamic"], help="LoRA adapters loading mode")
-    parser.add_argument("--empty_lora", action="store_true", help="Inference without lora")
+    parser.add_argument("--empty_lora", action="store_true", help="Inference with empty LoRA config")
     parser.add_argument(
         "--use_cb",
         action="store_true",
@@ -179,7 +179,7 @@ def get_argprser():
     parser.add_argument("--assistant_confidence_threshold", required=False, default=None,
                         help="Config option assistant_confidence_threshold for Speculative decoding", type=float)
     parser.add_argument("--max_ngram_size", required=False, default=None,
-                        help="Config option assistant_confidence_threshold for Prompt Lookup decoding", type=int)
+                        help="Config option max_ngram_size for Prompt Lookup decoding", type=int)
     parser.add_argument(
         '--end_token_stopping',
         action='store_true',
