@@ -682,22 +682,29 @@ def test_unicode_pybind_decoding_one_string_streamer(model_id):
 # Perf metrics
 #
 
-def run_perf_metrics_collection(model_id, generation_config_dict: dict, prompt: str) -> ov_genai.PerfMetrics:
+def run_perf_metrics_collection(
+    model_id: str,
+    generation_config_dict: dict,
+    prompt: str,
+    pipeline_type: PipelineType = PipelineType.AUTO
+) -> ov_genai.PerfMetrics:
     _, _, models_path = download_and_convert_model(model_id)
-    ov_pipe = create_ov_pipeline(models_path)
+    ov_pipe = create_ov_pipeline(models_path, pipeline_type)
     return ov_pipe.generate([prompt], **generation_config_dict).perf_metrics
 
 
 test_cases = [
     (dict(max_new_tokens=20), 'table is made of'),
+    (dict(max_new_tokens=20, num_beams=4), 'table is made of'),
 ]
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
+@pytest.mark.parametrize("pipeline_type", [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION])
 @pytest.mark.precommit
-def test_perf_metrics(generation_config, prompt):
+def test_perf_metrics(generation_config, prompt, pipeline_type):
     import time
     start_time = time.perf_counter()
     model_id = 'katuni4ka/tiny-random-gemma2'
-    perf_metrics = run_perf_metrics_collection(model_id, generation_config, prompt)
+    perf_metrics = run_perf_metrics_collection(model_id, generation_config, prompt, pipeline_type)
     total_time = (time.perf_counter() - start_time) * 1000
 
     # Check that load time is adequate.
@@ -746,7 +753,7 @@ def test_perf_metrics(generation_config, prompt):
 
     # assert that calculating statistics manually from the raw counters we get the same restults as from PerfMetrics
     assert np.allclose(mean_tpot, np.mean(durations))
-    assert np.allclose(std_tpot, np.std(durations), atol=0.00002)
+    assert np.allclose(std_tpot, np.std(durations))
 
     raw_dur = np.array(raw_metrics.generate_durations) / 1000
     assert np.allclose(mean_gen_duration, np.mean(raw_dur))
@@ -763,6 +770,7 @@ def test_perf_metrics(generation_config, prompt):
     assert len(raw_metrics.m_times_to_first_token) > 0
     assert len(raw_metrics.m_batch_sizes) > 0
     assert len(raw_metrics.m_durations) > 0
+    assert len(raw_metrics.m_durations) == num_generated_tokens - 1
 
 
 test_cases = [
