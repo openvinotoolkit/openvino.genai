@@ -170,7 +170,7 @@ jobs:
                 -S ${{ env.SRC_DIR }} \
                 -B ${{ env.BUILD_DIR }}
           /usr/bin/cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
-          for py_version in "3.9" "3.10" "3.11" "3.12" "3.13"
+          for py_version in "3.10" "3.11" "3.12" "3.13"
           do
             rm -rf ${{ env.BUILD_DIR }}/CMakeCache.txt
             
@@ -287,7 +287,7 @@ jobs:
 
       - name: Build GenAI Wheel
         run: |
-          for py_version in "3.9" "3.10" "3.11" "3.12" "3.13"
+          for py_version in "3.10" "3.11" "3.12" "3.13"
           do
             python_exec_path=$(python$py_version -c "import sys; print(sys.executable)")
             $python_exec_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
