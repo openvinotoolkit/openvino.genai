@@ -4,16 +4,14 @@ sidebar_position: 7
 
 # Structured Output
 
-Structured output generation lets a model produce machine‑readable responses that follow a defined format — for example JSON, a regular expression, or an EBNF grammar. OpenVINO GenAI provides a flexible structured output facility that combines normal text sampling with structural enforcement so the model can switch into a "structured mode" when a trigger is emitted and then generate valid, well‑formed output.
-
-This page explains what OpenVINO GenAI supports for structured outputs, the configuration options you can use, and provides small C++ and Python examples. For full, runnable examples see the samples linked at the end of the guide.
+Structured output generation lets a model produce machine‑readable responses that follow a defined format — for example JSON, a regular expression, or an EBNF grammar. OpenVINO GenAI provides a flexible structured output enforcement so the model can generate valid, well‑formed output.
 
 ## What OpenVINO GenAI provides
 
-- Structured output formats: JSON, regex, and grammar (EBNF) based structured generation.
-- Structural tags: you can blend regular free‑form generation with structural tags that guide the model to emit elements of the structure (for example, lists, objects, or typed fields).
-- Compound grammars: combine several grammars to handle more complex or mixed structured outputs.
-- Safety note: structural enforcement guarantees output shape/format (for example, valid JSON) but does not guarantee semantic correctness of values. Validate or post‑process generated data as needed.
+- Base structured output formats: JSON, regex, and grammar (EBNF) based structured generation.
+- Structural tags:
+  - Compound grammars: combine several grammars to handle more complex tasks or enforce different function calling styles.
+  - Tags: blend regular free‑form generation with structural tags during single generate call.
 
 ## Structured output configuration
 
@@ -111,9 +109,8 @@ You can find complete sample programs that demonstrate structured output generat
 ## Tips and best practices
 
 - Choose the simplest enforcement that satisfies your needs (JSON schema for typed objects, grammar for DSLs, regex for line formats).
-- Avoid very short or common triggers that can appear in ordinary text (for example single characters like "<"). Use explicit markers such as `"<function"`.
-- If your model struggles to produce complex, variadic structured outputs in one shot, break the task into stages (see the Python sample README for an approach split into multiple generate calls).
+- Avoid very short or common triggers for `Tags` that can appear in ordinary text (for example single characters like "<"). Use explicit markers such as `"<function"`.
 
-## Security and validation
-
+:::info
 Structured enforcement guarantees the format but not the content. Always validate and sanitize generated data, especially if it will be processed by downstream systems.
+:::
