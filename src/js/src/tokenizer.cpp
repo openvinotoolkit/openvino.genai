@@ -32,8 +32,18 @@ Napi::Object TokenizerWrapper::wrap(Napi::Env env, ov::genai::Tokenizer tokenize
 
 Napi::Value TokenizerWrapper::apply_chat_template(const Napi::CallbackInfo& info) {
     try {
-        auto history = js_to_cpp<ov::genai::ChatHistory>(info.Env(), info[0]);
-        OPENVINO_ASSERT(!info[1].IsUndefined() && info[1].IsBoolean(), "The argument 'addGenerationPrompt' must be a boolean");
+        OPENVINO_ASSERT(info.Length() >= 2,
+                       "Tokenizer.applyChatTemplate requires at least two arguments: chatHistory and addGenerationPrompt");
+        OPENVINO_ASSERT(info[0].IsObject(), "The argument 'chatHistory' must be an object");
+        OPENVINO_ASSERT(info[1].IsBoolean(), "The argument 'addGenerationPrompt' must be a boolean");
+
+        ov::genai::ChatHistory history;
+        if (is_chat_history(info.Env(), info[0])) {
+            history = unwrap<ov::genai::ChatHistory>(info.Env(), info[0]);
+        } else {
+            history = ov::genai::ChatHistory(js_to_cpp<ov::genai::JsonContainer>(info.Env(), info[0]));
+        }
+
         bool add_generation_prompt = info[1].ToBoolean();
         std::string chat_template = "";
         if (!info[2].IsUndefined()) {
