@@ -592,4 +592,9 @@ def test_qwen3_rerank_documents(download_and_convert_model_fixture, query, task,
     opt_result = run_qwen3_rerank_optimum(opt_model, hf_tokenizer, formatted_query, formatted_documents, config)
     genai_result = run_text_rerank_genai(models_path, formatted_query, formatted_documents, config)
 
+    for opt, genai in zip(opt_result, genai_result):
+        print(f"Optimum: {opt}")
+        print(f"GenAI:   {genai}")
+        print("-----")
+
     assert_rerank_results(opt_result, genai_result)
