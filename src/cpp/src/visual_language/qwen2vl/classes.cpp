@@ -751,8 +751,9 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_cpp(const std::vector<ov:
 }
 
 // keep both implementations for comparison and testing, here is the ov version
-// input multiple images, process based on video.
-// input single image, process based on image.
+/*
+@images,  size == 1 means image input;  size ==2, means 2 frames from video
+*/
 void VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vector<ov::Tensor>& images,
                                                           const ov::AnyMap& config_map,
                                                           ov::Tensor& out_tensor,
