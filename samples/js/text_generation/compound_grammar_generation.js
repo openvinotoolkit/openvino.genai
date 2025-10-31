@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { LLMPipeline, StructuredOutputConfig as SOC, StreamingStatus } from 'openvino-genai-node';
-import { serialize_json } from './helper.js';
+import { serialize_json, toJSONSchema } from './helper.js';
 
 function streamer(subword) {
     process.stdout.write(subword);
@@ -14,7 +14,7 @@ const bookingFlightTickets = {
         destination_airport_code: z.string().describe("The name of Destination airport code"),
         departure_date: z.string().describe("The date of outbound flight"),
         return_date: z.string().describe("The date of return flight"),
-    }),
+    }).describe("booking flights"),
 };
 
 const bookingHotels = {
@@ -23,13 +23,13 @@ const bookingHotels = {
         destination: z.string().describe("The name of the city"),
         check_in_date: z.string().describe("The date of check in"),
         checkout_date: z.string().describe("The date of check out"),
-    }),
+    }).describe("booking hotel"),
 };
 
 // Helper functions
 function toolToDict(tool, withDescription = true) {
-    const deleteDescription = (schema) => delete schema.jsonSchema['description'];
-    const jsonSchema = z.toJSONSchema(
+    const deleteDescription = (ctx) => delete ctx.jsonSchema['description'];
+    const jsonSchema = toJSONSchema(
         tool.schema,
         withDescription
             ? undefined
@@ -48,7 +48,7 @@ function toolToDict(tool, withDescription = true) {
 
 /** Generate part of the system prompt with available tools */
 function generateSystemPromptTools(...tools) {
-    return `<|tool|>${serialize_json(tools.map(toolToDict))}</|tool|>`;
+    return `<|tool|>${serialize_json(tools.map(tool => toolToDict(tool, true)))}</|tool|>`;
 }
 
 function toolsToArraySchema(...tools) {
@@ -67,7 +67,7 @@ You can answer yes or no to questions, or you can choose to call one or more of 
 Use the following rule to decide when to call a function:
     * if the response can be generated from your internal knowledge, do so, but use only yes or no as the response
     * if you need external information that can be obtained by calling one or more of the provided functions, generate function calls
-    
+
 If you decide to call functions:
     * prefix function calls with functools marker (no closing marker required)
     * all function calls should be generated in a single JSON list formatted as functools[{"name": [function name], "arguments": [function arguments as JSON]}, ...]
@@ -125,6 +125,7 @@ async function main() {
 
     process.stdout.write("Assistant: ");
     await pipe.generate(modelInput2, generationConfig, streamer);
+    console.log();
 }
 
 main();
