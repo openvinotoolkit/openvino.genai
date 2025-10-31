@@ -428,7 +428,7 @@ public:
         
         // Note: A ireq will pre-allocate a USM for each model's input. For tensor optimization, we cache pre-allocated USM gotten from a ireq for these tensors.
         // Since these tensors(except score_aggregation_window) are gotten from a ireq, there's no need to set them again.
-        // Score_aggregation_window might be not managed through the cached tensor system in some case as it is created inconditionally, and need to be set to a ireq.
+        // Score_aggregation_window might be not managed through the cached tensor system in some case as it is created unconditionally, and need to be set to a ireq.
         // To align these tensors' behavior, set each tensor when it is not cached.
 
         if (sequence_group_type == SequenceGroupType::TOKENS && !m_cached_input_ids) {

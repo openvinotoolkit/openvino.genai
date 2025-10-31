@@ -239,7 +239,7 @@ def _download_and_convert_model(model_id: str, model_class: Type[OVModel], **tok
         opt_model, hf_tokenizer = get_huggingface_models(model_id, model_class, local_files_only=False)
         if "padding_side" in tokenizer_kwargs:
             hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
-        # ov tokenizer padding side alignes with hf tokenizer during conversion
+        # ov tokenizer padding side aligns with hf tokenizer during conversion
         convert_models(opt_model, hf_tokenizer, models_path)
 
     if "padding_side" in tokenizer_kwargs:
