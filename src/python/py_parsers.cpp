@@ -58,6 +58,7 @@ public:
         std::string& delta_text, 
         const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
     ) override {
+        py::gil_scoped_acquire acquire;
         // Convert JsonContainer to py::dict
         py::dict py_msg = pyutils::json_container_to_py_object(msg);
 
