@@ -55,7 +55,7 @@ int main(int32_t argc, char* argv[]) {
     ov::genai::VideoGenerationConfig config = pipe.get_generation_config();
     config.num_frames = 9;
     pipe.set_generation_config(config);
-    ov::Tensor video = pipe.generate(
+    auto output = pipe.generate(
         prompt,
         "worst quality, inconsistent motion, blurry, jittery, distorted",
         ov::genai::height(512),  // OVLTXPipeline's default
@@ -67,7 +67,7 @@ int main(int32_t argc, char* argv[]) {
         // frame_rate: int = 25,
     );
 
-    imwrite_video("video_mjpeg.avi", video);
+    imwrite_video("video_mjpeg.avi", output.video);
 
     return EXIT_SUCCESS;
 // } catch (const std::exception& error) {
