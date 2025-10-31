@@ -53,7 +53,7 @@ class Sequence {
     std::vector<std::vector<float>> m_generated_ids_embeds;
     SequenceGroupType m_type;
     size_t m_hidden_size;
-    std::vector<ov:: Tensor> m_position_ids;
+    std::vector<ov::Tensor> m_position_ids;
     int64_t m_rope_delta;
 
     // Embeddings hash calculation params
