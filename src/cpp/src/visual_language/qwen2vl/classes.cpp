@@ -359,8 +359,8 @@ std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_i
     std::vector<ov::Tensor> reordered_image_embeds;
     std::vector<std::array<size_t, 3>> reordered_images_grid_thw;
     for (size_t new_image_id : images_sequence) {
-        reordered_image_embeds.push_back(std::move(image_embeds.at(new_image_id)));
-        reordered_images_grid_thw.push_back(std::move(images_grid_thw.at(new_image_id)));
+        reordered_image_embeds.push_back(image_embeds.at(new_image_id));
+        reordered_images_grid_thw.push_back(images_grid_thw.at(new_image_id));
     }
 
     return {std::move(reordered_image_embeds), std::move(reordered_images_grid_thw)};
