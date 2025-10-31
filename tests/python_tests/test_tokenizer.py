@@ -95,7 +95,7 @@ def test_encode(ov_hf_tokenizers, prompt):
     [
         [1, 1591, 338, 1754, 310],
         [1, 17102, 323, 3864, 471, 263],
-        # chineze characters
+        # chinese characters
         [1, 29871, 30919, 31076, 30584, 29871, 30919, 31076, 232, 154, 145, 30882],
         # On meta-llama/Meta-Llama-3-8B-Instruct this becomes longer  after removing the last token
         [3113, 264, 364, 267],
@@ -109,7 +109,7 @@ def test_encode(ov_hf_tokenizers, prompt):
     ids=[
         "encoded_prompt",
         "encoded_prompt_2",
-        "encoded_prompt_chineze",
+        "encoded_prompt_chinese",
         "encoded_prompt_meta_llama",
         "encoded_prompt_batched",
     ],

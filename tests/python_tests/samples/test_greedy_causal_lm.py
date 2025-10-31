@@ -16,10 +16,7 @@ class TestGreedyCausalLM:
             pytest.param("SmolLM-135M", "return 0"),
             pytest.param("SmolLM2-135M-GGUF", "return 0", marks=pytest.mark.skipif(sys.platform == "win32", reason="CVS-173467")),
             pytest.param("Qwen2-0.5B-Instruct", "69"),
-            pytest.param("Qwen2-0.5B-Instruct-GGUF", "69", marks=[
-                pytest.mark.skipif(sys.platform == "win32", reason="CVS-173467"), 
-                pytest.mark.xfail(reason="Subprocess returned non-zero exit status 1")
-            ]),
+            pytest.param("Qwen2-0.5B-Instruct-GGUF", "69", marks=pytest.mark.skipif(sys.platform == "win32", reason="CVS-173467")),
             pytest.param("phi-1_5", "Alan Turing was a"),
             pytest.param("TinyLlama-1.1B-Chat-v1.0", "Alan Turing was a"),
         ],

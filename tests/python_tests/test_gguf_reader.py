@@ -186,15 +186,17 @@ def test_full_gguf_pipeline(
     assert ov_pipe_gguf.get_tokenizer().get_bos_token() == hf_tokenizer.decode([ov_pipe_gguf.get_tokenizer().get_bos_token_id()])
 
     del ov_pipe_gguf
+    gc.collect()
 
     if enable_save_ov_model:
         gguf_full_path = Path(gguf_full_path)
         ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type, dynamic_quantization_group_size=dynamic_quantization_group_size)
         res_string_input_3  = ov_pipe_native.generate(prompt, generation_config=ov_generation_config)
+        del ov_pipe_native
+        gc.collect()
         assert res_string_input_2 == res_string_input_3
 
     assert res_string_input_1 == res_string_input_2
-    gc.collect()
 
 
 @pytest.mark.precommit

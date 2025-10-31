@@ -14,7 +14,7 @@ class TestBeamSearchCausalLM:
         "convert_model, sample_args",
         [
             pytest.param("Qwen2-0.5B-Instruct", "你好！", marks=pytest.mark.skipif(sys.platform == "win32", reason="Chinese input failed on Windows")),
-            pytest.param("Qwen2-0.5B-Instruct-GGUF", "你好！", marks=[pytest.mark.skipif(sys.platform == "win32", reason="Chinese input failed on Windows"), pytest.mark.xfail(reason="Subprocess returned non-zero exit status 1")]),
+            pytest.param("Qwen2-0.5B-Instruct-GGUF", "你好！", marks=pytest.mark.skipif(sys.platform == "win32", reason="Chinese input failed on Windows")),
             pytest.param("phi-1_5", "69", marks=pytest.mark.skipif(sys.platform == "win32", reason="Subprocess returned non-zero exit status 3221225477 on Windows")),
         ],
         indirect=["convert_model"],

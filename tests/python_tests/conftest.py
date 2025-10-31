@@ -1,4 +1,5 @@
 import os
+import gc
 import pytest
 import shutil
 import logging
@@ -56,3 +57,14 @@ def pytest_configure(config: pytest.Config):
     marker = "precommit" if config.getoption("-m") == "precommit" else None
     pytest.run_marker = marker
     pytest.selected_model_ids = config.getoption("--model_ids", default=None)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def run_gc_after_test():
+    """
+    Fixture to run garbage collection after each test module.
+    This is a workaround to minimize memory consumption during tests 
+    and allow the use of less powerful CI runners.
+    """
+    yield
+    gc.collect()

@@ -4,7 +4,6 @@ import json
 import pytest
 import shutil
 import logging
-import gc
 import requests
 from pathlib import Path
 
@@ -388,12 +387,3 @@ def generate_image_generation_jsonl(request):
         if os.path.exists(file_path):
             logger.info(f"Removing JSONL file: {file_path}")
             os.remove(file_path)
-
-@pytest.fixture(scope="module", autouse=True)
-def run_gc_after_test():
-    """
-    Fixture to run garbage collection after each test module.
-    This is a workaround to minimize memory consumption during tests and allow the use of less powerful CI runners.
-    """
-    yield
-    gc.collect()
