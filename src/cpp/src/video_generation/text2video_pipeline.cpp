@@ -281,7 +281,6 @@ ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_co
 
 void VideoGenerationConfig::validate() const {
     ImageGenerationConfig::validate();
-    OPENVINO_ASSERT(std::isnan(frame_rate) || frame_rate > 0, "frame_rate must be positive or NaN but got ", frame_rate);
 }
 
 void VideoGenerationConfig::update_generation_config(const ov::AnyMap& properties) {

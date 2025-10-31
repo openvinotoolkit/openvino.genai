@@ -29,7 +29,7 @@ struct VideoGenerationConfig : public ImageGenerationConfig {
     double guidance_rescale = std::numeric_limits<double>::quiet_NaN();
     /// The number of video frames to generate. 0 corresponds to model default which is 161 for LTX-Video.
     size_t num_frames = 0;
-    /// Video frame rate. NaN corresponds to model default which is 25.0f for LTX-Video.
+    /// Video frame rate. Affects rope_interpolation_scale. Any value can be used although positive non-infinity makes the most sense. NaN corresponds to model default which is 25.0f for LTX-Video.
     float frame_rate = std::numeric_limits<float>::quiet_NaN();
 
     /**
