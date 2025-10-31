@@ -4,6 +4,7 @@
 #include <thread>
 
 #include "openvino/genai/text_streamer.hpp"
+#include "openvino/pass/sdpa_to_paged_attention.hpp"
 #include "speculative_decoding_impl.hpp"
 #include "continuous_batching/paged_attention_transformations.hpp"
 #include "utils.hpp"
@@ -35,9 +36,17 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
 
     auto main_scheduler_config = main_model_desc.scheduler_config;
     auto main_device = main_model_desc.device;
+    bool allow_score_aggregation = true;
+    bool allow_xattention = false;
 
-    utils::apply_paged_attention_transformations(main_model, main_model_desc.scheduler_config.use_cache_eviction);
-    utils::apply_paged_attention_transformations(draft_model, main_model_desc.scheduler_config.use_cache_eviction);
+    ov::pass::SDPAToPagedAttention(main_model_desc.scheduler_config.use_cache_eviction,
+                                   main_model_desc.scheduler_config.use_cache_eviction,
+                                   allow_score_aggregation,
+                                   allow_xattention).run_on_model(main_model);
+    ov::pass::SDPAToPagedAttention(main_model_desc.scheduler_config.use_cache_eviction,
+                                   main_model_desc.scheduler_config.use_cache_eviction,
+                                   allow_score_aggregation,
+                                   allow_xattention).run_on_model(draft_model);
 
     utils::apply_gather_before_matmul_transformation(main_model);
     utils::apply_gather_before_matmul_transformation(draft_model);
