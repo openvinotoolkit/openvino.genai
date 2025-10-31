@@ -64,7 +64,7 @@ struct EncodedImage {
 /// @brief Embeddings of a given video. 
 struct EncodedVideo {
     /// @brief Embeddings of a given video obtained by applying preprocessing to frames and feature extracting models (resampler, mm_projector, etc.)
-    ov::Tensor video_feautures;
+    ov::Tensor video_features;
 
     /// @brief Number of video tokens required to append to a normalized prompt
     size_t num_video_tokens;
