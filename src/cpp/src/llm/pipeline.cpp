@@ -148,7 +148,7 @@ static std::unique_ptr<LLMPipelineImplBase> create(
     if (draft_model_descr.model != nullptr) {
         // FIXME: Add support for StatefulSpeculativeLLMPipeline for non-NPU devices for both models.
         OPENVINO_ASSERT(device == "NPU" || draft_model_descr.device == "NPU",
-            "Stateful Speculative Decoding is expected to be launched when NPU is requsted as "
+            "Stateful Speculative Decoding is expected to be launched when NPU is requested as "
             "execution device for one or both models.");
         auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, {}, generation_config);
         return std::make_unique<StatefulSpeculativeLLMPipeline>(main_model_descr, draft_model_descr);

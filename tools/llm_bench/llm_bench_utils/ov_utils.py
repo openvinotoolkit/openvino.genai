@@ -191,9 +191,12 @@ def get_scheduler_config_genai(config_data, config_name="CB config"):
             if "mode" in sparse_attention_kwargs.keys():
                 sparse_attention_kwargs["mode"] = getattr(openvino_genai.SparseAttentionMode, sparse_attention_kwargs["mode"])
 
-            scheduler_config.use_sparse_attention = True
-            scheduler_config.sparse_attention_config = openvino_genai.SparseAttentionConfig(**sparse_attention_kwargs)
-            log.info("Sparse Attention mode ON")
+            if user_config.pop('use_sparse_attention', True):
+                scheduler_config.use_sparse_attention = True
+                scheduler_config.sparse_attention_config = openvino_genai.SparseAttentionConfig(**sparse_attention_kwargs)
+                log.info("Sparse Attention mode ON")
+            else:
+                raise RuntimeError("sparse_attention_config cannot be specified when use_sparse_attention is False")
 
         for param, value in user_config.items():
             setattr(scheduler_config, param, value)
@@ -557,10 +560,9 @@ def create_genai_speech_2_txt_model(model_path, device, memory_data_collector, *
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data('compilation_phase')
         memory_data_collector.log_data(compilation_phase=True)
-    from_pretrained_time = end - start
-    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    log.info(f'Pipeline initialization time: {end - start:.2f}s')
     processor = AutoProcessor.from_pretrained(model_path)
-    return genai_pipe, processor, from_pretrained_time, True
+    return genai_pipe, processor, end - start, True
 
 
 def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwargs):
@@ -1027,7 +1029,7 @@ def get_genai_chunk_streamer():
                     pass
                 elif len(text) > self.print_len:
                     # It is possible to have a shorter text after adding new token.
-                    # Print to output only if text lengh is increaesed.
+                    # Print to output only if text length is increased.
                     word = text[self.print_len:]
                     self.print_len = len(text)
                 self.put_word(word)
