@@ -750,10 +750,10 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_cpp(const std::vector<ov:
     out_rsz_size = ImageSize{grid_h, grid_w};
 }
 
-// keep both implementations for comparison and testing, here is the ov version
-/*
-@images,  size == 1 means image input;  size ==2, means 2 frames from video
-*/
+/**
+ * @brief Encode image or video frames. here is the OV version of encode_with_imagepreprocess_cpp
+ * @param images size == 1 means image input;  size == 2, means 2 frames from video
+ */
 void VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vector<ov::Tensor>& images,
                                                           const ov::AnyMap& config_map,
                                                           ov::Tensor& out_tensor,
@@ -763,6 +763,11 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vector<ov::
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
+
+    OPENVINO_ASSERT(images.size() == 1 || images.size() == 2);
+    if (images.size() == 2) {
+        OPENVINO_ASSERT(images[0].get_shape() == images[1].get_shape(), "Video frames should have same layout.");
+    }
 
     ov::Shape image_shape = images[0].get_shape();
     auto original_height = image_shape.at(1);
