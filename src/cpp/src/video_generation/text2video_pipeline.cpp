@@ -5,6 +5,7 @@
 #include "openvino/genai/video_generation/ltx_video_transformer_3d_model.hpp"
 #include "image_generation/schedulers/ischeduler.hpp"
 #include "image_generation/numpy_utils.hpp"
+#include "utils.hpp"
 #include <openvino/op/transpose.hpp>
 #include "openvino/op/add.hpp"
 #include "openvino/op/multiply.hpp"
@@ -652,19 +653,6 @@ ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_co
 }
 }  // anonymous namespace
 
-void VideoGenerationConfig::validate() const {
-    ImageGenerationConfig::validate();
-}
-
-void VideoGenerationConfig::update_generation_config(const ov::AnyMap& properties) {
-    ImageGenerationConfig::update_generation_config(properties);
-    using ov::genai::utils::read_anymap_param;
-    read_anymap_param(properties, "guidance_rescale", guidance_rescale);
-    read_anymap_param(properties, "num_frames", num_frames);
-    read_anymap_param(properties, "frame_rate", frame_rate);
-    replace_defaults(*this);
-}
-
 class Text2VideoPipeline::LTXPipeline {
     using Ms = std::chrono::duration<float, std::ratio<1, 1000>>;
 
@@ -843,6 +831,7 @@ public:
 
         VideoGenerationConfig merged_generation_config = m_generation_config;
         merged_generation_config.update_generation_config(properties);
+        replace_defaults(merged_generation_config);
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const auto& transformer_config = m_transformer->get_config();
