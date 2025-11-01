@@ -128,7 +128,7 @@ class CommonPipeline(ABC):
     ):
         """
         Args:
-            input_token_size (int): Amoutn of input tokens.
+            input_token_size (int): Amount of input tokens.
             iter_num (int): Iteration number.
             infer_count (int): Amount of run inference.
             gen_time_list (list): List of generations duratrion times.

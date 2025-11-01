@@ -47,7 +47,7 @@ public:
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
-        return generate(prompt, images, {}, generation_config, streamer);
+        return generate(prompt, images, {}, std::move(generation_config), streamer);
     }
 
     VLMDecodedResults generate(
@@ -58,7 +58,7 @@ public:
         const StreamerVariant& streamer
     ) override {
         auto start_time = std::chrono::steady_clock::now();
-        auto result = m_impl.generate({prompt}, {images}, {video}, {generation_config}, streamer)[0];
+        auto result = m_impl.generate({prompt}, {images}, {video}, {std::move(generation_config)}, streamer)[0];
         auto stop_time = std::chrono::steady_clock::now();
         
         VLMDecodedResults decoded;

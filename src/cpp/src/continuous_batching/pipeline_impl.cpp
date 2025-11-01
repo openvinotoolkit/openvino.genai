@@ -39,7 +39,8 @@ size_t get_available_cpu_memory() {
             if(token == "MemTotal:") {
                 size_t mem;
                 if(file >> mem) {
-                    if (mem > std::numeric_limits<size_t>::max() / 1024) {
+                    constexpr auto max_bytes = std::numeric_limits<size_t>::max() / 1024;
+                    if (mem > max_bytes) {
                         return std::numeric_limits<size_t>::max();
                     }
                     return mem * 1024;
@@ -515,7 +516,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         raw_perf_counters.m_grammar_compile_times.emplace_back(t);
     }
 
-    // waiting for competion of streaming
+    // waiting for completion of streaming
     streamer_ptr->end();
 
     OPENVINO_ASSERT(m_requests.empty(), "Internal error: current request is supposed to be dropped within step() function as completed");

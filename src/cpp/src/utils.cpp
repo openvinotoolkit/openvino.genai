@@ -74,7 +74,6 @@ std::optional<uint32_t> pop_int_and_cast(ov::AnyMap& config, const std::string& 
 }
 
 void update_npu_config(ov::AnyMap& config,
-                       const std::shared_ptr<ov::Model>& model,
                        const ov::genai::utils::KVAxesPosition& kv_pos,
                        const ov::genai::utils::KVDesc& kv_desc) {
     update_config(config, {"NPU_USE_NPUW", "YES"});
@@ -95,6 +94,26 @@ void update_npu_config(ov::AnyMap& config,
     rename_key(config, "++PREFILL_CONFIG", "++NPUW_LLM_PREFILL_CONFIG");
     rename_key(config, "++GENERATE_CONFIG", "++NPUW_LLM_GENERATE_CONFIG");
     rename_key(config, "++SHARED_HEAD_CONFIG", "++NPUW_LLM_SHARED_HEAD_CONFIG");
+}
+
+void update_npu_config_whisper(ov::AnyMap& config,
+                               const ov::genai::utils::KVAxesPosition& kv_pos,
+                               const ov::genai::utils::KVDesc& kv_desc) {
+    update_config(config, {"NPU_USE_NPUW", "YES"});
+    update_config(config, {"NPUW_ONLINE_PIPELINE", "NONE"});
+    update_config(config, {"NPUW_FUNCALL_FOR_ALL", "NO"});
+    update_config(config, {"NPUW_FOLD", "NO"});
+    update_config(config, {"NPUW_LLM", "YES"});
+    update_config(config, {"NPUW_WHISPER", "YES"});
+
+    update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
+    update_config(config, {"NPUW_LLM_SEQ_LEN_DIM", kv_pos.seq_len});
+
+    update_config(config, {"NPUW_LLM_MAX_PROMPT_LEN", kv_desc.max_prompt_len});
+    update_config(config, {"NPUW_LLM_MIN_RESPONSE_LEN", kv_desc.min_response_len});
+
+    // To disable chunking
+    update_config(config, {"NPUW_LLM_PREFILL_HINT", "STATIC"});
 }
 
 inline bool is_paged_attention_available() {
@@ -554,7 +573,8 @@ void print_scheduler_config_info(const SchedulerConfig &scheduler_config) {
 std::pair<ov::CompiledModel, KVDesc>
 compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
                         const ov::AnyMap& config,
-                        const KVAxesPosition& kv_pos) {
+                        const KVAxesPosition& kv_pos,
+                        const bool is_whisper) {
     ov::CompiledModel compiled;
     ov::AnyMap properties = config;
     KVDesc kv_desc;
@@ -575,9 +595,16 @@ compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
         kv_desc.max_prompt_len = compiled.get_property("NPUW_LLM_MAX_PROMPT_LEN").as<uint32_t>();
         kv_desc.min_response_len = compiled.get_property("NPUW_LLM_MIN_RESPONSE_LEN").as<uint32_t>();
     } else {
-        kv_desc.max_prompt_len = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u);
-        kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
-        update_npu_config(properties, model, kv_pos, kv_desc);
+        if (is_whisper) {
+            kv_desc.max_prompt_len = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(4u);
+            // kvcache size for Whisper = 448u (MAX_PROMPT_LEN + MIN_RESPONSE_LEN)
+            kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(444u);
+            update_npu_config_whisper(properties, kv_pos, kv_desc);
+        } else {
+            kv_desc.max_prompt_len = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u);
+            kv_desc.min_response_len = pop_int_and_cast(properties, "MIN_RESPONSE_LEN").value_or(128u);
+            update_npu_config(properties, kv_pos, kv_desc);
+        }
         compiled = ov::genai::utils::singleton_core().compile_model(model, "NPU", properties);
         // Also export compiled model if required
         if (export_blob) {
@@ -754,7 +781,7 @@ size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_la
     // sum up all used device memory
     std::vector<std::string> device_memory_types = {"cl_mem", "usm_device"};
     size_t used_device_mem = 0;
-    for (auto mem_type: device_memory_types) {
+    for (const auto& mem_type: device_memory_types) {
         used_device_mem += memory_statistics[mem_type];
     }
 
@@ -811,6 +838,14 @@ void export_model(ov::CompiledModel& compiled_model, const std::filesystem::path
     OPENVINO_ASSERT(out.is_open(), "Cannot open file to write: " + blob_path.string());
     compiled_model.export_model(out);
     out.close();
+}
+
+bool has_input(const std::shared_ptr<ov::Model>& model, const std::string& name) {
+    auto inputs = model->inputs();
+    auto it = std::find_if(inputs.begin(), inputs.end(), [&](const auto& port) {
+        return port.get_names().count(name) != 0;
+    });
+    return it != inputs.end();
 }
 
 }  // namespace utils
