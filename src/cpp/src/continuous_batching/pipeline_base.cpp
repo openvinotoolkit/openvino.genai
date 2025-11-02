@@ -401,7 +401,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
         const auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, 0, encoded_images, encoded_videos);
         inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, metrics, true, image_sequence, video_sequence);
     }
-    return add_request(request_id, inputs, sampling_params);
+    return add_request(request_id, inputs, std::move(sampling_params));
 }
 
 void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(
