@@ -108,7 +108,10 @@ protected:
                                               const std::vector<std::array<size_t, 3>>& images_grid_thw,
                                               const std::vector<size_t>& images_sequence,
                                               size_t image_id,
-                                              const std::vector<std::vector<size_t>>& kept_indices_per_image);
+                                              const std::vector<std::vector<size_t>>& kept_indices_per_image,
+                                              std::vector<size_t>* original_tokens_per_region_out = nullptr,
+                                              std::vector<size_t>* pruned_tokens_per_region_out = nullptr,
+                                              std::vector<std::vector<bool>>* keep_flags_per_region_out = nullptr);
 
     ov::Tensor update_position_ids(const ov::Tensor& original_position_ids,
                                    const ov::Tensor& input_ids,
@@ -118,15 +121,20 @@ protected:
                                    const std::vector<std::vector<size_t>>& kept_indices_per_image,
                                    size_t spatial_merge_size,
                                    std::vector<int64_t>* pruned_token_ids_out,
-                                   std::vector<std::array<size_t, 4>>* removed_tokens_out);
+                                   std::vector<std::array<size_t, 4>>* removed_tokens_out,
+                                   std::vector<size_t>* pruned_tokens_per_region_out = nullptr,
+                                   std::vector<std::vector<size_t>>* normalized_kept_indices_out = nullptr,
+                                   std::vector<std::vector<bool>>* keep_flags_out = nullptr);
 
     // [CDPruner] Create merged embeddings for pruned visual tokens
     ov::Tensor merge_text_and_image_embeddings_with_pruning(const ov::Tensor& input_ids,
                                                             const ov::Tensor& text_embeds,
                                                             const ov::Tensor& pruned_vision_embeds,
                                                             int64_t image_pad_token_id,
-                                                            size_t original_visual_tokens,
-                                                            size_t num_images);
+                                                            int64_t vision_start_token_id,
+                                                            int64_t vision_end_token_id,
+                                                            const std::vector<size_t>& original_tokens_per_region,
+                                                            const std::vector<std::vector<bool>>& keep_flags_per_region);
 };
 
 namespace qwen2_vl_utils {
