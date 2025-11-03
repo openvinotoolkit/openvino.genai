@@ -22,6 +22,7 @@ def main():
     config.diversity_penalty = 1
     config.num_return_sequences = config.num_beams
 
+
     beams = pipe.generate(args.prompts, config)
     print(beams)
 
