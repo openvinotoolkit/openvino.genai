@@ -136,7 +136,6 @@ private:
         // position ids
         ov::Tensor m_position_ids;
         int64_t m_rope_delta = 0;
-        
         virtual ~IInputsEmbedder() = default;
 
     public:
