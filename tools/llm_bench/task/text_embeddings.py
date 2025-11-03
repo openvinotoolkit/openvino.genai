@@ -45,7 +45,9 @@ def run_text_embeddings_optimum(input_text, num, model, tokenizer, args, iter_da
     output = model(**input_data)
     end = time.perf_counter()
     # TODO do the same in run_text_embeddings_genai
+    log.info(f"Trying to save output embeddings in optimum... {args}")
     if args['save_output']:
+        log.info(f"Saving output embeddings to files with prefix: {args['save_output']}")
         if isinstance(output, dict):
             for k, v in output.items():
                 llm_bench_utils.output_file.save_tensor_to_file(v.cpu().numpy(), f"{args['save_output']}_out{k}_iter{num}.npy", args)
@@ -128,8 +130,13 @@ def run_text_embeddings_genai(input_text, num, model, tokenizer, args, iter_data
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start()
     start = time.perf_counter()
-    model.embed_documents(input_text_list)
+    output = model.embed_documents(input_text_list)
     end = time.perf_counter()
+
+    log.info(f"Trying to save output embeddings in genai... {args}")
+    if args['save_output']:
+        log.info(f"Saving output embeddings to files with prefix: {args['save_output']}")
+
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
         max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
