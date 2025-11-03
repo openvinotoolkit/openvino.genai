@@ -130,7 +130,7 @@ class CurrentTextParserStreamer(TextParserStreamer):
 
 def print_tool_call(answer: DecodedResults):
     for tool_call in answer.parsed[0]['tool_calls']:
-        print(f"{tool_call['name']}({', '.join(f'{key}=\"{value}\"' for key, value in tool_call['arguments'].items())})")
+        print(f"""{tool_call['name']}({', '.join(f'{key}="{value}"' for key, value in tool_call['arguments'].items())})""")
 
 
 # modified system message from:
