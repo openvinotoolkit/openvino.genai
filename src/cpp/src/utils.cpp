@@ -535,7 +535,7 @@ void print_cdpruner_processing_overview(size_t total_tokens,
     std::cout << "\n+--- CDPruner Processing Overview -------------------------+" << std::endl;
     std::cout << "[CDPruner] Input:  Vision[" << total_tokens << " tokens x " << feature_dim << "D] + Text["
               << text_tokens << " tokens x " << text_feature_dim << "D]" << std::endl;
-    std::cout << "[CDPruner] Config: Keep " << pruning_ratio << "% (" << num_tokens_to_keep << "/" << total_tokens
+    std::cout << "[CDPruner] Config: Keep " << 100 - pruning_ratio << "% (" << num_tokens_to_keep << "/" << total_tokens
               << " tokens) | Weight=" << relevance_weight << std::endl;
     std::cout << "[CDPruner] Result: " << tokens_removed << " tokens removed (" << reduction_ss.str()
               << "% reduction)" << std::endl;
@@ -569,7 +569,7 @@ void print_cdpruner_processing_overview(size_t frame_count,
     std::cout << "[CDPruner] Input:  " << frame_count << " frames × Vision[" << tokens_per_frame << " tokens x "
               << feature_dim << "D] + Text[" << text_tokens << " tokens x " << text_feature_dim << "D]"
               << std::endl;
-    std::cout << "[CDPruner] Config: Keep " << pruning_ratio << "% (" << num_tokens_to_keep_per_frame << "/"
+    std::cout << "[CDPruner] Config: Keep " << 100 - pruning_ratio << "% (" << num_tokens_to_keep_per_frame << "/"
               << tokens_per_frame << " tokens per frame) | Weight=" << relevance_weight << std::endl;
     std::cout << "[CDPruner] Total:  " << total_input_tokens << " → " << total_output_tokens << " tokens ("
               << reduction_ss.str() << "% reduction)" << std::endl;

@@ -735,6 +735,13 @@ std::vector<size_t> OpenCLDPP::select(const ov::Tensor& kernel, size_t num_token
     // Use OpenCL DPP implementation directly with ov::Tensor
     auto opencl_results = run_dpp_split_kernel_impl(kernel, num_tokens);
 
+    // Deduplicate token indices returned by the OpenCL kernel to guard against corrupted writes
+    if (!opencl_results.empty()) {
+        std::sort(opencl_results.begin(), opencl_results.end());
+        auto unique_end = std::unique(opencl_results.begin(), opencl_results.end());
+        opencl_results.erase(unique_end, opencl_results.end());
+    }
+
     return opencl_results;
 }
 
