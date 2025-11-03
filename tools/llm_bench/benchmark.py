@@ -256,6 +256,7 @@ def main():
     model_path, framework, model_args, model_name_or_id = (
         llm_bench_utils.model_utils.analyze_args(args)
     )
+    log.info(f"Parsed args to model: {model_args}")
     # Set the device for running OpenVINO backend for torch.compile()
     if model_args['torch_compile_backend']:
         ov_torch_backend_device = str(args.device)

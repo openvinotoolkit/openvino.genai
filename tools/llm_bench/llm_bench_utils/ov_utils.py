@@ -772,9 +772,9 @@ def create_text_embeddings_model(model_path, device, memory_data_collector, **kw
         #         "Benchmark will be switched to Optimum Intel pipeline realization"
         #     )
 
-    log.info("Selected Optimum Intel for benchmarking")
     return create_langchain_text_embed_model(model_path, device, memory_data_collector, **kwargs)
 
+    log.info("Selected Optimum Intel for benchmarking")
     model_class = kwargs['use_case'].ov_cls
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
