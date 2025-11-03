@@ -133,10 +133,11 @@ private:
         bool m_add_special_tokens = true;
         // True, if m_add_special_tokens was set, otherwise default behaviour is used
         bool m_add_special_tokens_is_set = false;
-        virtual ~IInputsEmbedder() = default;
         // position ids
         ov::Tensor m_position_ids;
         int64_t m_rope_delta = 0;
+        
+        virtual ~IInputsEmbedder() = default;
 
     public:
         virtual ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) = 0;
