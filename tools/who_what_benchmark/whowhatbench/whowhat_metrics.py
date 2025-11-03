@@ -176,6 +176,37 @@ class ImageSimilarity:
 
 from sklearn.linear_model import LogisticRegression
 
+
+
+
+
+def dot_score(a, b) -> torch.Tensor:
+    """Calculate pairwise dot products between two sets of vectors.
+
+    Computes the dot product dot_prod(a[i], b[j]) for all i and j.
+
+    Args:
+        a: The first tensor.
+        b: The second tensor.
+
+    Returns:
+        Matrix with res[i][j]  = dot_prod(a[i], b[j])
+    """
+    # Move tensor conversion outside the compiled function
+
+    # The actual function to compile
+    def _dot_score_core(a_tensor, b_tensor):
+        if len(a_tensor.shape) == 1:
+            a_tensor = a_tensor.unsqueeze(0)
+        if len(b_tensor.shape) == 1:
+            b_tensor = b_tensor.unsqueeze(0)
+
+        return a_tensor @ b_tensor.transpose(0, 1)
+
+
+    return _dot_score_core(a, b)
+    
+    
 def pairwise_dot_score(a, b):
     """Computes the pairwise dot-product dot_prod(a[i], b[i]).
 
@@ -186,8 +217,8 @@ def pairwise_dot_score(a, b):
     Returns:
         Tensor: Vector with res[i] = dot_prod(a[i], b[i])
     """
-    a = torch.nn.functional.normalize(a, p=2, dim=1)
-    b = torch.nn.functional.normalize(b, p=2, dim=1)
+    # a = torch.nn.functional.normalize(a, p=2, dim=1)
+    # b = torch.nn.functional.normalize(b, p=2, dim=1)
     return (a * b).sum(dim=-1)
 
 class EmbedsSimilarity:
@@ -212,9 +243,17 @@ class EmbedsSimilarity:
             
             # y_pred = evaluator_model.predict(torch.from_numpy(gold_data))
             # y_test = evaluator_model.predict(torch.from_numpy(prediction_data)
-            data = torch.from_numpy(prediction_data)
+            data_g = torch.from_numpy(prediction_data)
+            data_pred = torch.from_numpy(prediction_data)
+            # for y, g in enumerate(data_g):
+            #     print(g)
+            #     print([data_pred[y]])
+                # cos_sim = F.cosine_similarity([g], [data_pred[y]])
+                # cosine_similarity_sklearn = sklearn.metrics.pairwise.cosine_similarity([g], [data_pred[y]])
+                # cosine3 = pairwise_dot_score([g], [data_pred[y]])
+                # print(f"torch cossim {cos_sim} , cosine_similarity_sklearn {cosine_similarity_sklearn} cosine3 {cosine3} ")
             
-            print(data.size())
+            print(data_g.size())
 
             cos_sim = F.cosine_similarity(torch.from_numpy(gold_data), torch.from_numpy(prediction_data))
             
@@ -234,7 +273,7 @@ class EmbedsSimilarity:
             #        precision_score_macro {precision_score_macro}, precision_score_weighted {precision_score_weighted}, \
             #        recall_score_macro {recall_score_macro}, recall_score_weighted {recall_score_weighted} ")
             
-            print(f"torch cossim {cos_sim} , cosine_similarity_sklearn {cosine_similarity_sklearn} cosine3 {cosine3} ")
+            print(f"torch cossim {cos_sim} , cosine_similarity_sklearn {cosine_similarity_sklearn} cosine3 {cosine3} dot_score {dot_score(data_g, data_pred)}")
 
             metric_per_passages.append(cos_sim.detach().numpy())
             metric_per_gen.append(torch.mean(cos_sim).item())

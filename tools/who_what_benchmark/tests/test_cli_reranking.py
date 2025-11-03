@@ -57,8 +57,8 @@ def test_reranking_genai(model_info, tmp_path):
     ])
 
     assert Path(tmp_dir, "reference").exists()
-    
-    
+
+
 @pytest.mark.rerank
 @pytest.mark.parametrize(("model_info"), OV_RERANK_MODELS)
 def test_reranking_genai(model_info, tmp_path):
