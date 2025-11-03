@@ -490,5 +490,9 @@ GenerationConfig multinomial() {
     return multinomial_config;
 }
 
+void add_extension(const std::string& library_path) {
+    utils::singleton_core().add_extension(library_path);
+}
+
 }  // namespace genai
 }  // namespace ov

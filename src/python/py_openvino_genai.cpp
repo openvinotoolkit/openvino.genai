@@ -13,6 +13,7 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/genai/version.hpp"
+#include "openvino/genai/generation_config.hpp"
 
 #include "py_utils.hpp"
 
@@ -28,6 +29,7 @@ using ov::genai::StreamingStatus;
 using ov::genai::TextStreamer;
 using ov::genai::Tokenizer;
 using ov::genai::get_version;
+using ov::genai::add_extension;
 
 void init_lora_adapter(py::module_& m);
 void init_perf_metrics(py::module_& m);
@@ -87,6 +89,10 @@ PYBIND11_MODULE(py_openvino_genai, m) {
     m.def("get_version", [] () -> py::str {
         return get_version().buildNumber;
     }, get_version().description);
+
+    m.def("add_extension", [] (py::str library_path) {
+        return add_extension(library_path);
+    });
 
     init_perf_metrics(m);
 

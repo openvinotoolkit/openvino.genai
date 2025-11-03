@@ -4406,3 +4406,7 @@ def get_version() -> str:
     """
     OpenVINO GenAI version
     """
+def add_extension(str) -> None:
+    """
+    OpenVINO GenAI version
+    """
