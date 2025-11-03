@@ -83,7 +83,7 @@ void performInferenceThread(TsfnContext* context) {
             [context, config, streamer, &result](ov::genai::ChatHistory& inputs) {
                 result = context->pipe->generate(inputs, config, streamer);
             },
-            [&, context](auto&) {
+            [&](auto&) {
                 OPENVINO_THROW("Unsupported type for generate inputs.");
             }
         }, context->inputs);
