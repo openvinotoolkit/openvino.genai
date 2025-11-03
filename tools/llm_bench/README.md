@@ -190,7 +190,7 @@ python benchmark.py -m models/llama-2-7b-chat/ --draft_model models/TinyLlama-1.
 
 ```sh
 # prompt lookup decoding
-python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --task text_gen --max_ngram_siz 3 --num_assistant_tokens 5
+python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --task text_gen --max_ngram_size 3 --num_assistant_tokens 5
 ```
 
 > **Supported LLM model types:** arcee, decoder, falcon, glm, aquila, gpt2, open-llama, openchat, neural-chat, llama, tiny-llama, tinyllama, opt, pythia, stablelm, stable-zephyr, rocket, vicuna, dolly, bloom, red-pajama, xgen, longchat, jais, orca-mini, baichuan, qwen, zephyr, mistral, mixtral, phi2, minicpm, gemma, deci, phi3, deci, internlm, olmo, starcoder, instruct-gpt, granite, granitemoe, gptj, t5, gpt, mpt, blenderbot, chatglm, yi, phi
@@ -249,7 +249,7 @@ optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vo
 # load speaker embeddings
 wget https://huggingface.co/datasets/Xenova/cmu-arctic-xvectors-extracted/resolve/main/cmu_us_awb_arctic-wav-arctic_a0001.bin
 # run benchmark.py
-python benchmark.py -m models/speecht5_tts/ -p "Hello OpenVINO GenAI" -n 2 --task speech_to_text --speaker_embeddings ./cmu_us_awb_arctic-wav-arctic_a0001.bin
+python benchmark.py -m models/speecht5_tts/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speaker_embeddings ./cmu_us_awb_arctic-wav-arctic_a0001.bin
 ```
 
 **Some additional parameters:**
@@ -264,7 +264,7 @@ optimum-cli export openvino --model openai/whisper-base --trust-remote-code  mod
 # load audio
 wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
 # run benchmark.py
-python benchmark.py -m models/whisper-base/ -p ./how_are_you_doing_today.wav -n 2 --task text_to_speech 
+python benchmark.py -m models/whisper-base/ -p ./how_are_you_doing_today.wav -n 2 --task speech_to_text 
 ```
 
 > **Supported Text to Speech model types:** whisper
@@ -313,11 +313,11 @@ python benchmark.py -m models/codegen-350M-multi -p "def hello_world():" -n 2 --
 
 > **Supported Code Generation model types:**: codegen, codegen2, stable-code, replit, codet5
 
-## 8. Memory constipation mode
-Enables memory usage information collection mode. This mode is affect of execution time, so it is not recommended to run memory consumption and performance benchmarking at the same time. Effect on performance can be reduced by specifying a longer --memory_consumption_delay, but the impact is still expected.
+## 8. Memory consumption mode
+Enables memory usage information collection mode. This mode affects execution time, so it is not recommended to run memory consumption and performance benchmarking at the same time. Effect on performance can be reduced by specifying a longer --memory_consumption_delay, but the impact is still expected.
 
 ```sh
-# run benchmark.py in memory constipation mode
+# run benchmark.py in memory consumption mode
 python benchmark.py -m models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --task text_gen -mc 2 -mc_dir ./mem_output_info
 ```
 

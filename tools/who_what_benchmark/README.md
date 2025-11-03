@@ -56,7 +56,7 @@ wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text --genai
 ```sh
 # Export FP16 model to OpenVINO
 optimum-cli export openvino -m llava-hf/llava-v1.6-mistral-7b-hf  --weight-format int8 llava-int8
-# Collect the references and save the mappling in the .csv file. 
+# Collect the references and save the mapping in the .csv file. 
 # Reference images will be stored in the "reference" subfolder under the same path with .csv.
 wwb --base-model llava-hf/llava-v1.6-mistral-7b-hf --gt-data llava_test/gt.csv --model-type visual-text --hf
 # Compute the metric
@@ -68,7 +68,7 @@ wwb --target-model llava-int8 --gt-data llava_test/gt.csv --model-type visual-te
 ```sh
 # Export model with 8-bit quantized weights to OpenVINO
 optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format int8 sd-lcm-int8
-# Collect the references and save the mappling in the .csv file. 
+# Collect the references and save the mapping in the .csv file. 
 # Reference images will be stored in the "reference" subfolder under the same path with .csv.
 wwb --base-model SimianLuo/LCM_Dreamshaper_v7--gt-data lcm_test/gt.csv --model-type text-to-image --hf
 # Compute the metric
@@ -81,7 +81,7 @@ wwb --target-model sd-lcm-int8 --gt-data lcm_test/gt.csv --model-type text-to-im
 # Export FP16 model to OpenVINO
 optimum-cli export openvino -m black-forest-labs/FLUX.1-dev FLUX.1-dev-fp
 
-# Collect the references and save the mappling in the .csv file.
+# Collect the references and save the mapping in the .csv file.
 # Reference images will be stored in the "reference" subfolder under the same path with .csv.
 wwb --base-model black-forest-labs/FLUX.1-dev --gt-data flux.1-dev/gt.csv --model-type text-to-image --adapters Octree/flux-schnell-lora Shakker-Labs/FLUX.1-dev-LoRA-add-details --alphas 0.1 0.9 --hf
 # Compute the metric
@@ -94,11 +94,11 @@ wwb --target-model FLUX.1-dev-fp --gt-data flux.1-dev/gt.csv --model-type text-t
 # Export model to OpenVINO
 optimum-cli export openvino -m BAAI/bge-reranker-v2-m3 bge-reranker-v2-m3 --task text-classification
 
-# Collect the references and save the mappling in the .csv file.
-# Reference images will be stored in the "reference" subfolder under the same path with .csv.
+# Collect the references and save the mapping in the .csv file.
+# Reference data will be stored in the "reference" subfolder under the same path with .csv.
 wwb --base-model BAAI/bge-reranker-v2-m3 --gt-data rerank_test/gt.csv --model-type text-reranking --hf
 # Compute the metric
-# Target images will be stored in the "target" subfolder under the same path with .csv.
+# Target data will be stored in the "target" subfolder under the same path with .csv.
 wwb --target-model ./bge-reranker-v2-m3 --gt-data rerank_test/gt.csv --model-type text-reranking --genai
 ```
 
@@ -107,11 +107,11 @@ wwb --target-model ./bge-reranker-v2-m3 --gt-data rerank_test/gt.csv --model-typ
 # Export FP16 model to OpenVINO
 optimum-cli export openvino -m BAAI/bge-small-en-v1.5 bge-small-en-v1.5 --task feature-extraction
 
-# Collect the references and save the mappling in the .csv file.
-# Reference images will be stored in the "reference" subfolder under the same path with .csv.
+# Collect the references and save the mapping in the .csv file.
+# Reference data will be stored in the "reference" subfolder under the same path with .csv.
 wwb --base-model BAAI/bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling mean --embeds_normalize --embeds_padding_side "left" --hf
 # Compute the metric
-# Target images will be stored in the "target" subfolder under the same path with .csv.
+# Target data will be stored in the "target" subfolder under the same path with .csv.
 wwb --target-model ./bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling mean --embeds_normalize --embeds_padding_side "left" --genai
 ```
 
