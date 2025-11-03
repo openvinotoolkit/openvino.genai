@@ -328,14 +328,13 @@ static inline void pack_to_rgb_u8(const uint8_t* src, size_t H, size_t W, size_t
 }
 
 // accept video [B, F, H, W, C]
-void imwrite_video(const std::string& name, ov::Tensor video, bool convert_bgr2rgb, int quality) {
+void imwrite_video(const std::string& name, ov::Tensor video, const uint32_t fps, bool convert_bgr2rgb, int quality) {
     const auto shape = video.get_shape(); // [B, F, H, W, C]
     if (shape.size() != 5) throw std::runtime_error("imwrite_video: expected [B, F, H, W, C]");
 
     const size_t B = shape[0], F = shape[1], H = shape[2], W = shape[3], C = shape[4];
     if (!(C == 1 || C == 3 || C == 4)) throw std::runtime_error("imwrite_video: C must be 1, 3, or 4");
 
-    const uint32_t fps = 30; // TODO: update or support as param
     const size_t elems_per_frame = H * W * C;
     const uint8_t* base = video.data<uint8_t>();
 
