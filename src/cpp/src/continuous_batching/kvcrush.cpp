@@ -69,7 +69,7 @@ std::vector<size_t> KVCrushAlgorithm::create_anchor_point_kvcrush(size_t num_tok
         }
         break;
     }
-    case KVCrushAnchorPointMode::ALTERNATE:
+    case KVCrushAnchorPointMode::ALTERNATING:
         for (size_t i = 0; i < m_block_size; ++i) {
             anchor_point[i] = i % 2;
         }
