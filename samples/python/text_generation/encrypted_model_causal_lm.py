@@ -13,6 +13,7 @@ def decrypt_model(model_dir, model_file_name, weights_file_name):
         model = file.read()
     # decrypt model
 
+
     with open(model_dir + '/' + weights_file_name, "rb") as file:
         binary_data = file.read()
     # decrypt weights
