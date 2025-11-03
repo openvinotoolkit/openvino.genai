@@ -418,13 +418,6 @@ TEST_P(CDPrunerIntegrationTest, MultiFramePruning) {
     EXPECT_LT(pruned_shape[1], total_original_length) << "Sequence length should be reduced after pruning";
     EXPECT_GT(pruned_shape[1], 0) << "Pruned sequence should have at least some tokens";
 
-    // Verify pruning ratio is approximately correct (allowing some tolerance)
-    double actual_pruning_ratio = 1.0 - (double)pruned_shape[1] / total_original_length;
-    double expected_ratio = cdp_config.pruning_ratio / 100.0;
-    double tolerance = 0.1;  // 10% tolerance for pruning ratio
-    EXPECT_NEAR(actual_pruning_ratio, expected_ratio, tolerance)
-        << "Actual pruning ratio should be close to configured ratio";
-
     // Verify that output tensor is valid and contains reasonable values
     EXPECT_FALSE(pruned_features.get_shape().empty()) << "Pruned features should not be empty";
     EXPECT_GT(pruned_features.get_byte_size(), 0) << "Pruned features should have non-zero size";

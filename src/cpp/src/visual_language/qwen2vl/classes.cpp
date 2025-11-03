@@ -1,6 +1,10 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <algorithm>
+#include <iostream>
+#include <numeric>
+
 #include "visual_language/qwen2vl/classes.hpp"
 
 #include "visual_language/clip.hpp"
@@ -804,11 +808,14 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     // [CDPruner] Apply token pruning if CDPruner is enabled and images are present
     size_t original_visual_tokens = 0;
     size_t pruned_visual_tokens = 0;
+    std::vector<std::vector<bool>> keep_flags_per_region;
 
-    auto current_config = m_vision_encoder->get_pruning_config();
-    bool pruner_enabled = current_config.has_value() && current_config->pruning_ratio > 0;
+    auto current_pruning_config = m_vision_encoder->get_pruning_config();
+    bool pruner_enabled = current_pruning_config.has_value() && current_pruning_config->pruning_ratio > 0;
+    const bool cdpruner_active = m_vision_encoder->is_pruning_available() && pruner_enabled && !images.empty();
+    bool visual_tokens_pruned = false;
 
-    if (m_vision_encoder->is_pruning_available() && pruner_enabled && !images.empty()) {
+    if (cdpruner_active) {
         // Store original visual token count for position adjustment
         original_visual_tokens = merged_image_embeddings_tensor.get_shape()[0];
 
@@ -820,12 +827,12 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
 
         // Convert visual features for CDPruner using the implemented function
         // [CDPruner] Check enable_frame_chunking to decide chunking strategy
-        size_t chunk_count = current_config->enable_frame_chunking ? images.size() : 1;
+        size_t chunk_count = current_pruning_config->enable_frame_chunking ? images.size() : 1;
         auto visual_features = convert_visual_features_for_cdpruner(merged_image_embeddings_tensor, chunk_count);
 
         // Apply CDPruner to get pruned visual tokens
         ov::Tensor pruned_visual_features = m_vision_encoder->apply_pruning(visual_features, text_features);
-        
+
         // [CDPruner] Convert back from 3D [1, num_tokens, hidden_size] to 2D [num_tokens, hidden_size]
         // to match the expected input format for merge_text_and_image_embeddings
         ov::Shape pruned_shape = pruned_visual_features.get_shape();
@@ -845,36 +852,119 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
 
         // Adjust position_ids if pruning occurred
         if (original_visual_tokens != pruned_visual_tokens) {
+            visual_tokens_pruned = true;
             m_position_ids = adjust_position_ids_for_pruning(m_position_ids,
                                                              input_ids,
-                                                             original_visual_tokens,
-                                                             pruned_visual_tokens,
                                                              vision_start_token_id,
-                                                             image_pad_token_id);
+                                                             image_pad_token_id,
+                                                             images_grid_thw,
+                                                             images_sequence,
+                                                             keep_flags_per_region);
 
-            // Recalculate rope_delta based on adjusted position_ids
+            OPENVINO_ASSERT(keep_flags_per_region.size() > 0, "Vision region metadata not available for pruning");
+            size_t total_original_tokens = 0;
+            size_t total_pruned_tokens = 0;
+            for (const auto& mask : keep_flags_per_region) {
+                total_original_tokens += mask.size();
+                total_pruned_tokens += static_cast<size_t>(std::count(mask.begin(), mask.end(), true));
+            }
+            OPENVINO_ASSERT(total_original_tokens == original_visual_tokens,
+                            "Original visual token metadata mismatch after pruning");
+            OPENVINO_ASSERT(total_pruned_tokens == pruned_visual_tokens,
+                            "Pruned visual token metadata mismatch after pruning");
+            OPENVINO_ASSERT(keep_flags_per_region.size() == images_sequence.size(),
+                            "Kept visual token mask count mismatch with vision regions");
+
+            const int64_t* pos_data_begin = m_position_ids.data<const int64_t>();
             int64_t position_ids_max_element =
-                *std::max_element(m_position_ids.data<int64_t>(),
-                                  m_position_ids.data<int64_t>() + m_position_ids.get_size());
+                *std::max_element(pos_data_begin, pos_data_begin + m_position_ids.get_size());
 
-            // Calculate new sequence length after pruning
-            size_t tokens_removed = original_visual_tokens - pruned_visual_tokens;
-            size_t new_sequence_length = input_ids.get_shape().at(1) - tokens_removed;
-
+            size_t new_sequence_length = m_position_ids.get_shape().at(2);
             m_rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(new_sequence_length);
         }
     }
 
     // [CDPruner] Handle pruned visual tokens case
-    if (m_vision_encoder->is_pruning_available() && pruner_enabled && !images.empty() &&
-        original_visual_tokens != pruned_visual_tokens) {
+    if (visual_tokens_pruned) {
+        size_t tokens_removed = original_visual_tokens - pruned_visual_tokens;
+        size_t new_sequence_length = input_ids.get_shape().at(1) - tokens_removed;
+        ov::Tensor pruned_input_ids(ov::element::i64, {1, new_sequence_length});
+        const int64_t* input_data = input_ids.data<const int64_t>();
+        int64_t* pruned_data = pruned_input_ids.data<int64_t>();
+        const size_t seq_len = input_ids.get_shape().at(1);
+
+        size_t computed_pruned_tokens = 0;
+        for (const auto& mask : keep_flags_per_region) {
+            computed_pruned_tokens += static_cast<size_t>(std::count(mask.begin(), mask.end(), true));
+        }
+        OPENVINO_ASSERT(computed_pruned_tokens == pruned_visual_tokens,
+                        "Kept visual token mask total mismatch with pruned embeddings");
+
+        size_t write_idx = 0;
+        bool inside_vision_region = false;
+        size_t region_idx = 0;
+        size_t pad_index = 0;
+        size_t region_count = keep_flags_per_region.size();
+
+        for (size_t seq_idx = 0; seq_idx < seq_len; ++seq_idx) {
+            int64_t token_id = input_data[seq_idx];
+
+            if (token_id == vision_start_token_id) {
+                OPENVINO_ASSERT(region_idx < region_count,
+                                "Encountered more vision regions than metadata entries while pruning input ids");
+                inside_vision_region = true;
+                pad_index = 0;
+            }
+
+            if (inside_vision_region && token_id == image_pad_token_id) {
+                OPENVINO_ASSERT(region_idx < region_count,
+                                "Vision region index exceeds metadata size while pruning input ids");
+                const auto& keep_mask = keep_flags_per_region.at(region_idx);
+                OPENVINO_ASSERT(pad_index < keep_mask.size(),
+                                "Visual token index exceeds region token count while pruning input ids");
+                if (keep_mask[pad_index]) {
+                    OPENVINO_ASSERT(write_idx < new_sequence_length,
+                                    "Pruned input ids index exceeds expected sequence length");
+                    pruned_data[write_idx++] = token_id;
+                }
+                ++pad_index;
+                continue;
+            }
+
+            OPENVINO_ASSERT(write_idx < new_sequence_length, "Pruned input ids index exceeds expected sequence length");
+            pruned_data[write_idx++] = token_id;
+
+            if (inside_vision_region && token_id == vision_end_token_id) {
+                const auto& keep_mask = keep_flags_per_region.at(region_idx);
+                OPENVINO_ASSERT(pad_index == keep_mask.size(),
+                                "Mismatch between consumed visual tokens and region metadata while pruning input ids");
+                inside_vision_region = false;
+                ++region_idx;
+            }
+        }
+
+        OPENVINO_ASSERT(!inside_vision_region,
+                        "Unexpected end of sequence inside a vision region while pruning input ids");
+        OPENVINO_ASSERT(region_idx == region_count,
+                        "Not all vision regions processed while generating pruned input ids");
+        OPENVINO_ASSERT(write_idx == new_sequence_length,
+                        "Pruned input ids length mismatch after visual token pruning");
+
+        auto& kv_history = m_kv_cache_state.get_state();
+        OPENVINO_ASSERT(kv_history.size() >= input_ids.get_size(),
+                        "KV cache history does not contain expected original prompt length");
+        OPENVINO_ASSERT(kv_history.size() >= m_prev_hist_length,
+                        "KV cache history is shorter than recorded previous history length");
+        kv_history.resize(m_prev_hist_length);
+        m_kv_cache_state.add_inputs(pruned_input_ids);
         // Visual tokens have been pruned, need to create new merged embeddings with correct dimensions
         return merge_text_and_image_embeddings_with_pruning(input_ids,
                                                             text_embeds,
                                                             merged_image_embeddings_tensor,
                                                             image_pad_token_id,
-                                                            original_visual_tokens,
-                                                            images.size());
+                                                            vision_start_token_id,
+                                                            vision_end_token_id,
+                                                            keep_flags_per_region);
     } else {
         // No pruning or no images, use original function
         return qwen2_vl_utils::merge_text_and_image_embeddings(input_ids,
@@ -1200,86 +1290,258 @@ ov::Tensor InputsEmbedderQwen2VL::extract_text_features_for_cdpruner(const ov::T
     return avg_embedding;
 }
 
-// [CDPruner] Position encoding adjustment function for pruning
-ov::Tensor InputsEmbedderQwen2VL::adjust_position_ids_for_pruning(const ov::Tensor& original_position_ids,
-                                                                  const ov::Tensor& input_ids,
-                                                                  size_t original_visual_tokens,
-                                                                  size_t pruned_visual_tokens,
-                                                                  int64_t vision_start_token_id,
-                                                                  int64_t image_pad_token_id) {
-    // If no pruning occurred, return original position_ids
-    if (original_visual_tokens == pruned_visual_tokens) {
-        return original_position_ids;
+// [CDPruner] Position encoding adjustment function for pruning.
+// Example: consider a single image whose visual tokens form a 3x3 grid (indices 0-8).
+// If CDPruner keeps indices {0, 4, 7} (coords (0,0), (1,1), (2,1)), this helper
+// rebuilds the temporal/height/width tables so that:
+//   - only tokens at those coordinates are inserted back into the prompt,
+//   - each kept token retains its original grid row/col offsets, and
+//   - text tokens that follow resume indexing from the last visual position.
+ov::Tensor InputsEmbedderQwen2VL::adjust_position_ids_for_pruning(
+    const ov::Tensor& original_position_ids,
+    const ov::Tensor& input_ids,
+    int64_t vision_start_token_id,
+    int64_t image_pad_token_id,
+    const std::vector<std::array<size_t, 3>>& images_grid_thw,
+    const std::vector<size_t>& images_sequence,
+    std::vector<std::vector<bool>>& keep_flags_per_region_out) {
+    auto kept_indices_per_image = m_vision_encoder->get_last_selected_token_indices();
+    OPENVINO_ASSERT(!images_sequence.empty(), "Image sequence must not be empty when pruning visual tokens");
+    OPENVINO_ASSERT(!kept_indices_per_image.empty(), "Kept token indices are missing after pruning");
+
+    const size_t spatial_merge_size = std::max<size_t>(1, m_vision_encoder->get_processor_config().merge_size);
+
+    std::vector<std::array<size_t, 3>> reordered_images_grid_thw;
+    reordered_images_grid_thw.reserve(images_sequence.size());
+    for (size_t new_image_id : images_sequence) {
+        OPENVINO_ASSERT(new_image_id < images_grid_thw.size(), "Image sequence index is out of range");
+        // Indices are expected to be normalized to the current batch ordering.
+        reordered_images_grid_thw.push_back(images_grid_thw.at(new_image_id));
     }
 
-    // Calculate the reduction in visual tokens
-    size_t tokens_removed = original_visual_tokens - pruned_visual_tokens;
+    ov::Tensor updated_position_ids = update_position_ids(original_position_ids,
+                                                          input_ids,
+                                                          vision_start_token_id,
+                                                          image_pad_token_id,
+                                                          reordered_images_grid_thw,
+                                                          kept_indices_per_image,
+                                                          spatial_merge_size,
+                                                          keep_flags_per_region_out);
 
-    // Get input_ids data and dimensions
-    const int64_t* input_ids_data = input_ids.data<const int64_t>();
-    size_t batch_size = input_ids.get_shape().at(0);
-    size_t seq_len = input_ids.get_shape().at(1);
+    return updated_position_ids;
+}
 
-    // Get original position_ids data and create new position_ids
-    const int64_t* orig_pos_data = original_position_ids.data<const int64_t>();
-    ov::Tensor adjusted_position_ids(original_position_ids.get_element_type(), original_position_ids.get_shape());
-    int64_t* adj_pos_data = adjusted_position_ids.data<int64_t>();
+ov::Tensor InputsEmbedderQwen2VL::update_position_ids(
+    const ov::Tensor& original_position_ids,
+    const ov::Tensor& input_ids,
+    int64_t vision_start_token_id,
+    int64_t image_pad_token_id,
+    const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw,
+    const std::vector<std::vector<size_t>>& kept_indices_per_image,
+    size_t spatial_merge_size,
+    std::vector<std::vector<bool>>& keep_flags_out) {
+    const ov::Shape& pos_shape = original_position_ids.get_shape();
+    OPENVINO_ASSERT(pos_shape.size() == 3, "Position ids tensor must have 3 dimensions");
 
-    // Process each batch
-    for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-        // Find vision regions in this batch (image_pad_token sequences)
-        std::vector<std::pair<size_t, size_t>> vision_regions;  // [start_idx, end_idx)
-        bool in_vision_region = false;
-        size_t vision_start_idx = 0;
+    const size_t dims = pos_shape.at(0);
+    const size_t batch_size = pos_shape.at(1);
+    const size_t seq_len = pos_shape.at(2);
+    OPENVINO_ASSERT(dims == 3, "Position ids tensor first dimension must be 3");
 
-        for (size_t i = 0; i < seq_len; ++i) {
-            size_t input_idx = batch_idx * seq_len + i;
+    struct RegionInfo {
+        size_t tokens;
+        size_t grid_width;
+        size_t spatial_area;
+        size_t offset;
+    };
 
-            if (input_ids_data[input_idx] == vision_start_token_id) {
-                in_vision_region = true;
-                vision_start_idx = i + 1;  // Start after vision_start_token
-            } else if (in_vision_region && input_ids_data[input_idx] != image_pad_token_id) {
-                // End of vision region (found non-image_pad token)
-                in_vision_region = false;
-                vision_regions.push_back({vision_start_idx, i});
-            }
+    std::vector<RegionInfo> regions;
+    regions.reserve(reordered_images_grid_thw.size());
+
+    size_t cumulative_offset = 0;
+    for (const auto& grid : reordered_images_grid_thw) {
+        size_t grid_t = std::max<size_t>(1, grid.at(0));
+        size_t grid_h = grid.at(1);
+        size_t grid_w = grid.at(2);
+        OPENVINO_ASSERT(grid_h % spatial_merge_size == 0 && grid_w % spatial_merge_size == 0,
+                        "Grid dimensions must be divisible by spatial merge size");
+
+        size_t llm_grid_h = grid_h / spatial_merge_size;
+        size_t llm_grid_w = grid_w / spatial_merge_size;
+        size_t spatial_area = llm_grid_h * llm_grid_w;
+        OPENVINO_ASSERT(spatial_area > 0, "Vision region must contain at least one spatial token");
+        size_t total_tokens = spatial_area * grid_t;
+
+        regions.push_back({total_tokens, llm_grid_w == 0 ? 1 : llm_grid_w, spatial_area, cumulative_offset});
+        cumulative_offset += total_tokens;
+    }
+
+    const size_t region_count = regions.size();
+
+    auto normalize_indices = [&](const std::vector<std::vector<size_t>>& raw_indices) {
+        std::vector<std::vector<size_t>> normalized;
+        if (raw_indices.empty()) {
+            normalized.assign(region_count, {});
+            return normalized;
         }
 
-        // Handle case where vision region extends to end of sequence
-        if (in_vision_region) {
-            vision_regions.push_back({vision_start_idx, seq_len});
+        if (raw_indices.size() == region_count) {
+            normalized = raw_indices;
+            return normalized;
         }
 
-        // Copy and adjust position_ids for each dimension (temporal, height, width)
-        for (size_t dim = 0; dim < 3; ++dim) {
-            size_t dim_offset = dim * batch_size * seq_len + batch_idx * seq_len;
-
-            for (size_t i = 0; i < seq_len; ++i) {
-                size_t pos_idx = dim_offset + i;
-                int64_t original_pos = orig_pos_data[pos_idx];
-
-                // Check if this position is after any vision region
-                bool is_after_vision = false;
-                for (const auto& region : vision_regions) {
-                    if (i >= region.second) {  // Position is after this vision region
-                        is_after_vision = true;
+        if (raw_indices.size() == 1 && region_count > 1) {
+            normalized.assign(region_count, {});
+            const auto& aggregated = raw_indices.front();
+            for (size_t kept_idx : aggregated) {
+                OPENVINO_ASSERT(kept_idx < cumulative_offset, "Aggregated kept index is out of range");
+                size_t image_idx = 0;
+                for (; image_idx < region_count; ++image_idx) {
+                    size_t region_start = regions[image_idx].offset;
+                    size_t region_end = region_start + regions[image_idx].tokens;
+                    if (kept_idx >= region_start && kept_idx < region_end) {
+                        normalized[image_idx].push_back(kept_idx - region_start);
                         break;
                     }
                 }
-
-                // Adjust position if it's after vision regions
-                // For text tokens after vision, subtract the number of removed visual tokens
-                if (is_after_vision) {
-                    adj_pos_data[pos_idx] = original_pos - static_cast<int64_t>(tokens_removed);
-                } else {
-                    // For tokens before or within vision regions, keep original position
-                    adj_pos_data[pos_idx] = original_pos;
-                }
+                OPENVINO_ASSERT(image_idx < region_count,
+                                "Aggregated kept index cannot be assigned to a vision region");
             }
+            return normalized;
         }
+
+        OPENVINO_THROW("Kept token indices layout does not match vision regions");
+    };
+
+    std::vector<std::vector<size_t>> normalized_kept_indices = normalize_indices(kept_indices_per_image);
+    for (auto& per_region_indices : normalized_kept_indices) {
+        std::sort(per_region_indices.begin(), per_region_indices.end());
+        auto unique_end = std::unique(per_region_indices.begin(), per_region_indices.end());
+        per_region_indices.erase(unique_end, per_region_indices.end());
     }
 
-    return adjusted_position_ids;
+    keep_flags_out.clear();
+    keep_flags_out.reserve(region_count);
+
+    size_t total_removed = 0;
+    for (size_t idx = 0; idx < region_count; ++idx) {
+        const auto& region = regions[idx];
+        std::vector<bool> flags(region.tokens, false);
+        size_t kept_count = 0;
+        for (size_t kept_idx : normalized_kept_indices[idx]) {
+            OPENVINO_ASSERT(kept_idx < region.tokens, "Kept visual token index is out of range");
+            flags[kept_idx] = true;
+            ++kept_count;
+        }
+        if (region.tokens < kept_count) {
+            std::cerr << "[CDPruner] Region mismatch -- idx=" << idx << ", tokens=" << region.tokens
+                      << ", kept=" << kept_count << ", cumulative_offset=" << regions[idx].offset << std::endl;
+            if (idx + 1 < regions.size()) {
+                std::cerr << "[CDPruner] Next region offset=" << regions[idx + 1].offset << std::endl;
+            }
+            OPENVINO_THROW("Number of kept tokens exceeds original visual tokens for image");
+        }
+        total_removed += region.tokens - kept_count;
+        keep_flags_out.push_back(std::move(flags));
+    }
+    OPENVINO_ASSERT(seq_len >= total_removed, "Sequence length underflow after pruning");
+    size_t new_seq_len = seq_len - total_removed;
+
+    ov::Tensor new_position_ids(original_position_ids.get_element_type(), {3, batch_size, new_seq_len});
+    int64_t* new_data = new_position_ids.data<int64_t>();
+    int64_t* temporal_out = new_data;
+    int64_t* height_out = new_data + batch_size * new_seq_len;
+    int64_t* width_out = new_data + 2 * batch_size * new_seq_len;
+    size_t batch_stride_out = new_seq_len;
+
+    const int64_t* input_ids_data = input_ids.data<const int64_t>();
+    const int64_t* original_data = original_position_ids.data<const int64_t>();
+
+    for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
+        size_t seq_idx = 0;
+        size_t write_idx = 0;
+        size_t image_idx = 0;
+        bool inside_vision = false;
+        size_t visual_index = 0;
+        size_t batch_offset_in = batch_idx * seq_len;
+        size_t batch_offset_out = batch_idx * batch_stride_out;
+        int64_t next_pos = seq_len > 0 ? original_data[batch_offset_in] : 0;
+        int64_t grid_temporal_value = 0;
+        int64_t grid_base_value = 0;
+        int64_t max_height = next_pos - 1;
+        int64_t max_width = next_pos - 1;
+        int64_t max_temporal = next_pos - 1;
+
+        while (seq_idx < seq_len) {
+            int64_t token_id = input_ids_data[batch_offset_in + seq_idx];
+
+            if (inside_vision && token_id == image_pad_token_id) {
+                OPENVINO_ASSERT(image_idx < region_count, "Vision region index out of bounds");
+                const auto& region = regions[image_idx];
+                const size_t grid_width = region.grid_width > 0 ? region.grid_width : 1;
+                const size_t spatial_area = region.spatial_area > 0 ? region.spatial_area : grid_width;
+                bool keep_token = (image_idx < keep_flags_out.size() && visual_index < keep_flags_out[image_idx].size())
+                                      ? keep_flags_out[image_idx][visual_index]
+                                      : false;
+                size_t local_index = spatial_area > 0 ? (visual_index % spatial_area) : 0;
+                size_t row = grid_width > 0 ? local_index / grid_width : 0;
+                size_t col = grid_width > 0 ? local_index % grid_width : 0;
+                size_t temporal_index = spatial_area > 0 ? (visual_index / spatial_area) : 0;
+                if (keep_token) {
+                    int64_t temporal_value = grid_temporal_value + static_cast<int64_t>(temporal_index);
+                    int64_t height_value = grid_base_value + static_cast<int64_t>(row);
+                    int64_t width_value = grid_base_value + static_cast<int64_t>(col);
+
+                    temporal_out[batch_offset_out + write_idx] = temporal_value;
+                    height_out[batch_offset_out + write_idx] = height_value;
+                    width_out[batch_offset_out + write_idx] = width_value;
+
+                    max_height = std::max(max_height, height_value);
+                    max_width = std::max(max_width, width_value);
+                    max_temporal = std::max(max_temporal, temporal_value);
+
+                    ++write_idx;
+                }
+
+                ++visual_index;
+                ++seq_idx;
+                continue;
+            }
+
+            if (inside_vision) {
+                inside_vision = false;
+                int64_t region_max = std::max(std::max(max_height, max_width), max_temporal);
+                next_pos = region_max + 1;
+                ++image_idx;
+                visual_index = 0;
+                max_height = next_pos - 1;
+                max_width = next_pos - 1;
+                max_temporal = next_pos - 1;
+            }
+
+            int64_t temporal_value = next_pos;
+            temporal_out[batch_offset_out + write_idx] = temporal_value;
+            height_out[batch_offset_out + write_idx] = temporal_value;
+            width_out[batch_offset_out + write_idx] = temporal_value;
+
+            ++write_idx;
+            ++seq_idx;
+            ++next_pos;
+
+            if (token_id == vision_start_token_id) {
+                inside_vision = true;
+                visual_index = 0;
+                grid_temporal_value = next_pos;
+                grid_base_value = next_pos;
+            }
+        }
+
+        OPENVINO_ASSERT(!inside_vision, "Unexpected end of sequence inside a vision region");
+        OPENVINO_ASSERT(image_idx == keep_flags_out.size(), "Mismatch between processed vision regions and metadata");
+        OPENVINO_ASSERT(write_idx == new_seq_len, "Pruned position ids length mismatch after recomputation");
+    }
+
+    return new_position_ids;
 }
 
 std::vector<ov::Tensor> InputsEmbedderQwen2VL::convert_visual_features_for_cdpruner(
@@ -1306,24 +1568,38 @@ std::vector<ov::Tensor> InputsEmbedderQwen2VL::convert_visual_features_for_cdpru
 }
 
 // [CDPruner] Create merged embeddings for pruned visual tokens
-ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_with_pruning(const ov::Tensor& input_ids,
-                                                                               const ov::Tensor& text_embeds,
-                                                                               const ov::Tensor& pruned_vision_embeds,
-                                                                               int64_t image_pad_token_id,
-                                                                               size_t original_visual_tokens,
-                                                                               size_t num_images) {
+ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_with_pruning(
+    const ov::Tensor& input_ids,
+    const ov::Tensor& text_embeds,
+    const ov::Tensor& pruned_vision_embeds,
+    int64_t image_pad_token_id,
+    int64_t vision_start_token_id,
+    int64_t vision_end_token_id,
+    const std::vector<std::vector<bool>>& keep_flags_per_region) {
     auto text_embeds_shape = text_embeds.get_shape();
     size_t batch_size = text_embeds_shape.at(0);
-    size_t original_seq_length = text_embeds_shape.at(1);  // original sequence length (text + original visual)
+    size_t original_seq_length = text_embeds_shape.at(1);
     size_t hidden_size = text_embeds_shape.at(2);
 
-    // Calculate new sequence length after pruning
-    size_t pruned_visual_tokens = pruned_vision_embeds.get_shape()[0];  // dynamic pruned count
-    size_t tokens_removed = original_visual_tokens - pruned_visual_tokens;
+    size_t total_original_visual_tokens = 0;
+    for (const auto& mask : keep_flags_per_region) {
+        total_original_visual_tokens += mask.size();
+    }
+
+    size_t pruned_visual_tokens = pruned_vision_embeds.get_shape()[0];
+    size_t tokens_removed = total_original_visual_tokens - pruned_visual_tokens;
     size_t new_seq_length = original_seq_length - tokens_removed;
-    size_t original_visual_tokens_per_image = original_visual_tokens / num_images;
-    size_t pruned_visual_tokens_per_image = pruned_visual_tokens / num_images;
-    // Create new merged embeddings tensor with correct dimensions
+
+    const size_t region_count = keep_flags_per_region.size();
+    OPENVINO_ASSERT(region_count > 0, "Vision region metadata not available while merging embeddings");
+
+    size_t computed_pruned_tokens = 0;
+    for (const auto& mask : keep_flags_per_region) {
+        computed_pruned_tokens += static_cast<size_t>(std::count(mask.begin(), mask.end(), true));
+    }
+    OPENVINO_ASSERT(computed_pruned_tokens == pruned_visual_tokens,
+                    "Kept visual token mask total mismatch with pruned embeddings during merge");
+
     ov::Tensor merged_embeds(text_embeds.get_element_type(), {batch_size, new_seq_length, hidden_size});
 
     const int64_t* input_ids_data = input_ids.data<const int64_t>();
@@ -1332,32 +1608,66 @@ ov::Tensor InputsEmbedderQwen2VL::merge_text_and_image_embeddings_with_pruning(c
     float* merged_embeds_data = merged_embeds.data<float>();
 
     size_t vision_embed_idx = 0;
-    size_t output_idx = 0;
 
     for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-        size_t image_idx = 0;
-        for (size_t seq_idx = 0; seq_idx < original_seq_length;) {
+        size_t out_seq_idx = 0;
+        size_t region_idx = 0;
+        size_t pad_index = 0;
+        bool inside_vision_region = false;
+
+        for (size_t seq_idx = 0; seq_idx < original_seq_length; ++seq_idx) {
             size_t input_flat_idx = batch_idx * original_seq_length + seq_idx;
-            if (input_ids_data[input_flat_idx] == image_pad_token_id) {
-                // This is a visual token position
-                // Copy from pruned visual embeddings
-                std::copy_n(vision_embeds_data + vision_embed_idx * hidden_size,
-                            pruned_visual_tokens_per_image * hidden_size,
-                            merged_embeds_data + output_idx * hidden_size);
-                seq_idx += original_visual_tokens_per_image;  // Skip original visual tokens
-                vision_embed_idx += pruned_visual_tokens_per_image;
-                output_idx += pruned_visual_tokens_per_image;
-                image_idx++;
-            } else {
-                // This is a text token, copy from text_embeds
-                std::copy_n(text_embeds_data + input_flat_idx * hidden_size,
-                            hidden_size,
-                            merged_embeds_data + output_idx * hidden_size);
-                output_idx++;
-                seq_idx++;
+            int64_t token_id = input_ids_data[input_flat_idx];
+
+            if (token_id == vision_start_token_id) {
+                OPENVINO_ASSERT(region_idx < region_count,
+                                "Encountered more vision regions than metadata entries while merging embeddings");
+                inside_vision_region = true;
+                pad_index = 0;
+            }
+
+            if (inside_vision_region && token_id == image_pad_token_id) {
+                const auto& keep_mask = keep_flags_per_region.at(region_idx);
+                OPENVINO_ASSERT(pad_index < keep_mask.size(),
+                                "Visual token index exceeds region token count while merging embeddings");
+                if (keep_mask[pad_index]) {
+                    OPENVINO_ASSERT(out_seq_idx < new_seq_length,
+                                    "Merged embeddings index exceeds expected sequence length");
+                    size_t out_flat_idx = batch_idx * new_seq_length + out_seq_idx;
+                    std::copy_n(vision_embeds_data + vision_embed_idx * hidden_size,
+                                hidden_size,
+                                merged_embeds_data + out_flat_idx * hidden_size);
+                    ++vision_embed_idx;
+                    ++out_seq_idx;
+                }
+                ++pad_index;
+                continue;
+            }
+
+            OPENVINO_ASSERT(out_seq_idx < new_seq_length, "Merged embeddings index exceeds expected sequence length");
+            size_t out_flat_idx = batch_idx * new_seq_length + out_seq_idx;
+            std::copy_n(text_embeds_data + input_flat_idx * hidden_size,
+                        hidden_size,
+                        merged_embeds_data + out_flat_idx * hidden_size);
+            ++out_seq_idx;
+
+            if (inside_vision_region && token_id == vision_end_token_id) {
+                const auto& keep_mask = keep_flags_per_region.at(region_idx);
+                OPENVINO_ASSERT(pad_index == keep_mask.size(),
+                                "Mismatch between consumed visual tokens and region metadata while merging embeddings");
+                inside_vision_region = false;
+                ++region_idx;
             }
         }
+
+        OPENVINO_ASSERT(!inside_vision_region,
+                        "Unexpected end of sequence inside a vision region while merging embeddings");
+        OPENVINO_ASSERT(region_idx == region_count, "Not all vision regions processed while merging embeddings");
+        OPENVINO_ASSERT(out_seq_idx == new_seq_length, "Merged embeddings sequence length mismatch after pruning");
     }
+
+    OPENVINO_ASSERT(vision_embed_idx == pruned_visual_tokens,
+                    "Pruned vision embeddings were not fully consumed during merge");
 
     return merged_embeds;
 }

@@ -357,6 +357,7 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
 
         // Sort final result to maintain order
         std::sort(merged_selection.begin(), merged_selection.end());
+        merged_selection.erase(std::unique(merged_selection.begin(), merged_selection.end()), merged_selection.end());
         batch_results.push_back(std::move(merged_selection));
     }
 
@@ -783,7 +784,10 @@ std::vector<size_t> OpenCLDPP::run_dpp_split_kernel_impl(const ov::Tensor& kerne
     std::vector<size_t> results;
     for (auto id : output_ids)
         results.push_back(id);
-
+    if (batch_size == 1) {
+        std::sort(results.begin(), results.end());
+        results.erase(std::unique(results.begin(), results.end()), results.end());
+    }
     return results;
 }
 

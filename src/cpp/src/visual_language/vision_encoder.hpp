@@ -135,6 +135,7 @@ public:
     virtual std::optional<cdpruner::Config> get_pruning_config() const;
 
     std::optional<cdpruner::PruningStatistics> get_last_pruning_statistics() const;
+    std::vector<std::vector<size_t>> get_last_selected_token_indices() const;
 
     /// @brief Check if CDPruner functionality is available in this VisionEncoder.
     /// @return true if CDPruner is supported and configured, false otherwise.

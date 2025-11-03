@@ -144,6 +144,9 @@ public:
                                             size_t actual_total_tokens,
                                             size_t actual_batch_size,
                                             size_t actual_hidden_dim);
+    const std::vector<std::vector<size_t>>& get_last_selected_tokens() const {
+        return m_last_selected_tokens;
+    }
 
 private:
     /**
@@ -173,7 +176,8 @@ private:
     ConditionalKernelBuilder m_kernel_builder;  ///< Kernel matrix construction module (with OpenVINO ops)
     FastGreedyDPP m_dpp_selector;               ///< DPP selection module
 
-    mutable PruningStatistics m_last_statistics;  ///< Statistics from last operation
+    mutable PruningStatistics m_last_statistics;                      ///< Statistics from last operation
+    mutable std::vector<std::vector<size_t>> m_last_selected_tokens;  ///< Token indices selected during last pruning
 };
 
 }  // namespace ov::genai::cdpruner
