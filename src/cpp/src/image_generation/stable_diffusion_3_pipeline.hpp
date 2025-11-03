@@ -25,7 +25,7 @@ void padding_right(ov::Tensor src, ov::Tensor res) {
     OPENVINO_ASSERT(src_shape[0] == res_shape[0] && src_shape[1] == res_shape[1], "Tensors for padding_right must have the same dimensions");
 
     // since torch.nn.functional.pad can also perform trancation in case of negative pad size value
-    // we need to find minimal amoung src and res and respect it
+    // we need to find minimal among src and res and respect it
     size_t min_size = std::min(src_shape[2], res_shape[2]);
 
     const float* src_data = src.data<const float>();
@@ -38,7 +38,7 @@ void padding_right(ov::Tensor src, ov::Tensor res) {
 
             std::memcpy(res_data + offset_1, src_data + offset_2, min_size * sizeof(float));
             if (res_shape[2] > src_shape[2]) {
-                // peform actual padding if required
+                // perform actual padding if required
                 std::fill_n(res_data + offset_1 + src_shape[2], res_shape[2] - src_shape[2], 0.0f);
             }
         }
@@ -755,7 +755,7 @@ private:
             size_t height = initial_image_shape[1], width = initial_image_shape[2];
 
             OPENVINO_ASSERT(generation_config.strength >= 0.0f && generation_config.strength <= 1.0f,
-                "'Strength' generation parameter must be withion [0, 1] range");
+                "'Strength' generation parameter must be within [0, 1] range");
         } else {
             OPENVINO_ASSERT(generation_config.strength == 1.0f, "'Strength' generation parameter must be 1.0f for Text 2 image pipeline");
             OPENVINO_ASSERT(!initial_image, "Internal error: initial_image must be empty for Text 2 image pipeline");
