@@ -272,7 +272,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
 
     std::shared_ptr<SequenceGroup> sequence_group;
     if (m_model_input_type == ModelInputType::EMBEDDINGS) {
-        auto position_ids_rope_delta = m_inputs_embedder->get_position_ids(input_ids.get_shape()[1], 0);
+        const auto [position_ids, rope_delta] = m_inputs_embedder->get_position_ids(input_ids.get_shape()[1], 0);
         sequence_group = std::make_shared<SequenceGroup>(request_id, 
                                                          input_ids, 
                                                          sampling_params_copy, 
