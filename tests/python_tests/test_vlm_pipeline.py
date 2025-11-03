@@ -1461,7 +1461,7 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
     if has_image:
         resized_image = request.getfixturevalue(f"cat_image_{resolution}x{resolution}")
         media_content.append({"type": "image"})
-        prompt_parts.append("image")        
+        prompt_parts.append("image")
     
     if has_video:
         resized_video = request.getfixturevalue("synthetic_video_32x32")

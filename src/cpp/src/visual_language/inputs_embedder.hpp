@@ -202,7 +202,6 @@ private:
             size_t base_id,
             const std::vector<EncodedImage>& images
         ) const = 0;
-    
         virtual NormalizedPrompt normalize_prompt(
             const std::string& prompt,
             size_t base_image_id,

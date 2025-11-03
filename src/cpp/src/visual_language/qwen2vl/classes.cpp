@@ -260,7 +260,7 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
                                                            reshape_shape4d,
                                                            reshape_shape2d});
 }
-}  // namespace
+} // namespace
 
 namespace qwen2_vl_utils {
 
