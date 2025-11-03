@@ -261,6 +261,8 @@ export const LLM_MODELS: LLMModelType[] = [
       {
         name: 'Gemma3',
         links: [
+          'https://huggingface.co/google/gemma-3-270m',
+          'https://huggingface.co/google/gemma-3-270m-it',
           'https://huggingface.co/google/gemma-3-1b-it',
           'https://huggingface.co/google/gemma-3-1b-pt',
         ],

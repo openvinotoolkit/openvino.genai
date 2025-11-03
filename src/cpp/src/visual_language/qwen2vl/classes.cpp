@@ -141,9 +141,11 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
     auto image_scale = std::make_shared<ov::op::v0::Constant>(image_scale_tensor);
     auto img_f32_nchw = create_f32_nchw_input(input_images);
 
-    auto img_resized = create_bicubic_resize(img_f32_nchw, resize_shape);
+    auto img_resized = create_bicubic_resize(std::move(img_f32_nchw), resize_shape);
 
-    auto img_normalized = create_normalization(img_resized, image_mean, image_scale);
+    auto img_normalized = create_normalization(
+        std::move(img_resized), std::move(image_mean), std::move(image_scale)
+    );
 
     auto temporal_images = std::make_shared<ov::op::v0::Tile>(img_normalized, tile_shape);
 
@@ -155,11 +157,11 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
                                                                         std::vector<int32_t>{0, 2, 5, 3, 6, 1, 4, 7}));
 
     auto img_4d = create_transpose_patches(
-        img_8d,
+        std::move(img_8d),
         reshape_shape4d,
         std::make_shared<ov::op::v0::Constant>(ov::element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3}));
 
-    auto img_2d = create_flatten_patches(img_4d, reshape_shape2d);
+    auto img_2d = create_flatten_patches(std::move(img_4d), reshape_shape2d);
 
     auto params_org = model_org->get_parameters();
     OPENVINO_ASSERT(params_org.size() == 1);
@@ -170,7 +172,15 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
 
     return std::make_shared<ov::Model>(
         results,
-        ov::ParameterVector{input_images, resize_shape, tile_shape, reshape_shape8d, reshape_shape4d, reshape_shape2d});
+        ov::ParameterVector{
+            std::move(input_images), 
+            std::move(resize_shape), 
+            std::move(tile_shape), 
+            std::move(reshape_shape8d), 
+            std::move(reshape_shape4d), 
+            std::move(reshape_shape2d)
+        }
+    );
 }
 } // namespace
 
@@ -338,8 +348,7 @@ std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_i
     images_grid_thw.reserve(encoded_images.size());
     
     for (const auto& encoded_image : encoded_images) {
-        ov::Tensor single_image_embeds = encoded_image.resized_source;
-        image_embeds.push_back(std::move(single_image_embeds));
+        image_embeds.push_back(encoded_image.resized_source);
 
         size_t grid_t = 1;
         size_t grid_h = encoded_image.resized_source_size.height;
@@ -354,7 +363,7 @@ std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_i
         reordered_images_grid_thw.push_back(images_grid_thw.at(new_image_id));
     }
 
-    return {reordered_image_embeds, reordered_images_grid_thw};
+    return {std::move(reordered_image_embeds), std::move(reordered_images_grid_thw)};
 }
     
 ov::Tensor get_attention_mask(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw) {
