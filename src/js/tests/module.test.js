@@ -366,13 +366,14 @@ describe("stream()", () => {
 
 describe("LLMPipeline with chat history", () => {
   let pipeline = null;
+  const chatHistory = new ChatHistory();
 
   before(async () => {
-    pipeline = await LLMPipeline(MODEL_PATH, "CPU");
+    pipeline = await LLMPipeline(MODEL_PATH, "CPU", { ATTENTION_BACKEND: "SDPA" });
   });
 
   it("generate(chatHistory, config)", async () => {
-    const chatHistory = new ChatHistory([
+    chatHistory.setMessages([
       { role: "user", content: "Hello!" },
       { role: "assistant", content: "Hi! How can I help you?" },
       { role: "user", content: "Tell me a joke." },
@@ -381,8 +382,8 @@ describe("LLMPipeline with chat history", () => {
       max_new_tokens: 10,
       return_decoded_results: true,
     };
-    await pipeline.generate("prompt", config);
     const reply = await pipeline.generate(chatHistory, config);
+    chatHistory.push({ role: "assistant", content: reply.toString() });
     assert.ok(Array.isArray(reply.texts));
     assert.equal(reply.texts.length, 1);
     assert.ok(typeof reply.texts[0] === "string");
@@ -400,20 +401,17 @@ describe("LLMPipeline with chat history", () => {
     }, /An incorrect input value has been passed./);
   });
 
-  it("stram(chatHistory, config)", async () => {
-    const chatHistory = new ChatHistory([
-      { role: "user", content: "Hello!" },
-      { role: "assistant", content: "Hi! How can I help you?" },
-      { role: "user", content: "Tell me a joke." },
-    ]);
+  it("stream(chatHistory, config)", async () => {
+    chatHistory.push({ role: "user", content: "Tell me another joke." });
     const config = {
       max_new_tokens: 10,
     };
-    const streamer = pipeline.stream(chatHistory, config);
+    const streamer = await pipeline.stream(chatHistory, config);
     const chunks = [];
     for await (const chunk of streamer) {
       chunks.push(chunk);
     }
     assert.ok(chunks.length > 0);
+    chatHistory.push({ role: "assistant", content: chunks.join("") });
   });
 });
