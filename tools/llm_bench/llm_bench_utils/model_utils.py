@@ -144,6 +144,7 @@ def analyze_args(args):
     model_args["rerank_texts"] = args.texts
     model_args["rerank_texts_file"] = args.texts_file
     model_args["apply_chat_template"] = args.apply_chat_template
+    model_args["save_output"] = args.save_output
 
     optimum = args.optimum
 
