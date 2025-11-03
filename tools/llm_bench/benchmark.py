@@ -219,7 +219,7 @@ def get_argprser():
                         help="Path to .bin or .pt file with speaker embeddings for text to speech scenarios")
     parser.add_argument("--vocoder_path", type=str, default=None,
                         help="Path to vocoder  for text to speech scenarios")
-    parser.add_argument("--save_output", action="store_true", help="Save model outputs to files")
+    parser.add_argument("--save_output", type=str, default=None, help="Save model outputs to files with this prefix")
     
     return parser.parse_args()
 
