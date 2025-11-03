@@ -338,7 +338,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::get_inputs_embeds_with_token_t
 std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::get_inputs_embeds_with_token_type_ids(
     const std::string& prompt,
     const std::vector<EncodedImage>& images,
-    const std::vector<ov::genai::EncodedVideo>& videos,
+    const std::vector<EncodedVideo>& videos,
     VLMPerfMetrics& metrics,
     bool recalculate_merged_embeddings,
     const std::vector<size_t>& image_sequence,
