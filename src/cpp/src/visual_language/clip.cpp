@@ -76,6 +76,7 @@ void bicubic_resize(const clip_image_u8 &img, clip_image_u8 &dst, int target_wid
 
     dst.nx = target_width;
     dst.ny = target_height;
+    dst.buf.resize(3 * target_width * target_height);
 
     float Cc;
     float C[5];
