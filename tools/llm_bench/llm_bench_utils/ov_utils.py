@@ -191,9 +191,12 @@ def get_scheduler_config_genai(config_data, config_name="CB config"):
             if "mode" in sparse_attention_kwargs.keys():
                 sparse_attention_kwargs["mode"] = getattr(openvino_genai.SparseAttentionMode, sparse_attention_kwargs["mode"])
 
-            scheduler_config.use_sparse_attention = True
-            scheduler_config.sparse_attention_config = openvino_genai.SparseAttentionConfig(**sparse_attention_kwargs)
-            log.info("Sparse Attention mode ON")
+            if user_config.pop('use_sparse_attention', True):
+                scheduler_config.use_sparse_attention = True
+                scheduler_config.sparse_attention_config = openvino_genai.SparseAttentionConfig(**sparse_attention_kwargs)
+                log.info("Sparse Attention mode ON")
+            else:
+                raise RuntimeError("sparse_attention_config cannot be specified when use_sparse_attention is False")
 
         for param, value in user_config.items():
             setattr(scheduler_config, param, value)

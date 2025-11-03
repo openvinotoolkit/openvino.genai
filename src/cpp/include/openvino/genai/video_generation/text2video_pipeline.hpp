@@ -3,20 +3,18 @@
 
 #pragma once
 
-#include "openvino/genai/image_generation/generation_config.hpp"
+#include "openvino/genai/video_generation/generation_config.hpp"
 #include "openvino/genai/image_generation/image_generation_perf_metrics.hpp"
 #include "openvino/genai/image_generation/scheduler.hpp"
 #include "openvino/genai/image_generation/t5_encoder_model.hpp"
 #include "openvino/genai/video_generation/autoencoder_kl_ltx_video.hpp"
-#include "utils.hpp"
 
 namespace ov::genai {
 using VideoGenerationPerfMetrics = ImageGenerationPerfMetrics;
 
-struct VideoGenerationConfig : public ImageGenerationConfig {
-    double guidance_rescale = 0.0;
-    size_t num_frames = 161;
-    size_t frame_rate = 25;
+struct VideoGenerationResult {
+    ov::Tensor video;
+    ov::genai::VideoGenerationPerfMetrics perfomance_stat;
 };
 
 class OPENVINO_GENAI_EXPORTS Text2VideoPipeline {
@@ -34,14 +32,14 @@ public:
      * @param properties Image generation parameters specified as properties. Values in 'properties' override default value for generation parameters.
      * @returns A tensor which has dimensions [num_images_per_prompt, height, width, 3]
      */
-    ov::Tensor generate(
+    VideoGenerationResult generate(
         const std::string& positive_prompt,
         const std::string& negative_prompt = "",
         const ov::AnyMap& properties = {}
     );
 
     template <typename... Properties>
-    ov::util::EnableIfAllStringAny<ov::Tensor, Properties...> generate(
+    ov::util::EnableIfAllStringAny<VideoGenerationResult, Properties...> generate(
         const std::string& positive_prompt,
         const std::string& negative_prompt,
         Properties&&... properties

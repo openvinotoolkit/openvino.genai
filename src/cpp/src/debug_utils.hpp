@@ -10,6 +10,13 @@
 #include <iterator>
 #include <algorithm>
 #include <iostream>
+#include <filesystem>
+#include <sstream>
+#include <vector>
+#include <iterator>
+#include <algorithm>
+
+#include <openvino/runtime/tensor.hpp>
 #include <string>
 
 template <typename T>
