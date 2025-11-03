@@ -51,7 +51,10 @@ async function main() {
     const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
+        prompt: '> '
     });
+    // Queue for waiting for all requests to be processed before exiting
+    const promptQueue = [];
 
     const modelDir = process.argv[2];
     if (!modelDir) {
@@ -60,7 +63,8 @@ async function main() {
     }
 
     const device = 'CPU'; // GPU can be used as well
-    const pipe = await LLMPipeline(modelDir, device);
+    // We keep the promise here to avoid missing prompts while the model is loading
+    const pipeline = LLMPipeline(modelDir, device);
 
     const config = {};
     config.return_decoded_results = true;
@@ -72,6 +76,7 @@ async function main() {
 
     async function handleInput(prompt) {
         try {
+            const pipe = await pipeline;
             await pipe.startChat(sysMessage);
             config.structured_output_config = new StructuredOutputConfig({
                 json_schema: JSON.stringify(z.toJSONSchema(ItemQuantitiesSchema))
@@ -113,9 +118,18 @@ async function main() {
             console.error("An error occurred:", error);
         }
 
+        rl.prompt();
     }
 
-    rl.on('line', handleInput);
+    rl.on('line', input => {
+        promptQueue.push(handleInput(input));
+    });
+    rl.on('close', async () => {
+        await Promise.all(promptQueue);
+        return;
+    });
+
+    rl.prompt();
 }
 
 main();
