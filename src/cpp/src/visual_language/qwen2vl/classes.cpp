@@ -541,6 +541,8 @@ ov::Tensor concatenate_video_image_embeds(const std::vector<ov::Tensor>& reorder
 
         size_t hidden_dim;
         ov::element::Type type;
+        // The video and image embeds features are from same model.
+        // So reordered_image_embeds and reordered_video_embeds should have same element type and hidden_dim.
         if (reordered_image_embeds.size() > 0u) {
             hidden_dim = reordered_image_embeds.at(0).get_shape().at(1);
             type = reordered_image_embeds.at(0).get_element_type();
