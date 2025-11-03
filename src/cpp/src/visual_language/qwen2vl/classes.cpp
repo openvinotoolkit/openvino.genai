@@ -116,33 +116,33 @@ std::shared_ptr<ov::Node> create_flatten_patches(std::shared_ptr<ov::Node> input
 }
 
 std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::op::v0::Result>> patch_preprocess_branch_image(
-    const std::shared_ptr<ov::op::v0::Parameter>& raw_images_1,
+    const std::shared_ptr<ov::op::v0::Parameter>& raw_image_1,
     const std::shared_ptr<ov::op::v0::Parameter>& resize_shape,
     const std::shared_ptr<ov::op::v0::Constant>& image_mean,
     const std::shared_ptr<ov::op::v0::Constant>& image_scale,
     const std::shared_ptr<ov::op::v0::Parameter>& tile_shape) {
-    auto img_f32_nchw = create_f32_nchw_input(raw_images_1);
+    auto img_f32_nchw = create_f32_nchw_input(raw_image_1);
     auto img_resized = create_bicubic_resize(img_f32_nchw, resize_shape);
     auto img_normalized = create_normalization(img_resized, image_mean, image_scale);
     auto temporal_images = std::make_shared<ov::op::v0::Tile>(img_normalized, tile_shape);
     auto results = std::make_shared<ov::op::v0::Result>(temporal_images);
     return {
-        std::make_shared<ov::Model>(results, ov::ParameterVector{raw_images_1, resize_shape, tile_shape}, "then_body"),
+        std::make_shared<ov::Model>(results, ov::ParameterVector{raw_image_1, resize_shape, tile_shape}, "then_body"),
         results};
 }
 
 std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::op::v0::Result>> patch_preprocess_branch_video(
     std::shared_ptr<ov::op::v0::Parameter> cond_img_vid,
-    std::shared_ptr<ov::op::v0::Parameter> raw_images_1,
-    std::shared_ptr<ov::op::v0::Parameter> raw_images_2,
+    std::shared_ptr<ov::op::v0::Parameter> raw_frame_1,
+    std::shared_ptr<ov::op::v0::Parameter> raw_frame_2,
     std::shared_ptr<ov::op::v0::Parameter> resize_shape,
     std::shared_ptr<ov::op::v0::Constant> image_mean,
     std::shared_ptr<ov::op::v0::Constant> image_scale) {
-    auto img_f32_nchw_1 = create_f32_nchw_input(raw_images_1);
+    auto img_f32_nchw_1 = create_f32_nchw_input(raw_frame_1);
     auto img_resized_1 = create_bicubic_resize(img_f32_nchw_1, resize_shape);
     auto img_normalized_1 = create_normalization(img_resized_1, image_mean, image_scale);
 
-    auto img_f32_nchw_2 = create_f32_nchw_input(raw_images_2);
+    auto img_f32_nchw_2 = create_f32_nchw_input(raw_frame_2);
     auto img_resized_2 = create_bicubic_resize(img_f32_nchw_2, resize_shape);
     auto img_normalized_2 = create_normalization(img_resized_2, image_mean, image_scale);
 
@@ -155,7 +155,7 @@ std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::op::v0::Result>> patch
     // If node's limitation: condition node must be output.
     auto result_ignore = std::make_shared<ov::op::v0::Result>(cond_img_vid);
     return {std::make_shared<ov::Model>(ov::ResultVector{result_temperal_images, result_ignore},
-                                        ov::ParameterVector{cond_img_vid, raw_images_1, raw_images_2, resize_shape},
+                                        ov::ParameterVector{cond_img_vid, raw_frame_1, raw_frame_2, resize_shape},
                                         "else_body"),
             result_temperal_images};
 }
@@ -196,22 +196,22 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
     auto image_scale = std::make_shared<ov::op::v0::Constant>(image_scale_tensor);
 
     // If
-    auto then_raw_images_1 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
+    auto then_raw_image_1 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
     auto then_resize_target_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
     auto then_tile_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{4});
-    auto model_then = patch_preprocess_branch_image(then_raw_images_1,
+    auto model_then = patch_preprocess_branch_image(then_raw_image_1,
                                                     then_resize_target_shape,
                                                     image_mean,
                                                     image_scale,
                                                     then_tile_shape);
 
     auto else_video = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{1});
-    auto else_raw_images_1 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
-    auto else_raw_images_2 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
+    auto else_raw_frame_1 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
+    auto else_raw_frame_2 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
     auto else_resize_target_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
     auto model_else = patch_preprocess_branch_video(else_video,
-                                                    else_raw_images_1,
-                                                    else_raw_images_2,
+                                                    else_raw_frame_1,
+                                                    else_raw_frame_2,
                                                     else_resize_target_shape,
                                                     image_mean,
                                                     image_scale);
@@ -221,11 +221,11 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
     if_op->set_else_body(model_else.first);
     if_op->set_input(cond_img_vid->output(0), nullptr, else_video);
     
-    if_op->set_input(raw_images_1->output(0), nullptr, else_raw_images_1);
-    if_op->set_input(raw_images_2->output(0), nullptr, else_raw_images_2);
+    if_op->set_input(raw_images_1->output(0), nullptr, else_raw_frame_1);
+    if_op->set_input(raw_images_2->output(0), nullptr, else_raw_frame_2);
     if_op->set_input(resize_shape->output(0), nullptr, else_resize_target_shape);
 
-    if_op->set_input(raw_images_1->output(0), then_raw_images_1, nullptr);
+    if_op->set_input(raw_images_1->output(0), then_raw_image_1, nullptr);
     if_op->set_input(resize_shape->output(0), then_resize_target_shape, nullptr);
     if_op->set_input(tile_shape->output(0), then_tile_shape, nullptr);
 
@@ -524,44 +524,57 @@ ov::Tensor get_cu_seqlens(const std::vector<std::array<size_t, 3>>& reordered_im
 }
 
 ov::Tensor concatenate_video_image_embeds(const std::vector<ov::Tensor>& reordered_video_embeds, const std::vector<ov::Tensor>& reordered_image_embeds) {
-    ov::Tensor concatenated_embeds;
+    // one image + zero video.
     if (reordered_image_embeds.size() == 1u && reordered_video_embeds.size() == 0u) {
-        concatenated_embeds = reordered_image_embeds.at(0);
-    } else if (reordered_image_embeds.size() == 0u && reordered_video_embeds.size() == 1u) {
-        concatenated_embeds = reordered_video_embeds.at(0);
-    } else {
-        size_t total_length = 0;
-        for (const auto& embed : reordered_video_embeds) {
-            total_length += embed.get_shape().at(0);
-        }
-        for (const auto& embed : reordered_image_embeds) {
-            total_length += embed.get_shape().at(0);
-        }
+        return reordered_image_embeds.at(0);
+    }
+    // zero image + one video.
+    if (reordered_image_embeds.size() == 0u && reordered_video_embeds.size() == 1u) {
+        return reordered_video_embeds.at(0);
+    }
+    // zero image + zero video.
+    if (reordered_image_embeds.size() == 0u && reordered_video_embeds.size() == 0u) {
+        return ov::Tensor();
+    }
 
-        size_t hidden_dim;
-        ov::element::Type type;
-        // The video and image embeds features are from same model.
-        // So reordered_image_embeds and reordered_video_embeds should have same element type and hidden_dim.
-        if (reordered_image_embeds.size() > 0u) {
-            hidden_dim = reordered_image_embeds.at(0).get_shape().at(1);
-            type = reordered_image_embeds.at(0).get_element_type();
-        } else {
-            hidden_dim = reordered_video_embeds.at(0).get_shape().at(1);
-            type = reordered_video_embeds.at(0).get_element_type();
-        }
+    // mulitple image(s) or video(s).
+    ov::Tensor concatenated_embeds;
+    size_t total_length = 0;
+    for (const auto& embed : reordered_video_embeds) {
+        total_length += embed.get_shape().at(0);
+    }
+    for (const auto& embed : reordered_image_embeds) {
+        total_length += embed.get_shape().at(0);
+    }
 
-        concatenated_embeds = ov::Tensor(type, {total_length, hidden_dim});
-        uint8_t* concat_data = reinterpret_cast<uint8_t*>(concatenated_embeds.data());
+    // The video and image embeds features are from same embeded model.
+    // So reordered_image_embeds and reordered_video_embeds should have same element type and hidden_dim.
+    if (reordered_video_embeds.size() > 0u && reordered_image_embeds.size() > 0u) {
+        OPENVINO_ASSERT(reordered_video_embeds.at(0).get_element_type() == reordered_image_embeds.at(0).get_element_type());
+        OPENVINO_ASSERT(reordered_video_embeds.at(0).get_shape().at(1) == reordered_image_embeds.at(0).get_shape().at(1));
+    }
 
-        size_t offset = 0;
-        for (const auto& embed : reordered_video_embeds) {
-            std::memcpy(concat_data + offset, embed.data(), embed.get_byte_size());
-            offset += embed.get_byte_size();
-        }
-        for (const auto& embed : reordered_image_embeds) {
-            std::memcpy(concat_data + offset, embed.data(), embed.get_byte_size());
-            offset += embed.get_byte_size();
-        }
+    size_t hidden_dim;
+    ov::element::Type type;
+    if (reordered_image_embeds.size() > 0u) {
+        hidden_dim = reordered_image_embeds.at(0).get_shape().at(1);
+        type = reordered_image_embeds.at(0).get_element_type();
+    } else if (reordered_video_embeds.size() > 0u) {
+        hidden_dim = reordered_video_embeds.at(0).get_shape().at(1);
+        type = reordered_video_embeds.at(0).get_element_type();
+    }
+
+    concatenated_embeds = ov::Tensor(type, {total_length, hidden_dim});
+    uint8_t* concat_data = reinterpret_cast<uint8_t*>(concatenated_embeds.data());
+
+    size_t offset = 0;
+    for (const auto& embed : reordered_video_embeds) {
+        std::memcpy(concat_data + offset, embed.data(), embed.get_byte_size());
+        offset += embed.get_byte_size();
+    }
+    for (const auto& embed : reordered_image_embeds) {
+        std::memcpy(concat_data + offset, embed.data(), embed.get_byte_size());
+        offset += embed.get_byte_size();
     }
     return concatenated_embeds;
 }

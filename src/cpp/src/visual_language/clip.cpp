@@ -76,12 +76,6 @@ void bicubic_resize(const clip_image_u8 &img, clip_image_u8 &dst, int target_wid
 
     dst.nx = target_width;
     dst.ny = target_height;
-    const size_t target_size = static_cast<size_t>(3 * target_width * target_height);
-    dst.buf.resize(target_size);
-    if (img.nx == target_width && img.ny == target_height) {
-        std::memcpy(dst.buf.data(), img.buf.data(), target_size*sizeof(uint8_t));
-        return;
-    }
 
     float Cc;
     float C[5];
