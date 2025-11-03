@@ -235,7 +235,7 @@ public:
         } catch (const ov::Exception&) {}
 
         std::map<size_t, std::set<size_t>> seq_id_to_skipped_blocks_map;
-        size_t position_idx = 0;
+        size_t position_ids_idx = 0;
         for (size_t i = 0; i < num_sequence_groups; ++i) {
             size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
             SequenceGroup::Ptr sequence_group = sequence_groups[seq_group_id];
@@ -271,13 +271,13 @@ public:
                         input_ids_data[token_id] = position_id < prompt_len ?
                             sequence_group->get_prompt_ids()[position_id] :
                             sequence->get_generated_ids()[position_id - prompt_len];
-                        position_ids_data[position_idx] = position_id;
+                        position_ids_data[position_ids_idx] = position_id;
                     } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
                         const auto& generated_embeds = sequence->get_generated_ids_embeds();
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
                         std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
                         const auto& position_ids_elem = sequence->get_position_ids_list()[position_id];
-                        const auto [begin, end] = Sequence::get_position_ids_elem_coordinates(position_ids_elem.get_shape(), position_idx, false);
+                        const auto [begin, end] = Sequence::get_position_ids_elem_coordinates(position_ids_elem.get_shape(), position_ids_idx, false);
 
                         ov::Tensor dst_roi(position_ids, begin, end);
                         position_ids_elem.copy_to(dst_roi);
@@ -298,7 +298,7 @@ public:
                             output_seq_len++;
                         }
                     }
-                    position_idx++;
+                    position_ids_idx++;
                 }
 
                 size_t num_blocks = sequence_group->get_num_logical_blocks();

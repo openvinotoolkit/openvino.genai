@@ -278,8 +278,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
                                                          sampling_params_copy, 
                                                          m_block_size, 
                                                          token_type_ids, 
-                                                         position_ids_rope_delta.first, 
-                                                         position_ids_rope_delta.second);
+                                                         position_ids, 
+                                                         rope_delta);
     }
     else {
         sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params_copy, m_block_size, token_type_ids);
