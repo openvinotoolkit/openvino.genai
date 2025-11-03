@@ -452,7 +452,7 @@ public:
         return out_vec[0];  // [B, F, H, W, C]
 }
 
-    VideoGenerationResult generate(const std::string& positive_prompt, const std::string& negative_prompt, const ov::AnyMap& properties = {}) {
+    VideoGenerationResult generate(const std::string& positive_prompt, const ov::AnyMap& properties = {}) {
         const auto gen_start = std::chrono::steady_clock::now();
         m_perf_metrics.clean_up();
 
@@ -473,7 +473,7 @@ public:
             callback = callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>();
         }
 
-        compute_hidden_states(positive_prompt, negative_prompt, merged_generation_config);
+        compute_hidden_states(positive_prompt, merged_generation_config.negative_prompt.value_or(""), merged_generation_config);
 
         size_t num_channels_latents = m_transformer->get_config().in_channels;
         size_t spatial_compression_ratio = m_vae->get_config().patch_size * std::pow(2, std::reduce(m_vae->get_config().spatio_temporal_scaling.begin(), m_vae->get_config().spatio_temporal_scaling.end(), 0));
@@ -637,10 +637,9 @@ Text2VideoPipeline::Text2VideoPipeline(
 
 VideoGenerationResult Text2VideoPipeline::generate(
     const std::string& positive_prompt,
-    const std::string& negative_prompt,
     const ov::AnyMap& properties
 ) {
-    return m_impl->generate(positive_prompt, negative_prompt, properties);
+    return m_impl->generate(positive_prompt, properties);
 }
 
 const VideoGenerationConfig& Text2VideoPipeline::get_generation_config() const {
