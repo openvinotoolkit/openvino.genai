@@ -116,11 +116,11 @@ std::shared_ptr<ov::Node> create_flatten_patches(std::shared_ptr<ov::Node> input
 }
 
 std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::op::v0::Result>> patch_preprocess_branch_image(
-    std::shared_ptr<ov::op::v0::Parameter> raw_images_1,
-    std::shared_ptr<ov::op::v0::Parameter> resize_shape,
-    std::shared_ptr<ov::op::v0::Constant> image_mean,
-    std::shared_ptr<ov::op::v0::Constant> image_scale,
-    std::shared_ptr<ov::op::v0::Parameter> tile_shape) {
+    const std::shared_ptr<ov::op::v0::Parameter>& raw_images_1,
+    const std::shared_ptr<ov::op::v0::Parameter>& resize_shape,
+    const std::shared_ptr<ov::op::v0::Constant>& image_mean,
+    const std::shared_ptr<ov::op::v0::Constant>& image_scale,
+    const std::shared_ptr<ov::op::v0::Parameter>& tile_shape) {
     auto img_f32_nchw = create_f32_nchw_input(raw_images_1);
     auto img_resized = create_bicubic_resize(img_f32_nchw, resize_shape);
     auto img_normalized = create_normalization(img_resized, image_mean, image_scale);
