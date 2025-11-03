@@ -53,7 +53,7 @@ class Sequence {
     std::vector<std::vector<float>> m_generated_ids_embeds;
     SequenceGroupType m_type;
     size_t m_hidden_size;
-    std::vector<ov::Tensor> m_position_ids;
+    std::vector<ov::Tensor> m_position_ids_list;
     int64_t m_rope_delta;
 
     // Embeddings hash calculation params
@@ -77,7 +77,7 @@ class Sequence {
         m_hidden_size(seq.m_hidden_size),
         m_prefix_hashes(seq.m_prefix_hashes),
         m_generated_ids_embeds(seq.m_generated_ids_embeds),
-        m_position_ids(seq.m_position_ids),
+        m_position_ids_list(seq.m_position_ids_list),
         m_rope_delta(seq.m_rope_delta)
          {
         OPENVINO_ASSERT(seq.m_id != m_id);
@@ -234,7 +234,7 @@ public:
         size_t seq_len_shape_idx = position_ids.get_shape().size() == 3 ? 2 : 1;
         size_t position_ids_len = position_ids.get_shape()[seq_len_shape_idx];
         if (position_ids_len == 1) {
-            m_position_ids.emplace_back(position_ids);
+            m_position_ids_list.emplace_back(position_ids);
             return;
         }
         int64_t* position_ids_data = position_ids.data<int64_t>();
@@ -244,20 +244,11 @@ public:
         for (size_t idx = 0; idx < position_ids_len; idx ++) {
 
             ov::Tensor position_ids_elem(position_ids.get_element_type(), position_ids_elem_shape);
-            ov::Coordinate begin;
-            ov::Coordinate end;
-            if (position_ids_elem.get_shape().size() == 3) {
-                begin = ov::Coordinate{0, 0, idx};
-                end = ov::Coordinate{3, 1, idx + 1};
-            }
-            else {
-                begin = ov::Coordinate{0, idx};
-                end = ov::Coordinate{1, idx + 1};
-            }
+            const auto [begin, end] = get_position_ids_elem_coordinates(position_ids_elem.get_shape(), idx, true);
 
             ov::Tensor src_roi(position_ids, begin, end);
             src_roi.copy_to(position_ids_elem);
-            m_position_ids.emplace_back(position_ids_elem);
+            m_position_ids_list.emplace_back(position_ids_elem);
         }
     }
 
@@ -265,12 +256,13 @@ public:
         m_rope_delta = rope_delta;
     }
 
-    const std::vector<ov::Tensor>& get_position_ids() const {
+    const std::vector<ov::Tensor>& get_position_ids_list() const {
         OPENVINO_ASSERT(m_type == ov::genai::SequenceGroupType::EMBEDDINGS);
-        return m_position_ids;
+        return m_position_ids_list;
     }
 
     const int64_t get_rope_delta() const {
+        OPENVINO_ASSERT(m_type == ov::genai::SequenceGroupType::EMBEDDINGS);
         return m_rope_delta;
     }
 
@@ -280,6 +272,30 @@ public:
     // the tokens within the block and the tokens in the prefix before the block.
     // hash(prefix tokens + block tokens) <--> KV Block
     size_t get_hash(size_t content_length = 0);
+
+    static std::pair<ov::Coordinate, ov::Coordinate> get_position_ids_elem_coordinates(ov::Shape position_ids_elem_shape, size_t idx, bool need_batch_dimention) {
+
+        ov::Coordinate begin;
+        ov::Coordinate end;
+        if (position_ids_elem_shape.size() == 3) {
+            begin = ov::Coordinate{0, 0, idx};
+            end = ov::Coordinate{3, 1, idx + 1};
+        }
+        else if (position_ids_elem_shape.size() == 2) {
+            if (need_batch_dimention) {
+                begin = ov::Coordinate{0, idx};
+                end = ov::Coordinate{1, idx + 1};
+            }
+            else {
+                begin = ov::Coordinate{idx};
+                end = ov::Coordinate{idx + 1};
+            }
+        }
+        else {
+            OPENVINO_THROW("Unexpected rank of position ids element. Expected rank 2 or 3, got:" + std::to_string(position_ids_elem_shape.size()));
+        }
+        return {begin, end};
+    }
 };
 
 // contains a list of Sequences in generic case (beam search or parallel sampling)

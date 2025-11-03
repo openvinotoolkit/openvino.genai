@@ -136,7 +136,7 @@ public:
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer,
              const std::optional<std::vector<ov::Tensor>> token_type_ids = std::nullopt,
-             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>> position_ids = std::nullopt) override;
+             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>> position_ids_list = std::nullopt) override;
 
     /**
      * Updates LoRA adapters for current generation call

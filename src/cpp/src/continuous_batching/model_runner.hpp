@@ -199,7 +199,7 @@ public:
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             inputs_embeds_data = inputs_embeds.data<float>();
             token_type_ids_data = token_type_ids.data<int64_t>();
-            auto position_ids_elem = sequence_groups[0]->get_running_sequences()[0]->get_position_ids();
+            auto position_ids_elem = sequence_groups[0]->get_running_sequences()[0]->get_position_ids_list();
             ov::Shape position_ids_shape = position_ids_elem[0].get_shape();
             if (position_ids_shape.size() == 3) {
                 position_ids_shape[2] = total_num_tokens;
@@ -276,18 +276,8 @@ public:
                         const auto& generated_embeds = sequence->get_generated_ids_embeds();
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
                         std::copy_n(src, hidden_size, inputs_embeds_data + token_id * hidden_size);
-                        const auto& position_ids_elem = sequence->get_position_ids()[position_id];
-
-                        ov::Coordinate begin;
-                        ov::Coordinate end;
-                        if (position_ids_elem.get_shape().size() == 3) {
-                            begin = ov::Coordinate{0, 0, position_idx};
-                            end = ov::Coordinate{3, 1, position_idx + 1};
-                        }
-                        else {
-                            begin = ov::Coordinate{position_idx};
-                            end = ov::Coordinate{position_idx + 1};
-                        }
+                        const auto& position_ids_elem = sequence->get_position_ids_list()[position_id];
+                        const auto [begin, end] = Sequence::get_position_ids_elem_coordinates(position_ids_elem.get_shape(), position_idx, false);
 
                         ov::Tensor dst_roi(position_ids, begin, end);
                         position_ids_elem.copy_to(dst_roi);
@@ -377,7 +367,7 @@ public:
                 m_request.set_tensor("token_type_ids", token_type_ids);
             }
         }
-        if (position_ids.get_shape().size() > 2) {
+        if (position_ids.get_shape().size() == 3) {
             // flatten positions ids for 3D position ids case
             position_ids.set_shape({ov::shape_size(position_ids.get_shape())});
         }
