@@ -33,32 +33,6 @@ namespace {
 // Chat template hardcodes char sequence instead of referring to tag values, so NATIVE_TAG is hardcoded as well.
 const std::string NATIVE_TAG = "<|vision_start|><|image_pad|><|vision_end|>";
 
-void log_position_ids_table(const std::string& label,
-                            const ov::Tensor& position_ids,
-                            const std::vector<int64_t>& token_ids) {
-    const ov::Shape& shape = position_ids.get_shape();
-    if (shape.size() != 3 || shape.at(1) == 0) {
-        std::cout << label << " (unavailable)" << std::endl;
-        return;
-    }
-
-    size_t seq_len = shape.at(2);
-    size_t batch_offset = 0;  // first batch only
-    const int64_t* base_ptr = position_ids.data<const int64_t>();
-    const int64_t* temporal_ptr = base_ptr + batch_offset;
-    const int64_t* height_ptr = base_ptr + shape.at(1) * seq_len + batch_offset;
-    const int64_t* width_ptr = base_ptr + 2 * shape.at(1) * seq_len + batch_offset;
-
-    size_t rows = std::min(token_ids.size(), seq_len);
-
-    std::cout << label << std::endl;
-    std::cout << "index\t token_id\t temporal\t height\t width" << std::endl;
-    for (size_t idx = 0; idx < rows; ++idx) {
-        std::cout << idx << '\t' << token_ids[idx] << '\t' << temporal_ptr[idx] << '\t' << height_ptr[idx]
-                  << '\t' << width_ptr[idx] << std::endl;
-    }
-}
-
 std::shared_ptr<ov::Node> create_f32_nchw_input(std::shared_ptr<ov::Node> input) {
     auto raw_images_f32 = std::make_shared<ov::op::v0::Convert>(input, ov::element::f32);
     auto img_trans = std::make_shared<ov::op::v1::Transpose>(
@@ -1380,8 +1354,6 @@ ov::Tensor InputsEmbedderQwen2VL::adjust_position_ids_for_pruning(
         *original_tokens_per_region_out = original_tokens_per_region_local;
     }
 
-    std::vector<int64_t> pruned_token_ids;
-    std::vector<std::array<size_t, 4>> removed_tokens;
     std::vector<std::vector<bool>> keep_flags_local;
 
     ov::Tensor updated_position_ids = update_position_ids(original_position_ids,
@@ -1391,35 +1363,10 @@ ov::Tensor InputsEmbedderQwen2VL::adjust_position_ids_for_pruning(
                                                           reordered_images_grid_thw,
                                                           kept_indices_per_image,
                                                           spatial_merge_size,
-                                                          &pruned_token_ids,
-                                                          &removed_tokens,
                                                           pruned_tokens_per_region_out,
                                                           nullptr,
                                                           keep_flags_per_region_out ? keep_flags_per_region_out
                                                                                     : &keep_flags_local);
-
-    std::vector<int64_t> original_token_ids;
-    const ov::Shape& original_shape = original_position_ids.get_shape();
-    const ov::Shape& input_shape = input_ids.get_shape();
-    if (original_shape.size() == 3 && original_shape.at(1) > 0 && input_shape.size() >= 2 && input_shape.at(0) > 0) {
-        size_t seq_len = original_shape.at(2);
-        const int64_t* input_ptr = input_ids.data<const int64_t>();
-        original_token_ids.assign(input_ptr, input_ptr + seq_len);
-    }
-
-    log_position_ids_table("[CDPruner] Original position_ids before pruning:",
-                           original_position_ids,
-                           original_token_ids);
-    log_position_ids_table("[CDPruner] Updated position_ids after pruning:", updated_position_ids, pruned_token_ids);
-
-    if (!removed_tokens.empty()) {
-        std::cout << "[CDPruner] Removed visual tokens (first batch):" << std::endl;
-        std::cout << "image\tindex\trow\tcol" << std::endl;
-        for (const auto& token_info : removed_tokens) {
-            std::cout << token_info[0] << "\t" << token_info[1] << "\t" << token_info[2] << "\t" << token_info[3]
-                      << std::endl;
-        }
-    }
 
     return updated_position_ids;
 }
@@ -1432,8 +1379,6 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(
     const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw,
     const std::vector<std::vector<size_t>>& kept_indices_per_image,
     size_t spatial_merge_size,
-    std::vector<int64_t>* pruned_token_ids_out,
-    std::vector<std::array<size_t, 4>>* removed_tokens_out,
     std::vector<size_t>* pruned_tokens_per_region_out,
     std::vector<std::vector<size_t>>* normalized_kept_indices_out,
     std::vector<std::vector<bool>>* keep_flags_out) {
@@ -1569,15 +1514,6 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(
     const int64_t* input_ids_data = input_ids.data<const int64_t>();
     const int64_t* original_data = original_position_ids.data<const int64_t>();
 
-    if (pruned_token_ids_out) {
-        pruned_token_ids_out->clear();
-        pruned_token_ids_out->reserve(new_seq_len);
-    }
-    if (removed_tokens_out) {
-        removed_tokens_out->clear();
-        removed_tokens_out->reserve(total_removed);
-    }
-
     for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
         size_t seq_idx = 0;
         size_t write_idx = 0;
@@ -1621,13 +1557,7 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(
                     max_width = std::max(max_width, width_value);
                     max_temporal = std::max(max_temporal, temporal_value);
 
-                    if (pruned_token_ids_out && batch_idx == 0) {
-                        pruned_token_ids_out->push_back(token_id);
-                    }
-
                     ++write_idx;
-                } else if (removed_tokens_out && batch_idx == 0) {
-                    removed_tokens_out->push_back({image_idx, visual_index, row, col});
                 }
 
                 ++visual_index;
@@ -1650,10 +1580,6 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(
             temporal_out[batch_offset_out + write_idx] = temporal_value;
             height_out[batch_offset_out + write_idx] = temporal_value;
             width_out[batch_offset_out + write_idx] = temporal_value;
-
-            if (pruned_token_ids_out && batch_idx == 0) {
-                pruned_token_ids_out->push_back(token_id);
-            }
 
             ++write_idx;
             ++seq_idx;

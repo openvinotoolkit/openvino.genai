@@ -120,8 +120,6 @@ protected:
                                    const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw,
                                    const std::vector<std::vector<size_t>>& kept_indices_per_image,
                                    size_t spatial_merge_size,
-                                   std::vector<int64_t>* pruned_token_ids_out,
-                                   std::vector<std::array<size_t, 4>>* removed_tokens_out,
                                    std::vector<size_t>* pruned_tokens_per_region_out = nullptr,
                                    std::vector<std::vector<size_t>>* normalized_kept_indices_out = nullptr,
                                    std::vector<std::vector<bool>>* keep_flags_out = nullptr);
