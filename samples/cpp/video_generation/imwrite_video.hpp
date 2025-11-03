@@ -14,4 +14,4 @@
 //  */
 //
 
-void imwrite_video(const std::string& name, ov::Tensor video, bool convert_bgr2rgb = false, int quality = 85);
+void imwrite_video(const std::string& name, ov::Tensor video, const uint32_t fps = 25, bool convert_bgr2rgb = false, int quality = 85);
