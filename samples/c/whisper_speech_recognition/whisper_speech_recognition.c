@@ -5,9 +5,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 
 #include "openvino/genai/c/whisper_pipeline.h"
 #include "whisper_utils.h"
+
+#define SAMPLE_RATE_TOLERANCE 0.5f
 
 int main(int argc, char* argv[]) {
     if (argc != 3 && argc != 4) {
@@ -29,13 +32,19 @@ int main(int argc, char* argv[]) {
     char* output = NULL;
     size_t output_size = 0;
 
+    if (strlen(wav_file_path) == 0 || strstr(wav_file_path, "..") != NULL) {
+        fprintf(stderr, "Invalid file path provided\n");
+        exit_code = EXIT_FAILURE;
+        goto err;
+    }
+
     float file_sample_rate;
     if (load_wav_file(wav_file_path, &audio_data, &audio_length, &file_sample_rate) != 0) {
         exit_code = EXIT_FAILURE;
         goto err;
     }
 
-    if (file_sample_rate != 16000.0f) {
+    if (fabsf(file_sample_rate - 16000.0f) > SAMPLE_RATE_TOLERANCE) {
         size_t resampled_length;
         float* resampled_audio = resample_audio(audio_data, audio_length, file_sample_rate, 16000.0f, &resampled_length);
         if (!resampled_audio) {

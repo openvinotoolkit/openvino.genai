@@ -178,7 +178,7 @@ public:
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
-        return generate(prompt, images, {}, generation_config, streamer);
+        return generate(prompt, images, {}, std::move(generation_config), streamer);
     }
 
     VLMDecodedResults generate(
@@ -295,7 +295,7 @@ public:
         std::copy(tokenized_history.begin(), tokenized_history.end(), prompt_ids.data<int64_t>());
 
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config, block_size);
-        requests.push_back(sequence_group);
+        requests.push_back(std::move(sequence_group));
 
         std::shared_ptr<StreamerBase> streamer_ptr = utils::create_streamer(streamer, m_tokenizer);
 
@@ -314,8 +314,10 @@ public:
             m_sampler.set_seed(generation_config.rng_seed);
         }
 
-        ov::genai::utils::GenerationFinishInfo finish_info = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
-                                                                                               position_ids, token_type_ids, kv_cache_state, m_embedding, rope_delta, m_max_kv_cache_size);
+        ov::genai::utils::GenerationFinishInfo finish_info = ov::genai::get_lm_encoded_results(
+            m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, std::move(requests),
+            position_ids, token_type_ids, kv_cache_state, m_embedding, rope_delta, m_max_kv_cache_size
+        );
         EncodedResults& encoded_result = finish_info.results;
 
         auto decode_start_time = std::chrono::steady_clock::now();

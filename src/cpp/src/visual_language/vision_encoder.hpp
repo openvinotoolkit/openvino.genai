@@ -58,7 +58,7 @@ struct EncodedImage {
     ResampledImage resampled_image;
 
     /// @brief Number of image tokens required to append to a normalized prompt
-    size_t num_image_tokens;
+    size_t num_image_tokens = 0;
 };
 
 /// @brief Embeddings of a given video. 

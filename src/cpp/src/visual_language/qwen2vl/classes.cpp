@@ -238,11 +238,11 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model
                                                                         std::vector<int32_t>{0, 2, 5, 3, 6, 1, 4, 7}));
 
     auto img_4d = create_transpose_patches(
-        img_8d,
+        std::move(img_8d),
         reshape_shape4d,
         std::make_shared<ov::op::v0::Constant>(ov::element::i32, Shape{4}, std::vector<int32_t>{0, 2, 1, 3}));
 
-    auto img_2d = create_flatten_patches(img_4d, reshape_shape2d);
+    auto img_2d = create_flatten_patches(std::move(img_4d), reshape_shape2d);
 
     auto params_org = model_org->get_parameters();
     OPENVINO_ASSERT(params_org.size() == 1u);
@@ -427,8 +427,7 @@ std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_i
     images_grid_thw.reserve(encoded_images.size());
 
     for (const auto& encoded_image : encoded_images) {
-        ov::Tensor single_image_embeds = encoded_image.resized_source;
-        image_embeds.push_back(std::move(single_image_embeds));
+        image_embeds.push_back(encoded_image.resized_source);
 
         size_t grid_t = 1;
         size_t grid_h = encoded_image.resized_source_size.height;
@@ -443,7 +442,7 @@ std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_i
         reordered_images_grid_thw.push_back(images_grid_thw.at(new_image_id));
     }
 
-    return {reordered_image_embeds, reordered_images_grid_thw};
+    return {std::move(reordered_image_embeds), std::move(reordered_images_grid_thw)};
 }
 
 std::pair<std::vector<ov::Tensor>, std::vector<std::array<size_t, 3>>> reorder_video_embeds_and_grid_thw(
