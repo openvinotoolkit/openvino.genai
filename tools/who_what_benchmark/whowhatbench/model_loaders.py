@@ -210,6 +210,7 @@ def load_text_model(
                     use_cache=True,
                     device=device,
                     ov_config=ov_config,
+                    **kwargs
                 )
             except Exception:
                 config = AutoConfig.from_pretrained(model_id)
@@ -219,6 +220,7 @@ def load_text_model(
                     use_cache=True,
                     device=device,
                     ov_config=ov_config,
+                    **kwargs
                 )
 
     return model
@@ -530,8 +532,7 @@ def load_embedding_model(model_id, device="CPU", ov_config=None, use_hf=False, u
             model = OVModelForFeatureExtraction.from_pretrained(
                 model_id, device=device, ov_config=ov_config, safety_checker=None,
             )
-        except ValueError as e:
-            logger.error("Failed to load embedding pipeline. Details:\n", e)
+        except ValueError:
             model = OVModelForFeatureExtraction.from_pretrained(
                 model_id,
                 trust_remote_code=True,
@@ -596,8 +597,7 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
             model = model_cls.from_pretrained(
                 model_id, device=device, ov_config=ov_config, safety_checker=None,
             )
-        except ValueError as e:
-            logger.error("Failed to load reranking pipeline, an attempt will be made again with updated parameters. Details:\n", e)
+        except ValueError:
             model = model_cls.from_pretrained(
                 model_id,
                 trust_remote_code=True,
