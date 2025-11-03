@@ -297,6 +297,7 @@ class Text2VideoPipeline::LTXPipeline {
 
         // torch.cat([negative_prompt_embeds, prompt_embeds], dim=0)
         // genai m_t5_text_encoder->infer retuns the same tensor [negative_prompt_embeds, prompt_embeds]
+        infer_start = std::chrono::steady_clock::now();
         ov::Tensor prompt_embeds = m_t5_text_encoder->infer(
             positive_prompt,
             negative_prompt,
@@ -647,6 +648,7 @@ const VideoGenerationConfig& Text2VideoPipeline::get_generation_config() const {
 }
 
 void Text2VideoPipeline::set_generation_config(const VideoGenerationConfig& generation_config) {
+    generation_config.validate();
     m_impl->m_generation_config = generation_config;
     replace_defaults(m_impl->m_generation_config);
 }
