@@ -135,10 +135,10 @@ To run the benchmarking script with `torch.compile()`, use the `--torch_compile_
 python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_backend openvino
 ```
 
-> **Note:** To use `torch.compile()` with CUDA GPUs, you need to install the nightly version of PyTorch:
+> **Note:** To use `torch.compile()`, install PyTorch:
 >
 > ```bash
-> pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu118
+> pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 > ```
 
 
