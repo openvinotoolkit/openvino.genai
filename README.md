@@ -5,6 +5,7 @@
 [<b>Getting Started</b>](#getting-started) •
 [<b>AI Scenarios</b>](#ai-scenarios) •
 [<b>Optimization Methods</b>](#optimization-methods)
+[<b>Documentation</b>](https://openvinotoolkit.github.io/openvino.genai/)
 
 [![GitHub Release](https://img.shields.io/github/v/release/openvinotoolkit/openvino.genai?color=green)](https://github.com/openvinotoolkit/openvino.genai/releases)
 [![PyPI Downloads](https://static.pepy.tech/badge/openvino.genai)](https://pypi.org/project/openvino.genai/)
@@ -38,13 +39,13 @@ Please follow these blogs to setup your first hands-on experience with C++ and P
 
 ## Supported Generative AI scenarios
 
-OpenVINO™ GenAI library provides very lightweight C++ and Python APIs to run the following Generative Scenarios:
- - Text generation using Large Language Models. For example, chat with local LLaMa model
- - Image generation using Diffuser models, for example, generation using Stable Diffusion models
- - Speech recognition using Whisper family models
- - Text generation using Large Visual Models, for instance, Image analysis using LLaVa or miniCPM models family
- - Text-to-speech generation using SpeechT5 TTS models
- - Text embedding for Retrieval-Augmented Generation (RAG). For example, compute embeddings for documents and queries to enable efficient retrieval in RAG workflows.
+OpenVINO™ GenAI library provides very lightweight C++ and Python APIs to run the following Generative AI Scenarios:
+ - [Text generation using Large Language Models](#text-to-text), for example, chat with local Llama model
+ - [Text generation using Large Visual Models](#image-to-text), for example, image analysis using LLaVa or MiniCPM models family
+ - [Image generation using Diffuser models](#text-to-image), for example, generation using Stable Diffusion models
+ - [Speech recognition using Whisper family models](#speech-to-text)
+ - [Text-to-speech generation using SpeechT5 TTS models](#text-to-speech)
+ - [Text embedding for Retrieval-Augmented Generation (RAG)](#text-embedding), for example, compute embeddings for documents and queries to enable efficient retrieval in RAG workflows.
 
 Library efficiently supports LoRA adapters for Text and Image generation scenarios:
 - Load multiple adapters per model
@@ -75,6 +76,8 @@ Continuous batching functionality is used within OpenVINO Model Server (OVMS) to
 
     # (Optional) Install (TBD) to be able to download models from Model Scope
 ```
+
+<a id="text-to-text"></a>
 
 ## Performing text generation 
 <details>
@@ -134,6 +137,8 @@ int main(int argc, char* argv[]) {
 See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Create+an+LLM-powered+Chatbot+using+OpenVINO+Generate+API)
 
 </details>
+
+<a id="image-to-text"></a>
 
 ## Performing visual language text generation
 <details>
@@ -204,6 +209,8 @@ int main(int argc, char* argv[]) {
 See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Visual-language+assistant+with+MiniCPM-V2+and+OpenVINO)
 
 </details>
+
+<a id="image-to-text"></a>
 
 ## Performing image generation
 
@@ -360,6 +367,8 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Text+to+
 
 </details>
 
+<a id="speech-to-text"></a>
+
 ## Speech-to-text processing using Whisper Pipeline
 <details>
 
@@ -425,6 +434,8 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Automati
 
 </details>
 
+<a id="text-to-speech"></a>
+
 ## Performing text-to-speech generation
 <details>
 
@@ -480,7 +491,9 @@ int main(int argc, char* argv[]) {
 
 </details>
 
-## Text Embeddings
+<a id="text-embedding"></a>
+
+## Text Embedding
 <details>
 
 ### Converting and preparing a text embedding model from Hugging Face library
