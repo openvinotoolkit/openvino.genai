@@ -14,7 +14,7 @@ from utils.comparation import compare_generation_results
 from utils.ov_genai_pipelines import convert_decoded_results_to_generation_result
 
 def get_npu_llm_properties_for_test():
-    config = get_default_llm_properties()
+    config = {}
     config["NPUW_DEVICES"] = "CPU"
     config["GENERATE_HINT"] = "BEST_PERF"
     return config
