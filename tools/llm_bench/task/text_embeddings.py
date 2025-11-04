@@ -17,16 +17,16 @@ FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 
 def save_output_to_file(output, prefix, args):
     if isinstance(output, dict):
-        log.debug(f"{prefix} is dict")
+        log.info(f"{prefix} is dict")
         for k, v in output.items():
             save_output_to_file(v, f"{prefix}_{k}", args)
     elif isinstance(output, tuple) or isinstance(output, list):
-        log.debug(f"{prefix} is list")
+        log.info(f"{prefix} is list")
         for i, v in enumerate(output):
             save_output_to_file(v, f"{prefix}_{i}", args)
-    log.debug(f"Saving output embeddings to file {prefix}.npy")
+    log.info(f"Saving output embeddings to file {prefix}.npy")
     try: output = output.cpu().numpy()
-    except Exception as ex: log.debug(f"Output is not a tensor: {ex}")
+    except Exception as ex: log.info(f"Output is not a tensor: {ex}")
     llm_bench_utils.output_file.save_tensor_to_file(output, f"{prefix}.npy", args)
 
 

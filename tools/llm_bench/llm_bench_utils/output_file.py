@@ -14,7 +14,7 @@ def save_tensor_to_file(input_tensor: np.ndarray, text_file_name, args):
     else:
         out_path = '.'
     save_path = out_path + os.sep + text_file_name
-    input_text_file = open(save_path, 'w')
+    input_text_file = open(save_path, 'wb+')
     np.save(input_text_file, input_tensor)
     input_text_file.close()
     print(f"Saved tensor to file: {save_path}")
