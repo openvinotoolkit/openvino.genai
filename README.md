@@ -2,10 +2,15 @@
  
 # OpenVINO™ GenAI
 
-![](src/docs/openvino_genai.svg)
-
 [Getting Started](#getting-started) •
-[AI Scenarios](./docs/ModelZoo.md)
+[AI Scenarios](#ai-scenarios) •
+[Optimization Methods](#optimization-methods)
+
+[![GitHub Release](https://img.shields.io/github/v/release/openvinotoolkit/openvino.genai?color=green)](https://github.com/openvinotoolkit/openvino.genai/releases)
+[![PyPI Downloads](https://static.pepy.tech/badge/openvino.genai)](https://pypi.org/project/openvino.genai/)
+![OS](https://img.shields.io/badge/OS-Linux_|_Windows_|_MacOS-blue)
+
+![](src/docs/openvino_genai.svg)
 
 </div>
 
@@ -28,7 +33,6 @@ Please follow these blogs to setup your first hands-on experience with C++ and P
 * [How to Build OpenVINO™ GenAI APP in C++](https://medium.com/openvino-toolkit/how-to-build-openvino-genai-app-in-c-32dcbe42fa67)
 * [How to run Llama 3.2 locally with OpenVINO™](https://medium.com/openvino-toolkit/how-to-run-llama-3-2-locally-with-openvino-60a0f3674549)
 
-
 <a id="ai-scenarios"></a>
 
 ## Supported Generative AI scenarios
@@ -47,6 +51,8 @@ Library efficiently supports LoRA adapters for Text and Image generation scenari
 - Mix multiple adapters with coefficients via alpha blending
 
 All scenarios are run on top of OpenVINO Runtime that supports inference on CPU, GPU and NPU. See [here](https://docs.openvino.ai/2025/about-openvino/release-notes-openvino/system-requirements.html) for platform support matrix.
+
+<a id="optimization-methods"></a>
 
 ## Supported Generative AI optimization methods
 
@@ -360,7 +366,7 @@ For more examples check out our [Generative AI workflow](https://docs.openvino.a
 
 NOTE: Whisper Pipeline requires preprocessing of audio input (to adjust sampling rate and normalize)
  
- ### Converting and quantizing speech-to-text model from Hugging Face library
+### Converting and quantizing speech-to-text model from Hugging Face library
 ```sh
 #Download and convert to OpenVINO whisper-base model
 optimum-cli export openvino --model openai/whisper-base whisper-base
@@ -412,7 +418,7 @@ int main(int argc, char* argv[]) {
 }
 ```
 
- ### Sample notebooks using this API
+### Sample notebooks using this API
 
 See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Automatic+speech+recognition+using+Whisper+and+OpenVINO+with+Generate+API)
 
