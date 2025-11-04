@@ -292,7 +292,7 @@ public:
             }
         }
         else {
-            OPENVINO_THROW("Unexpected rank of position ids element. Expected rank 2 or 3, got:" + std::to_string(position_ids_elem_shape.size()));
+            OPENVINO_THROW("Unexpected rank of position ids element. Expected rank 2 or 3, got: " + std::to_string(position_ids_elem_shape.size()));
         }
         return {begin, end};
     }
