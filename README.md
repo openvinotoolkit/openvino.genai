@@ -2,12 +2,13 @@
  
 # OpenVINO™ GenAI
 
-[Getting Started](#getting-started) •
-[AI Scenarios](#ai-scenarios) •
-[Optimization Methods](#optimization-methods)
+[<b>Getting Started</b>](#getting-started) •
+[<b>AI Scenarios</b>](#ai-scenarios) •
+[<b>Optimization Methods</b>](#optimization-methods)
 
 [![GitHub Release](https://img.shields.io/github/v/release/openvinotoolkit/openvino.genai?color=green)](https://github.com/openvinotoolkit/openvino.genai/releases)
 [![PyPI Downloads](https://static.pepy.tech/badge/openvino.genai)](https://pypi.org/project/openvino.genai/)
+![Python](https://img.shields.io/badge/python-3.10+-green)
 ![OS](https://img.shields.io/badge/OS-Linux_|_Windows_|_MacOS-blue)
 
 ![](src/docs/openvino_genai.svg)
