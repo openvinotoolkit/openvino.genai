@@ -234,7 +234,7 @@ public:
         size_t seq_len_shape_idx = position_ids.get_shape().size() == 3 ? 2 : 1;
         size_t position_ids_len = position_ids.get_shape()[seq_len_shape_idx];
         if (position_ids_len == 1) {
-            m_position_ids_list.emplace_back(position_ids);
+            m_position_ids_list.push_back(position_ids);
             return;
         }
         int64_t* position_ids_data = position_ids.data<int64_t>();
