@@ -57,12 +57,12 @@ struct EncodedImage {
     ResampledImage resampled_image;
 
     /// @brief Number of image tokens required to append to a normalized prompt
-    size_t num_image_tokens;
+    size_t num_image_tokens = 0;
 };
 
 /// @brief Embeddings of a given video. 
 struct EncodedVideo {
-    /// @brief Embeddings of a given video obtained by appling preprocessing to frames and feature extracting models (resampler, mm_projector, etc.)
+    /// @brief Embeddings of a given video obtained by applying preprocessing to frames and feature extracting models (resampler, mm_projector, etc.)
     ov::Tensor video_feautures;
 
     /// @brief Number of video tokens required to append to a normalized prompt

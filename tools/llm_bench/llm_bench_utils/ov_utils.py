@@ -560,10 +560,9 @@ def create_genai_speech_2_txt_model(model_path, device, memory_data_collector, *
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data('compilation_phase')
         memory_data_collector.log_data(compilation_phase=True)
-    from_pretrained_time = end - start
-    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    log.info(f'Pipeline initialization time: {end - start:.2f}s')
     processor = AutoProcessor.from_pretrained(model_path)
-    return genai_pipe, processor, from_pretrained_time, True
+    return genai_pipe, processor, end - start, True
 
 
 def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwargs):
@@ -1030,7 +1029,7 @@ def get_genai_chunk_streamer():
                     pass
                 elif len(text) > self.print_len:
                     # It is possible to have a shorter text after adding new token.
-                    # Print to output only if text lengh is increaesed.
+                    # Print to output only if text length is increased.
                     word = text[self.print_len:]
                     self.print_len = len(text)
                 self.put_word(word)
