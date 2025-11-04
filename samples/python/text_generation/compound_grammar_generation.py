@@ -82,9 +82,9 @@ class CustomToolCallParser(Parser):
     Custom parser should be inherited from Parser and implement 'parse' method.
     """
     def parse(self, msg: dict):
-        if 'content' not in msg:
-            msg['content'] = ''
-        content = msg['content']
+        if "content" not in msg:
+            msg["content"] = ""
+        content = msg["content"]
 
         start_tag = "functools"
         start_index = content.find(start_tag)
@@ -94,15 +94,15 @@ class CustomToolCallParser(Parser):
         json_part = content[start_index + len(start_tag):]
         try:
             tool_calls = json.loads(json_part)
-            msg['tool_calls'] = tool_calls
+            msg["tool_calls"] = tool_calls
             return
-        except json.JSONDecodeError as e:
+        except json.JSONDecodeError:
             return
 
 
 def print_tool_call(answer: DecodedResults):
-    for tool_call in answer.parsed[0]['tool_calls']:
-        print(f"""{tool_call['name']}({', '.join(f'{key}="{value}"' for key, value in tool_call['arguments'].items())})""")
+    for tool_call in answer.parsed[0]["tool_calls"]:
+        print(f"""{tool_call["name"]}({", ".join(f'{key}="{value}"' for key, value in tool_call["arguments"].items())})""")
 
 
 # modified system message from:
