@@ -15,6 +15,21 @@ import llm_bench_utils.gen_output_data as gen_output_data
 FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 
 
+def save_output_to_file(output, prefix, args):
+    if isinstance(output, dict):
+        log.debug(f"{prefix} is dict")
+        for k, v in output.items():
+            save_output_to_file(v, f"{prefix}_{k}", args)
+    elif isinstance(output, tuple) or isinstance(output, list):
+        log.debug(f"{prefix} is list")
+        for i, v in enumerate(output):
+            save_output_to_file(v, f"{prefix}_{i}", args)
+    log.debug(f"Saving output embeddings to file {prefix}.npy")
+    try: output = output.cpu().numpy()
+    except Exception as ex: log.debug(f"Output is not a tensor: {ex}")
+    llm_bench_utils.output_file.save_tensor_to_file(output, f"{prefix}.npy", args)
+
+
 def run_text_embeddings_optimum(input_text, num, model, tokenizer, args, iter_data_list, prompt_index, bench_hook, proc_id, mem_consumption):
     input_text_list = [input_text] * args['batch_size']
     tokenizer_kwargs = {'padding': True, 'truncation': True, 'padding_side': args.get('emb_padding_side', 'right')}
@@ -47,15 +62,7 @@ def run_text_embeddings_optimum(input_text, num, model, tokenizer, args, iter_da
     # TODO do the same in run_text_embeddings_genai
     log.info(f"Trying to save output embeddings in optimum...")
     if args['save_output']:
-        log.info(f"Saving output embeddings to files with prefix: {args['save_output']}")
-        if isinstance(output, dict):
-            for k, v in output.items():
-                llm_bench_utils.output_file.save_tensor_to_file(v.cpu().numpy(), f"{args['save_output']}_out{k}_iter{num}.npy", args)
-        elif isinstance(output, tuple) or isinstance(output, list):
-            for i, v in enumerate(output):
-                llm_bench_utils.output_file.save_tensor_to_file(v.cpu().numpy(), f"{args['save_output']}_embeddings_out{i}_iter{num}.npy", args)
-        else:
-            llm_bench_utils.output_file.save_tensor_to_file(output.cpu().numpy(), f"{args['save_output']}_embeddings_iter{num}.npy", args)
+        save_output_to_file(output, f"{args['save_output']}_embeddings_iter{num}", args)
 
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
@@ -135,15 +142,7 @@ def run_text_embeddings_genai(input_text, num, model, tokenizer, args, iter_data
 
     log.info(f"Trying to save output embeddings in genai...")
     if args['save_output']:
-        log.info(f"Saving output embeddings to files with prefix: {args['save_output']}")
-        if isinstance(output, dict):
-            for k, v in output.items():
-                llm_bench_utils.output_file.save_tensor_to_file(v.cpu().numpy(), f"{args['save_output']}_out{k}_iter{num}.npy", args)
-        elif isinstance(output, tuple) or isinstance(output, list):
-            for i, v in enumerate(output):
-                llm_bench_utils.output_file.save_tensor_to_file(v.cpu().numpy(), f"{args['save_output']}_embeddings_out{i}_iter{num}.npy", args)
-        else:
-            llm_bench_utils.output_file.save_tensor_to_file(output.cpu().numpy(), f"{args['save_output']}_embeddings_iter{num}.npy", args)
+        save_output_to_file(output, f"{args['save_output']}_embeddings_iter{num}", args)
 
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
