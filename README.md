@@ -4,6 +4,9 @@
 
 ![](src/docs/openvino_genai.svg)
 
+[Getting Started](#getting-started) •
+[AI Scenarios](./docs/ModelZoo.md)
+
 </div>
 
 OpenVINO™ GenAI is a library of the most popular Generative AI model pipelines, optimized execution methods, and samples that run on top of highly performant [OpenVINO Runtime](https://github.com/openvinotoolkit/openvino).
@@ -11,6 +14,8 @@ OpenVINO™ GenAI is a library of the most popular Generative AI model pipelines
 This library is friendly to PC and laptop execution, and optimized for resource consumption. It requires no external dependencies to run generative models as it already includes all the core functionality (e.g. tokenization via openvino-tokenizers).
 
 ![Text generation using LLaMa 3.2 model running on Intel ARC770 dGPU](./samples/generation.gif)
+
+<a id="getting-started"></a>
 
 ## Getting Started
 
@@ -23,6 +28,8 @@ Please follow these blogs to setup your first hands-on experience with C++ and P
 * [How to Build OpenVINO™ GenAI APP in C++](https://medium.com/openvino-toolkit/how-to-build-openvino-genai-app-in-c-32dcbe42fa67)
 * [How to run Llama 3.2 locally with OpenVINO™](https://medium.com/openvino-toolkit/how-to-run-llama-3-2-locally-with-openvino-60a0f3674549)
 
+
+<a id="ai-scenarios"></a>
 
 ## Supported Generative AI scenarios
 
