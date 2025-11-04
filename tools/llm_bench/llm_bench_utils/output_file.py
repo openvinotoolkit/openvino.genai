@@ -18,27 +18,21 @@ def _get_save_path(text_file_name, args):
 
 def save_model_output_to_file(output, text_file_name, args):
     if isinstance(output, dict):
-        print(f"{text_file_name} is dict")
         for k, v in output.items():
             save_model_output_to_file(v, f"{text_file_name}_{k}", args)
     elif isinstance(output, tuple) or isinstance(output, list):
-        print(f"{text_file_name} is list")
         try:
             output = [np.array(output)]
-        except Exception as ex:
-            print(f"Cannot convert output to numpy array: {ex}")
-        if len(output) == 1:
-            save_model_output_to_file(output[0], text_file_name, args)
-        else:
+        except: pass
+        if len(output) != 1:
             for i, v in enumerate(output):
                 save_model_output_to_file(v, f"{text_file_name}_{i}", args)
+        else: save_model_output_to_file(output[0], text_file_name, args)
     else:
-        print(f"Saving output embeddings to file {text_file_name}.npy")
         save_path = _get_save_path(text_file_name + '.npy', args)
         input_text_file = open(save_path, 'wb+')
         np.save(input_text_file, output)
         input_text_file.close()
-        print(f"Saved tensor to file: {save_path}")
 
 
 def save_text_to_file(input_text, text_file_name, args):
