@@ -802,7 +802,7 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderQwen2VL::get_positio
 }
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderQwen2VL::get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) {
-    OPENVINO_ASSERT(history_size != 0, "get_generation_phase_position_ids() should be called on generate() phase only.");
+    OPENVINO_ASSERT(history_size != 0, "get_generation_phase_position_ids() should only be called when history_size is non-zero (generation phase).");
     ov::Tensor position_ids{ov::element::i64, {3, 1, inputs_embeds_size}};
     int64_t new_pos_id = static_cast<int64_t>(history_size + rope_delta);
     for (size_t dim = 0; dim < 3; ++dim) {
