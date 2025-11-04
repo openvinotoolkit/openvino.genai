@@ -135,10 +135,6 @@ To run the benchmarking script with `torch.compile()`, use the `--torch_compile_
 python ./benchmark.py -m models/llama-2-7b-chat/pytorch -d CPU --torch_compile_backend openvino
 ```
 
-```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-```
-
 ## 5. Running on 2-Socket Platforms
 
 The benchmarking script sets `openvino.properties.streams.num(1)` by default. For multi-socket platforms, use `numactl` on Linux or the `--load_config` option to modify behavior.
