@@ -525,15 +525,15 @@ ov::Tensor get_cu_seqlens(const std::vector<std::array<size_t, 3>>& reordered_im
 
 ov::Tensor concatenate_video_image_embeds(const std::vector<ov::Tensor>& reordered_video_embeds, const std::vector<ov::Tensor>& reordered_image_embeds) {
     // one image + zero video.
-    if (reordered_image_embeds.size() == 1u && reordered_video_embeds.size() == 0u) {
+    if (reordered_image_embeds.size() == 1u && reordered_video_embeds.empty()) {
         return reordered_image_embeds.at(0);
     }
     // zero image + one video.
-    if (reordered_image_embeds.size() == 0u && reordered_video_embeds.size() == 1u) {
+    if (reordered_image_embeds.empty() && reordered_video_embeds.size() == 1u) {
         return reordered_video_embeds.at(0);
     }
     // zero image + zero video.
-    if (reordered_image_embeds.size() == 0u && reordered_video_embeds.size() == 0u) {
+    if (reordered_image_embeds.empty() && reordered_video_embeds.empty()) {
         return ov::Tensor();
     }
 
