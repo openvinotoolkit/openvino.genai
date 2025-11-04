@@ -30,7 +30,6 @@ def save_model_output_to_file(output, text_file_name, args):
         else: save_model_output_to_file(output[0], text_file_name, args)
     else:
         save_path = _get_save_path(text_file_name + '.npy', args)
-        print("Saving model output to file:", save_path)
         input_text_file = open(save_path, 'wb+')
         np.save(input_text_file, output)
         input_text_file.close()
