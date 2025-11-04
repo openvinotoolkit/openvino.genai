@@ -44,7 +44,6 @@ def run_text_embeddings_optimum(input_text, num, model, tokenizer, args, iter_da
     start = time.perf_counter()
     output = model(**input_data)
     end = time.perf_counter()
-    # TODO do the same in run_text_embeddings_genai
     log.info(f"Trying to save output embeddings in optimum...")
     if args['save_output']:
         llm_bench_utils.output_file.save_model_output_to_file(output, f"{args['save_output']}_embeddings_iter{num}", args)
@@ -124,8 +123,6 @@ def run_text_embeddings_genai(input_text, num, model, tokenizer, args, iter_data
     start = time.perf_counter()
     output = model.embed_documents(input_text_list)
     end = time.perf_counter()
-
-    log.info(f"Trying to save output embeddings in genai...")
     if args['save_output']:
         llm_bench_utils.output_file.save_model_output_to_file(output, f"{args['save_output']}_embeddings_iter{num}", args)
 

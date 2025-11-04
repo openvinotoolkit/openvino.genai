@@ -238,7 +238,6 @@ def analyze_args(args):
 
 
 def get_use_case(model_name_or_path: str | Path, task: str | None = None):
-    log.info(f"Checking use case of {model_name_or_path} for task: {task}")
     if (Path(model_name_or_path) / "model_index.json").exists():
         diffusers_config = json.loads((Path(model_name_or_path) / "model_index.json").read_text())
         pipe_type = diffusers_config.get("_class_name")
@@ -253,7 +252,6 @@ def get_use_case(model_name_or_path: str | Path, task: str | None = None):
         if config is not None:
             case, model_name = resolve_complex_model_types(config)
             if case is not None:
-                log.info("From resolve_complex_model_types()")
                 log.info(f'==SUCCESS FOUND==: use_case: {case}, model_type: {model_name}')
                 return case, model_name
             model_id = config.get("model_type").lower().replace('_', '-')
@@ -267,7 +265,6 @@ def get_use_case(model_name_or_path: str | Path, task: str | None = None):
     if model_id is not None:
         case, model_id = get_use_case_by_model_id(model_id, task)
         if case:
-            log.info("From get_use_case_by_model_id()")
             log.info(f'==SUCCESS FOUND==: use_case: {case.task}, model_name: {model_id}')
             return case, model_id
 
@@ -275,7 +272,6 @@ def get_use_case(model_name_or_path: str | Path, task: str | None = None):
     if case is None:
         raise RuntimeError('==Failure FOUND==: no use_case found')
     else:
-        log.info("From get_model_name")
         log.info(f'==SUCCESS FOUND==: use_case: {case}, model_Name: {model_name}')
     return case, model_name
 

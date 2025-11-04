@@ -709,8 +709,8 @@ def create_langchain_text_embed_model(model_path, device, memory_data_collector,
     config = TextEmbeddingPipeline.Config()
     encode_kwargs = {
         "normalize_embeddings": kwargs.get("emb_normalize", False),
-        "batch_size": 1, # batch size affects the result
         "mean_pooling": kwargs.get("emb_pooling_type") == "mean",
+        "batch_size": 1,
     }
 
     if kwargs.get("mem_consumption"):

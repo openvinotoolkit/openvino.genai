@@ -221,7 +221,7 @@ def get_argprser():
     parser.add_argument("--vocoder_path", type=str, default=None,
                         help="Path to vocoder  for text to speech scenarios")
     parser.add_argument("--save_output", type=str, default=None, help="Save model outputs to files with this prefix")
-    
+
     return parser.parse_args()
 
 
