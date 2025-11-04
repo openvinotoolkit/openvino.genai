@@ -210,7 +210,7 @@ See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Visual-l
 
 </details>
 
-<a id="image-to-text"></a>
+<a id="text-to-image"></a>
 
 ## Performing image generation
 
