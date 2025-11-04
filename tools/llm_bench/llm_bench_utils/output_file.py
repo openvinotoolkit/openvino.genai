@@ -6,53 +6,52 @@ import numpy as np
 import soundfile as sf
 
 
-def save_tensor_to_file(input_tensor: np.ndarray, text_file_name, args):
+def _get_save_path(text_file_name, args):
     if args['output_dir'] is not None:
         if os.path.exists(args['output_dir']) is False:
             os.mkdir(args['output_dir'])
         out_path = args['output_dir']
     else:
         out_path = '.'
-    save_path = out_path + os.sep + text_file_name
-    input_text_file = open(save_path, 'wb+')
-    np.save(input_text_file, input_tensor)
-    input_text_file.close()
-    print(f"Saved tensor to file: {save_path}")
+    return out_path + os.sep + text_file_name
+
+
+def save_model_output_to_file(output, text_file_name, args):
+    if isinstance(output, dict):
+        print(f"{text_file_name} is dict")
+        for k, v in output.items():
+            save_model_output_to_file(v, f"{text_file_name}_{k}", args)
+    elif isinstance(output, tuple) or isinstance(output, list):
+        print(f"{text_file_name} is list")
+        try:
+            save_model_output_to_file(np.ndarray(output), text_file_name, args)
+        except:
+            for i, v in enumerate(output):
+                save_model_output_to_file(v, f"{text_file_name}_{i}", args)
+    else:
+        print(f"Saving output embeddings to file {text_file_name}.npy")
+        save_path = _get_save_path(text_file_name + '.npy', args)
+        input_text_file = open(save_path, 'wb+')
+        np.save(input_text_file, output)
+        input_text_file.close()
+        print(f"Saved tensor to file: {save_path}")
 
 
 def save_text_to_file(input_text, text_file_name, args):
-    if args['output_dir'] is not None:
-        if os.path.exists(args['output_dir']) is False:
-            os.mkdir(args['output_dir'])
-        out_path = args['output_dir']
-    else:
-        out_path = '.'
-    save_path = out_path + os.sep + text_file_name
+    save_path = _get_save_path(text_file_name, args)
     input_text_file = open(save_path, 'w')
     input_text_file.write(input_text)
     input_text_file.close()
 
 
 def save_image_file(img, img_file_name, args):
-    if args['output_dir'] is not None:
-        if os.path.exists(args['output_dir']) is False:
-            os.mkdir(args['output_dir'])
-        out_path = args['output_dir']
-    else:
-        out_path = '.'
-    save_path = out_path + os.sep + img_file_name
+    save_path = _get_save_path(img_file_name, args)
     img.save(save_path)
     return save_path
 
 
 def save_audio_file(audio, audio_file_name, args, samplerate=16000):
-    if args['output_dir'] is not None:
-        if os.path.exists(args['output_dir']) is False:
-            os.mkdir(args['output_dir'])
-        out_path = args['output_dir']
-    else:
-        out_path = '.'
-    save_path = out_path + os.sep + audio_file_name
+    save_path = _get_save_path(audio_file_name, args)
     sf.write(save_path, audio, samplerate)
     return save_path
 
