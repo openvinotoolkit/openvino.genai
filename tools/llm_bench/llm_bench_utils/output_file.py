@@ -24,8 +24,12 @@ def save_model_output_to_file(output, text_file_name, args):
     elif isinstance(output, tuple) or isinstance(output, list):
         print(f"{text_file_name} is list")
         try:
-            save_model_output_to_file(np.ndarray(output), text_file_name, args)
-        except:
+            output = [np.array(output)]
+        except Exception as ex:
+            print(f"Cannot convert output to numpy array: {ex}")
+        if len(output) == 1:
+            save_model_output_to_file(output[0], text_file_name, args)
+        else:
             for i, v in enumerate(output):
                 save_model_output_to_file(v, f"{text_file_name}_{i}", args)
     else:
