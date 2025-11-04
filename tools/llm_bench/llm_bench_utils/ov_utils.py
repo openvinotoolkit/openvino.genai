@@ -741,7 +741,7 @@ def create_langchain_text_embed_model(model_path, device, memory_data_collector,
         tokenizer = AutoTokenizer.from_pretrained(model_path)
     except Exception:
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-    return pipe, tokenizer, end - start, None, True
+    return pipe, tokenizer, end - start, None, False
 
 
 def create_text_embeddings_model(model_path, device, memory_data_collector, **kwargs):
