@@ -1590,7 +1590,7 @@ class KVCrushAnchorPointMode:
                       :param KVCrushAnchorPointMode.ZEROS: Vector of all zeros will be used as anchor point
                       :param KVCrushAnchorPointMode.ONES: Vector of all ones will be used as anchor point
                       :param KVCrushAnchorPointMode.MEAN: Mean of indicator feature vector to be used as anchor point
-                      :param KVCrushAnchorPointMode.ALTERNATE: Alternating 0s and 1s will be used as anchor point
+                      :param KVCrushAnchorPointMode.ALTERNATING: Alternating 0s and 1s will be used as anchor point
     
     Members:
     
@@ -1602,14 +1602,14 @@ class KVCrushAnchorPointMode:
     
       MEAN
     
-      ALTERNATE
+      ALTERNATING
     """
-    ALTERNATE: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ALTERNATE: 4>
+    ALTERNATING: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ALTERNATING: 4>
     MEAN: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.MEAN: 3>
     ONES: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ONES: 2>
     RANDOM: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.RANDOM: 0>
     ZEROS: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ZEROS: 1>
-    __members__: typing.ClassVar[dict[str, KVCrushAnchorPointMode]]  # value = {'RANDOM': <KVCrushAnchorPointMode.RANDOM: 0>, 'ZEROS': <KVCrushAnchorPointMode.ZEROS: 1>, 'ONES': <KVCrushAnchorPointMode.ONES: 2>, 'MEAN': <KVCrushAnchorPointMode.MEAN: 3>, 'ALTERNATE': <KVCrushAnchorPointMode.ALTERNATE: 4>}
+    __members__: typing.ClassVar[dict[str, KVCrushAnchorPointMode]]  # value = {'RANDOM': <KVCrushAnchorPointMode.RANDOM: 0>, 'ZEROS': <KVCrushAnchorPointMode.ZEROS: 1>, 'ONES': <KVCrushAnchorPointMode.ONES: 2>, 'MEAN': <KVCrushAnchorPointMode.MEAN: 3>, 'ALTERNATING': <KVCrushAnchorPointMode.ALTERNATING: 4>}
     def __eq__(self, other: typing.Any) -> bool:
         ...
     def __getstate__(self) -> int:

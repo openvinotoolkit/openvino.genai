@@ -295,12 +295,12 @@ void init_continuous_batching_pipeline(py::module_& m) {
                   :param KVCrushAnchorPointMode.ZEROS: Vector of all zeros will be used as anchor point
                   :param KVCrushAnchorPointMode.ONES: Vector of all ones will be used as anchor point
                   :param KVCrushAnchorPointMode.MEAN: Mean of indicator feature vector to be used as anchor point
-                  :param KVCrushAnchorPointMode.ALTERNATE: Alternating 0s and 1s will be used as anchor point)")
+                  :param KVCrushAnchorPointMode.ALTERNATING: Alternating 0s and 1s will be used as anchor point)")
         .value("RANDOM", KVCrushAnchorPointMode::RANDOM)
         .value("ZEROS", KVCrushAnchorPointMode::ZEROS)
         .value("ONES", KVCrushAnchorPointMode::ONES)
         .value("MEAN", KVCrushAnchorPointMode::MEAN)
-        .value("ALTERNATE", KVCrushAnchorPointMode::ALTERNATE);
+        .value("ALTERNATING", KVCrushAnchorPointMode::ALTERNATING);
 
     py::class_<KVCrushConfig>(m, "KVCrushConfig", "Configuration for KVCrush cache eviction algorithm")
         .def(py::init<>(), "Default constructor")
