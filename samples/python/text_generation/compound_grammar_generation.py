@@ -11,8 +11,6 @@ from openvino_genai import (
     LLMPipeline,
     StreamingStatus,
     Parser,
-    IncrementalParser,
-    TextParserStreamer,
     DecodedResults
 )
 
@@ -78,54 +76,28 @@ def tools_to_array_schema(*tools: BaseModel) -> str:
     )
 
 
-class IncrementalToolCallParser(IncrementalParser):
-    """Incremental parser to extract tool calls from the model output.
+class CustomToolCallParser(Parser):
+    """parser to extract tool calls from the model output.
 
-    Custom parser should be inherited from IncrementalParser and implement 'parse' and 'reset' methods.
+    Custom parser should be inherited from Parser and implement 'parse' method.
     """
-    def parse(self, msg: dict, delta_text: str, delta_tokens: list) -> str:
+    def parse(self, msg: dict):
         if 'content' not in msg:
             msg['content'] = ''
-        msg['delta_text'] = delta_text
+        content = msg['content']
 
-        # Join the previous content with the new delta_text for searching.
-        # Do not modify msg['content'] yet, as it will be updated automatically by the streamer.
-        content = msg['content'] + delta_text
-        
         start_tag = "functools"
         start_index = content.find(start_tag)
         if start_index == -1:
-            return delta_text
+            return
 
-        msg['generates_tool_call'] = True
-        if not content.endswith("}]"):
-            return delta_text
         json_part = content[start_index + len(start_tag):]
         try:
             tool_calls = json.loads(json_part)
             msg['tool_calls'] = tool_calls
-            msg['generates_tool_call'] = False
-            return delta_text
+            return
         except json.JSONDecodeError as e:
-            return delta_text
-    
-    def reset(self):
-        # This method should be implemented in inherited classes.
-        # e.g. self.text_cache = ""
-        # But since in this implementation no states were used so do nothing.
-        print('Parser state has been reset.')
-
-class CurrentTextParserStreamer(TextParserStreamer):
-    """
-    A TextParserStreamer that receives parsed dictionary every time new text is generated.
-
-    In order to get get parsed dictionary from the model output, a custom implementation of TextParserStreamer 
-    with defined 'write' methods is needed.
-    """
-    def write(self, msg: dict):
-        # If the tool call is not yet complete, continue streaming
-        print(msg['delta_text'], end="", flush=True)
-        return StreamingStatus.RUNNING
+            return
 
 
 def print_tool_call(answer: DecodedResults):
@@ -181,7 +153,7 @@ def main():
     print()
 
     user_text_2 = (
-        "book flight ticket from Beijing to Paris(using airport code) in 2025-12-04 to 2025-12-10 , "
+        "book flight ticket from Beijing to Paris(using airport code) in 2025-12-04 to 2025-12-10, "
         "then book hotel from 2025-12-04 to 2025-12-10 in Paris"
     )
     print("User: ", user_text_2)
@@ -194,8 +166,7 @@ def main():
     generation_config.structured_output_config.structural_tags_config = tool_call_grammar
 
     print("Assistant: ", end="")
-    custom_streamer = CurrentTextParserStreamer(pipe.get_tokenizer(), [IncrementalToolCallParser()])
-    answer = pipe.generate([model_input], generation_config, streamer=custom_streamer)
+    answer = pipe.generate([model_input], generation_config, parsers=[CustomToolCallParser()])
     
     print("\n\nThe following tool calls were generated:")
     print_tool_call(answer)

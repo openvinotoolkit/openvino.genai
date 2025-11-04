@@ -288,7 +288,7 @@ The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other mode
   Union (`|`) operation allows the model to choose which grammar to use during generation. 
   In the sample it is used to combine two regex grammars for `"yes"` or `"no"` answer.
   Concat (`+`) operation allows to start with one grammar and continue with another.
-  Also it demonstrates how to write custom incremental parser to extract tool calls from the generated text.
+  Also it demonstrates how to write custom parser to extract tool calls from the generated text.
   In the sample it used to create a `phi-4-mini-instruct` style tool calling answer - `functools[{tool_1_json}, ...]` - by combining regex and JSON schema grammars.
 
 - **Main Features:**
