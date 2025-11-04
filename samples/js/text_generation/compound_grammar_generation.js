@@ -7,8 +7,8 @@ function streamer(subword) {
     return StreamingStatus.RUNNING;
 }
 
-const bookingFlightTickets = {
-    name: "booking_flight_tickets",
+const bookFlightTicket = {
+    name: "book_flight_ticket",
     schema: z.object({
         origin_airport_code: z.string().describe("The name of Departure airport code"),
         destination_airport_code: z.string().describe("The name of Destination airport code"),
@@ -17,8 +17,8 @@ const bookingFlightTickets = {
     }).describe("booking flights"),
 };
 
-const bookingHotels = {
-    name: "booking_hotels",
+const bookHotel = {
+    name: "book_hotel",
     schema: z.object({
         destination: z.string().describe("The name of the city"),
         check_in_date: z.string().describe("The date of check in"),
@@ -46,11 +46,6 @@ function toolToDict(tool, withDescription = true) {
     };
 }
 
-/** Generate part of the system prompt with available tools */
-function generateSystemPromptTools(...tools) {
-    return `<|tool|>${serialize_json(tools.map(tool => toolToDict(tool, true)))}</|tool|>`;
-}
-
 function toolsToArraySchema(...tools) {
     return serialize_json({
         type: "array",
@@ -58,6 +53,34 @@ function toolsToArraySchema(...tools) {
             anyOf: tools.map(tool => toolToDict(tool, false)),
         },
     });
+}
+
+/** parser to extract tool calls from the model output. */
+function parse(answer) {
+    answer.parsed = []
+    for (const content of answer.texts) {
+        const startTag = "functools";
+        const startIndex = content.indexOf(startTag);
+        if (startIndex === -1) return
+
+        try {
+            const jsonPart = content.slice(startIndex + startTag.length);
+            const toolCalls = JSON.parse(jsonPart);
+            answer.parsed.push(toolCalls);
+        } catch {
+            answer.parsed.push([])
+        }
+    }
+
+    return
+}
+
+function printToolCall(answer) {
+    for (const toolCall of answer.parsed[0]) {
+        const args = Object.keys(toolCall["arguments"])
+            .map((key) => `${key}="${toolCall["arguments"][key]}"`);
+        console.log(`${toolCall["name"]}(${args.join(", ")})`);
+    }
 }
 
 // System message
@@ -75,7 +98,6 @@ If you decide to call functions:
     * respect the argument type formatting. E.g., if the type is number and format is float, write value 7 as 7.0
     * make sure you pick the right functions that match the user intent
 `;
-sysMessage += generateSystemPromptTools(bookingFlightTickets, bookingHotels);
 
 async function main() {
     const modelDir = process.argv[2];
@@ -87,6 +109,7 @@ async function main() {
     const pipe = await LLMPipeline(modelDir, "CPU");
     const tokenizer = await pipe.getTokenizer();
     const chatHistory = [{ role: "system", content: sysMessage }];
+    const tools = [bookFlightTicket, bookHotel].map((tool) => toolToDict(tool, true))
 
     const generationConfig = {
         return_decoded_results: true,
@@ -97,35 +120,38 @@ async function main() {
     const userText1 = "Do dolphins have fingers?";
     console.log("User: ", userText1);
     chatHistory.push({ role: "user", content: userText1 });
-    const modelInput = tokenizer.applyChatTemplate(chatHistory, true);
+    const modelInput = tokenizer.applyChatTemplate(chatHistory, true, undefined, tools);
 
     // the example grammar works the same as SOC.Regex("yes|no")
     // but the Union grammar is more flexible and can be extended with more options
     const yesOrNo = SOC.Union(SOC.Regex("yes"), SOC.Regex("no"));
     generationConfig.structured_output_config = new SOC({ structural_tags_config: yesOrNo });
     process.stdout.write("Assistant: ");
-    const answer = await pipe.generate(modelInput, generationConfig, streamer);
-    chatHistory.push({ role: "assistant", content: answer.texts[0] });
+    const answer1 = await pipe.generate(modelInput, generationConfig, streamer);
+    chatHistory.push({ role: "assistant", content: answer1.texts[0] });
     console.log();
 
     const userText2 =
-        "book flight ticket from Beijing to Paris(using airport code) in 2025-12-04 to 2025-12-10 , "
+        "book flight ticket from Beijing to Paris(using airport code) in 2025-12-04 to 2025-12-10, "
         + "then book hotel from 2025-12-04 to 2025-12-10 in Paris";
     console.log("User: ", userText2);
     chatHistory.push({ role: "user", content: userText2 });
-    const modelInput2 = tokenizer.applyChatTemplate(chatHistory, true);
+    const modelInput2 = tokenizer.applyChatTemplate(chatHistory, true, undefined, tools);
 
     const startToolCallTag = SOC.ConstString("functools");
     const toolsJson = SOC.JSONSchema(
-        toolsToArraySchema(bookingFlightTickets, bookingHotels)
+        toolsToArraySchema(bookFlightTicket, bookHotel)
     );
     const toolCall = SOC.Concat(startToolCallTag, toolsJson);
 
     generationConfig.structured_output_config.structural_tags_config = toolCall;
 
     process.stdout.write("Assistant: ");
-    await pipe.generate(modelInput2, generationConfig, streamer);
-    console.log();
+    const answer2 = await pipe.generate(modelInput2, generationConfig);
+    parse(answer2);
+    console.log("\n\nThe following tool calls were generated:")
+    printToolCall(answer2)
+    console.log()
 }
 
 main();
