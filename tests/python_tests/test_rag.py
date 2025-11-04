@@ -108,7 +108,8 @@ def run_text_embedding_langchain(
 
     encode_kwargs = {
         "normalize_embeddings": config.normalize,
-        "batch_size": len(documents), # batch size affects the result
+        # batch size affects the result
+        "batch_size": len(documents),
     }
     if config.pooling_type == TextEmbeddingPipeline.PoolingType.MEAN:
         encode_kwargs["mean_pooling"] = True
