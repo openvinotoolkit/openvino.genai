@@ -366,6 +366,7 @@ describe("stream()", () => {
 
 describe("LLMPipeline with chat history", () => {
   let pipeline = null;
+  // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
   const chatHistory = new ChatHistory();
 
   before(async () => {
@@ -383,6 +384,7 @@ describe("LLMPipeline with chat history", () => {
       return_decoded_results: true,
     };
     const reply = await pipeline.generate(chatHistory, config);
+    // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
     chatHistory.push({ role: "assistant", content: reply.toString() });
     assert.ok(Array.isArray(reply.texts));
     assert.equal(reply.texts.length, 1);
@@ -412,6 +414,7 @@ describe("LLMPipeline with chat history", () => {
       chunks.push(chunk);
     }
     assert.ok(chunks.length > 0);
+    // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
     chatHistory.push({ role: "assistant", content: chunks.join("") });
   });
 });
