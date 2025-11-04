@@ -66,9 +66,9 @@ Prompt: `cyberpunk cityscape like Tokyo New York with tall buildings at dusk gol
 
    ![](./../../cpp/image_generation/512x512.bmp)
 
-### Run with callback
+### Run with threaded callback
 
-You can also add a callback to the `text2image.py` file to interrupt the image generation process earlier if you are satisfied with the intermediate result of the image generation or to add logs.
+You can also implement a callback function in `text2image.py` that runs in a separate thread. This allows for parallel processing, enabling you to interrupt generation early if intermediate results are satisfactory or to add logs.
 
 Please find the template of the callback usage below.
 
