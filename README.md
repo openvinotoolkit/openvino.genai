@@ -4,7 +4,7 @@
 
 [<b>Getting Started</b>](#getting-started) •
 [<b>AI Scenarios</b>](#ai-scenarios) •
-[<b>Optimization Methods</b>](#optimization-methods)
+[<b>Optimization Methods</b>](#optimization-methods) •
 [<b>Documentation</b>](https://openvinotoolkit.github.io/openvino.genai/)
 
 [![GitHub Release](https://img.shields.io/github/v/release/openvinotoolkit/openvino.genai?color=green)](https://github.com/openvinotoolkit/openvino.genai/releases)
