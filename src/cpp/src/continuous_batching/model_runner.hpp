@@ -107,7 +107,7 @@ public:
         return m_request;
     }
 
-    void set_inputs_embedder(std::shared_ptr<InputsEmbedder> inputs_embedder) {
+    void set_inputs_embedder(const std::shared_ptr<InputsEmbedder>& inputs_embedder) {
         m_inputs_embedder = inputs_embedder;
         m_embedding = inputs_embedder->get_embedding_model();
     }
