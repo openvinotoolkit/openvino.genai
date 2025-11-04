@@ -695,6 +695,11 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_cpp(const std::vector<ov:
     // If images.size() == 1: means processing image.
     // If images.size() == 2: means processing video.
     // If images.size() == others: undefined behaviour. so the following check is required.
+    // NOTE: The following assertion enforces that temporal_patch_size == 2.
+    // This is a limitation of the current model architectures (QWen2-VL and QWen2.5-VL), which are designed to process
+    // either a single image or a pair of video frames (temporal_patch_size = 2). The code and model are not guaranteed
+    // to work correctly for other values of temporal_patch_size. If support for more frames or different patch sizes is
+    // required in the future, both the model and this preprocessing logic will need to be updated accordingly.
     OPENVINO_ASSERT(config.temporal_patch_size == 2u, "temporal_patch_size != 2.");
     if (images.size() > 1)
         OPENVINO_ASSERT(config.temporal_patch_size == images.size(), "temporal_patch_size != images.size()");
