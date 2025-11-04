@@ -458,8 +458,8 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                              const std::vector<GenerationConfig>& sampling_params,
                                                              const StreamerVariant& streamer,
-                                                             const std::optional<std::vector<ov::Tensor>> token_type_ids,
-                                                             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>> position_ids_list) {
+                                                             const std::optional<std::vector<ov::Tensor>>& token_type_ids,
+                                                             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list) {
 
     _reset_cache_usage_statistics();
     ManualTimer generate_timer("generate()");

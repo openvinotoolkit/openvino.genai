@@ -334,7 +334,7 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(c
     return m_impl->get_position_ids(inputs_embeds_size, history_size);
 }
 
-void InputsEmbedder::set_position_ids(ov::Tensor position_ids) {
+void InputsEmbedder::set_position_ids(const ov::Tensor& position_ids) {
     m_impl->set_position_ids(position_ids);
 }
 

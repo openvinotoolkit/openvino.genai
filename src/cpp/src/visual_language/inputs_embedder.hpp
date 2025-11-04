@@ -63,7 +63,7 @@ public:
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
 
-    void set_position_ids(ov::Tensor position_ids);
+    void set_position_ids(const ov::Tensor& position_ids);
 
     void set_rope_delta(int64_t rope_delta);
 
@@ -159,7 +159,7 @@ private:
 
         virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
         
-        void set_position_ids(ov::Tensor position_ids) {
+        void set_position_ids(const ov::Tensor& position_ids) {
             m_position_ids = position_ids;
         }
 

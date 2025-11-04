@@ -230,7 +230,7 @@ public:
         }
     }
 
-    void append_position_ids(ov::Tensor position_ids) {
+    void append_position_ids(const ov::Tensor& position_ids) {
         size_t seq_len_shape_idx = position_ids.get_shape().size() == 3 ? 2 : 1;
         size_t position_ids_len = position_ids.get_shape()[seq_len_shape_idx];
         if (position_ids_len == 1) {
@@ -248,7 +248,7 @@ public:
 
             ov::Tensor src_roi(position_ids, begin, end);
             src_roi.copy_to(position_ids_elem);
-            m_position_ids_list.emplace_back(position_ids_elem);
+            m_position_ids_list.push_back(position_ids_elem);
         }
     }
 
@@ -273,7 +273,7 @@ public:
     // hash(prefix tokens + block tokens) <--> KV Block
     size_t get_hash(size_t content_length = 0);
 
-    static std::pair<ov::Coordinate, ov::Coordinate> get_position_ids_elem_coordinates(ov::Shape position_ids_elem_shape, size_t idx, bool need_batch_dimention) {
+    static std::pair<ov::Coordinate, ov::Coordinate> get_position_ids_elem_coordinates(const ov::Shape& position_ids_elem_shape, size_t idx, bool need_batch_dimention) {
 
         ov::Coordinate begin;
         ov::Coordinate end;
@@ -359,7 +359,7 @@ public:
     }
 
     SequenceGroup(uint64_t request_id, 
-                  const ov::Tensor input_ids, 
+                  const ov::Tensor& input_ids, 
                   const ov::genai::GenerationConfig& sampling_params, 
                   std::size_t block_size, 
                   const std::optional<ov::Tensor>& token_type_ids = std::nullopt, 
