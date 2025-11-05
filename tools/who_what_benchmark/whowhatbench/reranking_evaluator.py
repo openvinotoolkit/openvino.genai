@@ -108,15 +108,18 @@ class RerankingEvaluator(BaseEvaluator):
 
         return pd.DataFrame(all_metrics_per_query), pd.DataFrame([all_metrics])
 
+
     def worst_examples(self, top_k: int = 5, metric="similarity"):
         assert self.last_cmp is not None
         res = self.last_cmp.nsmallest(top_k, metric)
         res = list(row for idx, row in res.iterrows())
         return res
-    
+
     def _apply_qwen3_template(self, query, passages):
-        prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the '\
-                         + 'Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
+        prefix = (
+            "<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the "
+            + 'Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
+        )
         suffix = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
         task = "Given a web search query, retrieve relevant passages that answer the query"
 
@@ -127,10 +130,6 @@ class RerankingEvaluator(BaseEvaluator):
 
     def _generate_data(self, model, gen_answer_fn=None, result_dir="reference"):
         def default_gen_answer(model, tokenizer, query, passages):
-            device = "cpu"
-            if hasattr(model, "device"):
-                device = model.device
-
             # post/pre processing for qwen models added according to transformers Qwen3-Embedding-0.6B model card:
             # https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
             if is_qwen3(model.config):
@@ -186,7 +185,7 @@ class RerankingEvaluator(BaseEvaluator):
             if is_qwen3(model.config):
                 query, documents = self._apply_qwen3_template(data[0], data[1])
             result = gen_answer_fn(model, self.tokenizer, query, documents)
-            
+
             queries.append(data[0])
             passages.append(data[1])
             result_path = os.path.join(result_dir, f"scores_{i}.npy")
