@@ -712,6 +712,7 @@ public:
  * @{
  */
 void OPENVINO_GENAI_EXPORTS add_extension(const std::string& library_path);
+/** @} */
 
 /*
  * utils that allow to use generate and operator() in the following way:
