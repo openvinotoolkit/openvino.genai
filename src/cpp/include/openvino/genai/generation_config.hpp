@@ -709,10 +709,9 @@ public:
 /**
  * @brief Registers an extension to ov::Core object for model with custom op.
  * @param library_path Path to the library with ov::Extension.
- * @{
  */
 void OPENVINO_GENAI_EXPORTS add_extension(const std::string& library_path);
-/** @} */
+
 
 /*
  * utils that allow to use generate and operator() in the following way:
