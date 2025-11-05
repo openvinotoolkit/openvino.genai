@@ -21,7 +21,7 @@ TextStreamer::TextStreamer(const Tokenizer& tokenizer,
                            std::function<ov::genai::CallbackTypeVariant(std::string)> callback,
                            const ov::AnyMap& detokenization_params) {
     m_tokenizer = tokenizer;
-    m_subword_callback = callback;
+    m_subword_callback = std::move(callback);
     m_additional_detokenization_params = detokenization_params;
 }
 

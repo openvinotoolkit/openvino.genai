@@ -95,7 +95,8 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                        const std::vector<GenerationConfig>& sampling_params,
                                                        const StreamerVariant& streamer,
-                                                       std::optional<std::vector<ov::Tensor>> token_type_ids) {
+                                                       const std::optional<std::vector<ov::Tensor>>& token_type_ids,
+                                                       const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids) {
     m_perf_metrics = PerfMetrics();
     m_perf_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
 
@@ -140,7 +141,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
         stream_tokens(streamer_ptr, generation);
     }
 
-    // waiting for competion of streaming
+    // waiting for completion of streaming
     streamer_ptr->end();
 
     OPENVINO_ASSERT(m_pipeline->is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");

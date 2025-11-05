@@ -5,7 +5,7 @@ openvino
 openvino-tokenizers
 openvino_genai
 pillow
-torch!=2.9.0
+torch
 transformers[sentencepiece]>=4.40.0
 diffusers>=0.22.0
 #optimum is in dependency list of optimum-intel 
@@ -20,3 +20,4 @@ jinja2>=3.1.0
 scipy
 gguf_parser
 gguf>=0.10
+num2words

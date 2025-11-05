@@ -126,7 +126,7 @@ prompts = val["text"]
 metrics_per_prompt, metrics = evaluator.score(optimized_model, test_data=prompts)
 ```
 
-### Advaned CLI usage
+### Advanced CLI usage
 
 ```sh
 wwb --help

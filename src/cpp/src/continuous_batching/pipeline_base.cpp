@@ -55,15 +55,15 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         // but embedding model is available => compute embeddings first, then pass to LLM
         std::vector<std::vector<ov::Tensor>> images(prompts.size());
         auto results_vlm = generate(prompts, images, sampling_params, streamer);
-        std::vector<GenerationResult> resutls;
+        std::vector<GenerationResult> results;
         for (auto& vlm_result : results_vlm) {
             GenerationResult result;
             result.m_generation_ids = std::move(vlm_result.texts);
             result.m_scores = std::move(vlm_result.scores);
             result.perf_metrics = std::move(vlm_result.perf_metrics);
-            resutls.push_back(result);
+            results.push_back(result);
         }
-        return resutls;
+        return results;
     }
     std::vector<ov::Tensor> input_ids;
     auto start_time = std::chrono::steady_clock::now();
@@ -129,7 +129,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         // The same perf metrics for each sequence, only tokenization/detokenization will differ.
         perf_metrics.raw_metrics.generate_durations.clear();
         perf_metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
-        // Reevaluate taking into accound tokenization/detokenization times.
+        // Reevaluate taking into account tokenization/detokenization times.
         perf_metrics.m_evaluated = false;
         perf_metrics.evaluate_statistics(start_time);
 
@@ -249,6 +249,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
     std::vector<ov::Tensor> input_embeds_list;
     std::vector<ov::Tensor> token_type_ids_list;
+    std::vector<std::pair<ov::Tensor, std::optional<int64_t>>> position_ids_list;
     
     std::vector<VLMPerfMetrics> vlm_perf_metrics(prompts.size());
     std::vector<EncodedImage> encoded_images = {};
@@ -287,6 +288,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
                                                                     m_history_image_ids,
                                                                     m_history_video_ids));
         }
+        position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[0].get_shape()[1], 0));
 
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
         vlm_perf_metrics[0].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
@@ -312,13 +314,14 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
             } else {
                 input_embeds_list.emplace_back(m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, vlm_perf_metrics[i], true, image_sequence, video_sequence));
             }
+            position_ids_list.push_back(m_inputs_embedder->get_position_ids(input_embeds_list[i].get_shape()[1], 0));
         
             auto end_get_inputs_embeds = std::chrono::steady_clock::now();
             vlm_perf_metrics[i].vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
         }
     }
     std::vector<VLMDecodedResults> results;
-    std::vector<EncodedGenerationResult> encoded_results = generate(input_embeds_list, sampling_params, streamer, token_type_ids_list);
+    std::vector<EncodedGenerationResult> encoded_results = generate(input_embeds_list, sampling_params, streamer, token_type_ids_list, position_ids_list);
     for (size_t i = 0; i < prompts.size(); i++) {
         auto result = encoded_results[i];
         VLMDecodedResults gen_result;
@@ -401,7 +404,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
         const auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, 0, encoded_images, encoded_videos);
         inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, metrics, true, image_sequence, video_sequence);
     }
-    return add_request(request_id, inputs, sampling_params);
+    return add_request(request_id, inputs, std::move(sampling_params));
 }
 
 void ContinuousBatchingPipeline::IContinuousBatchingPipeline::stream_tokens(
