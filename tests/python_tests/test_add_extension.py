@@ -10,7 +10,5 @@ def test_add_extension():
     print(ov_genai.get_version())
     # Path to the OpenVINO extension shared library (update as needed).
     extension_path = ""
-    try:
+    with pytest.raises(Exception):
         ov_genai.add_extension(extension_path)
-    except Exception:
-        assert(False)
