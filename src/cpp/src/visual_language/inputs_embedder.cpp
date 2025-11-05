@@ -32,6 +32,10 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::IInputsEmbedder::g
     return {position_ids, std::nullopt};
 }
 
+std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::IInputsEmbedder::get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) {
+    return get_position_ids(inputs_embeds_size, history_size);
+}
+
 void InputsEmbedder::IInputsEmbedder::start_chat(const std::string& system_message) {
     m_is_chat_conversation = true;
     if (!m_kv_cache_state.get_state().empty()) {
@@ -328,6 +332,18 @@ std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::ve
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
     return m_impl->get_position_ids(inputs_embeds_size, history_size);
+}
+
+void InputsEmbedder::set_position_ids(const ov::Tensor& position_ids) {
+    m_impl->set_position_ids(position_ids);
+}
+
+void InputsEmbedder::set_rope_delta(int64_t rope_delta) {
+    m_impl->set_rope_delta(rope_delta);
+}
+
+std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) {
+    return m_impl->get_generation_phase_position_ids(inputs_embeds_size, history_size, rope_delta);
 }
 
 EmbeddingsModel::Ptr InputsEmbedder::get_embedding_model() const {

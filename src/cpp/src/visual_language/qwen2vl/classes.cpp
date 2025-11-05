@@ -805,15 +805,20 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderQwen2VL::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
     if (history_size != 0) {
-        ov::Tensor position_ids{ov::element::i64, {3, 1, inputs_embeds_size}};
-        int64_t new_pos_id = static_cast<int64_t>(history_size + m_rope_delta);
-        for (size_t dim = 0; dim < 3; ++dim) {
-            int64_t* pos_data = position_ids.data<int64_t>() + dim * inputs_embeds_size;
-            std::iota(pos_data, pos_data + inputs_embeds_size, new_pos_id);
-        }
-        return {position_ids, m_rope_delta};
+        return get_generation_phase_position_ids(inputs_embeds_size, history_size, m_rope_delta);
     }
     return {m_position_ids, m_rope_delta};
+}
+
+std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderQwen2VL::get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) {
+    OPENVINO_ASSERT(history_size != 0, "get_generation_phase_position_ids() should only be called when history_size is non-zero (generation phase).");
+    ov::Tensor position_ids{ov::element::i64, {3, 1, inputs_embeds_size}};
+    int64_t new_pos_id = static_cast<int64_t>(history_size + rope_delta);
+    for (size_t dim = 0; dim < 3; ++dim) {
+        int64_t* pos_data = position_ids.data<int64_t>() + dim * inputs_embeds_size;
+        std::iota(pos_data, pos_data + inputs_embeds_size, new_pos_id);
+    }
+    return {position_ids, rope_delta};
 }
 
 void InputsEmbedderQwen2VL::start_chat(const std::string& system_message) {
