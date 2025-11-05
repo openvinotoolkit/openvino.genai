@@ -695,7 +695,7 @@ def run_perf_metrics_collection(
 
 test_cases = [
     (dict(max_new_tokens=20), 'table is made of'),
-    (dict(max_new_tokens=20, num_beams=4), 'table is made of'),
+    (dict(max_new_tokens=20, num_beams=4), 'table is made of' * 100),
 ]
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
 @pytest.mark.parametrize("pipeline_type", [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION])
