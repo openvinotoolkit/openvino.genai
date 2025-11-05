@@ -16,15 +16,26 @@ namespace ov {
 namespace genai {
 
 /**
- * @brief Wrapper for Eagle3 model inference with performance tracking
+ * @brief Output structure for Eagle3 model inference
  * 
- * This class handles both draft and target model inference for Eagle3 speculative decoding,
- * providing sequence management, tensor building, and performance metrics.
+ * Contains all outputs from a single inference call, including logits and hidden features.
+ * This structure makes it easy to handle multiple outputs and allows for future extensions.
  */
-class Eagle3InferWrapper {
+struct InferenceOutput {
+    ov::Tensor logits;
+    ov::Tensor hidden_features;
+};
+
+/**
+ * @brief Base class for Eagle3 model inference with common functionality
+ * 
+ * This abstract base class provides shared functionality for both target and draft model wrappers,
+ * including sequence management, tensor building, and performance metrics.
+ */
+class Eagle3InferWrapperBase {
 public:
-    explicit Eagle3InferWrapper(const ov::genai::ModelDesc& model_desc);
-    ~Eagle3InferWrapper() = default;
+    explicit Eagle3InferWrapperBase(const ov::genai::ModelDesc& model_desc);
+    virtual ~Eagle3InferWrapperBase() = default;
 
     // Configuration methods
     std::string device() const { return m_device; }
@@ -46,11 +57,6 @@ public:
     const std::vector<int64_t>& get_tokens() const { return m_tokens; }
     const std::vector<int64_t>& get_positions() const { return m_positions; }
     int64_t get_last_sampled_token() const { return m_last_sampled_token; }
-
-    // Core inference methods
-    ov::Tensor infer_target_model(const ov::Tensor& input_ids, const ov::Tensor& attention_mask, const ov::Tensor& position_ids);
-    ov::Tensor infer_draft_model(const ov::Tensor& input_ids, const ov::Tensor& attention_mask, const ov::Tensor& position_ids,
-                                 const ov::Tensor& target_hidden_features, const ov::Tensor& internal_hidden_features);
     
     // Output access
     ov::Tensor get_logits() const;
@@ -91,11 +97,11 @@ public:
     const InferenceMetrics& get_metrics() const { return m_metrics; }
     ov::genai::RawPerfMetrics& get_raw_perf_metrics() { return m_raw_perf_metrics; }
 
-private:
+protected:
     static constexpr std::size_t BATCH_SIZE = 1;
     
     // Core inference helper
-    uint64_t execute_inference(const ov::Tensor& input_ids);
+    uint64_t execute_inference();
     void update_performance_metrics(uint64_t inference_time_us, std::size_t tokens_count);
     
     // Debug logging functions
@@ -117,9 +123,9 @@ private:
     std::size_t m_max_prompt_len = 0;
     std::size_t m_kv_cache_capacity = 0;
     
-    // Token sequences - each wrapper only maintains its own sequences
-    std::vector<int64_t> m_tokens;      // Either target or draft tokens depending on wrapper type
-    std::vector<int64_t> m_positions;   // Corresponding position IDs
+    // Token sequences
+    std::vector<int64_t> m_tokens;
+    std::vector<int64_t> m_positions;
     
     // State tracking
     std::size_t m_processed_tokens = 0;
@@ -131,6 +137,42 @@ private:
     
     // Configuration
     bool m_verbose = true;
+};
+
+/**
+ * @brief Target model wrapper for Eagle3 speculative decoding
+ * 
+ * Handles inference for the main/target model which validates draft predictions
+ * and generates the final output tokens.
+ */
+class Eagle3TargetModelWrapper : public Eagle3InferWrapperBase {
+public:
+    explicit Eagle3TargetModelWrapper(const ov::genai::ModelDesc& model_desc);
+    ~Eagle3TargetModelWrapper() = default;
+
+    // Target model inference - returns both logits and hidden features
+    InferenceOutput infer(const ov::Tensor& input_ids, 
+                         const ov::Tensor& attention_mask, 
+                         const ov::Tensor& position_ids);
+};
+
+/**
+ * @brief Draft model wrapper for Eagle3 speculative decoding
+ * 
+ * Handles inference for the draft model which generates candidate tokens
+ * using hidden states from the target model or its own previous predictions.
+ */
+class Eagle3DraftModelWrapper : public Eagle3InferWrapperBase {
+public:
+    explicit Eagle3DraftModelWrapper(const ov::genai::ModelDesc& model_desc);
+    ~Eagle3DraftModelWrapper() = default;
+
+    // Draft model inference with hidden state inputs - returns both logits and hidden features
+    InferenceOutput infer(const ov::Tensor& input_ids,
+                         const ov::Tensor& attention_mask,
+                         const ov::Tensor& position_ids,
+                         const ov::Tensor& target_hidden_features,
+                         const ov::Tensor& internal_hidden_features);
 };
 
 /**
@@ -156,6 +198,10 @@ public:
     // Eagle3-specific configuration
     void set_draft_target_mapping(const std::shared_ptr<ov::Model>& draft_model);
     void set_verbose(bool verbose);
+    bool is_verbose() const { return m_main_model ? m_main_model->is_verbose() : false; }
+    
+    // Configuration resolution
+    GenerationConfig resolve_generation_config(OptionalGenerationConfig generation_config);
     
     // Performance metrics
     ov::genai::SpeculativeDecodingMetrics get_speculative_decoding_metrics() const;
@@ -220,13 +266,11 @@ private:
     ov::Tensor combine_hidden_windows(const ov::Tensor& confirmed_hidden, const ov::Tensor& new_hidden) const;
 
     // Model wrappers
-    std::unique_ptr<Eagle3InferWrapper> m_draft_model;
-    std::unique_ptr<Eagle3InferWrapper> m_main_model;
+    std::unique_ptr<Eagle3DraftModelWrapper> m_draft_model;
+    std::unique_ptr<Eagle3TargetModelWrapper> m_main_model;
     
     // Algorithm parameters
-    static constexpr std::size_t DEFAULT_DRAFT_ITERATIONS = 3;
-    static constexpr std::size_t DEFAULT_VALIDATION_WINDOW = 5;
-    static constexpr std::size_t MAX_CANDIDATES = 10;  // For NPU compatibility
+    std::size_t m_draft_iterations = 5;  // Number of draft iterations (configurable via num_assistant_tokens)
     
     // Draft-to-target token mapping
     ov::Tensor m_draft_target_mapping;
@@ -243,9 +287,6 @@ private:
     bool m_is_chat_active = false;
     ChatHistory m_chat_history;
     bool m_streaming_was_cancelled = false;
-    
-    // Configuration
-    bool m_verbose = true;
 };
 
 }  // namespace genai
