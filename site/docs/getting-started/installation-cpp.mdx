@@ -1,0 +1,34 @@
+---
+sidebar_position: 4
+sidebar_label: Installation C++ API
+---
+
+# Install OpenVINO GenAI for C++
+
+OpenVINO GenAI provides C++ API for high-performance generative AI applications.
+
+## Installation
+
+OpenVINO GenAI C++ library is available via [Archive distributions](https://storage.openvinotoolkit.org/repositories/openvino_genai/packages/) for Linux, Windows and macOS platforms.
+
+## Building from Source
+
+To build OpenVINO GenAI C++ library from source, refer to the [Build Instructions](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/docs/BUILD.md).
+
+:::info
+Please make sure that you are following the versions compatibility rules. OpenVINO GenAI depends on [OpenVINO](https://github.com/openvinotoolkit/openvino) and [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers).
+:::
+
+## System Requirements
+
+OpenVINO GenAI is built on top of OpenVINO Runtime and shares the same system requirements.
+
+Refer to the [OpenVINO System Requirements](https://docs.openvino.ai/2025/about-openvino/release-notes-openvino/system-requirements.html) for more details.
+
+## OpenVINO GenAI Dependencies
+
+OpenVINO GenAI depends on [OpenVINO](https://github.com/openvinotoolkit/openvino) and [OpenVINO Tokenizers](https://github.com/openvinotoolkit/openvino_tokenizers).
+
+C++ archive distributions for Ubuntu are compiled with `_GLIBCXX_USE_CXX11_ABI=1`. It is not possible to mix different Application Binary Interfaces (ABIs) because doing so results in a link error.
+
+If you want to try OpenVINO GenAI with different dependencies versions (**not** prebuilt packages as archives), build OpenVINO GenAI library from source.

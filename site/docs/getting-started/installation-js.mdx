@@ -1,0 +1,115 @@
+---
+sidebar_position: 5
+sidebar_label: Installation JS/TS API
+---
+
+# Install OpenVINO GenAI for JavaScript/TypeScript
+
+OpenVINO GenAI provides Node.js bindings that enable you to use generative AI pipelines in JavaScript and TypeScript applications.
+
+:::note API Coverage
+JavaScript/TypeScript bindings currently provide a subset of the full OpenVINO GenAI API available in C++ and Python. The focus is on core text generation (LLMPipeline) and text embedding (TextEmbeddingPipeline) functionality.
+:::
+
+## System Requirements
+
+- **Node.js**: Version 21.0.0 or higher
+- **Operating Systems**: 
+  - Linux (x86/ARM)
+  - Windows (x86)
+  - macOS (x86/ARM)
+
+## Installation
+
+### Using npm (Recommended)
+
+Install the `openvino-genai-node` package from npm:
+
+```bash
+npm install openvino-genai-node
+```
+
+The package will automatically install the required `openvino-node` dependency with the matching version.
+
+:::info
+The OpenVINO GenAI Node.js package depends on the OpenVINO Node.js package. These packages must be of the same version to ensure compatibility. The npm installation automatically handles this requirement.
+:::
+
+### Verify Installation
+
+After installation, verify that the package is working correctly:
+
+```bash
+node -e "const { LLMPipeline } = require('openvino-genai-node'); console.log(LLMPipeline);"
+```
+
+If the installation is successful, you should see the `LLMPipeline` function output.
+
+## Building from Source
+
+If you need to build the JavaScript bindings from source (for example, to use the latest development version or customize the build), refer to the [Build Instructions](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/js/BUILD.md).
+
+:::warning OpenVINO Version Compatibility
+If you build the OpenVINO GenAI Node.js package from source, you must also build and use the OpenVINO Node.js bindings from source following the [OpenVINO JavaScript build instructions](https://github.com/openvinotoolkit/openvino/blob/master/src/bindings/js/docs/README.md#build). Both packages must be built from compatible versions to ensure ABI compatibility.
+:::
+
+## Quick Start Example
+
+After installation, you can start using OpenVINO GenAI in your TypeScript projects:
+
+```typescript
+import { LLMPipeline, GenerationConfig } from "openvino-genai-node";
+
+const device: string = "CPU";
+
+const pipe = await LLMPipeline(model_path, device);
+
+const input: string = "What is OpenVINO?";
+const config: GenerationConfig = { max_new_tokens: 100 };
+
+for await (const chunk of pipe.stream(input, config)) {
+    process.stdout.write(chunk);
+}
+
+console.log("\n\nGeneration complete!");
+```
+
+## Available Pipelines
+
+The JavaScript/TypeScript bindings currently support:
+
+- **LLMPipeline**: Text generation with Large Language Models
+  - Chat mode with conversation history
+  - Streaming support
+  - Batch generation
+  - Multiple sampling strategies (greedy, beam search)
+  - Structured output
+  - ReAct agent support
+- **TextEmbeddingPipeline**: Generate text embeddings for semantic search and RAG applications
+
+## Next Steps
+
+- Check out code samples in the [Samples](/docs/samples) section
+- Review [supported models](/docs/supported-models)
+- Learn about [use cases](/docs/category/use-cases)
+- Visit the [OpenVINO GenAI GitHub repository](https://github.com/openvinotoolkit/openvino.genai)
+
+## Troubleshooting
+
+### Module Not Found Errors
+
+If you encounter errors like `Cannot find module 'openvino-genai-node'`:
+
+1. Verify installation: `npm list openvino-genai-node`
+2. Check Node.js version: `node --version` (must be 21.0.0+)
+3. Ensure ES modules are enabled: add `"type": "module"` in your `package.json`
+
+### Version Compatibility Issues
+
+If you encounter errors related to shared libraries or ABI compatibility:
+
+1. Ensure both `openvino-node` and `openvino-genai-node` are the same version
+2. If building from source, rebuild both OpenVINO and OpenVINO GenAI bindings
+3. Check that your system meets the requirements for your platform
+
+For more help, refer to the [OpenVINO GenAI GitHub repository](https://github.com/openvinotoolkit/openvino.genai) or open an issue.
