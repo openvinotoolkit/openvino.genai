@@ -160,7 +160,7 @@ std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::op::v0::Result>> patch
             result_temperal_images};
 }
 
-std::shared_ptr<ov::Model> patch_preprocess_into_model(std::shared_ptr<ov::Model>& model_org,
+std::shared_ptr<ov::Model> patch_preprocess_into_model(const std::shared_ptr<ov::Model>& model_org,
                                                        const ov::op::v0::Constant& image_mean_tensor,
                                                        const ov::op::v0::Constant& image_scale_tensor) {
     auto cond_img_vid = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{1});
