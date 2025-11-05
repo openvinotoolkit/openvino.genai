@@ -10,7 +10,7 @@ Structured output generation lets a model produce machine-readable responses tha
 
 Structured output generation consists of several steps:
 1. Compile the structured-output configuration (JSON Schema, regex, or EBNF grammar) into an internal grammar representation.
-2. After the model computes the probability distribution for the next token, apply a mask that prevents tokens incompatible with the current grammar state from being sampled.
+2. After the model computes the probability distribution for the next token, a mask is applied that prevents tokens incompatible with the current grammar state from being sampled.
 3. When a token is sampled, advance the grammar state and recompute the mask for the next sampling round.
 
 :::info
