@@ -29,16 +29,24 @@ namespace {
 
 VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
     ImageGenerationConfig{
-        .guidance_scale = 3.0f,
-        .height = 512,
-        .width = 704,
-        .num_inference_steps = 50,
-        .max_sequence_length = 128,
-        .strength = 1.0f,
+        std::nullopt,  // prompt_2
+        std::nullopt,  // prompt_3
+        std::nullopt,  // negative_prompt
+        std::nullopt,  // negative_prompt_2
+        std::nullopt,  // negative_prompt_3
+        1,  // num_images_per_prompt
+        nullptr,  // generator
+        42,  // rng_seed
+        7.5f,  // guidance_scale
+        512,  // height
+        704,  // width
+        50,  // num_inference_steps
+        128,  // max_sequence_length
+        1.0f,  // strength
     },
-    .guidance_rescale = 0.0,
-    .num_frames = 161,
-    .frame_rate = 25.0f
+    0.0,  // guidance_rescale
+    161,  // num_frames
+    25.0f  // frame_rate
 };
 
 // Some defaults aren't special values so it's not possible to distinguish
