@@ -1042,7 +1042,7 @@ NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prom
 
     for (const auto& encoded_vd : videos) {
         size_t grid_t = encoded_vd.frame_num;
-        OPENVINO_ASSERT(grid_t > 0, "Input at least one frame for video.");
+        OPENVINO_ASSERT(grid_t > 0, "Video input must contain at least one frame.");
         size_t grid_h = encoded_vd.resized_source_size.height;
         size_t grid_w = encoded_vd.resized_source_size.width;
         video_grid_thw.push_back({grid_t, grid_h, grid_w});
