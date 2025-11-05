@@ -536,7 +536,7 @@ ov::Tensor concatenate_video_image_embeds(const std::vector<ov::Tensor>& reorder
         return ov::Tensor();
     }
 
-    // mulitple image(s) or video(s).
+    // multiple image(s) or video(s).
     ov::Tensor concatenated_embeds;
     size_t total_length = 0;
     for (const auto& embed : reordered_video_embeds) {
