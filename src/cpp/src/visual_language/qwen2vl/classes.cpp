@@ -558,7 +558,7 @@ ov::Tensor concatenate_video_image_embeds(const std::vector<ov::Tensor>& reorder
     if (reordered_image_embeds.size() > 0u) {
         hidden_dim = reordered_image_embeds.at(0).get_shape().at(1);
         type = reordered_image_embeds.at(0).get_element_type();
-    } else if (reordered_video_embeds.size() > 0u) {
+    } else {
         hidden_dim = reordered_video_embeds.at(0).get_shape().at(1);
         type = reordered_video_embeds.at(0).get_element_type();
     }
