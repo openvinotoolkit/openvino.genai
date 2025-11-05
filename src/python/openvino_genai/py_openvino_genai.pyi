@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'MeanStdPair', 'PerfMetrics', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__: list[str] = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -384,6 +384,8 @@ class CacheEvictionConfig:
         ...
     def get_start_size(self) -> int:
         ...
+    def to_string(self) -> str:
+        ...
     @property
     def snapkv_window_size(self) -> int:
         ...
@@ -516,6 +518,9 @@ class ContinuousBatchingPipeline:
     def generate(self, prompt: str, generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
     @typing.overload
+    def generate(self, prompts: collections.abc.Sequence[ChatHistory], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
+        ...
+    @typing.overload
     def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
     @typing.overload
@@ -566,6 +571,9 @@ class DecodedResults:
     def extended_perf_metrics(self) -> ExtendedPerfMetrics:
         ...
     @property
+    def parsed(self) -> list:
+        ...
+    @property
     def perf_metrics(self) -> PerfMetrics:
         ...
     @property
@@ -573,6 +581,12 @@ class DecodedResults:
         ...
     @property
     def texts(self) -> list[str]:
+        ...
+class DeepSeekR1ReasoningIncrementalParser(IncrementalParser):
+    def __init__(self) -> None:
+        ...
+class DeepSeekR1ReasoningParser(ReasoningParser):
+    def __init__(self) -> None:
         ...
 class EncodedGenerationResult:
     """
@@ -970,6 +984,12 @@ class GenerationConfig:
         ...
     @num_return_sequences.setter
     def num_return_sequences(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def parsers(self) -> list[Parser]:
+        ...
+    @parsers.setter
+    def parsers(self, arg0: collections.abc.Sequence[Parser]) -> None:
         ...
     @property
     def presence_penalty(self) -> float:
@@ -1447,6 +1467,17 @@ class ImageGenerationPerfMetrics:
     @property
     def raw_metrics(self) -> RawImageGenerationPerfMetrics:
         ...
+class IncrementalParser:
+    def __init__(self) -> None:
+        ...
+    def parse(self, message: dict, delta_text: str, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
+        """
+        Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.
+        """
+    def reset(self) -> None:
+        """
+        Reset the internal state of the parser.
+        """
 class InpaintingPipeline:
     """
     This class is used for generation with inpainting models.
@@ -1556,7 +1587,7 @@ class KVCrushAnchorPointMode:
                       :param KVCrushAnchorPointMode.ZEROS: Vector of all zeros will be used as anchor point
                       :param KVCrushAnchorPointMode.ONES: Vector of all ones will be used as anchor point
                       :param KVCrushAnchorPointMode.MEAN: Mean of indicator feature vector to be used as anchor point
-                      :param KVCrushAnchorPointMode.ALTERNATE: Alternating 0s and 1s will be used as anchor point
+                      :param KVCrushAnchorPointMode.ALTERNATING: Alternating 0s and 1s will be used as anchor point
     
     Members:
     
@@ -1568,14 +1599,14 @@ class KVCrushAnchorPointMode:
     
       MEAN
     
-      ALTERNATE
+      ALTERNATING
     """
-    ALTERNATE: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ALTERNATE: 4>
+    ALTERNATING: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ALTERNATING: 4>
     MEAN: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.MEAN: 3>
     ONES: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ONES: 2>
     RANDOM: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.RANDOM: 0>
     ZEROS: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ZEROS: 1>
-    __members__: typing.ClassVar[dict[str, KVCrushAnchorPointMode]]  # value = {'RANDOM': <KVCrushAnchorPointMode.RANDOM: 0>, 'ZEROS': <KVCrushAnchorPointMode.ZEROS: 1>, 'ONES': <KVCrushAnchorPointMode.ONES: 2>, 'MEAN': <KVCrushAnchorPointMode.MEAN: 3>, 'ALTERNATE': <KVCrushAnchorPointMode.ALTERNATE: 4>}
+    __members__: typing.ClassVar[dict[str, KVCrushAnchorPointMode]]  # value = {'RANDOM': <KVCrushAnchorPointMode.RANDOM: 0>, 'ZEROS': <KVCrushAnchorPointMode.ZEROS: 1>, 'ONES': <KVCrushAnchorPointMode.ONES: 2>, 'MEAN': <KVCrushAnchorPointMode.MEAN: 3>, 'ALTERNATING': <KVCrushAnchorPointMode.ALTERNATING: 4>}
     def __eq__(self, other: typing.Any) -> bool:
         ...
     def __getstate__(self) -> int:
@@ -1617,6 +1648,8 @@ class KVCrushConfig:
         """
         Constructor with budget, anchor point mode, and RNG seed
         """
+    def to_string(self) -> str:
+        ...
     @property
     def budget(self) -> int:
         ...
@@ -1633,11 +1666,11 @@ class LLMPipeline:
     """
     This class is used for generation with LLMs
     """
-    def __call__(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str], generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
+    def __call__(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str] | openvino_genai.py_openvino_genai.ChatHistory, generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
         """
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
-            :param inputs: inputs in the form of string, list of strings or tokenized input_ids
+            :param inputs: inputs in the form of string, list of strings, chat history or tokenized input_ids
             :type inputs: str, list[str], ov.genai.TokenizedInputs, or ov.Tensor
         
             :param generation_config: generation_config
@@ -1730,11 +1763,11 @@ class LLMPipeline:
         """
     def finish_chat(self) -> None:
         ...
-    def generate(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str], generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
+    def generate(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str] | openvino_genai.py_openvino_genai.ChatHistory, generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
         """
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
         
-            :param inputs: inputs in the form of string, list of strings or tokenized input_ids
+            :param inputs: inputs in the form of string, list of strings, chat history or tokenized input_ids
             :type inputs: str, list[str], ov.genai.TokenizedInputs, or ov.Tensor
         
             :param generation_config: generation_config
@@ -1803,6 +1836,12 @@ class LLMPipeline:
         ...
     def start_chat(self, system_message: str = '') -> None:
         ...
+class Llama3JsonToolParser(Parser):
+    def __init__(self) -> None:
+        ...
+class Llama3PythonicToolParser(Parser):
+    def __init__(self) -> None:
+        ...
 class MeanStdPair:
     def __init__(self) -> None:
         ...
@@ -1814,6 +1853,13 @@ class MeanStdPair:
     @property
     def std(self) -> float:
         ...
+class Parser:
+    def __init__(self) -> None:
+        ...
+    def parse(self, message: dict) -> None:
+        """
+        Parse is called with the full text. Returns a dict with parsed content.
+        """
 class PerfMetrics:
     """
     
@@ -1915,6 +1961,12 @@ class PerfMetrics:
         ...
     @property
     def raw_metrics(self) -> RawPerfMetrics:
+        ...
+class Phi4ReasoningIncrementalParser(IncrementalParser):
+    def __init__(self) -> None:
+        ...
+class Phi4ReasoningParser(ReasoningParser):
+    def __init__(self) -> None:
         ...
 class PipelineMetrics:
     """
@@ -2046,6 +2098,12 @@ class RawPerfMetrics:
         ...
     @property
     def tokenization_durations(self) -> list[float]:
+        ...
+class ReasoningIncrementalParser(IncrementalParser):
+    def __init__(self, expect_open_tag: bool = True, keep_original_content: bool = True, open_tag: str = '<think>', close_tag: str = '</think>') -> None:
+        ...
+class ReasoningParser(Parser):
+    def __init__(self, expect_open_tag: bool = True, keep_original_content: bool = True, open_tag: str = '<think>', close_tag: str = '</think>') -> None:
         ...
 class SD3Transformer2DModel:
     """
@@ -2264,6 +2322,8 @@ class SchedulerConfig:
     use_sparse_attention: bool
     def __init__(self) -> None:
         ...
+    def to_string(self) -> str:
+        ...
     @property
     def cache_size(self) -> int:
         ...
@@ -2332,6 +2392,8 @@ class SparseAttentionConfig:
     """
     mode: SparseAttentionMode
     def __init__(self, mode: SparseAttentionMode = ..., num_last_dense_tokens_in_prefill: typing.SupportsInt = 100, num_retained_start_tokens_in_cache: typing.SupportsInt = 128, num_retained_recent_tokens_in_cache: typing.SupportsInt = 1920, xattention_threshold: typing.SupportsFloat = 0.8, xattention_block_size: typing.SupportsInt = 64, xattention_stride: typing.SupportsInt = 8) -> None:
+        ...
+    def to_string(self) -> str:
         ...
     @property
     def num_last_dense_tokens_in_prefill(self) -> int:
@@ -3347,6 +3409,28 @@ class TextEmbeddingPipeline:
     def wait_embed_query(self) -> list[float] | list[int] | list[int]:
         """
         Waits computed embeddings for a query
+        """
+class TextParserStreamer(TextStreamer):
+    """
+    
+    Base class for text streamers which works with parsed messages. In order to use inherit from this class and implement write method which takes a dict as input parameter.
+    
+    tokenizer: Tokenizer object to decode tokens into text.
+    parsers: vector of IncrementalParser to process the text stream incrementally.
+    """
+    def __init__(self, tokenizer: Tokenizer, parsers: collections.abc.Sequence[IncrementalParser] = []) -> None:
+        ...
+    def _write(self, chunk: collections.abc.Sequence[typing.SupportsInt] | str) -> StreamingStatus:
+        """
+        This is a private method is used to call write with integer tokens or text chunks. Is used for text purposes only.
+        """
+    def get_parsed_message(self) -> dict:
+        """
+        Returns the accumulated message.
+        """
+    def reset(self) -> None:
+        """
+        Resets the internal state of the parser streamer.
         """
 class TextRerankPipeline:
     """

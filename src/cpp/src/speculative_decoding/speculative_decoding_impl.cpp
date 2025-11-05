@@ -30,6 +30,9 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
     auto main_model = main_model_desc.model;
     auto draft_model = draft_model_desc.model;
 
+    OPENVINO_ASSERT(main_model != nullptr, "Main model cannot be null");
+    OPENVINO_ASSERT(draft_model != nullptr, "Draft model cannot be null");
+
     auto main_scheduler_config = main_model_desc.scheduler_config;
     auto main_device = main_model_desc.device;
 
@@ -106,7 +109,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
 GenerationHandle
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t request_id,
                                                                  const ov::Tensor& input_ids,
-                                                                 ov::genai::GenerationConfig sampling_params,
+                                                                 const ov::genai::GenerationConfig& sampling_params,
                                                                  std::optional<ov::Tensor> token_type_ids) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
@@ -119,7 +122,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
 GenerationHandle
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t request_id,
                                                                  const std::string& prompt,
-                                                                 ov::genai::GenerationConfig sampling_params) {
+                                                                 const ov::genai::GenerationConfig& sampling_params) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
@@ -236,7 +239,8 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                               const std::vector<GenerationConfig>& sampling_params,
                                                               const StreamerVariant& streamer,
-                                                              std::optional<std::vector<ov::Tensor>> token_type_ids) {
+                                                              const std::optional<std::vector<ov::Tensor>>& token_type_ids,
+                                                              const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids) {
     OPENVINO_ASSERT(!token_type_ids.has_value());
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
     m_draft_pipeline->raw_perf_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
@@ -294,7 +298,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         stream_tokens(streamer_ptr, generation);
     }
 
-    // waiting for competion of streaming
+    // waiting for completion of streaming
     streamer_ptr->end();
 
     OPENVINO_ASSERT(is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");

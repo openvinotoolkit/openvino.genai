@@ -135,7 +135,9 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                 py::gil_scoped_acquire acquire;
                 return (*py_decrypt)(py::bytes(in_str)).cast<std::string>();
             };
-            ov::EncryptionCallbacks encryption_callbacks{encrypt_func, decrypt_func};
+            ov::EncryptionCallbacks encryption_callbacks{
+                std::move(encrypt_func), std::move(decrypt_func)
+            };
             return encryption_callbacks;
         } else if (property_name == "structural_tags") {
             // this impl is based on OpenVINO python bindings impl.
@@ -149,6 +151,17 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                 }
             }
             return structural_tags;
+        } else if (property_name == "parsers") {
+            auto property_list = py_obj.cast<py::list>();
+            std::vector<std::shared_ptr<ov::genai::Parser>> parsers;
+            for (const auto& item : property_list) {
+                if (py::isinstance<ov::genai::Parser>(item)) {
+                    parsers.push_back(item.cast<std::shared_ptr<ov::genai::Parser>>());
+                } else {
+                    OPENVINO_THROW("Incorrect value in \"", property_name, "\". Expected Parser.");
+                }
+            }
+            return parsers;
         } else {
             auto _list = py_obj.cast<py::list>();
             enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE, TENSOR, DICT};

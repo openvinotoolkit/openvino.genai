@@ -43,12 +43,18 @@ def num_infer_count_type(x):
 
 
 def get_argprser():
-    parser = argparse.ArgumentParser('LLM benchmarking tool', add_help=True, formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('-m', '--model', help='model folder including IR files or Pytorch files or path to GGUF model', required=TabError)
+    parser = argparse.ArgumentParser('LLM benchmarking tool', add_help=True, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument(
+        '-m',
+        '--model',
+        help='model folder including IR files or PyTorch files or path to GGUF model',
+        required=True,
+        default=argparse.SUPPRESS
+    )
     parser.add_argument('-d', '--device', default='cpu', help='inference device')
     parser.add_argument('-r', '--report', help='report csv')
     parser.add_argument('-rj', '--report_json', help='report json')
-    parser.add_argument('-f', '--framework', default='ov', help='framework')
+    parser.add_argument('-f', '--framework', default='ov', choices={"ov", "pt"}, help='inference framework, ov: OpenVINO, pt: PyTorch')
     parser.add_argument('-p', '--prompt', default=None, help='one prompt')
     parser.add_argument('-pf', '--prompt_file', nargs='+', default=None,
                         help='Prompt file(s) in jsonl format. Multiple prompt files should be separated with space(s).')
@@ -188,7 +194,7 @@ def get_argprser():
     parser.add_argument(
         "--static_reshape",
         action="store_true",
-        help="Reshape image generation pipeline to specific width & height at pipline creation time. Applicable for Image Generation.")
+        help="Reshape image generation pipeline to specific width & height at pipeline creation time. Applicable for Image Generation.")
     parser.add_argument('-mi', '--mask_image', default=None,
                         help='Mask image for Inpainting pipelines. Can be directory or path to single image. Applicable for Image Generation.')
     parser.add_argument('-t', '--task', default=None,
@@ -197,8 +203,8 @@ def get_argprser():
                         help='The task to setup the pipeline type')
     parser.add_argument(
         '--strength', type=float, default=None,
-        help='Applicable for Image to imaage/Inpainting pipelines. Indicates extent to transform the reference `image`. Must be between 0 and 1.')
-    parser.add_argument("--disable_prompt_permutation", action="store_true", help="Disable modification prompt from run to run for avoid prefix caching")
+        help='Applicable for Image to image/Inpainting pipelines. Indicates extent to transform the reference `image`. Must be between 0 and 1.')
+    parser.add_argument("--disable_prompt_permutation", action="store_true", help="Disable modification prompt from run to run to allow prefix caching")
     parser.add_argument("--embedding_pooling", choices=["cls", "mean", "last_token"], default=None,
                         help="Pooling type CLS or MEAN for encoders, LAST_TOKEN for decoders. "
                              "Different post-processing is applied depending on the padding side. Applicable only for text embeddings")

@@ -15,7 +15,7 @@ from llm_bench_utils.memory_monitor import MemMonitorWrapper
 from llm_bench_utils.hook_forward import MeanStdPair, RawImGenPerfMetrics
 from llm_bench_utils.model_utils import get_version_in_format_to_pars
 from llm_bench_utils.config_class import (
-    UseCaseTextToSpeech,
+    UseCaseSpeech2Text,
     UseCaseTextGen,
     PA_ATTENTION_BACKEND
 )
@@ -191,9 +191,12 @@ def get_scheduler_config_genai(config_data, config_name="CB config"):
             if "mode" in sparse_attention_kwargs.keys():
                 sparse_attention_kwargs["mode"] = getattr(openvino_genai.SparseAttentionMode, sparse_attention_kwargs["mode"])
 
-            scheduler_config.use_sparse_attention = True
-            scheduler_config.sparse_attention_config = openvino_genai.SparseAttentionConfig(**sparse_attention_kwargs)
-            log.info("Sparse Attention mode ON")
+            if user_config.pop('use_sparse_attention', True):
+                scheduler_config.use_sparse_attention = True
+                scheduler_config.sparse_attention_config = openvino_genai.SparseAttentionConfig(**sparse_attention_kwargs)
+                log.info("Sparse Attention mode ON")
+            else:
+                raise RuntimeError("sparse_attention_config cannot be specified when use_sparse_attention is False")
 
         for param, value in user_config.items():
             setattr(scheduler_config, param, value)
@@ -557,10 +560,9 @@ def create_genai_speech_2_txt_model(model_path, device, memory_data_collector, *
     if kwargs.get("mem_consumption"):
         memory_data_collector.stop_and_collect_data('compilation_phase')
         memory_data_collector.log_data(compilation_phase=True)
-    from_pretrained_time = end - start
-    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    log.info(f'Pipeline initialization time: {end - start:.2f}s')
     processor = AutoProcessor.from_pretrained(model_path)
-    return genai_pipe, processor, from_pretrained_time, True
+    return genai_pipe, processor, end - start, True
 
 
 def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwargs):
@@ -580,7 +582,7 @@ def create_speech_2_txt_model(model_path, device, memory_data_collector, **kwarg
         raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
     else:
         if kwargs.get("genai", True) and is_genai_available(log_msg=True):
-            if model_class not in [UseCaseTextToSpeech.ov_cls]:
+            if model_class not in [UseCaseSpeech2Text.ov_cls]:
                 log.warning("OpenVINO GenAI based benchmarking is not available for required model type. Will be switched to default benchmarking")
             else:
                 log.info("Selected OpenVINO GenAI for benchmarking")
@@ -1027,7 +1029,7 @@ def get_genai_chunk_streamer():
                     pass
                 elif len(text) > self.print_len:
                     # It is possible to have a shorter text after adding new token.
-                    # Print to output only if text lengh is increaesed.
+                    # Print to output only if text length is increased.
                     word = text[self.print_len:]
                     self.print_len = len(text)
                 self.put_word(word)

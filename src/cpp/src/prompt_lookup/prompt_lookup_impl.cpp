@@ -15,7 +15,7 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 GenerationHandle
 ContinuousBatchingPipeline::PromptLookupImpl::add_request(uint64_t request_id,
                                                           const ov::Tensor& input_ids,
-                                                          ov::genai::GenerationConfig sampling_params,
+                                                          const ov::genai::GenerationConfig& sampling_params,
                                                           std::optional<ov::Tensor> token_type_ids) {
     OPENVINO_ASSERT(sampling_params.is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`");
     return m_pipeline->add_request(request_id, input_ids, sampling_params, token_type_ids);
@@ -24,7 +24,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::add_request(uint64_t request_id,
 GenerationHandle
 ContinuousBatchingPipeline::PromptLookupImpl::add_request(uint64_t request_id,
                                                           const std::string& prompt,
-                                                          ov::genai::GenerationConfig sampling_params) {
+                                                          const ov::genai::GenerationConfig& sampling_params) {
     OPENVINO_ASSERT(sampling_params.is_prompt_lookup(), "`max_ngram_size` && `num_assistant_tokens` should be specified for `prompt lookup decoding`");
     return m_pipeline->add_request(request_id, prompt, sampling_params);
 }
@@ -95,7 +95,8 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                        const std::vector<GenerationConfig>& sampling_params,
                                                        const StreamerVariant& streamer,
-                                                       std::optional<std::vector<ov::Tensor>> token_type_ids) {
+                                                       const std::optional<std::vector<ov::Tensor>>& token_type_ids,
+                                                       const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids) {
     m_perf_metrics = PerfMetrics();
     m_perf_metrics.raw_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
 
@@ -140,7 +141,7 @@ ContinuousBatchingPipeline::PromptLookupImpl::generate(const std::vector<ov::Ten
         stream_tokens(streamer_ptr, generation);
     }
 
-    // waiting for competion of streaming
+    // waiting for completion of streaming
     streamer_ptr->end();
 
     OPENVINO_ASSERT(m_pipeline->is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");

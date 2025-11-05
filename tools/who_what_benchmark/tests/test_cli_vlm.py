@@ -13,7 +13,7 @@ def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
     GT_FILE = tmp_path / "gt.csv"
-    MODEL_PATH = tmp_path / model_id.replace("/", "--")
+    MODEL_PATH = tmp_path / model_id.replace("/", "_")
 
     result = subprocess.run(["optimum-cli", "export",
                              "openvino", "-m", model_id,

@@ -164,6 +164,8 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
      */
     virtual void evaluate_statistics(std::optional<TimePoint> start_time = std::nullopt);
 
+    virtual ~PerfMetrics() = default;
+
     /**
      * @brief convert duration to microseconds
      *

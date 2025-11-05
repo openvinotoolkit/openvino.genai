@@ -128,7 +128,7 @@ jobs:
 
       - name: Build for coverity
         run: |
-          ${{ env.COV_TOOL_DIR }}/bin/cov-build --config ${{ env.COV_TOOL_DIR }}/config/coverity_config.xml --tmpdir cov_temp --dir ${BUILD_DIR}/cov-int --fs-capture-search ./openvino.genai sh build.sh
+          ${{ env.COV_TOOL_DIR }}/bin/cov-build --config ${{ env.COV_TOOL_DIR }}/config/coverity_config.xml --tmpdir cov_temp --dir ${BUILD_DIR}/cov-int sh build.sh
 
       - name: Pack for analysis submission
         run: tar -cvf - cov-int | pigz > openvino-genai.tgz
@@ -171,7 +171,7 @@ jobs:
           path: ${{ env.COV_TOOL_DIR }}
         
       - name: Upload Coverity build log
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: always()
         with:
           name: coverity_logs
@@ -179,7 +179,7 @@ jobs:
           if-no-files-found: 'error'
 
       - name: Upload Coverity build archive
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: always()
         with:
           name: coverity_archive
