@@ -1093,7 +1093,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     video_grid_thw.reserve(videos.size());
     for (const auto& encoded_video : videos) {
         size_t grid_t = encoded_video.frame_num;
-        OPENVINO_ASSERT(grid_t > 0, "Input at least one frame for video.");
+        OPENVINO_ASSERT(grid_t > 0, "Video input must contain at least one frame.");
         size_t grid_h = encoded_video.resized_source_size.height;
         size_t grid_w = encoded_video.resized_source_size.width;
         video_grid_thw.push_back({grid_t, grid_h, grid_w});
