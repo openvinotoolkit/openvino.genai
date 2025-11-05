@@ -7,7 +7,6 @@ import openvino_genai as ov_genai
 
 @pytest.mark.precommit
 def test_add_extension():
-    print(ov_genai.get_version())
     # Path to the OpenVINO extension shared library (update as needed).
     extension_path = ""
     with pytest.raises(RuntimeError):
