@@ -12,5 +12,5 @@ def test_add_extension():
     tokenizer_path = ""
     try:
         ov_genai.add_extension(tokenizer_path)
-    except:
+    except Exception:
         assert(False)
