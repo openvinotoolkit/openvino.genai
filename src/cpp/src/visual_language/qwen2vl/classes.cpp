@@ -132,12 +132,12 @@ std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::op::v0::Result>> patch
 }
 
 std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::op::v0::Result>> patch_preprocess_branch_video(
-    std::shared_ptr<ov::op::v0::Parameter> cond_img_vid,
-    std::shared_ptr<ov::op::v0::Parameter> raw_frame_1,
-    std::shared_ptr<ov::op::v0::Parameter> raw_frame_2,
-    std::shared_ptr<ov::op::v0::Parameter> resize_shape,
-    std::shared_ptr<ov::op::v0::Constant> image_mean,
-    std::shared_ptr<ov::op::v0::Constant> image_scale) {
+    const std::shared_ptr<ov::op::v0::Parameter>& cond_img_vid,
+    const std::shared_ptr<ov::op::v0::Parameter>& raw_frame_1,
+    const std::shared_ptr<ov::op::v0::Parameter>& raw_frame_2,
+    const std::shared_ptr<ov::op::v0::Parameter>& resize_shape,
+    const std::shared_ptr<ov::op::v0::Constant>& image_mean,
+    const std::shared_ptr<ov::op::v0::Constant>& image_scale) {
     auto img_f32_nchw_1 = create_f32_nchw_input(raw_frame_1);
     auto img_resized_1 = create_bicubic_resize(img_f32_nchw_1, resize_shape);
     auto img_normalized_1 = create_normalization(img_resized_1, image_mean, image_scale);
