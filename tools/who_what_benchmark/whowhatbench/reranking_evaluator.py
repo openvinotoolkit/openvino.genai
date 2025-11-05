@@ -108,7 +108,6 @@ class RerankingEvaluator(BaseEvaluator):
 
         return pd.DataFrame(all_metrics_per_query), pd.DataFrame([all_metrics])
 
-
     def worst_examples(self, top_k: int = 5, metric="similarity"):
         assert self.last_cmp is not None
         res = self.last_cmp.nsmallest(top_k, metric)
@@ -126,7 +125,6 @@ class RerankingEvaluator(BaseEvaluator):
         qwen3_query = f"{prefix}<Instruct>: {task}\n<Query>: {query}\n"
         qwen3_passages = [f"<Document>: {doc}{suffix}" for doc in passages]
         return qwen3_query, qwen3_passages
-
 
     def _generate_data(self, model, gen_answer_fn=None, result_dir="reference"):
         def default_gen_answer(model, tokenizer, query, passages):
