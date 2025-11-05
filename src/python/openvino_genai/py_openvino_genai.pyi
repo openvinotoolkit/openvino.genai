@@ -4408,5 +4408,7 @@ def get_version() -> str:
     """
 def add_extension(str) -> None:
     """
-    OpenVINO GenAI version
+    Registers an OpenVINO extension from a library path to enable support for models with custom operations.
+
+    :param str: Path to the extension library to register.
     """
