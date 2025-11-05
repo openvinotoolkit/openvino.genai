@@ -21,7 +21,7 @@ namespace ov::genai {
 
 // Forward declarations for Eagle3 transformation functions
 void share_embedding_weights(std::shared_ptr<ov::Model>& main_model, std::shared_ptr<ov::Model>& draft_model);
-void extract_hidden_state_generic(std::shared_ptr<ov::Model>& model, const std::vector<int>& hidden_layers_to_abstract);
+void extract_hidden_state_generic(std::shared_ptr<ov::Model>& model, const std::vector<int>& hidden_layers_to_abstract, const std::string& device = "");
 std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(const std::shared_ptr<ov::Model>& model);
 void remove_d2t_result_node(std::shared_ptr<ov::Model>& model);
 
@@ -79,13 +79,14 @@ class EagleInputTransform : public ov::pass::MatcherPass { // eagle3 specific fo
 public:
     using NodePtr = std::shared_ptr<ov::Node>;
     OPENVINO_MATCHER_PASS_RTTI("EagleInputTransform");
-    EagleInputTransform(std::vector<std::shared_ptr<ov::op::v0::Parameter>>& params);
+    EagleInputTransform(std::vector<std::shared_ptr<ov::op::v0::Parameter>>& params, const std::string& device = "");
 
     ~EagleInputTransform() = default;
 
 private:
     bool apply(NodePtr node, std::vector<std::shared_ptr<ov::op::v0::Parameter>>& params);
     size_t applied = 0;
+    std::string m_device;
 };
 class Eagle3Transform : public ov::pass::MatcherPass {
 public:
@@ -101,11 +102,12 @@ private:
 
 class EagleModelTransform : public ov::pass::ModelPass {
 public:
-    EagleModelTransform(const std::vector<int>& layer_ids);
+    EagleModelTransform(const std::vector<int>& layer_ids, const std::string& device = "");
     bool run_on_model(const std::shared_ptr<Model>& model) override;
 
 private:
     const std::vector<int> m_layer_ids;
+    std::string m_device;
     std::vector<std::shared_ptr<ov::op::v0::Result>> m_new_results;
     std::vector<std::shared_ptr<ov::op::v0::Parameter>> m_new_parameters;
     std::vector<Output<Node>> m_hidden_layer_outputs;

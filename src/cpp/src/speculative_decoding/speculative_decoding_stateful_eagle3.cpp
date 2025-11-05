@@ -722,11 +722,11 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
     log_debug("Removed d2t Result node from draft model");
     
     // Step 4: Extract hidden states from main model (target model)
-    ov::genai::extract_hidden_state_generic(main_model, m_hidden_layers_to_abstract);
+    ov::genai::extract_hidden_state_generic(main_model, m_hidden_layers_to_abstract, main_model_desc.device);
     log_debug("Extracted hidden states from main model layers");
     
     // Step 5: Extract hidden states and add inputs for draft model
-    ov::genai::extract_hidden_state_generic(draft_model, {-1});
+    ov::genai::extract_hidden_state_generic(draft_model, {-1}, draft_model_desc.device);
     log_debug("Extracted hidden states from draft model and added hidden state inputs");
     // ov::serialize(main_model, "main_model_sgl.xml");
     // ov::serialize(draft_model, "draft_model_sgl.xml");
@@ -734,7 +734,7 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
 
     auto draft_desc = draft_model_desc;
     if (draft_desc.device == "NPU") {
-        draft_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = MAX_CANDIDATES + 1;
+        draft_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = DEFAULT_VALIDATION_WINDOW;
         draft_desc.properties["NPUW_DEVICES"] = "CPU";
         draft_desc.properties["NPUW_ONLINE_PIPELINE"] = "NONE";
     }
@@ -744,7 +744,7 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
     auto main_desc = main_model_desc;
     if (main_desc.device == "NPU") {
         main_model->set_rt_info("true", "eagle3_mode");
-        main_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = MAX_CANDIDATES + 1;
+        main_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = DEFAULT_VALIDATION_WINDOW;
         main_desc.properties["NPUW_DEVICES"] = "CPU";
     }
     
