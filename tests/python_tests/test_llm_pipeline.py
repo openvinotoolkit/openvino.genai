@@ -99,7 +99,7 @@ def test_batch_string_inputs(model_id, generation_config_dict, prompts, pipeline
 
 @pytest.mark.precommit
 def test_batch_size_switch():
-    model_id = 'katuni4ka/tiny-random-phi3'
+    model_id = 'optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM'
     _, _, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
@@ -110,7 +110,7 @@ def test_batch_size_switch():
 
 @pytest.mark.precommit
 def test_empty_encoded_inputs_throw():
-    model_id = 'katuni4ka/tiny-random-phi3'
+    model_id = 'optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM'
     _, _, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
@@ -645,37 +645,43 @@ def test_pipeline_validates_generation_config(model_id):
 # Work with Unicode in Python API
 #
 
+# Model, prompt and max_new_tokens that generates unfinished utf-8 string.
+UNICODE_PYBIND_DECODING_TEST_CASES: list[tuple[str, str, int]] = [
+    ("optimum-intel-internal-testing/tiny-random-PhiForCausalLM", ",", 3)
+]
+
+
 @pytest.mark.precommit
-@pytest.mark.parametrize("model_id", get_models_list())
-def test_unicode_pybind_decoding_one_string(model_id):
+@pytest.mark.parametrize("model_id,prompt,max_new_tokens", UNICODE_PYBIND_DECODING_TEST_CASES)
+def test_unicode_pybind_decoding_one_string(model_id: str, prompt: str, max_new_tokens: int):
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
     _, _, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
-    res_str = ov_pipe.generate(',', max_new_tokens=4, apply_chat_template=False)
+    res_str = ov_pipe.generate(prompt, max_new_tokens=max_new_tokens, apply_chat_template=False)
     assert '�' == res_str[-1]
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("model_id", get_models_list())
-def test_unicode_pybind_decoding_batched(model_id):
+@pytest.mark.parametrize("model_id,prompt,max_new_tokens", UNICODE_PYBIND_DECODING_TEST_CASES)
+def test_unicode_pybind_decoding_batched(model_id: str, prompt: str, max_new_tokens: int):
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
     _, _, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
-    res_str = ov_pipe.generate([","], max_new_tokens=4, apply_chat_template=False)
+    res_str = ov_pipe.generate([prompt], max_new_tokens=max_new_tokens, apply_chat_template=False)
     assert '�' == res_str.texts[0][-1]
 
 
 @pytest.mark.precommit
-@pytest.mark.parametrize("model_id", get_models_list())
-def test_unicode_pybind_decoding_one_string_streamer(model_id):
+@pytest.mark.parametrize("model_id,prompt,max_new_tokens", UNICODE_PYBIND_DECODING_TEST_CASES)
+def test_unicode_pybind_decoding_one_string_streamer(model_id: str, prompt: str, max_new_tokens: int):
     # On this model this prompt generates unfinished utf-8 string
     # and streams it. Test that pybind will not fail while we pass string to python.
     _, _, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     res_str = []
-    ov_pipe.generate(",", max_new_tokens=4, apply_chat_template=False, streamer=lambda x: res_str.append(x))
+    ov_pipe.generate(prompt, max_new_tokens=max_new_tokens, apply_chat_template=False, streamer=lambda x: res_str.append(x))
     assert '�' == ''.join(res_str)[-1]
 
 #
@@ -696,7 +702,7 @@ test_cases = [
 def test_perf_metrics(generation_config, prompt):
     import time
     start_time = time.perf_counter()
-    model_id = 'katuni4ka/tiny-random-gemma2'
+    model_id = 'optimum-intel-internal-testing/tiny-random-gemma2'
     perf_metrics = run_perf_metrics_collection(model_id, generation_config, prompt)
     total_time = (time.perf_counter() - start_time) * 1000
 
@@ -778,7 +784,7 @@ def test_perf_metrics_with_structured_output(generation_config, prompt):
         city: Literal["Dublin", "Dubai", "Munich"]
     generation_config.update(dict(structured_output_config=ov_genai.StructuredOutputConfig(json_schema=json.dumps(Person.model_json_schema()))))
     
-    model_id = 'katuni4ka/tiny-random-gemma2'
+    model_id = 'optimum-intel-internal-testing/tiny-random-gemma2'
     _, _, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     perf_metrics = ov_pipe.generate([prompt], **generation_config).perf_metrics
