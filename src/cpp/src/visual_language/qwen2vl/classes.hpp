@@ -69,6 +69,8 @@ public:
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size) override;
 
+    std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) override;
+
     void start_chat(const std::string& system_message) override;
 
     void finish_chat() override;
@@ -96,9 +98,6 @@ protected:
     //  - attention_mask: [1, ?, ?]
     // Output: [N, hidden_size]
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_embeddings_merger;
-
-    ov::Tensor m_position_ids;
-    int64_t m_rope_delta = 0;
     ov::Tensor m_merged_image_embeddings;
     ov::Tensor m_merged_video_embeddings;
     std::map<std::string, int64_t> m_vision_token_ids;
