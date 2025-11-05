@@ -547,7 +547,7 @@ ov::Tensor concatenate_video_image_embeds(const std::vector<ov::Tensor>& reorder
         total_length += embed.get_shape().at(0);
     }
 
-    // The video and image embeds features are from same embeded model.
+    // The video and image embeds features are from same embedded model.
     // So reordered_image_embeds and reordered_video_embeds should have same element type and hidden_dim.
     if (reordered_video_embeds.size() > 0u && reordered_image_embeds.size() > 0u) {
         OPENVINO_ASSERT(reordered_video_embeds.at(0).get_element_type() == reordered_image_embeds.at(0).get_element_type());
