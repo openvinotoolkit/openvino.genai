@@ -337,7 +337,7 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
             for idx, input_text in enumerate(image_text_list):
                 p_idx = prompt_idx_list[idx]
                 if num == 0:
-                    log.info(f'[warm-up][P{p_idx}] Input text: {input_text}')
+                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 gen_fn(
                     input_text, num, model, processor, args, iter_data_list, md5_list,
@@ -350,7 +350,7 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
             p_idx = prompt_idx_list[idx]
             for num in range(num_iters + 1):
                 if num == 0:
-                    log.info(f'[warm-up][P{p_idx}] Input text: {input_text}')
+                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 gen_fn(
                     input_text, num, model, processor, args, iter_data_list, md5_list,

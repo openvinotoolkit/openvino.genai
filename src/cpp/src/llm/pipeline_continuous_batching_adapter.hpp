@@ -70,7 +70,7 @@ public:
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
     ) override {
-        // Get the currrent timestamp in order to evaluate total generate duration.
+        // Get the current timestamp in order to evaluate total generate duration.
         auto start_time =  std::chrono::steady_clock::now();
         
         std::vector<std::string> prompts = std::visit(overloaded{
@@ -181,7 +181,7 @@ public:
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
     ) override {
-        // Get the currrent timestamp in order to evaluate total generate duration.
+        // Get the current timestamp in order to evaluate total generate duration.
         auto start_time =  std::chrono::steady_clock::now();
 
         std::vector<ov::Tensor> input_ids = std::visit(overloaded{

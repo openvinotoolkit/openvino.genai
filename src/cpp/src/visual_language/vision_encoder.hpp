@@ -13,6 +13,7 @@
 #include "visual_language/cdpruner/cdpruner_config.hpp"
 #include "circular_buffer_queue.hpp"
 
+
 namespace ov::genai {
 /// @brief A pair describing image size.
 struct ImageSize {
@@ -60,16 +61,23 @@ struct EncodedImage {
     ResampledImage resampled_image;
 
     /// @brief Number of image tokens required to append to a normalized prompt
-    size_t num_image_tokens;
+    size_t num_image_tokens = 0;
 };
 
 /// @brief Embeddings of a given video. 
 struct EncodedVideo {
-    /// @brief Embeddings of a given video obtained by appling preprocessing to frames and feature extracting models (resampler, mm_projector, etc.)
-    ov::Tensor video_feautures;
+    /// @brief Embeddings of a given video obtained by applying preprocessing to frames and feature extracting models (resampler, mm_projector, etc.)
+    ov::Tensor video_features;
 
     /// @brief Number of video tokens required to append to a normalized prompt
     size_t num_video_tokens;
+
+    /// @brief A size of an image used to compute embeddings for
+    /// divided by ProcessorConfig's patch_size.
+    ImageSize resized_source_size;
+
+    /// @brief A number of encoded frames.
+    size_t frame_num;
 };
 
 /// @brief A class used to infer embeddings of an image using
@@ -120,6 +128,11 @@ public:
     /// @param text_features
     /// @return
     virtual ov::Tensor apply_pruning(const std::vector<ov::Tensor>& visual_features, const ov::Tensor& text_features);
+    /// @brief Compute embeddings of a or multiple video given
+    virtual EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map = {}) {
+        OPENVINO_THROW("The current model does not support 'video' input, please use 'images' instead.");
+    }
+
     /// @brief Gets processor config
     /// @return Processor config
     ProcessorConfig get_processor_config() const;
