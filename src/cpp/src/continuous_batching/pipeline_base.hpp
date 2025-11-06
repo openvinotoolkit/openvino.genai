@@ -55,6 +55,7 @@ protected:
     std::vector<size_t> m_history_image_ids;
     std::vector<ov::genai::EncodedVideo> m_history_videos;
     std::vector<size_t> m_history_video_ids;
+    std::vector<std::pair<std::size_t, std::size_t>> m_history_vision_count;  // pair<video count, image count>
     size_t m_image_id = 0;
     size_t m_video_id = 0;
 
@@ -145,7 +146,7 @@ public:
 
     virtual std::vector<VLMDecodedResults> generate(const std::vector<std::string>& prompts,
                                                     const std::vector<std::vector<ov::Tensor>>& images,
-                                                    const std::vector<std::vector<ov::Tensor>>& video,
+                                                    const std::vector<std::vector<ov::Tensor>>& videos,
                                                     const std::vector<GenerationConfig>& sampling_params,
                                                     const StreamerVariant& streamer);
 
