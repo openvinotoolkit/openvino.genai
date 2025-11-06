@@ -233,6 +233,7 @@ def run_qwen3_rerank_optimum(
         truncation=True,
         return_tensors="pt",
     )
+    print(inputs["attention_mask"])
     logits = model(**inputs).logits
 
     # support seq-cls reranker
@@ -539,9 +540,13 @@ def test_rerank_documents(download_and_convert_rerank_model, dataset_documents, 
     "config",
     [
         TextRerankPipeline.Config(top_n=4),
+        TextRerankPipeline.Config(top_n=4, padding_side="left"),
+        TextRerankPipeline.Config(top_n=4, padding_side="right"),
     ],
     ids=[
         "top_n=4",
+        "top_n=4,padding_side=left",
+        "top_n=4,padding_side=right",
     ],
 )
 @pytest.mark.precommit
@@ -554,6 +559,11 @@ def test_qwen3_seq_cls_rerank_documents(download_and_convert_rerank_model, query
 
     opt_result = run_qwen3_rerank_optimum(opt_model, hf_tokenizer, formatted_query, formatted_documents, config)
     genai_result = run_text_rerank_genai(models_path, formatted_query, formatted_documents, config)
+
+    for opt, genai in zip(opt_result, genai_result):
+        print(f"Optimum: {opt}")
+        print(f"GenAI:   {genai}")
+        print("-----")
 
     assert_rerank_results(opt_result, genai_result)
 
@@ -576,9 +586,13 @@ def test_qwen3_seq_cls_rerank_documents(download_and_convert_rerank_model, query
     "config",
     [
         TextRerankPipeline.Config(top_n=4),
+        TextRerankPipeline.Config(top_n=4, padding_side="left"),
+        TextRerankPipeline.Config(top_n=4, padding_side="right"),
     ],
     ids=[
         "top_n=4",
+        "top_n=4, padding_side=left",
+        "top_n=4, padding_side=right",
     ],
 )
 @pytest.mark.precommit

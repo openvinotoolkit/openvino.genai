@@ -53,6 +53,8 @@ Attributes:
         Number of documents to return sorted by score.
     max_length (int, optional):
         Maximum length of tokens passed to the embedding model.
+    padding_side (str, optional):
+        Side to use for padding "left" or "right"
 )";
 
 }  // namespace
@@ -226,7 +228,8 @@ kwargs: Plugin and/or config properties
             return ov::genai::TextRerankPipeline::Config(pyutils::kwargs_to_any_map(kwargs));
         }))
         .def_readwrite("top_n", &ov::genai::TextRerankPipeline::Config::top_n)
-        .def_readwrite("max_length", &ov::genai::TextRerankPipeline::Config::max_length);
+        .def_readwrite("max_length", &ov::genai::TextRerankPipeline::Config::max_length)
+        .def_readwrite("padding_side", &ov::genai::TextRerankPipeline::Config::padding_side);
 
     text_rerank_pipeline.def(
         py::init([](const std::filesystem::path& models_path,

@@ -23,6 +23,7 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
 
     properties_copy.erase(top_n.name());
     properties_copy.erase(max_length.name());
+    properties_copy.erase(padding_side.name());
 
     return properties_copy;
 }
@@ -138,6 +139,7 @@ using utils::read_anymap_param;
 TextRerankPipeline::Config::Config(const ov::AnyMap& properties) {
     read_anymap_param(properties, ov::genai::top_n.name(), top_n);
     read_anymap_param(properties, ov::genai::max_length.name(), max_length);
+    read_anymap_param(properties, ov::genai::padding_side.name(), padding_side);
 };
 
 class TextRerankPipeline::TextRerankPipelineImpl {
@@ -152,6 +154,10 @@ public:
 
         if (m_config.max_length) {
             m_tokenization_params.insert({max_length.name(), *m_config.max_length});
+        }
+
+        if (m_config.padding_side) {
+            m_tokenization_params.insert({padding_side.name(), *m_config.padding_side});
         }
 
         // qwen3 tokenizer doesn't support add_second_input(true)
@@ -278,6 +284,10 @@ private:
         for (auto& text : texts) {
             concatenated.push_back(query + text);
         }
+        std::string padding_side_val;
+        ov::genai::utils::read_anymap_param(m_tokenization_params, padding_side.name(), padding_side_val);
+
+        std::cout << "Requested padding_side: " << (padding_side_val.empty() ? "not set" : padding_side_val) << std::endl;
 
         return m_tokenizer.encode(concatenated, m_tokenization_params);
     }

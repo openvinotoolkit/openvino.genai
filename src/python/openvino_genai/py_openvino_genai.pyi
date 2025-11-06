@@ -3445,7 +3445,10 @@ class TextRerankPipeline:
                 Number of documents to return sorted by score.
             max_length (int, optional):
                 Maximum length of tokens passed to the embedding model.
+            padding_side (str, optional):
+                Side to use for padding "left" or "right"
         """
+        padding_side: str | None
         @typing.overload
         def __init__(self) -> None:
             ...
