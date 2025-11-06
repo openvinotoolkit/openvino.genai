@@ -8,6 +8,10 @@ Structured output generation lets a model produce machine-readable responses tha
 
 ## How It Works
 
+[![Example from XGrammar paper](/img/structured_output_work_example.png)](https://arxiv.org/pdf/2411.15100)
+
+[![Example from XGrammar paper](/img/structured_output_work_example.png)](https://arxiv.org/pdf/2411.15100)
+
 Structured output generation consists of several steps:
 1. Compile the structured-output configuration (JSON Schema, regex, or EBNF grammar) into an internal grammar representation.
 2. After the model computes the probability distribution for the next token, a mask is applied that prevents tokens incompatible with the current grammar state from being sampled.
