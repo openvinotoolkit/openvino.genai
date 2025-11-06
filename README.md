@@ -514,7 +514,7 @@ int main(int argc, char* argv[]) {
 
 ```sh
 # Download and convert the BAAI/bge-small-en-v1.5 model to OpenVINO format
-optimum-cli export openvino --trust-remote-code --model BAAI/bge-small-en-v1.5 BAAI/bge-small-en-v1.5
+optimum-cli export openvino --task feature-extraction --model BAAI/bge-small-en-v1.5 BAAI/bge-small-en-v1.5
 ```
 
 ### Compute embeddings using TextEmbeddingPipeline API in Python

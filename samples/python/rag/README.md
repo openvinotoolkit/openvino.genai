@@ -33,7 +33,7 @@ from transformers import AutoTokenizer
 
 output_dir = "embedding_model"
 
-model = OVModelForFeatureExtraction.from_pretrained("BAAI/bge-small-en-v1.5", export=True, trust_remote_code=True)
+model = OVModelForFeatureExtraction.from_pretrained("BAAI/bge-small-en-v1.5", export=True)
 model.save_pretrained(output_dir)
 
 tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-small-en-v1.5")
