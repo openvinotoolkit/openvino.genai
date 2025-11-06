@@ -24,21 +24,7 @@ template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
 namespace {
 
-/**
- * @brief Utility function to stream generated tokens
- */
-ov::genai::StreamingStatus stream_generated_tokens(
-    std::shared_ptr<ov::genai::StreamerBase> streamer_ptr,
-    const std::vector<int64_t>& tokens) {
-    if (streamer_ptr) {
-        return streamer_ptr->write(tokens);
-    }
-    return ov::genai::StreamingStatus{};
-}
-
-/**
- * @brief Utility to format time duration for logging
- */
+// Format microseconds for logging
 std::string format_duration_us(uint64_t microseconds) {
     if (microseconds < 1000) {
         return std::to_string(microseconds) + "μs";
@@ -49,51 +35,33 @@ std::string format_duration_us(uint64_t microseconds) {
     }
 }
 
-/**
- * @brief Extract last token's hidden state from tensor using zero-copy ROI
- * @param hidden_features Input tensor with shape [batch=1, seq_len, hidden_size]
- * @return A tensor view (ROI) of the last token's hidden state [1, 1, hidden_size]
- * @throws std::runtime_error if input tensor is invalid
- */
+// Extract last token's hidden state using zero-copy ROI
+// Input: [batch=1, seq_len, hidden_size] -> Output: [1, 1, hidden_size]
 ov::Tensor extract_last_hidden_state(const ov::Tensor& hidden_features) {
-    // Validate tensor exists and has data
     OPENVINO_ASSERT(hidden_features && hidden_features.get_size() > 0,
-                    "Hidden features tensor is empty or null");
+                    "Hidden features tensor is empty");
     
     auto shape = hidden_features.get_shape();
-    
-    // Validate shape: must be 3D [batch=1, seq_len, hidden_size]
-    OPENVINO_ASSERT(shape.size() == 3,
-                    "Hidden features must be 3D tensor, got ", shape.size(), "D");
-    OPENVINO_ASSERT(shape[0] == 1,
-                    "Batch size must be 1, got ", shape[0]);
-    OPENVINO_ASSERT(shape[1] > 0,
-                    "Sequence length must be > 0, got ", shape[1]);
+    OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && shape[1] > 0,
+                    "Expected shape [1, seq_len, hidden_size], got [", 
+                    shape.size() == 3 ? std::to_string(shape[0]) + ", " + 
+                    std::to_string(shape[1]) + ", " + std::to_string(shape[2]) : "invalid", "]");
     
     std::size_t seq_len = shape[1];
     std::size_t hidden_size = shape[2];
     
-    // Use ROI to create a zero-copy view of the last token
-    ov::Tensor last_hidden(hidden_features, 
-                          {0, seq_len - 1, 0},
-                          {1, seq_len, hidden_size});
-    
-    return last_hidden;
+    return ov::Tensor(hidden_features, {0, seq_len - 1, 0}, {1, seq_len, hidden_size});
 }
 
-/**
- * @brief Ensure num_assistant_tokens is properly set in generation config
- */
-void ensure_num_assistant_tokens_is_set(ov::genai::GenerationConfig& generation_config) {
-    auto assistant_confidence_threshold = generation_config.assistant_confidence_threshold;
-    OPENVINO_ASSERT(assistant_confidence_threshold == 0.f,
-        "Stateful (non Continuous Batching) Speculative Decoding pipeline only supports `num_assistant_tokens` "
-        "as parameter in GenerationConfig and doesn't work with `assistant_confidence_threshold`.\nPlease "
-        "remove its specification or set it to 0.f.");
+// Validate and set num_assistant_tokens
+void ensure_num_assistant_tokens_is_set(ov::genai::GenerationConfig& config) {
+    OPENVINO_ASSERT(config.assistant_confidence_threshold == 0.f,
+        "Stateful Speculative Decoding only supports num_assistant_tokens, "
+        "not assistant_confidence_threshold. Set it to 0.f.");
 
-    constexpr std::size_t default_num_assistant_tokens = 4;
-    if (generation_config.num_assistant_tokens == 0) {
-        generation_config.num_assistant_tokens = default_num_assistant_tokens;
+    constexpr std::size_t DEFAULT_NUM_ASSISTANT_TOKENS = 4;
+    if (config.num_assistant_tokens == 0) {
+        config.num_assistant_tokens = DEFAULT_NUM_ASSISTANT_TOKENS;
     }
 }
 
@@ -112,7 +80,7 @@ Eagle3InferWrapperBase::Eagle3InferWrapperBase(const ov::genai::ModelDesc& model
     , m_generation_config(model_desc.generation_config)
     , m_tokenizer(model_desc.tokenizer) {
     
-    log_debug("Initializing Eagle3InferWrapperBase for device: " + m_device);
+    log_debug("Initializing for device: " + m_device);
     
     m_kv_axes_pos = ov::genai::utils::get_kv_axes_pos(model_desc.model);
 
@@ -123,38 +91,33 @@ Eagle3InferWrapperBase::Eagle3InferWrapperBase(const ov::genai::ModelDesc& model
         m_kv_cache_capacity = kv_desc.max_prompt_len + kv_desc.min_response_len;
         m_request = compiled.create_infer_request();
         
-        log_debug("NPU: max_prompt_len=" + std::to_string(m_max_prompt_len) + 
-                  ", kv_cache_capacity=" + std::to_string(m_kv_cache_capacity) + " model compiled successfully");
+        log_debug("NPU compiled: max_prompt=" + std::to_string(m_max_prompt_len) + 
+                  ", kv_capacity=" + std::to_string(m_kv_cache_capacity));
     } else {
-        // TODO: We might need it for manipulations with indices
-        // utils::apply_gather_before_matmul_transformation(model_desc.model);
         m_request = ov::genai::utils::singleton_core().compile_model(
             model_desc.model, m_device, m_properties).create_infer_request();
-        
-        log_debug(m_device + ": model compiled successfully");
+        log_debug(m_device + " compiled successfully");
     }
     
-    // Initialize performance metrics
+    // Initialize metrics
     m_raw_perf_metrics.m_inference_durations = {ov::genai::MicroSeconds(0.0f)};
     m_raw_perf_metrics.tokenization_durations = {ov::genai::MicroSeconds(0.0f)};
     m_raw_perf_metrics.detokenization_durations = {ov::genai::MicroSeconds(0.0f)};
     
-    log_debug("Eagle3InferWrapper initialization completed");
+    log_debug("Initialization completed");
 }
 
 void Eagle3InferWrapperBase::append_tokens(const std::vector<int64_t>& tokens) {
     if (tokens.empty()) return;
     
-    // Append to sequence
     std::size_t old_size = m_tokens.size();
     m_tokens.insert(m_tokens.end(), tokens.begin(), tokens.end());
     
-    // Update positions
     for (std::size_t i = 0; i < tokens.size(); ++i) {
         m_positions.push_back(static_cast<int64_t>(old_size + i));
     }
     
-    log_debug("Appended " + std::to_string(tokens.size()) + " tokens - Sequence size: " + 
+    log_debug("Appended " + std::to_string(tokens.size()) + " tokens, total: " + 
               std::to_string(m_tokens.size()));
 }
 
@@ -162,36 +125,31 @@ void Eagle3InferWrapperBase::truncate_sequence(std::size_t size) {
     if (size < m_tokens.size()) {
         m_tokens.resize(size);
         m_positions.resize(size);
+        log_debug("Truncated to: " + std::to_string(size));
     }
-    
-    log_debug("Truncated sequence to size: " + std::to_string(m_tokens.size()));
 }
 
 void Eagle3InferWrapperBase::trim_kv_cache(std::size_t tokens_to_remove) {
     if (tokens_to_remove == 0 || m_processed_tokens == 0) {
-        log_debug("No KV cache trimming needed");
         return;
     }
     
-    OPENVINO_ASSERT(tokens_to_remove < m_processed_tokens, "trim_kv_cache() can be called only after infer_first()!");
+    OPENVINO_ASSERT(tokens_to_remove < m_processed_tokens, 
+                    "Cannot trim more tokens than processed");
     
-    log_debug("Trimming KV cache: removing " + std::to_string(tokens_to_remove) + " tokens");
+    log_debug("Trimming KV cache: " + std::to_string(tokens_to_remove) + " tokens");
     
-    // For NPU, KV cache trimming is handled by position IDs on NPUW side
+    // NPU handles KV trimming via position IDs
     if (m_device != "NPU") {
-        ov::genai::utils::KVCacheState to_trim_state;
-        to_trim_state.num_tokens_to_trim = tokens_to_remove;
-        to_trim_state.seq_length_axis = m_kv_axes_pos.seq_len;
-        to_trim_state.reset_mem_state = false;
-        
-        ov::genai::utils::trim_kv_cache(m_request, to_trim_state, {});
-        log_debug("KV cache trimmed successfully");
+        ov::genai::utils::KVCacheState state;
+        state.num_tokens_to_trim = tokens_to_remove;
+        state.seq_length_axis = m_kv_axes_pos.seq_len;
+        state.reset_mem_state = false;
+        ov::genai::utils::trim_kv_cache(m_request, state, {});
     }
     
-    // Update processed tokens count
     m_processed_tokens -= tokens_to_remove;
-    
-    log_debug("KV cache trimmed - processed tokens now: " + std::to_string(m_processed_tokens));
+    log_debug("KV trimmed, processed: " + std::to_string(m_processed_tokens));
 }
 
 void Eagle3InferWrapperBase::reset_state() {
@@ -200,57 +158,45 @@ void Eagle3InferWrapperBase::reset_state() {
     m_processed_tokens = 0;
     m_last_sampled_token = -1;
     
-    // Reset raw performance metrics
     m_raw_perf_metrics.m_inference_durations = {ov::genai::MicroSeconds(0.0f)};
     m_raw_perf_metrics.m_durations.clear();
     m_raw_perf_metrics.m_batch_sizes.clear();
     
-    log_debug("State reset completed");
+    log_debug("State reset");
 }
 
 void Eagle3InferWrapperBase::release_memory() {
     m_request.get_compiled_model().release_memory();
-    log_debug("Released compiled model memory");
+    log_debug("Memory released");
 }
 
 void Eagle3InferWrapperBase::build_model_inputs(std::size_t token_count,
-                                           ov::Tensor& input_ids, ov::Tensor& attention_mask, 
+                                           ov::Tensor& input_ids, 
+                                           ov::Tensor& attention_mask, 
                                            ov::Tensor& position_ids) {
-    // Validate input state
-    if (m_tokens.empty() || token_count == 0) {
-        throw std::runtime_error("Cannot build model inputs: empty sequence or zero token count");
-    }
-    
-    if (m_positions.empty()) {
-        throw std::runtime_error("Position IDs not initialized - call initialize_sequence first");
-    }
+    OPENVINO_ASSERT(!m_tokens.empty() && token_count > 0,
+                    "Cannot build inputs: empty sequence or zero token count");
+    OPENVINO_ASSERT(!m_positions.empty(),
+                    "Position IDs not initialized");
     
     const std::size_t seq_len = m_tokens.size();
+    OPENVINO_ASSERT(token_count <= seq_len,
+                    "Requested ", token_count, " tokens but only ", seq_len, " available");
     
-    // Validate that we have enough tokens
-    if (token_count > seq_len) {
-        throw std::runtime_error("Requested token_count (" + std::to_string(token_count) + 
-                               ") exceeds sequence length (" + std::to_string(seq_len) + ")");
-    }
-    
-    // Extract last token_count tokens from the sequence
     const std::size_t start_pos = seq_len - token_count;
     
     input_ids = ov::Tensor(ov::element::i64, {1, token_count});
     position_ids = ov::Tensor(ov::element::i64, {1, token_count});
     
-    // Copy token slice from the end of the sequence
     int64_t* input_ids_ptr = input_ids.data<int64_t>();
     int64_t* position_ids_ptr = position_ids.data<int64_t>();
     
     std::memcpy(input_ids_ptr, m_tokens.data() + start_pos, token_count * sizeof(int64_t));
     std::memcpy(position_ids_ptr, m_positions.data() + start_pos, token_count * sizeof(int64_t));
     
-    // Compute attention mask length: last_position_id + 1
-    // This represents the total KV cache size needed
+    // Attention mask length = last_position_id + 1 (total KV cache size)
     const std::size_t attention_mask_len = static_cast<std::size_t>(position_ids_ptr[token_count - 1] + 1);
     
-    // Create attention mask filled with 1s (all positions are attended)
     attention_mask = ov::Tensor(ov::element::i64, {1, attention_mask_len});
     std::fill_n(attention_mask.data<int64_t>(), attention_mask_len, 1);
 }
@@ -261,62 +207,59 @@ ov::Tensor Eagle3InferWrapperBase::create_hidden_state_placeholder(const ov::Sha
     return tensor;
 }
 
-std::variant<int64_t, std::vector<int64_t>> Eagle3InferWrapperBase::sample_tokens(const ov::Tensor& logits, std::size_t count) {
-    auto logits_shape = logits.get_shape();
-    if (logits_shape.size() != 3 || logits_shape[0] != 1) {
-        throw std::runtime_error("Invalid logits shape for sampling");
-    }
+std::variant<int64_t, std::vector<int64_t>> Eagle3InferWrapperBase::sample_tokens(
+    const ov::Tensor& logits, std::size_t count) {
+    auto shape = logits.get_shape();
+    OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1,
+                    "Invalid logits shape for sampling");
     
-    std::size_t seq_len = logits_shape[1];
-    std::size_t vocab_size = logits_shape[2];
+    std::size_t seq_len = shape[1];
+    std::size_t vocab_size = shape[2];
+    OPENVINO_ASSERT(count <= seq_len,
+                    "Requested count exceeds sequence length");
     
-    if (count > seq_len) {
-        throw std::runtime_error("Requested token count exceeds sequence length");
-    }
-    
-    log_debug("Sampling " + std::to_string(count) + " tokens from logits with shape [" + 
-              std::to_string(logits_shape[0]) + ", " + std::to_string(seq_len) + ", " + std::to_string(vocab_size) + "]");
+    log_debug("Sampling " + std::to_string(count) + " tokens from logits [" + 
+              std::to_string(shape[0]) + ", " + std::to_string(seq_len) + 
+              ", " + std::to_string(vocab_size) + "]");
     
     auto sample_single = [&](std::size_t pos) -> int64_t {
-        const float* logits_data = logits.data<const float>() + pos * vocab_size;
-        auto max_it = std::max_element(logits_data, logits_data + vocab_size);
-        int64_t token = static_cast<int64_t>(max_it - logits_data);
-        float max_prob = *max_it;
+        const float* data = logits.data<const float>() + pos * vocab_size;
+        auto max_it = std::max_element(data, data + vocab_size);
+        int64_t token = static_cast<int64_t>(max_it - data);
         
         if (m_verbose) {
-            log_debug("Position " + std::to_string(pos) + ": sampled token " + std::to_string(token) + 
-                      " with logit value " + std::to_string(max_prob));
+            log_debug("Pos " + std::to_string(pos) + ": token " + 
+                     std::to_string(token) + " (logit: " + std::to_string(*max_it) + ")");
         }
-        
         return token;
     };
     
     if (count == 1) {
         int64_t token = sample_single(seq_len - 1);
         m_last_sampled_token = token;
-        log_debug("Sampled single token: " + std::to_string(token));
+        log_debug("Sampled: " + std::to_string(token));
         return token;
-    } else {
-        std::vector<int64_t> tokens;
-        tokens.reserve(count);
-        for (std::size_t i = 0; i < count; ++i) {
-            tokens.push_back(sample_single(seq_len - count + i));
-        }
-        if (!tokens.empty()) {
-            m_last_sampled_token = tokens.back();
-        }
-        
-        if (m_verbose) {
-            std::cout << "[EAGLE3-WRAPPER] Sampled " << count << " tokens: ";
-            for (std::size_t i = 0; i < tokens.size(); ++i) {
-                std::cout << tokens[i];
-                if (i + 1 < tokens.size()) std::cout << ", ";
-            }
-            std::cout << std::endl;
-        }
-        
-        return tokens;
     }
+    
+    std::vector<int64_t> tokens;
+    tokens.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        tokens.push_back(sample_single(seq_len - count + i));
+    }
+    if (!tokens.empty()) {
+        m_last_sampled_token = tokens.back();
+    }
+    
+    if (m_verbose) {
+        std::cout << "[EAGLE3-WRAPPER] Sampled " << count << " tokens: ";
+        for (std::size_t i = 0; i < tokens.size(); ++i) {
+            std::cout << tokens[i];
+            if (i + 1 < tokens.size()) std::cout << ", ";
+        }
+        std::cout << std::endl;
+    }
+    
+    return tokens;
 }
 
 ov::Tensor Eagle3InferWrapperBase::get_logits() const {
@@ -325,55 +268,37 @@ ov::Tensor Eagle3InferWrapperBase::get_logits() const {
 
 ov::Tensor Eagle3InferWrapperBase::get_hidden_features() const {
     auto hidden_state = m_request.get_tensor("last_hidden_state");
-    
     auto shape = hidden_state.get_shape();
     
-    // Validate tensor shape: Expected [batch=1, seq_len, hidden_size]
     OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1,
-                    "Invalid hidden_state shape: expected [1, seq_len, hidden_size], got [",
-                    shape.size() == 3 ? std::to_string(shape[0]) + ", " + std::to_string(shape[1]) + ", " + std::to_string(shape[2]) : "invalid",
-                    "]");
+                    "Expected [1, seq_len, hidden_size], got [",
+                    shape.size() == 3 ? std::to_string(shape[0]) + ", " + 
+                    std::to_string(shape[1]) + ", " + std::to_string(shape[2]) : "invalid", "]");
     
     std::size_t output_seq_len = shape[1];
     std::size_t hidden_size = shape[2];
     
-    // Get actual input sequence length
     auto input_ids = m_request.get_tensor("input_ids");
     std::size_t actual_seq_len = input_ids.get_shape()[1];
     
-    // If output sequence length matches input, no trimming needed
     if (output_seq_len == actual_seq_len) {
         return hidden_state;
     }
     
-    // If output is longer (due to padding), trim from the end to match actual length
-    // This handles both NPU padding and any other padding scenarios
+    // Trim padding (NPU or other sources)
     OPENVINO_ASSERT(actual_seq_len <= output_seq_len,
-                    "Actual sequence length (", actual_seq_len, ") cannot exceed output length (", output_seq_len, ")");
+                    "Actual length (", actual_seq_len, ") exceeds output (", output_seq_len, ")");
     
-    log_debug("Trimming hidden state: output_len=" + std::to_string(output_seq_len) + 
-              " -> actual_len=" + std::to_string(actual_seq_len));
+    log_debug("Trimming hidden: " + std::to_string(output_seq_len) + 
+              " -> " + std::to_string(actual_seq_len));
     
-    // Create a view into the last actual_seq_len positions of the hidden state
-    // This avoids data copying by using ROI (Region Of Interest)
-    // The data layout is: [batch=1, output_seq_len, hidden_size]
-    // We want to extract: [batch=1, actual_seq_len, hidden_size] from the end
+    std::size_t start_offset = output_seq_len - actual_seq_len;
+    ov::Tensor trimmed(hidden_state, {0, start_offset, 0}, {1, output_seq_len, hidden_size});
     
-    std::size_t start_offset = output_seq_len - actual_seq_len;  // Offset in sequence dimension
+    log_debug("Trimmed via ROI: [1, " + std::to_string(actual_seq_len) + 
+              ", " + std::to_string(hidden_size) + "]");
     
-    // Calculate byte offset: skip (start_offset * hidden_size) elements
-    std::size_t element_offset = start_offset * hidden_size;
-    std::size_t byte_offset = element_offset * hidden_state.get_element_type().size();
-    
-    // Create a new tensor that shares the same memory but with trimmed shape
-    ov::Tensor trimmed_hidden(hidden_state, {0, start_offset, 0}, {1, output_seq_len, hidden_size});
-    
-    log_debug("Hidden state trimmed from [1, " + std::to_string(output_seq_len) + 
-              ", " + std::to_string(hidden_size) + "] to [1, " + 
-              std::to_string(actual_seq_len) + ", " + std::to_string(hidden_size) + 
-              "] (zero-copy ROI)");
-    
-    return trimmed_hidden;
+    return trimmed;
 }
 
 uint64_t Eagle3InferWrapperBase::execute_inference() {
@@ -542,10 +467,11 @@ void Eagle3InferWrapperBase::log_model_outputs(const ov::Tensor& logits, const o
 
 Eagle3TargetModelWrapper::Eagle3TargetModelWrapper(const ov::genai::ModelDesc& model_desc)
     : Eagle3InferWrapperBase(model_desc) {
-    log_debug("Eagle3TargetModelWrapper initialized");
+    log_debug("Target model initialized");
 }
 
-void Eagle3TargetModelWrapper::initialize_sequence(const ov::Tensor& input_ids, const ov::Tensor& position_ids) {
+void Eagle3TargetModelWrapper::initialize_sequence(const ov::Tensor& input_ids, 
+                                                   const ov::Tensor& position_ids) {
     const int64_t* ids_data = input_ids.data<const int64_t>();
     std::size_t seq_len = input_ids.get_size();
     m_tokens.assign(ids_data, ids_data + seq_len);
@@ -555,21 +481,19 @@ void Eagle3TargetModelWrapper::initialize_sequence(const ov::Tensor& input_ids, 
         m_positions.assign(pos_data, pos_data + position_ids.get_size());
     }
     
-    log_debug("Target model initialized sequence with " + std::to_string(m_tokens.size()) + " tokens");
+    log_debug("Sequence initialized: " + std::to_string(m_tokens.size()) + " tokens");
 }
 
 InferenceOutput Eagle3TargetModelWrapper::infer(const ov::Tensor& input_ids, 
                                                 const ov::Tensor& attention_mask, 
                                                 const ov::Tensor& position_ids) {
-    log_debug("Starting target model inference");
+    log_debug("Target inference start");
     log_model_inputs(input_ids, attention_mask, position_ids);
     
     if (m_device == "NPU") {
         auto prompt_len = input_ids.get_shape()[1];
-        if (prompt_len > m_max_prompt_len) {
-            throw std::runtime_error("NPU prompt length " + std::to_string(prompt_len) + 
-                                   " exceeds maximum " + std::to_string(m_max_prompt_len));
-        }
+        OPENVINO_ASSERT(prompt_len <= m_max_prompt_len,
+                        "NPU prompt length ", prompt_len, " exceeds max ", m_max_prompt_len);
     }
     
     m_request.set_tensor("input_ids", input_ids);
@@ -581,17 +505,15 @@ InferenceOutput Eagle3TargetModelWrapper::infer(const ov::Tensor& input_ids,
         m_request.get_tensor("beam_idx").data<int32_t>()[0] = 0;
     }
     
-    // Execute inference with timing
-    uint64_t inference_time_us = execute_inference();
-    update_performance_metrics(inference_time_us, input_ids.get_shape()[1]);
+    uint64_t time_us = execute_inference();
+    update_performance_metrics(time_us, input_ids.get_shape()[1]);
     
-    // Get outputs and log them
     InferenceOutput output;
     output.logits = get_logits();
     output.hidden_features = get_hidden_features();
     log_model_outputs(output.logits, output.hidden_features);
     
-    log_debug("Target model inference completed in " + format_duration_us(inference_time_us));
+    log_debug("Target inference done: " + format_duration_us(time_us));
     return output;
 }
 
@@ -601,33 +523,28 @@ InferenceOutput Eagle3TargetModelWrapper::infer(const ov::Tensor& input_ids,
 
 Eagle3DraftModelWrapper::Eagle3DraftModelWrapper(const ov::genai::ModelDesc& model_desc)
     : Eagle3InferWrapperBase(model_desc) {
-    log_debug("Eagle3DraftModelWrapper initialized");
+    log_debug("Draft model initialized");
 }
 
-void Eagle3DraftModelWrapper::initialize_sequence(const ov::Tensor& input_ids, const ov::Tensor& position_ids) {
-    // Eagle3 specific: Draft model uses sequence starting from second token (offset=1)
+void Eagle3DraftModelWrapper::initialize_sequence(const ov::Tensor& input_ids, 
+                                                 const ov::Tensor& position_ids) {
+    // Eagle3: draft uses tokens[1:] with positions [0, 1, ..., n-2]
     const int64_t* ids_data = input_ids.data<const int64_t>();
     std::size_t total_len = input_ids.get_size();
     
-    // Validate that we have at least 2 tokens
-    if (total_len < 2) {
-        throw std::runtime_error("Draft model requires at least 2 tokens, got " + std::to_string(total_len));
-    }
+    OPENVINO_ASSERT(total_len >= 2,
+                    "Draft model requires at least 2 tokens, got ", total_len);
     
-    std::size_t actual_length = total_len - 1;  // Skip first token
-    
-    // Assign tokens from position 1 to end
+    std::size_t actual_len = total_len - 1;
     m_tokens.assign(ids_data + 1, ids_data + total_len);
     
-    // Position IDs start from 0 for the draft model's perspective
     if (position_ids) {
-        m_positions.resize(actual_length);
+        m_positions.resize(actual_len);
         std::iota(m_positions.begin(), m_positions.end(), 0);
     }
     
-    log_debug("Draft model initialized sequence with " + std::to_string(m_tokens.size()) + 
-              " tokens (skipped first token, position_ids from 0 to " + 
-              std::to_string(actual_length - 1) + ")");
+    log_debug("Sequence initialized: " + std::to_string(m_tokens.size()) + 
+              " tokens (skipped first, positions 0 to " + std::to_string(actual_len - 1) + ")");
 }
 
 InferenceOutput Eagle3DraftModelWrapper::infer(const ov::Tensor& input_ids,
@@ -635,62 +552,55 @@ InferenceOutput Eagle3DraftModelWrapper::infer(const ov::Tensor& input_ids,
                                                const ov::Tensor& position_ids,
                                                const ov::Tensor& target_hidden_features,
                                                const ov::Tensor& internal_hidden_features) {
-    log_debug("Starting draft model inference");
+    log_debug("Draft inference start");
     log_model_inputs(input_ids, attention_mask, position_ids);
     
     m_request.set_tensor("input_ids", input_ids);
     m_request.set_tensor("attention_mask", attention_mask);
     m_request.set_tensor("position_ids", position_ids);
     
-    // Handle hidden state inputs (Eagle3 requires exactly one of target/internal)
+    // Eagle3 requires exactly one hidden state input
     bool has_target = target_hidden_features && target_hidden_features.get_size() > 0;
     bool has_internal = internal_hidden_features && internal_hidden_features.get_size() > 0;
     
-    if (!(has_target ^ has_internal)) {
-        throw std::runtime_error("Draft model requires exactly one of target_hidden_features or internal_hidden_features");
-    }
+    OPENVINO_ASSERT(has_target ^ has_internal,
+                    "Draft model requires exactly one of target/internal hidden features");
     
     ov::Tensor target_tensor, internal_tensor;
     
     if (has_target) {
-        // Use target hidden features, create placeholder for internal
         auto t_shape = target_hidden_features.get_shape();
-        if (t_shape.size() != 3 || t_shape.back() % 3 != 0) {
-            throw std::runtime_error("Invalid target hidden features shape for Eagle3");
-        }
+        OPENVINO_ASSERT(t_shape.size() == 3 && t_shape.back() % 3 == 0,
+                        "Invalid target hidden features shape");
         
         target_tensor = target_hidden_features;
         auto internal_shape = t_shape;
         internal_shape.back() = t_shape.back() / 3;
         internal_tensor = create_hidden_state_placeholder(internal_shape);
         
-        log_tensor_info("processed_target_tensor", target_tensor);
-        log_tensor_info("created_internal_placeholder", internal_tensor);
+        log_tensor_info("target_tensor", target_tensor);
+        log_tensor_info("internal_placeholder", internal_tensor);
     } else {
-        // Use internal hidden features, create placeholder for target  
         auto i_shape = internal_hidden_features.get_shape();
-        if (i_shape.size() != 3) {
-            throw std::runtime_error("Invalid internal hidden features shape for Eagle3");
-        }
+        OPENVINO_ASSERT(i_shape.size() == 3,
+                        "Invalid internal hidden features shape");
         
         internal_tensor = internal_hidden_features;
         auto target_shape = i_shape;
         target_shape.back() = i_shape.back() * 3;
         target_tensor = create_hidden_state_placeholder(target_shape);
         
-        log_tensor_info("processed_internal_tensor", internal_tensor);
-        log_tensor_info("created_target_placeholder", target_tensor);
+        log_tensor_info("internal_tensor", internal_tensor);
+        log_tensor_info("target_placeholder", target_tensor);
     }
     
     m_request.set_tensor("hidden_states", target_tensor);
     m_request.set_tensor("internal_hidden_states", internal_tensor);
     
-    // Print hidden_states and internal_hidden_states values if verbose
     if (m_verbose) {
-        std::cout << "[EAGLE3-WRAPPER] Final Hidden State Tensors:" << std::endl;
+        std::cout << "[EAGLE3-WRAPPER] Hidden State Tensors:" << std::endl;
         log_tensor_info("hidden_states", target_tensor);
         log_tensor_content("hidden_states", target_tensor, 10);
-        
         log_tensor_info("internal_hidden_states", internal_tensor);
         log_tensor_content("internal_hidden_states", internal_tensor, 10);
     }
@@ -700,17 +610,15 @@ InferenceOutput Eagle3DraftModelWrapper::infer(const ov::Tensor& input_ids,
         m_request.get_tensor("beam_idx").data<int32_t>()[0] = 0;
     }
     
-    // Execute inference with timing
-    uint64_t inference_time_us = execute_inference();
-    update_performance_metrics(inference_time_us, input_ids.get_shape()[1]);
+    uint64_t time_us = execute_inference();
+    update_performance_metrics(time_us, input_ids.get_shape()[1]);
     
-    // Get outputs and log them
     InferenceOutput output;
     output.logits = get_logits();
     output.hidden_features = get_hidden_features();
     log_model_outputs(output.logits, output.hidden_features);
     
-    log_debug("Draft model inference completed in " + format_duration_us(inference_time_us));
+    log_debug("Draft inference done: " + format_duration_us(time_us));
     return output;
 }
 
@@ -718,140 +626,107 @@ InferenceOutput Eagle3DraftModelWrapper::infer(const ov::Tensor& input_ids,
 // StatefulEagle3LLMPipeline Implementation  
 //==================================================================================================
 
-StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc& main_model_desc,
-                                                     const ov::genai::ModelDesc& draft_model_desc,
-                                                     const std::vector<int>& hidden_layers_to_abstract)
+StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(
+    const ov::genai::ModelDesc& main_model_desc,
+    const ov::genai::ModelDesc& draft_model_desc,
+    const std::vector<int>& hidden_layers_to_abstract)
     : LLMPipelineImplBase(main_model_desc.tokenizer, main_model_desc.generation_config)
     , m_hidden_layers_to_abstract(hidden_layers_to_abstract) {
     
-    // Ensure num_assistant_tokens is properly configured
     ensure_num_assistant_tokens_is_set(m_generation_config);
     m_draft_iterations = m_generation_config.num_assistant_tokens;
     
-    log_info("Initializing Eagle3 pipeline with main device: " + main_model_desc.device + 
-             ", draft device: " + draft_model_desc.device +
-             ", draft_iterations: " + std::to_string(m_draft_iterations));
+    log_info("Initializing Eagle3: main=" + main_model_desc.device + 
+             ", draft=" + draft_model_desc.device +
+             ", iterations=" + std::to_string(m_draft_iterations));
     
-    // Apply model transformations
     auto main_model = main_model_desc.model;
     auto draft_model = draft_model_desc.model;
-    
-    // Use main model's tokenizer (draft model shares the same vocabulary)
     m_tokenizer = main_model_desc.tokenizer;
     
-    // Validate that hidden_layers were provided
-    if (m_hidden_layers_to_abstract.empty()) {
-        throw std::runtime_error(
-            "Eagle3 requires explicit hidden_layers_list configuration. "
-            "Please provide hidden_layers_list in draft model properties, or ensure it can be "
-            "auto-deduced from the model's config.json. "
-            "Example: config[\"hidden_layers_list\"] = std::vector<int>{2, 16, 29};"
-        );
-    }
+    OPENVINO_ASSERT(!m_hidden_layers_to_abstract.empty(),
+        "Eagle3 requires hidden_layers_list configuration. "
+        "Provide it in properties or config.json. "
+        "Example: config[\"hidden_layers_list\"] = std::vector<int>{2, 16, 29}");
     
-    // Step 1: Share embedding weights to reduce memory usage
+    // Model transformations
     ov::genai::share_embedding_weights(main_model, draft_model);
-    log_debug("Shared embedding weights between main and draft models");
+    log_debug("Shared embedding weights");
 
-    // Step 2: Extract draft-to-target mapping from draft model (must be done before other transformations)
     set_draft_target_mapping(draft_model);
     
-    // Step 3: Remove the d2t Result node after extraction
-    // TODO: NPUW has an issue with this node present, so we remove it for now
     ov::genai::remove_d2t_result_node(draft_model);
-    log_debug("Removed d2t Result node from draft model");
+    log_debug("Removed d2t node");
     
-    // Step 4: Extract hidden states from main model (target model)
-    ov::genai::extract_hidden_state_generic(main_model, m_hidden_layers_to_abstract, main_model_desc.device);
-    log_debug("Extracted hidden states from main model layers");
+    ov::genai::extract_hidden_state_generic(main_model, m_hidden_layers_to_abstract, 
+                                            main_model_desc.device);
+    log_debug("Extracted main model hidden states");
     
-    // Step 5: Extract hidden states and add inputs for draft model
     ov::genai::extract_hidden_state_generic(draft_model, {-1}, draft_model_desc.device);
+    log_debug("Model transformations completed");
 
-    // ov::serialize(main_model, "main_model_sgl.xml");
-    // ov::serialize(draft_model, "draft_model_sgl.xml");
-    log_debug("Eagle3 model transformations completed for both models");
-
-    // Calculate validation window based on draft iterations
     std::size_t validation_window = m_draft_iterations + 1;
 
     auto draft_desc = draft_model_desc;
     if (draft_desc.device == "NPU") {
         draft_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = validation_window;
         draft_desc.properties["NPUW_DEVICES"] = "CPU";
-        // TODO: NPUW has compilation issues with partitioned draft models - disabling pipeline for now
-        // Since the draft model has only one repeat block, the impact on compilation time is minimal
         draft_desc.properties["NPUW_ONLINE_PIPELINE"] = "NONE";
     }
-
     m_draft_model = std::make_unique<Eagle3DraftModelWrapper>(draft_desc);
     
     auto main_desc = main_model_desc;
     if (main_desc.device == "NPU") {
         main_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = validation_window;
         main_desc.properties["NPUW_DEVICES"] = "CPU";
-
-        // NPUW uses this rt_info to determine whether it is in Eagle3 mode or not
         main_model->set_rt_info("true", "eagle3_mode");
     }
-    
     m_main_model = std::make_unique<Eagle3TargetModelWrapper>(main_desc);
     
-    // Initialize performance metrics
     m_sd_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
     m_sd_perf_metrics.raw_metrics.m_inference_durations = {{ov::genai::MicroSeconds(0.0f)}};
     
-    log_info("Eagle3 pipeline initialization completed");
+    log_info("Eagle3 initialization completed");
 }
 
 StatefulEagle3LLMPipeline::~StatefulEagle3LLMPipeline() {
     m_main_model->release_memory();
     m_draft_model->release_memory();
-    log_debug("Eagle3 pipeline destructor called");
+    log_debug("Pipeline destroyed");
 }
 
 void StatefulEagle3LLMPipeline::set_draft_target_mapping(const std::shared_ptr<ov::Model>& draft_model) {
-    if (!draft_model) {
-        throw std::runtime_error("Draft model is null");
-    }
+    OPENVINO_ASSERT(draft_model, "Draft model is null");
     
-    // Extract d2t mapping from draft model
     auto d2t_tensor = ov::genai::extract_d2t_mapping_table(draft_model);
-    if (!d2t_tensor) {
-        throw std::runtime_error("Draft-to-target mapping table not found in draft model. "
-                                 "Eagle3 requires d2t mapping for token conversion.");
-    }
+    OPENVINO_ASSERT(d2t_tensor,
+        "Draft-to-target mapping not found. Eagle3 requires d2t mapping.");
     
-    // Validate element type before copying
-    if (d2t_tensor->get_element_type() != ov::element::i64) {
-        throw std::runtime_error("Draft-to-target mapping must be int64 tensor");
-    }
+    OPENVINO_ASSERT(d2t_tensor->get_element_type() == ov::element::i64,
+        "Draft-to-target mapping must be int64");
     
-    auto d2t_shape = d2t_tensor->get_shape();
-    ov::Tensor d2t_mapping(ov::element::i64, d2t_shape);
-    
+    ov::Tensor d2t_mapping(ov::element::i64, d2t_tensor->get_shape());
     std::memcpy(d2t_mapping.data(), d2t_tensor->get_data_ptr(), d2t_tensor->get_byte_size());
     
     m_draft_target_mapping = std::move(d2t_mapping);
-    log_info("Draft-to-target mapping configured with " + std::to_string(m_draft_target_mapping.get_size()) + " entries");
+    log_info("D2T mapping: " + std::to_string(m_draft_target_mapping.get_size()) + " entries");
 }
 
 void StatefulEagle3LLMPipeline::set_verbose(bool verbose) {
     if (m_main_model) m_main_model->set_verbose(verbose);
     if (m_draft_model) m_draft_model->set_verbose(verbose);
-    log_debug("Verbosity set to " + std::string(verbose ? "enabled" : "disabled"));
+    log_debug("Verbose: " + std::string(verbose ? "on" : "off"));
 }
 
-GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGenerationConfig generation_config) {
+GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(
+    OptionalGenerationConfig generation_config) {
     GenerationConfig config = generation_config.value_or(m_generation_config);
     
     ensure_num_assistant_tokens_is_set(config);
     m_draft_iterations = config.num_assistant_tokens;
     
-    // If stop_token_ids were not provided, take value from default m_generation_config
     if (config.stop_token_ids.empty())
         config.stop_token_ids = m_generation_config.stop_token_ids;
-    // If eos_token_id was not provided, take value from default m_generation_config
     if (config.eos_token_id == -1)
         config.set_eos_token_id(m_generation_config.eos_token_id);
     config.validate();
@@ -1324,39 +1199,37 @@ StatefulEagle3LLMPipeline::run_speculative_iteration(const ov::Tensor& target_hi
 
 int64_t StatefulEagle3LLMPipeline::map_draft_token(int64_t draft_token) const {
     if (!m_draft_target_mapping || m_draft_target_mapping.get_size() == 0) {
-        return draft_token; // Identity mapping
+        return draft_token;
     }
     
     std::size_t mapping_size = m_draft_target_mapping.get_size();
     if (draft_token < 0 || static_cast<std::size_t>(draft_token) >= mapping_size) {
-        log_debug("Draft token " + std::to_string(draft_token) + " out of mapping range, using identity");
+        log_debug("Token " + std::to_string(draft_token) + " out of range, identity mapping");
         return draft_token;
     }
     
-    const int64_t* mapping_data = m_draft_target_mapping.data<const int64_t>();
-    int64_t offset = mapping_data[draft_token];
-    int64_t target_token = draft_token + offset;
+    const int64_t* data = m_draft_target_mapping.data<const int64_t>();
+    int64_t target_token = draft_token + data[draft_token];
     
     if (is_verbose()) {
-        log_debug("Mapped draft token " + std::to_string(draft_token) + " -> " + std::to_string(target_token));
+        log_debug("Mapped: " + std::to_string(draft_token) + " -> " + std::to_string(target_token));
     }
     
     return target_token;
 }
 
-std::vector<int64_t> StatefulEagle3LLMPipeline::map_draft_tokens(const std::vector<int64_t>& draft_tokens) const {
+std::vector<int64_t> StatefulEagle3LLMPipeline::map_draft_tokens(
+    const std::vector<int64_t>& draft_tokens) const {
     if (!m_draft_target_mapping || m_draft_target_mapping.get_size() == 0) {
         return draft_tokens;
     }
     
-    std::vector<int64_t> mapped_tokens;
-    mapped_tokens.reserve(draft_tokens.size());
-    
+    std::vector<int64_t> mapped;
+    mapped.reserve(draft_tokens.size());
     for (int64_t token : draft_tokens) {
-        mapped_tokens.push_back(map_draft_token(token));
+        mapped.push_back(map_draft_token(token));
     }
-    
-    return mapped_tokens;
+    return mapped;
 }
 
 void StatefulEagle3LLMPipeline::start_chat(const std::string& system_message) {
@@ -1366,14 +1239,13 @@ void StatefulEagle3LLMPipeline::start_chat(const std::string& system_message) {
     if (!system_message.empty()) {
         m_chat_history.push_back({{"role", "system"}, {"content", system_message}});
     }
-    
-    log_info("Chat session started");
+    log_info("Chat started");
 }
 
 void StatefulEagle3LLMPipeline::finish_chat() {
     m_is_chat_active = false;
     m_chat_history.clear();
-    log_info("Chat session ended");
+    log_info("Chat ended");
 }
 
 ov::genai::SpeculativeDecodingMetrics StatefulEagle3LLMPipeline::get_speculative_decoding_metrics() const {
@@ -1386,13 +1258,15 @@ void StatefulEagle3LLMPipeline::log_info(const std::string& message) const {
 
 void StatefulEagle3LLMPipeline::log_debug(const std::string& message) const {
     if (is_verbose()) {
-        std::cout << "[EAGLE3-PIPELINE-DEBUG] " << message << std::endl;
+        std::cout << "[EAGLE3-DEBUG] " << message << std::endl;
     }
 }
 
-void StatefulEagle3LLMPipeline::log_generation_step(const std::string& step_name, std::size_t step_number) const {
+void StatefulEagle3LLMPipeline::log_generation_step(const std::string& step_name, 
+                                                    std::size_t step_number) const {
     if (is_verbose()) {
-        std::cout << "\n[EAGLE3-PIPELINE] ========== STEP " << step_number << ": " << step_name << " =========="<< std::endl;
+        std::cout << "\n[EAGLE3] ===== STEP " << step_number << ": " 
+                  << step_name << " =====" << std::endl;
     }
 }
 
@@ -1458,22 +1332,17 @@ void StatefulEagle3LLMPipeline::log_sequence_state(const std::string& context) c
     }
 }
 
-void StatefulEagle3LLMPipeline::log_performance_summary() const {
-    // Performance metrics are now handled by the standard SDPerModelsPerfMetrics interface
-    // which is evaluated and printed by the caller using m_sd_perf_metrics
-    log_debug("Performance summary available through SDPerModelsPerfMetrics");
-}
-
-ov::Tensor StatefulEagle3LLMPipeline::slice_hidden_features(const ov::Tensor& hidden_features, 
-                                                           std::size_t start_pos, 
-                                                           std::size_t length) const {
+ov::Tensor StatefulEagle3LLMPipeline::slice_hidden_features(
+    const ov::Tensor& hidden_features, 
+    std::size_t start_pos, 
+    std::size_t length) const {
     if (!hidden_features || hidden_features.get_size() == 0) {
         return ov::Tensor{};
     }
     
     auto shape = hidden_features.get_shape();
     if (shape.size() != 3 || shape[0] != 1) {
-        return hidden_features; // Return original if unexpected shape
+        return hidden_features;
     }
     
     std::size_t seq_len = shape[1];
@@ -1483,23 +1352,23 @@ ov::Tensor StatefulEagle3LLMPipeline::slice_hidden_features(const ov::Tensor& hi
         return ov::Tensor{};
     }
     
-    std::size_t actual_length = std::min(length, seq_len - start_pos);
-    ov::Tensor sliced(ov::element::f32, {1, actual_length, hidden_dim});
+    std::size_t actual_len = std::min(length, seq_len - start_pos);
+    ov::Tensor sliced(ov::element::f32, {1, actual_len, hidden_dim});
     
     if (hidden_features.get_element_type() == ov::element::f32) {
-        const float* src_data = hidden_features.data<const float>() + start_pos * hidden_dim;
-        std::copy_n(src_data, actual_length * hidden_dim, sliced.data<float>());
+        const float* src = hidden_features.data<const float>() + start_pos * hidden_dim;
+        std::copy_n(src, actual_len * hidden_dim, sliced.data<float>());
     }
     
     return sliced;
 }
 
-ov::Tensor StatefulEagle3LLMPipeline::combine_hidden_windows(const ov::Tensor& confirmed_hidden, 
-                                                            const ov::Tensor& new_hidden) const {
+ov::Tensor StatefulEagle3LLMPipeline::combine_hidden_windows(
+    const ov::Tensor& confirmed_hidden, 
+    const ov::Tensor& new_hidden) const {
     if (!confirmed_hidden || confirmed_hidden.get_size() == 0) {
         return new_hidden;
     }
-    
     if (!new_hidden || new_hidden.get_size() == 0) {
         return confirmed_hidden;
     }
@@ -1508,29 +1377,23 @@ ov::Tensor StatefulEagle3LLMPipeline::combine_hidden_windows(const ov::Tensor& c
     auto new_shape = new_hidden.get_shape();
     
     if (conf_shape.size() != 3 || new_shape.size() != 3 || 
-        conf_shape[0] != 1 || new_shape[0] != 1 ||
-        conf_shape[2] != new_shape[2]) {
-        return confirmed_hidden; // Return first tensor if shapes incompatible
+        conf_shape[0] != 1 || new_shape[0] != 1 || conf_shape[2] != new_shape[2]) {
+        return confirmed_hidden;
     }
     
-    std::size_t conf_seq_len = conf_shape[1];
-    std::size_t new_seq_len = new_shape[1];
+    std::size_t conf_len = conf_shape[1];
+    std::size_t new_len = new_shape[1];
     std::size_t hidden_dim = conf_shape[2];
-    std::size_t combined_seq_len = conf_seq_len + new_seq_len;
+    std::size_t total_len = conf_len + new_len;
     
-    ov::Tensor combined(ov::element::f32, {1, combined_seq_len, hidden_dim});
+    ov::Tensor combined(ov::element::f32, {1, total_len, hidden_dim});
     
     if (confirmed_hidden.get_element_type() == ov::element::f32 && 
         new_hidden.get_element_type() == ov::element::f32) {
-        
-        float* dst_data = combined.data<float>();
-        
-        // Copy confirmed hidden states
-        std::copy_n(confirmed_hidden.data<const float>(), conf_seq_len * hidden_dim, dst_data);
-        
-        // Copy new hidden states
-        std::copy_n(new_hidden.data<const float>(), new_seq_len * hidden_dim, 
-                   dst_data + conf_seq_len * hidden_dim);
+        float* dst = combined.data<float>();
+        std::copy_n(confirmed_hidden.data<const float>(), conf_len * hidden_dim, dst);
+        std::copy_n(new_hidden.data<const float>(), new_len * hidden_dim, 
+                   dst + conf_len * hidden_dim);
     }
     
     return combined;
