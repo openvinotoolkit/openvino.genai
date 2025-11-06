@@ -2,6 +2,9 @@
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import logging as log
+import sys
+
+MAX_INPUT_TXT_IN_LOG = 1024
 
 
 def print_metrics(iter_num, iter_data, tms=None, tms_infer=None, warm_up=False,
@@ -107,14 +110,22 @@ def print_generated(iter_num, warm_up=False, generated=None, prompt_idx=-1):
         print_unicode(f'{prefix} Generated: {generated}', '{prefix} Unable print generated')
 
 
-def print_unicode(text, on_error="Unable print", loglevel="info"):
+def print_unicode(text, on_error="Unable print", loglevel="info", max_output=sys.maxsize):
     log_fn = getattr(log, loglevel)
     try:
-        log_fn(text)
+        if len(text) > max_output:
+            output_text = text[:max_output] + f" ... [truncated to {max_output}]"
+        else:
+            output_text = text
+        log_fn(output_text)
     except (UnicodeError, UnicodeEncodeError, UnicodeDecodeError):
         try:
             utf8_text = text.encode(encoding="utf-8", errors="replace").decode()
-            log_fn(utf8_text)
+            if len(utf8_text) > max_output:
+                output_text = utf8_text[:max_output] + f" ... [truncated to {max_output}]"
+            else:
+                output_text = utf8_text
+            log_fn(output_text)
         except Exception:
             log.warning(on_error)
 

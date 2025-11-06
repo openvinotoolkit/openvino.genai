@@ -58,7 +58,7 @@ Multi-turn conversations with an interactive chat interface powered by OpenVINO.
 ./chat_sample_c model_dir
 ```
 
-#### LLMs benchamrking sample(`benchmark_genai_c`)
+#### LLMs benchmarking sample(`benchmark_genai_c`)
 The sample demonstrates how to benchmark LLMs in OpenVINO GenAI by using C language. 
 - **Run Command:**
 ```sh

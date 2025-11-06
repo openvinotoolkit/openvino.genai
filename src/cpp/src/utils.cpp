@@ -781,7 +781,7 @@ size_t get_available_gpu_memory(const std::string& device, size_t num_decoder_la
     // sum up all used device memory
     std::vector<std::string> device_memory_types = {"cl_mem", "usm_device"};
     size_t used_device_mem = 0;
-    for (auto mem_type: device_memory_types) {
+    for (const auto& mem_type: device_memory_types) {
         used_device_mem += memory_statistics[mem_type];
     }
 

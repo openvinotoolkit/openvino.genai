@@ -66,9 +66,9 @@ Prompt: `cyberpunk cityscape like Tokyo New York with tall buildings at dusk gol
 
    ![](./../../cpp/image_generation/512x512.bmp)
 
-### Run with callback
+### Run with threaded callback
 
-You can also add a callback to the `text2image.py` file to interrupt the image generation process earlier if you are satisfied with the intermediate result of the image generation or to add logs.
+You can also implement a callback function in `text2image.py` that runs in a separate thread. This allows for parallel processing, enabling you to interrupt generation early if intermediate results are satisfactory or to add logs.
 
 Please find the template of the callback usage below.
 
@@ -149,7 +149,7 @@ And then run the sample:
 
 `python image2image.py ./dreamlike_anime_1_0_ov/FP16 'cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k' cat.png`
 
-The resuling image is:
+The resulting image is:
 
    ![](./../../cpp/image_generation/imageimage.bmp)
 
@@ -157,7 +157,7 @@ Note, that LoRA, heterogeneous execution and other features of `Text2ImagePipeli
 
 ## Run inpainting pipeline
 
-The `inpainting.py` sample demonstrates usage of inpainting pipeline, which can inpaint initial image by a given mask. Inpainting pipeline can work on typical text to image models as well as on specialized models which are oftenly named `space/model-inpainting`, e.g. `stabilityai/stable-diffusion-2-inpainting`. 
+The `inpainting.py` sample demonstrates usage of inpainting pipeline, which can inpaint initial image by a given mask. Inpainting pipeline can work on typical text to image models as well as on specialized models which are often named `space/model-inpainting`, e.g. `stabilityai/stable-diffusion-2-inpainting`. 
 
 Such models can be converted in the same way as regular ones via `optimum-cli`:
 
@@ -173,7 +173,7 @@ And run the sample:
 
 `python inpainting.py ./stable-diffusion-2-inpainting 'Face of a yellow cat, high resolution, sitting on a park bench' image.png mask_image.png`
 
-The resuling image is:
+The resulting image is:
 
    ![](./../../cpp/image_generation/inpainting.bmp)
 
