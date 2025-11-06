@@ -138,7 +138,7 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderNanoLLaVA::encode_images(cons
     return embeds;
 }
 
-NormlizedPrompt InputsEmbedderNanoLLaVA::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormalizedPrompt InputsEmbedderNanoLLaVA::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     auto norm_res = normalize(prompt, NATIVE_TAG, NATIVE_TAG, base_id, images.size());
     return {norm_res.first, norm_res.second, {}};
 }
