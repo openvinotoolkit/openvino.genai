@@ -7,6 +7,7 @@ import { z } from 'zod';
  * with specific formatting to align with Python. */
 export function serialize_json(object) {
     return JSON.stringify(object)
+        // Add a space after every colon or comma not already followed by a space
         .replace(/(:|,)(?! )/g, '$1 ');
 }
 

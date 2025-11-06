@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { LLMPipeline, StructuredOutputConfig as SOC, StreamingStatus } from 'openvino-genai-node';
+import { ChatHistory, LLMPipeline, StructuredOutputConfig as SOC, StreamingStatus } from 'openvino-genai-node';
 import { serialize_json, toJSONSchema } from './helper.js';
 
 function streamer(subword) {
@@ -108,8 +108,9 @@ async function main() {
 
     const pipe = await LLMPipeline(modelDir, "CPU");
     const tokenizer = await pipe.getTokenizer();
-    const chatHistory = [{ role: "system", content: sysMessage }];
-    const tools = [bookFlightTicket, bookHotel].map((tool) => toolToDict(tool, true))
+    const chatHistory = new ChatHistory([{ role: "system", content: sysMessage }]);
+    const tools = [bookFlightTicket, bookHotel].map((tool) => toolToDict(tool, true));
+    chatHistory.setTools(tools);
 
     const generationConfig = {
         return_decoded_results: true,
@@ -120,7 +121,7 @@ async function main() {
     const userText1 = "Do dolphins have fingers?";
     console.log("User: ", userText1);
     chatHistory.push({ role: "user", content: userText1 });
-    const modelInput = tokenizer.applyChatTemplate(chatHistory, true, undefined, tools);
+    const modelInput = tokenizer.applyChatTemplate(chatHistory, true);
 
     // the example grammar works the same as SOC.Regex("yes|no")
     // but the Union grammar is more flexible and can be extended with more options
@@ -136,7 +137,7 @@ async function main() {
         + "then book hotel from 2025-12-04 to 2025-12-10 in Paris";
     console.log("User: ", userText2);
     chatHistory.push({ role: "user", content: userText2 });
-    const modelInput2 = tokenizer.applyChatTemplate(chatHistory, true, undefined, tools);
+    const modelInput2 = tokenizer.applyChatTemplate(chatHistory, true);
 
     const startToolCallTag = SOC.ConstString("functools");
     const toolsJson = SOC.JSONSchema(
