@@ -8,12 +8,14 @@ Structured output generation forces a model to produce responses that follow a d
 
 ## How It Works
 
-[![Example from XGrammar paper](/img/structured_output_work_example.png)](https://arxiv.org/pdf/2411.15100)
+![Example from XGrammar paper](/img/structured_output_work_example.png)
 
 Structured output generation consists of several steps:
 1. Compile the structured-output configuration (JSON Schema, regex, or EBNF grammar) into an internal grammar representation.
 2. After the model computes the probability distribution for the next token, a mask is applied that prevents tokens incompatible with the current grammar state from being sampled.
 3. When a token is sampled, advance the grammar state and recompute the mask for the next sampling round.
+
+Refer to [XGrammar paper](https://arxiv.org/pdf/2411.15100) for more details.
 
 :::info
 Structured enforcement guarantees the syntactic format but not the semantic correctness of generated data. Always validate and sanitize outputs.
@@ -124,3 +126,5 @@ You can find complete sample programs that demonstrate structured output generat
 - [Combining multiple grammars for structured output](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/compound_grammar_generation.py)
 - [Trigger structured output during regular generation run](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/structural_tags_generation.py)
 - [Test-driven examples](https://github.com/openvinotoolkit/openvino.genai/blob/master/tests/python_tests/test_structured_output.py) (comprehensive examples covering JSON, regex, EBNF and structural tags)
+
+OpenVINO GenAI JavaScript bindings also support the Structured Output feature. Check [JS samples directory](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/js/text_generation) for usage examples.
