@@ -19,6 +19,9 @@ struct SchedulerConfig {
     // total size of KV cache in GB
     std::size_t cache_size = 0;
 
+    // non-zero means enable offload to disk, and the value is num of experts reside in memory 
+    std::size_t offload_to_disk = 0;
+
     // whether to split prompt / generate to different scheduling phases
     bool dynamic_split_fuse = true;
 

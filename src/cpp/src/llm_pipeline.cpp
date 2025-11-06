@@ -191,7 +191,8 @@ ov::genai::LLMPipeline::LLMPipeline(
 ov::genai::LLMPipeline::LLMPipeline(
     const std::filesystem::path& models_path,
     const std::string& device,
-    const ov::AnyMap& user_properties) {
+    const ov::AnyMap& user_properties,
+    const size_t offload_to_disk) {
     auto start_time = std::chrono::steady_clock::now();
 
     auto [properties, attention_backend] = extract_attention_backend(user_properties);
@@ -214,7 +215,11 @@ ov::genai::LLMPipeline::LLMPipeline(
             // we need use CB only for x86, as for other architectures like arm64 or risc-v we can create Paged Attention based model
             // but cannot perform its inference later
 #ifdef OPENVINO_ARCH_X86_64
-            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, get_latency_oriented_scheduler_config(), device, properties);
+            auto scheduler_config = get_latency_oriented_scheduler_config();
+            if (offload_to_disk) {
+                scheduler_config.offload_to_disk = offload_to_disk;
+            }
+            m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, properties);
 #endif
         } catch (ov::Exception&) {
             // ignore exceptions from PA

@@ -8,6 +8,10 @@ find_package(OpenVINOGenAI REQUIRED
     NO_CMAKE_FIND_ROOT_PATH
 )
 
+if(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    add_compile_definitions(RELWITHDEBINFO)
+endif()
+
 function(add_sample_executable target_name)
     add_executable(${target_name} ${target_name}.cpp)
     target_link_libraries(${target_name} PRIVATE openvino::genai)

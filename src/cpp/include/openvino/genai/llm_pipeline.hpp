@@ -112,7 +112,8 @@ public:
     LLMPipeline(
         const std::filesystem::path& models_path,
         const std::string& device,
-        const ov::AnyMap& properties = {}
+        const ov::AnyMap& properties = {},
+        const size_t offload_to_disk = 0
     );
 
     LLMPipeline(

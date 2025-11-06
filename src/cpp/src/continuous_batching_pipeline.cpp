@@ -96,6 +96,9 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
 
     auto model = utils::read_model(models_path, properties_without_draft_model);
+    if (scheduler_config.offload_to_disk) {
+        model->get_rt_info()["offload_to_disk"] = scheduler_config.offload_to_disk;
+    }
     auto generation_config = utils::from_config_json_if_exists(models_path);
 
     std::shared_ptr<InputsEmbedder> embedder;
