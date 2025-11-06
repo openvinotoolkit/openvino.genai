@@ -45,7 +45,6 @@ public:
     bool is_verbose() const { return m_verbose; }
 
     // Sequence management
-    void initialize_sequence(const ov::Tensor& input_ids, const ov::Tensor& position_ids);
     void append_tokens(const std::vector<int64_t>& tokens);
     void truncate_sequence(std::size_t size);
     void trim_kv_cache(std::size_t tokens_to_remove);
@@ -63,38 +62,15 @@ public:
     ov::Tensor get_hidden_features() const;
     
     // Tensor utilities
-    void build_model_inputs(int64_t begin_idx, std::size_t size,
-                           ov::Tensor& input_ids, ov::Tensor& attention_mask, ov::Tensor& position_ids, 
-                           bool reset_positions = false, bool full_attention_mask = false);
+    // Builds model inputs by extracting the last token_count tokens from the sequence
+    void build_model_inputs(std::size_t token_count,
+                           ov::Tensor& input_ids, ov::Tensor& attention_mask, ov::Tensor& position_ids);
     ov::Tensor create_hidden_state_placeholder(const ov::Shape& shape) const;
     
     // Sampling
     std::variant<int64_t, std::vector<int64_t>> sample_tokens(const ov::Tensor& logits, std::size_t count);
 
     // Performance metrics
-    struct InferenceMetrics {
-        uint64_t total_inference_time_us = 0;
-        uint64_t last_inference_time_us = 0;
-        std::size_t total_inferences = 0;
-        std::size_t total_tokens_processed = 0;
-        
-        double get_average_inference_time_us() const {
-            return total_inferences > 0 ? static_cast<double>(total_inference_time_us) / total_inferences : 0.0;
-        }
-        
-        double get_tokens_per_second() const {
-            return total_inference_time_us > 0 ? (total_tokens_processed * 1000000.0) / total_inference_time_us : 0.0;
-        }
-        
-        void reset() {
-            total_inference_time_us = 0;
-            last_inference_time_us = 0;
-            total_inferences = 0;
-            total_tokens_processed = 0;
-        }
-    };
-    
-    const InferenceMetrics& get_metrics() const { return m_metrics; }
     ov::genai::RawPerfMetrics& get_raw_perf_metrics() { return m_raw_perf_metrics; }
 
 protected:
@@ -123,16 +99,17 @@ protected:
     std::size_t m_max_prompt_len = 0;
     std::size_t m_kv_cache_capacity = 0;
     
-    // Token sequences
-    std::vector<int64_t> m_tokens;
-    std::vector<int64_t> m_positions;
+    // Temporary token sequences for validation window
+    // NOTE: These are speculative tokens that may be rolled back
+    // Verified tokens are stored in Pipeline's m_verified_tokens
+    std::vector<int64_t> m_tokens;      // Current speculative token sequence
+    std::vector<int64_t> m_positions;   // Corresponding position IDs
     
     // State tracking
     std::size_t m_processed_tokens = 0;
     int64_t m_last_sampled_token = -1;
     
     // Performance tracking
-    InferenceMetrics m_metrics;
     ov::genai::RawPerfMetrics m_raw_perf_metrics;
     
     // Configuration
@@ -150,6 +127,9 @@ public:
     explicit Eagle3TargetModelWrapper(const ov::genai::ModelDesc& model_desc);
     ~Eagle3TargetModelWrapper() = default;
 
+    // Initialize sequence with full input
+    void initialize_sequence(const ov::Tensor& input_ids, const ov::Tensor& position_ids);
+
     // Target model inference - returns both logits and hidden features
     InferenceOutput infer(const ov::Tensor& input_ids, 
                          const ov::Tensor& attention_mask, 
@@ -166,6 +146,10 @@ class Eagle3DraftModelWrapper : public Eagle3InferWrapperBase {
 public:
     explicit Eagle3DraftModelWrapper(const ov::genai::ModelDesc& model_desc);
     ~Eagle3DraftModelWrapper() = default;
+
+    // Initialize sequence with input starting from second token (Eagle3 specific)
+    // Draft model uses tokens[1:], position_ids will be [0, 1, 2, ..., seq_len-2]
+    void initialize_sequence(const ov::Tensor& input_ids, const ov::Tensor& position_ids);
 
     // Draft model inference with hidden state inputs - returns both logits and hidden features
     InferenceOutput infer(const ov::Tensor& input_ids,
@@ -209,36 +193,6 @@ public:
     // Debug logging
     void log_generation_step(const std::string& step_name, std::size_t step_number) const;
     void log_sequence_state(const std::string& context) const;
-    
-    struct PerformanceSummary {
-        uint64_t total_generation_time_us = 0;
-        uint64_t draft_inference_time_us = 0;
-        uint64_t main_inference_time_us = 0;
-        uint64_t validation_time_us = 0;
-        
-        std::size_t prompt_tokens = 0;
-        std::size_t generated_tokens = 0;
-        std::size_t draft_iterations = 0;
-        std::size_t validation_rounds = 0;
-        std::size_t accepted_tokens = 0;
-        std::size_t rejected_tokens = 0;
-        
-        double get_acceptance_rate() const {
-            std::size_t total = accepted_tokens + rejected_tokens;
-            return total > 0 ? static_cast<double>(accepted_tokens) / total : 0.0;
-        }
-        
-        double get_speedup() const {
-            return main_inference_time_us > 0 ? 
-                static_cast<double>(generated_tokens * main_inference_time_us) / (draft_inference_time_us + main_inference_time_us) : 1.0;
-        }
-        
-        void reset() {
-            *this = PerformanceSummary{};
-        }
-    };
-    
-    const PerformanceSummary& get_performance_summary() const { return m_perf_summary; }
 
 private:
     struct SpeculativeResult {
@@ -250,7 +204,7 @@ private:
     };
 
     // Core Eagle3 algorithm
-    SpeculativeResult run_speculative_iteration(const ov::Tensor& hidden_window, std::size_t window_size, int64_t eos_token_id);
+    SpeculativeResult run_speculative_iteration(const ov::Tensor& target_hidden_states, std::size_t token_count, int64_t eos_token_id);
     
     // Draft-to-target token mapping
     int64_t map_draft_token(int64_t draft_token) const;
@@ -278,8 +232,16 @@ private:
     // Hidden layers configuration
     std::vector<int> m_hidden_layers_to_abstract;
     
-    // Performance tracking
-    PerformanceSummary m_perf_summary;
+    // Token storage - Pipeline is the source of truth for verified tokens
+    std::vector<int64_t> m_verified_tokens;  // All verified tokens (prompt + generated)
+    std::size_t m_prompt_length = 0;         // Length of initial prompt
+    
+    // Performance tracking - using standard speculative decoding metrics
+    // m_sd_metrics: Algorithm-specific metrics (acceptance rate, draft efficiency, etc.)
+    // m_sd_perf_metrics: Complete performance statistics for both main and draft models
+    //   - main_model_metrics: TTFT, TPOT, throughput for main/target model
+    //   - draft_model_metrics: TTFT, TPOT, throughput for draft model  
+    //   - num_accepted_tokens: Number of draft tokens accepted by main model (NOT including main's own predictions)
     ov::genai::SpeculativeDecodingMetrics m_sd_metrics;
     ov::genai::SDPerModelsPerfMetrics m_sd_perf_metrics;
     

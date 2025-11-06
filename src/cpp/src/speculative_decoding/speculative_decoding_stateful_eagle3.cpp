@@ -50,27 +50,33 @@ std::string format_duration_us(uint64_t microseconds) {
 }
 
 /**
- * @brief Extract last token's hidden state from tensor
+ * @brief Extract last token's hidden state from tensor using zero-copy ROI
+ * @param hidden_features Input tensor with shape [batch=1, seq_len, hidden_size]
+ * @return A tensor view (ROI) of the last token's hidden state [1, 1, hidden_size]
+ * @throws std::runtime_error if input tensor is invalid
  */
 ov::Tensor extract_last_hidden_state(const ov::Tensor& hidden_features) {
-    if (!hidden_features || hidden_features.get_size() == 0) {
-        return ov::Tensor{};
-    }
+    // Validate tensor exists and has data
+    OPENVINO_ASSERT(hidden_features && hidden_features.get_size() > 0,
+                    "Hidden features tensor is empty or null");
     
     auto shape = hidden_features.get_shape();
-    if (shape.size() != 3 || shape[0] != 1 || shape[1] == 0) {
-        return ov::Tensor{};
-    }
+    
+    // Validate shape: must be 3D [batch=1, seq_len, hidden_size]
+    OPENVINO_ASSERT(shape.size() == 3,
+                    "Hidden features must be 3D tensor, got ", shape.size(), "D");
+    OPENVINO_ASSERT(shape[0] == 1,
+                    "Batch size must be 1, got ", shape[0]);
+    OPENVINO_ASSERT(shape[1] > 0,
+                    "Sequence length must be > 0, got ", shape[1]);
     
     std::size_t seq_len = shape[1];
     std::size_t hidden_size = shape[2];
     
-    ov::Tensor last_hidden(ov::element::f32, {1, 1, hidden_size});
-    
-    if (hidden_features.get_element_type() == ov::element::f32) {
-        const float* src = hidden_features.data<const float>() + (seq_len - 1) * hidden_size;
-        std::copy_n(src, hidden_size, last_hidden.data<float>());
-    }
+    // Use ROI to create a zero-copy view of the last token
+    ov::Tensor last_hidden(hidden_features, 
+                          {0, seq_len - 1, 0},
+                          {1, seq_len, hidden_size});
     
     return last_hidden;
 }
@@ -136,19 +142,6 @@ Eagle3InferWrapperBase::Eagle3InferWrapperBase(const ov::genai::ModelDesc& model
     log_debug("Eagle3InferWrapper initialization completed");
 }
 
-void Eagle3InferWrapperBase::initialize_sequence(const ov::Tensor& input_ids, const ov::Tensor& position_ids) {
-    const int64_t* ids_data = input_ids.data<const int64_t>();
-    std::size_t seq_len = input_ids.get_size();
-    m_tokens.assign(ids_data, ids_data + seq_len);
-    
-    if (position_ids) {
-        const int64_t* pos_data = position_ids.data<const int64_t>();
-        m_positions.assign(pos_data, pos_data + position_ids.get_size());
-    }
-    
-    log_debug("Initialized sequence with " + std::to_string(m_tokens.size()) + " tokens");
-}
-
 void Eagle3InferWrapperBase::append_tokens(const std::vector<int64_t>& tokens) {
     if (tokens.empty()) return;
     
@@ -206,7 +199,11 @@ void Eagle3InferWrapperBase::reset_state() {
     m_positions.clear();
     m_processed_tokens = 0;
     m_last_sampled_token = -1;
-    m_metrics.reset();
+    
+    // Reset raw performance metrics
+    m_raw_perf_metrics.m_inference_durations = {ov::genai::MicroSeconds(0.0f)};
+    m_raw_perf_metrics.m_durations.clear();
+    m_raw_perf_metrics.m_batch_sizes.clear();
     
     log_debug("State reset completed");
 }
@@ -216,48 +213,46 @@ void Eagle3InferWrapperBase::release_memory() {
     log_debug("Released compiled model memory");
 }
 
-void Eagle3InferWrapperBase::build_model_inputs(int64_t begin_idx, std::size_t size,
+void Eagle3InferWrapperBase::build_model_inputs(std::size_t token_count,
                                            ov::Tensor& input_ids, ov::Tensor& attention_mask, 
-                                           ov::Tensor& position_ids, bool reset_positions, bool full_attention_mask) {
-    const auto& tokens = m_tokens;
-    const auto& positions = m_positions;
-    
-    if (tokens.empty() || size == 0) {
-        throw std::runtime_error("Cannot build model inputs: empty sequence or zero size");
+                                           ov::Tensor& position_ids) {
+    // Validate input state
+    if (m_tokens.empty() || token_count == 0) {
+        throw std::runtime_error("Cannot build model inputs: empty sequence or zero token count");
     }
     
-    // Handle negative indexing
-    int64_t sequence_size = static_cast<int64_t>(tokens.size());
-    int64_t actual_begin = (begin_idx < 0) ? sequence_size + begin_idx : begin_idx;
-    
-    if (actual_begin < 0 || actual_begin >= sequence_size || actual_begin + static_cast<int64_t>(size) > sequence_size) {
-        throw std::runtime_error("Invalid slice range for model inputs");
+    if (m_positions.empty()) {
+        throw std::runtime_error("Position IDs not initialized - call initialize_sequence first");
     }
     
-    // Create tensors for input_ids and position_ids (current input)
-    input_ids = ov::Tensor(ov::element::i64, {1, size});
-    position_ids = ov::Tensor(ov::element::i64, {1, size});
+    const std::size_t seq_len = m_tokens.size();
     
-    // Fill input_ids
-    std::copy_n(tokens.data() + actual_begin, size, input_ids.data<int64_t>());
-    
-    // Fill position_ids
-    if (reset_positions || positions.empty()) {
-        std::iota(position_ids.data<int64_t>(), position_ids.data<int64_t>() + size, actual_begin);
-    } else {
-        std::copy_n(positions.data() + actual_begin, size, position_ids.data<int64_t>());
+    // Validate that we have enough tokens
+    if (token_count > seq_len) {
+        throw std::runtime_error("Requested token_count (" + std::to_string(token_count) + 
+                               ") exceeds sequence length (" + std::to_string(seq_len) + ")");
     }
     
-    // Attention mask: full sequence or just input_ids size
-    if (full_attention_mask) {
-        attention_mask = ov::Tensor(ov::element::i64, {1, tokens.size()});
-        std::fill_n(attention_mask.data<int64_t>(), tokens.size(), 1);
-        log_debug("Model inputs built: begin=" + std::to_string(actual_begin) + ", size=" + std::to_string(size) + ", attention_mask.size=" + std::to_string(tokens.size()));
-    } else {
-        attention_mask = ov::Tensor(ov::element::i64, {1, size});
-        std::fill_n(attention_mask.data<int64_t>(), size, 1);
-        log_debug("Model inputs built: begin=" + std::to_string(actual_begin) + ", size=" + std::to_string(size) + ", attention_mask.size=" + std::to_string(size));
-    }
+    // Extract last token_count tokens from the sequence
+    const std::size_t start_pos = seq_len - token_count;
+    
+    input_ids = ov::Tensor(ov::element::i64, {1, token_count});
+    position_ids = ov::Tensor(ov::element::i64, {1, token_count});
+    
+    // Copy token slice from the end of the sequence
+    int64_t* input_ids_ptr = input_ids.data<int64_t>();
+    int64_t* position_ids_ptr = position_ids.data<int64_t>();
+    
+    std::memcpy(input_ids_ptr, m_tokens.data() + start_pos, token_count * sizeof(int64_t));
+    std::memcpy(position_ids_ptr, m_positions.data() + start_pos, token_count * sizeof(int64_t));
+    
+    // Compute attention mask length: last_position_id + 1
+    // This represents the total KV cache size needed
+    const std::size_t attention_mask_len = static_cast<std::size_t>(position_ids_ptr[token_count - 1] + 1);
+    
+    // Create attention mask filled with 1s (all positions are attended)
+    attention_mask = ov::Tensor(ov::element::i64, {1, attention_mask_len});
+    std::fill_n(attention_mask.data<int64_t>(), attention_mask_len, 1);
 }
 
 ov::Tensor Eagle3InferWrapperBase::create_hidden_state_placeholder(const ov::Shape& shape) const {
@@ -393,12 +388,7 @@ uint64_t Eagle3InferWrapperBase::execute_inference() {
 }
 
 void Eagle3InferWrapperBase::update_performance_metrics(uint64_t inference_time_us, std::size_t tokens_count) {
-    m_metrics.total_inference_time_us += inference_time_us;
-    m_metrics.last_inference_time_us = inference_time_us;
-    m_metrics.total_inferences++;
-    m_metrics.total_tokens_processed += tokens_count;
-    
-    // Update raw metrics for compatibility
+    // Use standard performance tracking approach consistent with other speculative decoding implementations
     m_raw_perf_metrics.m_durations.emplace_back(static_cast<float>(inference_time_us));
     m_raw_perf_metrics.m_inference_durations[0] += ov::genai::MicroSeconds(static_cast<float>(inference_time_us));
     m_raw_perf_metrics.m_batch_sizes.emplace_back(tokens_count);
@@ -555,6 +545,19 @@ Eagle3TargetModelWrapper::Eagle3TargetModelWrapper(const ov::genai::ModelDesc& m
     log_debug("Eagle3TargetModelWrapper initialized");
 }
 
+void Eagle3TargetModelWrapper::initialize_sequence(const ov::Tensor& input_ids, const ov::Tensor& position_ids) {
+    const int64_t* ids_data = input_ids.data<const int64_t>();
+    std::size_t seq_len = input_ids.get_size();
+    m_tokens.assign(ids_data, ids_data + seq_len);
+    
+    if (position_ids) {
+        const int64_t* pos_data = position_ids.data<const int64_t>();
+        m_positions.assign(pos_data, pos_data + position_ids.get_size());
+    }
+    
+    log_debug("Target model initialized sequence with " + std::to_string(m_tokens.size()) + " tokens");
+}
+
 InferenceOutput Eagle3TargetModelWrapper::infer(const ov::Tensor& input_ids, 
                                                 const ov::Tensor& attention_mask, 
                                                 const ov::Tensor& position_ids) {
@@ -599,6 +602,32 @@ InferenceOutput Eagle3TargetModelWrapper::infer(const ov::Tensor& input_ids,
 Eagle3DraftModelWrapper::Eagle3DraftModelWrapper(const ov::genai::ModelDesc& model_desc)
     : Eagle3InferWrapperBase(model_desc) {
     log_debug("Eagle3DraftModelWrapper initialized");
+}
+
+void Eagle3DraftModelWrapper::initialize_sequence(const ov::Tensor& input_ids, const ov::Tensor& position_ids) {
+    // Eagle3 specific: Draft model uses sequence starting from second token (offset=1)
+    const int64_t* ids_data = input_ids.data<const int64_t>();
+    std::size_t total_len = input_ids.get_size();
+    
+    // Validate that we have at least 2 tokens
+    if (total_len < 2) {
+        throw std::runtime_error("Draft model requires at least 2 tokens, got " + std::to_string(total_len));
+    }
+    
+    std::size_t actual_length = total_len - 1;  // Skip first token
+    
+    // Assign tokens from position 1 to end
+    m_tokens.assign(ids_data + 1, ids_data + total_len);
+    
+    // Position IDs start from 0 for the draft model's perspective
+    if (position_ids) {
+        m_positions.resize(actual_length);
+        std::iota(m_positions.begin(), m_positions.end(), 0);
+    }
+    
+    log_debug("Draft model initialized sequence with " + std::to_string(m_tokens.size()) + 
+              " tokens (skipped first token, position_ids from 0 to " + 
+              std::to_string(actual_length - 1) + ")");
 }
 
 InferenceOutput Eagle3DraftModelWrapper::infer(const ov::Tensor& input_ids,
@@ -952,7 +981,6 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
     generate_timer.start();
     
     auto config = resolve_generation_config(generation_config);
-    m_perf_summary.reset();
     
     log_info("Starting Eagle3 generation with max_new_tokens=" + std::to_string(config.max_new_tokens) +
              ", draft_iterations=" + std::to_string(m_draft_iterations));
@@ -973,7 +1001,13 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
     }
     
     std::size_t prompt_len = prompt_shape[1];
-    m_perf_summary.prompt_tokens = prompt_len;
+    
+    // Initialize Pipeline's verified token storage with prompt
+    const int64_t* prompt_data = input_ids.data<const int64_t>();
+    m_verified_tokens.assign(prompt_data, prompt_data + prompt_len);
+    m_prompt_length = prompt_len;
+    
+    log_debug("Initialized verified_tokens with prompt (" + std::to_string(prompt_len) + " tokens)");
     
     // Initialize position IDs
     ov::Tensor position_ids{ov::element::i64, input_ids.get_shape()};
@@ -986,53 +1020,37 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
     // Initialize main model with full sequence
     m_main_model->initialize_sequence(input_ids, position_ids);
     
-    // Initialize draft model with sequence starting from second token (Eagle3 specific)
-    std::size_t seq_len = prompt_shape[1];
-    if (seq_len > 1) {
-        ov::Tensor draft_input_ids(ov::element::i64, {1, seq_len - 1});
-        ov::Tensor draft_position_ids(ov::element::i64, {1, seq_len - 1});
-        
-        const int64_t* ids_data = input_ids.data<const int64_t>();
-        const int64_t* pos_data = position_ids.data<const int64_t>();
-        
-        std::copy_n(ids_data + 1, seq_len - 1, draft_input_ids.data<int64_t>());
-        std::copy_n(pos_data, seq_len - 1, draft_position_ids.data<int64_t>());
-        
-        m_draft_model->initialize_sequence(draft_input_ids, draft_position_ids);
-    } else {
-        // Single token case - draft gets empty sequence initially
-        ov::Tensor empty_ids(ov::element::i64, {1, 0});
-        ov::Tensor empty_pos(ov::element::i64, {1, 0});
-        m_draft_model->initialize_sequence(empty_ids, empty_pos);
-    }
-    
+    // Initialize draft model with sequence starting from second token
+    m_draft_model->initialize_sequence(input_ids, position_ids);
+
     // Initial main model inference
     log_generation_step("Initial Main Model Inference", 0);
-    auto initial_start = std::chrono::steady_clock::now();
     auto main_output = m_main_model->infer(input_ids, attention_mask, position_ids);
     auto initial_token = std::get<int64_t>(m_main_model->sample_tokens(main_output.logits, 1));
-    auto initial_end = std::chrono::steady_clock::now();
-    
-    m_perf_summary.main_inference_time_us += 
-        std::chrono::duration_cast<std::chrono::microseconds>(initial_end - initial_start).count();
     
     // Get initial hidden features and append first generated token
     auto main_hidden_features = main_output.hidden_features;
     m_main_model->append_tokens({initial_token});
     m_draft_model->append_tokens({initial_token});
     
-    log_debug("Initial token generated: " + std::to_string(initial_token));
+    // Write initial verified token to Pipeline storage
+    m_verified_tokens.push_back(initial_token);
+    
+    log_debug("Initial token generated: " + std::to_string(initial_token) + 
+              ", verified_tokens now: " + std::to_string(m_verified_tokens.size()));
     log_sequence_state("after initial token generation");
     
     // Main generation loop using speculative decoding
     std::size_t max_new_tokens = config.max_new_tokens;
     std::size_t generated_tokens = 1; // Count initial token
-    // Initial window size should be the draft model sequence length, but subsequent will be 1
-    std::size_t window_size = m_draft_model->get_sequence_length();
-    auto hidden_window = main_hidden_features;
+    std::size_t token_count = m_draft_model->get_sequence_length();
+    auto target_hidden_states = main_hidden_features;
     bool eos_reached = false;
     
-    auto generation_start = std::chrono::steady_clock::now();
+    // Track metrics for speculative decoding
+    std::size_t total_draft_accepted = 0;  // Number of draft tokens accepted by main model
+    std::size_t total_draft_generated = 0; // Total draft tokens generated (including rejected)
+    std::size_t total_iterations = 0;      // Number of speculative iterations
     
     while (!eos_reached && generated_tokens < max_new_tokens && 
            m_main_model->get_sequence_length() < prompt_len + max_new_tokens) {
@@ -1040,9 +1058,14 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
         log_generation_step("Speculative Decoding Iteration", generated_tokens);
         log_sequence_state("iteration start");
         
-        auto iteration_start = std::chrono::steady_clock::now();
-        auto result = run_speculative_iteration(hidden_window, window_size, static_cast<int64_t>(config.eos_token_id));
-        auto iteration_end = std::chrono::steady_clock::now();
+        auto result = run_speculative_iteration(target_hidden_states, token_count, static_cast<int64_t>(config.eos_token_id));
+        
+        // Update iteration counter
+        total_iterations++;
+        
+        // Update draft token statistics
+        total_draft_generated += m_draft_iterations; // Each iteration generates m_draft_iterations draft tokens
+        total_draft_accepted += result.accepted_tokens_count; // Number of draft tokens accepted (not including main model's token)
         
         // Update metrics
         if (result.new_token == static_cast<int64_t>(config.eos_token_id) || result.eos_reached) {
@@ -1052,18 +1075,18 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
         
         if (result.new_token != -1) {
             generated_tokens++;
-            m_perf_summary.accepted_tokens += result.accepted_tokens_count;
             log_debug("Generated token " + std::to_string(generated_tokens) + ": " + std::to_string(result.new_token) + 
-                      ", accepted " + std::to_string(result.accepted_tokens_count) + " draft tokens");
+                      ", accepted " + std::to_string(result.accepted_tokens_count) + " draft tokens out of " + 
+                      std::to_string(m_draft_iterations));
         }
         
         // Prepare for next iteration
-        window_size = result.next_window_size > 0 ? result.next_window_size : 
+        token_count = result.next_window_size > 0 ? result.next_window_size : 
                       std::min<std::size_t>(1, m_main_model->get_sequence_length());
-        hidden_window = result.next_hidden_window ? result.next_hidden_window : m_main_model->get_hidden_features();
+        target_hidden_states = result.next_hidden_window ? result.next_hidden_window : m_main_model->get_hidden_features();
         
-        log_debug("Next iteration: window_size=" + std::to_string(window_size) + 
-                  ", hidden_window_size=" + (hidden_window ? std::to_string(hidden_window.get_size()) : "0"));
+        log_debug("Next iteration: token_count=" + std::to_string(token_count) + 
+                  ", hidden_states_size=" + (target_hidden_states ? std::to_string(target_hidden_states.get_size()) : "0"));
         
         // Safety check to prevent infinite loops
         if (result.next_window_size == 0 && result.new_token == -1) {
@@ -1071,38 +1094,27 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
             break;
         }
         
-        m_perf_summary.validation_rounds++;
         log_sequence_state("iteration end");
     }
     
-    auto generation_end = std::chrono::steady_clock::now();
-    m_perf_summary.total_generation_time_us = 
-        std::chrono::duration_cast<std::chrono::microseconds>(generation_end - generation_start).count();
-    m_perf_summary.generated_tokens = generated_tokens;
-    
-    // Log performance summary
-    if (is_verbose()) {
-        log_performance_summary();
-    }
-    
-    // Convert all main model tokens to text and display
-    const auto& all_tokens = m_main_model->get_tokens();
-    if (!all_tokens.empty()) {
+    // Convert all verified tokens to text and display
+    if (!m_verified_tokens.empty()) {
         try {
-            std::string decoded_text = m_tokenizer.decode(all_tokens);
-            std::cout << "[EAGLE3-FINAL] All generated tokens decoded: \"" << decoded_text << "\"" << std::endl;
+            std::string decoded_text = m_tokenizer.decode(m_verified_tokens);
+            std::cout << "[EAGLE3-FINAL] All verified tokens decoded (" << m_verified_tokens.size() 
+                      << " tokens): \"" << decoded_text << "\"" << std::endl;
         } catch (const std::exception& e) {
-            std::cout << "[EAGLE3-FINAL] Failed to decode all tokens: " << e.what() << std::endl;
+            std::cout << "[EAGLE3-FINAL] Failed to decode verified tokens: " << e.what() << std::endl;
         }
     }
     
-    // Prepare results
+    // Prepare results using Pipeline's verified tokens (source of truth)
     EncodedResults results;
-    results.tokens = {m_main_model->get_tokens()};
+    results.tokens = {m_verified_tokens};
     results.scores.resize(1);
     results.scores[0] = 0.0f; // Greedy decoding, no scores
     
-    // Update performance metrics following the stateful pipeline pattern
+    // Update performance metrics following the standard stateful speculative decoding pattern
     generate_timer.end();
     
     m_sd_perf_metrics.num_input_tokens = prompt_len;
@@ -1111,23 +1123,26 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
     m_sd_perf_metrics.raw_metrics.generate_durations.emplace_back(
         generate_timer.get_duration_microsec());
     
-    // Update main and draft model metrics
+    // Update main and draft model metrics from their RawPerfMetrics
     m_sd_perf_metrics.main_model_metrics.raw_metrics = m_main_model->get_raw_perf_metrics();
     m_sd_perf_metrics.draft_model_metrics.raw_metrics = m_draft_model->get_raw_perf_metrics();
     
-    // Update speculative decoding metrics
-    m_sd_metrics.draft_duration = m_perf_summary.draft_inference_time_us / 1e6f;
-    m_sd_metrics.main_duration = m_perf_summary.main_inference_time_us / 1e6f;
+    // Set num_accepted_tokens - this represents draft tokens accepted by main model
+    m_sd_perf_metrics.num_accepted_tokens = total_draft_accepted;
     
+    // Update speculative decoding metrics based on collected data
     if (generated_tokens > 0) {
-        float acceptance_rate = m_perf_summary.get_acceptance_rate() * 100.0f;
+        // Calculate acceptance rate: accepted draft tokens / total draft tokens generated
+        float acceptance_rate = total_draft_generated > 0 ? 
+            (static_cast<float>(total_draft_accepted) / total_draft_generated * 100.0f) : 0.0f;
+        
         m_sd_metrics.update_acceptance_rate(0, acceptance_rate);
-        m_sd_metrics.update_draft_accepted_tokens(0, m_perf_summary.accepted_tokens);
-        m_sd_metrics.update_draft_generated_len(0, m_perf_summary.draft_iterations);
+        m_sd_metrics.update_draft_accepted_tokens(0, total_draft_accepted);
+        m_sd_metrics.update_draft_generated_len(0, total_draft_generated);
         m_sd_metrics.update_generated_len(generated_tokens);
     }
     
-    // Evaluate statistics
+    // Evaluate statistics using standard interface
     m_sd_perf_metrics.evaluate_statistics(generate_timer.get_start_time());
     
     results.perf_metrics = m_sd_perf_metrics;
@@ -1137,28 +1152,25 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
 }
 
 StatefulEagle3LLMPipeline::SpeculativeResult 
-StatefulEagle3LLMPipeline::run_speculative_iteration(const ov::Tensor& hidden_window, 
-                                                     std::size_t window_size, 
+StatefulEagle3LLMPipeline::run_speculative_iteration(const ov::Tensor& target_hidden_states, 
+                                                     std::size_t token_count, 
                                                      int64_t eos_token_id) {
     SpeculativeResult result;
     
-    log_debug("Starting speculative iteration with window_size=" + std::to_string(window_size));
+    log_debug("Starting speculative iteration with token_count=" + std::to_string(token_count));
     
-    if (!hidden_window || hidden_window.get_size() == 0) {
-        log_debug("Invalid hidden window provided");
+    if (!target_hidden_states || target_hidden_states.get_size() == 0) {
+        log_debug("Invalid target hidden states provided");
         return result;
     }
     
-    auto draft_start = std::chrono::steady_clock::now();
-    
-    // Step 1: Initial draft inference using main hidden features
+    // Step 1: Initial draft inference using target model's hidden states
     ov::Tensor draft_input_ids, draft_attention_mask, draft_position_ids;
-    int64_t begin_idx = -static_cast<int64_t>(window_size);
-    m_draft_model->build_model_inputs(begin_idx, window_size, 
-                                     draft_input_ids, draft_attention_mask, draft_position_ids, true, true);
+    m_draft_model->build_model_inputs(token_count, 
+                                     draft_input_ids, draft_attention_mask, draft_position_ids);
     
     auto draft_output = m_draft_model->infer(draft_input_ids, draft_attention_mask, draft_position_ids,
-                                            hidden_window, ov::Tensor{});
+                                            target_hidden_states, /*internal_hidden_states=*/ov::Tensor{});
     
     int64_t first_draft_token = std::get<int64_t>(m_draft_model->sample_tokens(draft_output.logits, 1));
     first_draft_token = map_draft_token(first_draft_token);
@@ -1174,15 +1186,15 @@ StatefulEagle3LLMPipeline::run_speculative_iteration(const ov::Tensor& hidden_wi
     // Append first draft token and get its hidden state for subsequent iterations
     m_main_model->append_tokens({first_draft_token});
     m_draft_model->append_tokens({first_draft_token});
-    auto draft_hidden = extract_last_hidden_state(draft_output.hidden_features);
-    
-    // Step 2: Additional draft iterations  
-    for (std::size_t i = 1; i < m_draft_iterations; ++i) {
-        m_draft_model->build_model_inputs(-1, 1, 
-                                         draft_input_ids, draft_attention_mask, draft_position_ids, false, true);
+    auto internal_hidden_states = extract_last_hidden_state(draft_output.hidden_features);
+
+    // Step 2: Additional draft iterations
+    for (std::size_t i = 0; i < m_draft_iterations - 1; ++i) {
+        m_draft_model->build_model_inputs(1, 
+                                         draft_input_ids, draft_attention_mask, draft_position_ids);
         
         auto more_output = m_draft_model->infer(draft_input_ids, draft_attention_mask, draft_position_ids,
-                                               ov::Tensor{}, draft_hidden);
+                                               /*target_hidden_states*/ov::Tensor{}, internal_hidden_states);
         
         int64_t draft_token = std::get<int64_t>(m_draft_model->sample_tokens(more_output.logits, 1));
         draft_token = map_draft_token(draft_token);
@@ -1190,184 +1202,122 @@ StatefulEagle3LLMPipeline::run_speculative_iteration(const ov::Tensor& hidden_wi
         draft_candidates.push_back(draft_token);
         m_main_model->append_tokens({draft_token});
         m_draft_model->append_tokens({draft_token});
-        draft_hidden = extract_last_hidden_state(more_output.hidden_features);
-        
-        m_perf_summary.draft_iterations++;
+        internal_hidden_states = extract_last_hidden_state(more_output.hidden_features);
     }
     
-    auto draft_end = std::chrono::steady_clock::now();
-    m_perf_summary.draft_inference_time_us += 
-        std::chrono::duration_cast<std::chrono::microseconds>(draft_end - draft_start).count();
+    // Step 3: Validation - main model validates draft tokens with shift comparison
+    log_debug("Starting validation phase with " + std::to_string(m_draft_iterations) + " draft tokens");
     
-    // Step 3: Validation phase
-    log_debug("Starting validation phase");
-    auto validation_start = std::chrono::steady_clock::now();
+    std::size_t validation_window_size = m_draft_iterations + 1;
     
-    std::size_t current_target_len = m_main_model->get_sequence_length();
-    std::size_t validation_window_size = m_draft_iterations + 1;  // validation window = draft iterations + 1
-    std::size_t validation_window = std::min(validation_window_size, current_target_len);
-    
-    if (validation_window == 0) {
-        log_debug("Validation window too small, skipping validation");
-        result.next_window_size = window_size;
-        result.next_hidden_window = hidden_window;
-        return result;
-    }
-    
-    // Build validation inputs
     ov::Tensor val_input_ids, val_attention_mask, val_position_ids;
-    int64_t val_begin_idx = static_cast<int64_t>(current_target_len - validation_window);
-    m_main_model->build_model_inputs(val_begin_idx, validation_window,
-                                    val_input_ids, val_attention_mask, val_position_ids, false, true);
+    m_main_model->build_model_inputs(validation_window_size,
+                                    val_input_ids, val_attention_mask, val_position_ids);
     
-    // Run validation inference
+    // Run main model validation inference
     auto val_output = m_main_model->infer(val_input_ids, val_attention_mask, val_position_ids);
-    auto sampled_tokens = std::get<std::vector<int64_t>>(m_main_model->sample_tokens(val_output.logits, validation_window));
+    auto sampled_tokens = std::get<std::vector<int64_t>>(
+        m_main_model->sample_tokens(val_output.logits, validation_window_size));
     
-    // Compare predictions with existing tokens using shift-based validation
+    // Compare main model predictions with draft tokens (shift comparison)
     const int64_t* existing_tokens = val_input_ids.data<const int64_t>();
     std::size_t accepted_count = 0;
-    int64_t future_token = -1;
-    bool mismatch_found = false;
-    int validation_position = -1;
     
-    // Shift comparison: sampled[i] should match existing[i+1]
-    if (validation_window >= 2) {
-        for (std::size_t i = 0; i < validation_window - 1; ++i) {
-            if (sampled_tokens[i] == existing_tokens[i + 1]) {
-                accepted_count++;
-            } else {
-                // Mismatch found - truncate sequences and use predicted token
-                std::size_t truncate_pos = (current_target_len - validation_window) + (i + 1);
-                std::size_t tokens_to_trim = current_target_len - truncate_pos;
-                
-                m_main_model->truncate_sequence(truncate_pos);
-                m_main_model->trim_kv_cache(tokens_to_trim);
-                
-                future_token = sampled_tokens[i];
-                mismatch_found = true;
-                validation_position = static_cast<int>(i);
-                log_debug("Validation mismatch at position " + std::to_string(i) + 
-                          ", truncated and trimmed " + std::to_string(tokens_to_trim) + " tokens");
-                break;
-            }
-        }
-    }
-    
-    if (!mismatch_found) {
-        // All shifts matched or single token window
-        if (validation_window == 1) {
-            future_token = sampled_tokens[0];
-            validation_position = 0;
+    for (std::size_t i = 0; i < m_draft_iterations; ++i) {
+        if (sampled_tokens[i] == existing_tokens[i + 1]) {
+            accepted_count++;
         } else {
-            future_token = sampled_tokens[validation_window - 1];
-            validation_position = static_cast<int>(validation_window - 1);
+            log_debug("Validation mismatch at position " + std::to_string(i) + 
+                      ": expected " + std::to_string(existing_tokens[i + 1]) + 
+                      ", got " + std::to_string(sampled_tokens[i]));
+            break;
         }
     }
     
-    // Critical fix: Remove rejected draft tokens from sequences
-    // Only keep accepted tokens + future token (if any)
-    std::size_t draft_tokens_added = draft_candidates.size(); // Total draft tokens added
-    std::size_t tokens_to_keep = accepted_count;
-    std::size_t tokens_to_remove = draft_tokens_added - tokens_to_keep;
+    // The main model's prediction at accepted_count position becomes the new token
+    int64_t main_predicted_token = sampled_tokens[accepted_count];
     
-    if (tokens_to_remove > 0) {
-        log_debug("Removing " + std::to_string(tokens_to_remove) + " rejected draft tokens");
-        
-        // Truncate both models to remove rejected tokens
-        std::size_t new_main_len = pre_draft_main_len + tokens_to_keep;
-        std::size_t new_draft_len = pre_draft_draft_len + tokens_to_keep;
-        
-        m_main_model->truncate_sequence(new_main_len);
-        m_draft_model->truncate_sequence(new_draft_len);
-        
-        // Trim KV cache for both models to match the truncated sequences
-        // m_main_model->trim_kv_cache(tokens_to_remove);
-        
-        // If we have a future token, append it back
-        if (future_token != -1) {
-            m_main_model->append_tokens({future_token});
-            m_draft_model->append_tokens({future_token});
-        }
-        
-        m_perf_summary.rejected_tokens += tokens_to_remove;
-        log_debug("Accepted " + std::to_string(accepted_count) + " tokens, rejected " + 
-                  std::to_string(tokens_to_remove) + " tokens, KV cache trimmed");
-    } else {
-        // All draft tokens were accepted
-        if (future_token != -1) {
-            m_main_model->append_tokens({future_token});
-            m_draft_model->append_tokens({future_token});
-        }
-        log_debug("All " + std::to_string(draft_tokens_added) + " draft tokens accepted");
+    // Calculate tokens to accept and reject
+    std::size_t tokens_to_remove_from_draft = m_draft_iterations - accepted_count;
+    std::size_t total_accepted_tokens = accepted_count + 1;  // accepted drafts + main prediction
+    
+    log_debug("Validation result: accepted " + std::to_string(accepted_count) + "/" + 
+              std::to_string(m_draft_iterations) + " draft tokens, main_predicted_token=" + 
+              std::to_string(main_predicted_token));
+    
+    // Rollback both models to pre-draft state, then append accepted tokens
+    m_main_model->truncate_sequence(pre_draft_main_len);
+    m_draft_model->truncate_sequence(pre_draft_draft_len);
+    
+    // Append accepted draft tokens + main predicted token to both models
+    std::vector<int64_t> tokens_to_append;
+    tokens_to_append.reserve(total_accepted_tokens);
+    for (std::size_t i = 0; i < accepted_count; ++i) {
+        tokens_to_append.push_back(draft_candidates[i]);
     }
-
-    m_draft_model->trim_kv_cache(tokens_to_remove-1+tokens_to_keep);
+    tokens_to_append.push_back(main_predicted_token);
     
-    auto validation_end = std::chrono::steady_clock::now();
-    m_perf_summary.validation_time_us += 
-        std::chrono::duration_cast<std::chrono::microseconds>(validation_end - validation_start).count();
+    m_main_model->append_tokens(tokens_to_append);
+    m_draft_model->append_tokens(tokens_to_append);
     
-    // Build next hidden window - includes accepted draft tokens + future token's hidden states
+    // Write accepted tokens to Pipeline's verified storage
+    for (const auto& token : tokens_to_append) {
+        m_verified_tokens.push_back(token);
+    }
+    
+    // Trim KV cache for rejected draft tokens
+    if (tokens_to_remove_from_draft > 0) {
+        m_main_model->trim_kv_cache(tokens_to_remove_from_draft);
+        m_draft_model->trim_kv_cache(tokens_to_remove_from_draft);
+    }
+    
+    log_debug("Accepted total " + std::to_string(total_accepted_tokens) + " tokens (" + 
+              std::to_string(accepted_count) + " draft + 1 main prediction), rejected " + 
+              std::to_string(tokens_to_remove_from_draft) + " draft tokens. " +
+              "Verified tokens now: " + std::to_string(m_verified_tokens.size()));
+    
+    // Build next hidden window for next iteration
     ov::Tensor next_hidden;
     auto current_hidden = val_output.hidden_features;
     if (current_hidden && current_hidden.get_size() > 0) {
         auto h_shape = current_hidden.get_shape();
-        if (h_shape.size() == 3 && h_shape[0] == 1 && current_hidden.get_element_type() == ov::element::f32) {
-            std::size_t seq_len = h_shape[1];
-            std::size_t hidden_dim = h_shape[2];
-            
-            // Calculate window size: accepted tokens + future token
-            std::size_t next_window_len = accepted_count + (future_token != -1 ? 1 : 0);
-            
-            if (next_window_len > 0 && seq_len >= next_window_len) {
-                // Create hidden window containing accepted tokens + future token
-                next_hidden = ov::Tensor(ov::element::f32, {1, next_window_len, hidden_dim});
-                const float* src_data = current_hidden.data<const float>();
-                float* dst_data = next_hidden.data<float>();
-                
-                // Copy hidden states from the last next_window_len positions
-                std::size_t start_pos = 0;
-                std::copy_n(src_data + start_pos * hidden_dim, next_window_len * hidden_dim, dst_data);
-                
-                if (is_verbose()) {
-                    log_debug("Built next hidden window: " + std::to_string(accepted_count) + 
-                              " accepted tokens + " + (future_token != -1 ? "1" : "0") + 
-                              " future token (total window size: " + std::to_string(next_window_len) + ")");
-                }
-            } else {
-                // Fallback: use last available hidden state if calculation failed
-                if (seq_len > 0) {
-                    next_hidden = ov::Tensor(ov::element::f32, {1, 1, hidden_dim});
-                    const float* src_data = current_hidden.data<const float>();
-                    float* dst_data = next_hidden.data<float>();
-                    
-                    std::size_t last_pos = seq_len - 1;
-                    std::copy_n(src_data + last_pos * hidden_dim, hidden_dim, dst_data);
-                    
-                    if (is_verbose()) {
-                        log_debug("Built fallback next hidden window from last position " + std::to_string(last_pos));
-                    }
-                }
-            }
-        }
+        OPENVINO_ASSERT(h_shape.size() == 3 && h_shape[0] == 1,
+                       "Invalid hidden state shape for next window construction");
+        
+        std::size_t seq_len = h_shape[1];
+        std::size_t hidden_dim = h_shape[2];
+        std::size_t next_window_len = total_accepted_tokens;
+        
+        OPENVINO_ASSERT(seq_len >= next_window_len,
+                       "Hidden state seq_len (", seq_len, ") < next_window_len (", next_window_len, ")");
+        
+        // Extract hidden states for accepted tokens
+        next_hidden = ov::Tensor(ov::element::f32, {1, next_window_len, hidden_dim});
+        const float* src_data = current_hidden.data<const float>();
+        float* dst_data = next_hidden.data<float>();
+        
+        std::memcpy(dst_data, src_data, next_window_len * hidden_dim * sizeof(float));
+        
+        log_debug("Built next hidden window with " + std::to_string(next_window_len) + " positions");
     }
     
     // Check for EOS token
-    if (future_token != -1 && future_token == eos_token_id) {
+    if (main_predicted_token == eos_token_id) {
         result.eos_reached = true;
-        log_debug("EOS token detected: " + std::to_string(future_token));
+        log_debug("EOS token detected: " + std::to_string(main_predicted_token));
     }
     
-    // Set result fields - window size = accepted draft tokens + future token
-    result.accepted_tokens_count = accepted_count;
-    result.next_window_size = accepted_count + (future_token != -1 ? 1 : 0);  // Accepted tokens + future token
-    result.new_token = future_token;
-    result.next_hidden_window = next_hidden;  // Hidden states for accepted tokens + future token
+    // Set result fields
+    // IMPORTANT: accepted_tokens_count is ONLY the number of DRAFT tokens accepted by main model
+    // It does NOT include the main model's own prediction token
+    result.accepted_tokens_count = accepted_count;  // Only draft tokens accepted
+    result.next_window_size = total_accepted_tokens; // Total tokens for next iteration (draft + main)
+    result.new_token = main_predicted_token;        // Main model's prediction
+    result.next_hidden_window = next_hidden;
     
-    log_debug("Speculative iteration completed - accepted: " + std::to_string(accepted_count) + 
-              ", next_window_size: " + std::to_string(result.next_window_size) + 
-              " (accepted tokens + future token)");
+    log_debug("Speculative iteration completed - accepted " + std::to_string(accepted_count) + 
+              " draft tokens + 1 main prediction = " + std::to_string(total_accepted_tokens) + 
+              " tokens for next iteration");
     
     return result;
 }
@@ -1450,8 +1400,20 @@ void StatefulEagle3LLMPipeline::log_sequence_state(const std::string& context) c
     if (!is_verbose()) return;
     
     std::cout << "[EAGLE3-PIPELINE] Sequence state (" << context << "):" << std::endl;
-    std::cout << "  Main model tokens: " << m_main_model->get_sequence_length() << " tokens" << std::endl;
-    std::cout << "  Draft model tokens: " << m_draft_model->get_sequence_length() << " tokens" << std::endl;
+    std::cout << "  Pipeline verified tokens: " << m_verified_tokens.size() << " tokens (prompt=" 
+              << m_prompt_length << ", generated=" << (m_verified_tokens.size() - m_prompt_length) << ")" << std::endl;
+    std::cout << "  Main model tokens (speculative): " << m_main_model->get_sequence_length() << " tokens" << std::endl;
+    std::cout << "  Draft model tokens (speculative): " << m_draft_model->get_sequence_length() << " tokens" << std::endl;
+    
+    // Show verified tokens from Pipeline
+    if (!m_verified_tokens.empty()) {
+        std::cout << "  Pipeline verified tokens: ";
+        for (std::size_t i = 0; i < m_verified_tokens.size(); ++i) {
+            std::cout << m_verified_tokens[i];
+            if (i + 1 < m_verified_tokens.size()) std::cout << ", ";
+        }
+        std::cout << std::endl;
+    }
     
     // Show all tokens and positions from main model
     const auto& main_tokens = m_main_model->get_tokens();
@@ -1497,37 +1459,9 @@ void StatefulEagle3LLMPipeline::log_sequence_state(const std::string& context) c
 }
 
 void StatefulEagle3LLMPipeline::log_performance_summary() const {
-    const auto& perf = m_perf_summary;
-    const auto& main_metrics = m_main_model->get_metrics();
-    const auto& draft_metrics = m_draft_model->get_metrics();
-    
-    std::cout << "\n[EAGLE3-PERFORMANCE-SUMMARY]\n";
-    std::cout << "==================================================\n";
-    std::cout << "Generation Statistics:\n";
-    std::cout << "  Prompt tokens: " << perf.prompt_tokens << "\n";
-    std::cout << "  Generated tokens: " << perf.generated_tokens << "\n";
-    std::cout << "  Total generation time: " << format_duration_us(perf.total_generation_time_us) << "\n";
-    std::cout << "  Tokens per second: " << std::fixed << std::setprecision(2) 
-              << (perf.total_generation_time_us > 0 ? 
-                  (perf.generated_tokens * 1000000.0) / perf.total_generation_time_us : 0.0) << "\n";
-    
-    std::cout << "\nSpeculative Decoding Metrics:\n";
-    std::cout << "  Draft iterations: " << perf.draft_iterations << "\n";
-    std::cout << "  Validation rounds: " << perf.validation_rounds << "\n";
-    std::cout << "  Accepted tokens: " << perf.accepted_tokens << "\n"; 
-    std::cout << "  Rejected tokens: " << perf.rejected_tokens << "\n";
-    std::cout << "  Acceptance rate: " << std::fixed << std::setprecision(1) 
-              << (perf.get_acceptance_rate() * 100.0) << "%\n";
-    std::cout << "  Estimated speedup: " << std::fixed << std::setprecision(2) 
-              << perf.get_speedup() << "x\n";
-    
-    std::cout << "\nModel Performance:\n";
-    std::cout << "  Main model avg inference: " << format_duration_us(static_cast<uint64_t>(main_metrics.get_average_inference_time_us())) << "\n";
-    std::cout << "  Draft model avg inference: " << format_duration_us(static_cast<uint64_t>(draft_metrics.get_average_inference_time_us())) << "\n";
-    std::cout << "  Main model total time: " << format_duration_us(perf.main_inference_time_us) << "\n";
-    std::cout << "  Draft model total time: " << format_duration_us(perf.draft_inference_time_us) << "\n";
-    std::cout << "  Validation time: " << format_duration_us(perf.validation_time_us) << "\n";
-    std::cout << "==================================================\n" << std::endl;
+    // Performance metrics are now handled by the standard SDPerModelsPerfMetrics interface
+    // which is evaluated and printed by the caller using m_sd_perf_metrics
+    log_debug("Performance summary available through SDPerModelsPerfMetrics");
 }
 
 ov::Tensor StatefulEagle3LLMPipeline::slice_hidden_features(const ov::Tensor& hidden_features, 
