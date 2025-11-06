@@ -655,8 +655,8 @@ ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_co
     size_t width = generation_config.width / spatial_compression_ratio;
     size_t latent_num_frames = (generation_config.num_frames - 1) / temporal_compression_ratio + 1;
     ov::Shape shape{generation_config.num_images_per_prompt, num_channels_latents, latent_num_frames, height, width};
-    ov::Tensor latents = generation_config.generator->randn_tensor(shape);
-    // ov::Tensor latents = loadTensorFromFile("../latents_before_pack.txt");
+    // ov::Tensor latents = generation_config.generator->randn_tensor(shape);
+    ov::Tensor latents = loadTensorFromFile("../latents_before_pack.txt");
     return pack_latents(latents, transformer_spatial_patch_size, transformer_temporal_patch_size);
 }
 }  // anonymous namespace

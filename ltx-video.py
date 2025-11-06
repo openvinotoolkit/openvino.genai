@@ -8,19 +8,17 @@ from diffusers.utils import export_to_video
 
 
 def generate(pipeline, frame_rate):
-    prompt = "Will Smith eating spaghetti"
+    # prompt = "Will Smith eating spaghetti"
+    prompt = "A woman with long brown hair and light skin smiles at another woman...A woman with long brown hair and light skin smiles at another woman with long blonde hair. The woman with brown hair wears a black jacket and has a small, barely noticeable mole on her right cheek. The camera angle is a close-up, focused on the woman with brown hair's face. The lighting is warm and natural, likely from the setting sun, casting a soft glow on the scene. The scene appears to be real-life footage."
     negative_prompt = "worst quality, inconsistent motion, blurry, jittery, distorted"
     ltx_pipeline_output = pipeline(
         prompt=prompt,
-        # prompt_embeds=0,
-        # prompt_attention_mask=1,
         negative_prompt=negative_prompt,
         height=512,
         width=704,
-        num_frames=9,
+        num_frames=65,
         frame_rate=frame_rate,
-        # num_inference_steps=25,
-        num_inference_steps=2,
+        num_inference_steps=15,
         generator=torch.Generator(device="cpu").manual_seed(42),
         guidance_scale=3,
     )
@@ -41,7 +39,7 @@ def main():
     )
     ov_video = generate(ov_pipe, frame_rate)
     print(ov_video)
-    # export_to_video(ov_video, "ov_video.mp4", fps=frame_rate)
+    export_to_video(ov_video, "5_opt_video.mp4", fps=frame_rate)
 
     # diffusers_pipeline = LTXPipeline.from_pretrained("Lightricks/LTX-Video", torch_dtype=torch.float32)
     # diffusers_video = generate(diffusers_pipeline, frame_rate)
