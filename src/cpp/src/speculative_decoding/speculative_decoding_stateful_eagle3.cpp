@@ -69,15 +69,17 @@ ov::Tensor extract_last_hidden_state(const ov::Tensor& hidden_features) {
 }
 
 // Validate and set num_assistant_tokens
-void ensure_num_assistant_tokens_is_set(ov::genai::GenerationConfig& config) {
+void ensure_num_assistant_tokens_is_set(ov::genai::GenerationConfig& config, bool allow_zero = false) {
     OPENVINO_ASSERT(config.assistant_confidence_threshold == 0.f,
                     "Stateful Speculative Decoding only supports num_assistant_tokens, "
                     "not assistant_confidence_threshold. Set it to 0.f.");
 
     constexpr std::size_t DEFAULT_NUM_ASSISTANT_TOKENS = 4;
-    if (config.num_assistant_tokens == 0) {
+    // If num_assistant_tokens is not explicitly set (is 0) and zero is not allowed, use default
+    if (config.num_assistant_tokens == 0 && !allow_zero) {
         config.num_assistant_tokens = DEFAULT_NUM_ASSISTANT_TOKENS;
     }
+    // If num_assistant_tokens is 0 and allow_zero is true, keep it as 0 (disabled speculative decoding)
 }
 
 }  // anonymous namespace
@@ -745,8 +747,20 @@ void StatefulEagle3LLMPipeline::set_verbose(bool verbose) {
 GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGenerationConfig generation_config) {
     GenerationConfig config = generation_config.value_or(m_generation_config);
 
-    ensure_num_assistant_tokens_is_set(config);
+    std::size_t prev_draft_iterations = m_draft_iterations;
+    // Allow num_assistant_tokens to be 0 (disables speculative decoding)
+    ensure_num_assistant_tokens_is_set(config, /*allow_zero=*/true);
     m_draft_iterations = config.num_assistant_tokens;
+
+    // Log if draft_iterations changed from default
+    if (m_draft_iterations != prev_draft_iterations) {
+        if (m_draft_iterations == 0) {
+            log_info("Speculative decoding DISABLED (num_assistant_tokens=0), using target model only");
+        } else if (is_verbose()) {
+            log_debug("Draft iterations updated: " + std::to_string(prev_draft_iterations) + " -> " +
+                      std::to_string(m_draft_iterations));
+        }
+    }
 
     if (config.stop_token_ids.empty())
         config.stop_token_ids = m_generation_config.stop_token_ids;
@@ -935,11 +949,9 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
     log_debug("Initial token generated: " + std::to_string(initial_token));
     log_sequence_state("after initial token generation");
 
-    // Main generation loop using speculative decoding
+    // Main generation loop
     std::size_t max_new_tokens = config.max_new_tokens;
     std::size_t generated_tokens = 1;  // Count initial token
-    std::size_t token_count = m_draft_model->get_sequence_length();
-    auto target_hidden_states = main_hidden_features;
     bool eos_reached = false;
 
     // Track metrics for speculative decoding
@@ -947,56 +959,94 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
     std::size_t total_draft_generated = 0;  // Total draft tokens generated (including rejected)
     std::size_t total_iterations = 0;       // Number of speculative iterations
 
-    while (!eos_reached && generated_tokens < max_new_tokens &&
-           m_main_model->get_sequence_length() < prompt_len + max_new_tokens &&
-           (streaming_status == ov::genai::StreamingStatus::RUNNING)) {
-        log_generation_step("Speculative Decoding Iteration", generated_tokens);
-        log_sequence_state("iteration start");
+    // Check if speculative decoding is disabled
+    if (m_draft_iterations == 0) {
+        // Standard autoregressive generation with target model only
+        log_info("Running standard autoregressive generation (no speculative decoding)");
 
-        auto result =
-            run_speculative_iteration(target_hidden_states, token_count, static_cast<int64_t>(config.eos_token_id));
+        int64_t current_token = initial_token;
+        while (!eos_reached && generated_tokens < max_new_tokens &&
+               m_main_model->get_sequence_length() < prompt_len + max_new_tokens &&
+               (streaming_status == ov::genai::StreamingStatus::RUNNING)) {
+            // Check for EOS
+            if (current_token == static_cast<int64_t>(config.eos_token_id)) {
+                eos_reached = true;
+                log_debug("EOS reached - terminating generation");
+                break;
+            }
 
-        // Stream validated tokens
-        streaming_status = stream_generated_tokens(streamer_ptr, result.validated_tokens);
+            // Generate next token using target model
+            ov::Tensor next_input_ids, next_attention_mask, next_position_ids;
+            m_main_model->build_model_inputs(1, next_input_ids, next_attention_mask, next_position_ids);
 
-        // Update iteration counter
-        total_iterations++;
+            auto output = m_main_model->infer(next_input_ids, next_attention_mask, next_position_ids);
+            current_token = std::get<int64_t>(m_main_model->sample_tokens(output.logits, 1));
 
-        // Update draft token statistics
-        total_draft_generated += m_draft_iterations;  // Each iteration generates m_draft_iterations draft tokens
-        total_draft_accepted +=
-            result.accepted_tokens_count;  // Number of draft tokens accepted (not including main model's token)
+            m_main_model->append_tokens({current_token});
 
-        // Update metrics
-        if (result.new_token == static_cast<int64_t>(config.eos_token_id) || result.eos_reached) {
-            eos_reached = true;
-            log_debug("EOS reached - terminating generation");
-        }
+            // Stream the token
+            streaming_status = stream_generated_tokens(streamer_ptr, std::vector<int64_t>{current_token});
 
-        if (result.new_token != -1) {
             generated_tokens++;
-            log_debug("Generated token " + std::to_string(generated_tokens) + ": " + std::to_string(result.new_token) +
-                      ", accepted " + std::to_string(result.accepted_tokens_count) + " draft tokens out of " +
-                      std::to_string(m_draft_iterations));
+            log_debug("Generated token " + std::to_string(generated_tokens) + ": " + std::to_string(current_token));
         }
+    } else {
+        // Speculative decoding loop
+        std::size_t token_count = m_draft_model->get_sequence_length();
+        auto target_hidden_states = main_hidden_features;
 
-        // Prepare for next iteration
-        token_count = result.next_window_size > 0 ? result.next_window_size
-                                                  : std::min<std::size_t>(1, m_main_model->get_sequence_length());
-        target_hidden_states =
-            result.next_hidden_window ? result.next_hidden_window : m_main_model->get_hidden_features();
+        while (!eos_reached && generated_tokens < max_new_tokens &&
+               m_main_model->get_sequence_length() < prompt_len + max_new_tokens &&
+               (streaming_status == ov::genai::StreamingStatus::RUNNING)) {
+            log_generation_step("Speculative Decoding Iteration", generated_tokens);
+            log_sequence_state("iteration start");
 
-        log_debug("Next iteration: token_count=" + std::to_string(token_count) + ", hidden_states_size=" +
-                  (target_hidden_states ? std::to_string(target_hidden_states.get_size()) : "0"));
+            auto result =
+                run_speculative_iteration(target_hidden_states, token_count, static_cast<int64_t>(config.eos_token_id));
 
-        // Safety check to prevent infinite loops
-        if (result.next_window_size == 0 && result.new_token == -1) {
-            log_debug("No progress made, terminating generation");
-            break;
+            // Stream validated tokens
+            streaming_status = stream_generated_tokens(streamer_ptr, result.validated_tokens);
+
+            // Update iteration counter
+            total_iterations++;
+
+            // Update draft token statistics
+            total_draft_generated += m_draft_iterations;  // Each iteration generates m_draft_iterations draft tokens
+            total_draft_accepted +=
+                result.accepted_tokens_count;  // Number of draft tokens accepted (not including main model's token)
+
+            // Update metrics
+            if (result.new_token == static_cast<int64_t>(config.eos_token_id) || result.eos_reached) {
+                eos_reached = true;
+                log_debug("EOS reached - terminating generation");
+            }
+
+            if (result.new_token != -1) {
+                generated_tokens++;
+                log_debug("Generated token " + std::to_string(generated_tokens) + ": " +
+                          std::to_string(result.new_token) + ", accepted " +
+                          std::to_string(result.accepted_tokens_count) + " draft tokens out of " +
+                          std::to_string(m_draft_iterations));
+            }
+
+            // Prepare for next iteration
+            token_count = result.next_window_size > 0 ? result.next_window_size
+                                                      : std::min<std::size_t>(1, m_main_model->get_sequence_length());
+            target_hidden_states =
+                result.next_hidden_window ? result.next_hidden_window : m_main_model->get_hidden_features();
+
+            log_debug("Next iteration: token_count=" + std::to_string(token_count) + ", hidden_states_size=" +
+                      (target_hidden_states ? std::to_string(target_hidden_states.get_size()) : "0"));
+
+            // Safety check to prevent infinite loops
+            if (result.next_window_size == 0 && result.new_token == -1) {
+                log_debug("No progress made, terminating generation");
+                break;
+            }
+
+            log_sequence_state("iteration end");
         }
-
-        log_sequence_state("iteration end");
-    }
+    }  // End of speculative decoding / standard generation branch
 
     m_streaming_was_cancelled = (streaming_status == ov::genai::StreamingStatus::CANCEL);
     if (streamer_ptr) {  // push streamer's cache
@@ -1220,7 +1270,7 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     result.next_window_size = total_accepted_tokens;  // Total tokens for next iteration (draft + main)
     result.new_token = main_predicted_token;          // Main model's prediction
     result.next_hidden_window = next_hidden;
-    result.validated_tokens = tokens_to_append;       // Return validated tokens for streaming
+    result.validated_tokens = tokens_to_append;  // Return validated tokens for streaming
 
     log_debug("Speculative iteration completed - accepted " + std::to_string(accepted_count) +
               " draft tokens + 1 main prediction = " + std::to_string(total_accepted_tokens) +
@@ -1306,8 +1356,7 @@ void StatefulEagle3LLMPipeline::log_sequence_state(const std::string& context) c
     std::cout << "[EAGLE3-PIPELINE] Sequence state (" << context << "):" << std::endl;
     std::cout << "  Prompt length: " << m_prompt_length << " tokens" << std::endl;
     std::cout << "  Main model tokens: " << m_main_model->get_sequence_length() << " tokens" << std::endl;
-    std::cout << "  Draft model tokens: " << m_draft_model->get_sequence_length() << " tokens"
-              << std::endl;
+    std::cout << "  Draft model tokens: " << m_draft_model->get_sequence_length() << " tokens" << std::endl;
 
     // Show all tokens and positions from main model
     const auto& main_tokens = m_main_model->get_tokens();
