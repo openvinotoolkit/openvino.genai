@@ -87,7 +87,7 @@ ov::genai::GenerationConfig LLMInferWrapper::get_generation_config() const {
 }
 
 void LLMInferWrapper::set_generation_config(ov::genai::GenerationConfig config) {
-    m_generation_config = config;
+    m_generation_config = std::move(config);
 }
 
 int64_t LLMInferWrapper::get_kvcache_capacity() const {
@@ -170,7 +170,7 @@ bool LLMInferWrapper::can_infer(const std::size_t prompt_len) {
     if (!m_generation_config.ignore_eos && (last_token == m_generation_config.eos_token_id)) {
         return false;
     }
-    auto stop_token_ids = m_generation_config.stop_token_ids;
+    const auto& stop_token_ids = m_generation_config.stop_token_ids;
     if (std::find(stop_token_ids.begin(), stop_token_ids.end(), last_token) != stop_token_ids.end()) {
         return false;
     }
@@ -338,7 +338,7 @@ std::variant<int64_t, std::vector<int64_t>>
 
     auto sample_token = [&](const ov::Tensor& logits, std::size_t idx) {
         size_t sequence_offset = idx * vocab_size;
-        float* logits_data = logits.data<float>() + sequence_offset;
+        const float* logits_data = logits.data<float>() + sequence_offset;
         return std::max_element(logits_data, logits_data + vocab_size) - logits_data;
     };
 
@@ -359,14 +359,17 @@ StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(
     const ov::genai::ModelDesc& main_model_desc, 
     const ov::genai::ModelDesc& draft_model_desc
 ) : LLMPipelineImplBase(main_model_desc.tokenizer, main_model_desc.generation_config) {
-    auto draft_model = draft_model_desc.model;
 
+    OPENVINO_ASSERT(main_model_desc.model != nullptr, "Main model cannot be null");
+    OPENVINO_ASSERT(draft_model_desc.model != nullptr, "Draft model cannot be null");
+
+    auto draft_model = draft_model_desc.model;
     // FIXME: slicing produces incorrect results for some models on NPU.
     // On NPU, applying slice the safe way is done by the underlying plugin
     if (draft_model_desc.device != "NPU") {
         // As draft_model_desc contains std::shared_ptr<ov::Model>,
         // this model update will be reflected in draft_model_desc
-        utils::apply_slice_before_matmul_transformation(draft_model);
+        utils::apply_slice_before_matmul_transformation(std::move(draft_model));
     }
 
     // Main and Draft model can have different tokenizers
@@ -458,7 +461,7 @@ DecodedResults StatefulSpeculativeLLMPipeline::generate(
         if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
             ChatHistory history({{{"role", "user"}, {"content", prompt}}});
             constexpr bool add_generation_prompt = true;
-            auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+            const auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
             tokenized_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
         } else {
             // in case when chat_template was not found in tokenizer_config.json or set
@@ -475,7 +478,7 @@ DecodedResults StatefulSpeculativeLLMPipeline::generate(
     decode_timer.end();
 
     if (m_is_chat_conversation) {
-        auto answer = decoded_results.texts[0];
+        const auto& answer = decoded_results.texts[0];
         if (m_streaming_was_cancelled)
             // If generation process was cancelled by user, let's rollback to previous state of history
             m_history.pop_back();
@@ -581,7 +584,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
     // will be utilized.
     draft_config.max_new_tokens = config.get_max_new_tokens();
     draft_config.validate();
-    m_draft_request->set_generation_config(draft_config);
+    m_draft_request->set_generation_config(std::move(draft_config));
 
     std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
     ov::genai::EncodedResults results;
