@@ -15,7 +15,7 @@ The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upg
 Install dependencies if model conversion is required:
 
 ```sh
-uv sync --group samples-export
+uv sync --extra samples-export
 ```
 
 Then, run the export with Optimum CLI:

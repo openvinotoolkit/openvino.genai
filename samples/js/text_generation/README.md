@@ -10,7 +10,7 @@ The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upg
 Install dependencies to convert a model:
 
 ```sh
-uv sync --group samples-export
+uv sync --extra samples-export
 optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
 ```
 If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via huggingface-cli.
