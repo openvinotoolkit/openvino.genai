@@ -20,7 +20,7 @@ def test_structured_output_sample(convert_model):
 
     # Test JS sample
     js_sample = SAMPLES_JS_DIR / "text_generation" / "compound_grammar_generation.js"
-    js_command = ['node', js_sample, convert_model]
+    js_command = ["node", js_sample, convert_model]
     js_result = run_sample(js_command)
     js_predictions = js_result.stdout
 

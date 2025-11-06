@@ -57,22 +57,22 @@ function toolsToArraySchema(...tools) {
 
 /** parser to extract tool calls from the model output. */
 function parse(answer) {
-    answer.parsed = []
+    answer.parsed = [];
     for (const content of answer.texts) {
         const startTag = "functools";
         const startIndex = content.indexOf(startTag);
-        if (startIndex === -1) return
+        if (startIndex === -1) return;
 
         try {
             const jsonPart = content.slice(startIndex + startTag.length);
             const toolCalls = JSON.parse(jsonPart);
             answer.parsed.push(toolCalls);
         } catch {
-            answer.parsed.push([])
+            answer.parsed.push([]);
         }
     }
 
-    return
+    return;
 }
 
 function printToolCall(answer) {
@@ -152,7 +152,7 @@ async function main() {
     parse(answer2);
     console.log("\n\nThe following tool calls were generated:")
     printToolCall(answer2)
-    console.log()
+    console.log();
 }
 
 main();
