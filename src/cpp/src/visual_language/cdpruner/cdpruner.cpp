@@ -1,6 +1,53 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * @file cdpruner.cpp
+ * @brief Conditional Determinantal Point Process (DPP) based Visual Token Pruner
+ *
+ * Algorithm Workflow:
+ * ===================
+ *
+ * The CDPruner implements a three-stage pipeline for visual token pruning:
+ *
+ * 1. Relevance Calculation (RelevanceCalculator)
+ *    - Computes relevance scores between visual tokens and text features
+ *    - Uses cosine similarity: score = (V · T) / (||V|| * ||T||)
+ *    - Input: Visual features [B, N, D] and Text features [M, D]
+ *    - Output: Relevance scores [B, N, M]
+ *
+ * 2. Conditional Kernel Construction (ConditionalKernelBuilder)
+ *    - Builds a conditional kernel matrix combining:
+ *      a) Token similarity: S[i,j] = visual[i] · visual[j]
+ *      b) Text relevance: R[i] = max(relevance_scores[i])
+ *    - Kernel formula: K[i,j] = λ·R[i]·R[j]·S[i,j] + (1-λ)·S[i,j]
+ *    - λ = relevance_weight (default: 1.0)
+ *    - Output: Kernel matrix [N, N]
+ *
+ * 3. DPP-based Token Selection (FastGreedyDPP)
+ *    - Selects diverse and relevant tokens using greedy DPP algorithm
+ *    - Maximizes: Quality (relevance) + Diversity (orthogonality)
+ *    - Iteratively selects tokens that maximize marginal gain
+ *    - Supports both traditional CPU and OpenCL GPU acceleration
+ *    - Output: Selected token indices [T] where T = N * (1 - pruning_ratio/100)
+ *
+ * Key Features:
+ * - Adaptive pruning based on token count (split_threshold for large sequences)
+ * - Quality-diversity trade-off controlled by relevance_weight
+ * - Configurable pruning ratio (0-100%)
+ * - Optional OpenCL GPU acceleration for DPP selection
+ *
+ * Usage Example:
+ * ```cpp
+ * Config config;
+ * config.pruning_ratio = 50;  // Keep 50% of tokens
+ * config.relevance_weight = 1.0;
+ *
+ * CDPruner pruner(config);
+ * auto pruned_features = pruner.apply_pruning(visual_features, text_features);
+ * ```
+ */
+
 #include "cdpruner.hpp"
 
 #include <algorithm>
@@ -16,20 +63,6 @@
 #include "utils.hpp"
 
 namespace ov::genai::cdpruner {
-
-namespace {
-
-bool should_log_cdpruner(bool silent, bool debug_mode) {
-    if (ov::genai::utils::env_setup_for_print_debug_info()) {
-        return true;
-    }
-    if (debug_mode) {
-        return true;
-    }
-    return !silent;
-}
-
-}  // namespace
 
 CDPruner::CDPruner(const Config& config)
     : m_config(config),
@@ -64,13 +97,8 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
 
     validate_input_tensors(visual_features, text_features);
 
-    auto overall_start = std::chrono::high_resolution_clock::now();
-
     try {
         std::vector<std::vector<size_t>> selected_tokens;
-        std::chrono::microseconds dpp_duration{0};
-        std::chrono::microseconds relevance_duration{0};
-        std::chrono::microseconds kernel_duration{0};
         size_t batch_size = visual_shape[0];
         size_t total_visual_tokens = visual_shape[1];
         size_t feature_dim = visual_shape[2];
@@ -106,15 +134,9 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
         ov::Tensor kernel_matrix_first;
         ov::Tensor kernel_matrix_second;
 
-        std::string computation_mode;
         try {
-            // OpenVINO ops model approach
-            computation_mode = std::string("OV Model by ") + m_config.device;
-            // CDPruner Step 1-2: Compute relevance scores and build kernel matrix via OV model
-            auto computation_start = std::chrono::high_resolution_clock::now();
-
+            // OpenVINO ops model approach - compute relevance scores and build kernel matrix via OV model
             if (use_splitting) {
-                computation_mode += "<Split>";
                 // Building kernel matrix for first half
                 kernel_matrix_first = m_kernel_builder.build(visual_first_half, text_features);
                 // Building kernel matrix for second half
@@ -123,92 +145,33 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
                 // Building single kernel matrix for all the tokens
                 kernel_matrix_first = m_kernel_builder.build(visual_first_half, text_features);
             }
-
-            auto computation_end = std::chrono::high_resolution_clock::now();
-            auto computation_duration =
-                std::chrono::duration_cast<std::chrono::microseconds>(computation_end - computation_start);
-
-            kernel_duration = computation_duration;
         } catch (const std::exception& e) {
-            computation_mode = "Traditional Step-by-Step";
-            auto relevance_start = std::chrono::high_resolution_clock::now();
-            // CDPruner Step 1: Compute relevance scores
+            // Traditional step-by-step approach: compute relevance scores first, then build kernel
             if (use_splitting) {
-                computation_mode += "<Split>";
                 // Compute relevance scores for both halves
                 ov::Tensor relevance_scores_first = m_relevance_calc.compute(visual_first_half, text_features);
                 ov::Tensor relevance_scores_second = m_relevance_calc.compute(visual_second_half, text_features);
 
-                auto relevance_end = std::chrono::high_resolution_clock::now();
-                relevance_duration =
-                    std::chrono::duration_cast<std::chrono::microseconds>(relevance_end - relevance_start);
-
-                auto kernel_start = std::chrono::high_resolution_clock::now();
-
                 // Build kernel matrices using relevance scores
                 kernel_matrix_first = m_kernel_builder.build(visual_first_half, relevance_scores_first);
                 kernel_matrix_second = m_kernel_builder.build(visual_second_half, relevance_scores_second);
-
-                auto kernel_end = std::chrono::high_resolution_clock::now();
-                kernel_duration = std::chrono::duration_cast<std::chrono::microseconds>(kernel_end - kernel_start);
             } else {
                 // Process entire tensor without splitting
                 ov::Tensor relevance_scores = m_relevance_calc.compute(visual_first_half, text_features);
 
-                auto relevance_end = std::chrono::high_resolution_clock::now();
-                relevance_duration =
-                    std::chrono::duration_cast<std::chrono::microseconds>(relevance_end - relevance_start);
-
-                auto kernel_start = std::chrono::high_resolution_clock::now();
-
                 // Build single kernel matrix using relevance scores
                 kernel_matrix_first = m_kernel_builder.build(visual_first_half, relevance_scores);
-
-                auto kernel_end = std::chrono::high_resolution_clock::now();
-                kernel_duration = std::chrono::duration_cast<std::chrono::microseconds>(kernel_end - kernel_start);
-
-                // Accumulate kernel duration
-                kernel_duration += relevance_duration;
             }
         }
 
+        // CDPruner Step 3: Apply DPP selection
         if (use_splitting) {
             // Use parallel DPP selection for split processing
-            auto dpp_start = std::chrono::high_resolution_clock::now();
-
             selected_tokens =
                 m_dpp_selector.select(kernel_matrix_first, kernel_matrix_second, num_tokens_to_keep, split_point);
-
-            auto dpp_end = std::chrono::high_resolution_clock::now();
-            dpp_duration = std::chrono::duration_cast<std::chrono::microseconds>(dpp_end - dpp_start);
         } else {
             // Direct DPP selection for single tensor processing
-            auto dpp_start = std::chrono::high_resolution_clock::now();
-
             selected_tokens = m_dpp_selector.select(kernel_matrix_first, num_tokens_to_keep);
-
-            auto dpp_end = std::chrono::high_resolution_clock::now();
-            dpp_duration = std::chrono::duration_cast<std::chrono::microseconds>(dpp_end - dpp_start);
-        }
-
-        auto overall_end = std::chrono::high_resolution_clock::now();
-        auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(overall_end - overall_start);
-
-        if (!silent) {
-            size_t total_input_tokens = visual_shape[0] * visual_shape[1];
-            size_t total_output_tokens = visual_shape[0] * num_tokens_to_keep;
-
-#ifdef ENABLE_OPENCL_DPP
-            if (m_config.use_cl_kernel) {
-                computation_mode += " + OpenCL GPU DPP";
-            }
-#endif
-            print_cdpruner_performance_summary(computation_mode,
-                                               total_duration,
-                                               kernel_duration,
-                                               dpp_duration,
-                                               total_input_tokens,
-                                               total_output_tokens);
         }
 
         return selected_tokens;
@@ -225,21 +188,6 @@ ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features, const ov::
     size_t feature_dim = visual_shape[2];
 
     size_t num_tokens_to_keep = static_cast<size_t>(std::round(total_tokens * (1 - m_config.pruning_ratio / 100.0)));
-
-    size_t text_tokens = text_shape[0];
-    size_t text_feature_dim = text_shape[1];
-
-    float pruning_ratio = 1.0f - static_cast<float>(num_tokens_to_keep) / static_cast<float>(total_tokens);
-    size_t tokens_removed = total_tokens - num_tokens_to_keep;
-
-    print_cdpruner_processing_overview(total_tokens,
-                                       feature_dim,
-                                       text_tokens,
-                                       text_feature_dim,
-                                       num_tokens_to_keep,
-                                       tokens_removed,
-                                       m_config.pruning_ratio,
-                                       m_config.relevance_weight);
 
     auto selected_tokens = select_tokens(visual_features, text_features, silent);
     m_last_selected_tokens = selected_tokens;
@@ -295,21 +243,6 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
 
     size_t num_tokens_to_keep =
         static_cast<size_t>(std::round(tokens_per_frame * (1 - m_config.pruning_ratio / 100.0)));
-    size_t total_output_tokens = num_tokens_to_keep * visual_features_list.size();
-
-    size_t text_tokens = text_shape[0];
-    size_t text_feature_dim = text_shape[1];
-
-    print_cdpruner_processing_overview(visual_features_list.size(),
-                                       tokens_per_frame,
-                                       feature_dim,
-                                       text_tokens,
-                                       text_feature_dim,
-                                       num_tokens_to_keep,
-                                       total_input_tokens,
-                                       total_output_tokens,
-                                       m_config.pruning_ratio,
-                                       m_config.relevance_weight);
 
     // Apply pruning to each visual feature and collect results (using silent mode)
     std::vector<ov::Tensor> pruned_features_list;
@@ -317,10 +250,6 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
     std::vector<std::vector<size_t>> aggregated_selected;
 
     size_t global_offset = 0;
-
-    auto overall_start = std::chrono::high_resolution_clock::now();
-    std::chrono::microseconds total_kernel_duration{0};
-    std::chrono::microseconds total_dpp_duration{0};
 
     for (size_t frame_idx = 0; frame_idx < visual_features_list.size(); ++frame_idx) {
         const auto& visual_feature = visual_features_list[frame_idx];
@@ -361,29 +290,10 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
         offset_elements += actual_tokens_per_frame * actual_hidden_dim;
     }
 
-    auto overall_end = std::chrono::high_resolution_clock::now();
-    auto total_duration = std::chrono::duration_cast<std::chrono::microseconds>(overall_end - overall_start);
-
     m_last_statistics.total_tokens = total_input_tokens;
     m_last_statistics.selected_tokens = actual_total_tokens;
     m_last_statistics.pruning_ratio = 1.0f - static_cast<float>(actual_total_tokens) / total_input_tokens;
     m_last_statistics.batch_size = actual_batch_size;
-
-#ifdef ENABLE_OPENCL_DPP
-    std::string computation_mode = std::string("OV Model by ") + m_config.device;
-    if (m_config.use_cl_kernel) {
-        computation_mode += " + OpenCL GPU DPP";
-    }
-#else
-    std::string computation_mode = std::string("OV Model by ") + m_config.device + std::string(" + Traditional DPP");
-#endif
-    print_cdpruner_performance_summary(computation_mode,
-                                       total_duration,
-                                       visual_features_list.size(),
-                                       total_input_tokens,
-                                       actual_total_tokens,
-                                       actual_batch_size,
-                                       actual_hidden_dim);
 
     return concatenated_features;
 }
@@ -394,145 +304,6 @@ float CDPruner::compute_pruning_ratio() const {
 
 PruningStatistics CDPruner::get_last_pruning_statistics() const {
     return m_last_statistics;
-}
-
-void CDPruner::print_cdpruner_processing_overview(size_t total_tokens,
-                                                  size_t feature_dim,
-                                                  size_t text_tokens,
-                                                  size_t text_feature_dim,
-                                                  size_t num_tokens_to_keep,
-                                                  size_t tokens_removed,
-                                                  size_t pruning_ratio,
-                                                  float relevance_weight) {
-    if (!utils::env_setup_for_print_debug_info())
-        return;
-    float reduction_percentage = 0.0f;
-    if (total_tokens > 0) {
-        reduction_percentage = (static_cast<float>(tokens_removed) / static_cast<float>(total_tokens)) * 100.0f;
-    }
-    std::cout << ("+--- CDPruner Processing Overview -------------------------+") << std::endl;
-    std::cout << "[CDPruner] Input:  Vision[" << total_tokens << " tokens x " << feature_dim << "D] + Text["
-              << text_tokens << " tokens x " << text_feature_dim << "D]" << std::endl;
-    std::cout << "[CDPruner] Config: Keep " << (100 - pruning_ratio) << "% (" << num_tokens_to_keep << "/"
-              << total_tokens << " tokens) | Weight=" << relevance_weight
-              << " | Split Threshold=" << m_config.split_threshold << std::endl;
-    std::cout << "[CDPruner] Result: " << tokens_removed << " tokens removed (" << reduction_percentage
-              << "% reduction)" << std::endl;
-    std::cout << "+----------------------------------------------------------+" << std::endl;
-}
-
-void CDPruner::print_cdpruner_processing_overview(size_t frame_count,
-                                                  size_t tokens_per_frame,
-                                                  size_t feature_dim,
-                                                  size_t text_tokens,
-                                                  size_t text_feature_dim,
-                                                  size_t num_tokens_to_keep_per_frame,
-                                                  size_t total_input_tokens,
-                                                  size_t total_output_tokens,
-                                                  size_t pruning_ratio,
-                                                  float relevance_weight) {
-    if (!utils::env_setup_for_print_debug_info())
-        return;
-    float reduction_percentage = 0.0f;
-    if (total_input_tokens > 0) {
-        reduction_percentage =
-            (1.0f - static_cast<float>(total_output_tokens) / static_cast<float>(total_input_tokens)) * 100.0f;
-    }
-
-    std::cout << "+--- CDPruner Multi-Frame Processing Overview -------------+" << std::endl;
-    std::cout << "[CDPruner] Input:  " << frame_count << " frames x Vision[" << tokens_per_frame << " tokens x "
-              << feature_dim << "D] + Text[" << text_tokens << " tokens x " << text_feature_dim << "D]" << std::endl;
-    std::cout << "[CDPruner] Config: Keep " << pruning_ratio << "% (" << num_tokens_to_keep_per_frame << "/"
-              << tokens_per_frame << " tokens per frame) | Weight=" << relevance_weight
-              << " | Split Threshold=" << m_config.split_threshold << std::endl;
-    std::cout << "[CDPruner] Total:  " << total_input_tokens << " → " << total_output_tokens << " tokens ("
-              << reduction_percentage << "% reduction)" << std::endl;
-    std::cout << "+----------------------------------------------------------+" << std::endl;
-}
-
-void CDPruner::print_cdpruner_performance_summary(const std::string& computation_mode,
-                                                  std::chrono::microseconds total_duration,
-                                                  std::chrono::microseconds kernel_duration,
-                                                  std::chrono::microseconds dpp_duration,
-                                                  size_t total_input_tokens,
-                                                  size_t total_output_tokens) {
-    if (!utils::env_setup_for_print_debug_info())
-        return;
-    std::cout << "+-------------- CDPruner Performance Summary --------------+" << std::endl;
-    std::cout << "[CDPruner] Computation mode: " << computation_mode << std::endl;
-    std::cout << "[CDPruner] Total processing time: " << total_duration.count() << " us ("
-              << total_duration.count() / 1000.0 << " ms)" << std::endl;
-    std::cout << "[CDPruner] Performance Metrics:" << std::endl;
-    std::cout << "[CDPruner]   Kernel computation time: " << kernel_duration.count() << " us ("
-              << kernel_duration.count() / 1000.0 << " ms)" << std::endl;
-    std::cout << "[CDPruner]   DPP selection time: " << dpp_duration.count() << " us (" << dpp_duration.count() / 1000.0
-              << " ms)" << std::endl;
-    if (total_duration.count() > 0) {
-        const double total_time_sec = static_cast<double>(total_duration.count()) / 1'000'000.0;
-        std::cout << "[CDPruner]   Overall throughput: " << static_cast<double>(total_input_tokens) / total_time_sec
-                  << " input tokens/sec" << std::endl;
-        std::cout << "[CDPruner]   Pruning efficiency: " << static_cast<double>(total_output_tokens) / total_time_sec
-                  << " output tokens/sec" << std::endl;
-    } else {
-        std::cout << "[CDPruner]   Overall throughput: N/A" << std::endl;
-        std::cout << "[CDPruner]   Pruning efficiency: N/A" << std::endl;
-    }
-    if (total_input_tokens > 0) {
-        std::cout << "[CDPruner]   Pruning ratio: "
-                  << (1.0 - static_cast<double>(total_output_tokens) / total_input_tokens) * 100 << "%" << std::endl;
-    } else {
-        std::cout << "[CDPruner]   Pruning ratio: N/A" << std::endl;
-    }
-    std::cout << "+----------------------------------------------------------+" << std::endl;
-}
-
-void CDPruner::print_cdpruner_performance_summary(const std::string& computation_mode,
-                                                  std::chrono::microseconds total_duration,
-                                                  size_t frame_count,
-                                                  size_t total_input_tokens,
-                                                  size_t actual_total_tokens,
-                                                  size_t actual_batch_size,
-                                                  size_t actual_hidden_dim) {
-    if (!utils::env_setup_for_print_debug_info())
-        return;
-    std::cout << "+---------- CDPruner Multi-Frame Processing Performance Summary ---------+" << std::endl;
-    std::cout << "[CDPruner] Computation mode: " << computation_mode << std::endl;
-    std::cout << "[CDPruner] Total processing time: " << total_duration.count() << " us ("
-              << total_duration.count() / 1000.0 << " ms)" << std::endl;
-    std::cout << "[CDPruner] Performance Metrics:" << std::endl;
-
-    if (frame_count > 0) {
-        std::cout << "[CDPruner]   Frames processed: " << frame_count << std::endl;
-        std::cout << "[CDPruner]   Average time per frame: " << total_duration.count() / frame_count << " us ("
-                  << total_duration.count() / frame_count / 1000.0 << " ms)" << std::endl;
-    } else {
-        std::cout << "[CDPruner]   Frames processed: 0" << std::endl;
-        std::cout << "[CDPruner]   Average time per frame: N/A" << std::endl;
-    }
-
-    if (total_duration.count() > 0) {
-        const double duration_us = static_cast<double>(total_duration.count());
-        std::cout << "[CDPruner]   Overall throughput: "
-                  << (static_cast<double>(total_input_tokens) / duration_us * 1'000'000) << " input tokens/sec"
-                  << std::endl;
-        std::cout << "[CDPruner]   Pruning efficiency: "
-                  << (static_cast<double>(actual_total_tokens) / duration_us * 1'000'000) << " output tokens/sec"
-                  << std::endl;
-    } else {
-        std::cout << "[CDPruner]   Overall throughput: N/A" << std::endl;
-        std::cout << "[CDPruner]   Pruning efficiency: N/A" << std::endl;
-    }
-
-    if (total_input_tokens > 0) {
-        std::cout << "[CDPruner]   Combined pruning ratio: "
-                  << (1.0 - static_cast<double>(actual_total_tokens) / total_input_tokens) * 100 << "%" << std::endl;
-    } else {
-        std::cout << "[CDPruner]   Combined pruning ratio: N/A" << std::endl;
-    }
-
-    std::cout << "[CDPruner] Final result: [" << actual_batch_size << ", " << actual_total_tokens << ", "
-              << actual_hidden_dim << "] from " << frame_count << " frames" << std::endl;
-    std::cout << "+----------------------------------------------------------+" << std::endl;
 }
 
 void CDPruner::validate_config(const Config& config) {

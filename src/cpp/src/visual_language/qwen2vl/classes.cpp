@@ -1341,28 +1341,22 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(
     size_t spatial_merge_size,
     std::vector<std::vector<bool>>& keep_flags_out) {
     const ov::Shape& pos_shape = original_position_ids.get_shape();
-    OPENVINO_ASSERT(pos_shape.size() == 3, "Position ids tensor must have 3 dimensions");
+    OPENVINO_ASSERT(pos_shape.size() == 3 && pos_shape[0] == 3, "Position ids must be [3, batch, seq_len]");
 
-    const size_t dims = pos_shape.at(0);
-    const size_t batch_size = pos_shape.at(1);
-    const size_t seq_len = pos_shape.at(2);
-    OPENVINO_ASSERT(dims == 3, "Position ids tensor first dimension must be 3");
+    const size_t batch_size = pos_shape[1];
+    const size_t seq_len = pos_shape[2];
+    const size_t region_count = reordered_images_grid_thw.size();
 
+    // Build region metadata
     struct RegionInfo {
-        size_t tokens;
-        size_t grid_width;
-        size_t spatial_area;
-        size_t offset;
+        size_t tokens, grid_width, spatial_area, offset;
     };
 
     std::vector<RegionInfo> regions;
-    regions.reserve(reordered_images_grid_thw.size());
-
+    regions.reserve(region_count);
     size_t cumulative_offset = 0;
-    for (const auto& grid : reordered_images_grid_thw) {
-        size_t grid_t = std::max<size_t>(1, grid.at(0));
-        size_t grid_h = grid.at(1);
-        size_t grid_w = grid.at(2);
+
+    for (const auto& [grid_t, grid_h, grid_w] : reordered_images_grid_thw) {
         OPENVINO_ASSERT(grid_h % spatial_merge_size == 0 && grid_w % spatial_merge_size == 0,
                         "Grid dimensions must be divisible by spatial merge size");
 
@@ -1370,175 +1364,138 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(
         size_t llm_grid_w = grid_w / spatial_merge_size;
         size_t spatial_area = llm_grid_h * llm_grid_w;
         OPENVINO_ASSERT(spatial_area > 0, "Vision region must contain at least one spatial token");
-        size_t total_tokens = spatial_area * grid_t;
 
-        regions.push_back({total_tokens, llm_grid_w == 0 ? 1 : llm_grid_w, spatial_area, cumulative_offset});
+        size_t t = std::max<size_t>(1, grid_t);
+        size_t total_tokens = spatial_area * t;
+        regions.push_back({total_tokens, std::max<size_t>(1, llm_grid_w), spatial_area, cumulative_offset});
         cumulative_offset += total_tokens;
     }
 
-    const size_t region_count = regions.size();
+    // Normalize kept indices: convert aggregated indices to per-region format if needed
+    auto normalize_kept_indices = [&]() {
+        if (kept_indices_per_image.empty())
+            return std::vector<std::vector<size_t>>(region_count);
 
-    auto normalize_indices = [&](const std::vector<std::vector<size_t>>& raw_indices) {
-        std::vector<std::vector<size_t>> normalized;
-        if (raw_indices.empty()) {
-            normalized.assign(region_count, {});
-            return normalized;
-        }
+        if (kept_indices_per_image.size() == region_count)
+            return kept_indices_per_image;
 
-        if (raw_indices.size() == region_count) {
-            normalized = raw_indices;
-            return normalized;
-        }
+        // Handle single aggregated vector case
+        OPENVINO_ASSERT(kept_indices_per_image.size() == 1 && region_count > 1,
+                        "Kept token indices layout does not match vision regions");
 
-        if (raw_indices.size() == 1 && region_count > 1) {
-            normalized.assign(region_count, {});
-            const auto& aggregated = raw_indices.front();
-            for (size_t kept_idx : aggregated) {
-                OPENVINO_ASSERT(kept_idx < cumulative_offset, "Aggregated kept index is out of range");
-                size_t image_idx = 0;
-                for (; image_idx < region_count; ++image_idx) {
-                    size_t region_start = regions[image_idx].offset;
-                    size_t region_end = region_start + regions[image_idx].tokens;
-                    if (kept_idx >= region_start && kept_idx < region_end) {
-                        normalized[image_idx].push_back(kept_idx - region_start);
-                        break;
-                    }
+        std::vector<std::vector<size_t>> normalized(region_count);
+        for (size_t kept_idx : kept_indices_per_image[0]) {
+            OPENVINO_ASSERT(kept_idx < cumulative_offset, "Aggregated kept index out of range");
+            for (size_t img_idx = 0; img_idx < region_count; ++img_idx) {
+                if (kept_idx >= regions[img_idx].offset &&
+                    kept_idx < regions[img_idx].offset + regions[img_idx].tokens) {
+                    normalized[img_idx].push_back(kept_idx - regions[img_idx].offset);
+                    break;
                 }
-                OPENVINO_ASSERT(image_idx < region_count,
-                                "Aggregated kept index cannot be assigned to a vision region");
             }
-            return normalized;
         }
-
-        OPENVINO_THROW("Kept token indices layout does not match vision regions");
+        return normalized;
     };
 
-    std::vector<std::vector<size_t>> normalized_kept_indices = normalize_indices(kept_indices_per_image);
-    for (auto& per_region_indices : normalized_kept_indices) {
-        std::sort(per_region_indices.begin(), per_region_indices.end());
-        auto unique_end = std::unique(per_region_indices.begin(), per_region_indices.end());
-        per_region_indices.erase(unique_end, per_region_indices.end());
+    auto normalized_indices = normalize_kept_indices();
+
+    // Sort and deduplicate each region's indices
+    for (auto& indices : normalized_indices) {
+        std::sort(indices.begin(), indices.end());
+        indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
     }
 
+    // Build keep flags and calculate new sequence length
     keep_flags_out.clear();
     keep_flags_out.reserve(region_count);
-
     size_t total_removed = 0;
+
     for (size_t idx = 0; idx < region_count; ++idx) {
-        const auto& region = regions[idx];
-        std::vector<bool> flags(region.tokens, false);
-        size_t kept_count = 0;
-        for (size_t kept_idx : normalized_kept_indices[idx]) {
-            OPENVINO_ASSERT(kept_idx < region.tokens, "Kept visual token index is out of range");
+        std::vector<bool> flags(regions[idx].tokens, false);
+        for (size_t kept_idx : normalized_indices[idx]) {
+            OPENVINO_ASSERT(kept_idx < regions[idx].tokens, "Kept token index out of range");
             flags[kept_idx] = true;
-            ++kept_count;
         }
-        if (region.tokens < kept_count) {
-            std::cerr << "[CDPruner] Region mismatch -- idx=" << idx << ", tokens=" << region.tokens
-                      << ", kept=" << kept_count << ", cumulative_offset=" << regions[idx].offset << std::endl;
-            if (idx + 1 < regions.size()) {
-                std::cerr << "[CDPruner] Next region offset=" << regions[idx + 1].offset << std::endl;
-            }
-            OPENVINO_THROW("Number of kept tokens exceeds original visual tokens for image");
-        }
-        total_removed += region.tokens - kept_count;
+        size_t kept_count = std::count(flags.begin(), flags.end(), true);
+        OPENVINO_ASSERT(kept_count <= regions[idx].tokens, "Kept tokens exceed region size");
+        total_removed += regions[idx].tokens - kept_count;
         keep_flags_out.push_back(std::move(flags));
     }
+
     OPENVINO_ASSERT(seq_len >= total_removed, "Sequence length underflow after pruning");
     size_t new_seq_len = seq_len - total_removed;
 
+    // Allocate new position IDs tensor
     ov::Tensor new_position_ids(original_position_ids.get_element_type(), {3, batch_size, new_seq_len});
-    int64_t* new_data = new_position_ids.data<int64_t>();
-    int64_t* temporal_out = new_data;
-    int64_t* height_out = new_data + batch_size * new_seq_len;
-    int64_t* width_out = new_data + 2 * batch_size * new_seq_len;
-    size_t batch_stride_out = new_seq_len;
+    int64_t* pos_data[3] = {new_position_ids.data<int64_t>(),
+                            new_position_ids.data<int64_t>() + batch_size * new_seq_len,
+                            new_position_ids.data<int64_t>() + 2 * batch_size * new_seq_len};
 
     const int64_t* input_ids_data = input_ids.data<const int64_t>();
-    const int64_t* original_data = original_position_ids.data<const int64_t>();
 
+    // Process each batch
     for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-        size_t seq_idx = 0;
-        size_t write_idx = 0;
-        size_t image_idx = 0;
+        size_t write_idx = 0, image_idx = 0, visual_idx = 0;
         bool inside_vision = false;
-        size_t visual_index = 0;
-        size_t batch_offset_in = batch_idx * seq_len;
-        size_t batch_offset_out = batch_idx * batch_stride_out;
-        int64_t next_pos = seq_len > 0 ? original_data[batch_offset_in] : 0;
-        int64_t grid_temporal_value = 0;
-        int64_t grid_base_value = 0;
-        int64_t max_height = next_pos - 1;
-        int64_t max_width = next_pos - 1;
-        int64_t max_temporal = next_pos - 1;
+        int64_t next_pos = 0, grid_base = 0;
+        int64_t max_pos[3] = {-1, -1, -1};  // temporal, height, width
+        size_t batch_offset = batch_idx * seq_len;
+        size_t out_offset = batch_idx * new_seq_len;
 
-        while (seq_idx < seq_len) {
-            int64_t token_id = input_ids_data[batch_offset_in + seq_idx];
+        for (size_t seq_idx = 0; seq_idx < seq_len; ++seq_idx) {
+            int64_t token_id = input_ids_data[batch_offset + seq_idx];
 
+            // Handle image pad tokens inside vision region
             if (inside_vision && token_id == image_pad_token_id) {
                 OPENVINO_ASSERT(image_idx < region_count, "Vision region index out of bounds");
-                const auto& region = regions[image_idx];
-                const size_t grid_width = region.grid_width > 0 ? region.grid_width : 1;
-                const size_t spatial_area = region.spatial_area > 0 ? region.spatial_area : grid_width;
-                bool keep_token = (image_idx < keep_flags_out.size() && visual_index < keep_flags_out[image_idx].size())
-                                      ? keep_flags_out[image_idx][visual_index]
-                                      : false;
-                size_t local_index = spatial_area > 0 ? (visual_index % spatial_area) : 0;
-                size_t row = grid_width > 0 ? local_index / grid_width : 0;
-                size_t col = grid_width > 0 ? local_index % grid_width : 0;
-                size_t temporal_index = spatial_area > 0 ? (visual_index / spatial_area) : 0;
-                if (keep_token) {
-                    int64_t temporal_value = grid_temporal_value + static_cast<int64_t>(temporal_index);
-                    int64_t height_value = grid_base_value + static_cast<int64_t>(row);
-                    int64_t width_value = grid_base_value + static_cast<int64_t>(col);
+                if (keep_flags_out[image_idx][visual_idx]) {
+                    const auto& region = regions[image_idx];
+                    size_t local_idx = visual_idx % region.spatial_area;
+                    size_t temporal_idx = visual_idx / region.spatial_area;
+                    size_t row = local_idx / region.grid_width;
+                    size_t col = local_idx % region.grid_width;
 
-                    temporal_out[batch_offset_out + write_idx] = temporal_value;
-                    height_out[batch_offset_out + write_idx] = height_value;
-                    width_out[batch_offset_out + write_idx] = width_value;
+                    int64_t pos_vals[3] = {grid_base + static_cast<int64_t>(temporal_idx),
+                                           grid_base + static_cast<int64_t>(row),
+                                           grid_base + static_cast<int64_t>(col)};
 
-                    max_height = std::max(max_height, height_value);
-                    max_width = std::max(max_width, width_value);
-                    max_temporal = std::max(max_temporal, temporal_value);
-
+                    for (int dim = 0; dim < 3; ++dim) {
+                        pos_data[dim][out_offset + write_idx] = pos_vals[dim];
+                        max_pos[dim] = std::max(max_pos[dim], pos_vals[dim]);
+                    }
                     ++write_idx;
                 }
-
-                ++visual_index;
-                ++seq_idx;
+                ++visual_idx;
                 continue;
             }
 
+            // Handle end of vision region
             if (inside_vision) {
                 inside_vision = false;
-                int64_t region_max = std::max(std::max(max_height, max_width), max_temporal);
-                next_pos = region_max + 1;
+                next_pos = std::max({max_pos[0], max_pos[1], max_pos[2]}) + 1;
                 ++image_idx;
-                visual_index = 0;
-                max_height = next_pos - 1;
-                max_width = next_pos - 1;
-                max_temporal = next_pos - 1;
+                visual_idx = 0;
+                std::fill(max_pos, max_pos + 3, next_pos - 1);
             }
 
-            int64_t temporal_value = next_pos;
-            temporal_out[batch_offset_out + write_idx] = temporal_value;
-            height_out[batch_offset_out + write_idx] = temporal_value;
-            width_out[batch_offset_out + write_idx] = temporal_value;
-
+            // Write text token position
+            for (int dim = 0; dim < 3; ++dim) {
+                pos_data[dim][out_offset + write_idx] = next_pos;
+            }
             ++write_idx;
-            ++seq_idx;
             ++next_pos;
 
+            // Handle start of vision region
             if (token_id == vision_start_token_id) {
                 inside_vision = true;
-                visual_index = 0;
-                grid_temporal_value = next_pos;
-                grid_base_value = next_pos;
+                visual_idx = 0;
+                grid_base = next_pos;
             }
         }
 
-        OPENVINO_ASSERT(!inside_vision, "Unexpected end of sequence inside a vision region");
-        OPENVINO_ASSERT(image_idx == keep_flags_out.size(), "Mismatch between processed vision regions and metadata");
-        OPENVINO_ASSERT(write_idx == new_seq_len, "Pruned position ids length mismatch after recomputation");
+        OPENVINO_ASSERT(!inside_vision, "Unexpected end of sequence inside vision region");
+        OPENVINO_ASSERT(image_idx == region_count, "Not all vision regions processed");
+        OPENVINO_ASSERT(write_idx == new_seq_len, "Output sequence length mismatch");
     }
 
     return new_position_ids;
