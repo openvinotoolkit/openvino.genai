@@ -29,6 +29,15 @@ overloaded(Ts...) -> overloaded<Ts...>;
 
 namespace {
 
+// Stream generated tokens to output
+ov::genai::StreamingStatus stream_generated_tokens(std::shared_ptr<ov::genai::StreamerBase> streamer_ptr,
+                                                   const std::vector<int64_t>& tokens) {
+    if (streamer_ptr) {
+        return streamer_ptr->write(tokens);
+    }
+    return ov::genai::StreamingStatus{};
+}
+
 // Format microseconds for logging
 std::string format_duration_us(uint64_t microseconds) {
     if (microseconds < 1000) {
@@ -869,6 +878,9 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
 
     auto config = resolve_generation_config(generation_config);
 
+    // Create streamer for streaming output
+    std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
+
     log_info("Starting Eagle3 generation with max_new_tokens=" + std::to_string(config.max_new_tokens) +
              ", draft_iterations=" + std::to_string(m_draft_iterations));
 
@@ -889,12 +901,9 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
 
     std::size_t prompt_len = prompt_shape[1];
 
-    // Initialize Pipeline's verified token storage with prompt
-    const int64_t* prompt_data = input_ids.data<const int64_t>();
-    m_verified_tokens.assign(prompt_data, prompt_data + prompt_len);
     m_prompt_length = prompt_len;
 
-    log_debug("Initialized verified_tokens with prompt (" + std::to_string(prompt_len) + " tokens)");
+    log_debug("Prompt length: " + std::to_string(prompt_len) + " tokens");
 
     // Initialize position IDs
     ov::Tensor position_ids{ov::element::i64, input_ids.get_shape()};
@@ -920,11 +929,10 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
     m_main_model->append_tokens({initial_token});
     m_draft_model->append_tokens({initial_token});
 
-    // Write initial verified token to Pipeline storage
-    m_verified_tokens.push_back(initial_token);
+    // Stream the initial token
+    auto streaming_status = stream_generated_tokens(streamer_ptr, std::vector<int64_t>{initial_token});
 
-    log_debug("Initial token generated: " + std::to_string(initial_token) +
-              ", verified_tokens now: " + std::to_string(m_verified_tokens.size()));
+    log_debug("Initial token generated: " + std::to_string(initial_token));
     log_sequence_state("after initial token generation");
 
     // Main generation loop using speculative decoding
@@ -940,12 +948,16 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
     std::size_t total_iterations = 0;       // Number of speculative iterations
 
     while (!eos_reached && generated_tokens < max_new_tokens &&
-           m_main_model->get_sequence_length() < prompt_len + max_new_tokens) {
+           m_main_model->get_sequence_length() < prompt_len + max_new_tokens &&
+           (streaming_status == ov::genai::StreamingStatus::RUNNING)) {
         log_generation_step("Speculative Decoding Iteration", generated_tokens);
         log_sequence_state("iteration start");
 
         auto result =
             run_speculative_iteration(target_hidden_states, token_count, static_cast<int64_t>(config.eos_token_id));
+
+        // Stream validated tokens
+        streaming_status = stream_generated_tokens(streamer_ptr, result.validated_tokens);
 
         // Update iteration counter
         total_iterations++;
@@ -986,22 +998,27 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
         log_sequence_state("iteration end");
     }
 
-    // Convert all verified tokens to text and display
-    if (!m_verified_tokens.empty()) {
-        try {
-            std::string decoded_text = m_tokenizer.decode(m_verified_tokens);
-            std::cout << "[EAGLE3-FINAL] All verified tokens decoded (" << m_verified_tokens.size() << " tokens): \""
-                      << decoded_text << "\"" << std::endl;
-        } catch (const std::exception& e) {
-            std::cout << "[EAGLE3-FINAL] Failed to decode verified tokens: " << e.what() << std::endl;
-        }
+    m_streaming_was_cancelled = (streaming_status == ov::genai::StreamingStatus::CANCEL);
+    if (streamer_ptr) {  // push streamer's cache
+        streamer_ptr->end();
     }
 
-    // Prepare results using Pipeline's verified tokens (source of truth)
+    // Prepare results using main model's tokens as source of truth
     EncodedResults results;
-    results.tokens = {m_verified_tokens};
+    results.tokens = {m_main_model->get_tokens()};
     results.scores.resize(1);
     results.scores[0] = 0.0f;  // Greedy decoding, no scores
+
+    // Display final tokens if verbose
+    if (is_verbose() && !results.tokens[0].empty()) {
+        try {
+            std::string decoded_text = m_tokenizer.decode(results.tokens[0]);
+            std::cout << "[EAGLE3-FINAL] All tokens decoded (" << results.tokens[0].size() << " tokens): \""
+                      << decoded_text << "\"" << std::endl;
+        } catch (const std::exception& e) {
+            std::cout << "[EAGLE3-FINAL] Failed to decode tokens: " << e.what() << std::endl;
+        }
+    }
 
     // Update performance metrics following the standard stateful speculative decoding pattern
     generate_timer.end();
@@ -1151,11 +1168,6 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     m_main_model->append_tokens(tokens_to_append);
     m_draft_model->append_tokens(tokens_to_append);
 
-    // Write accepted tokens to Pipeline's verified storage
-    for (const auto& token : tokens_to_append) {
-        m_verified_tokens.push_back(token);
-    }
-
     // Trim KV cache for rejected draft tokens
     if (tokens_to_remove_from_draft > 0) {
         m_main_model->trim_kv_cache(tokens_to_remove_from_draft);
@@ -1164,7 +1176,7 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
 
     log_debug("Accepted total " + std::to_string(total_accepted_tokens) + " tokens (" + std::to_string(accepted_count) +
               " draft + 1 main prediction), rejected " + std::to_string(tokens_to_remove_from_draft) +
-              " draft tokens. " + "Verified tokens now: " + std::to_string(m_verified_tokens.size()));
+              " draft tokens.");
 
     // Build next hidden window for next iteration
     ov::Tensor next_hidden;
@@ -1208,6 +1220,7 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     result.next_window_size = total_accepted_tokens;  // Total tokens for next iteration (draft + main)
     result.new_token = main_predicted_token;          // Main model's prediction
     result.next_hidden_window = next_hidden;
+    result.validated_tokens = tokens_to_append;       // Return validated tokens for streaming
 
     log_debug("Speculative iteration completed - accepted " + std::to_string(accepted_count) +
               " draft tokens + 1 main prediction = " + std::to_string(total_accepted_tokens) +
@@ -1291,22 +1304,10 @@ void StatefulEagle3LLMPipeline::log_sequence_state(const std::string& context) c
         return;
 
     std::cout << "[EAGLE3-PIPELINE] Sequence state (" << context << "):" << std::endl;
-    std::cout << "  Pipeline verified tokens: " << m_verified_tokens.size() << " tokens (prompt=" << m_prompt_length
-              << ", generated=" << (m_verified_tokens.size() - m_prompt_length) << ")" << std::endl;
-    std::cout << "  Main model tokens (speculative): " << m_main_model->get_sequence_length() << " tokens" << std::endl;
-    std::cout << "  Draft model tokens (speculative): " << m_draft_model->get_sequence_length() << " tokens"
+    std::cout << "  Prompt length: " << m_prompt_length << " tokens" << std::endl;
+    std::cout << "  Main model tokens: " << m_main_model->get_sequence_length() << " tokens" << std::endl;
+    std::cout << "  Draft model tokens: " << m_draft_model->get_sequence_length() << " tokens"
               << std::endl;
-
-    // Show verified tokens from Pipeline
-    if (!m_verified_tokens.empty()) {
-        std::cout << "  Pipeline verified tokens: ";
-        for (std::size_t i = 0; i < m_verified_tokens.size(); ++i) {
-            std::cout << m_verified_tokens[i];
-            if (i + 1 < m_verified_tokens.size())
-                std::cout << ", ";
-        }
-        std::cout << std::endl;
-    }
 
     // Show all tokens and positions from main model
     const auto& main_tokens = m_main_model->get_tokens();

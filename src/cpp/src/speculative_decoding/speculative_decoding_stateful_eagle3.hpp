@@ -123,7 +123,6 @@ protected:
     std::size_t m_kv_cache_capacity = 0;
 
     // Speculative token sequences (may be rolled back)
-    // Verified tokens stored in Pipeline's m_verified_tokens
     std::vector<int64_t> m_tokens;
     std::vector<int64_t> m_positions;
 
@@ -220,6 +219,7 @@ private:
         std::size_t next_window_size = 0;
         int64_t new_token = -1;
         bool eos_reached = false;
+        std::vector<int64_t> validated_tokens;  // Tokens accepted by main model (draft + main prediction)
     };
 
     // Core algorithm
@@ -250,8 +250,6 @@ private:
     ov::Tensor m_draft_target_mapping;
     std::vector<int> m_hidden_layers_to_abstract;
 
-    // Verified tokens (source of truth)
-    std::vector<int64_t> m_verified_tokens;
     std::size_t m_prompt_length = 0;
 
     // Metrics
