@@ -35,15 +35,12 @@ dependencies = [
 
 [project.optional-dependencies]
 testing = ["pytest>=6.0"]
-
-[dependency-groups]
 samples = [
     "librosa==0.11.0",
     "pillow==12.0.0",
     "json5==0.12.1",
     "pydantic==2.12.3",
 ]
-
 samples-export = [
     "optimum-intel[nncf]==1.26.0",
     "numpy==1.26.4; platform_system == 'Darwin' and platform_machine == 'x86_64' and python_version < '3.13'",
@@ -60,7 +57,6 @@ samples-export = [
     "backoff==2.2.1",
     "peft==0.17.1",
 ]
-
 testing-full = [
     "diffusers==0.35.2",
     "optimum-intel==1.26.0",
@@ -85,7 +81,6 @@ testing-full = [
     "rouge==1.0.1",
     "peft==0.17.1",
 ]
-
 dev = [
     "pytest>=6.0",
     "pytest-xdist",

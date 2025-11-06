@@ -38,7 +38,7 @@ If you want to try OpenVINO GenAI with different dependencies versions (**not** 
     cd openvino.genai
     
     # Option A: Using UV (recommended)
-    uv sync --group samples --group samples-export
+    uv sync --extra samples --extra samples-export
     
     # Option B: Using pip
     pip install ./thirdparty/openvino_tokenizers/[transformers] --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly

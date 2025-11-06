@@ -512,15 +512,19 @@ jobs:
 
       - name: Setup UV
         if: ${{ matrix.test.run_condition }}
-        uses: ./src/.github/actions/setup-uv
+        uses: astral-sh/setup-uv@v4
 
       - name: Install GenAI Wheels
         if: ${{ matrix.test.run_condition }}
-        uses: ./src/.github/actions/uv-sync
+        uses: ./src/.github/actions/install_wheel
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai;whowhatbench"
-          dependency-groups: "testing-full"
-          local-wheel-dir: ${{ env.INSTALL_DIR }}/wheels
+          local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
+      
+      - name: Sync dependency groups
+        if: ${{ matrix.test.run_condition }}
+        working-directory: ${{ github.workspace }}/src
+        run: uv sync --extra testing-full --no-install-project --prerelease=allow
 
       - name: Tests
         if: ${{ matrix.test.run_condition }}
@@ -598,15 +602,21 @@ jobs:
 
       - name: Setup UV
         if: ${{ matrix.test.run_condition }}
-        uses: ./src/.github/actions/setup-uv
+        uses: astral-sh/setup-uv@v4
 
       - name: Install GenAI wheels
         if: ${{ matrix.test.run_condition }}
-        uses: ./src/.github/actions/uv-sync
+        uses: ./src/.github/actions/install_wheel
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai[testing]"
-          dependency-groups: "samples,testing-full"
-          local-wheel-dir: ${{ env.INSTALL_DIR }}/wheels
+          local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
+      
+      - name: Sync dependency groups
+        if: ${{ matrix.test.run_condition }}
+        working-directory: ${{ github.workspace }}/src
+        run: |
+          uv sync --extra samples --no-install-project --prerelease=allow
+          uv sync --extra testing-full --no-install-project --prerelease=allow
 
       # transformers >= 4.52 require torch >= 2.6 and raise an error otherwise:
       # ValueError: Due to a serious vulnerability issue in `torch.load`, even with `weights_only=True`, we now require users to upgrade torch to at least v2.6 in order to use the function. This version restriction does not apply when loading files with safetensors.
@@ -693,14 +703,19 @@ jobs:
           cache: 'pip'
 
       - name: Setup UV
-        uses: ./src/.github/actions/setup-uv
+        uses: astral-sh/setup-uv@v4
 
       - name: Install GenAI wheels
-        uses: ./src/.github/actions/uv-sync
+        uses: ./src/.github/actions/install_wheel
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai[testing]"
-          dependency-groups: "samples,testing-full"
-          local-wheel-dir: ${{ env.INSTALL_DIR }}/wheels
+          local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
+      
+      - name: Sync dependency groups
+        working-directory: ${{ github.workspace }}/src
+        run: |
+          uv sync --extra samples --no-install-project --prerelease=allow
+          uv sync --extra testing-full --no-install-project --prerelease=allow
 
       - name: gtests unit tests
         run: |

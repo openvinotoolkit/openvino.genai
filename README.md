@@ -77,7 +77,7 @@ Continuous batching functionality is used within OpenVINO Model Server (OVMS) to
     uv pip install openvino-genai
     
     # With sample dependencies
-    uv sync --group samples --group samples-export
+    uv sync --extra samples --extra samples-export
 ```
 
 <a id="text-to-text"></a>

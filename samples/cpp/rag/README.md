@@ -9,7 +9,7 @@ The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upg
 Install dependencies to convert a model:
 
 ```sh
-uv sync --group samples-export
+uv sync --extra samples-export
 ```
 
 To export text embedding model run Optimum CLI command:

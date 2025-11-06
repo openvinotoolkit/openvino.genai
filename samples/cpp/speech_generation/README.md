@@ -11,7 +11,7 @@ The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upg
 Install dependencies to convert a model:
 
 ```sh
-uv sync --group samples-export
+uv sync --extra samples-export
 optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vocoder\": \"microsoft/speecht5_hifigan\"}" speecht5_tts
 ```
 
