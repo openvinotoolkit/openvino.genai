@@ -1,0 +1,30 @@
+name: 'Setup UV'
+description: 'Install UV package manager'
+outputs:
+  uv-version:
+    description: 'The installed UV version'
+    value: ${{ steps.get-version.outputs.version }}
+runs:
+  using: "composite"
+  steps:
+    - name: Install UV (Unix)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+    
+    - name: Install UV (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        irm https://astral.sh/uv/install.ps1 | iex
+        echo "$env:USERPROFILE\.local\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+    
+    - name: Verify UV installation
+      id: get-version
+      shell: bash
+      run: |
+        uv --version
+        echo "version=$(uv --version | cut -d' ' -f2)" >> $GITHUB_OUTPUT
+

@@ -3,21 +3,22 @@
 This script provides a unified approach to estimate performance for Large Language Models (LLMs). It leverages pipelines provided by Optimum-Intel and allows performance estimation for PyTorch and OpenVINO models using nearly identical code and pre-collected models.
 
 
-### 1. Prepare Python Virtual Environment for LLM Benchmarking
-   
-``` bash
-python3 -m venv ov-llm-bench-env
-source ov-llm-bench-env/bin/activate
-pip install --upgrade pip
+### 1. Prepare Python Environment for LLM Benchmarking
 
-git clone  https://github.com/openvinotoolkit/openvino.genai.git
-cd openvino.genai/tools/llm_bench
-pip install -r requirements.txt  
+**Option A: Using UV (Recommended)**:
+``` bash
+git clone https://github.com/openvinotoolkit/openvino.genai.git
+cd openvino.genai
+uv sync
+cd tools/llm_bench
 ```
 
-> Note:
-> For existing Python environments, run the following command to ensure that all dependencies are installed with the latest versions:  
-> `pip install -U --upgrade-strategy eager -r requirements.txt`
+**Option B: Using pip**:
+``` bash
+git clone https://github.com/openvinotoolkit/openvino.genai.git
+cd openvino.genai
+pip install -e tools/llm_bench
+```
 
 #### (Optional) Hugging Face Login :
 

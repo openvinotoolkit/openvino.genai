@@ -4,7 +4,7 @@ version = "2026.0.0.0"
 description = "Library of the most popular Generative AI model pipelines, optimized execution methods, and samples"
 requires-python = ">=3.10"
 readme = { file = "src/README.md", content-type="text/markdown" }
-license = { "file" = "LICENSE" }
+license = { file = "LICENSE" }
 authors = [
     { name = "OpenVINO Developers", email = "openvino@intel.com" },
 ]
@@ -29,13 +29,101 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython"
 ]
 dependencies = [
-    "openvino_tokenizers~=2026.0.0.0.dev"
+    "openvino~=2026.0.0.0.dev",
+    "openvino-tokenizers~=2026.0.0.0.dev",
 ]
+
 [project.optional-dependencies]
 testing = ["pytest>=6.0"]
 
+[dependency-groups]
+samples = [
+    "librosa==0.11.0",
+    "pillow==12.0.0",
+    "json5==0.12.1",
+    "pydantic==2.12.3",
+]
+
+samples-export = [
+    "optimum-intel[nncf]==1.26.0",
+    "numpy==1.26.4; platform_system == 'Darwin' and platform_machine == 'x86_64' and python_version < '3.13'",
+    "numpy>=2.1.0; python_version >= '3.13'",
+    "safetensors==0.6.2; platform_system == 'Darwin' and platform_machine == 'x86_64'",
+    "einops==0.8.1",
+    "transformers-stream-generator==0.0.5",
+    "diffusers==0.35.2",
+    "timm==1.0.21",
+    "torchvision==0.17.2; platform_system == 'Darwin' and platform_machine == 'x86_64'",
+    "torchvision==0.23.0; platform_system != 'Darwin' or platform_machine != 'x86_64'",
+    "transformers==4.55.4",
+    "hf-transfer==0.1.9",
+    "backoff==2.2.1",
+    "peft==0.17.1",
+]
+
+testing-full = [
+    "diffusers==0.35.2",
+    "optimum-intel==1.26.0",
+    "numpy==1.26.4; platform_system == 'Darwin' and platform_machine == 'x86_64' and python_version < '3.13'",
+    "numpy>=2.1.0; python_version >= '3.13'",
+    "safetensors==0.6.2; platform_system == 'Darwin' and platform_machine == 'x86_64'",
+    "pytest==8.4.2",
+    "transformers==4.55.4",
+    "hf-transfer==0.1.9",
+    "gguf==0.17.1",
+    "langchain-community==0.4",
+    "langchain-core==1.0.1",
+    "einops==0.8.1",
+    "torchvision==0.17.2; platform_system == 'Darwin' and platform_machine == 'x86_64'",
+    "torchvision==0.23.0; platform_system != 'Darwin' or platform_machine != 'x86_64'",
+    "timm==1.0.21",
+    "librosa==0.11.0",
+    "soundfile==0.13.1",
+    "datasets==4.1.1; sys_platform == 'linux'",
+    "datasets==3.6.0; sys_platform != 'linux'",
+    "torchcodec==0.7.0; sys_platform == 'linux'",
+    "rouge==1.0.1",
+    "peft==0.17.1",
+]
+
+dev = [
+    "pytest>=6.0",
+    "pytest-xdist",
+    "ruff",
+]
+
+[tool.uv.workspace]
+members = [
+    "tools/llm_bench",
+    "tools/who_what_benchmark",
+    "tools/cacheviz",
+]
+
+[tool.uv]
+index-strategy = "unsafe-best-match"
+
+[[tool.uv.index]]
+name = "openvino-nightly"
+url = "https://storage.openvinotoolkit.org/simple/wheels/nightly"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+openvino-genai = { workspace = true }
+openvino = { index = "openvino-nightly" }
+openvino-tokenizers = { index = "openvino-nightly" }
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
 [tool.py-build-cmake.module]
 directory = "src/python"
+
+[tool.py-build-cmake.editable]
+mode = "wrapper"
 
 [tool.py-build-cmake.sdist]
 include = ["CMakeLists.txt", "LICENSE", "third-party-programs.txt", "SECURITY.md", "cmake", "src", "thirdparty"]

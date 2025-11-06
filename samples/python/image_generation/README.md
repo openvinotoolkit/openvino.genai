@@ -30,9 +30,9 @@ Users can change the sample code and play with the following generation paramete
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
+Install dependencies to convert a model:
 ```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
+uv sync --group samples-export
 ```
 
 Then, run the export with Optimum CLI:
@@ -56,7 +56,11 @@ export_tokenizer(pipeline.tokenizer, output_dir + "/tokenizer")
 
 ## Run text to image
 
-Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
+Install dependencies and run a sample:
+
+```sh
+uv sync --group samples
+```
 
 `python text2image.py ./dreamlike_anime_1_0_ov/FP16 "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"`
 

@@ -583,13 +583,17 @@ jobs:
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
+      - name: Setup UV
+        if: ${{ matrix.test.run_condition }}
+        uses: ./src/.github/actions/setup-uv
+
       - name: Install GenAI Wheels
         if: ${{ matrix.test.run_condition }}
-        uses: ./src/.github/actions/install_wheel
+        uses: ./src/.github/actions/uv-sync
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai;whowhatbench"
-          requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
-          local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
+          dependency-groups: "testing-full"
+          local-wheel-dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Tests
         if: ${{ matrix.test.run_condition }}
@@ -690,13 +694,17 @@ jobs:
           pigz -dc ${{ env.GENAI_SAMPLES_NAME }} | tar -xf - -C ${{ env.INSTALL_DIR }}
         working-directory: ${{ env.INSTALL_DIR }}
 
+      - name: Setup UV
+        if: ${{ matrix.test.run_condition }}
+        uses: ./src/.github/actions/setup-uv
+
       - name: Install GenAI wheels
         if: ${{ matrix.test.run_condition }}
-        uses: ./src/.github/actions/install_wheel
+        uses: ./src/.github/actions/uv-sync
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai[testing]"
-          requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
-          local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
+          dependency-groups: "samples,testing-full"
+          local-wheel-dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Setup Node
         if: ${{ matrix.test.run_condition }}
@@ -776,12 +784,16 @@ jobs:
       - name: Fix C++ samples permissions
         run: chmod +x ${{ env.INSTALL_DIR }}/samples_bin/*
 
+      - name: Setup UV
+        uses: ./src/.github/actions/setup-uv
+
       - name: Install GenAI wheels
-        uses: ./src/.github/actions/install_wheel
+        uses: ./src/.github/actions/uv-sync
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai[testing]"
-          requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt;${{ env.SRC_DIR }}/tools/llm_bench/requirements.txt"
-          local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
+          dependency-groups: "samples,testing-full"
+          workspace-member: "llm_bench"
+          local-wheel-dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: gtests unit tests
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
@@ -919,12 +931,15 @@ jobs:
                 -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR}} --config Release --parallel $(nproc) --target py_openvino_genai --verbose
 
+      - name: Setup UV
+        uses: ./src/.github/actions/setup-uv
+
       - name: Install dependencies
-        uses: ./src/.github/actions/install_wheel
+        uses: ./src/.github/actions/uv-sync
         with:
-          packages: openvino;openvino_tokenizers[transformers]
-          requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
-          local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
+          packages: "openvino;openvino_tokenizers[transformers]"
+          dependency-groups: "testing-full"
+          local-wheel-dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Run test_llm_pipeline.py when -DENABLE_XGRAMMAR=OFF
         env:
