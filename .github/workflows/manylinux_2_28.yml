@@ -521,13 +521,17 @@ jobs:
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
+      - name: Setup UV
+        if: ${{ matrix.test.run_condition }}
+        uses: ./src/.github/actions/setup-uv
+
       - name: Install GenAI Wheels
         if: ${{ matrix.test.run_condition }}
-        uses: ./src/.github/actions/install_wheel
+        uses: ./src/.github/actions/uv-sync
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai;whowhatbench"
-          requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
-          local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
+          dependency-groups: "testing-full"
+          local-wheel-dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Tests
         if: ${{ matrix.test.run_condition }}

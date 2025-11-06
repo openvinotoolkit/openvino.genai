@@ -1,0 +1,18 @@
+[project]
+name = "cacheviz"
+version = "1.0.0"
+description = "Cache visualization tool for OpenVINO GenAI"
+requires-python = ">=3.10"
+readme = "../../README.md"
+license = { file = "../../LICENSE" }
+authors = [
+    { name = "OpenVINO Developers", email = "openvino@intel.com" },
+]
+dependencies = [
+    "matplotlib",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+

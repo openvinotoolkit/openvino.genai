@@ -6,10 +6,10 @@ This example showcases inference of Text Embedding and Text Rerank Models. The a
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
+Install dependencies to convert a model:
 
 ```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
+uv sync --group samples-export
 ```
 
 To export text embedding model run Optimum CLI command:
@@ -42,7 +42,11 @@ export_tokenizer(tokenizer, output_dir)
 
 ## Run
 
-Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
+Install dependencies before running the samples:
+
+```sh
+uv sync --group samples
+```
 
 ### 1. Text Embedding Sample (`text_embeddings.py`)
 - **Description:**

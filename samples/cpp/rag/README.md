@@ -6,10 +6,10 @@ This example showcases inference of Text Embedding and Text Rerank Models. The a
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
+Install dependencies to convert a model:
 
 ```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
+uv sync --group samples-export
 ```
 
 To export text embedding model run Optimum CLI command:

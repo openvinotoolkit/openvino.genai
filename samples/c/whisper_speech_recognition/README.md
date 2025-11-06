@@ -41,10 +41,10 @@ Windows PowerShell:
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-Install [../../export-requirements.txt](../../export-requirements.txt) if model conversion is required.
+Install dependencies if model conversion is required:
 
 ```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
+uv sync --group samples-export
 optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny
 ```
 

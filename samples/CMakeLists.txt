@@ -14,9 +14,8 @@ if(ENABLE_SAMPLES)
 endif()
 
 install(FILES
-        deployment-requirements.txt
-        export-requirements.txt
-        requirements.txt
+        ${CMAKE_SOURCE_DIR}/pyproject.toml
+        ${CMAKE_SOURCE_DIR}/uv.lock
     DESTINATION samples
     COMPONENT cpp_samples_genai)
 

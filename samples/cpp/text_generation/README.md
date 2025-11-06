@@ -12,10 +12,10 @@ There are also Jupyter notebooks for some samples. You can find links to them in
 
 ## Download and convert the model and tokenizers
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
-Install [../../export-requirements.txt](../../export-requirements.txt) if model conversion is required.
+Install dependencies if model conversion is required:
 ```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
-optimim-cli export openvino --model <model> <output_folder>
+uv sync --group samples-export
+optimum-cli export openvino --model <model> <output_folder>
 ```
 If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via huggingface-cli.
 ```sh
@@ -39,9 +39,9 @@ GPUs usually provide better performance compared to CPUs. Modify the source code
 
 Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/) for more details.
 
-Install [../../deployment-requirements.txt](../../deployment-requirements.txt) to run samples
+Install dependencies to run samples:
 ```sh
-pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
+uv sync --group samples
 ```
 
 ### 1. Chat Sample (`chat_sample`)
@@ -69,7 +69,7 @@ LLMs](https://docs.openvino.ai/2025/openvino-workflow-generative/inference-with-
 - Models must be exported with symmetric INT4 quantization (`optimum-cli export openvino --weight-format int4 --sym --model <model> <output_folder>`).
   For models with more than 4B parameters, channel wise quantization should be used (`--group-size -1`).
 - Beam search and parallel sampling are not supported.
-- Use OpenVINO 2025.0 or later (installed by deployment-requirements.txt, see "Common information" section), and the latest NPU driver.
+- Use OpenVINO 2025.0 or later (installed by UV dependency groups, see "Common information" section), and the latest NPU driver.
 
 
 ### 2. Greedy Causal LM (`greedy_causal_lm`)

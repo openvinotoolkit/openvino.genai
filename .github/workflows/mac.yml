@@ -510,13 +510,17 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
+      - name: Setup UV
+        if: ${{ matrix.test.run_condition }}
+        uses: ./src/.github/actions/setup-uv
+
       - name: Install GenAI Wheels
         if: ${{ matrix.test.run_condition }}
-        uses: ./src/.github/actions/install_wheel
+        uses: ./src/.github/actions/uv-sync
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai;whowhatbench"
-          requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
-          local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
+          dependency-groups: "testing-full"
+          local-wheel-dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Tests
         if: ${{ matrix.test.run_condition }}
@@ -592,13 +596,17 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
+      - name: Setup UV
+        if: ${{ matrix.test.run_condition }}
+        uses: ./src/.github/actions/setup-uv
+
       - name: Install GenAI wheels
         if: ${{ matrix.test.run_condition }}
-        uses: ./src/.github/actions/install_wheel
+        uses: ./src/.github/actions/uv-sync
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai[testing]"
-          requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
-          local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
+          dependency-groups: "samples,testing-full"
+          local-wheel-dir: ${{ env.INSTALL_DIR }}/wheels
 
       # transformers >= 4.52 require torch >= 2.6 and raise an error otherwise:
       # ValueError: Due to a serious vulnerability issue in `torch.load`, even with `weights_only=True`, we now require users to upgrade torch to at least v2.6 in order to use the function. This version restriction does not apply when loading files with safetensors.
@@ -684,12 +692,15 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
+      - name: Setup UV
+        uses: ./src/.github/actions/setup-uv
+
       - name: Install GenAI wheels
-        uses: ./src/.github/actions/install_wheel
+        uses: ./src/.github/actions/uv-sync
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai[testing]"
-          requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
-          local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
+          dependency-groups: "samples,testing-full"
+          local-wheel-dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: gtests unit tests
         run: |

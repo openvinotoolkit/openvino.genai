@@ -17,21 +17,20 @@ WWB provides default datasets for the supported use cases. However, it is relati
 * Validation of Visual Language pipelines. Computes similarity score between generated images with Diffusers library, Optimum-Intel, and OpenVINO GenAI via `VisualTextEvaluator` class.
 
 ### Installation
-To install WWB and its dependencies, follow these steps:
-1. Set up a Python virtual environment (recommended):
+
+**Option A: Using UV (Recommended)**:
+```bash
+git clone https://github.com/openvinotoolkit/openvino.genai.git
+cd openvino.genai
+uv sync
+uv run wwb --help
 ```
-    python -m venv eval_env
-    source eval_env/bin/activate
-```
-2. Install WWB from the source directory:
-```
-    pip install .
-```
-To install WWB with nightly builds of openvino, openvino-tokenizers, and openvino-genai, use the following command:
-```
-PIP_PRE=1 \
-PIP_EXTRA_INDEX_URL=https://storage.openvinotoolkit.org/simple/wheels/nightly \
-pip install .
+
+**Option B: Using pip**:
+```bash
+python -m venv eval_env
+source eval_env/bin/activate
+pip install tools/who_what_benchmark
 ```
 
 ## Usage

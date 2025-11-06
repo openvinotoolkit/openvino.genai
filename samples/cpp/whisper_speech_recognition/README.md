@@ -6,10 +6,10 @@ This example showcases inference of speech recognition Whisper Models. The appli
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-It's not required to install [../../export-requirements.txt](../../export-requirements.txt) for deployment if the model has already been exported.
+If the model has not been exported yet, install dependencies and export it:
 
 ```sh
-pip install --upgrade-strategy eager -r ../../requirements.txt
+uv sync --group samples
 optimum-cli export openvino --trust-remote-code --model openai/whisper-base whisper-base
 ```
 

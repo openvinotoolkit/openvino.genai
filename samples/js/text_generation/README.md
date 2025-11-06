@@ -7,10 +7,10 @@ This example showcases inference of text-generation Large Language Models (LLMs)
 To convert model you have to use python package `optimum-intel`.
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
+Install dependencies to convert a model:
 
 ```sh
-pip install --upgrade-strategy eager -r ../../export-requirements.txt
+uv sync --group samples-export
 optimum-cli export openvino --trust-remote-code --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 TinyLlama-1.1B-Chat-v1.0
 ```
 If a converted model in OpenVINO IR format is already available in the collection of [OpenVINO optimized LLMs](https://huggingface.co/collections/OpenVINO/llm-6687aaa2abca3bbcec71a9bd) on Hugging Face, it can be downloaded directly via huggingface-cli.

@@ -1,0 +1,61 @@
+name: 'UV Sync Dependencies'
+description: 'Sync UV workspace dependencies with optional extras and local wheels'
+inputs:
+  workspace-member:
+    description: 'Specific workspace member to sync (optional, default: all)'
+    required: false
+    default: ''
+  dependency-groups:
+    description: 'Comma-separated dependency groups to install, e.g., "testing-full,samples"'
+    required: false
+    default: ''
+  local-wheel-dir:
+    description: 'Path to directory containing local wheels to install'
+    required: false
+    default: ''
+  packages:
+    description: 'Semicolon-separated list of packages to install from wheels, e.g., "openvino;openvino_tokenizers[transformers];openvino_genai"'
+    required: false
+    default: ''
+runs:
+  using: "composite"
+  steps:
+    - name: Install local wheels
+      if: inputs.local-wheel-dir != '' && inputs.packages != ''
+      shell: bash
+      run: |
+        cd ${{ github.workspace }}/src
+        
+        if [ -d "${{ inputs.local-wheel-dir }}" ]; then
+          echo "Installing local wheels from ${{ inputs.local-wheel-dir }}"
+          
+          IFS=';' read -ra PACKAGES <<< "${{ inputs.packages }}"
+          for pkg in "${PACKAGES[@]}"; do
+            echo "Installing ${pkg}"
+            uv pip install "$pkg" --find-links "${{ inputs.local-wheel-dir }}" --prerelease=allow
+          done
+        fi
+    
+    - name: Sync dependency groups
+      if: inputs.dependency-groups != ''
+      shell: bash
+      run: |
+        cd ${{ github.workspace }}/src
+        
+        IFS=',' read -ra GROUPS <<< "${{ inputs.dependency-groups }}"
+        for group in "${GROUPS[@]}"; do
+          echo "Syncing dependency group: ${group}"
+          uv sync --group "${group}" --no-install-project --prerelease=allow
+        done
+    
+    - name: Sync workspace
+      if: inputs.workspace-member != ''
+      shell: bash
+      run: |
+        cd ${{ github.workspace }}/src
+        
+        SYNC_CMD="uv sync --package ${{ inputs.workspace-member }} --prerelease=allow"
+        
+        echo "Running: $SYNC_CMD"
+        $SYNC_CMD
+
