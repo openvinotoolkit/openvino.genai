@@ -46,6 +46,7 @@ OpenVINO™ GenAI library provides very lightweight C++ and Python APIs to run t
  - [Speech recognition using Whisper family models](#speech-to-text)
  - [Text-to-speech generation using SpeechT5 TTS models](#text-to-speech)
  - [Text embedding for Retrieval-Augmented Generation (RAG)](#text-embedding), for example, compute embeddings for documents and queries to enable efficient retrieval in RAG workflows.
+ - [Text reranking for Retrieval-Augmented Generation (RAG)](#text-rerank), for example, reorder candidate documents by semantic relevance to a query to improve retrieval quality in RAG workflows.
 
 Library efficiently supports LoRA adapters for Text and Image generation scenarios:
 - Load multiple adapters per model
@@ -563,6 +564,53 @@ int main(int argc, char* argv[]) {
     ov::genai::TextEmbeddingPipeline pipeline(models_path, device);
 
     const ov::genai::EmbeddingResults embeddings = pipeline.embed_documents(documents);
+}
+```
+</details>
+
+<a id="text-rerank"></a>
+
+## Text Reranking
+<details>
+
+### Converting and preparing a text reranking model from Hugging Face library
+
+```sh
+optimum-cli export openvino --task text-classification --model cross-encoder/ms-marco-MiniLM-L6-v2 cross-encoder/ms-marco-MiniLM-L6-v2
+```
+
+### Rerank documents using TextRerankPipeline API in Python
+
+```python
+import openvino_genai
+
+pipeline = openvino_genai.TextRerankPipeline("./cross-encoder/ms-marco-MiniLM-L6-v2", "CPU", top_n=3)
+
+rerank_result = pipeline.rerank(query, documents)
+
+print("Reranked documents:")
+for index, score in rerank_result:
+    print(f"Document {index} (score: {score:.4f}): {documents[index]}")
+```
+
+### Rerank documents using TextRerankPipeline API in C++
+
+```cpp
+#include "openvino/genai/rag/text_rerank_pipeline.hpp"
+#include <iostream>
+
+int main(int argc, char* argv[]) {
+    std::vector<std::string> documents(argv + 3, argv + argc);
+    std::string models_path = argv[1], query = argv[2];
+    
+    ov::genai::TextRerankPipeline pipeline(models_path, "CPU", ov::genai::top_n(3));
+    
+    auto rerank_result = pipeline.rerank(query, documents);
+    
+    std::cout << "Reranked documents:\n";
+    for (const auto& [index, score] : rerank_result) {
+        std::cout << "Document " << index << " (score: " << score << "): " << documents[index] << '\n';
+    }
 }
 ```
 </details>
