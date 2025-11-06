@@ -55,6 +55,7 @@ protected:
     std::vector<size_t> m_history_image_ids;
     std::vector<ov::genai::EncodedVideo> m_history_videos;
     std::vector<size_t> m_history_video_ids;
+    std::vector<std::pair<std::size_t, std::size_t>> m_history_vision_count;  // pair<video count, image count>
     size_t m_image_id = 0;
     size_t m_video_id = 0;
 
@@ -125,7 +126,8 @@ public:
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer,
-             std::optional<std::vector<ov::Tensor>> token_type_ids = std::nullopt) = 0;
+             const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
+             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt) = 0;
 
     /**
      * Performs monolitic generation based on text prompts
@@ -144,7 +146,7 @@ public:
 
     virtual std::vector<VLMDecodedResults> generate(const std::vector<std::string>& prompts,
                                                     const std::vector<std::vector<ov::Tensor>>& images,
-                                                    const std::vector<std::vector<ov::Tensor>>& video,
+                                                    const std::vector<std::vector<ov::Tensor>>& videos,
                                                     const std::vector<GenerationConfig>& sampling_params,
                                                     const StreamerVariant& streamer);
 
