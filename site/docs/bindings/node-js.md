@@ -1,42 +1,42 @@
 ---
 sidebar_position: 1
-sidebar_label: Node.js bindings
+sidebar_label: Node.js
 description: Node.js bindings provide JavaScript/TypeScript API.
 ---
 
-# OpenVINO™ GenAI Node.js bindings
+# Node.js Bindings for OpenVINO™ GenAI
 
 OpenVINO GenAI provides Node.js bindings that enable you to use generative AI pipelines in JavaScript and TypeScript applications.
 
-:::note API Coverage
-JavaScript/TypeScript bindings currently provide a subset of the full OpenVINO GenAI API available in C++ and Python. The focus is on core text generation (LLMPipeline) and text embedding (TextEmbeddingPipeline) functionality.
+:::warning API Coverage
+Node.js bindings currently provide a subset of the full OpenVINO GenAI API available in C++ and Python. The focus is on core text generation (`LLMPipeline`) and text embedding (`TextEmbeddingPipeline`) functionality.
 :::
 
-## Available Pipelines
+## Supported Pipelines and Features
 
-The JavaScript/TypeScript bindings currently support:
+Node.js bindings currently support:
 
-- **LLMPipeline**: Text generation with Large Language Models
+- `LLMPipeline`: Text generation with Large Language Models
   - Chat mode with conversation history
   - Streaming support
   - Batch generation
   - Multiple sampling strategies (greedy, beam search)
   - Structured output
   - ReAct agent support
-- **TextEmbeddingPipeline**: Generate text embeddings for semantic search and RAG applications
+- `TextEmbeddingPipeline`: Generate text embeddings for semantic search and RAG applications
 
 ## Installation
 
-To install OpenVINO GenAI JavaScript/TypeScript API, refer to the [Install Guide](https://docs.openvino.ai/2025/get-started/install-openvino.html).
+To install OpenVINO GenAI for Node.js, refer to the [Install Guide](https://docs.openvino.ai/2025/get-started/install-openvino.html).
 
-## Quick Start Example
+## Quick Start
 
 :::tip Model Preparation
 Before using LLMPipeline, you need to convert your model to OpenVINO IR format.
 See [Model Preparation](/docs/category/model-preparation) for details.
 :::
 
-After installation, you can start using OpenVINO GenAI in your TypeScript projects:
+After installation, you can start using OpenVINO GenAI in your Node.js projects:
 
 ```typescript
 import { LLMPipeline, GenerationConfig } from "openvino-genai-node";
@@ -59,11 +59,11 @@ main();
 
 ## Next Steps
 
-- Check out code samples in the [Samples](/docs/samples) section
-- Review [supported models](/docs/supported-models)
-- Learn about [use cases](/docs/category/use-cases)
-- Visit the [OpenVINO GenAI Node.js bindings source](https://github.com/openvinotoolkit/openvino.genai/tree/master/src/js)
-- Visit the [NPM package](https://www.npmjs.com/package/openvino-genai-node)
+- Check out [Code Samples](/docs/samples)
+- Review [Supported Models](/docs/supported-models)
+- Explore [Use Cases](/docs/category/use-cases)
+- Browse the [Node.js bindings source](https://github.com/openvinotoolkit/openvino.genai/tree/master/src/js)
+- View the [NPM package](https://www.npmjs.com/package/openvino-genai-node)
 
 ## Troubleshooting
 
