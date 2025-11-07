@@ -539,7 +539,7 @@ print(tokens.input_ids.shape)
 
 ## How It Works
 
-For information on how OpenVINO™ GenAI works, refer to the [How It Works Section](./docs/HOW_IT_WORKS.md).
+For information on how OpenVINO™ GenAI works, refer to the [How It Works](https://openvinotoolkit.github.io/openvino.genai/docs/concepts/how-it-works) page.
 
 ## Supported Models
 
