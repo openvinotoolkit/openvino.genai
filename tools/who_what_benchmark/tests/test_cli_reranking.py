@@ -4,7 +4,7 @@ import pytest
 import shutil
 import logging
 import tempfile
-from test_cli_image import run_wwb
+from test_cli_image import run_wwb, get_similarity
 from pathlib import Path
 
 
@@ -13,62 +13,32 @@ logger = logging.getLogger(__name__)
 tmp_dir = tempfile.mkdtemp()
 
 
-OV_RERANK_MODELS = {
-    ("cross-encoder/ms-marco-TinyBERT-L2-v2", "text-classification"),
-    ("Qwen/Qwen3-Reranker-0.6B", "text-generation"),
-}
+def download_model(model_id, task, tmp_path):
+    MODEL_PATH = Path(tmp_path, model_id.replace("/", "_"))
+    subprocess.run(["optimum-cli", "export", "openvino", "--model", model_id, MODEL_PATH, "--task", task, "--trust-remote-code"],
+                   capture_output=True,
+                   text=True)
+    return MODEL_PATH
 
 
-def setup_module():
-    for model_info in OV_RERANK_MODELS:
-        model_id = model_info[0]
-        task = model_info[1]
-        MODEL_PATH = Path(tmp_dir, model_id.replace("/", "_"))
-        subprocess.run(["optimum-cli", "export", "openvino", "--model", model_id, MODEL_PATH, "--task", task, "--trust-remote-code"],
-                       capture_output=True,
-                       text=True)
+def remove_artifacts(artifacts_path, file_type="outputs"):
+    logger.info(f"Remove {file_type}")
+    shutil.rmtree(artifacts_path)
 
 
-def teardown_module():
-    logger.info("Remove models")
-    shutil.rmtree(tmp_dir)
-
-
-@pytest.mark.parametrize(("model_info"), OV_RERANK_MODELS)
-def test_reranking_genai(model_info, tmp_path):
-    if sys.platform == 'darwin':
-        pytest.xfail("Ticket 175534")
-
-    GT_FILE = Path(tmp_dir) / "gt.csv"
-    model_id = model_info[0]
-    MODEL_PATH = Path(tmp_dir) / model_id.replace("/", "_")
-
-    # test GenAI
-    run_wwb([
-        "--base-model",
-        MODEL_PATH,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        "text-reranking",
-        "--genai"
-    ])
-
-    assert Path(tmp_dir, "reference").exists()
-
-
+@pytest.mark.wwb_rerank
 @pytest.mark.parametrize(
-    ("model_info"), OV_RERANK_MODELS
+    ("model_id", "model_task", "threshold"),
+    [
+        ("cross-encoder/ms-marco-TinyBERT-L2-v2", "text-classification", 0.6),
+        ("tomaarsen/Qwen3-Reranker-0.6B-seq-cls", "text-classification", 0.6),
+        ("Qwen/Qwen3-Reranker-0.6B", "text-generation", 0.6),
+    ],
 )
 @pytest.mark.xfail(sys.platform == 'darwin', reason="Hangs. Ticket 175534", run=False)
-def test_reranking_optimum(model_info, tmp_path):
+def test_reranking_optimum(model_id, model_task, threshold, tmp_path):
     GT_FILE = Path(tmp_dir) / "gt.csv"
-    model_id = model_info[0]
-    MODEL_PATH = Path(tmp_dir, model_id.replace("/", "_"))
+    MODEL_PATH = download_model(model_id, model_task, tmp_path)
 
     # Collect reference with HF model
     run_wwb([
@@ -88,8 +58,9 @@ def test_reranking_optimum(model_info, tmp_path):
     assert GT_FILE.exists()
     assert Path(tmp_dir, "reference").exists()
 
+    outputs_path = tmp_path / "optimum"
     # test Optimum
-    outpus = run_wwb([
+    outputs_optimum = run_wwb([
         "--target-model",
         MODEL_PATH,
         "--num-samples",
@@ -101,19 +72,50 @@ def test_reranking_optimum(model_info, tmp_path):
         "--model-type",
         "text-reranking",
         "--output",
-        tmp_path,
+        outputs_path,
     ])
 
-    assert (tmp_path / "target").exists()
-    assert (tmp_path / "target.csv").exists()
-    assert (tmp_path / "metrics_per_question.csv").exists()
-    assert (tmp_path / "metrics.csv").exists()
-    assert "Metrics for model" in outpus
+    assert (outputs_path / "target").exists()
+    assert (outputs_path / "target.csv").exists()
+    assert (outputs_path / "metrics_per_question.csv").exists()
+    assert (outputs_path / "metrics.csv").exists()
+    assert "Metrics for model" in outputs_optimum
+
+    similarity = get_similarity(outputs_optimum)
+    assert similarity >= threshold
+
+    remove_artifacts(outputs_path.as_posix())
+
+    outputs_path = tmp_path / "genai"
+    # test GenAI
+    outputs_genai = run_wwb([
+        "--target-model",
+        MODEL_PATH,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        "text-reranking",
+        "--genai",
+        "--output",
+        outputs_path,
+    ])
+    assert (outputs_path / "target").exists()
+    assert (outputs_path / "target.csv").exists()
+    assert (outputs_path / "metrics_per_question.csv").exists()
+    assert (outputs_path / "metrics.csv").exists()
+    assert "Metrics for model" in outputs_genai
+
+    similarity = get_similarity(outputs_genai)
+    assert similarity >= threshold
 
     # test w/o models
     run_wwb([
         "--target-data",
-        tmp_path / "target.csv",
+        outputs_path / "target.csv",
         "--num-samples",
         "1",
         "--gt-data",
@@ -124,3 +126,6 @@ def test_reranking_optimum(model_info, tmp_path):
         "text-reranking",
         "--genai"
     ])
+
+    remove_artifacts(outputs_path.as_posix())
+    remove_artifacts(MODEL_PATH.as_posix(), "model")
