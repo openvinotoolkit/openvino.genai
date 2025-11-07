@@ -547,4 +547,4 @@ For a list of supported models, refer to the [Supported Models](https://openvino
 
 ## Debug Log
 
-For using debug log, refer to [DEBUG Log](./doc/DEBUG_LOG.md).
+For using debug log, refer to the [Debug Logging](https://openvinotoolkit.github.io/openvino.genai/docs/guides/debug-logging) page.
