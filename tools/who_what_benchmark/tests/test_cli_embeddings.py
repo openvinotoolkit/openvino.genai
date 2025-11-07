@@ -4,6 +4,11 @@ import pytest
 from conftest import convert_model, run_wwb
 
 
+def remove_artifacts(artifacts_path, file_type="outputs"):
+    logger.info(f"Remove {file_type}")
+    shutil.rmtree(artifacts_path)
+
+
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [
@@ -39,6 +44,7 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
         ]
     )
 
+    outputs_path = tmp_path / "optimum"
     # test Optimum
     run_wwb(
         [
@@ -55,6 +61,18 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
         ]
     )
 
+    assert (outputs_path / "target").exists()
+    assert (outputs_path / "target.csv").exists()
+    assert (outputs_path / "metrics_per_question.csv").exists()
+    assert (outputs_path / "metrics.csv").exists()
+    assert "Metrics for model" in outputs
+
+    similarity = get_similarity(outputs)
+    assert similarity >= SIMILARITY_THRESHOLD
+
+    remove_artifacts(outputs_path.as_posix())
+
+    outputs_path = tmp_path / "genai"
     # test GenAI
     run_wwb(
         [
@@ -73,6 +91,15 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
             tmp_path,
         ]
     )
+
+    assert (outputs_path / "target").exists()
+    assert (outputs_path / "target.csv").exists()
+    assert (outputs_path / "metrics_per_question.csv").exists()
+    assert (outputs_path / "metrics.csv").exists()
+    assert "Metrics for model" in outputs
+
+    similarity = get_similarity(outputs)
+    assert similarity >= SIMILARITY_THRESHOLD
 
     # test w/o models
     run_wwb(
