@@ -1399,7 +1399,7 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
         pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA"), True, False, id="qwen2vl/PA/image"),
         pytest.param(("katuni4ka/tiny-random-qwen2vl","SDPA"), False, True, id="qwen2vl/SDPA/video"),
         pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA"), False, True, id="qwen2vl/PA/video"),
-        pytest.param(("katuni4ka/tiny-random-qwen2vl", "SDPA"), True, True, id="qwen2vl/PA/image+video"),
+        pytest.param(("katuni4ka/tiny-random-qwen2vl", "SDPA"), True, True, id="qwen2vl/SDPA/image+video"),
         pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA"), True, True, id="qwen2vl/PA/image+video"),
         pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "SDPA"), True, False, id="qwen2.5-vl/SDPA/image"),
         pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "PA"), True, False, id="qwen2.5-vl/PA/image", marks=pytest.mark.xfail(reason="CVS-167316")),
