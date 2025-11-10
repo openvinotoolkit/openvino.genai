@@ -6,7 +6,7 @@ import pytest
 import openvino_genai as ov_genai
 import platform
 import os
-import openvino_tokenizers;
+import openvino_tokenizers
 
 @pytest.mark.precommit
 def test_add_extension():
