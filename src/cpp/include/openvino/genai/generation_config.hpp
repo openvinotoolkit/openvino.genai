@@ -707,7 +707,7 @@ public:
 };
 
 /**
- * @brief Registers an extension to ov::Core object for model with custom op.
+ * @brief Registers an extension to ov::Core object for models with custom ops.
  * @param library_path Path to the library with ov::Extension.
  */
 void OPENVINO_GENAI_EXPORTS add_extension(const std::string& library_path);
