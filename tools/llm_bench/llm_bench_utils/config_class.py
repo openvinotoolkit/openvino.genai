@@ -138,7 +138,7 @@ USE_CASES = {
                                  "tiny-llama", "tinyllama", "opt", "opt-", "pythia", "pythia-", "stablelm", "stablelm-", "stable-zephyr-", "rocket-",
                                  "vicuna", "dolly", "bloom", "red-pajama", "xgen", "longchat", "jais", "orca-mini", "baichuan", "qwen", "zephyr",
                                  "mistral", "mixtral", "phi", "phi2-", "minicpm", "gemma", "deci", "phi3", "internlm", "olmo", "starcoder", "instruct-gpt",
-                                 "granite", "granitemoe", "gptj", "yi-"]),
+                                 "granite", "granitemoe", "gptj", "yi-", "exaone"]),
                  UseCaseTextGen(['t5'], ov_cls=OVModelForSeq2SeqLM, pt_cls=T5ForConditionalGeneration),
                  UseCaseTextGen(['mpt'], OVMPTModel),
                  UseCaseTextGen(['blenderbot'], ov_cls=OVModelForSeq2SeqLM, pt_cls=BlenderbotForConditionalGeneration),
