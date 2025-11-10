@@ -12,7 +12,7 @@
 ![Python](https://img.shields.io/badge/python-3.10+-green)
 ![OS](https://img.shields.io/badge/OS-Linux_|_Windows_|_MacOS-blue)
 
-![](src/docs/openvino_genai.svg)
+![](site/static/img/openvino-genai-workflow.svg)
 
 </div>
 
@@ -180,6 +180,13 @@ image_data = ov.Tensor(image_data)
 
 prompt = "Can you describe the image?"
 result = pipe.generate(prompt, image=image_data, max_new_tokens=100)
+
+# To input multiple images, use 'images='
+# result = pipe.generate(prompt, images=[image_data], max_new_tokens=100)
+
+# To input videos frames, use 'videos=', frames_data layout = [Frame num, H, W, C]
+# result = pipe.generate(prompt, videos=[frames_data], max_new_tokens=100)
+
 print(result.texts[0])
 ```
 
@@ -201,6 +208,12 @@ int main(int argc, char* argv[]) {
         ov::genai::image(rgb),
         ov::genai::max_new_tokens(100)
     ) << '\n';
+
+    // To input multiple images, use 'images'
+    // pipe.generate(prompt, ov::genai::images(std::vector<ov::Tensor>{rgb}), ov::genai::max_new_tokens(100));
+
+    // To input videos frames, use 'videos'
+    // pipe.generate(prompt, ov::genai::videos(std::vector<ov::Tensor>{frames}), ov::genai::max_new_tokens(100));
 }
 ```
 
