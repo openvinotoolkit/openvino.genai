@@ -17,8 +17,7 @@ def test_add_extension():
     elif os_name == "Linux":
         ov_tokenizer_path = os.path.join(os.path.dirname(openvino_tokenizers.__file__), "lib", "libopenvino_tokenizers.so")
     else:
-        print(f"Skipped. Current test only support Windows and Linux")
-        return
+        pytest.skip("Skipped. Current test only supports Windows and Linux")
 
     try:
         ov_genai.add_extension(ov_tokenizer_path)
