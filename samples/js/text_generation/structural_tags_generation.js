@@ -9,19 +9,19 @@ import { serialize_json } from './helper.js';
 const getWeatherTool = {
     name: "get_weather",
     schema: z.object({
-        city: z.string().describe("City name"),
-        country: z.string().describe("Country name"),
-        date: z.string().regex(/2\d{3}-[0-1]\d-[0-3]\d/).describe("Date in YYYY-MM-DD format")
-    }),
+        city: z.string().describe("City name").meta({ title: "City" }),
+        country: z.string().describe("Country name").meta({ title: "Country" }),
+        date: z.string().regex(/2\d\d\d-[0-1]\d-[0-3]\d/).describe("Date in YYYY-MM-DD format").meta({ title: "Date" })
+    }).meta({ title: "WeatherRequest" }),
 };
 
 const getCurrencyExchangeTool = {
     name: "get_currency_exchange",
     schema: z.object({
-        from_currency: z.string().describe("Currency to convert from"),
-        to_currency: z.string().describe("Currency to convert to"),
-        amount: z.number().describe("Amount to convert")
-    }),
+        from_currency: z.string().describe("Currency to convert from").meta({ title: "From Currency" }),
+        to_currency: z.string().describe("Currency to convert to").meta({ title: "To Currency" }),
+        amount: z.number().describe("Amount to convert").meta({ title: "Amount" })
+    }).meta({ title: "CurrencyExchangeRequest" }),
 };
 
 const tools = [getWeatherTool, getCurrencyExchangeTool];
@@ -35,7 +35,8 @@ ${tools.map(tool => `<function_name=\"${tool.name}\">, arguments=${serialize_jso
 Please, only use the following format for tool calling in your responses:
 <function=\"function_name\">{"argument1": "value1", ...}</function>
 Use the tool name and arguments as defined in the tool schema.
-If you don't know the answer, just say that you don't know, but try to call the tool if it helps to answer the question.`;
+If you don't know the answer, just say that you don't know, but try to call the tool if it helps to answer the question.
+`;
 
 const functionPattern = /<function="([^"]+)">(.*?)<\/function>/gs;
 
@@ -55,6 +56,16 @@ function parseToolsFromResponse(response) {
 function streamer(subword) {
     process.stdout.write(subword);
     return StreamingStatus.RUNNING;
+}
+
+function centerString(str, width) {
+    if (str.length >= width) {
+        return str;
+    }
+    const totalPadding = width - str.length;
+    const paddingStart = Math.floor(totalPadding / 2);
+    const paddingEnd = totalPadding - paddingStart;
+    return ' '.repeat(paddingStart) + str + ' '.repeat(paddingEnd);
 }
 
 async function main() {
@@ -78,11 +89,11 @@ async function main() {
     const device = "CPU"; // GPU can be used as well
     const pipe = await LLMPipeline(modelDir, device);
 
-    console.log(`User prompt: ${prompt} `);
+    console.log(`User prompt: ${prompt}`);
 
     for (const useStructuralTags of [false, true]) {
         console.log("=".repeat(80));
-        console.log(`${useStructuralTags ? "Using structural tags" : "Using no structural tags"} `.padStart(40).padEnd(80));
+        console.log(`${centerString(useStructuralTags ? "Using structural tags" : "Using no structural tags", 80)}`);
         console.log("=".repeat(80));
 
         const generation_config = {};
@@ -101,8 +112,8 @@ async function main() {
                     triggers: ["<function="]
                 })
             };
+            generation_config.do_sample = true;
         };
-        generation_config.do_sample = true;
 
         const response = await pipe.generate(prompt, generation_config, streamer);
         await pipe.finishChat();
