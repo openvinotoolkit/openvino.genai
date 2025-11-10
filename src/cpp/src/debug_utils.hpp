@@ -1,3 +1,4 @@
+
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
@@ -123,15 +124,7 @@ inline void read_tensor(const std::string& file_name, ov::Tensor tensor, bool as
 
 /// @brief Read an npy file created in Python:
 /// with open('ndarray.npy', 'wb') as file:
-<<<<<<< HEAD
-<<<<<<< HEAD
 ///     np.save(file, ndarray.ascontiguousarray())
-=======
-///     np.save(file, ndarray.copy(order='C'))
->>>>>>> bebbb084 (timesteps)
-=======
-///     np.save(file, ndarray.ascontiguousarray())
->>>>>>> 3decb2ab (floats)
 inline ov::Tensor from_npy(const std::filesystem::path& npy) {
     std::ifstream fstream{npy, std::ios::binary};
     fstream.seekg(0, std::ios_base::end);

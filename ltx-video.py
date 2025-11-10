@@ -14,8 +14,8 @@ def generate(pipeline, frame_rate):
     ltx_pipeline_output = pipeline(
         prompt=prompt,
         negative_prompt=negative_prompt,
-        height=512,
-        width=704,
+        height=128,
+        width=128,
         num_frames=65,
         frame_rate=frame_rate,
         num_inference_steps=15,
@@ -39,7 +39,7 @@ def main():
     )
     ov_video = generate(ov_pipe, frame_rate)
     print(ov_video)
-    export_to_video(ov_video, "5_opt_video.mp4", fps=frame_rate)
+    export_to_video(ov_video, "optimum_video.mp4", fps=frame_rate)
 
     # diffusers_pipeline = LTXPipeline.from_pretrained("Lightricks/LTX-Video", torch_dtype=torch.float32)
     # diffusers_video = generate(diffusers_pipeline, frame_rate)

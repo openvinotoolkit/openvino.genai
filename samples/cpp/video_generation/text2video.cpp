@@ -55,8 +55,8 @@ int main(int32_t argc, char* argv[]) {
     auto output = pipe.generate(
         prompt,
         ov::genai::negative_prompt("worst quality, inconsistent motion, blurry, jittery, distorted"),
-        ov::genai::height(512),  // OVLTXPipeline's default
-        ov::genai::width(704),  // OVLTXPipeline's default
+        ov::genai::height(128),
+        ov::genai::width(128),
         ov::genai::num_frames(65),
         ov::genai::num_inference_steps(15),
         ov::genai::num_images_per_prompt(1),
@@ -67,7 +67,7 @@ int main(int32_t argc, char* argv[]) {
         // frame_rate: int = 25,
     );
 
-    imwrite_video("5_genai_video.avi", output.video, 25);
+    imwrite_video("genai_video.avi", output.video, 25);
 
     return EXIT_SUCCESS;
 // } catch (const std::exception& error) {
@@ -81,6 +81,3 @@ int main(int32_t argc, char* argv[]) {
 //     } catch (const std::ios_base::failure&) {}
 //     return EXIT_FAILURE;
 }
-
-
-
