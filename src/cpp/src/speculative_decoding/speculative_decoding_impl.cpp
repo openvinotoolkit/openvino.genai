@@ -238,7 +238,8 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                               const std::vector<GenerationConfig>& sampling_params,
                                                               const StreamerVariant& streamer,
-                                                              std::optional<std::vector<ov::Tensor>> token_type_ids) {
+                                                              const std::optional<std::vector<ov::Tensor>>& token_type_ids,
+                                                              const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids) {
     GenerateStrategy strategy;
     strategy.prepare_request = [this](size_t,
                                   const ov::Tensor& in_ids,
