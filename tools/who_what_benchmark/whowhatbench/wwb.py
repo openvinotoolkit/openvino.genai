@@ -262,6 +262,12 @@ def parse_args():
         help="Config option assistant_confidence_threshold for Speculative decoding.",
     )
 
+    parser.add_argument(
+        '-bs', '--batch_size',
+        type=int,
+        default=None,
+        help='Batch size value')
+
     return parser.parse_args()
 
 
@@ -517,6 +523,7 @@ def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_to
 
 def genai_gen_embedding(model, tokenizer, passages, **kwargs):
     embeddings = model.embed_documents(passages)
+
     return embeddings
 
 
@@ -635,6 +642,7 @@ def create_evaluator(base_model, args):
                 pooling_type=args.embeds_pooling_type,
                 normalize=args.embeds_normalize,
                 padding_side=args.embeds_padding_side,
+                batch_size=args.batch_size
             )
         elif task == "text-reranking":
             return EvaluatorCLS(
@@ -754,6 +762,8 @@ def main():
     logger.info(version_str)
 
     kwargs = {}
+    kwargs["batch_size"] = args.batch_size
+
     if args.cb_config:
         kwargs["cb_config"] = read_cb_config(args.cb_config)
     if args.from_onnx:

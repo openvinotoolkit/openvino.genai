@@ -683,6 +683,7 @@ def create_genai_text_embed_model(model_path, device, memory_data_collector, **k
     if padding_side:
         config.padding_side = padding_side
 
+    config.batch_size = kwargs.get("batch_size", config.batch_size)
     ov_config = kwargs['config']
 
     if kwargs.get("mem_consumption"):
