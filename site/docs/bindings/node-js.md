@@ -38,8 +38,8 @@ See [Model Preparation](/docs/category/model-preparation) for details.
 
 After installation, you can start using OpenVINO GenAI in your Node.js projects:
 
-```typescript
-import { LLMPipeline, GenerationConfig } from "openvino-genai-node";
+```js
+import { LLMPipeline } from "openvino-genai-node";
 
 async function main() {
   const modelPath = "/path/to/ov/model";
@@ -47,7 +47,7 @@ async function main() {
   const pipe = await LLMPipeline(modelPath, device);
 
   const input = "What is OpenVINO?";
-  const config: GenerationConfig = { max_new_tokens: 100 };
+  const config = { max_new_tokens: 100 };
 
   for await (const chunk of pipe.stream(input, config)) {
     process.stdout.write(chunk);

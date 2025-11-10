@@ -78,7 +78,7 @@ In this example, a function outputs words to the console immediately upon genera
         ```
     </TabItemCpp>
     <TabItemJS>
-        ```typescript showLineNumbers
+        ```js showLineNumbers
         import { LLMPipeline } from "openvino-genai-node";
         import readline from 'readline';
 
@@ -86,7 +86,7 @@ In this example, a function outputs words to the console immediately upon genera
 
         // highlight-start
         // Create a streamer function
-        function streamer(subword: string) {
+        function streamer(subword) {
             process.stdout.write(subword);
         }
         // highlight-end
