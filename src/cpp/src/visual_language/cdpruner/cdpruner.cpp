@@ -69,31 +69,21 @@ CDPruner::CDPruner(const Config& config)
       m_relevance_calc(config),
       m_kernel_builder(config),
       m_dpp_selector(config) {
-    // Load config from env
     m_config.update_from_env();
-    // Validate configuration
     validate_config(config);
 }
 
 std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visual_features,
                                                          const ov::Tensor& text_features,
                                                          bool silent) {
-    // Input validation
-    if (m_config.pruning_ratio == 0) {
-        return create_all_tokens_selection(visual_features);
-    }
-
     const auto& visual_shape = visual_features.get_shape();
     const auto& text_shape = text_features.get_shape();
 
     size_t total_tokens = visual_shape[1];
     size_t raw_tokens_to_keep = static_cast<size_t>(std::round(total_tokens * (1.0 - m_config.pruning_ratio / 100.0)));
     // Round up to the next even number of tokens to keep
+    // This is required for DPP OpenCL implementation
     size_t num_tokens_to_keep = (raw_tokens_to_keep % 2 == 0) ? raw_tokens_to_keep : raw_tokens_to_keep + 1;
-
-    if (m_config.pruning_ratio == 0 || num_tokens_to_keep >= total_tokens) {
-        return create_all_tokens_selection(visual_features);
-    }
 
     validate_input_tensors(visual_features, text_features);
 
@@ -103,6 +93,11 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
         size_t total_visual_tokens = visual_shape[1];
         size_t feature_dim = visual_shape[2];
 
+        // Determine whether to use token splitting strategy
+        // Splitting is introduced to handle large token sequences more efficiently:
+        // 1. Computational efficiency: Greedy DPP algorithm complexity is O(N×M²) where N is total
+        //    tokens and M is tokens to select. Splitting into halves could provide ~4× speedup for large sequences.
+        // 2. Parallel processing: Two halves can be processed independently, enabling parallelization.
         bool use_splitting = m_config.split_threshold > 0 && total_visual_tokens > m_config.split_threshold;
 
         size_t split_point = 0;
@@ -136,17 +131,15 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
 
         try {
             // OpenVINO ops model approach - compute relevance scores and build kernel matrix via OV model
+            // Building single kernel matrix for all the tokens or first half.
+            kernel_matrix_first = m_kernel_builder.build(visual_first_half, text_features);
             if (use_splitting) {
-                // Building kernel matrix for first half
-                kernel_matrix_first = m_kernel_builder.build(visual_first_half, text_features);
                 // Building kernel matrix for second half
                 kernel_matrix_second = m_kernel_builder.build(visual_second_half, text_features);
-            } else {
-                // Building single kernel matrix for all the tokens
-                kernel_matrix_first = m_kernel_builder.build(visual_first_half, text_features);
             }
-        } catch (const std::exception& e) {
-            // Traditional step-by-step approach: compute relevance scores first, then build kernel
+        } catch (const std::exception&) {
+            // Fallback to CPU-based kernel construction when GPU/OV model approach fails
+            // Using traditional step-by-step computation:
             if (use_splitting) {
                 // Compute relevance scores for both halves
                 ov::Tensor relevance_scores_first = m_relevance_calc.compute(visual_first_half, text_features);
@@ -176,11 +169,13 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
 
         return selected_tokens;
     } catch (const std::exception& e) {
-        throw std::runtime_error("CDPruner::select_tokens failed: " + std::string(e.what()));
+        OPENVINO_THROW("CDPruner::select_tokens failed: ", e.what());
     }
 }
 
 ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features, const ov::Tensor& text_features, bool silent) {
+    if (m_config.pruning_ratio <= 0 || m_config.pruning_ratio >= 100)
+        return visual_features;
     const auto& visual_shape = visual_features.get_shape();
     const auto& text_shape = text_features.get_shape();
     size_t batch_size = visual_shape[0];
@@ -310,24 +305,20 @@ void CDPruner::validate_config(const Config& config) {
     if (config.pruning_ratio == 0)
         return;  // Pruning disabled, no validation needed
 
-    if (config.pruning_ratio < 1 || config.pruning_ratio > 100) {
-        throw std::invalid_argument("pruning ratio must be between 0 and 100");
-    }
+    OPENVINO_ASSERT(config.pruning_ratio >= 1 && config.pruning_ratio <= 100,
+                    "pruning ratio must be between 0 and 100");
 
-    if (config.relevance_weight < 0.0f || config.relevance_weight > 1.0f) {
-        throw std::invalid_argument("relevance weight must be between 0.0 and 1.0");
-    }
+    OPENVINO_ASSERT(config.relevance_weight >= 0.0f && config.relevance_weight <= 1.0f,
+                    "relevance weight must be between 0.0 and 1.0");
 
-    if (config.numerical_threshold < 0.0f) {
-        throw std::invalid_argument("numerical_threshold must be positive");
-    }
+    OPENVINO_ASSERT(config.numerical_threshold >= 0.0f, "numerical_threshold must be positive");
 
-    if (config.device.empty()) {
-        throw std::invalid_argument("device cannot be empty");
-    }
+    OPENVINO_ASSERT(!config.device.empty(), "device cannot be empty");
 }
 
 bool CDPruner::update_config(const Config& new_config) {
+    if (m_config == new_config)
+        return true;
     try {
         // Validate the new configuration first
         validate_config(new_config);
@@ -340,59 +331,34 @@ bool CDPruner::update_config(const Config& new_config) {
         m_kernel_builder = ConditionalKernelBuilder(new_config);
         m_dpp_selector = FastGreedyDPP(new_config);
         return true;
-    } catch (const std::exception& e) {
+    } catch (const std::exception&) {
         return false;
     }
 }
 
 void CDPruner::validate_input_tensors(const ov::Tensor& visual_features, const ov::Tensor& text_features) {
     // Validate visual features
-    if (visual_features.get_shape().size() != 3) {
-        throw std::invalid_argument("Visual features must be 3D tensor [B, N, D]");
-    }
+    OPENVINO_ASSERT(visual_features.get_shape().size() == 3, "Visual features must be 3D tensor [B, N, D]");
 
     // Validate text features
-    if (text_features.get_shape().size() != 2) {
-        throw std::invalid_argument("Text features must be 2D tensor [M, D]");
-    }
+    OPENVINO_ASSERT(text_features.get_shape().size() == 2, "Text features must be 2D tensor [M, D]");
 
     const auto& visual_shape = visual_features.get_shape();
     const auto& text_shape = text_features.get_shape();
 
     // Check feature dimension consistency
-    if (visual_shape[2] != text_shape[1]) {
-        throw std::invalid_argument("Visual and text features must have same feature dimension");
-    }
+    OPENVINO_ASSERT(visual_shape[2] == text_shape[1], "Visual and text features must have same feature dimension");
 
     // Calculate actual token count based on percentage
     size_t num_tokens_to_keep = static_cast<size_t>(std::round(visual_shape[1] * (1 - m_config.pruning_ratio / 100.0)));
 
     // Check if percentage would result in zero tokens
-    if (num_tokens_to_keep == 0) {
-        throw std::invalid_argument("Percentage is too small, would result in zero tokens");
-    }
+    OPENVINO_ASSERT(num_tokens_to_keep > 0, "Percentage is too small, would result in zero tokens");
 
     // Check tensor data types
-    if (visual_features.get_element_type() != ov::element::f32 ||
-        text_features.get_element_type() != ov::element::f32) {
-        throw std::invalid_argument("Input tensors must be float32 type");
-    }
+    OPENVINO_ASSERT(
+        visual_features.get_element_type() == ov::element::f32 && text_features.get_element_type() == ov::element::f32,
+        "Input tensors must be float32 type");
 }
 
-std::vector<std::vector<size_t>> CDPruner::create_all_tokens_selection(const ov::Tensor& visual_features) {
-    auto shape = visual_features.get_shape();
-    size_t batch_size = shape[0];
-    size_t total_tokens = shape[1];
-
-    std::vector<std::vector<size_t>> all_tokens(batch_size);
-
-    for (size_t b = 0; b < batch_size; ++b) {
-        all_tokens[b].reserve(total_tokens);
-        for (size_t t = 0; t < total_tokens; ++t) {
-            all_tokens[b].push_back(t);
-        }
-    }
-
-    return all_tokens;
-}
 }  // namespace ov::genai::cdpruner

@@ -49,9 +49,7 @@ ConditionalKernelBuilder::ConditionalKernelBuilder(const Config& config)
 
 ov::Tensor ConditionalKernelBuilder::build(const ov::Tensor& visual_features, const ov::Tensor& input_param) {
     // Input validation
-    if (visual_features.get_shape().size() != 3) {
-        throw std::invalid_argument("Visual features must be 3D tensor [B, N, D]");
-    }
+    OPENVINO_ASSERT(visual_features.get_shape().size() == 3, "Visual features must be 3D tensor [B, N, D]");
 
     auto visual_shape = visual_features.get_shape();
     size_t batch_size = visual_shape[0];
@@ -79,14 +77,11 @@ ov::Tensor ConditionalKernelBuilder::build_with_ov_model(const ov::Tensor& visua
     size_t total_operations = batch_size * num_tokens * num_tokens;  // Dominant operation is N^2
 
     // Use OV model for building the kernel matrix
-    if (text_features.get_shape().size() != 2) {
-        throw std::invalid_argument("Text features must be 2D tensor [N, D]");
-    }
+    OPENVINO_ASSERT(text_features.get_shape().size() == 2, "Text features must be 2D tensor [N, D]");
 
     // Check shape consistency
-    if (text_features.get_shape()[1] != feature_dim) {
-        throw std::invalid_argument("Visual features and text features must have the same feature dimension");
-    }
+    OPENVINO_ASSERT(text_features.get_shape()[1] == feature_dim,
+                    "Visual features and text features must have the same feature dimension");
     ov::Tensor conditional_kernel = compute_conditional_kernel_with_model(visual_features, text_features);
     return conditional_kernel;
 }
@@ -99,15 +94,11 @@ ov::Tensor ConditionalKernelBuilder::build_with_normal_pipeline(const ov::Tensor
     size_t feature_dim = visual_shape[2];
     size_t total_operations = batch_size * num_tokens * num_tokens;  // Dominant operation is N^2
 
-    if (relevance_scores.get_shape().size() != 2) {
-        throw std::invalid_argument("Relevance scores must be 2D tensor [B, N]");
-    }
+    OPENVINO_ASSERT(relevance_scores.get_shape().size() == 2, "Relevance scores must be 2D tensor [B, N]");
     auto relevance_shape = relevance_scores.get_shape();
     // Check shape consistency
-    if (relevance_shape[0] != batch_size || relevance_shape[1] != num_tokens) {
-        throw std::invalid_argument(
-            "Visual features and relevance scores must have consistent batch size and token count");
-    }
+    OPENVINO_ASSERT(relevance_shape[0] == batch_size && relevance_shape[1] == num_tokens,
+                    "Visual features and relevance scores must have consistent batch size and token count");
 
     // Performance timing for kernel building steps
     auto kernel_build_start = std::chrono::high_resolution_clock::now();
@@ -280,9 +271,8 @@ ov::Tensor ConditionalKernelBuilder::batch_matrix_multiply(const ov::Tensor& a, 
     size_t inner_dim = a_shape[2];
     size_t result_cols = b_shape[2];
 
-    if (b_shape[0] != batch_size || b_shape[1] != inner_dim) {
-        throw std::invalid_argument("Incompatible matrix dimensions for batch multiplication");
-    }
+    OPENVINO_ASSERT(b_shape[0] == batch_size && b_shape[1] == inner_dim,
+                    "Incompatible matrix dimensions for batch multiplication");
 
     ov::Tensor result(ov::element::f32, {batch_size, result_rows, result_cols});
 
@@ -384,23 +374,16 @@ ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_normal(const ov:
 ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_with_model(const ov::Tensor& visual_features,
                                                                            const ov::Tensor& text_features) {
     // Input validation
-    if (visual_features.get_shape().size() != 3) {
-        throw std::invalid_argument("Visual features must be 3D tensor [B, N, D]");
-    }
-    if (text_features.get_shape().size() != 2) {
-        throw std::invalid_argument("Text features must be 2D tensor [M, D]");
-    }
+    OPENVINO_ASSERT(visual_features.get_shape().size() == 3, "Visual features must be 3D tensor [B, N, D]");
+    OPENVINO_ASSERT(text_features.get_shape().size() == 2, "Text features must be 2D tensor [M, D]");
 
     auto visual_shape = visual_features.get_shape();
     auto text_shape = text_features.get_shape();
 
-    if (visual_shape[2] != text_shape[1]) {
-        throw std::invalid_argument("Visual and text features must have same feature dimension");
-    }
+    OPENVINO_ASSERT(visual_shape[2] == text_shape[1], "Visual and text features must have same feature dimension");
 
-    if (!m_requests_initialized) {
-        throw std::runtime_error("Conditional kernel infer request not initialized. Cannot use GPU acceleration.");
-    }
+    OPENVINO_ASSERT(m_requests_initialized,
+                    "Conditional kernel infer request not initialized. Cannot use GPU acceleration.");
 
     // Use preinitialized infer request
     m_conditional_kernel_infer_request.set_input_tensor(0, visual_features);  // visual features

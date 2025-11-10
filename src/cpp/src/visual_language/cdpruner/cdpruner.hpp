@@ -131,13 +131,6 @@ private:
      */
     void validate_input_tensors(const ov::Tensor& visual_features, const ov::Tensor& text_features);
 
-    /**
-     * @brief Create selection that includes all tokens (when pruning is disabled)
-     * @param visual_features Visual features tensor
-     * @return All token indices for each batch
-     */
-    std::vector<std::vector<size_t>> create_all_tokens_selection(const ov::Tensor& visual_features);
-
     Config m_config;                            ///< Configuration
     RelevanceCalculator m_relevance_calc;       ///< Relevance computation module
     ConditionalKernelBuilder m_kernel_builder;  ///< Kernel matrix construction module (with OpenVINO ops)

@@ -17,12 +17,8 @@ RelevanceCalculator::RelevanceCalculator(const Config& config) : m_config(config
 
 ov::Tensor RelevanceCalculator::compute(const ov::Tensor& visual_embeds, const ov::Tensor& text_embeds) {
     // Input validation
-    if (visual_embeds.get_shape().size() != 3) {
-        throw std::invalid_argument("Visual embeddings must be 3D tensor [B, N, C]");
-    }
-    if (text_embeds.get_shape().size() != 2) {
-        throw std::invalid_argument("Text embeddings must be 2D tensor [M, C]");
-    }
+    OPENVINO_ASSERT(visual_embeds.get_shape().size() == 3, "Visual embeddings must be 3D tensor [B, N, C]");
+    OPENVINO_ASSERT(text_embeds.get_shape().size() == 2, "Text embeddings must be 2D tensor [M, C]");
 
     auto visual_shape = visual_embeds.get_shape();
     auto text_shape = text_embeds.get_shape();
@@ -35,9 +31,7 @@ ov::Tensor RelevanceCalculator::compute(const ov::Tensor& visual_embeds, const o
 
     // For simplicity, we assume visual and text embeddings have the same dimension
     // In practice, they might need to be projected to the same space
-    if (visual_dim != text_dim) {
-        throw std::invalid_argument("Visual and text embeddings must have the same feature dimension");
-    }
+    OPENVINO_ASSERT(visual_dim == text_dim, "Visual and text embeddings must have the same feature dimension");
 
     // Step 1: L2 normalize visual embeddings along the last dimension
     ov::Tensor visual_normalized = l2_normalize(visual_embeds);
@@ -110,7 +104,7 @@ ov::Tensor RelevanceCalculator::l2_normalize(const ov::Tensor& input) {
             }
         }
     } else {
-        throw std::invalid_argument("L2 normalization only supports 2D and 3D tensors");
+        OPENVINO_ASSERT(false, "L2 normalization only supports 2D and 3D tensors");
     }
 
     return result;
@@ -152,7 +146,7 @@ ov::Tensor RelevanceCalculator::min_max_normalize(const ov::Tensor& input) {
             }
         }
     } else {
-        throw std::invalid_argument("Min-max normalization only supports 2D tensors");
+        OPENVINO_ASSERT(false, "Min-max normalization only supports 2D tensors");
     }
 
     return result;

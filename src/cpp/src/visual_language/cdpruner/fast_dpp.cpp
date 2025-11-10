@@ -107,22 +107,20 @@ FastGreedyDPP::FastGreedyDPP(const Config& config) : m_config(config) {
 
 std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel, size_t num_tokens) {
     // Input validation
-    if (kernel.get_shape().size() != 3) {
-        throw std::invalid_argument("Kernel must be 3D tensor [B, N, N]");
-    }
+    OPENVINO_ASSERT(kernel.get_shape().size() == 3, "Kernel must be 3D tensor [B, N, N]");
 
     auto shape = kernel.get_shape();
     size_t batch_size = shape[0];
     size_t total_tokens = shape[1];
 
-    if (shape[1] != shape[2]) {
-        throw std::invalid_argument("Kernel matrix must be square [B, N, N]");
-    }
+    OPENVINO_ASSERT(shape[1] == shape[2], "Kernel matrix must be square [B, N, N]");
 
-    if (num_tokens > total_tokens) {
-        throw std::invalid_argument("Cannot select more tokens [" + std::to_string(num_tokens) + "] than available [" +
-                                    std::to_string(total_tokens) + "]");
-    }
+    OPENVINO_ASSERT(num_tokens <= total_tokens,
+                    "Cannot select more tokens [",
+                    num_tokens,
+                    "] than available [",
+                    total_tokens,
+                    "]");
 
 #ifdef ENABLE_OPENCL_DPP
     if (total_tokens < 16) {
@@ -251,15 +249,11 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
     auto second_shape = kernel_matrix_second.get_shape();
 
     // Verify shapes are compatible
-    if (first_shape.size() != 3 || second_shape.size() != 3) {
-        throw std::invalid_argument("Input kernel matrices must be 3D tensors with shape [B, tokens, tokens]");
-    }
-    if (first_shape[1] != first_shape[2] || second_shape[1] != second_shape[2]) {
-        throw std::invalid_argument("Kernel matrices must be square");
-    }
-    if (first_shape[0] != second_shape[0]) {
-        throw std::invalid_argument("Kernel matrices must have the same batch size");
-    }
+    OPENVINO_ASSERT(first_shape.size() == 3 && second_shape.size() == 3,
+                    "Input kernel matrices must be 3D tensors with shape [B, tokens, tokens]");
+    OPENVINO_ASSERT(first_shape[1] == first_shape[2] && second_shape[1] == second_shape[2],
+                    "Kernel matrices must be square");
+    OPENVINO_ASSERT(first_shape[0] == second_shape[0], "Kernel matrices must have the same batch size");
 
     size_t original_batch_size = first_shape[0];
     size_t first_tokens = first_shape[1];
@@ -492,9 +486,7 @@ size_t FastGreedyDPP::argmax(const ov::Tensor& scores) {
     const float* data = scores.data<const float>();
     size_t size = scores.get_size();
 
-    if (size == 0) {
-        throw std::invalid_argument("Cannot find argmax of empty tensor");
-    }
+    OPENVINO_ASSERT(size > 0, "Cannot find argmax of empty tensor");
 
     size_t best_idx = 0;
     float best_value = -std::numeric_limits<float>::infinity();
@@ -614,30 +606,24 @@ OpenCLDPP::~OpenCLDPP() {
 }
 
 std::vector<size_t> OpenCLDPP::select(const ov::Tensor& kernel, size_t num_tokens) {
-    if (!m_initialized) {
-        throw std::runtime_error("OpenCL DPP not initialized");
-    }
+    OPENVINO_ASSERT(m_initialized, "OpenCL DPP not initialized");
 
     // Validate input tensor
     auto shape = kernel.get_shape();
-    if (shape.size() != 3) {
-        throw std::invalid_argument("Kernel must be 3D tensor [B, N, N]");
-    }
+    OPENVINO_ASSERT(shape.size() == 3, "Kernel must be 3D tensor [B, N, N]");
 
     size_t batch_size = shape[0];
-    if (batch_size > 2) {
-        throw std::invalid_argument("Batch size must be 1 for single batch or 2 for split matrix");
-    }
+    OPENVINO_ASSERT(batch_size <= 2, "Batch size must be 1 for single batch or 2 for split matrix");
     size_t total_tokens = shape[1];
 
-    if (shape[1] != shape[2]) {
-        throw std::invalid_argument("Kernel matrix must be square [B, N, N]");
-    }
+    OPENVINO_ASSERT(shape[1] == shape[2], "Kernel matrix must be square [B, N, N]");
 
-    if (num_tokens / batch_size > total_tokens) {
-        throw std::invalid_argument("Cannot select more tokens [" + std::to_string(num_tokens / batch_size) +
-                                    "] than available [" + std::to_string(total_tokens) + "]");
-    }
+    OPENVINO_ASSERT(num_tokens / batch_size <= total_tokens,
+                    "Cannot select more tokens [",
+                    num_tokens / batch_size,
+                    "] than available [",
+                    total_tokens,
+                    "]");
 
     // Use OpenCL DPP implementation directly with ov::Tensor
     auto opencl_results = run_dpp_split_kernel_impl(kernel, num_tokens);
