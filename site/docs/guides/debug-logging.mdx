@@ -76,3 +76,13 @@ Accepted token rate, %: 51
 ===============================
 Request_id: 0 ||| 40 0 40 20 0 0 40 40 0 20 20 20 0 40 0 0 20 80 0 80 20 0 0 0 40 80 0 40 60 40 80 0 0 0 0 40 20 20 0 40 20 40 0 20 0 0 0
 ```
+
+When a GGUF model is passed to the pipeline, the detailed debug info will also be printed.
+
+```sh title="Output:"
+[GGUF Reader]: Loading and unpacking model from: gguf_models/qwen2.5-0.5b-instruct-q4_0.gguf
+[GGUF Reader]: Loading and unpacking model done. Time: 196ms
+[GGUF Reader]: Start generating OpenVINO model...
+[GGUF Reader]: Save generated OpenVINO model to: gguf_models/openvino_model.xml done. Time: 466 ms
+[GGUF Reader]: Model generation done. Time: 757ms
+```
