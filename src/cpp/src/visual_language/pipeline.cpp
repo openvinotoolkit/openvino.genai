@@ -80,8 +80,9 @@ public:
         } {
         m_is_npu = device.find("NPU") != std::string::npos;
 
+        auto properties_copy = properties;
         auto language_model_path = models_dir / "openvino_language_model.xml";
-        auto [properties_copy, extensions] = utils::extract_extensions(properties);
+        auto extensions = utils::extract_extensions(properties_copy);
         for (const auto& extension : extensions) {
             utils::singleton_core().add_extension(extension);
         }
@@ -161,7 +162,7 @@ public:
 
         auto m_language_pair = utils::get_model_weights_pair(models_map, "language");
 
-        auto [properties_copy, extensions] = utils::extract_extensions(properties);
+        auto extensions = utils::extract_extensions(properties);
         for (const auto& extension : extensions) {
             utils::singleton_core().add_extension(extension);
         }

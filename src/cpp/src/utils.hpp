@@ -286,7 +286,7 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
 
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties, bool is_npu_requested = false);
 
-std::pair<ov::AnyMap, std::vector<std::string>> extract_extensions(const ov::AnyMap& external_properties);
+std::vector<std::string> extract_extensions(const ov::AnyMap& properties);
 
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
 

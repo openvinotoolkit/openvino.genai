@@ -260,6 +260,11 @@ ov::genai::LLMPipeline::LLMPipeline(
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
 
+    auto extensions = utils::extract_extensions(properties);
+    for (const auto& extension : extensions) {
+        utils::singleton_core().add_extension(extension);
+    }
+
     if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(
             utils::singleton_core().read_model(model_str, weights_tensor),
