@@ -19,8 +19,7 @@ from .py_openvino_genai import (
     get_version,
     StreamingStatus,
     TextStreamer,
-    TextParserStreamer,
-    add_extension
+    TextParserStreamer
 )
 
 from .py_openvino_genai import (

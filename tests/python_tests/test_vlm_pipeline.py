@@ -1516,3 +1516,16 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
     genai_text = genai_output.texts[0]
 
     assert optimum_text == genai_text
+
+@pytest.mark.precommit
+def test_vlm_pipeline_add_extension():
+    model_id = MODEL_IDS[6]
+    models_path = _get_ov_model(model_id)
+
+    properties = {}
+    properties["EXTENSIONS"] = ["fake_path"]
+
+    try:
+        pipe = VLMPipeline(models_path, "CPU", properties)
+    except RuntimeError as e:
+        assert("Cannot find entry point to the extension library" in str(e))

@@ -29,7 +29,6 @@ using ov::genai::StreamingStatus;
 using ov::genai::TextStreamer;
 using ov::genai::Tokenizer;
 using ov::genai::get_version;
-using ov::genai::add_extension;
 
 void init_lora_adapter(py::module_& m);
 void init_perf_metrics(py::module_& m);
@@ -90,23 +89,6 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         return get_version().buildNumber;
     }, get_version().description);
 
-    m.def("add_extension", [] (py::str library_path) {
-        return add_extension(library_path);
-    },
-    R"doc(
-        Adds a custom extension library to the OpenVINO GenAI backend.
-
-        Parameters
-        ----------
-        library_path : str
-            Path to the shared library containing the extension.
-
-        Raises
-        ------
-        RuntimeError
-            If the extension cannot be loaded.
-        )doc"
-    );
     init_perf_metrics(m);
 
     py::class_<DecodedResults>(m, "DecodedResults", decoded_results_docstring)

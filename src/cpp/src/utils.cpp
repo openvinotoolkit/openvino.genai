@@ -718,6 +718,22 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
     return {properties, attention_backend};
 };
 
+std::pair<ov::AnyMap, std::vector<std::string>> extract_extensions(const ov::AnyMap& external_properties) {
+    std::vector<std::string> extensions;
+    ov::AnyMap properties = external_properties;
+
+    auto it = properties.find("EXTENSIONS");
+    if (it != properties.end()) {
+        extensions = it->second.as<std::vector<std::string>>();
+        for (auto ext : extensions) {
+            std::cout << "ext = " << ext.c_str() << std::endl;
+        }
+        properties.erase(it);
+    }
+
+    return {properties, extensions};
+}
+
 void release_core_plugin(const std::string& device) {
     try {
         singleton_core().unload_plugin(device);
