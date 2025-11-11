@@ -362,9 +362,6 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
             segment_offset = extracted_segments.last_offset;
         } else {
             output_tokens.insert(output_tokens.end(), chunk_output_tokens.begin(), chunk_output_tokens.end());
-        }
-
-        if (is_shortform) {
             segment_offset = input_features.n_frames;
         }
 
