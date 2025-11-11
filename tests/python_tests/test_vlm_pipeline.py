@@ -1541,7 +1541,6 @@ def test_vlm_pipeline_add_extension():
     properties = {}
     properties["EXTENSIONS"] = ["fake_path"]
 
-    try:
+    with pytest.raises(RuntimeError) as exc_info:
         pipe = VLMPipeline(models_path, "CPU", properties)
-    except RuntimeError as e:
-        assert("Cannot find entry point to the extension library" in str(e))
+    assert "Cannot find entry point to the extension library" in str(exc_info.value)
