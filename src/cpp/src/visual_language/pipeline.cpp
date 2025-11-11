@@ -82,7 +82,7 @@ public:
 
         auto language_model_path = models_dir / "openvino_language_model.xml";
         auto [properties_copy, extensions] = utils::extract_extensions(properties);
-        for (auto extension : extensions) {
+        for (const auto& extension : extensions) {
             utils::singleton_core().add_extension(extension);
         }
         auto language_model = utils::singleton_core().read_model(language_model_path, {}, properties_copy);
