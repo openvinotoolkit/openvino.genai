@@ -1,0 +1,130 @@
+---
+sidebar_position: 7
+---
+
+# Structured Output
+
+Structured output generation forces a model to produce responses that follow a defined format - for example JSON, a regular expression, or an EBNF grammar. OpenVINO GenAI provides a flexible structured output enforcement so the model can generate well‑formed output.
+
+## How It Works
+
+![Example from XGrammar paper](/img/structured_output_work_example.png)
+
+Structured output generation consists of several steps:
+1. Compile the structured-output configuration (JSON Schema, regex, or EBNF grammar) into an internal grammar representation.
+2. After the model computes the probability distribution for the next token, a mask is applied that prevents tokens incompatible with the current grammar state from being sampled.
+3. When a token is sampled, advance the grammar state and recompute the mask for the next sampling round.
+
+Refer to [XGrammar paper](https://arxiv.org/pdf/2411.15100) for more details.
+
+:::info
+Structured enforcement guarantees the syntactic format but not the semantic correctness of generated data. Always validate and sanitize outputs.
+:::
+
+:::info
+Structured constraints can affect model behavior and may reduce accuracy on some downstream tasks.
+:::
+
+## What OpenVINO GenAI Provides
+
+- Base structured output formats: JSON, regex, and grammar (EBNF) based structured generation.
+- Structural tags:
+  - Compound grammars: combine several grammars to handle more complex tasks or enforce different function calling styles.
+  - Tags: blend regular free-form generation with structural tags during single generate call.
+
+## Structured Output Configuration
+
+Structured output is configured through a `StructuredOutputConfig` (exposed in the Python and C++ APIs). The main options are:
+
+- `json_schema` - a JSON Schema that the generator will try to satisfy; useful when you need typed fields and nested structures.
+- `regex` - a regular expression that the output must match.
+- `grammar` - an EBNF grammar that describes structure of the output.
+- `structural_tags_config` and `compound_grammar` - advanced options to combine multiple grammars.
+
+:::info
+You should set only one primary structured constraint (for example `json_schema`, `regex`, or `grammar`) on a `StructuredOutputConfig` instance. The library validates the configuration and will raise an error if conflicting constraints are provided (for example both `json_schema` and `regex`).
+:::
+
+:::warning Deprecation Note
+The `StructuralTagsConfig` class and the `compound_grammar` field are deprecated. Use the `structural_tags_config` field on `StructuredOutputConfig` instead; it provides the same functionality and is the recommended API going forward.
+:::
+
+## Using Structured Output
+
+### Examples
+
+<LanguageTabs>
+    <TabItemPython>
+```python
+import json
+import openvino_genai as ov_genai
+
+
+pipe = ov_genai.LLMPipeline(model_path, "CPU")
+
+# Structured output configuration: simple JSON schema
+so_config = ov_genai.StructuredOutputConfig(
+    json_schema=json.dumps({
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "age": {"type": "integer"}
+        },
+        "required": ["name"]
+    }),
+)
+gen_config = ov_genai.GenerationConfig(max_new_tokens=100, structured_output_config=so_config)
+
+prompt = "Extract a person's name and age from the text and return only a JSON object.\nText: 'Alice is 29 years old.'"
+result = pipe.generate(prompt, generation_config=gen_config)
+print(json.loads(result))
+```
+    </TabItemPython>
+    <TabItemCpp>
+```cpp
+#include <openvino/genai/llm_pipeline.hpp>
+
+using namespace ov::genai;
+
+int main() {
+    std::string models_path = "/path/to/model/dir";
+    auto pipe = LLMPipeline(models_path, "CPU");
+
+    // Build a JSON schema object (represented using the SDK types) and configure structured output
+    StructuredOutputConfig so_config;
+    so_config.json_schema = R"({
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "age": {"type": "integer"}
+        },
+        "required": ["name"]
+    })";
+
+    std::string prompt = "Extract a person's name and age and return only a JSON object.\nText: 'Bob is 34 years old.'";
+
+    // Attach structured output config to a GenerationConfig and call generate
+    GenerationConfig gen_config;
+    gen_config.max_new_tokens = 100;
+    gen_config.structured_output_config = so_config;
+
+    auto result = pipe.generate(prompt, gen_config);
+
+    std::cout << "Model output: " << result.texts[0] << std::endl;
+    return 0;
+}
+```
+    </TabItemCpp>
+</LanguageTabs>
+
+### Samples and Further Reading
+
+You can find complete sample programs that demonstrate structured output generation here:
+
+- [Python sample](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/structured_output_generation.py)
+- [C++ sample](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/text_generation/structured_output_generation.cpp)
+- [Combining multiple grammars for structured output](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/compound_grammar_generation.py)
+- [Trigger structured output during regular generation run](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/structural_tags_generation.py)
+- [Test-driven examples](https://github.com/openvinotoolkit/openvino.genai/blob/master/tests/python_tests/test_structured_output.py) (comprehensive examples covering JSON, regex, EBNF and structural tags)
+
+OpenVINO GenAI JavaScript bindings also support the Structured Output feature. Check [JS samples](/docs/samples/js/text_generation#7-structured-output-sample-structured_output_sample) for usage examples.
