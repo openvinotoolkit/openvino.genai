@@ -22,7 +22,7 @@ namespace ov::genai {
 struct VLMPerfMetrics;
 const static std::regex UNIVERSAL_PATTERN{R"(<ov_genai_image_(\d+)>)"};
 
-struct NormlizedPrompt {
+struct NormalizedPrompt {
     std::string unified_prompt;
     std::vector<size_t> images_sequence;
     std::vector<size_t> videos_sequence;
@@ -44,15 +44,26 @@ public:
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
 
     ov::Tensor get_inputs_embeds(const std::string& prompt,
-                            const std::vector<ov::genai::EncodedImage>& images,
-                            const std::vector<ov::genai::EncodedVideo>& videos,
-                            ov::genai::VLMPerfMetrics& metrics,
-                            bool recalculate_merged_embeddings = true,
-                            const std::vector<size_t>& image_sequence = {},
-                            const std::vector<size_t>& videos_sequence = {});
+                                 const std::vector<ov::genai::EncodedImage>& images,
+                                 const std::vector<ov::genai::EncodedVideo>& videos,
+                                 ov::genai::VLMPerfMetrics& metrics,
+                                 bool recalculate_merged_embeddings = true,
+                                 const std::vector<size_t>& image_sequence = {},
+                                 const std::vector<size_t>& videos_sequence = {},
+                                 const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
     // compute input embedding and token_type_ids
     std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
+
+    std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(
+        const std::string& prompt,
+        const std::vector<ov::genai::EncodedImage>& images,
+        const std::vector<ov::genai::EncodedVideo>& videos,
+        ov::genai::VLMPerfMetrics& metrics,
+        bool recalculate_merged_embeddings = true,
+        const std::vector<size_t>& image_sequence = {},
+        const std::vector<size_t>& videos_sequence = {},
+        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
     bool has_token_type_ids() const;
 
@@ -90,19 +101,18 @@ public:
     // finishes chat and clears a chat history
     void finish_chat();
 
-    virtual NormlizedPrompt normalize_prompt(
+    virtual NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images
     ) const;
 
-    virtual NormlizedPrompt normalize_prompt(
+    virtual NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_image_id,
         size_t base_video_id,
         const std::vector<EncodedImage>& images,
         const std::vector<EncodedVideo>& videos) const;
-
 
 private:
     class IInputsEmbedder {
@@ -147,9 +157,19 @@ private:
                                              ov::genai::VLMPerfMetrics& metrics,
                                              bool recalculate_merged_embeddings = true,
                                              const std::vector<size_t>& image_sequence = {},
-                                             const std::vector<size_t>& videos_sequence = {});
+                                             const std::vector<size_t>& videos_sequence = {},
+                                             const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
         virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
+        virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(
+            const std::string& prompt,
+            const std::vector<ov::genai::EncodedImage>& images,
+            const std::vector<ov::genai::EncodedVideo>& videos,
+            ov::genai::VLMPerfMetrics& metrics,
+            bool recalculate_merged_embeddings = true,
+            const std::vector<size_t>& image_sequence = {},
+            const std::vector<size_t>& videos_sequence = {},
+            const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
         virtual bool has_token_type_ids() const;
 
@@ -196,13 +216,12 @@ private:
 
         virtual void finish_chat();
 
-        virtual NormlizedPrompt normalize_prompt(
+        virtual NormalizedPrompt normalize_prompt(
             const std::string& prompt,
             size_t base_id,
             const std::vector<EncodedImage>& images
         ) const = 0;
-
-        virtual NormlizedPrompt normalize_prompt(
+        virtual NormalizedPrompt normalize_prompt(
             const std::string& prompt,
             size_t base_image_id,
             size_t base_video_id,
