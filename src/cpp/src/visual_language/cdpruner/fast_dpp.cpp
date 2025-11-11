@@ -40,7 +40,16 @@
 
 namespace ov::genai::cdpruner {
 
-// SIMD optimized vector subtraction: out[i] -= scalar * in[i]
+/**
+ * Performs element-wise subtraction of a scaled input vector from an output vector:
+ *     out[i] -= scalar * in[i]   for i in [0, size)
+ *
+ * Parameters:
+ *   - out: Pointer to the output array of floats. Must have at least 'size' elements.
+ *   - in: Pointer to the input array of floats. Must have at least 'size' elements.
+ *   - scalar: Scalar multiplier applied to each element of 'in'.
+ *   - size: Number of elements to process.
+ */
 inline void simd_vector_sub_scalar_mul(float* out, const float* in, float scalar, size_t size) {
     size_t i = 0;
 

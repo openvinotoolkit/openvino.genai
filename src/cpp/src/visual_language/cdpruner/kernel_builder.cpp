@@ -434,7 +434,7 @@ std::shared_ptr<ov::Model> ConditionalKernelBuilder::create_conditional_kernel_m
                                                                     ov::op::EpsMode::ADD);
 
     // Step 1.2: L2 normalize text features
-    auto axes_text = ov::op::v0::Constant::create(element::i32, {1}, {1});
+    auto axes_text = ov::op::v0::Constant::create(ov::element::i32, {1}, {1});
     auto text_l2_norm = std::make_shared<ov::op::v0::NormalizeL2>(text_input,
                                                                   axes_text,
                                                                   m_config.numerical_threshold,

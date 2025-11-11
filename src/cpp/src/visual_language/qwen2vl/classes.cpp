@@ -983,9 +983,12 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
 }
 
 void InputsEmbedderQwen2VL::encode_vision_placeholder_tokens() {
-    auto encoded_vision_tokens = m_tokenizer.encode(
-        m_vlm_config.vision_start_token + m_vlm_config.vision_end_token + m_vlm_config.image_pad_token + m_vlm_config.video_pad_token,
-        ov::genai::add_special_tokens(false));
+    auto encoded_vision_tokens = m_tokenizer.encode(m_vlm_config.vision_start_token + m_vlm_config.vision_end_token +
+                                                        m_vlm_config.image_pad_token + m_vlm_config.video_pad_token,
+                                                    ov::genai::add_special_tokens(false));
+    OPENVINO_ASSERT(encoded_vision_tokens.input_ids.get_shape()[0] == 4,
+                    "Expected 4 vision tokens, got ",
+                    encoded_vision_tokens.input_ids.get_shape()[0]);
     m_vision_token_ids["vision_start"] = encoded_vision_tokens.input_ids.data<int64_t>()[0];
     m_vision_token_ids["vision_end"] = encoded_vision_tokens.input_ids.data<int64_t>()[1];
     m_vision_token_ids["image_pad"] = encoded_vision_tokens.input_ids.data<int64_t>()[2];
@@ -1112,7 +1115,9 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
         EmbeddingsRequest& req = embeddings_request_guard.get();
         ov::Tensor tmp_embeds = m_embedding->infer(req, input_ids);
 
-        // Deep-copy to ensure the data remains valid after the request is released
+        // Deep-copy necessary: Retured InferRequest's internal memory will be reused in
+        // extract_text_features_for_cdpruner() that acquires a request from the same queue.
+        // Without deep-copy, the second inference would overwrite this data, corrupting text_embeds.
         text_embeds = ov::Tensor(tmp_embeds.get_element_type(), tmp_embeds.get_shape());
         std::memcpy(text_embeds.data(), tmp_embeds.data(), tmp_embeds.get_byte_size());
     } // Request released here
