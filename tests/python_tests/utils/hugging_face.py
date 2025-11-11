@@ -225,6 +225,16 @@ def download_and_convert_rerank_model(
     return _download_and_convert_model(model_id, OVModelForSequenceClassification, ov_cache_models_dir, ov_cache_manager)
 
 
+@pytest.fixture()
+def download_and_convert_model_fixture(
+    request: pytest.FixtureRequest, 
+    ov_cache_models_dir: Path,
+    ov_cache_manager: OvTestCacheManager,
+) -> tuple[OVModel | None, AutoTokenizer | None, Path]:
+    model_id = request.param
+    return _download_and_convert_model(model_id, OVModelForSequenceClassification, ov_cache_models_dir, ov_cache_manager)
+
+
 def _download_and_convert_model(
     model_id: str, 
     model_class: Type[OVModel], 
