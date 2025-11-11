@@ -986,9 +986,6 @@ void InputsEmbedderQwen2VL::encode_vision_placeholder_tokens() {
     auto encoded_vision_tokens = m_tokenizer.encode(m_vlm_config.vision_start_token + m_vlm_config.vision_end_token +
                                                         m_vlm_config.image_pad_token + m_vlm_config.video_pad_token,
                                                     ov::genai::add_special_tokens(false));
-    OPENVINO_ASSERT(encoded_vision_tokens.input_ids.get_shape()[0] == 4,
-                    "Expected 4 vision tokens, got ",
-                    encoded_vision_tokens.input_ids.get_shape()[0]);
     m_vision_token_ids["vision_start"] = encoded_vision_tokens.input_ids.data<int64_t>()[0];
     m_vision_token_ids["vision_end"] = encoded_vision_tokens.input_ids.data<int64_t>()[1];
     m_vision_token_ids["image_pad"] = encoded_vision_tokens.input_ids.data<int64_t>()[2];
