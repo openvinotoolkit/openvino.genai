@@ -10,9 +10,9 @@ from optimum.intel.openvino.utils import TemporaryDirectory
 from openvino_genai import SchedulerConfig, draft_model, ContinuousBatchingPipeline, \
     LLMPipeline, GenerationConfig, GenerationResult, StreamerBase, DecodedResults
 
-from utils.constants import get_default_llm_properties
+from utils.constants import get_default_llm_properties, ModelDownloaderCallable
 from utils.comparation import compare_generation_results, compare_generation_results_vs_ref
-from utils.hugging_face import download_and_convert_model, run_hugging_face
+from utils.hugging_face import run_hugging_face
 
 def dict_to_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
@@ -230,13 +230,16 @@ def is_generation_available(generation_config: GenerationConfig | list[Generatio
 
 
 # TODO: remove `ref` after Generator property is supported by LLMPipeline / VLMPipeline
-def generate_and_compare(model: str,
-                         prompts : str | list[str],
-                         generation_config: list[GenerationConfig] | GenerationConfig | dict,
-                         pipeline_type: PipelineType = PipelineType.AUTO,
-                         scheduler_config: SchedulerConfig | dict = SchedulerConfig(),
-                         ref : list[list[str]] = None,
-                         streamer: StreamerWithResults | Callable | StreamerBase = None):
+def generate_and_compare(
+    model_downloader: ModelDownloaderCallable,
+    model: str,
+    prompts : str | list[str],
+    generation_config: list[GenerationConfig] | GenerationConfig | dict,
+    pipeline_type: PipelineType = PipelineType.AUTO,
+    scheduler_config: SchedulerConfig | dict = SchedulerConfig(),
+    ref : list[list[str]] = None,
+    streamer: StreamerWithResults | Callable | StreamerBase = None,
+):
     ov_prompts = prompts if type(prompts) is list else [prompts]
 
     ov_gen_config = GenerationConfig(**generation_config) if type(generation_config) is dict else generation_config
@@ -251,7 +254,7 @@ def generate_and_compare(model: str,
         ov_gen_config = [ov_gen_config] * len(ov_prompts)
 
     ov_scheduler_config = scheduler_config if isinstance(scheduler_config, SchedulerConfig) else dict_to_scheduler_config(scheduler_config)
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model)
+    opt_model, hf_tokenizer, models_path = model_downloader(model)
 
     # w/a to align different API between CB and LLM
     run_cnt = len(ov_gen_config) if pipeline_type != PipelineType.CONTINUOUS_BATCHING and type(ov_gen_config) is list else 1

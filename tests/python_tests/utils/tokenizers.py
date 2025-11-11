@@ -12,9 +12,9 @@ from utils.hugging_face import download_and_convert_model
 
 
 @pytest.fixture(scope="module")
-def model_tmp_path(tmpdir_factory):
+def model_tmp_path(tmpdir_factory, ov_cache_models_dir, ov_cache_manager):
     model_id = get_models_list()[0]
-    _, _, models_path = download_and_convert_model(model_id)
+    _, _, models_path = download_and_convert_model(model_id, ov_cache_models_dir, ov_cache_manager)
 
     temp_path = tmpdir_factory.mktemp(model_id.replace("/", "_"))
 
