@@ -16,11 +16,21 @@ from utils.ov_genai_pipelines import create_ov_pipeline, get_gguf_pipeline_types
 from data.models import get_gguf_model_list
 
 
+def model_id_to_test_id(model_id):
+    if isinstance(model_id, dict):
+        return model_id["gguf_model_id"]
+    return str(model_id)
+
+
+@pytest.fixture(params=get_gguf_model_list(), ids=model_id_to_test_id)
+def model_ids(request):
+    return request.param
+
+
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
-@pytest.mark.parametrize("model_ids", get_gguf_model_list())
 @pytest.mark.precommit
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
-def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
+def test_pipelines_with_gguf_generate(pipeline_type, model_ids, ov_cache_models_dir: Path, ov_cache_manager):
     if sys.platform == 'darwin':
         pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
     gguf_model_id = model_ids["gguf_model_id"]
@@ -49,7 +59,7 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
     all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
     res_string_input_1 = all_text_batch[0]
 
-    gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
+    gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename, ov_cache_models_dir, ov_cache_manager)
     ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, dynamic_quantization_group_size=dynamic_quantization_group_size)
     encoded_result  = ov_pipe_gguf.generate(ov.Tensor(input_ids.numpy()), generation_config=ov_generation_config)
     del ov_pipe_gguf
@@ -60,7 +70,6 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
 
 
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
-@pytest.mark.parametrize("model_ids", get_gguf_model_list())
 @pytest.mark.parametrize("enable_save_ov_model", [False, True])
 @pytest.mark.parametrize("prompt", [
     'Why is the Sun yellow?', 
@@ -71,7 +80,7 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
 ])
 @pytest.mark.precommit
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
-def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model, prompt):
+def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model, prompt, ov_cache_models_dir: Path, ov_cache_manager):
     if sys.platform == 'darwin':
         pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
     gguf_model_id = model_ids["gguf_model_id"]
@@ -105,7 +114,7 @@ def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model, prom
     all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
     res_string_input_1 = all_text_batch[0]
 
-    gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
+    gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename, ov_cache_models_dir, ov_cache_manager)
     ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model, dynamic_quantization_group_size=dynamic_quantization_group_size)
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
     
@@ -131,11 +140,11 @@ def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model, prom
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 172335")
 @pytest.mark.precommit
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
-def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
+def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids, ov_cache_models_dir: Path, ov_cache_manager):
     # Temporal testing solution until transformers starts to support qwen3 in GGUF format
     # Please refer details in issue: https://github.com/huggingface/transformers/issues/38063
-    gguf_model_id = model_ids["gguf_model_id"]
-    gguf_filename = model_ids["gguf_filename"]
+    gguf_model_id = "Qwen/Qwen3-0.6B-GGUF"
+    gguf_filename = "Qwen3-0.6B-Q8_0.gguf"
     prompt = 'Why is the Sun yellow?'
 
     ov_generation_config = ov_genai.GenerationConfig()
@@ -149,7 +158,7 @@ def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     # TODO: Investigate output difference for GGUF models. Ticket: TBD
     res_string_input_1 = "\nOkay, the user is asking why the Sun is yellow. Let me start by recalling what I know about the Sun's color. I remember"
 
-    gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
+    gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename, ov_cache_models_dir, ov_cache_manager)
     ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type)
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 

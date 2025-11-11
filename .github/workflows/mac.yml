@@ -22,7 +22,6 @@ env:
   BASE_PRODUCT_TYPE: public_macos_arm64
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: ~/.cache/hf
-  OV_CACHE: ~/.cache/ov_cache/
   CLEANUP_CACHE: 1
   OPENVINO_LOG_LEVEL: 4
 
@@ -447,7 +446,7 @@ jobs:
           #   timeout: 240
           # Only supported on X64 or ARM with SVE support
           # - name: 'LLM & VLM'
-          #   cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py'
+          #   cmd: 'python -m pytest -v tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py -o cache_dir=~/.cache/pytest'
           #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
           #   timeout: 180
           - name: 'GGUF Reader tests'
@@ -636,7 +635,7 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
+          python -m pytest -vs -o cache_dir=~/.cache/pytest ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
           SAMPLES_JS_DIR: "${{ env.SRC_DIR }}/samples/js"
@@ -700,7 +699,7 @@ jobs:
       - name: Test C++ Tools
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
-          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching_tools.py -m "samples"
+          python -m pytest -vs -o cache_dir=~/.cache/pytest ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching_tools.py -m "samples"
         env:
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
 

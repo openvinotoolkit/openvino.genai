@@ -18,7 +18,7 @@ from openvino import save_model
 from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
 from openvino_tokenizers import convert_tokenizer
 
-from utils.constants import get_default_llm_properties, extra_generate_kwargs, get_ov_cache_models_dir
+from utils.constants import get_default_llm_properties, extra_generate_kwargs, OvTestCacheManager
 from utils.network import retry_request
 import pytest
 
@@ -197,44 +197,64 @@ def convert_models(opt_model : OVModelForCausalLM,
     convert_and_save_tokenizer(hf_tokenizer, models_path, **tokenizer_kwargs)
 
 
-def download_and_convert_model(model_id: str, **tokenizer_kwargs):
-    return _download_and_convert_model(model_id, OVModelForCausalLM, **tokenizer_kwargs)
+def download_and_convert_model(
+    model_id: str, 
+    ov_cache_models_dir: Path, 
+    cache_manager: OvTestCacheManager | None = None,
+    **tokenizer_kwargs,
+) -> tuple[OVModel | None, AutoTokenizer | None, Path]:
+    return _download_and_convert_model(model_id, OVModelForCausalLM, ov_cache_models_dir, cache_manager, **tokenizer_kwargs)
 
 @pytest.fixture(scope="module")
-def download_and_convert_embeddings_models(request):
+def download_and_convert_embeddings_models(
+    request: pytest.FixtureRequest, 
+    ov_cache_models_dir: Path,
+    ov_cache_manager: OvTestCacheManager,
+) -> tuple[OVModel | None, AutoTokenizer | None, Path]:
     model_id = request.param
-    return _download_and_convert_model(model_id, OVModelForFeatureExtraction)
+    return _download_and_convert_model(model_id, OVModelForFeatureExtraction, ov_cache_models_dir, ov_cache_manager)
 
 
 @pytest.fixture()
-def download_and_convert_rerank_model(request):
+def download_and_convert_rerank_model(
+    request: pytest.FixtureRequest, 
+    ov_cache_models_dir: Path,
+    ov_cache_manager: OvTestCacheManager,
+) -> tuple[OVModel | None, AutoTokenizer | None, Path]:
     model_id = request.param
-    return _download_and_convert_model(model_id, OVModelForSequenceClassification)
+    return _download_and_convert_model(model_id, OVModelForSequenceClassification, ov_cache_models_dir, ov_cache_manager)
 
 
-@pytest.fixture()
-def download_and_convert_model_fixture(request):
-    model_id = request.param
-    tokenizer_kwargs = {
-        "padding_side": "left"
-    }
-    return _download_and_convert_model(model_id, OVModelForCausalLM, **tokenizer_kwargs)
-
-
-def _download_and_convert_model(model_id: str, model_class: Type[OVModel], **tokenizer_kwargs):
+def _download_and_convert_model(
+    model_id: str, 
+    model_class: Type[OVModel], 
+    ov_cache_models_dir: Path,
+    cache_manager: OvTestCacheManager | None = None,
+    **tokenizer_kwargs,
+) -> tuple[OVModel | None, AutoTokenizer | None, Path]:
     dir_name = str(model_id).replace(sep, "_")
-    ov_cache_models_dir = get_ov_cache_models_dir()
     models_path = ov_cache_models_dir / dir_name
 
     from utils.constants import OV_MODEL_FILENAME
-    if (models_path / OV_MODEL_FILENAME).exists():
+    model_file = models_path / OV_MODEL_FILENAME
+    
+    if model_file.exists():
         opt_model, hf_tokenizer = get_huggingface_models(models_path, model_class, local_files_only=True)
     else:
-        opt_model, hf_tokenizer = get_huggingface_models(model_id, model_class, local_files_only=False)
-        if "padding_side" in tokenizer_kwargs:
-            hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
-        # ov tokenizer padding side aligns with hf tokenizer during conversion
-        convert_models(opt_model, hf_tokenizer, models_path)
+        if cache_manager is not None:
+            with cache_manager.get_model_lock(dir_name):
+                if model_file.exists():
+                    opt_model, hf_tokenizer = get_huggingface_models(models_path, model_class, local_files_only=True)
+                else:
+                    opt_model, hf_tokenizer = get_huggingface_models(model_id, model_class, local_files_only=False)
+                    if "padding_side" in tokenizer_kwargs:
+                        hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
+                    convert_models(opt_model, hf_tokenizer, models_path)
+        else:
+            opt_model, hf_tokenizer = get_huggingface_models(model_id, model_class, local_files_only=False)
+            if "padding_side" in tokenizer_kwargs:
+                hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
+            convert_models(opt_model, hf_tokenizer, models_path)
 
     if "padding_side" in tokenizer_kwargs:
         hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
@@ -242,19 +262,36 @@ def _download_and_convert_model(model_id: str, model_class: Type[OVModel], **tok
     return opt_model, hf_tokenizer, models_path
 
 
-def download_gguf_model(gguf_model_id: str,
-                        gguf_filename: str):
+def download_gguf_model(
+    gguf_model_id: str,
+    gguf_filename: str,
+    ov_cache_models_dir: Path,
+    cache_manager: OvTestCacheManager | None = None,
+):
     gguf_dir_name = str(gguf_model_id).replace(sep, "_")
-    ov_cache_models_dir = get_ov_cache_models_dir()
     models_path_gguf = ov_cache_models_dir / gguf_dir_name
-
-    gguf_path = hf_hub_download(
-        repo_id=gguf_model_id,
-        filename=gguf_filename,
-        local_dir=models_path_gguf # Optional: Specify download directory
-    )
-
-    return gguf_path
+    gguf_path = models_path_gguf / gguf_filename
+    
+    if gguf_path.exists():
+        return str(gguf_path)
+    
+    if cache_manager is not None:
+        with cache_manager.get_model_lock(f"{gguf_dir_name}_{gguf_filename}"):
+            if gguf_path.exists():
+                return str(gguf_path)
+            result = hf_hub_download(
+                repo_id=gguf_model_id,
+                filename=gguf_filename,
+                local_dir=models_path_gguf
+            )
+            return result
+    else:
+        result = hf_hub_download(
+            repo_id=gguf_model_id,
+            filename=gguf_filename,
+            local_dir=models_path_gguf
+        )
+        return result
 
 @lru_cache(maxsize=None)
 def load_hf_model_from_gguf(gguf_model_id, gguf_filename):

@@ -9,7 +9,6 @@ import requests
 from pathlib import Path
 
 from utils.network import retry_request
-from utils.constants import get_ov_cache_dir
 
 
 # Configure logging
@@ -168,29 +167,28 @@ SAMPLES_C_DIR = os.environ.get("SAMPLES_C_DIR", os.getcwd())
 SAMPLES_JS_DIR = Path(os.environ.get("SAMPLES_JS_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/js"))))
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_and_teardown(request, tmp_path_factory):
+def setup_and_teardown(request, tmp_path_factory, ov_cache_dir: Path):
     """Fixture to set up and tear down the temporary directories."""
     
-    ov_cache = get_ov_cache_dir(tmp_path_factory.mktemp("ov_cache"))  
-    models_dir = os.path.join(ov_cache, "test_models")
-    test_data = os.path.join(ov_cache, "test_data")
+    models_dir = os.path.join(ov_cache_dir, "test_models")
+    test_data = os.path.join(ov_cache_dir, "test_data")
     
     logger.info(f"Creating directories: {models_dir} and {test_data}")
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(test_data, exist_ok=True)
     
-    request.config.cache.set("OV_CACHE", str(ov_cache))
+    request.config.cache.set("OV_CACHE", str(ov_cache_dir))
     request.config.cache.set("MODELS_DIR", str(models_dir))
     request.config.cache.set("TEST_DATA", str(test_data))
     
     yield
     
     if os.environ.get("CLEANUP_CACHE", "false").lower() != "false":
-        if os.path.exists(ov_cache):
-            logger.info(f"Removing temporary directory: {ov_cache}")
-            shutil.rmtree(ov_cache)
+        if os.path.exists(ov_cache_dir):
+            logger.info(f"Removing temporary directory: {ov_cache_dir}")
+            shutil.rmtree(ov_cache_dir)
         else:
-            logger.info(f"Skipping cleanup of temporary directory: {ov_cache}")
+            logger.info(f"Skipping cleanup of temporary directory: {ov_cache_dir}")
 
 
 def download_gguf_model(model, model_path):

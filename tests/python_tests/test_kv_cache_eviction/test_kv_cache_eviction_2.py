@@ -35,13 +35,13 @@ OPTIMAL_KVCRUSH_CONFIGS = {
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("subset", ["samsum", "trec", "qasper"])
-def test_kvcrush_vs_snapkv_baseline_longbench(subset):
+def test_kvcrush_vs_snapkv_baseline_longbench(subset, model_downloader):
     """Test that KVCrush performs equal or better than SnapKV baseline on LongBench datasets."""
     device = "CPU"
     seqs_per_request = 32
     num_kv_blocks = 1000 if device == "CPU" else 500
     model_id = "Qwen/Qwen2-0.5B-Instruct"
-    _, _, models_path = download_and_convert_model(model_id)
+    _, _, models_path = model_downloader(model_id)
 
     # Setup baseline and KVCrush configurations
     scheduler_config_baseline = get_scheduler_config(num_kv_blocks)

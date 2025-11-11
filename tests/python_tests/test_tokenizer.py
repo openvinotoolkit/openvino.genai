@@ -14,8 +14,8 @@ from openvino_genai import Tokenizer, ChatHistory
 from openvino_tokenizers import convert_tokenizer
 from transformers import AutoTokenizer
 
-from utils.constants import get_disabled_mmap_ov_config
-from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
+from utils.constants import get_disabled_mmap_ov_config, ModelDownloaderCallable
+from utils.hugging_face import convert_and_save_tokenizer
 from utils.network import retry_request
 from utils.tokenizers import delete_rt_info, model_tmp_path
 
@@ -62,8 +62,8 @@ prompts = [
 
 
 @pytest.fixture(scope="module")
-def ov_hf_tokenizers(request):
-    _, hf_tokenizer, models_path = download_and_convert_model(request.param)
+def ov_hf_tokenizers(request, model_downloader: ModelDownloaderCallable):
+    _, hf_tokenizer, models_path = model_downloader(request.param)
     ov_tokenizer = Tokenizer(models_path)
     return ov_tokenizer, hf_tokenizer
 

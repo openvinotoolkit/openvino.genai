@@ -6,13 +6,13 @@ import openvino_genai as ov_genai
 import pytest
 from openvino_genai import StructuredOutputConfig as SOC
 from pydantic import BaseModel, Field
-from utils.hugging_face import download_and_convert_model
+from utils.constants import ModelDownloaderCallable
 from utils.ov_genai_pipelines import create_ov_pipeline
 
 
 @pytest.fixture(scope="module")
-def ov_pipe(request):
-    _, _, models_path = download_and_convert_model(request.param)
+def ov_pipe(request, model_downloader: ModelDownloaderCallable):
+    _, _, models_path = model_downloader(request.param)
     return create_ov_pipeline(models_path)
 
 

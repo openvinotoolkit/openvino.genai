@@ -10,15 +10,14 @@ import os
 import json
 import numpy as np
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 from pydantic import BaseModel, Field
 
 import openvino as ov
 import openvino_genai as ov_genai
 
-from utils.constants import get_default_llm_properties, extra_generate_kwargs
-from utils.hugging_face import generation_config_to_hf, download_and_convert_model
-# model_tmp_path fixture import required
+from utils.constants import get_default_llm_properties, extra_generate_kwargs, ModelDownloaderCallable
+from utils.hugging_face import generation_config_to_hf
 from utils.tokenizers import delete_rt_info, model_tmp_path
 from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, get_main_pipeline_types, PipelineType, GenerationChatInputsType
 from data.models import get_models_list, get_chat_models_list
@@ -41,8 +40,14 @@ test_cases = [
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.parametrize("pipeline_type", get_main_pipeline_types())
 @pytest.mark.precommit
-def test_string_inputs(model_id, generation_config_dict, prompt, pipeline_type):
-    generate_and_compare(model=model_id, prompts=[prompt], generation_config=generation_config_dict, pipeline_type=pipeline_type)
+def test_string_inputs(model_id, generation_config_dict, prompt, pipeline_type, model_downloader: ModelDownloaderCallable):
+    generate_and_compare(
+        model_downloader, 
+        model=model_id, 
+        prompts=[prompt], 
+        generation_config=generation_config_dict, 
+        pipeline_type=pipeline_type,
+    )
 
 
 input_tensors_list = [
@@ -53,8 +58,8 @@ input_tensors_list = [
 @pytest.mark.parametrize("inputs", input_tensors_list)
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
-def test_encoded_inputs(model_id, inputs):
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
+def test_encoded_inputs(model_id, inputs, model_downloader: ModelDownloaderCallable):
+    opt_model, hf_tokenizer, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
     ov_generation_config = ov_genai.GenerationConfig(max_new_tokens=20)
@@ -93,14 +98,20 @@ batched_prompts = [
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.parametrize("pipeline_type", get_main_pipeline_types())
 @pytest.mark.precommit
-def test_batch_string_inputs(model_id, generation_config_dict, prompts, pipeline_type):
-    generate_and_compare(model=model_id, prompts=prompts, generation_config=generation_config_dict, pipeline_type=pipeline_type)
+def test_batch_string_inputs(model_id, generation_config_dict, prompts, pipeline_type, model_downloader):
+    generate_and_compare(
+        model_downloader, 
+        model=model_id, 
+        prompts=prompts, 
+        generation_config=generation_config_dict, 
+        pipeline_type=pipeline_type,
+    )
 
 
 @pytest.mark.precommit
-def test_batch_size_switch():
+def test_batch_size_switch(model_downloader: ModelDownloaderCallable):
     model_id = 'katuni4ka/tiny-random-phi3'
-    _, _, models_path = download_and_convert_model(model_id)
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
     ov_pipe.generate(["a"], max_new_tokens=2)
@@ -109,9 +120,9 @@ def test_batch_size_switch():
 
 
 @pytest.mark.precommit
-def test_empty_encoded_inputs_throw():
+def test_empty_encoded_inputs_throw(model_downloader: ModelDownloaderCallable):
     model_id = 'katuni4ka/tiny-random-phi3'
-    _, _, models_path = download_and_convert_model(model_id)
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
     with pytest.raises(RuntimeError):
@@ -120,8 +131,8 @@ def test_empty_encoded_inputs_throw():
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_chat_models_list())
-def test_different_input_types_works_same_and_change_nothing(model_id):
-    opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id)
+def test_different_input_types_works_same_and_change_nothing(model_id, model_downloader: ModelDownloaderCallable):
+    opt_model, hf_tokenizer, models_path  = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
     ov_generation_config = ov_genai.GenerationConfig()
@@ -165,11 +176,11 @@ questions = [
     GenerationChatInputsType.ENCODED_INPUTS,
     GenerationChatInputsType.CHAT_HISTORY])
 @pytest.mark.precommit
-def test_chat_scenario(model_id, inputs, input_type):
+def test_chat_scenario(model_id, inputs, input_type, model_downloader: ModelDownloaderCallable):
     chat_history_hf = []
     chat_history_ov = ov_genai.ChatHistory() if input_type == GenerationChatInputsType.CHAT_HISTORY else []
 
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
+    opt_model, hf_tokenizer, models_path = model_downloader(model_id)
     if input_type == GenerationChatInputsType.ENCODED_INPUTS:
         # chat is not supported for PA backend with encoded_inputs format
         ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
@@ -237,8 +248,8 @@ def test_chat_scenario(model_id, inputs, input_type):
 
 
 @pytest.mark.precommit
-def test_chat_scenario_several_chats_in_series():
-    opt_model, hf_tokenizer, models_path  = download_and_convert_model(get_chat_models_list()[0])
+def test_chat_scenario_several_chats_in_series(model_downloader: ModelDownloaderCallable):
+    opt_model, hf_tokenizer, models_path  = model_downloader(get_chat_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
 
     generation_config_kwargs, _ = chat_inputs[0]
@@ -271,8 +282,8 @@ def test_chat_scenario_several_chats_in_series():
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_chat_models_list())
-def test_chat_scenario_several_start(model_id):
-    opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id)
+def test_chat_scenario_several_start(model_id, model_downloader: ModelDownloaderCallable):
+    opt_model, hf_tokenizer, models_path  = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
     generation_config_kwargs, _ = chat_inputs[0]
@@ -286,8 +297,8 @@ def test_chat_scenario_several_start(model_id):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_chat_models_list())
-def test_generate_works_same_before_and_after_chat(model_id):
-    opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id)
+def test_generate_works_same_before_and_after_chat(model_id, model_downloader: ModelDownloaderCallable):
+    opt_model, hf_tokenizer, models_path  = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
     generation_config_kwargs, _ = chat_inputs[0]
@@ -320,8 +331,8 @@ def user_defined_status_callback(subword):
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
-def test_callback_one_string(callback, model_id):
-    _, _, models_path = download_and_convert_model(model_id)
+def test_callback_one_string(callback, model_id, model_downloader: ModelDownloaderCallable):
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 10
@@ -331,8 +342,8 @@ def test_callback_one_string(callback, model_id):
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
-def test_callback_batch_throws(callback, model_id):
-    _, _, models_path = download_and_convert_model(model_id)
+def test_callback_batch_throws(callback, model_id, model_downloader: ModelDownloaderCallable):
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     with pytest.raises(RuntimeError):
         ov_pipe.generate(['1', '2'], ov_pipe.get_generation_config(), callback)
@@ -341,8 +352,8 @@ def test_callback_batch_throws(callback, model_id):
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
-def test_callback_kwargs_one_string(callback, model_id):
-    _, _, models_path = download_and_convert_model(model_id)
+def test_callback_kwargs_one_string(callback, model_id, model_downloader: ModelDownloaderCallable):
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     ov_pipe.generate('table is made of', max_new_tokens=10, streamer=callback)
 
@@ -350,13 +361,13 @@ def test_callback_kwargs_one_string(callback, model_id):
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
-def test_callback_decoding_metallama(model_id, callback):
+def test_callback_decoding_metallama(model_id, callback, model_downloader: ModelDownloaderCallable):
     # On metallama this prompt generates output which can shorten after adding new tokens.
     # Test that streamer correctly handles such cases.
     prompt = 'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
     if model_id != 'meta-llama/Meta-Llama-3-8B-Instruct':
         pytest.skip()
-    _, _, models_path = download_and_convert_model(model_id)
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     ov_pipe.generate(prompt, max_new_tokens=300, streamer=callback)
 
@@ -364,8 +375,8 @@ def test_callback_decoding_metallama(model_id, callback):
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
-def test_callback_kwargs_batch_throws(callback, model_id):
-    _, _, models_path = download_and_convert_model(model_id)
+def test_callback_kwargs_batch_throws(callback, model_id, model_downloader: ModelDownloaderCallable):
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     with pytest.raises(RuntimeError):
         ov_pipe.generate(['1', '2'], max_new_tokens=10, streamer=callback)
@@ -373,8 +384,8 @@ def test_callback_kwargs_batch_throws(callback, model_id):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_callback_terminate_by_bool(model_id):
-    _, _, models_path = download_and_convert_model(model_id)
+def test_callback_terminate_by_bool(model_id, model_downloader: ModelDownloaderCallable):
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
     current_iter = 0
@@ -397,8 +408,8 @@ def test_callback_terminate_by_bool(model_id):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_callback_terminate_by_status(model_id):
-    _, _, models_path = download_and_convert_model(model_id)
+def test_callback_terminate_by_status(model_id, model_downloader: ModelDownloaderCallable):
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
     current_iter = 0
@@ -421,7 +432,7 @@ def test_callback_terminate_by_status(model_id):
 
 @pytest.mark.parametrize("model_id", get_chat_models_list())
 @pytest.mark.precommit
-def test_chat_scenario_callback_cancel(model_id):
+def test_chat_scenario_callback_cancel(model_id, model_downloader: ModelDownloaderCallable):
     callback_questions = [
         '1+1=',
         'Why is the Sun yellow?',
@@ -434,7 +445,7 @@ def test_chat_scenario_callback_cancel(model_id):
     chat_history_hf = []
     chat_history_ov = []
 
-    opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
+    opt_model, hf_tokenizer, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
 
     ov_generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
@@ -518,8 +529,8 @@ class PrinterStatus(ov_genai.StreamerBase):
 @pytest.mark.parametrize("streamer_base", [PrinterNone, PrinterBool, PrinterStatus])
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
-def test_streamer_one_string(streamer_base, model_id):
-    _, _, models_path = download_and_convert_model(model_id)
+def test_chat_scenario_callback_cancel_second(model_id, streamer_base, model_downloader: ModelDownloaderCallable):
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 10
@@ -529,8 +540,8 @@ def test_streamer_one_string(streamer_base, model_id):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_streamer_batch_throws(model_id):
-    _, _, models_path = download_and_convert_model(model_id)
+def test_streamer_batch_throws(model_id, model_downloader: ModelDownloaderCallable):
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     printer = PrinterNone(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
@@ -539,8 +550,8 @@ def test_streamer_batch_throws(model_id):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_streamer_kwargs_one_string(model_id):
-    _, _, models_path = download_and_convert_model(model_id)
+def test_streamer_kwargs_one_string(model_id, model_downloader: ModelDownloaderCallable):
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     printer = PrinterNone(ov_pipe.get_tokenizer())
     ov_pipe.generate('table is made of', max_new_tokens=10, do_sample=False, streamer=printer)
@@ -548,8 +559,8 @@ def test_streamer_kwargs_one_string(model_id):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_streamer_kwargs_batch_throws(model_id):
-    _, _, models_path = download_and_convert_model(model_id)
+def test_streamer_kwargs_batch_throws(model_id, model_downloader: ModelDownloaderCallable):
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     printer = PrinterNone(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
@@ -559,8 +570,8 @@ def test_streamer_kwargs_batch_throws(model_id):
 @pytest.mark.precommit
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_operator_with_callback_one_string(callback, model_id):
-    _, _, models_path = download_and_convert_model(model_id)
+def test_operator_with_callback_one_string(callback, model_id, model_downloader: ModelDownloaderCallable):
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     ten_tokens = ov_pipe.get_generation_config()
     ten_tokens.max_new_tokens = 10
@@ -570,8 +581,8 @@ def test_operator_with_callback_one_string(callback, model_id):
 @pytest.mark.precommit
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_operator_with_callback_batch_throws(callback, model_id):
-    _, _, models_path = download_and_convert_model(model_id)
+def test_operator_with_callback_batch_throws(callback, model_id, model_downloader: ModelDownloaderCallable):
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     with pytest.raises(RuntimeError):
         ov_pipe(['1', '2'], ov_pipe.get_generation_config(), callback)
@@ -580,8 +591,8 @@ def test_operator_with_callback_batch_throws(callback, model_id):
 @pytest.mark.parametrize("streamer_base", [PrinterNone, PrinterBool, PrinterStatus])
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
-def test_operator_with_streamer_kwargs_one_string(streamer_base, model_id):
-    _, _, models_path = download_and_convert_model(model_id)
+def test_operator_with_streamer_kwargs_one_string(streamer_base, model_id, model_downloader: ModelDownloaderCallable):
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     printer = streamer_base(ov_pipe.get_tokenizer())
     ov_pipe('hi', max_new_tokens=10, do_sample=True, streamer=printer)
@@ -589,8 +600,8 @@ def test_operator_with_streamer_kwargs_one_string(streamer_base, model_id):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_operator_with_streamer_kwargs_batch_throws(model_id):
-    _, _, models_path = download_and_convert_model(model_id)
+def test_operator_with_streamer_kwargs_batch_throws(model_id, model_downloader: ModelDownloaderCallable):
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     printer = PrinterNone(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
@@ -634,8 +645,8 @@ def test_eos_token_is_inherited_from_default_generation_config(model_tmp_path):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_pipeline_validates_generation_config(model_id):
-    _, _, models_path = download_and_convert_model(model_id)
+def test_pipeline_validates_generation_config(model_id, model_downloader: ModelDownloaderCallable):
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     invalid_generation_config = dict(num_beam_groups=3, num_beams=15, do_sample=True) # beam sample is not supported
     with pytest.raises(RuntimeError):
@@ -647,10 +658,10 @@ def test_pipeline_validates_generation_config(model_id):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_unicode_pybind_decoding_one_string(model_id):
+def test_unicode_pybind_decoding_one_string(model_id, model_downloader: ModelDownloaderCallable):
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
-    _, _, models_path = download_and_convert_model(model_id)
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     res_str = ov_pipe.generate(',', max_new_tokens=4, apply_chat_template=False)
     assert '�' == res_str[-1]
@@ -658,10 +669,10 @@ def test_unicode_pybind_decoding_one_string(model_id):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_unicode_pybind_decoding_batched(model_id):
+def test_unicode_pybind_decoding_batched(model_id, model_downloader: ModelDownloaderCallable):
     # On this model this prompt generates unfinished utf string.
     # Test that pybind will not fail.
-    _, _, models_path = download_and_convert_model(model_id)
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     res_str = ov_pipe.generate([","], max_new_tokens=4, apply_chat_template=False)
     assert '�' == res_str.texts[0][-1]
@@ -669,10 +680,10 @@ def test_unicode_pybind_decoding_batched(model_id):
 
 @pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
-def test_unicode_pybind_decoding_one_string_streamer(model_id):
+def test_unicode_pybind_decoding_one_string_streamer(model_id, model_downloader: ModelDownloaderCallable):
     # On this model this prompt generates unfinished utf-8 string
     # and streams it. Test that pybind will not fail while we pass string to python.
-    _, _, models_path = download_and_convert_model(model_id)
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     res_str = []
     ov_pipe.generate(",", max_new_tokens=4, apply_chat_template=False, streamer=lambda x: res_str.append(x))
@@ -682,8 +693,8 @@ def test_unicode_pybind_decoding_one_string_streamer(model_id):
 # Perf metrics
 #
 
-def run_perf_metrics_collection(model_id, generation_config_dict: dict, prompt: str) -> ov_genai.PerfMetrics:
-    _, _, models_path = download_and_convert_model(model_id)
+def run_perf_metrics_collection(model_id, generation_config_dict: dict, prompt: str, model_downloader: ModelDownloaderCallable) -> ov_genai.PerfMetrics:
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     return ov_pipe.generate([prompt], **generation_config_dict).perf_metrics
 
@@ -770,7 +781,7 @@ test_cases = [
 ]
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
 @pytest.mark.precommit
-def test_perf_metrics_with_structured_output(generation_config, prompt):
+def test_perf_metrics_with_structured_output(generation_config, prompt, model_downloader: ModelDownloaderCallable):
     class Person(BaseModel):
         name: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
         surname: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
@@ -779,7 +790,7 @@ def test_perf_metrics_with_structured_output(generation_config, prompt):
     generation_config.update(dict(structured_output_config=ov_genai.StructuredOutputConfig(json_schema=json.dumps(Person.model_json_schema()))))
     
     model_id = 'katuni4ka/tiny-random-gemma2'
-    _, _, models_path = download_and_convert_model(model_id)
+    _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
     perf_metrics = ov_pipe.generate([prompt], **generation_config).perf_metrics
     raw_metrics = perf_metrics.raw_metrics
@@ -822,11 +833,14 @@ def test_pipelines_generate_with_streaming(pipeline_type, stop_str):
         generation_config.stop_strings = {" the", "Prom"}
         generation_config.include_stop_str_in_output = False
 
-    _ = generate_and_compare(model=model_id,
-                             prompts=prompt,
-                             generation_config=generation_config,
-                             pipeline_type=pipeline_type,
-                             streamer=py_streamer)
+    _ = generate_and_compare(
+        model_downloader,
+        model=model_id,
+        prompts=prompt,
+        generation_config=generation_config,
+        pipeline_type=pipeline_type,
+        streamer=py_streamer,
+    )
     if stop_str:
         assert it_cnt == 0
     else:

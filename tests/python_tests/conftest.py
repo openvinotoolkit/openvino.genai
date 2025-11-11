@@ -1,20 +1,46 @@
 import os
+from pathlib import Path
+from typing import Callable
 import pytest
 import shutil
 import logging
-from utils.constants import get_ov_cache_models_dir
+
+from transformers import AutoTokenizer
+from optimum.intel.openvino.modeling import OVModel
+from tests.python_tests.utils.hugging_face import download_and_convert_model
+from utils.constants import OvTestCacheManager, ModelDownloaderCallable
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+@pytest.fixture(scope="session")
+def ov_cache_manager(pytestconfig: pytest.Config) -> OvTestCacheManager:
+    return OvTestCacheManager(pytestconfig)
+
+
+@pytest.fixture(scope="session")
+def ov_cache_models_dir(ov_cache_manager: OvTestCacheManager) -> Path:
+    return ov_cache_manager.get_models_dir()
+
+
+@pytest.fixture(scope="session")
+def ov_cache_dir(ov_cache_manager: OvTestCacheManager) -> Path:
+    return ov_cache_manager.get_cache_dir()
+
+
+@pytest.fixture(scope="session")
+def model_downloader(ov_cache_models_dir: Path, ov_cache_manager: OvTestCacheManager) -> ModelDownloaderCallable:
+    def download_model(model_id: str) -> tuple:
+        return download_and_convert_model(model_id, ov_cache_models_dir, ov_cache_manager)
+
+    return download_model
+
+
 @pytest.fixture(scope="session", autouse=True)
-def setup_and_teardown():
+def setup_and_teardown(ov_cache_models_dir: Path):
     """Fixture to set up and tear down the temporary directories."""
-
-    ov_cache_models_dir = get_ov_cache_models_dir()
-
     logger.info(f"Creating directory: {ov_cache_models_dir}")
     os.makedirs(ov_cache_models_dir, exist_ok=True)
 
