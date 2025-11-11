@@ -706,7 +706,6 @@ public:
     void validate() const;
 };
 
-
 /*
  * utils that allow to use generate and operator() in the following way:
  * pipe.generate(input_ids, ov::genai::max_new_tokens(200), ov::genai::temperature(1.0f),...)
