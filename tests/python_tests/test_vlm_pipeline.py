@@ -420,7 +420,6 @@ def test_images(request: pytest.FixtureRequest):
     return [request.getfixturevalue(image) for image in request.param]
 
 
-@pytest.mark.precommit
 @parametrize_all_models
 def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Tensor]):
     ov_pipe = ov_pipe_model.pipeline
@@ -442,7 +441,6 @@ def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Te
     assert res.texts[0] == "".join(result_from_streamer)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "config", 
     [
@@ -506,7 +504,6 @@ def test_vlm_continuous_batching_generate_vs_add_request(
             )
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "config", 
     [
@@ -618,7 +615,6 @@ def iteration_images_and_videos(request):
     return params
 
 
-@pytest.mark.precommit
 @parametrize_all_models
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 def test_vlm_pipeline_chat(
@@ -679,7 +675,6 @@ def iteration_images_npu(request):
     return [[request.getfixturevalue(image) for image in bundle] for bundle in request.param]
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", MODEL_IDS)
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
@@ -721,7 +716,6 @@ def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
     run_chat(npu_pipe, system_message, iteration_images_npu)
 
 
-@pytest.mark.precommit
 @parametrize_all_models_with_video
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 def test_vlm_pipeline_chat_with_video(
@@ -771,7 +765,6 @@ def test_vlm_pipeline_chat_with_video(
     ov_pipe.finish_chat()
 
 
-@pytest.mark.precommit
 @parametrize_one_model_backends
 def test_vlm_get_tokenizer(ov_pipe_model: VlmModelInfo):
     ov_pipe = ov_pipe_model.pipeline
@@ -779,7 +772,6 @@ def test_vlm_get_tokenizer(ov_pipe_model: VlmModelInfo):
     tokenizer.encode("")
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "config",
     [
@@ -797,7 +789,6 @@ def test_sampling(
     ov_pipe.generate(PROMPTS[0], image=cat_tensor, generation_config=config)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("backend", ATTENTION_BACKEND)
 def test_perf_metrics(
     backend: str, 
@@ -865,7 +856,6 @@ def test_perf_metrics(
     assert np.allclose(std_dur, np.std(raw_dur))
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", MODEL_IDS)
 @pytest.mark.parametrize("backend", ATTENTION_BACKEND)
 @pytest.mark.skipif(
@@ -901,7 +891,6 @@ def image_sequence(request):
     return [request.getfixturevalue(image) for image in request.param]
 
 
-@pytest.mark.precommit
 @pytest.mark.skipif(
     sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
     reason="NPU plugin is available only on Linux and Windows x86_64",
@@ -923,7 +912,6 @@ def test_vlm_npu_no_image():
     )
 
 
-@pytest.mark.precommit
 @parametrize_all_models
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     request: pytest.FixtureRequest,
@@ -998,7 +986,6 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     assert results_with_cancel == results
 
 
-@pytest.mark.precommit
 @parametrize_one_model_backends
 def test_start_chat_clears_history(
     ov_pipe_model: VlmModelInfo,
@@ -1025,7 +1012,6 @@ def test_start_chat_clears_history(
     assert results_first_generate == results_second_generate
 
 
-@pytest.mark.precommit
 def test_start_chat_clears_history_cb_api(
     ov_continious_batching_pipe: ContinuousBatchingPipeline, 
     image_sequence: list[openvino.Tensor]
@@ -1051,7 +1037,6 @@ def test_start_chat_clears_history_cb_api(
     assert results_first_generate == results_second_generate
 
 
-@pytest.mark.precommit
 @parametrize_all_models
 def test_vlm_pipeline_chat_streamer_cancel_first_generate(
     request: pytest.FixtureRequest,
@@ -1182,7 +1167,6 @@ def model_and_tag_parametrize(
     )
 
 
-@pytest.mark.precommit
 @model_and_tag_parametrize(TAG_INSERTED_BY_TEMPLATE)
 def test_model_tags_representation(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
     ov_pipe = ov_pipe_model.pipeline
@@ -1235,7 +1219,6 @@ def test_model_tags_representation(ov_pipe_model: VlmModelInfo, cat_tensor: open
     retry(workaround_inconsistent_inference)
 
 
-@pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_prepend_native(
     ov_pipe_model: VlmModelInfo, 
@@ -1264,7 +1247,6 @@ def test_model_tags_prepend_native(
     retry(workaround_inconsistent_inference)
 
 
-@pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_prepend_universal(
     ov_pipe_model: VlmModelInfo, 
@@ -1297,7 +1279,6 @@ def test_model_tags_prepend_universal(
 def cat_image_384x384(cat_image):
     return cat_image.resize((384, 384))
 
-@pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_append(
     ov_pipe_model: VlmModelInfo, 
@@ -1338,7 +1319,6 @@ def test_model_tags_append(
     retry(workaround_inconsistent_inference)
 
 
-@pytest.mark.precommit
 @model_and_tag_parametrize(IMAGE_ID_IGNORANT_MODELS_TO_TAG)
 def test_model_tags_same_reference(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
     ov_pipe = ov_pipe_model.pipeline
@@ -1358,7 +1338,6 @@ def test_model_tags_same_reference(ov_pipe_model: VlmModelInfo, cat_tensor: open
     retry(workaround_inconsistent_inference)
 
 
-@pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_older(ov_pipe_model: VlmModelInfo, car_tensor: openvino.Tensor):
     ov_pipe = ov_pipe_model.pipeline
@@ -1372,7 +1351,6 @@ def test_model_tags_older(ov_pipe_model: VlmModelInfo, car_tensor: openvino.Tens
     ov_pipe.finish_chat()
         
         
-@pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_missing_universal(ov_pipe_model: VlmModelInfo):
     ov_pipe = ov_pipe_model.pipeline
@@ -1381,7 +1359,6 @@ def test_model_tags_missing_universal(ov_pipe_model: VlmModelInfo):
         ov_pipe.generate("<ov_genai_image_0>")
         
         
-@pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
     ov_pipe = ov_pipe_model.pipeline
@@ -1391,7 +1368,6 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
         ov_pipe.generate(image_tag(0))
             
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "ov_pipe_model,has_image,has_video",
     [
