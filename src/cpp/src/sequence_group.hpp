@@ -237,7 +237,6 @@ public:
             m_position_ids_list.push_back(position_ids);
             return;
         }
-        int64_t* position_ids_data = position_ids.data<int64_t>();
         ov::Shape position_ids_elem_shape = position_ids.get_shape();
         position_ids_elem_shape[seq_len_shape_idx] = 1;
 
@@ -317,7 +316,7 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     SequenceGroupType m_sequence_group_type;
 
     uint64_t m_next_sequence_id = 0;
- 
+
     // amount of processed tokens, e.g. prompt can be processed using multiple consequence inferences
     // so, we need to track which part of the prompt we have already processed
     size_t m_num_processed_tokens = 0;
@@ -358,12 +357,12 @@ public:
         : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params, block_size, std::nullopt) {
     }
 
-    SequenceGroup(uint64_t request_id, 
-                  const ov::Tensor& input_ids, 
-                  const ov::genai::GenerationConfig& sampling_params, 
-                  std::size_t block_size, 
-                  const std::optional<ov::Tensor>& token_type_ids = std::nullopt, 
-                  const std::optional<ov::Tensor>& position_ids = std::nullopt, 
+    SequenceGroup(uint64_t request_id,
+                  const ov::Tensor& input_ids,
+                  const ov::genai::GenerationConfig& sampling_params,
+                  std::size_t block_size,
+                  const std::optional<ov::Tensor>& token_type_ids = std::nullopt,
+                  const std::optional<ov::Tensor>& position_ids = std::nullopt,
                   const std::optional<int64_t>& rope_delta = std::nullopt)
         : SequenceGroup(request_id, sampling_params, block_size) {
         size_t prompt_len;
@@ -405,7 +404,7 @@ public:
         m_prompt_log_probs.reserve(prompt_len);
 
         auto sequence = Sequence::create(m_next_sequence_id++, m_sequence_group_type, hidden_size);
-        
+
         if (position_ids.has_value()) {
             sequence->append_position_ids(*position_ids);
         }
@@ -647,7 +646,7 @@ public:
     size_t get_num_tokens_to_validate() {
         return m_num_validation_tokens;
     }
-    
+
     void set_stream_window_size(size_t k) {
         m_stream_window_size = k;
     }
@@ -863,7 +862,7 @@ public:
         }
     }
 
-    
+
     // Special notification path for max_new_tokens == 0 where we don't expect to return any new tokens, but only process prompt
     void notify_handle_echo_only() {
         // This method is called after scheduling and before sampling,
