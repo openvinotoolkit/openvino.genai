@@ -162,7 +162,7 @@ public:
         auto m_language_pair = utils::get_model_weights_pair(models_map, "language");
 
         auto [properties_copy, extensions] = utils::extract_extensions(properties);
-        for (auto extension : extensions) {
+        for (const auto& extension : extensions) {
             utils::singleton_core().add_extension(extension);
         }
 
