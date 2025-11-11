@@ -81,6 +81,8 @@ PROMPTS: list[str] = [
 
 VIDEO_MODEL_IDS = [
     "katuni4ka/tiny-random-llava-next-video",
+    "katuni4ka/tiny-random-qwen2vl",
+    "katuni4ka/tiny-random-qwen2.5-vl"
 ]
 
 
@@ -91,8 +93,6 @@ MODEL_IDS: list[str] = [
     "katuni4ka/tiny-random-llava",
     "katuni4ka/tiny-random-llava-next",
     "katuni4ka/tiny-random-internvl2",
-    "katuni4ka/tiny-random-qwen2vl",
-    "katuni4ka/tiny-random-qwen2.5-vl",
     "katuni4ka/tiny-random-gemma3",
     "qnguyen3/nanoLLaVA",
     *VIDEO_MODEL_IDS,
@@ -607,8 +607,8 @@ def iteration_images(request) -> list[list[PIL.Image]]:
         id="Image + video on first iteration, image on third iteration"
     ),
     pytest.param(
-        [[["cat_tensor", "car_tensor", "handwritten_tensor"], []], [["synthetic_video_32x32_tensor"], ["synthetic_video_32x32_tensor"]]],
-        id="3 images + video on first iteration, video on second iteration"
+        [[["cat_tensor", "car_tensor", "handwritten_tensor"], []], [["synthetic_video_32x32_tensor", "synthetic_video_32x32_tensor"], ["synthetic_video_32x32_tensor"]]],
+        id="3 images + 2 videos on first iteration, video on second iteration"
     ),
 ])
 def iteration_images_and_videos(request):
@@ -1397,8 +1397,16 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
     [
         pytest.param(("katuni4ka/tiny-random-qwen2vl","SDPA"), True, False, id="qwen2vl/SDPA/image"),
         pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA"), True, False, id="qwen2vl/PA/image"),
+        pytest.param(("katuni4ka/tiny-random-qwen2vl","SDPA"), False, True, id="qwen2vl/SDPA/video"),
+        pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA"), False, True, id="qwen2vl/PA/video"),
+        pytest.param(("katuni4ka/tiny-random-qwen2vl", "SDPA"), True, True, id="qwen2vl/SDPA/image+video"),
+        pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA"), True, True, id="qwen2vl/PA/image+video"),
         pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "SDPA"), True, False, id="qwen2.5-vl/SDPA/image"),
         pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "PA"), True, False, id="qwen2.5-vl/PA/image", marks=pytest.mark.xfail(reason="CVS-167316")),
+        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "SDPA"), False, True, id="qwen2.5-vl/SDPA/video"),
+        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "PA"), False, True, id="qwen2.5-vl/PA/video", marks=pytest.mark.xfail(reason="CVS-167316")),
+        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "SDPA"), True, True, id="qwen2.5-vl/SDPA/image+video"),
+        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "PA"), True, True, id="qwen2.5-vl/PA/image+video", marks=pytest.mark.xfail(reason="CVS-167316")),
         (
             pytest.param(("katuni4ka/tiny-random-gemma3", "SDPA"), True, False, id="gemma3/SDPA/image", marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) 
             if sys.platform == "darwin" 
@@ -1449,15 +1457,23 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
     ]
     
     prompt_parts = []
+    media_content = []
     if has_image:
         resized_image = request.getfixturevalue(f"cat_image_{resolution}x{resolution}")
-        conversation[0]["content"] = [{"type": "image"}] + conversation[0]["content"]
+        media_content.append({"type": "image"})
         prompt_parts.append("image")
     
     if has_video:
         resized_video = request.getfixturevalue("synthetic_video_32x32")
-        conversation[0]["content"] = [{"type": "video"}] + conversation[0]["content"]
+        media_content.append({"type": "video"})
         prompt_parts.append("video")
+    
+    # For QWen-VL series models, in GenAI VLM implementation, video is placed before image in chat template, 
+    # but in Optimum, this order depends only on the image and video order in the "conversation".
+    # So just reverse here in order to keep align.
+    if has_image and has_video and model_id in ["katuni4ka/tiny-random-qwen2.5-vl", "katuni4ka/tiny-random-qwen2vl"]:
+        media_content.reverse()
+    conversation[0]["content"] = media_content + conversation[0]["content"]
     
     if len(prompt_parts) == 1:
         prompt = f"Describe this {prompt_parts[0]}."
