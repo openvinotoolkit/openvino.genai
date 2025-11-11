@@ -7,7 +7,7 @@ import logging
 
 from transformers import AutoTokenizer
 from optimum.intel.openvino.modeling import OVModel
-from tests.python_tests.utils.hugging_face import download_and_convert_model
+from utils.hugging_face import download_and_convert_model
 from utils.constants import OvTestCacheManager, ModelDownloaderCallable
 
 # Configure logging
