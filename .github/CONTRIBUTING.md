@@ -1,5 +1,5 @@
-1. See [pull_request_template.md](./pull_request_template.md) for pull request (PR) requirements.
-2. See [BUILD.md](../src/docs/BUILD.md) for instructions on how to build `OpenVINO™ GenAI`.
+1. See [pull_request_template.md](/.github/pull_request_template.md) for pull request (PR) requirements.
+2. See [BUILD.md](/src/docs/BUILD.md) for instructions on how to build `OpenVINO™ GenAI`.
 3. Code style is determined by the file the change is made in. If ambiguous, look into the neighboring files of the same type. In case of contradiction, pick any of the options but stay consistent in your choice.
 4. Don't push branches directly to the upstream repository. Once a branch is pushed to upstream, non-admins lose push access to it, preventing you from updating your changes. Instead, push to your fork and open PRs from there.
 5. Your PR will be tested after one of the developers approves the tests run.
