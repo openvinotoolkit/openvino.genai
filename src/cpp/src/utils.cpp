@@ -725,7 +725,7 @@ std::pair<ov::AnyMap, std::vector<std::string>> extract_extensions(const ov::Any
     auto it = properties.find("EXTENSIONS");
     if (it != properties.end()) {
         extensions = it->second.as<std::vector<std::string>>();
-        for (auto ext : extensions) {
+        for (const auto& ext : extensions) {
             std::cout << "ext = " << ext.c_str() << std::endl;
         }
         properties.erase(it);
