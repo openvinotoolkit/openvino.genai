@@ -13,7 +13,6 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/genai/version.hpp"
-#include "openvino/genai/generation_config.hpp"
 
 #include "py_utils.hpp"
 
