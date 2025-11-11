@@ -295,10 +295,10 @@ class TestBenchmarkLLM:
         ["-d", "cpu", "-n", "1"],
         ["-d", "cpu", "-n", "1", "-f", "pt"],
     ])
-    def test_python_tool_llm_benchmark_gguf_format(self, sample_args):
+    def test_python_tool_llm_benchmark_gguf_format(self, sample_args, ov_cache_models_dir, ov_cache_manager):
         benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
         gguf_model = get_gguf_model_list()[0]
-        gguf_full_path = download_gguf_model(gguf_model["gguf_model_id"], gguf_model["gguf_filename"])
+        gguf_full_path = download_gguf_model(gguf_model["gguf_model_id"], gguf_model["gguf_filename"], ov_cache_models_dir, ov_cache_manager)
         benchmark_py_command = [
             sys.executable,
             benchmark_script,
