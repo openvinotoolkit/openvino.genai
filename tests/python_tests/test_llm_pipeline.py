@@ -682,17 +682,6 @@ def test_unicode_pybind_decoding_one_string_streamer(model_id):
 # Perf metrics
 #
 
-def run_perf_metrics_collection(
-    model_id: str,
-    generation_config_dict: dict,
-    prompt: str,
-    pipeline_type: PipelineType = PipelineType.AUTO
-) -> ov_genai.PerfMetrics:
-    _, _, models_path = download_and_convert_model(model_id)
-    ov_pipe = create_ov_pipeline(models_path, pipeline_type)
-    return ov_pipe.generate([prompt], **generation_config_dict).perf_metrics
-
-
 test_cases = [
     (dict(max_new_tokens=20), 'table is made of'),
     (dict(max_new_tokens=20, num_beams=4), 'table is made of' * 100),
@@ -702,25 +691,35 @@ test_cases = [
 @pytest.mark.precommit
 def test_perf_metrics(generation_config, prompt, pipeline_type):
     import time
-    start_time = time.perf_counter()
+
     model_id = 'katuni4ka/tiny-random-gemma2'
-    perf_metrics = run_perf_metrics_collection(model_id, generation_config, prompt, pipeline_type)
+
+    _, _, models_path = download_and_convert_model(model_id)
+    start_time = time.perf_counter()
+    ov_pipe = create_ov_pipeline(models_path, pipeline_type)
+    load_time_in_test = (time.perf_counter() - start_time) * 1000
+    start_generate = time.perf_counter()
+    result = ov_pipe.generate([prompt], **generation_config)
+    generate_time = (time.perf_counter() - start_generate) * 1000
     total_time = (time.perf_counter() - start_time) * 1000
+
+    perf_metrics: ov_genai.PerfMetrics = result.perf_metrics
 
     # Check that load time is adequate.
     load_time = perf_metrics.get_load_time()
-    assert load_time > 0 and load_time < total_time
+    assert 0 < load_time < total_time
+    assert 0 < load_time < load_time_in_test
 
     # Check that num input and generated tokens are adequate.
     num_generated_tokens = perf_metrics.get_num_generated_tokens()
-    assert num_generated_tokens > 0 and num_generated_tokens <= generation_config['max_new_tokens']
+    assert 0 < num_generated_tokens <= generation_config['max_new_tokens']
 
     num_input_tokens = perf_metrics.get_num_input_tokens()
-    assert num_input_tokens > 0 and num_input_tokens <= len(prompt)
+    assert 0 < num_input_tokens <= len(prompt)
 
     mean_ttft, std_ttft = perf_metrics.get_ttft()
     assert (mean_ttft, std_ttft) == (perf_metrics.get_ttft().mean, perf_metrics.get_ttft().std)
-    assert mean_ttft > 0 and mean_ttft < 1000.0
+    assert 0 < mean_ttft < generate_time
 
     raw_metrics = perf_metrics.raw_metrics
     durations = np.array(raw_metrics.m_durations) / 1000
@@ -730,25 +729,28 @@ def test_perf_metrics(generation_config, prompt, pipeline_type):
 
     mean_tpot, std_tpot = perf_metrics.get_tpot()
     assert (mean_tpot, std_tpot) == (perf_metrics.get_tpot().mean, perf_metrics.get_tpot().std)
-    assert mean_tpot > 0 and mean_ttft < 1000.0
+    assert 0 < mean_tpot < generate_time / num_generated_tokens
 
     mean_throughput, std_throughput = perf_metrics.get_throughput()
     assert (mean_throughput, std_throughput) == (perf_metrics.get_throughput().mean, perf_metrics.get_throughput().std)
-    assert mean_throughput > 0 and mean_throughput < 20000.0
+    assert 0 < mean_throughput
+    assert (num_generated_tokens - 1) / (
+        (generate_time - mean_ttft) / 1000.0
+    ) < mean_throughput
 
     mean_gen_duration, std_gen_duration = perf_metrics.get_generate_duration()
     assert (mean_gen_duration, std_gen_duration) == (perf_metrics.get_generate_duration().mean, perf_metrics.get_generate_duration().std)
-    assert mean_gen_duration > 0 and load_time + mean_gen_duration < total_time
+    assert 0 < mean_gen_duration < generate_time
     assert std_gen_duration == 0
 
     mean_tok_duration, std_tok_duration = perf_metrics.get_tokenization_duration()
     assert (mean_tok_duration, std_tok_duration) == (perf_metrics.get_tokenization_duration().mean, perf_metrics.get_tokenization_duration().std)
-    assert mean_tok_duration > 0 and mean_tok_duration < mean_gen_duration
+    assert 0 < mean_tok_duration < generate_time
     assert std_tok_duration == 0
 
     mean_detok_duration, std_detok_duration = perf_metrics.get_detokenization_duration()
     assert (mean_detok_duration, std_detok_duration) == (perf_metrics.get_detokenization_duration().mean, perf_metrics.get_detokenization_duration().std)
-    assert mean_detok_duration > 0 and mean_detok_duration < mean_gen_duration
+    assert 0 < mean_detok_duration < generate_time
     assert std_detok_duration == 0
 
     # assert that calculating statistics manually from the raw counters we get the same restults as from PerfMetrics
