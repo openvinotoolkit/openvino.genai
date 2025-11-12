@@ -182,7 +182,8 @@ class EmbeddingsEvaluator(BaseEvaluator):
                       'normalize': self.normalize}
 
             batch_size = self.batch_size or len(data[0])
-            batch_size = min(batch_size, len(data[0]))
+            assert batch_size <= len(data[0]), \
+                f"batch_size ({batch_size}) cannot be greater than data length ({len(data[0])})"
             data_input = data[0][:batch_size]
             result = gen_answer_fn(model, self.tokenizer, data_input, **kwargs)
 
