@@ -14,7 +14,7 @@ void reshape_hidden_states_to_static(std::shared_ptr<ov::Model> model, const ov:
     model->reshape(name_to_shape);
 }
 
-}  // namespace
+} // anonymous
 
 namespace ov::genai {
 WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& models_path,
