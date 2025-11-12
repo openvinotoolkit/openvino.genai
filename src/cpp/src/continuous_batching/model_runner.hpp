@@ -496,6 +496,7 @@ public:
                 } catch (const ov::Exception& e) {
                 }
             }
+        }
         if (position_ids.get_shape().size() == 3) {
             // flatten positions ids for 3D position ids case
             position_ids.set_shape({ov::shape_size(position_ids.get_shape())});

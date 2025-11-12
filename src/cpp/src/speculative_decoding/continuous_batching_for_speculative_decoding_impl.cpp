@@ -299,7 +299,8 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                     ov::Tensor pruned_hidden_state = truncate_hidden_state_from_end(hidden_state, result.removed_tokens_cnt);
                     m_model_runner->set_initial_hidden_state(request_id,
                                                             pruned_hidden_state);
-                    validate_length = pruned_hidden_state.get_shape().size() > 0 ? pruned_hidden_state.get_shape()[0] : 0;
+                    const auto& shape = pruned_hidden_state.get_shape();
+                    validate_length = shape.size() > 0 ? shape[0] : 0;
                 }
             }
             // we should update a logit processor just for draft model to generate the same tokens

@@ -8,6 +8,7 @@ void share_embedding_weights(std::shared_ptr<ov::Model>& main_model, std::shared
     // extract embedding weight from main model
     auto find_embedding_gather = [](const std::shared_ptr<ov::Model>& model)
         -> std::shared_ptr<ov::Node> {
+        constexpr size_t MIN_VOCAB_SIZE_THRESHOLD = 1000;
         for (const auto& node : model->get_ordered_ops()) {
             auto gather = std::dynamic_pointer_cast<ov::op::util::GatherBase>(node);
             if (!gather) continue;
@@ -18,7 +19,7 @@ void share_embedding_weights(std::shared_ptr<ov::Model>& main_model, std::shared
             // indices_node should be on parameter path, maybe this is better rule
             ov::PartialShape ps = data_node->get_output_partial_shape(0);
             if (ps.rank().is_static() && ps.rank().get_length() >= 2) {
-                if (ps[0].is_static() && ps[0].get_length() > 1000) { // Heuristic: vocab size > 1000
+                if (ps[0].is_static() && ps[0].get_length() > MIN_VOCAB_SIZE_THRESHOLD) { // Heuristic: vocab size > 1000
                     return gather;
                 }
             }
@@ -398,7 +399,8 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
     const std::vector<ov::Tensor>& input_ids,
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer,
-    std::optional<std::vector<ov::Tensor>> token_type_ids) {
+    const std::optional<std::vector<ov::Tensor>>& token_type_ids,
+    const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids) {
     GenerateStrategy strategy;
     strategy.prepare_request = [this](size_t,
                                       const ov::Tensor& in_ids,
