@@ -4,7 +4,7 @@ import pytest
 from conftest import convert_model, run_wwb
 
 
-def remove_artifacts(artifacts_path, file_type="outputs"):
+def remove_artifacts(artifacts_path: Path, file_type="outputs"):
     logger.info(f"Remove {file_type}")
     shutil.rmtree(artifacts_path)
 
@@ -70,7 +70,7 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
     similarity = get_similarity(outputs)
     assert similarity >= SIMILARITY_THRESHOLD
 
-    remove_artifacts(outputs_path.as_posix())
+    remove_artifacts(outputs_path)
 
     outputs_path = tmp_path / "genai"
     # test GenAI
