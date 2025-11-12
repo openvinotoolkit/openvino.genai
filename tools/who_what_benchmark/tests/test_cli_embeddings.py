@@ -3,6 +3,7 @@ import sys
 import pytest
 import shutil
 import logging
+from pathlib import Path
 from test_cli_image import run_wwb, get_similarity
 
 
@@ -10,7 +11,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def remove_artifacts(artifacts_path, file_type="outputs"):
+def remove_artifacts(artifacts_path: Path, file_type="outputs"):
     logger.info(f"Remove {file_type}")
     shutil.rmtree(artifacts_path)
 
@@ -80,7 +81,7 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
     similarity = get_similarity(outputs)
     assert similarity >= SIMILARITY_THRESHOLD
 
-    remove_artifacts(outputs_path.as_posix())
+    remove_artifacts(outputs_path)
 
     outputs_path = tmp_path / "genai"
     # test GenAI
@@ -124,5 +125,5 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
         "--genai",
     ])
 
-    remove_artifacts(outputs_path.as_posix())
-    remove_artifacts(MODEL_PATH.as_posix(), "model")
+    remove_artifacts(outputs_path)
+    remove_artifacts(MODEL_PATH, "model")

@@ -15,14 +15,13 @@ tmp_dir = tempfile.mkdtemp()
 
 def download_model(model_id, task, tmp_path):
     MODEL_PATH = Path(tmp_path, model_id.replace("/", "_"))
-    subprocess.run(["optimum-cli", "export", "openvino", "--model", model_id, MODEL_PATH, "--task", task, "--trust-remote-code"],
+    subprocess.run(["optimum-cli", "export", "openvino", "--model", model_id, MODEL_PATH, "--task", task],
                    capture_output=True,
                    text=True)
     return MODEL_PATH
 
 
-def remove_artifacts(artifacts_path, file_type="outputs"):
-    logger.info(f"Remove {file_type}")
+def remove_artifacts(artifacts_path: Path, file_type="outputs"):
     shutil.rmtree(artifacts_path)
 
 
@@ -84,7 +83,7 @@ def test_reranking_optimum(model_id, model_task, threshold, tmp_path):
     similarity = get_similarity(outputs_optimum)
     assert similarity >= threshold
 
-    remove_artifacts(outputs_path.as_posix())
+    remove_artifacts(outputs_path)
 
     outputs_path = tmp_path / "genai"
     # test GenAI
@@ -127,5 +126,5 @@ def test_reranking_optimum(model_id, model_task, threshold, tmp_path):
         "--genai"
     ])
 
-    remove_artifacts(outputs_path.as_posix())
-    remove_artifacts(MODEL_PATH.as_posix(), "model")
+    remove_artifacts(outputs_path)
+    remove_artifacts(MODEL_PATH, "model")
