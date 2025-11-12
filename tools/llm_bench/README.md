@@ -2,9 +2,9 @@
 
 This script provides a unified approach to estimate performance for Large Language Models (LLMs). It leverages pipelines provided by Optimum-Intel and allows performance estimation for PyTorch and OpenVINO models using nearly identical code and pre-collected models.
 
-This tool is not intended for accuracy checks. For accuracy checks, please refer to [wwb tool](https://github.com/openvinotoolkit/openvino.genai/blob/master/tools/who_what_benchmark/README.md).
+This tool is designed for performance estimation, not accuracy validation. For accuracy checks, refer to the [wwb tool](https://github.com/openvinotoolkit/openvino.genai/blob/master/tools/who_what_benchmark/README.md).
 
-For Text Generation Pipeline prompt modifications are turned on by default from iteration to iteration. It's enabled to avoid prefix caching. If you need to have equiel results on each iteration, please, run tool with --disable_prompt_permutation.
+For Text Generation Pipeline prompt modifications are turned on by default from iteration to iteration. It's enabled to avoid prefix caching. If you need to have equal results on each iteration, please, run tool with --disable_prompt_permutation.
 
 ### 1. Prepare Python Virtual Environment for LLM Benchmarking
    
@@ -175,7 +175,7 @@ python benchmark.py -m ./models/llama-2-7b-chat/ -p "What is openvino?" -n 2 --t
 - `--cb_config`: Path to file with Continuous Batching Scheduler settings or dict".
 - `--disable_prompt_permutation`: "Disable modification prompt from run to run for avoid prefix caching"
 - `--apply_chat_template`: "Apply chat template for LLM. By default chat template is not applied"
---from_onnx
+- `--from_onnx`: "Load the model from an ONNX file instead of a pre-converted OpenVINO IR."
 
 ```sh
 optimum-cli export openvino --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 models/TinyLlama-1.1B-Chat-v1.0
@@ -205,7 +205,7 @@ python benchmark.py -m models/MiniCPM-V-2_6/ -p "What is openvino?" -n 2 --task 
 
 > **Supported VLM model types:** llava, llava-next, qwen2-vl, llava-qwen2, internvl-chat, minicpmv, phi3-v, minicpm-v, minicpmo, maira2, qwen2-5-vl 
 
-### Image Generaion Models
+### Image Generation Models
 ```sh
 # convert model to OpenVINO IRs format
 optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task stable-diffusion --weight-format fp16 models/dreamlike_anime_1_0_ov/FP16
@@ -228,7 +228,7 @@ python benchmark.py -m models/dreamlike_anime_1_0_ov/FP16 -p "cat wizard, gandal
 > **Supported Image Generation model types:** stable-diffusion, ssd, tiny-sd, small-sd, lcm, sdxl, dreamlike, flux
 
 ### Generation with LoRA
-LoRA is supported for Text Generation and Image Generation OpenVION GenAI Pipelines.
+LoRA is supported for Text Generation and Image Generation OpenVINO GenAI Pipelines.
 ```sh
 # load LoRA adapters
 wget -O soulcard.safetensors https://civitai.com/api/download/models/72591
@@ -260,7 +260,7 @@ python benchmark.py -m models/speecht5_tts/ -p "Hello OpenVINO GenAI" -n 2 --tas
 ### Speech to Text models
 ```sh
 # convert model to OpenVINO IR format
-optimum-cli export openvino --model openai/whisper-base --trust-remote-code  models/whisper-base
+optimum-cli export openvino --model openai/whisper-base models/whisper-base
 # load audio
 wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
 # run benchmark.py
@@ -272,41 +272,41 @@ python benchmark.py -m models/whisper-base/ -p ./how_are_you_doing_today.wav -n 
 ### Text Rerank models
 ```sh
 # convert model to OpenVINO IR format
-optimum-cli export openvino --model cross-encoder/ms-marco-MiniLM-L2-v2 --trust-remote-code  models/ms-marco-MiniLM-L2-v2
+optimum-cli export openvino --model cross-encoder/ms-marco-MiniLM-L2-v2 --task text-classification models/ms-marco-MiniLM-L2-v2
 # run benchmark.py
 python benchmark.py -m models/ms-marco-MiniLM-L2-v2/ -n 2 --task text_rerank
 ```
 
 **Some additional parameters:**
 - `-p`: Query.
-- `--texts`: Text or list of texts of documets for reranking based on their relevance to a query.
+- `--texts`: Text or list of texts of documents for reranking based on their relevance to a query.
 - `--reranking_max_length`: Max length for text reranking. Input text will be padded or truncated to specified value.
 - `--reranking_top_n`: Number of top results to return for text reranking
 - `--texts_file`: Files with texts in JSONL format with candidates for reranking based on relevance to a prompt(query). Multiple files should be separated with space(s).
 
-> **Supported Text Rerank model types:**: bge, "bert, albert, "roberta, xlm-roberta, qwen3
+> **Supported Text Rerank model types:**: bge, bert, albert, roberta, xlm-roberta, qwen3
 
 ### Compare Text Embeddings models
 ```sh
 # convert model to OpenVINO IR format
-optimum-cli export openvino --model BAAI/bge-small-en-v1.5 --trust-remote-code  models/bge-small-en-v1.5
+optimum-cli export openvino --model BAAI/bge-small-en-v1.5 --task feature-extraction models/bge-small-en-v1.5
 # run benchmark.py
 python benchmark.py -m models/bge-small-en-v1.5/ -n 2 --task text_embed 
 ```
 
 **Some additional parameters:**
 - `-p`: Text for creating embeddings
-- `--embedding_poolin`: Pooling type CLS or MEAN for encoders, LAST_TOKEN for decoders. Different post-processing is applied depending on the padding side.
+- `--embedding_pooling`: Pooling type CLS or MEAN for encoders, LAST_TOKEN for decoders. Different post-processing is applied depending on the padding side.
 - `--embedding_normalize`: Normalize embeddings
 - `--embedding_max_length`: Max length for text embeddings. Input text will be padded or truncated to specified value.
 - `--embedding_padding_side`: Side to use for padding 'left' or 'right'.
 
-> **Supported Text Embeddings model types:**: bge, "bert, albert, roberta, xlm-roberta, qwen3
+> **Supported Text Embeddings model types:**: bge, bert, albert, roberta, xlm-roberta, qwen3
 
 ### Code Generation models
 ```sh
 # convert model to OpenVINO IR format
-optimum-cli export openvino --model Salesforce/codegen-350M-multi --trust-remote-code  models/codegen-350M-multi
+optimum-cli export openvino --model Salesforce/codegen-350M-multi models/codegen-350M-multi
 # run benchmark.py
 python benchmark.py -m models/codegen-350M-multi -p "def hello_world():" -n 2 --task code_gen 
 ```
