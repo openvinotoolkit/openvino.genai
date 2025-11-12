@@ -93,7 +93,6 @@ bool EagleModelTransform::run_on_model(const std::shared_ptr<ov::Model>& model) 
         manager.set_per_pass_validation(false);
         manager.register_pass<Eagle3Transform>(m_layer_ids, m_hidden_layer_outputs);
         manager.run_passes(model);
-        
         if (!m_hidden_layer_outputs.empty()) {
             auto concat = std::make_shared<v0::Concat>(m_hidden_layer_outputs, -1);
             concat->set_friendly_name("eagle3_hidden_states_concat");
@@ -215,7 +214,6 @@ bool EagleBaseTransform::apply(NodePtr node, std::vector<std::shared_ptr<v0::Res
             if (!last_residual_node) {
                 return false;
             }
-            // 
             auto result = std::make_shared<v0::Result>(last_residual_node);
             std::string output_name = "last_hidden_state";
             result->output(0).set_names({output_name});
