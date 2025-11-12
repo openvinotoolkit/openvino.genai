@@ -469,7 +469,7 @@ def test_return_timestamps_short_form(model_descr, sample_from_dataset):
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 1}], indirect=True)
+@pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 1}], indirect=True)
 @pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_return_timestamps_on_cut_sample(model_descr, sample_from_dataset):
