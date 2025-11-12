@@ -11,7 +11,7 @@
 #include "visual_language/inputs_embedder.hpp"
 
 namespace ov::genai {
-
+    extern bool g_enable_custom_vit;
 class VisionEncoderQwen2VL : public VisionEncoder {
 public:
     explicit VisionEncoderQwen2VL(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties);
@@ -20,21 +20,21 @@ public:
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
     EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map) override;
 
-private:
-    void encode_with_imagepreprocess_cpp(const std::vector<ov::Tensor>& image,
+protected:
+    virtual void encode_with_imagepreprocess_cpp(const std::vector<ov::Tensor>& images,
                                                  const ov::AnyMap& config_map,
                                                  ov::Tensor& out_tensor,
                                                  ImageSize& out_rsz_size,
                                                  size_t frame_num = 1,
                                                  size_t frame_id = 0);
+
     void encode_with_imagepreprocess_ov(const std::vector<ov::Tensor>& image,
                                         const ov::AnyMap& config_map,
                                         ov::Tensor& out_tensor,
                                         ImageSize& out_rsz_size,
                                         size_t frame_num = 1,
                                         size_t frame_id = 0);
-
-    bool use_ov_image_preprocess = true; // default use ov image preprocess, control by env IMAGE_PREPROCESS=CPP to use cpp image preprocess
+    bool use_ov_image_preprocess = g_enable_custom_vit ? false : true; // default use ov image preprocess, control by env IMAGE_PREPROCESS=CPP to use cpp image preprocess
 };
 
 class InputsEmbedderQwen2VL : public InputsEmbedder::IInputsEmbedder {
