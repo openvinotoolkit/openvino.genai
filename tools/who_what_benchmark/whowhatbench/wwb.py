@@ -719,8 +719,8 @@ def main():
             kwargs["alphas"] = args.alphas
         else:
             kwargs["alphas"] = [1.0] * len(args.adapters)
+    kwargs["empty_adapters"] = args.empty_adapters
     if args.model_type == "text-embedding":
-        kwargs["empty_adapters"] = args.empty_adapters
         kwargs["embeds_pooling"] = args.embeds_pooling_type
         kwargs["embeds_normalize"] = args.embeds_normalize
         kwargs["embeds_padding_side"] = args.embeds_padding_side

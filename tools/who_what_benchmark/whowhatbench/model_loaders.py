@@ -273,7 +273,8 @@ def load_text2image_model(
             raise ValueError("Adapters are not supported for OVPipelineForText2Image.")
 
         model_kwargs = {"ov_config": ov_config, "safety_checker": None}
-        model_kwargs |= {"from_onnx": kwargs['from_onnx']} if kwargs.get('from_onnx') else {}
+        if kwargs.get('from_onnx'):
+            model_kwargs['from_onnx'] = kwargs['from_onnx']
         try:
             model = TEXT2IMAGEPipeline.from_pretrained(model_id, device=device, **model_kwargs)
         except ValueError:
@@ -426,7 +427,8 @@ def load_imagetext2image_model(
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVPipelineForImage2Image
         model_kwargs = {"ov_config": ov_config, "safety_checker": None}
-        model_kwargs |= {"from_onnx": kwargs['from_onnx']} if kwargs.get('from_onnx') else {}
+        if kwargs.get('from_onnx'):
+            model_kwargs['from_onnx'] = kwargs['from_onnx']
         try:
             model = OVPipelineForImage2Image.from_pretrained(model_id, device=device, **model_kwargs)
         except ValueError:
@@ -470,7 +472,8 @@ def load_inpainting_model(
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVPipelineForInpainting
         model_kwargs = {"ov_config": ov_config, "safety_checker": None}
-        model_kwargs |= {"from_onnx": kwargs['from_onnx']} if kwargs.get('from_onnx') else {}
+        if kwargs.get('from_onnx'):
+            model_kwargs['from_onnx'] = kwargs['from_onnx']
         try:
             model = OVPipelineForInpainting.from_pretrained(model_id, device=device, **model_kwargs)
         except ValueError as e:
