@@ -31,6 +31,20 @@ enum HiddenStateFlags : uint8_t {
     HS_INTERNAL  = 1 << 2
 };
 
+struct SequenceKey {
+    size_t request_id{};
+    size_t grouped_sequence_id{};
+    bool operator<(const SequenceKey& other) const {
+        return std::tie(request_id, grouped_sequence_id) <
+            std::tie(other.request_id, other.grouped_sequence_id);
+    }
+};
+
+struct HiddenStateRange {
+    size_t start_token_idx{};
+    size_t length{};
+};
+
 /**
  * @brief Runs the LLM infer request, parsing the continuous batching scheduler output into proper inputs in terms of OV API (e.g. token input IDs,
  * KV cache block indices etc.) and returning the logit scores for the next token to be generated for each of the currently scheduled sequences.
@@ -56,20 +70,6 @@ class ModelRunner {
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
     uint8_t m_hidden_state_flags = HS_NONE;
-    struct SequenceKey {
-        size_t request_id{};
-        size_t grouped_sequence_id{};
-        bool operator<(const SequenceKey& other) const {
-            return std::tie(request_id, grouped_sequence_id) <
-                std::tie(other.request_id, other.grouped_sequence_id);
-        }
-    };
-
-    struct HiddenStateRange {
-        size_t start_token_idx{};
-        size_t length{};
-    };
-
     std::map<SequenceKey, HiddenStateRange> m_sequence_hidden_state_mapping;
     // a container which use sequence group id and request id as key to store hidden states
     std::map<size_t, ov::Tensor> m_initial_hidden_states; // shape: [N, seq_len, hidden_size]
