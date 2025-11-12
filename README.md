@@ -18,7 +18,7 @@
 
 OpenVINO™ GenAI is a library of the most popular Generative AI model pipelines, optimized execution methods, and samples that run on top of highly performant [OpenVINO Runtime](https://github.com/openvinotoolkit/openvino).
 
-This library is friendly to PC and laptop execution, and optimized for resource consumption. It requires no external dependencies to run generative models as it already includes all the core functionality (e.g. tokenization via openvino-tokenizers).
+This library is friendly to PC and laptop execution, and optimized for resource consumption. It requires no external dependencies to run generative models as it already includes all the core functionality (e.g. tokenization via [`openvino-tokenizers`](https://github.com/openvinotoolkit/openvino_tokenizers)).
 
 ![Text generation using LLaMa 3.2 model running on Intel ARC770 dGPU](./samples/generation.gif)
 
@@ -28,24 +28,26 @@ This library is friendly to PC and laptop execution, and optimized for resource 
 
 * [Introduction to OpenVINO™ GenAI](https://openvinotoolkit.github.io/openvino.genai/docs/getting-started/introduction)
 * [Install OpenVINO™ GenAI](https://openvinotoolkit.github.io/openvino.genai/docs/getting-started/installation)
-* [Build OpenVINO™ GenAI](./src/docs/BUILD.md)
+* [Build OpenVINO™ GenAI](/src/docs/BUILD.md)
+* [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/)
 
-Please follow these blogs to setup your first hands-on experience with C++ and Python samples.
+Please follow these blogs to setup your first hands-on experience with OpenVINO GenAI.
 
 * [How to Build OpenVINO™ GenAI APP in C++](https://medium.com/openvino-toolkit/how-to-build-openvino-genai-app-in-c-32dcbe42fa67)
 * [How to run Llama 3.2 locally with OpenVINO™](https://medium.com/openvino-toolkit/how-to-run-llama-3-2-locally-with-openvino-60a0f3674549)
 
 <a id="ai-scenarios"></a>
 
-## Supported Generative AI scenarios
+## Supported Generative AI Scenarios
 
 OpenVINO™ GenAI library provides very lightweight C++ and Python APIs to run the following Generative AI Scenarios:
- - [Text generation using Large Language Models](#text-to-text), for example, chat with local Llama model
- - [Text generation using Large Visual Models](#image-to-text), for example, image analysis using LLaVa or MiniCPM models family
- - [Image generation using Diffuser models](#text-to-image), for example, generation using Stable Diffusion models
- - [Speech recognition using Whisper family models](#speech-to-text)
- - [Text-to-speech generation using SpeechT5 TTS models](#text-to-speech)
- - [Text embedding for Retrieval-Augmented Generation (RAG)](#text-embedding), for example, compute embeddings for documents and queries to enable efficient retrieval in RAG workflows.
+ - [Text generation using Large Language Models (LLMs)](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/text-generation/) - Chat with local Llama, Phi, Qwen and other models
+ - [Image processing using Visual Language Model (VLMs)](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/) - Analyze images/videos with LLaVa, MiniCPM-V and other models
+ - [Image generation using Diffusers](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-generation/) - Generate images with Stable Diffusion & Flux models
+ - [Speech recognition using Whisper](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/speech-recognition/) - Convert speech to text using Whisper models
+ - [Speech generation using SpeechT5](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/speech-generation/) - Convert text to speech using SpeechT5 TTS models
+ - [Semantic search using Text Embedding](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/text-embedding) - Compute embeddings for documents and queries to enable efficient retrieval in RAG workflows
+ - [Text Rerank for Retrieval-Augmented Generation (RAG)](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/text-rerank) - Analyze the relevance and accuracy of documents and queries for your RAG workflows
 
 Library efficiently supports LoRA adapters for Text and Image generation scenarios:
 - Load multiple adapters per model
@@ -56,7 +58,7 @@ All scenarios are run on top of OpenVINO Runtime that supports inference on CPU,
 
 <a id="optimization-methods"></a>
 
-## Supported Generative AI optimization methods
+## Supported Generative AI Optimization Methods
 
 OpenVINO™ GenAI library provides a transparent way to use state-of-the-art generation optimizations:
 - Speculative decoding that employs two models of different sizes and uses the large model to periodically correct the results of the small model. See [here](https://pytorch.org/blog/hitchhikers-guide-speculative-decoding/) for more detailed overview
@@ -567,11 +569,11 @@ int main(int argc, char* argv[]) {
 ```
 </details>
 
-## Additional materials
+## Additional Resources
 
-- [List of supported models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/)
 - [OpenVINO Generative AI workflow](https://docs.openvino.ai/2025/openvino-workflow-generative.html)
-- [Optimum-intel and OpenVINO](https://huggingface.co/docs/optimum/intel/openvino/export)
+- [Optimum Intel and OpenVINO](https://huggingface.co/docs/optimum/intel/openvino/export)
+- [OpenVINO Notebooks with GenAI](https://openvinotoolkit.github.io/openvino_notebooks/?libraries=OpenVINO+GenAI)
 
 ## License
 
