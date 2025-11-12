@@ -93,7 +93,7 @@ jobs:
       with:
         platform: almalinux8
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
-        revision: eacbd941f39094e0114a64db882f65f7b4949e81
+        revision: d0a810e97cd98e6e008e89ba213a1728e3c1eddb
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         event_name: pull_request
