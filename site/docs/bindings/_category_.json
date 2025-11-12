@@ -1,0 +1,8 @@
+{
+  "label": "Bindings",
+  "position": 7,
+  "link": {
+    "type": "generated-index",
+    "description": "Bindings for OpenVINO GenAI."
+  }
+}

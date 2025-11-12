@@ -77,6 +77,42 @@ In this example, a function outputs words to the console immediately upon genera
         }
         ```
     </TabItemCpp>
+    <TabItemJS>
+        ```js showLineNumbers
+        import { LLMPipeline } from "openvino-genai-node";
+        import readline from 'readline';
+
+        const pipe = await LLMPipeline(model_path, "CPU");
+
+        // highlight-start
+        // Create a streamer function
+        function streamer(subword) {
+            process.stdout.write(subword);
+        }
+        // highlight-end
+
+        // highlight-next-line
+        await pipe.startChat();
+        
+        const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout,
+        });
+
+        console.log('question:');
+        rl.on('line', async (prompt) => {
+            // highlight-next-line
+            await pipe.generate(prompt, { max_new_tokens: 100 }, streamer);
+            console.log('\n----------\nquestion:');
+        });
+
+        rl.on('close', async () => {
+            // highlight-next-line
+            await pipe.finishChat();
+            process.exit(0);
+        });
+        ```
+    </TabItemJS>
 </LanguageTabs>
 
 ## Custom Streamer Class

@@ -1,3 +1,4 @@
+from pathlib import Path
 import logging
 import json
 import torch
@@ -5,7 +6,7 @@ import torch
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq, AutoTokenizer
 
 from .embeddings_evaluator import DEFAULT_MAX_LENGTH as EMBED_DEFAULT_MAX_LENGTH
-from .reranking_evaluator import DEFAULT_MAX_LENGTH as RERANK_DEFAULT_MAX_LENGTH, DEFAULT_TOP_K as RERANK_DEFAULT_TOP_K, reranking_base_on_causallm_arch
+from .reranking_evaluator import DEFAULT_MAX_LENGTH as RERANK_DEFAULT_MAX_LENGTH, DEFAULT_TOP_K as RERANK_DEFAULT_TOP_K, is_qwen3_causallm
 from .utils import mock_torch_cuda_is_available, mock_AwqQuantizer_validate_environment
 import os
 
@@ -98,6 +99,17 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
         for adapter, alpha in zip(kwargs['adapters'], kwargs['alphas']):
             ov_adapter = openvino_genai.Adapter(adapter)
             adapter_config.add(ov_adapter, alpha)
+
+    draft_model_path = kwargs.get("draft_model", '')
+    if draft_model_path:
+        if not Path(draft_model_path).exists():
+            raise RuntimeError(f"Error: Draft model path does not exist: {draft_model_path}")
+        draft_device = kwargs.get("draft_device", None) or device
+        draft_model_load_kwargs = (
+            {"scheduler_config": get_scheduler_config_genai(kwargs["draft_cb_config"])}
+            if kwargs["draft_cb_config"] is not None else {}
+        )
+        ov_config["draft_model"] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
 
     is_continuous_batching = kwargs.get("cb_config", None) is not None
 
@@ -573,7 +585,7 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
 
     if use_hf:
         logger.info("Using HF Transformers API")
-        if reranking_base_on_causallm_arch(config):
+        if is_qwen3_causallm(config):
             from transformers import AutoModelForCausalLM
             model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True)
         else:
@@ -585,7 +597,7 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
     else:
         logger.info("Using Optimum API")
         model_cls = None
-        if reranking_base_on_causallm_arch(config):
+        if is_qwen3_causallm(config):
             from optimum.intel.openvino import OVModelForCausalLM
             model_cls = OVModelForCausalLM
         else:

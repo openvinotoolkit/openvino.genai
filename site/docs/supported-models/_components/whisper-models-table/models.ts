@@ -2,7 +2,6 @@ type WhisperModelType = {
   architecture: string;
   models: Array<{
     name: string;
-    loraSupport: boolean;
     links: string[];
   }>;
 };
@@ -13,7 +12,6 @@ export const WHISPER_MODELS: WhisperModelType[] = [
     models: [
       {
         name: 'Whisper',
-        loraSupport: false,
         links: [
           'https://huggingface.co/openai/whisper-tiny',
           'https://huggingface.co/openai/whisper-tiny.en',
@@ -28,7 +26,6 @@ export const WHISPER_MODELS: WhisperModelType[] = [
       },
       {
         name: 'Distil-Whisper',
-        loraSupport: false,
         links: [
           'https://huggingface.co/distil-whisper/distil-small.en',
           'https://huggingface.co/distil-whisper/distil-medium.en',

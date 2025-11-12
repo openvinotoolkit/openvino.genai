@@ -230,93 +230,36 @@ table::= "users" | "orders" | "products"`),
     assert.ok(typeof parsed.city === "string");
   });
 
-  it("generate with TriggeredTags in structural_tags_config", async (testContext) => {
-    testContext.skip("Skipped due to inconsistent LLM outputs. CVS-175278");
-    return;
-    // eslint-disable-next-line no-unreachable
-    const tools = [
-      {
-        name: "get_weather",
-        schema: {
-          type: "object",
-          properties: {
-            location: { type: "string" },
-            unit: { type: "string", enum: ["metric", "imperial"] },
-          },
-          required: ["location", "unit"],
-        },
-      },
-      {
-        name: "get_currency_exchange",
-        schema: {
-          type: "object",
-          properties: {
-            fromCurrency: { type: "string" },
-            toCurrency: { type: "string" },
-            amount: { type: "number" },
-          },
-          required: ["fromCurrency", "toCurrency", "amount"],
-        },
-      },
-    ];
+  it("generate with TriggeredTags in structural_tags_config", async () => {
+    const prompt = "TriggeredTags. Repeat word 'function'";
     const generationConfig = {
-      max_new_tokens: 200,
-      structured_output_config: {
+      max_new_tokens: 100,
+      structured_output_config: new StructuredOutputConfig({
         structural_tags_config: StructuredOutputConfig.TriggeredTags({
-          triggers: ["<function="],
-          tags: tools.map((tool) =>
+          triggers: ["function"],
+          tags: [
             StructuredOutputConfig.Tag({
-              begin: `<function="${tool.name}">`,
-              content: StructuredOutputConfig.JSONSchema(JSON.stringify(tool.schema)),
+              begin: "function",
+              content: StructuredOutputConfig.ConstString("A"),
               end: "</function>",
             }),
-          ),
+            StructuredOutputConfig.Tag({
+              begin: "function",
+              content: StructuredOutputConfig.ConstString("B"),
+              end: "</function>",
+            }),
+          ],
+          atLeastOne: true,
+          stopAfterFirst: true,
         }),
-      },
-      return_decoded_results: true,
+      }),
     };
-    const sysMessage =
-      "You are a helpful assistant that can provide weather information and currency exchange rates. " +
-      `Today is ${new Date().toISOString().split("T")[0]}. ` +
-      "You can respond in natural language, always start your answer with appropriate greeting, " +
-      "If you need additional information to respond you can request it by calling particular tool with structured JSON. " +
-      `You can use the following tools:
-${tools.map((tool) => `<function_name="${tool.name}">, arguments=${JSON.stringify(tool.schema.required)}`).join("\n")}
-Please, only use the following format for tool calling in your responses:
-<function="function_name">{"argument1": "value1", ...}</function>
-Use the tool name and arguments as defined in the tool schema.
-If you don't know the answer, just say that you don't know, but try to call the tool if it helps to answer the question.`;
 
-    const prompt =
-      "What is the weather in London today and in Paris yesterday with metric units, and how many pounds can I get for 100 euros?";
-    await pipeline.startChat(sysMessage);
-    try {
-      const res = await pipeline.generate(prompt, generationConfig);
-      const text = res.texts[0].trim();
-      const matches = [...text.matchAll(/<function="([^"]+)">(.*?)<\/function>/gs)];
-      assert.equal(matches.length, 3, `Expected 3 function calls, got ${matches.length}`);
-      assert.ok(
-        matches[0][1] === "get_weather" || matches[0][1] === "get_currency_exchange",
-        `Unexpected function name: ${matches[0][1]}`,
-      );
-      const args = JSON.parse(matches[0][2]);
-      if (matches[0][1] === "get_weather") {
-        assert.ok(typeof args.location === "string", `Unexpected location: ${args.location}`);
-        assert.ok(
-          args.unit === "metric" || args.unit === "imperial",
-          `Unexpected unit: ${args.unit}`,
-        );
-      } else if (matches[0][1] === "get_currency_exchange") {
-        assert.ok(
-          typeof args.fromCurrency === "string",
-          `Unexpected fromCurrency: ${args.fromCurrency}`,
-        );
-        assert.ok(typeof args.toCurrency === "string", `Unexpected toCurrency: ${args.toCurrency}`);
-        assert.ok(typeof args.amount === "number", `Unexpected amount: ${args.amount}`);
-      }
-    } finally {
-      await pipeline.finishChat();
-    }
+    const result = await pipeline.generate(prompt, generationConfig);
+    assert.ok(
+      /(function(A|B)<\/function>)/gs.test(result.toString()),
+      `No matches found in output: ${result.toString()}`,
+    );
   });
 
   it("generate with ConstString in structural_tags_config", async () => {

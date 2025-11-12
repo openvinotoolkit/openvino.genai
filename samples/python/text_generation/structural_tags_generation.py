@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 class ToolRequest(BaseModel):
     @classmethod
     def string_representation(cls) -> str:
-        return f'<function_name="{cls.get_name()}">, arguments={list(cls.model_fields)}'
+        return f'<function_name="{cls.get_name()}">, arguments={json.dumps(list(cls.model_fields))}'
 
     @classmethod
     def get_name(cls) -> str:

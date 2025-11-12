@@ -12,7 +12,7 @@
 ![Python](https://img.shields.io/badge/python-3.10+-green)
 ![OS](https://img.shields.io/badge/OS-Linux_|_Windows_|_MacOS-blue)
 
-![](src/docs/openvino_genai.svg)
+![](site/static/img/openvino-genai-workflow.svg)
 
 </div>
 

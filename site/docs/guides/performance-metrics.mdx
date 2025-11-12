@@ -59,6 +59,23 @@ However, since mean and standard deviation values are usually sufficient, we wil
         }
         ```
     </TabItemCpp>
+    <TabItemJS>
+        ```js
+        import { LLMPipeline } from "openvino-genai-node";
+
+        const pipe = await LLMPipeline(models_path, "CPU");
+        const result = await pipe.generate("The Sun is yellow because", { 
+            max_new_tokens: 20,
+            return_decoded_results: true 
+        });
+        const perf_metrics = result.perfMetrics;
+
+        console.log(`Generate duration: ${perf_metrics.getGenerateDuration().mean.toFixed(2)} ms`);
+        console.log(`TTFT: ${perf_metrics.getTTFT().mean.toFixed(2)} ms`);
+        console.log(`TPOT: ${perf_metrics.getTPOT().mean.toFixed(2)} ms/token`);
+        console.log(`Throughput: ${perf_metrics.getThroughput().mean.toFixed(2)} tokens/s`);
+        ```
+    </TabItemJS>
 </LanguageTabs>
 
 ```sh title="Output:"
@@ -113,6 +130,27 @@ This accumulates statistics from several `generate()` calls.
         }
         ```
     </TabItemCpp>
+    <TabItemJS>
+        ```js
+        import { LLMPipeline } from "openvino-genai-node";
+
+        const pipe = await LLMPipeline(models_path, "CPU");
+        const res_1 = await pipe.generate("The Sun is yellow because", { 
+            max_new_tokens: 20,
+            return_decoded_results: true 
+        });
+        const res_2 = await pipe.generate("Why Sky is blue because", { 
+            max_new_tokens: 20,
+            return_decoded_results: true 
+        });
+        const perf_metrics = res_1.perfMetrics.add(res_2.perfMetrics);
+
+        console.log(`Generate duration: ${perf_metrics.getGenerateDuration().mean.toFixed(2)} ms`);
+        console.log(`TTFT: ${perf_metrics.getTTFT().mean.toFixed(2)} ms`);
+        console.log(`TPOT: ${perf_metrics.getTPOT().mean.toFixed(2)} ms/token`);
+        console.log(`Throughput: ${perf_metrics.getThroughput().mean.toFixed(2)} tokens/s`);
+        ```
+    </TabItemJS>
 </LanguageTabs>
 
 ## Using Raw Performance Metrics

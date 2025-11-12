@@ -12,8 +12,10 @@ export function LanguageTabs({ children, ...props }: LanguageTabsProps) {
       return TabItemPython(child.props as TabItemProps);
     } else if (child.type === TabItemCpp) {
       return TabItemCpp(child.props as TabItemProps);
+    } else if (child.type === TabItemJS) {
+      return TabItemJS(child.props as TabItemProps);
     } else {
-      throw new Error('LanguageTabs children must be TabItemPython or TabItemCpp components');
+      throw new Error('LanguageTabs children must be TabItemPython, TabItemCpp or TabItemJS components');
     }
   });
 
@@ -37,6 +39,14 @@ export function TabItemPython({ children, ...props }: LanguageTabItemProps) {
 export function TabItemCpp({ children, ...props }: LanguageTabItemProps) {
   return (
     <TabItem {...props} label="C++" value="cpp">
+      {children}
+    </TabItem>
+  );
+}
+
+export function TabItemJS({ children, ...props }: LanguageTabItemProps) {
+  return (
+    <TabItem {...props} label="JavaScript" value="javascript">
       {children}
     </TabItem>
   );
