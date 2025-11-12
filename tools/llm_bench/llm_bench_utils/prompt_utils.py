@@ -10,7 +10,7 @@ from PIL import Image
 import logging as log
 from .model_utils import get_param_from_file
 from .parse_json_data import parse_text_json_data
-
+import openvino as ov
 
 def get_text_prompt(args):
     text_list = []
@@ -32,13 +32,16 @@ def print_video_frames_number_and_convert_to_tensor(func):
             log.info(f"Requested to reduce into {decym_frames} frames")
         out_frames = func(video_path, decym_frames)
         log.info(f"Final frames number: {len(out_frames)}")
-        return np.array(out_frames)
+        log.info(f"First frame shape: {out_frames[0].shape}")
+        log.info(f"First frame dtype: {out_frames[0].dtype}")
+        return [ov.Tensor(frame) for frame in out_frames]
+        # return out_frames
     return inner
 
 
 @print_video_frames_number_and_convert_to_tensor
 def make_video_tensor(video_path, decym_frames=None):
-    supported_files = set([".mp4"])
+    supported_files = {".mp4"}
 
     assert os.path.exists(video_path), f"no input video file: {video_path}"
     assert video_path.suffix.lower() in supported_files, "no supported video file"
@@ -49,21 +52,24 @@ def make_video_tensor(video_path, decym_frames=None):
         ret, frame = cap.read()
         if not ret:
             break
+
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         pil_image = Image.fromarray(frame_rgb)
+        np_img_array = np.array(pil_image)
+        output_frames.append(np_img_array)
 
-        shape = np.array(pil_image).shape
-        dtype = np.array(pil_image).dtype
-        log.info(f"Video shape: {shape}")
-        log.info(f"Video dtype: {dtype}")
-        new_frame = np.zeros(shape, dtype)
+        shape = np_img_array.shape
+        dtype = np_img_array.dtype
+        log.debug(f"Video shape: {shape}")
+        log.debug(f"Video dtype: {dtype}")
 
-        width, height = pil_image.size
-        log.info(f"Video size: {width}x{height}")
-        for x in range(0, width):
-            for y in range(0, height):
-                new_frame[y, x] = frame_rgb[y, x]
-        output_frames.append(np.array(pil_image))
+        # new_frame = np.zeros(shape, dtype=int)
+        # width, height = pil_image.size
+        # log.debug(f"Video size: {width}x{height}")
+        # for x in range(0, width):
+        #     for y in range(0, height):
+        #         new_frame[y, x] = frame_rgb[y, x]
+        # output_frames.append(new_frame)
 
     if decym_frames is None:
         return output_frames
