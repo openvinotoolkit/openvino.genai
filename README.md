@@ -1,6 +1,6 @@
 <div align="center">
  
-# OpenVINO™ GenAI
+![OpenVINO GenAI](/site/static/img/openvino-genai-logo-gradient.svg)
 
 [<b>Getting Started</b>](#getting-started) •
 [<b>AI Scenarios</b>](#ai-scenarios) •
@@ -12,7 +12,7 @@
 ![Python](https://img.shields.io/badge/python-3.10+-green)
 ![OS](https://img.shields.io/badge/OS-Linux_|_Windows_|_MacOS-blue)
 
-![](site/static/img/openvino-genai-workflow.svg)
+![](/site/static/img/openvino-genai-workflow.svg)
 
 </div>
 
