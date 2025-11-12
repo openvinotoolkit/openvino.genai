@@ -56,7 +56,21 @@ class ModelRunner {
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
     uint8_t m_hidden_state_flags = HS_NONE;
-    std::map<std::pair<size_t, size_t>, std::pair<size_t, size_t>> m_sequence_hidden_state_mapping; // pre-requisite: main/draft have same seq group and running seq grouped id
+    struct SequenceKey {
+        size_t request_id{};
+        size_t grouped_sequence_id{};
+        bool operator<(const SequenceKey& other) const {
+            return std::tie(request_id, grouped_sequence_id) <
+                std::tie(other.request_id, other.grouped_sequence_id);
+        }
+    };
+
+    struct HiddenStateRange {
+        size_t start_token_idx{};
+        size_t length{};
+    };
+
+    std::map<SequenceKey, HiddenStateRange> m_sequence_hidden_state_mapping;
     // a container which use sequence group id and request id as key to store hidden states
     std::map<size_t, ov::Tensor> m_initial_hidden_states; // shape: [N, seq_len, hidden_size]
     size_t m_adjust_factor = 1; // to adjust the hidden size of draft model input
@@ -301,8 +315,8 @@ public:
                     size_t start_token_idx = current_token_idx;
                     size_t sequence_length = num_scheduled_tokens;
 
-                    auto key = std::make_pair(sequence_group->get_request_id(), sequence->get_grouped_id());
-                    m_sequence_hidden_state_mapping[key] = std::make_pair(start_token_idx, sequence_length);
+                    SequenceKey key{sequence_group->get_request_id(), sequence->get_grouped_id()};
+                    m_sequence_hidden_state_mapping[key] = HiddenStateRange{start_token_idx, sequence_length};
                 }
                 if (_is_hs_import()) {
                     auto it = m_initial_hidden_states.find(sequence_group->get_request_id());
@@ -634,14 +648,14 @@ private:
             return ov::Tensor();
         }
 
-        const auto key = std::make_pair(request_id, seq_grouped_id);
+        SequenceKey key{request_id, seq_grouped_id};
         const auto it = m_sequence_hidden_state_mapping.find(key);
         if (it == m_sequence_hidden_state_mapping.end()) {
             return ov::Tensor();
         }
 
-        size_t start_idx = it->second.first;
-        size_t length = it->second.second;
+        size_t start_idx = it->second.start_token_idx;
+        size_t length = it->second.length;
 
         auto shape = m_hidden_states.get_shape();
         if (shape.size() < 2) {
