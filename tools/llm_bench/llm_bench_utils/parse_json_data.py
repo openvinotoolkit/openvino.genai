@@ -27,7 +27,7 @@ def parse_vlm_json_data(json_data_list):
     for json_data in json_data_list:
         prompt_data = create_base_prompt(json_data)
         if ("media" in json_data) and ("video" in json_data):
-            raise ValueError("only one key is avaialble from media & video")
+            raise ValueError("only one key is available from media & video")
         if "media" in json_data:
             prompt_data["media"] = json_data["media"]
         if "video" in json_data:

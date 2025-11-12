@@ -78,6 +78,7 @@ def get_argprser():
         'if the value equals 0 (default), execute the warm-up iteration(0th iteration).',
     )
     parser.add_argument('-i', '--images', default=None, help='test images for vision tasks. Can be directory or path to single image')
+    parser.add_argument('-vp', '--videos', default=None, help='test videos for vision tasks. Can be directory or path to single video')
     parser.add_argument('-s', '--seed', type=int, default=42, required=False, help='specific random seed to generate fix result. Default 42.')
     parser.add_argument(
         '-lc',
@@ -230,16 +231,16 @@ def get_argprser():
     parser.add_argument("--vocoder_path", type=str, default=None,
                         help="Path to vocoder  for text to speech scenarios")
     parser.add_argument("-vf", "--video_frames", type=int, default=None,
-                        help="controler of video frames to process")
+                        help="controller of video frames to process (required frame number or decymation factor if negative)")
     return parser.parse_args()
 
 
 CASE_TO_BENCH = {
-    'text_gen': bench_text.run_text_generation_benchmark,
-    'image_gen': bench_image.run_image_generation_benchmark,
-    'code_gen': bench_text.run_text_generation_benchmark,
-    'ldm_super_resolution': bench_ldm_sr.run_ldm_super_resolution_benchmark,
-    'speech_to_text': bench_speech.run_speech_2_txt_benchmark,
+    "text_gen": bench_text.run_text_generation_benchmark,
+    "image_gen": bench_image.run_image_generation_benchmark,
+    "code_gen": bench_text.run_text_generation_benchmark,
+    "ldm_super_resolution": bench_ldm_sr.run_ldm_super_resolution_benchmark,
+    "speech_to_text": bench_speech.run_speech_2_txt_benchmark,
     "visual_text_gen": bench_vlm.run_visual_language_generation_benchmark,
     "text_embed": bench_text_embed.run_text_embddings_benchmark,
     "text_to_speech": bench_text_to_speech.run_text_2_speech_benchmark,
@@ -315,10 +316,14 @@ def main():
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case'].task](
                 model_path, framework, args.device, args.tokens_len, args.streaming, model_args,
                 args.num_iters, memory_data_collector)
-        else:
+        elif model_args['use_case'].task == "visual_text_gen":
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case'].task](
                 model_path, framework, args.device, model_args, args.num_iters,
-                memory_data_collector, args.video_frames)
+                memory_data_collector, decym_frames=args.video_frames)
+        else:
+            iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case'].task](
+                model_path, framework, args.device, model_args, args.num_iters, memory_data_collector)
+
         if args.report is not None or args.report_json is not None:
             model_precision = ''
             if framework == 'ov':
