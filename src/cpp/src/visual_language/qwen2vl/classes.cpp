@@ -1112,7 +1112,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
         EmbeddingsRequest& req = embeddings_request_guard.get();
         ov::Tensor tmp_embeds = m_embedding->infer(req, input_ids);
 
-        // Deep-copy necessary: Retured InferRequest's internal memory will be reused in
+        // Deep-copy necessary: Returned InferRequest's internal memory will be reused in
         // extract_text_features_for_cdpruner() that acquires a request from the same queue.
         // Without deep-copy, the second inference would overwrite this data, corrupting text_embeds.
         text_embeds = ov::Tensor(tmp_embeds.get_element_type(), tmp_embeds.get_shape());

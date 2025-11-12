@@ -323,13 +323,26 @@ bool CDPruner::update_config(const Config& new_config) {
         // Validate the new configuration first
         validate_config(new_config);
 
+        // Determine what needs to be reinitialized based on config changes
+        bool need_reinit_relevance = new_config.use_negative_relevance != m_config.use_negative_relevance;
+        bool need_reinit_kernel = (new_config.use_negative_relevance != m_config.use_negative_relevance ||
+                                   new_config.relevance_weight != m_config.relevance_weight);
+        bool need_reinit_dpp = (new_config.use_cl_kernel != m_config.use_cl_kernel);
+
         // Update the configuration
         m_config = new_config;
 
         // Reinitialize components with new config
-        m_relevance_calc = RelevanceCalculator(new_config);
-        m_kernel_builder = ConditionalKernelBuilder(new_config);
-        m_dpp_selector = FastGreedyDPP(new_config);
+        if (need_reinit_relevance) {
+            m_relevance_calc = RelevanceCalculator(m_config);
+        }
+        if (need_reinit_kernel) {
+            m_kernel_builder = ConditionalKernelBuilder(m_config);
+        }
+        if (need_reinit_dpp) {
+            m_dpp_selector = FastGreedyDPP(m_config);
+        }
+
         return true;
     } catch (const std::exception&) {
         return false;

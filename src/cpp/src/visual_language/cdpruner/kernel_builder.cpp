@@ -4,10 +4,7 @@
 #include "kernel_builder.hpp"
 
 #include <algorithm>
-#include <chrono>
 #include <cmath>
-#include <iostream>
-#include <sstream>
 #include <stdexcept>
 
 #include "logger.hpp"
@@ -70,14 +67,11 @@ ov::Tensor ConditionalKernelBuilder::build(const ov::Tensor& visual_features, co
 
 ov::Tensor ConditionalKernelBuilder::build_with_ov_model(const ov::Tensor& visual_features,
                                                          const ov::Tensor& text_features) {
-    auto visual_shape = visual_features.get_shape();
-    size_t batch_size = visual_shape[0];
-    size_t num_tokens = visual_shape[1];
-    size_t feature_dim = visual_shape[2];
-    size_t total_operations = batch_size * num_tokens * num_tokens;  // Dominant operation is N^2
-
     // Use OV model for building the kernel matrix
     OPENVINO_ASSERT(text_features.get_shape().size() == 2, "Text features must be 2D tensor [N, D]");
+
+    auto visual_shape = visual_features.get_shape();
+    size_t feature_dim = visual_shape[2];
 
     // Check shape consistency
     OPENVINO_ASSERT(text_features.get_shape()[1] == feature_dim,
@@ -92,7 +86,6 @@ ov::Tensor ConditionalKernelBuilder::build_with_normal_pipeline(const ov::Tensor
     size_t batch_size = visual_shape[0];
     size_t num_tokens = visual_shape[1];
     size_t feature_dim = visual_shape[2];
-    size_t total_operations = batch_size * num_tokens * num_tokens;  // Dominant operation is N^2
 
     OPENVINO_ASSERT(relevance_scores.get_shape().size() == 2, "Relevance scores must be 2D tensor [B, N]");
     auto relevance_shape = relevance_scores.get_shape();
@@ -100,74 +93,19 @@ ov::Tensor ConditionalKernelBuilder::build_with_normal_pipeline(const ov::Tensor
     OPENVINO_ASSERT(relevance_shape[0] == batch_size && relevance_shape[1] == num_tokens,
                     "Visual features and relevance scores must have consistent batch size and token count");
 
-    // Performance timing for kernel building steps
-    auto kernel_build_start = std::chrono::high_resolution_clock::now();
-
     // Step 1: L2 normalize visual features along the last dimension
     // This is equivalent to: image_normalized = image_features / image_features.norm(dim=-1, keepdim=True)
-    auto normalize_start = std::chrono::high_resolution_clock::now();
     ov::Tensor normalized_features = l2_normalize_features(visual_features);
-    auto normalize_end = std::chrono::high_resolution_clock::now();
-    auto normalize_duration = std::chrono::duration_cast<std::chrono::microseconds>(normalize_end - normalize_start);
 
     // Step 2: Compute similarity matrix L = normalized_features @ normalized_features.T
     // This gives us the base similarity matrix [B, N, N]
-    auto similarity_start = std::chrono::high_resolution_clock::now();
-    // ov::Tensor similarity_matrix = compute_similarity_matrix(normalized_features);
     ov::Tensor similarity_matrix = compute_similarity_matrix_with_model(normalized_features);
-    auto similarity_end = std::chrono::high_resolution_clock::now();
-    auto similarity_duration = std::chrono::duration_cast<std::chrono::microseconds>(similarity_end - similarity_start);
 
     // Step 3: Build conditional kernel matrix L̃ = diag(r) · L · diag(r)
     // Following CDPruner: kernel = relevance.unsqueeze(2) * similarity * relevance.unsqueeze(1)
-    auto conditional_start = std::chrono::high_resolution_clock::now();
     ov::Tensor conditional_kernel = compute_conditional_kernel_normal(similarity_matrix, relevance_scores);
-    auto conditional_end = std::chrono::high_resolution_clock::now();
-    auto conditional_duration =
-        std::chrono::duration_cast<std::chrono::microseconds>(conditional_end - conditional_start);
-
-    auto kernel_build_end = std::chrono::high_resolution_clock::now();
-    auto total_kernel_duration =
-        std::chrono::duration_cast<std::chrono::microseconds>(kernel_build_end - kernel_build_start);
-
-    print_kernel_build_performance(batch_size,
-                                   num_tokens,
-                                   feature_dim,
-                                   total_operations,
-                                   normalize_duration,
-                                   similarity_duration,
-                                   conditional_duration,
-                                   total_kernel_duration);
 
     return conditional_kernel;
-}
-
-void ConditionalKernelBuilder::print_kernel_build_performance(size_t batch_size,
-                                                              size_t num_tokens,
-                                                              size_t feature_dim,
-                                                              size_t total_operations,
-                                                              const std::chrono::microseconds& normalize_duration,
-                                                              const std::chrono::microseconds& similarity_duration,
-                                                              const std::chrono::microseconds& conditional_duration,
-                                                              const std::chrono::microseconds& total_kernel_duration) {
-    if (!utils::env_setup_for_print_debug_info())
-        return;
-    std::ostringstream ss;
-    ss << "[CDPruner]   L2 normalization [" << batch_size << ", " << num_tokens << ", " << feature_dim
-       << "]: " << normalize_duration.count() << " us ("
-       << (static_cast<double>(normalize_duration.count()) / total_kernel_duration.count() * 100) << "%)" << std::endl;
-    ss << "[CDPruner]   Similarity matrix [" << batch_size << ", " << num_tokens << ", " << num_tokens
-       << "]: " << similarity_duration.count() << " us ("
-       << (static_cast<double>(similarity_duration.count()) / total_kernel_duration.count() * 100) << "%)" << std::endl;
-    ss << "[CDPruner]   Conditional kernel [" << batch_size << ", " << num_tokens << ", " << num_tokens
-       << "]: " << conditional_duration.count() << " us ("
-       << (static_cast<double>(conditional_duration.count()) / total_kernel_duration.count() * 100) << "%)"
-       << std::endl;
-    ss << "[CDPruner] Total kernel build time: " << total_kernel_duration.count() << " us ("
-       << (total_kernel_duration.count() / 1000.0) << " ms)" << std::endl;
-    ss << "[CDPruner] Kernel build throughput: "
-       << (static_cast<double>(total_operations) / total_kernel_duration.count() * 1000000) << " ops/sec" << std::endl;
-    std::cout << ss.str();
 }
 
 // GPU-accelerated similarity matrix computation using OpenVINO
@@ -355,6 +293,12 @@ ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_normal(const ov:
     const float* rel_data = relevance_scores.data<const float>();
     float* kernel_data = conditional_kernel.data<float>();
 
+    // Apply relevance weight: kernel[i,j] = (1-w) * similarity[i,j] + w * (r[i] * similarity[i,j] * r[j])
+    // When w=0: pure similarity matrix
+    // When w=1: full conditional weighting
+    const float w = m_config.relevance_weight;
+    const float one_minus_w = 1.0f - w;
+
     for (size_t b = 0; b < batch_size; ++b) {
         for (size_t i = 0; i < num_tokens; ++i) {
             for (size_t j = 0; j < num_tokens; ++j) {
@@ -362,8 +306,10 @@ ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_normal(const ov:
                 size_t rel_i_idx = b * num_tokens + i;
                 size_t rel_j_idx = b * num_tokens + j;
 
-                // Apply conditional weighting: r[i] * similarity[i,j] * r[j]
-                kernel_data[sim_idx] = rel_data[rel_i_idx] * sim_data[sim_idx] * rel_data[rel_j_idx];
+                // Blend between pure similarity and conditional weighting
+                float base_similarity = sim_data[sim_idx];
+                float conditional_weight = rel_data[rel_i_idx] * base_similarity * rel_data[rel_j_idx];
+                kernel_data[sim_idx] = one_minus_w * base_similarity + w * conditional_weight;
             }
         }
     }
@@ -475,7 +421,7 @@ std::shared_ptr<ov::Model> ConditionalKernelBuilder::create_conditional_kernel_m
 
     auto visual_self_similarity = std::make_shared<ov::op::v0::MatMul>(visual_l2_norm, visual_transposed);
 
-    // Step 2.2: Build conditional kernel matrix
+    // Step 2.2: Build conditional kernel matrix with relevance weighting
     auto relevance_i = std::make_shared<ov::op::v0::Unsqueeze>(
         relevance_scores,
         ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {2})  // axis=2
@@ -485,9 +431,19 @@ std::shared_ptr<ov::Model> ConditionalKernelBuilder::create_conditional_kernel_m
         ov::op::v0::Constant::create(ov::element::i64, ov::Shape{1}, {1})  // axis=1
     );
 
-    // Conditional kernel: relevance[i] * similarity[i,j] * relevance[j]
+    // Conditional weighting: relevance[i] * similarity[i,j] * relevance[j]
     auto temp_kernel = std::make_shared<ov::op::v1::Multiply>(relevance_i, visual_self_similarity);
-    auto conditional_kernel = std::make_shared<ov::op::v1::Multiply>(temp_kernel, relevance_j);
+    auto conditional_weighted = std::make_shared<ov::op::v1::Multiply>(temp_kernel, relevance_j);
+
+    // Blend between pure similarity and conditional weighting using relevance_weight
+    // kernel = (1-w) * similarity + w * conditional_weighted
+    auto weight = ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, {m_config.relevance_weight});
+    auto one_minus_weight =
+        ov::op::v0::Constant::create(ov::element::f32, ov::Shape{}, {1.0f - m_config.relevance_weight});
+
+    auto similarity_part = std::make_shared<ov::op::v1::Multiply>(visual_self_similarity, one_minus_weight);
+    auto conditional_part = std::make_shared<ov::op::v1::Multiply>(conditional_weighted, weight);
+    auto conditional_kernel = std::make_shared<ov::op::v1::Add>(similarity_part, conditional_part);
 
     // Create outputs
     auto kernel_result = std::make_shared<ov::op::v0::Result>(conditional_kernel);

@@ -667,7 +667,7 @@ public:
     size_t rng_seed = 0;
 
     // CDPruner config
-    size_t pruning_ratio = 0;  // 0 means disabled, 1-100 means percentage to prune
+    size_t pruning_ratio = 0;  // 0 means disabled, and values from 1 to 100 represent the percentage to prune.
     float relevance_weight = 0.5f;
 
     // Assisting generation parameters
