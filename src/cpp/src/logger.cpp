@@ -40,8 +40,6 @@ ov::log::Level get_cur_log_level() {
     return cur_log_level;
 }
 
-std::once_flag Logger::init_flag;
-
 Logger::Logger() {
     log_level.store(get_cur_log_level(), std::memory_order_relaxed);
 }
