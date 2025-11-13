@@ -121,6 +121,7 @@ async function main() {
 
 ### Run generation using LLMPipeline in C++
 
+<!-- TODO Add this note to Installation Guide -->
 Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2025/get-started/install-openvino/install-openvino-genai.html#archive-installation) for more details)
 
 ```cpp
@@ -135,7 +136,7 @@ int main(int argc, char* argv[]) {
 ```
 
 ### Sample notebooks using this API
-
+<!-- TODO Consider adding sample notebook to LLM use case -->
 See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Create+an+LLM-powered+Chatbot+using+OpenVINO+Generate+API)
 
 </details>
@@ -220,7 +221,7 @@ int main(int argc, char* argv[]) {
 ```
 
 ### Sample notebooks using this API
-
+<!-- TODO Remove as does not exist anymore -->
 See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Visual-language+assistant+with+MiniCPM-V2+and+OpenVINO)
 
 </details>
@@ -377,7 +378,7 @@ int main(int argc, char* argv[]) {
 ```
 
 ### Sample notebooks using this API
-
+<!-- TODO Consider adding to use case page -->
 See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Text+to+Image+pipeline+and+OpenVINO+with+Generate+API)
 
 </details>
@@ -444,7 +445,7 @@ int main(int argc, char* argv[]) {
 ```
 
 ### Sample notebooks using this API
-
+<!-- TODO Consider adding to use case page -->
 See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Automatic+speech+recognition+using+Whisper+and+OpenVINO+with+Generate+API)
 
 </details>
