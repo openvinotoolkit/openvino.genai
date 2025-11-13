@@ -30,6 +30,7 @@ This library is friendly to PC and laptop execution, and optimized for resource 
 * [Install OpenVINO™ GenAI](https://openvinotoolkit.github.io/openvino.genai/docs/getting-started/installation)
 * [Build OpenVINO™ GenAI](/src/docs/BUILD.md)
 * [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/)
+* [Model Preparation Guide](https://openvinotoolkit.github.io/openvino.genai/docs/category/model-preparation)
 
 Please follow these blogs to setup your first hands-on experience with OpenVINO GenAI.
 
