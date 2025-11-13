@@ -92,3 +92,86 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
         model_type,
         "--genai",
     ])
+
+def test_embeddings_with_batch(model_id, model_type, tmp_path):
+    GT_FILE = tmp_path / "gt_batch_1.csv"
+    MODEL_PATH = tmp_path / model_id.replace("/", "_")
+
+    result = subprocess.run(["optimum-cli", "export",
+                             "openvino", "-m", model_id,
+                             MODEL_PATH, "--task",
+                             "feature-extraction",
+                             "--trust-remote-code"],
+                            capture_output=True,
+                            text=True,
+                            )
+    assert result.returncode == 0
+
+    # Collect reference with HF model
+    run_wwb([
+        "--base-model",
+        model_id,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--batch_size",
+        "1",
+        "--hf",
+    ])
+
+    # test Optimum
+    run_wwb([
+        "--target-model",
+        MODEL_PATH,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--batch_size",
+        "1",
+    ])
+
+    # test GenAI
+    run_wwb([
+        "--target-model",
+        MODEL_PATH,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--genai",
+        "--output",
+        "--batch_size",
+        "1",
+        tmp_path,
+    ])
+
+    # test w/o models
+    run_wwb([
+        "--target-data",
+        tmp_path / "target.csv",
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--genai",
+        "--batch_size",
+        "1",
+    ])
