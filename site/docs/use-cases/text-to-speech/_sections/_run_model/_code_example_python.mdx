@@ -1,0 +1,16 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="python" showLineNumbers>
+{`import openvino_genai
+
+model_dir = "speecht5_tts"
+device = "${props.device || 'CPU'}"
+
+pipeline = openvino_genai.Text2SpeechPipeline(model_dir, device)
+
+# Generate audio using the default speaker
+result = pipeline.generate("Hello OpenVINO GenAI")
+speech = result.output_audio  # speech tensor contains the waveform of the spoken phrase
+
+`}
+</CodeBlock>

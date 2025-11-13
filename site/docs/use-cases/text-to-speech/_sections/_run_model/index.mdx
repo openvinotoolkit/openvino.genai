@@ -1,0 +1,81 @@
+import CodeExampleCPP from './_code_example_cpp.mdx';
+import CodeExamplePython from './_code_example_python.mdx';
+import CodeBlock from '@theme/CodeBlock';
+
+
+## Run Model Using OpenVINO GenAI
+
+
+The [`Text2SpeechPipeline`](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.Text2SpeechPipeline.html) is the main object for generating speech from text.  
+It automatically loads the TTS model and vocoder from the converted model directory.
+
+<LanguageTabs>
+    <TabItemPython>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <CodeExamplePython device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <CodeExamplePython device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemPython>
+    <TabItemCpp>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <CodeExampleCPP device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <CodeExampleCPP device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemCpp>
+</LanguageTabs>
+
+
+
+### Use Speaker Embedding File
+
+To generate speech using the SpeechT5 TTS model, you can specify a target voice by providing a speaker embedding file. 
+
+This file must contain 512 32-bit floating-point values that represent the voice characteristics of the target speaker. The model will use these characteristics to synthesize the input text in the specified voice.
+
+If no speaker embedding is provided, the model uses the default built-in speaker.
+
+You can generate a speaker embedding using the [create_speaker_embedding.py](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/speech_generation/create_speaker_embedding.py) script. This script records 5 seconds of audio from your microphone and extracts a speaker embedding vector from the recording.
+
+<CodeBlock language="bash" showLineNumbers>
+{`python create_speaker_embedding.py`}
+</CodeBlock>
+
+<LanguageTabs>
+  <TabItemPython>
+    <CodeBlock language="python" showLineNumbers>
+{`import openvino_genai
+import numpy as np
+
+pipeline = openvino_genai.Text2SpeechPipeline("speecht5_tts", "CPU")
+speaker_embedding = np.fromfile("speaker_embedding.bin", dtype=np.float32)
+result = pipeline.generate("Hello OpenVINO GenAI", speaker_embedding=speaker_embedding)
+`}
+    </CodeBlock>
+  </TabItemPython>
+
+  <TabItemCpp>
+    <CodeBlock language="cpp" showLineNumbers>
+{`#include "openvino/genai/text2speech_pipeline.hpp"
+#include <vector>
+
+int main() {
+    ov::genai::Text2SpeechPipeline pipeline("speecht5_tts", "CPU");
+
+    std::vector<float> embedding(512); // load your embedding into this vector
+    auto result = pipeline.generate("Hello OpenVINO GenAI", embedding);
+
+    return 0;
+}
+`}
+    </CodeBlock>
+  </TabItemCpp>
+</LanguageTabs>
+
