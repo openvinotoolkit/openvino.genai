@@ -32,7 +32,7 @@ This library is friendly to PC and laptop execution, and optimized for resource 
 * [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/)
 * [Model Preparation Guide](https://openvinotoolkit.github.io/openvino.genai/docs/category/model-preparation)
 
-Please follow these blogs to setup your first hands-on experience with OpenVINO GenAI.
+Explore blogs to setup your first hands-on experience with OpenVINO GenAI:
 
 * [How to Build OpenVINO™ GenAI APP in C++](https://medium.com/openvino-toolkit/how-to-build-openvino-genai-app-in-c-32dcbe42fa67)
 * [How to run Llama 3.2 locally with OpenVINO™](https://medium.com/openvino-toolkit/how-to-run-llama-3-2-locally-with-openvino-60a0f3674549)
@@ -70,77 +70,6 @@ Additionally, OpenVINO™ GenAI library implements a continuous batching approac
 
 Continuous batching functionality is used within OpenVINO Model Server (OVMS) to serve LLMs, see [here](https://docs.openvino.ai/2025/openvino-workflow/model-server/ovms_what_is_openvino_model_server.html) for more details.
 
-## Installing OpenVINO GenAI
-
-```sh
-    # Installing OpenVINO GenAI via pip
-    # export-requirements are not required to run models, only to convert and compress
-    pip install openvino-genai --requirement ./samples/export-requirements.txt --requirement ./samples/deployment-requirements.txt
-
-    # (Optional) Install (TBD) to be able to download models from Model Scope
-```
-
-<a id="text-to-text"></a>
-
-## Performing text generation 
-<details>
-
-For more examples check out our [Generative AI workflow](https://docs.openvino.ai/2025/openvino-workflow-generative.html)
-
-### Converting and compressing text generation model from Hugging Face library
-
-```sh
-#(Basic) download and convert to OpenVINO TinyLlama-Chat-v1.0 model
-optimum-cli export openvino --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" --weight-format fp16 --trust-remote-code "TinyLlama-1.1B-Chat-v1.0"
-
-#(Recommended) download, convert to OpenVINO and compress to int4 TinyLlama-Chat-v1.0 model
-optimum-cli export openvino --model "TinyLlama/TinyLlama-1.1B-Chat-v1.0" --weight-format int4 --trust-remote-code "TinyLlama-1.1B-Chat-v1.0"
-```
-
-### Run generation using LLMPipeline API in Python
-
-```python
-import openvino_genai
-#Will run model on CPU, GPU or NPU are possible options
-pipe = openvino_genai.LLMPipeline("./TinyLlama-1.1B-Chat-v1.0/", "CPU")
-print(pipe.generate("The Sun is yellow because", max_new_tokens=100))
-```
-
-### Run generation using LLMPipeline API in JavaScript
-
-```js
-import { LLMPipeline } from 'openvino-genai-node';
-
-main();
-
-async function main() {
-    const pipe = await LLMPipeline("./TinyLlama-1.1B-Chat-v1.0/", "CPU");
-    const result = await pipe.generate("The Sun is yellow because", { 'max_new_tokens': 100 });
-    console.log(result);
-}
-```
-
-### Run generation using LLMPipeline in C++
-
-<!-- TODO Add this note to Installation Guide -->
-Code below requires installation of C++ compatible package (see [here](https://docs.openvino.ai/2025/get-started/install-openvino/install-openvino-genai.html#archive-installation) for more details)
-
-```cpp
-#include "openvino/genai/llm_pipeline.hpp"
-#include <iostream>
-
-int main(int argc, char* argv[]) {
-    std::string models_path = argv[1];
-    ov::genai::LLMPipeline pipe(models_path, "CPU");
-    std::cout << pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(100)) << '\n';
-}
-```
-
-### Sample notebooks using this API
-<!-- TODO Consider adding sample notebook to LLM use case -->
-See [here](https://openvinotoolkit.github.io/openvino_notebooks/?search=Create+an+LLM-powered+Chatbot+using+OpenVINO+Generate+API)
-
-</details>
 
 <a id="image-to-text"></a>
 
