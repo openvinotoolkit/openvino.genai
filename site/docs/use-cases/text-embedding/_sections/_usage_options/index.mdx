@@ -1,7 +1,7 @@
 ## Additional Usage Options
 
 :::tip
-Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/rag) and [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/rag) text embedding samples.
+Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/rag), [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/rag), and [JavaScript](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/js/rag) text embedding samples.
 :::
 
 ### Pooling Strategies
@@ -83,6 +83,26 @@ Some models support special instructions for queries and documents. Use `query_i
         );
         ```
     </TabItemCpp>
+    <TabItemJS>
+        ```js
+        import { TextEmbeddingPipeline, PoolingType } from "openvino-genai-node";
+        
+        const pipeline = await TextEmbeddingPipeline(
+            models_path,
+            "CPU",
+            {
+                pooling_type: PoolingType.MEAN,
+                normalize: true,
+                max_length: 512,
+                pad_to_max_length: true,
+                padding_side: "left",
+                batch_size: 4,
+                query_instruction: "Represent this sentence for searching relevant passages: ",
+                embed_instruction: "Represent this passage for retrieval: "
+            }
+        );
+        ```
+    </TabItemJS>
 </LanguageTabs>
 
 :::info

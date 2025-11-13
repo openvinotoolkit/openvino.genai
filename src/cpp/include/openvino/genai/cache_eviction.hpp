@@ -31,8 +31,8 @@ enum class KVCrushAnchorPointMode {
     MEAN, /**<In this mode the anchor point is a random binary vector of 0s and 1s, where individual values are decided
              based on majority value */
     ALTERNATING, /**In this mode the anchor point is a vector of alternate 0s and 1s */
-#if !defined(_WIN32) || !defined(_MSC_VER) || _MSC_VER <= 1942
-    // KVCrushAnchorPointMode::ALTERNATE is conflicting with definitions in windows.h in newer MSVC versions
+#ifndef _WIN32
+    // KVCrushAnchorPointMode::ALTERNATE is conflicting with definitions in windows.h in MSVC versions (https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-getpolyfillmode)
     ALTERNATE OPENVINO_ENUM_DEPRECATED("Please, use `KVCrushAnchorPointMode::ALTERNATING` instead of `KVCrushAnchorPointMode::ALTERNATE`.") = ALTERNATING /**In this mode the anchor point is a vector of alternate 0s and 1s */
 #endif
 };
