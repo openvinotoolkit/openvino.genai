@@ -3819,7 +3819,7 @@ class VLMPipeline:
             MiniCPM-V-2_6: <image>./</image>\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
-            Qwen2-VL: <|vision_start|><video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
+            Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
             gemma-3-4b-it: <start_of_image>
             Model's native video tag can be used to refer to a video:
@@ -3867,7 +3867,7 @@ class VLMPipeline:
             MiniCPM-V-2_6: <image>./</image>\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
-            Qwen2-VL: <|vision_start|><video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
+            Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
             gemma-3-4b-it: <start_of_image>
             Model's native video tag can be used to refer to a video:
@@ -3915,7 +3915,7 @@ class VLMPipeline:
             MiniCPM-V-2_6: <image>./</image>\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
-            Qwen2-VL: <|vision_start|><video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
+            Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
             gemma-3-4b-it: <start_of_image>
             Model's native video tag can be used to refer to a video:
@@ -3963,7 +3963,7 @@ class VLMPipeline:
             MiniCPM-V-2_6: <image>./</image>\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
-            Qwen2-VL: <|vision_start|><video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
+            Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
             gemma-3-4b-it: <start_of_image>
             Model's native video tag can be used to refer to a video:
@@ -4010,7 +4010,7 @@ class VLMPipeline:
             MiniCPM-V-2_6: <image>./</image>\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
-            Qwen2-VL: <|vision_start|><video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
+            Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
             Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
             gemma-3-4b-it: <start_of_image>
             Model's native video tag can be used to refer to a video:
