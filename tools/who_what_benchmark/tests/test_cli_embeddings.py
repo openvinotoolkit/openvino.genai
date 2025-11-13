@@ -93,8 +93,18 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
         "--genai",
     ])
 
-def test_embeddings_with_batch(model_id, model_type, tmp_path):
-    GT_FILE = tmp_path / "gt_batch_1.csv"
+@pytest.mark.parametrize(
+    ("model_id", "model_type", "batch_size"),
+    [
+        pytest.param("BAAI/bge-small-en-v1.5", "text-embedding", 1, marks=pytest.mark.xfail(
+            sys.platform == 'darwin', reason="Hangs. Ticket 175534", run=False
+        )),
+        ("Qwen/Qwen3-Embedding-0.6B", "text-embedding", 1),
+        ("Qwen/Qwen3-Embedding-0.6B", "text-embedding", 2),
+    ],
+)
+def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
+    GT_FILE = tmp_path / f"gt_batch_{batch_size}.csv"
     MODEL_PATH = tmp_path / model_id.replace("/", "_")
 
     result = subprocess.run(["optimum-cli", "export",
@@ -120,7 +130,7 @@ def test_embeddings_with_batch(model_id, model_type, tmp_path):
         "--model-type",
         model_type,
         "--batch_size",
-        "1",
+        str(batch_size),
         "--hf",
     ])
 
@@ -137,7 +147,7 @@ def test_embeddings_with_batch(model_id, model_type, tmp_path):
         "--model-type",
         model_type,
         "--batch_size",
-        "1",
+        str(batch_size),
     ])
 
     # test GenAI
@@ -154,9 +164,9 @@ def test_embeddings_with_batch(model_id, model_type, tmp_path):
         model_type,
         "--genai",
         "--output",
-        "--batch_size",
-        "1",
         tmp_path,
+        "--batch_size",
+        str(batch_size),
     ])
 
     # test w/o models
@@ -173,5 +183,5 @@ def test_embeddings_with_batch(model_id, model_type, tmp_path):
         model_type,
         "--genai",
         "--batch_size",
-        "1",
+        str(batch_size),
     ])
