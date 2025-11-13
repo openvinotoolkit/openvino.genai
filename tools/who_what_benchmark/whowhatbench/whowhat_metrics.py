@@ -189,14 +189,7 @@ class EmbedsSimilarity:
             with open(prediction, 'rb') as f:
                 prediction_data = np.load(f)
 
-            if gold_data.shape[0] != prediction_data.shape[0]:
-                print(f"Warning: gold_data rows = {gold_data.shape[0]}, prediction_data rows = {prediction_data.shape[0]}")
-
-            min_len = min(gold_data.shape[0], prediction_data.shape[0])
-            gold_trimmed = gold_data[:min_len]
-            pred_trimmed = prediction_data[:min_len]
-
-            cos_sim = F.cosine_similarity(torch.from_numpy(gold_trimmed), torch.from_numpy(pred_trimmed))
+            cos_sim = F.cosine_similarity(torch.from_numpy(gold_data), torch.from_numpy(prediction_data))
             metric_per_passages.append(cos_sim.detach().numpy())
             metric_per_gen.append(torch.mean(cos_sim).item())
 
