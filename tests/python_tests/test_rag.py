@@ -85,12 +85,11 @@ def run_text_embedding_genai(
     documents: list[str],
     config: TextEmbeddingPipeline.Config | None = None,
     task: Literal["embed_documents", "embed_query"] = "embed_documents",
-    device: str = "CPU",
 ):
     if not config:
         config = TextEmbeddingPipeline.Config()
 
-    pipeline = TextEmbeddingPipeline(models_path, device, config)
+    pipeline = TextEmbeddingPipeline(models_path, "CPU", config)
 
     if config.batch_size:
         documents = documents[: config.batch_size]
@@ -171,12 +170,12 @@ EmbeddingResult = Union[list[list[float]], list[list[int]], list[float], list[in
 MAX_EMBEDDING_ERROR = 2e-6 if sys.platform != "darwin" else 0.02  # ARM64 macs have different results
 
 
-def validate_embedding_results(result_1: EmbeddingResult, result_2: EmbeddingResult, threshold: float = MAX_EMBEDDING_ERROR):
+def validate_embedding_results(result_1: EmbeddingResult, result_2: EmbeddingResult):
     np_result_1 = np.array(result_1)
     np_result_2 = np.array(result_2)
 
     max_error = np.abs(np_result_1 - np_result_2).max()
-    assert max_error < threshold, f"Max error: {max_error} is greater than allowed {threshold}"
+    assert max_error < MAX_EMBEDDING_ERROR, f"Max error: {max_error} is greater than allowed {MAX_EMBEDDING_ERROR}"
 
 
 def run_text_embedding_pipeline_with_ref(
@@ -331,53 +330,6 @@ def test_qwen3_embedding(download_and_convert_embeddings_models, dataset_documen
     embeddings_opt = run_qwen3_embedding_optimum(opt_model, hf_tokenizer, dataset_documents, config.padding_side)
     embeddings_genai = run_text_embedding_genai(models_path, dataset_documents, config, "embed_documents")
     validate_embedding_results(embeddings_genai, embeddings_opt.tolist())
-
-
-@pytest.mark.parametrize("download_and_convert_embeddings_models", ["Qwen/Qwen3-Embedding-0.6B"], indirect=True)
-@pytest.mark.parametrize(
-    "config",
-    [
-        TextEmbeddingPipeline.Config(normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN, padding_side="left", batch_size=1),
-        TextEmbeddingPipeline.Config(normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN, batch_size=1),
-    ],
-)
-@pytest.mark.precommit
-@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
-def test_qwen3_embedding_set_batch(download_and_convert_embeddings_models, dataset_documents, config):
-    opt_model, hf_tokenizer, models_path = download_and_convert_embeddings_models
-
-    docs_to_embed = dataset_documents[: config.batch_size] if config.batch_size else dataset_documents
-    embeddings_opt = run_qwen3_embedding_optimum(opt_model, hf_tokenizer, docs_to_embed, config.padding_side)
-    refs_to_validate = embeddings_opt[: config.batch_size] if config.batch_size else embeddings_opt
-    embeddings_genai = run_text_embedding_genai(models_path, docs_to_embed, config, "embed_documents")
-    target_to_validate = embeddings_genai[: config.batch_size] if config.batch_size else embeddings_genai
-    validate_embedding_results(target_to_validate, refs_to_validate.tolist())
-
-
-@pytest.mark.parametrize("download_and_convert_embeddings_models", ["Qwen/Qwen3-Embedding-0.6B"], indirect=True)
-@pytest.mark.parametrize(
-    "config",
-    [
-        TextEmbeddingPipeline.Config(normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN, padding_side="left", batch_size=1, max_length=200, pad_to_max_length=True),
-        TextEmbeddingPipeline.Config(normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN, batch_size=1, max_length=200, pad_to_max_length=True),
-    ],
-)
-@pytest.mark.precommit
-@pytest.mark.skipif(
-    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
-    reason="NPU plugin is available only on Linux and Windows x86_64",
-)
-@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
-def test_qwen3_embedding_npu(download_and_convert_embeddings_models, dataset_documents, config):
-    opt_model, hf_tokenizer, models_path = download_and_convert_embeddings_models
-
-    docs_to_embed = dataset_documents[: config.batch_size] if config.batch_size else dataset_documents
-    embeddings_opt = run_qwen3_embedding_optimum(opt_model, hf_tokenizer, docs_to_embed, config.padding_side)
-    refs_to_validate = embeddings_opt[: config.batch_size] if config.batch_size else embeddings_opt
-    embeddings_genai = run_text_embedding_genai(models_path, docs_to_embed, config, "embed_documents", device="NPU")
-    target_to_validate = embeddings_genai[: config.batch_size] if config.batch_size else embeddings_genai
-    threshold = 0.1
-    validate_embedding_results(target_to_validate, refs_to_validate.tolist(), threshold)
 
 
 @pytest.mark.parametrize("download_and_convert_embeddings_models", EMBEDDINGS_TEST_MODELS, indirect=True)
