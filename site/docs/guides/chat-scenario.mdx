@@ -75,8 +75,45 @@ A simple chat example (with grouped beam search decoding):
         }
         ```
     </TabItemCpp>
+    <TabItemJS>
+        ```js showLineNumbers
+        import { LLMPipeline } from "openvino-genai-node";
+        import readline from 'readline';
+
+        const pipe = await LLMPipeline(model_path, 'CPU');
+
+        const config = { 
+            max_new_tokens: 100, 
+            num_beam_groups: 3, 
+            num_beams: 15, 
+            diversity_penalty: 1.5 
+        };
+
+        // highlight-next-line
+        await pipe.startChat();
+        
+        const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout,
+        });
+
+        console.log('question:');
+        rl.on('line', async (prompt) => {
+            console.log('answer:');
+            const answer = await pipe.generate(prompt, config);
+            console.log(answer);
+            console.log('\n----------\nquestion:');
+        });
+
+        rl.on('close', async () => {
+            // highlight-next-line
+            await pipe.finishChat();
+            process.exit(0);
+        });
+        ```
+    </TabItemJS>
 </LanguageTabs>
 
 :::info
-For more information, refer to the [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/chat_sample.py) and [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/text_generation/chat_sample.cpp) chat samples.
+For more information, refer to the [Python](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/python/text_generation/chat_sample.py), [C++](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/cpp/text_generation/chat_sample.cpp), and [JavaScript](https://github.com/openvinotoolkit/openvino.genai/blob/master/samples/js/text_generation/chat_sample.js) chat samples.
 :::

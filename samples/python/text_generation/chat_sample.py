@@ -23,15 +23,17 @@ def main():
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
 
-    pipe.start_chat()
+    chat_history = openvino_genai.ChatHistory()
     while True:
         try:
             prompt = input('question:\n')
         except EOFError:
             break
-        pipe.generate(prompt, config, streamer)
+        chat_history.append({'role': 'user', 'content': prompt})
+        decoded_results: openvino_genai.DecodedResults = pipe.generate(chat_history, config, streamer)
+        output = decoded_results.texts[0]
+        chat_history.append({'role': 'assistant', 'content': output})
         print('\n----------')
-    pipe.finish_chat()
 
 
 if '__main__' == __name__:

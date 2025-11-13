@@ -27,13 +27,12 @@ KVCRUSH_SNAPKV_BASELINE_CONFIG = CacheEvictionConfig(
 
 
 OPTIMAL_KVCRUSH_CONFIGS = {
-    "samsum": (768, 8, KVCrushAnchorPointMode.ALTERNATE),
-    "trec": (960, 2, KVCrushAnchorPointMode.ALTERNATE), 
-    "qasper": (960, 2, KVCrushAnchorPointMode.ALTERNATE)
+    "samsum": (768, 8, KVCrushAnchorPointMode.ALTERNATING),
+    "trec": (960, 2, KVCrushAnchorPointMode.ALTERNATING), 
+    "qasper": (960, 2, KVCrushAnchorPointMode.ALTERNATING)
 }
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("subset", ["samsum", "trec", "qasper"])
 def test_kvcrush_vs_snapkv_baseline_longbench(subset):
     """Test that KVCrush performs equal or better than SnapKV baseline on LongBench datasets."""

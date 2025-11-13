@@ -43,12 +43,18 @@ def num_infer_count_type(x):
 
 
 def get_argprser():
-    parser = argparse.ArgumentParser('LLM benchmarking tool', add_help=True, formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('-m', '--model', help='model folder including IR files or Pytorch files or path to GGUF model', required=TabError)
+    parser = argparse.ArgumentParser('LLM benchmarking tool', add_help=True, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument(
+        '-m',
+        '--model',
+        help='model folder including IR files or PyTorch files or path to GGUF model',
+        required=True,
+        default=argparse.SUPPRESS
+    )
     parser.add_argument('-d', '--device', default='cpu', help='inference device')
     parser.add_argument('-r', '--report', help='report csv')
     parser.add_argument('-rj', '--report_json', help='report json')
-    parser.add_argument('-f', '--framework', default='ov', help='framework')
+    parser.add_argument('-f', '--framework', default='ov', choices={"ov", "pt"}, help='inference framework, ov: OpenVINO, pt: PyTorch')
     parser.add_argument('-p', '--prompt', default=None, help='one prompt')
     parser.add_argument('-pf', '--prompt_file', nargs='+', default=None,
                         help='Prompt file(s) in jsonl format. Multiple prompt files should be separated with space(s).')
@@ -155,7 +161,7 @@ def get_argprser():
         help="Path to LoRA adapters for using OpenVINO GenAI optimized pipelines with LoRA for benchmarking")
     parser.add_argument('--lora_alphas', nargs='*', help='Alphas params for LoRA adapters.', required=False, default=[])
     parser.add_argument("--lora_mode", choices=["auto", "fuse", "static", "static_rank", "dynamic"], help="LoRA adapters loading mode")
-    parser.add_argument("--empty_lora", action="store_true", help="Inference without lora")
+    parser.add_argument("--empty_lora", action="store_true", help="Inference with empty LoRA config")
     parser.add_argument(
         "--use_cb",
         action="store_true",
@@ -173,7 +179,7 @@ def get_argprser():
     parser.add_argument("--assistant_confidence_threshold", required=False, default=None,
                         help="Config option assistant_confidence_threshold for Speculative decoding", type=float)
     parser.add_argument("--max_ngram_size", required=False, default=None,
-                        help="Config option assistant_confidence_threshold for Prompt Lookup decoding", type=int)
+                        help="Config option max_ngram_size for Prompt Lookup decoding", type=int)
     parser.add_argument(
         '--end_token_stopping',
         action='store_true',
@@ -188,7 +194,7 @@ def get_argprser():
     parser.add_argument(
         "--static_reshape",
         action="store_true",
-        help="Reshape image generation pipeline to specific width & height at pipline creation time. Applicable for Image Generation.")
+        help="Reshape image generation pipeline to specific width & height at pipeline creation time. Applicable for Image Generation.")
     parser.add_argument('-mi', '--mask_image', default=None,
                         help='Mask image for Inpainting pipelines. Can be directory or path to single image. Applicable for Image Generation.')
     parser.add_argument('-t', '--task', default=None,
