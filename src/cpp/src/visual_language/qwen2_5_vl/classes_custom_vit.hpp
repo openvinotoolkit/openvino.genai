@@ -17,6 +17,14 @@ namespace ov::genai {
 class VisionEncoderQwen2_5_VL_CustomVIT : public VisionEncoderQwen2_5_VL {
 public:
     using VisionEncoderQwen2_5_VL::VisionEncoderQwen2_5_VL;
+
+protected:
+    void encode_with_imagepreprocess_cpp(const std::vector<ov::Tensor>& images,
+                                         const ov::AnyMap& config_map,
+                                         ov::Tensor& out_tensor,
+                                         ImageSize& out_rsz_size,
+                                         size_t frame_num,
+                                         size_t frame_id) override;
 };
 
 class InputsEmbedderQwen2_5_VL_CustomVIT : public InputsEmbedderQwen2_5_VL {
@@ -36,13 +44,6 @@ public:
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
 
 protected:
-    void encode_with_imagepreprocess_cpp(const std::vector<ov::Tensor>& images,
-                                         const ov::AnyMap& config_map,
-                                         ov::Tensor& out_tensor,
-                                         ov::genai::ImageSize& out_rsz_size,
-                                         size_t frame_num,
-                                         size_t frame_id) override;
-
     std::pair<ov::Tensor, ov::Tensor> run_video_image_embeddings_merger(
         const std::vector<EncodedImage>& images,
         const std::vector<size_t>& images_sequence,

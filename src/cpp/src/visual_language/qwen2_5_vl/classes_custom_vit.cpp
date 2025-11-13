@@ -63,12 +63,12 @@ static ImageSize smart_resize(size_t height, size_t width, size_t factor, size_t
 
 // image vector = 1: means image
 // image vector = 2: means video
-void InputsEmbedderQwen2_5_VL_CustomVIT::encode_with_imagepreprocess_cpp(const std::vector<ov::Tensor>& images,
-                                                                         const ov::AnyMap& config_map,
-                                                                         ov::Tensor& out_tensor,
-                                                                         ImageSize& out_rsz_size,
-                                                                         size_t frame_num,
-                                                                         size_t frame_id) {
+void VisionEncoderQwen2_5_VL_CustomVIT::encode_with_imagepreprocess_cpp(const std::vector<ov::Tensor>& images,
+                                                                        const ov::AnyMap& config_map,
+                                                                        ov::Tensor& out_tensor,
+                                                                        ImageSize& out_rsz_size,
+                                                                        size_t frame_num,
+                                                                        size_t frame_id) {
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
     ov::Shape orig_shape = images[0].get_shape();
     ImageSize target_image_size = smart_resize(orig_shape.at(1),
@@ -90,11 +90,9 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderQwen2_5_VL_CustomVIT::encode_
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
     for (ov::Tensor& image : single_images) {
         std::cout << "== image = " << image.get_shape() << std::endl;
-        cvt_to_3_chn_image(image);
+        
         embeds.emplace_back(m_vision_encoder->encode(image));
     }
-    
-    std::cout << "== embeds = " << embeds[0].resized_source.get_shape() << std::endl;
     return embeds;
 }
 
@@ -104,10 +102,17 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2_5_VL_CustomVIT::run_video_
     const std::vector<EncodedVideo>& videos,
     const std::vector<size_t>& videos_sequence
 ) {
-    ov::Shape video_fea_shape = ov::Shape({0, 4096});
+    ov::Shape video_fea_shape = ov::Shape({0, 2048});
     ov::Tensor res_video = ov::Tensor(ov::element::f32, video_fea_shape);
-    ov::Shape image_fea_shape({1, 4096});
+
+    ov::Shape image_fea_shape({1215,2048});
     ov::Tensor res_image(ov::element::f32, image_fea_shape);
+    {
+        FILE* pf = fopen("dump_embedding.dat", "rb");
+        fread(res_image.data(), res_image.get_byte_size(), 1, pf);
+        fclose(pf);
+    }
+
     return {res_video, res_image};
 }
 
