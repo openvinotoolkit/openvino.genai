@@ -34,6 +34,24 @@ CMakeUserPresets.json
 *.swp
 /config.xml
 
+# clang-tidy artifacts
+.clang-tidy-cache/
+
+# mypy artifacts
+.mypy_cache/
+
+# ruff artifacts
+.ruff_cache/
+
+# prettier artifacts
+.prettier_cache/
+
+# cmake-format artifacts
+.cmake-format_cache/
+
+# node modules
+node_modules/
+
 # Python-specific
 *.?env*
 *.pyc
