@@ -832,3 +832,14 @@ def test_pipelines_generate_with_streaming(pipeline_type, stop_str):
     else:
         assert it_cnt > 0
 
+
+@pytest.mark.precommit
+def test_llm_pipeline_add_extension():
+    model_id = "katuni4ka/tiny-random-phi3"
+    _, _, models_path = download_and_convert_model(model_id)
+
+    properties = {"EXTENSIONS": ["fake_path"]}
+
+    with pytest.raises(RuntimeError) as exc_info:
+        ov_genai.LLMPipeline(models_path, "CPU", **properties)
+    assert "Cannot find entry point to the extension library" in str(exc_info.value)

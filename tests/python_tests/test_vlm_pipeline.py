@@ -304,12 +304,14 @@ parametrize_one_model_backends = pytest.mark.parametrize(
     ids=lambda p: f"{p[0]}/{p[1]}",
     indirect=["ov_pipe_model"],
 )
-    
+
+
 @pytest.fixture(scope="module")
 def ov_continious_batching_pipe() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[0])
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
-    
+
+
 @pytest.fixture(scope="module")
 def ov_continious_batching_pipe_gemma() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[8])
@@ -400,7 +402,7 @@ def cat_tensor(cat_image) -> openvino.Tensor:
 def car_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
     return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['car'], "car.jpg"))
 
- 
+
 @pytest.fixture(scope="module")
 def synthetic_video_32x32_tensor(synthetic_video_32x32):
     return openvino.Tensor(synthetic_video_32x32)
@@ -1370,8 +1372,8 @@ def test_model_tags_older(ov_pipe_model: VlmModelInfo, car_tensor: openvino.Tens
     with pytest.raises(RuntimeError):
         ov_pipe.generate("<ov_genai_image_0>", images=[car_tensor])
     ov_pipe.finish_chat()
-        
-        
+
+
 @pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_missing_universal(ov_pipe_model: VlmModelInfo):
@@ -1379,8 +1381,8 @@ def test_model_tags_missing_universal(ov_pipe_model: VlmModelInfo):
     
     with pytest.raises(RuntimeError):
         ov_pipe.generate("<ov_genai_image_0>")
-        
-        
+
+
 @pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
@@ -1389,7 +1391,7 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
     
     with pytest.raises(RuntimeError):
         ov_pipe.generate(image_tag(0))
-            
+
 
 @pytest.mark.precommit
 @pytest.mark.parametrize(
@@ -1535,12 +1537,11 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
 
 @pytest.mark.precommit
 def test_vlm_pipeline_add_extension():
-    model_id = MODEL_IDS[6]
+    model_id = VIDEO_MODEL_IDS[1]
     models_path = _get_ov_model(model_id)
 
-    properties = {}
-    properties["EXTENSIONS"] = ["fake_path"]
+    properties = {"EXTENSIONS": ["fake_path"]}
 
     with pytest.raises(RuntimeError) as exc_info:
-        VLMPipeline(models_path, "CPU", properties)
+        VLMPipeline(models_path, "CPU", config=properties)
     assert "Cannot find entry point to the extension library" in str(exc_info.value)

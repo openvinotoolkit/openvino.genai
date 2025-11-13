@@ -168,7 +168,7 @@ public:
         }
 
         m_language = utils::singleton_core().compile_model(
-            m_language_pair.first, m_language_pair.second, device, properties_copy
+            m_language_pair.first, m_language_pair.second, device, properties
         ).create_infer_request();
 
         m_language.get_tensor("attention_mask").set_shape({1, 0});
