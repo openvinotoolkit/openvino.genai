@@ -103,6 +103,12 @@ std::string js_to_cpp<std::string>(const Napi::Env& env, const Napi::Value& valu
 }
 
 template <>
+int64_t js_to_cpp<int64_t>(const Napi::Env& env, const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsNumber(), "Passed argument must be of type Number.");
+    return value.As<Napi::Number>().Int64Value();
+}
+
+template <>
 std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& env, const Napi::Value& value) {
     if (value.IsArray()) {
         auto array = value.As<Napi::Array>();
@@ -120,6 +126,23 @@ std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& en
 
     } else {
         OPENVINO_THROW("Passed argument must be of type Array or TypedArray.");
+    }
+}
+
+template <>
+std::vector<int64_t> js_to_cpp<std::vector<int64_t>>(const Napi::Env& env, const Napi::Value& value) {
+    if (value.IsArray()) {
+        auto array = value.As<Napi::Array>();
+        size_t arrayLength = array.Length();
+
+        std::vector<int64_t> vector;
+        vector.reserve(arrayLength);
+        for (uint32_t i = 0; i < arrayLength; ++i) {
+            vector.push_back(js_to_cpp<int64_t>(env, array[i]));
+        }
+        return vector;
+    } else {
+        OPENVINO_THROW("Passed argument must be of type Array.");
     }
 }
 
@@ -293,6 +316,23 @@ ov::genai::StructuredOutputConfig js_to_cpp<ov::genai::StructuredOutputConfig>(c
 }
 
 template <>
+ov::Tensor js_to_cpp<ov::Tensor>(const Napi::Env& env, const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsObject(), "Passed argument must be an object.");
+
+    auto tensor_wrap = value.As<Napi::Object>();
+    auto tensor_prototype = get_prototype_from_ov_addon(env, "Tensor");
+    OPENVINO_ASSERT(tensor_wrap.InstanceOf(tensor_prototype), "Passed argument is not of type Tensor");
+
+    auto native_tensor_func = tensor_wrap.Get("__getExternalTensor").As<Napi::Function>();
+    Napi::Value native_tensor_value = native_tensor_func.Call(tensor_wrap, {});
+    OPENVINO_ASSERT(native_tensor_value.IsExternal(), "__getExternalTensor() did not return an External object.");
+
+    auto external = native_tensor_value.As<Napi::External<ov::Tensor>>();
+    auto tensor_ptr = external.Data();
+    return *tensor_ptr;
+}
+
+template <>
 ov::genai::PerfMetrics& unwrap<ov::genai::PerfMetrics>(const Napi::Env& env, const Napi::Value& value) {
     const auto obj = value.As<Napi::Object>();
     const auto& prototype = env.GetInstanceData<AddonData>()->perf_metrics;
@@ -417,6 +457,34 @@ Napi::Value cpp_to_js<ov::genai::JsonContainer, Napi::Value>(const Napi::Env& en
     return json_parse(env, json_container.to_json_string());
 }
 
+template <>
+Napi::Value cpp_to_js<ov::Tensor, Napi::Value>(const Napi::Env& env, const ov::Tensor& tensor) {
+    try {
+        auto prototype = get_prototype_from_ov_addon(env, "Tensor");
+
+        auto external = Napi::External<ov::Tensor>::New(env, new ov::Tensor(tensor),
+                [](Napi::Env /*env*/, ov::Tensor* external_tensor) {
+                    delete external_tensor;
+                });
+        auto tensor_wrap = prototype.New({ external });
+
+        return tensor_wrap;
+    } catch (const ov::Exception& e) {
+        Napi::Error::New(env, std::string("Cannot create Tensor wrapper: ") + e.what()).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+}
+
+template <>
+Napi::Value cpp_to_js<ov::genai::TokenizedInputs, Napi::Value>(const Napi::Env& env, const ov::genai::TokenizedInputs& tokenized_inputs) {
+    auto js_object = Napi::Object::New(env);
+
+    js_object.Set("input_ids", cpp_to_js<ov::Tensor, Napi::Value>(env, tokenized_inputs.input_ids));
+    js_object.Set("attention_mask", cpp_to_js<ov::Tensor, Napi::Value>(env, tokenized_inputs.attention_mask));
+
+    return js_object;
+}
+
 bool is_napi_value_int(const Napi::Env& env, const Napi::Value& num) {
     return env.Global().Get("Number").ToObject().Get("isInteger").As<Napi::Function>().Call({num}).ToBoolean().Value();
 }
@@ -448,4 +516,17 @@ Napi::Value json_parse(const Napi::Env& env, const std::string& value) {
         .Get("parse")
         .As<Napi::Function>()
         .Call({ Napi::String::New(env, value) });
+}
+
+Napi::Function get_prototype_from_ov_addon(const Napi::Env& env, const std::string& ctor_name) {
+    auto addon_data = env.GetInstanceData<AddonData>();
+    OPENVINO_ASSERT(!addon_data->openvino_addon.IsEmpty(), "Addon data is not initialized");
+    Napi::Value ov_addon = addon_data->openvino_addon.Value();
+    OPENVINO_ASSERT(!ov_addon.IsUndefined() && !ov_addon.IsNull() && ov_addon.IsObject(), "OV addon value is not an object");
+    Napi::Object addon_obj = ov_addon.As<Napi::Object>();
+    OPENVINO_ASSERT(addon_obj.Has(ctor_name), std::string("OV addon does not export '") + ctor_name + "' class");
+    Napi::Value ctor_val = addon_obj.Get(ctor_name);
+    OPENVINO_ASSERT(ctor_val.IsFunction(), ctor_name + std::string(" is not a prototype"));
+
+    return ctor_val.As<Napi::Function>();
 }

@@ -2,6 +2,7 @@ import { createRequire } from "module";
 import { platform } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import type { ChatHistory as IChatHistory } from "./chatHistory.js";
+import { addon as ovAddon } from "openvino-node";
 
 export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
 export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
@@ -60,6 +61,7 @@ interface OpenVINOGenAIAddon {
   TextEmbeddingPipeline: TextEmbeddingPipelineWrapper;
   LLMPipeline: any;
   ChatHistory: IChatHistory;
+  setOpenvinoAddon: (ovAddon: any) => void;
 }
 
 // We need to use delayed import to get an updated Path if required
@@ -78,7 +80,7 @@ function getGenAIAddon(): OpenVINOGenAIAddon {
 }
 
 const addon = getGenAIAddon();
+addon.setOpenvinoAddon(ovAddon);
 
-export const { ChatHistory } = addon;
+export const { TextEmbeddingPipeline, LLMPipeline, ChatHistory } = addon;
 export type ChatHistory = IChatHistory;
-export default addon;
