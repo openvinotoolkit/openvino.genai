@@ -100,8 +100,8 @@ struct AutoSafetensor: public safetensors_File {
 ConstantMap safetensor_to_constant_map(const ov::Tensor& safetensor) {
     AutoSafetensor safe_tensors_file{};
     // Intentionally discard const qualifier used as read only in safetensors_file_init
-    auto ptr = const_cast<char*>(safetensor.data<char>());
-    OPENVINO_ASSERT(safetensors_file_init(ptr, safetensor.get_byte_size(), &safe_tensors_file) == nullptr,
+    auto safetensor_data = const_cast<char*>(safetensor.data<char>());
+    OPENVINO_ASSERT(safetensors_file_init(safetensor_data, safetensor.get_byte_size(), &safe_tensors_file) == nullptr,
         "Cannot parse safetensor as a Safetensors file format. Safetensors file format is supported only"
     );
 
