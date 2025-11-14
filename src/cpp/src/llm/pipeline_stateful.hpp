@@ -66,11 +66,26 @@ public:
         StreamerVariant streamer
     ) override;
 
+    DecodedResults generate(
+        const ChatHistory& history,
+        OptionalGenerationConfig generation_config,
+        StreamerVariant streamer
+    ) override;
+
     EncodedResults generate(
         const EncodedInputs& inputs,
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
     ) override;
+
+    GenerationConfig resolve_generation_config(OptionalGenerationConfig generation_config) const;
+
+    DecodedResults get_decoded_results(
+        TokenizedInputs encoded_input,
+        OptionalGenerationConfig generation_config,
+        StreamerVariant streamer,
+        std::chrono::steady_clock::time_point start_time
+    );
 
     void start_chat(const std::string& system_message) override;
 

@@ -17,10 +17,10 @@ FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 
 def run_text_embeddings_optimum(input_text, num, model, tokenizer, args, iter_data_list, prompt_index, bench_hook, proc_id, mem_consumption):
     input_text_list = [input_text] * args['batch_size']
-    tokenizer_kwargs = {}
+    tokenizer_kwargs = {'padding': True, 'truncation': True, 'padding_side': args.get('emb_padding_side', 'right')}
     max_lenght = args.get('emb_max_length')
     if max_lenght is not None:
-        tokenizer_kwargs = {'padding': 'max_length', 'max_length': max_lenght}
+        tokenizer_kwargs.update({'padding': 'max_length', 'max_length': max_lenght})
     tok_encode_start = time.perf_counter()
     input_data = tokenizer(input_text_list, return_tensors='pt', **tokenizer_kwargs)
     tok_encode_end = time.perf_counter()
@@ -184,7 +184,8 @@ def run_text_embddings_benchmark(model_path, framework, device, args, num_iters,
             for idx, input_text in enumerate(text_list):
                 p_idx = prompt_idx_list[idx]
                 if num == 0:
-                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text')
+                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
+                                                max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 text_emb_fn(input_text, num, model, tokenizer, args, iter_data_list, p_idx, bench_hook, proc_id, mem_consumption)
                 iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
@@ -195,7 +196,8 @@ def run_text_embddings_benchmark(model_path, framework, device, args, num_iters,
             p_idx = prompt_idx_list[idx]
             for num in range(num_iters + 1):
                 if num == 0:
-                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text')
+                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
+                                                max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 text_emb_fn(input_text, num, model, tokenizer, args, iter_data_list,
                             prompt_idx_list[idx], bench_hook, proc_id, mem_consumption)

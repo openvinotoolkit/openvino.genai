@@ -9,30 +9,37 @@ bool is_incomplete(std::string& text) {
     constexpr char replacement[] = "\xef\xbf\xbd";
     return text.size() >= 3 && text.compare(text.size() - 3, 3, replacement) == 0;
 }
+
+constexpr size_t delay_n_tokens = 3;
+
 }  // namespace
 
 namespace ov {
 namespace genai {
 
 TextStreamer::TextStreamer(const Tokenizer& tokenizer,
-                           std::function<ov::genai::CallbackTypeVariant(std::string)> callback) {
+                           std::function<ov::genai::CallbackTypeVariant(std::string)> callback,
+                           const ov::AnyMap& detokenization_params) {
     m_tokenizer = tokenizer;
-    m_subword_callback = callback;
+    m_subword_callback = std::move(callback);
+    m_additional_detokenization_params = detokenization_params;
 }
 
 StreamingStatus TextStreamer::write(int64_t token) {
     std::stringstream res;
     m_tokens_cache.push_back(token);
-    std::string text = m_tokenizer.decode(m_tokens_cache);
+    std::string text = m_tokenizer.decode(m_tokens_cache, m_additional_detokenization_params);
     m_decoded_lengths.push_back(text.length());
 
     if (!text.empty() && '\n' == text.back() && text.size() > m_printed_len) {
         // Flush the cache after the new line symbol
         res << std::string_view{text.data() + m_printed_len, text.size() - m_printed_len};
+
+        auto res_status = run_callback_if_needed(res.str());
         m_tokens_cache.clear();
         m_decoded_lengths.clear();
         m_printed_len = 0;
-        return run_callback_if_needed(res.str());
+        return res_status;
     }
 
     if (is_incomplete(text)) {
@@ -40,7 +47,7 @@ StreamingStatus TextStreamer::write(int64_t token) {
         // Don't print incomplete text
         return run_callback_if_needed(res.str());
     }
-    constexpr size_t delay_n_tokens = 3;
+
     // In some cases adding the next token can shorten the text,
     // e.g. when apostrophe removing regex had worked after adding new tokens.
     // Printing several last tokens is delayed.
@@ -54,12 +61,16 @@ StreamingStatus TextStreamer::write(int64_t token) {
 
     if (print_until > -1 && print_until > m_printed_len) {
         // It is possible to have a shorter text after adding new token.
-        // Print to output only if text length is increaesed.
+        // Print to output only if text length is increased.
         res << std::string_view{text.data() + m_printed_len, print_until - m_printed_len} << std::flush;
+    }
+    
+    auto status = run_callback_if_needed(res.str());
+    
+    if (print_until > -1 && print_until > m_printed_len) {
         m_printed_len = print_until;
     }
-
-    return run_callback_if_needed(res.str());
+    return status;
 }
 
 void TextStreamer::compute_decoded_length_for_position(size_t cache_position) {
@@ -69,7 +80,7 @@ void TextStreamer::compute_decoded_length_for_position(size_t cache_position) {
     }
 
     auto cache_for_position = std::vector(m_tokens_cache.begin(), m_tokens_cache.begin() + cache_position + 1);
-    std::string text_for_position = m_tokenizer.decode(cache_for_position);
+    std::string text_for_position = m_tokenizer.decode(cache_for_position, m_additional_detokenization_params);
 
     if (is_incomplete(text_for_position)) {
         m_decoded_lengths[cache_position] = -1;
@@ -109,7 +120,7 @@ StreamingStatus TextStreamer::run_callback_if_needed(const std::string& text) {
 
 void TextStreamer::end() {
     std::stringstream res;
-    std::string text = m_tokenizer.decode(m_tokens_cache);
+    std::string text = m_tokenizer.decode(m_tokens_cache, m_additional_detokenization_params);
     if (text.size() <= m_printed_len)
         return;
     res << std::string_view{text.data() + m_printed_len, text.size() - m_printed_len} << std::flush;
@@ -120,7 +131,73 @@ void TextStreamer::end() {
     return;
 }
 
-ov::genai::StreamerBase::~StreamerBase() = default;
+StreamerBase::~StreamerBase() = default;
+
+// Is used to hide internal states of TextParserStreamer
+class TextParserStreamer::TextParserStreamerImpl {
+public:
+
+std::vector<std::shared_ptr<IncrementalParser>> m_parsers;
+JsonContainer m_parsed_message;
+
+TextParserStreamerImpl(std::vector<std::shared_ptr<IncrementalParser>> parsers) : m_parsers{parsers} {}
+};
+
+TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::shared_ptr<IncrementalParser>> parsers) 
+    : TextStreamer(tokenizer, [this](std::string s) -> CallbackTypeVariant {
+                return this->write(s);
+    }), m_pimpl{std::make_unique<TextParserStreamerImpl>(parsers)} {}
+
+CallbackTypeVariant TextParserStreamer::write(std::string message) {
+    // When 'write' is called with string, it means new chunk of tokens is decoded into text
+
+    auto flushed_tokens = std::vector<int64_t>();
+    if (message.back() == '\n') {
+        // Flush all tokens
+        flushed_tokens.assign(m_tokens_cache.begin(), m_tokens_cache.end());
+    } else if (m_decoded_lengths.size() >= delay_n_tokens) {
+        // prompt          = "I was waiting for the bus.\n"
+        // tokens          = [2,2,  3,      45, 67, 89,4,2]
+        // decoded_lengths = [1,5,  13,     17, 21, 25,26,27]
+        // let printed_len = 13 (after "I was waiting")
+        // then delta_text = "for the bus.\n"
+        // delta_tokens = [45, 67, 89,4,2]
+        // delta_tokens = m_tokens_cache[4..end]
+
+        // Find where the last printed tokens are located based on m_printed_len and print_until
+        auto print_until = m_decoded_lengths[m_decoded_lengths.size() - delay_n_tokens];
+        auto first = std::upper_bound(m_decoded_lengths.begin(), m_decoded_lengths.end(), static_cast<long long>(m_printed_len))
+                     - m_decoded_lengths.begin();
+        auto last  = std::upper_bound(m_decoded_lengths.begin(), m_decoded_lengths.end(), static_cast<long long>(print_until))
+                     - m_decoded_lengths.begin();
+        
+        // Before calling base write from TextStreamer save the current token.
+        if (last >= first) {
+            flushed_tokens.assign(m_tokens_cache.begin() + first, m_tokens_cache.begin() + last);
+        }
+    }
+
+    // Iterate over all parsers and apply them to the message
+    for (auto& parser: m_pimpl->m_parsers) {
+        message = parser->parse(m_pimpl->m_parsed_message, message, flushed_tokens);
+        // Message can be modified inside parser, if parser for example extracted tool calling from message content
+        m_pimpl->m_parsed_message["content"] = m_pimpl->m_parsed_message["content"].get_string() + message;
+    }
+    return write(m_pimpl->m_parsed_message);
+}
+
+JsonContainer TextParserStreamer::get_parsed_message() const {
+    return m_pimpl->m_parsed_message;
+}
+
+void TextParserStreamer::reset() {
+    m_pimpl->m_parsed_message = JsonContainer();
+    for (auto& parser : m_pimpl->m_parsers) {
+        parser->reset();
+    }
+}
+
+TextParserStreamer::~TextParserStreamer() = default;
 
 }  // namespace genai
 }  // namespace ov

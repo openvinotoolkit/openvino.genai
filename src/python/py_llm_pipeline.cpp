@@ -24,13 +24,14 @@ using ov::genai::StreamerVariant;
 using ov::genai::DecodedResults;
 using ov::genai::Tokenizer;
 using ov::genai::draft_model;
+using ov::genai::ChatHistory;
 
 namespace {
 
 auto generate_docstring = R"(
     Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
 
-    :param inputs: inputs in the form of string, list of strings or tokenized input_ids
+    :param inputs: inputs in the form of string, list of strings, chat history or tokenized input_ids
     :type inputs: str, list[str], ov.genai.TokenizedInputs, or ov.Tensor
 
     :param generation_config: generation_config
@@ -48,12 +49,12 @@ auto generate_docstring = R"(
 
 py::object call_common_generate(
     LLMPipeline& pipe,
-    const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>>& inputs,
+    const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>, ChatHistory>& inputs,
     const OptionalGenerationConfig& config,
     const pyutils::PyBindStreamerVariant& py_streamer,
     const py::kwargs& kwargs
 ) {
-    ov::genai::GenerationConfig default_config = config.has_value() ? *config : pipe.get_generation_config();
+    const ov::genai::GenerationConfig& default_config = config.value_or(pipe.get_generation_config());
     auto updated_config = pyutils::update_config_from_kwargs(default_config, kwargs);
 
     py::object results;
@@ -84,7 +85,7 @@ py::object call_common_generate(
             res = pipe.generate(string_input, updated_config, streamer);
         }
         // If input was a string return a single string otherwise return DecodedResults.
-        if (updated_config.has_value() && (*updated_config).num_return_sequences == 1) {
+        if (updated_config.num_return_sequences == 1) {
             results = py::cast<py::object>(pyutils::handle_utf8(res.texts[0]));
         } else {
             results = py::cast(res);
@@ -96,6 +97,14 @@ py::object call_common_generate(
         {
             py::gil_scoped_release rel;
             res = pipe.generate(string_input, updated_config, streamer);
+        }
+        results = py::cast(res);
+    },
+    [&](ChatHistory history) {
+        DecodedResults res;
+        {
+            py::gil_scoped_release rel;
+            res = pipe.generate(history, updated_config, streamer);
         }
         results = py::cast(res);
     }},
@@ -203,14 +212,14 @@ void init_llm_pipeline(py::module_& m) {
         .def(
             "generate",
             [](LLMPipeline& pipe,
-                const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>>& inputs,
+                const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>, ChatHistory>& inputs,
                 const OptionalGenerationConfig& generation_config,
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::genai::EncodedResults, ov::genai::DecodedResults> {
                 return call_common_generate(pipe, inputs, generation_config, streamer, kwargs);
             },
-            py::arg("inputs"), "Input string, or list of string or encoded tokens",
+            py::arg("inputs"), "Input string, or list of string, chat history or encoded tokens",
             py::arg("generation_config") = std::nullopt, "generation_config",
             py::arg("streamer") = std::monostate(), "streamer",
             (generate_docstring + std::string(" \n ") + generation_config_docstring).c_str()
@@ -219,14 +228,14 @@ void init_llm_pipeline(py::module_& m) {
         .def(
             "__call__",
             [](LLMPipeline& pipe,
-                const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>>& inputs,
+                const std::variant<ov::Tensor, TokenizedInputs, std::string, std::vector<std::string>, ChatHistory>& inputs,
                 const OptionalGenerationConfig& generation_config,
                 const pyutils::PyBindStreamerVariant& streamer,
                 const py::kwargs& kwargs
             ) -> py::typing::Union<ov::genai::EncodedResults, ov::genai::DecodedResults> {
                 return call_common_generate(pipe, inputs, generation_config, streamer, kwargs);
             },
-            py::arg("inputs"), "Input string, or list of string or encoded tokens",
+            py::arg("inputs"), "Input string, or list of string, chat history or encoded tokens",
             py::arg("generation_config") = std::nullopt, "generation_config",
             py::arg("streamer") = std::monostate(), "streamer",
             (generate_docstring + std::string(" \n ") + generation_config_docstring).c_str()

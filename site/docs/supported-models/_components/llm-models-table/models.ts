@@ -261,6 +261,8 @@ export const LLM_MODELS: LLMModelType[] = [
       {
         name: 'Gemma3',
         links: [
+          'https://huggingface.co/google/gemma-3-270m',
+          'https://huggingface.co/google/gemma-3-270m-it',
           'https://huggingface.co/google/gemma-3-1b-it',
           'https://huggingface.co/google/gemma-3-1b-pt',
         ],
@@ -382,6 +384,17 @@ export const LLM_MODELS: LLMModelType[] = [
       {
         name: 'GPT NeoX Japanese',
         links: ['https://huggingface.co/abeja/gpt-neox-japanese-2.7b'],
+      },
+    ],
+  },
+  {
+    architecture: 'GptOssForCausalLM',
+    models: [
+      {
+        name: 'GPT-OSS',
+        links: [
+          'https://huggingface.co/openai/gpt-oss-20b',
+        ],
       },
     ],
   },
@@ -553,6 +566,8 @@ export const LLM_MODELS: LLMModelType[] = [
           'https://huggingface.co/openbmb/MiniCPM-2B-dpo-fp32',
           'https://huggingface.co/openbmb/MiniCPM-2B-sft-bf16',
           'https://huggingface.co/openbmb/MiniCPM-2B-dpo-bf16',
+          'https://huggingface.co/openbmb/MiniCPM4-0.5B',
+          'https://huggingface.co/openbmb/MiniCPM4-8B',
         ],
       },
     ],

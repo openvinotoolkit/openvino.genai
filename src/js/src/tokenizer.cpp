@@ -32,14 +32,32 @@ Napi::Object TokenizerWrapper::wrap(Napi::Env env, ov::genai::Tokenizer tokenize
 
 Napi::Value TokenizerWrapper::apply_chat_template(const Napi::CallbackInfo& info) {
     try {
-        auto history = js_to_cpp<ov::genai::ChatHistory>(info.Env(), info[0]);
-        OPENVINO_ASSERT(!info[1].IsUndefined() && info[1].IsBoolean(), "The argument 'addGenerationPrompt' must be a boolean");
+        OPENVINO_ASSERT(info.Length() >= 2,
+                       "Tokenizer.applyChatTemplate requires at least two arguments: chatHistory and addGenerationPrompt");
+        OPENVINO_ASSERT(info[0].IsObject(), "The argument 'chatHistory' must be an object");
+        OPENVINO_ASSERT(info[1].IsBoolean(), "The argument 'addGenerationPrompt' must be a boolean");
+
+        ov::genai::ChatHistory history;
+        if (is_chat_history(info.Env(), info[0])) {
+            history = unwrap<ov::genai::ChatHistory>(info.Env(), info[0]);
+        } else {
+            history = ov::genai::ChatHistory(js_to_cpp<ov::genai::JsonContainer>(info.Env(), info[0]));
+        }
+
         bool add_generation_prompt = info[1].ToBoolean();
         std::string chat_template = "";
-        if (info.Length() == 3 && !info[2].IsUndefined()) {
+        if (!info[2].IsUndefined()) {
             chat_template = info[2].ToString().Utf8Value();
         }
-        auto result = this->_tokenizer.apply_chat_template(history, add_generation_prompt, chat_template);
+        std::optional<ov::genai::JsonContainer> tools;
+        if (!info[3].IsUndefined()) {
+            tools = ov::genai::JsonContainer::from_json_string(json_stringify(info.Env(), info[3]));
+        }
+        std::optional<ov::genai::JsonContainer> extra_context;
+        if (!info[4].IsUndefined()) {
+            extra_context = ov::genai::JsonContainer::from_json_string(json_stringify(info.Env(), info[4]));
+        }
+        auto result = this->_tokenizer.apply_chat_template(history, add_generation_prompt, chat_template, tools, extra_context);
         return Napi::String::New(info.Env(), result);
     } catch (std::exception& err) {
         Napi::Error::New(info.Env(), err.what()).ThrowAsJavaScriptException();

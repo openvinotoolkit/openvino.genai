@@ -9,14 +9,14 @@ The preferred approach is to build both OpenVINO and OpenVINO GenAI from sources
 
 - [CMake](https://cmake.org/download/) 3.23 or higher
 - GCC 7.5 or higher
-- Python 3.9 or higher
+- Python 3.10 or higher
 - Git
 
 ### Windows
 
 - [CMake](https://cmake.org/download/) 3.23 or higher
 - Microsoft Visual Studio 2019 or higher, version 16.3 or later
-- Python 3.9 or higher
+- Python 3.10 or higher
 - Git for Windows
 
 ### macOS
@@ -30,7 +30,7 @@ The preferred approach is to build both OpenVINO and OpenVINO GenAI from sources
     ```sh
     xcode-select --install
     ```
-- Python 3.9 or higher
+- Python 3.10 or higher
 - Git
 
 
@@ -245,7 +245,7 @@ After setting up your environment, use the following commands to configure addit
     ```
 - **Disable Python bindings to reduce build size:**
     ```sh
-    cmake -DENABLE_PYTHON_BINDINGS=OFF -S ./ -B ./build/
+    cmake -DENABLE_PYTHON=OFF -S ./ -B ./build/
     ```
 - **Experimental free threaded Python build:**
     To build the Python bindings with experimental free threaded Python support, add the following flag to your `cmake` command:

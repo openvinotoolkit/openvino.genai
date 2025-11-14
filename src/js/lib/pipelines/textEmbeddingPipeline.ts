@@ -17,12 +17,12 @@ export class TextEmbeddingPipeline {
   constructor(
     modelPath: string,
     device: string,
-    config?: TextEmbeddingConfig,
+    config: TextEmbeddingConfig,
     ovProperties?: object,
   ) {
     this.modelPath = modelPath;
     this.device = device;
-    this.config = config || {};
+    this.config = config;
     this.ovProperties = ovProperties || {};
   }
 

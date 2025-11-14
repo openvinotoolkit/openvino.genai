@@ -69,7 +69,7 @@ public:
 
     void finish_chat() override;
 
-    std::pair<std::string, std::vector<size_t>> normalize_prompt(
+    NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images

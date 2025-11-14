@@ -18,7 +18,7 @@ describe("bindings", () => {
         process.exit(1);
       }
 
-      pipeline.startChat((err) => {
+      pipeline.startChat("", (err) => {
         if (err) {
           console.error(err);
           process.exit(1);

@@ -21,6 +21,20 @@
 
 using namespace ov::genai;
 
+namespace {
+void update_npu_properties(const std::filesystem::path& models_dir, ov::AnyMap& properties) {
+    auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
+    switch (vlm_config.model_type) {
+        case VLMModelType::GEMMA3:
+            properties.insert({"NPUW_LLM_PREFILL_HINT", "STATIC"});
+            properties.insert({"NPUW_F16IC", "NO"});
+            break;
+        default:
+            break;
+    }
+}
+}
+
 class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     // A config to follow for text generation.
     GenerationConfig m_generation_config;
@@ -46,8 +60,13 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     size_t m_max_kv_cache_size = std::numeric_limits<size_t>::max();
     bool m_is_npu = false;
     size_t m_image_id = 0;
+    size_t m_video_id = 0;
     ChatHistory m_history;
-
+    // if True, full history will be used as prompt on each chat generation
+    bool m_use_full_chat_history = false;
+    // It stores encoded images in case when m_use_full_chat_history is true
+    std::vector<ov::genai::EncodedImage> m_encoded_images;
+    std::string m_system_message;
 public:
     VLMPipelineImpl(
         const std::filesystem::path& models_dir,
@@ -84,6 +103,7 @@ public:
         if (m_is_npu) {
             embedder_device = "CPU";
             utils::KVDesc kv_desc;
+            update_npu_properties(models_dir, lm_properties);
             std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(language_model, lm_properties, kv_pos);
             m_max_prompt_len = kv_desc.max_prompt_len;
             m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
@@ -102,6 +122,8 @@ public:
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, embedder_properties);
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
+        // NPU is not supporting history, so in chat scenarios let's use full chat history on each iteration
+        m_use_full_chat_history = m_is_npu;
 
         utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
         kv_cache_state.seq_length_axis = kv_pos.seq_len;
@@ -152,11 +174,20 @@ public:
 
     VLMDecodedResults generate(
         const std::string& prompt,
-        const std::vector<ov::Tensor>& rgbs,
+        const std::vector<ov::Tensor>& images,
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
+        return generate(prompt, images, {}, std::move(generation_config), streamer);
+    }
 
+    VLMDecodedResults generate(
+        const std::string& prompt,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) override {
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
@@ -177,37 +208,57 @@ public:
         generation_config.validate();
 
         if (m_is_npu) {
-            OPENVINO_ASSERT(rgbs.size() <= 1u, "Currently only batch size equal to 1 is supported for NPU device!");
+            OPENVINO_ASSERT(images.size() <= 1u && videos.size() <= 1u, "Currently only batch size equal to 1 is supported for NPU device!");
             OPENVINO_ASSERT(generation_config.is_greedy_decoding() || generation_config.is_multinomial(),
                 "Currently only greedy and multinomial decoding are supported for NPU device!");
             OPENVINO_ASSERT(generation_config.num_return_sequences == 1u,
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
+            if (m_is_chat_conversation)
+                OPENVINO_ASSERT(videos.empty(), "Chat mode is currently not supported with video input for NPU device!");
         }
-
-        const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
-        auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
+        auto encoded_images = m_inputs_embedder->encode_images(images);
+        OPENVINO_ASSERT(images.size() == encoded_images.size(), "Input images size and encoded images size mismatch!");
+        const auto encoded_videos = m_inputs_embedder->encode_videos(videos);
+        auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
 
         if (m_is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
             unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
 
-            for (size_t idx = 0; idx < image_sequence.size(); idx++) {
-                image_sequence[idx] -= m_image_id;
+            if (m_use_full_chat_history) {
+                m_encoded_images.reserve(m_encoded_images.size() + encoded_images.size());
+                m_encoded_images.insert(m_encoded_images.end(), encoded_images.begin(), encoded_images.end());
+                image_sequence.resize(m_encoded_images.size());
+                std::iota(image_sequence.begin(), image_sequence.end(), 0);
+                encoded_images = m_encoded_images;
+                m_inputs_embedder->start_chat(m_system_message);
+            } else {
+                for (size_t idx = 0; idx < image_sequence.size(); idx++) {
+                   image_sequence[idx] -= m_image_id;
+                }
+                for (size_t idx = 0; idx < video_sequence.size(); idx++) {
+                    video_sequence[idx] -= m_video_id;
+                }
             }
-        }
-        else {
+        } else {
             m_inputs_embedder->set_apply_chat_template_status(generation_config.apply_chat_template);
         }
         ov::Tensor inputs_embeds;
         std::optional<ov::Tensor> token_type_ids;
+        bool recalculate_merged_embeddings = encoded_images.size() > 0 || encoded_videos.size() > 0;
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         if (m_inputs_embedder->has_token_type_ids()) {
-            ov::Tensor prompt_ids_tmp;
-            std::tie(inputs_embeds, prompt_ids_tmp) = m_inputs_embedder->get_inputs_embeds_with_prompt_ids(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
-            token_type_ids = m_inputs_embedder->get_inputs_token_type_ids(prompt_ids_tmp, perf_metrics);
+            std::tie(inputs_embeds, token_type_ids) =
+                m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt,
+                                                                         encoded_images,
+                                                                         encoded_videos,
+                                                                         perf_metrics,
+                                                                         recalculate_merged_embeddings,
+                                                                         image_sequence,
+                                                                         video_sequence);
         } else {
-            inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, perf_metrics, encoded_images.size() > 0, image_sequence);
+            inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, perf_metrics, recalculate_merged_embeddings, image_sequence, video_sequence);
         }
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
 
@@ -220,8 +271,15 @@ public:
         }
 
         utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
-        if (m_is_chat_conversation)
-            utils::trim_kv_cache(m_language, kv_cache_state, std::nullopt);
+        if (m_is_chat_conversation) {
+            if (m_use_full_chat_history) {
+                kv_cache_state.reset_state();
+                m_language.reset_state();
+                m_language.get_tensor("attention_mask").set_shape({1, 0});
+            } else {
+                utils::trim_kv_cache(m_language, kv_cache_state, std::nullopt);
+            }
+        }
 
         std::vector<SequenceGroup::Ptr> requests;
         size_t request_id = 0;
@@ -237,7 +295,7 @@ public:
         std::copy(tokenized_history.begin(), tokenized_history.end(), prompt_ids.data<int64_t>());
 
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(request_id, prompt_ids, generation_config, block_size);
-        requests.push_back(sequence_group);
+        requests.push_back(std::move(sequence_group));
 
         std::shared_ptr<StreamerBase> streamer_ptr = utils::create_streamer(streamer, m_tokenizer);
 
@@ -256,8 +314,10 @@ public:
             m_sampler.set_seed(generation_config.rng_seed);
         }
 
-        ov::genai::utils::GenerationFinishInfo finish_info = ov::genai::get_lm_encoded_results(m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, requests,
-                                                                                               position_ids, token_type_ids, kv_cache_state, m_embedding, rope_delta, m_max_kv_cache_size);
+        ov::genai::utils::GenerationFinishInfo finish_info = ov::genai::get_lm_encoded_results(
+            m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, std::move(requests),
+            position_ids, token_type_ids, kv_cache_state, m_embedding, rope_delta, m_max_kv_cache_size
+        );
         EncodedResults& encoded_result = finish_info.results;
 
         auto decode_start_time = std::chrono::steady_clock::now();
@@ -273,17 +333,25 @@ public:
             m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status);
 
             if (finish_info.streaming_finish_status != ov::genai::GenerationStatus::CANCEL) {
-                m_image_id += encoded_images.size();
+                // using here images.size() instead of encoded_images.size() since
+                // encoded_images could be overriden when m_use_full_chat_history is true
+                m_image_id += images.size();
+                m_video_id += encoded_videos.size();
                 // Tail of chat template is missing in KV cache.
                 // Find the tail to concatenate it with the next input prompt.
                 m_history.push_back({{"role", "assistant"}, {"content", decoded_results}});
-            }
-            else {
+            } else {
                 m_history.pop_back();
+                if (m_use_full_chat_history) {
+                    OPENVINO_ASSERT(images.size() <= m_encoded_images.size(), "Number of images to remove is more than stored images!");
+                    m_encoded_images.resize(m_encoded_images.size() - images.size());
+                }
             }
-        }
-        else
+        } else
             kv_cache_state.reset_state();
+
+        if (!(m_is_chat_conversation && m_use_full_chat_history))
+            m_encoded_images.clear();
 
         auto generate_end_time = std::chrono::steady_clock::now();
         decoded.perf_metrics = encoded_result.perf_metrics;
@@ -307,25 +375,27 @@ public:
     }
 
     void start_chat(const std::string& system_message) override {
-        OPENVINO_ASSERT(!m_is_npu, "start_chat() isn't supported in VLMPipeline for NPU device");
         m_is_chat_conversation = true;
-        m_inputs_embedder->start_chat(system_message);
+        m_system_message = system_message;
+        m_inputs_embedder->start_chat(m_system_message);
         if (system_message.empty()) {
             return;
         }
-        m_history = {{{"role", "system"}, {"content", system_message}}};
+        m_history.clear();
+        m_history.push_back({{"role", "system"}, {"content", m_system_message}});
     }
 
     void finish_chat() override {
-        OPENVINO_ASSERT(!m_is_npu, "finish_chat() isn't supported in VLMPipeline for NPU device");
         m_is_chat_conversation = false;
         m_image_id = 0;
+        m_video_id = 0;
         // Resetting state may be slow.
         m_language.reset_state();
         m_language.get_tensor("attention_mask").set_shape({0, 0});
         // clear all chat history
         m_inputs_embedder->finish_chat();
         m_history.clear();
+        m_encoded_images.clear();
     }
 
     Tokenizer get_tokenizer() const override {
@@ -453,11 +523,21 @@ VLMPipeline::~VLMPipeline() = default;
 
 VLMDecodedResults VLMPipeline::generate(
     const std::string& prompt,
-    const std::vector<ov::Tensor>& rgbs,
+    const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& videos,
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(prompt, rgbs, generation_config, streamer);
+    return m_pimpl->generate(prompt, images, videos, generation_config, streamer);
+}
+
+VLMDecodedResults VLMPipeline::generate(
+    const std::string& prompt,
+    const std::vector<ov::Tensor>& images,
+    const GenerationConfig& generation_config,
+    const StreamerVariant& streamer
+) {
+    return m_pimpl->generate(prompt, images, generation_config, streamer);
 }
 
 VLMDecodedResults VLMPipeline::generate(

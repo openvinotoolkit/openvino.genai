@@ -19,16 +19,6 @@
 using namespace ov::genai;
 
 namespace {
-ov::genai::ModelDesc
-extract_draft_model_from_config(ov::AnyMap& config) {
-    ov::genai::ModelDesc draft_model;
-    if (config.find(utils::DRAFT_MODEL_ARG_NAME) != config.end()) {
-        draft_model = config.at(utils::DRAFT_MODEL_ARG_NAME).as<ov::genai::ModelDesc>();
-        config.erase(utils::DRAFT_MODEL_ARG_NAME);
-    }
-    return draft_model;
-}
-
 bool
 extract_prompt_lookup_from_config(ov::AnyMap& config) {
     bool res = false;
@@ -53,11 +43,12 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
                                                         const ov::AnyMap& vision_encoder_properties) {
     auto start_time = std::chrono::steady_clock::now();
     auto properties_without_draft_model = properties;
-    auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
+    auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
 
     auto model = utils::read_model(models_path, properties);
     auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
+    properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
     auto tokenizer = ov::genai::Tokenizer(models_path, tokenizer_properties);
     auto generation_config = utils::from_config_json_if_exists(models_path);
 
@@ -65,6 +56,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
         embedder = std::make_shared<InputsEmbedder>(models_path, device, vision_encoder_properties, is_prompt_lookup_enabled);
     }
+
+    utils::print_scheduler_config_info(scheduler_config);
 
     if (is_prompt_lookup_enabled) {
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
@@ -94,11 +87,12 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     const ov::AnyMap& properties) {
     auto start_time = std::chrono::steady_clock::now();
     auto properties_without_draft_model = properties;
-    auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
+    auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
 
     auto model = utils::read_model(models_path, properties_without_draft_model);
     auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
+    properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
 
     auto generation_config = utils::from_config_json_if_exists(models_path);
 
@@ -106,6 +100,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     if (std::filesystem::exists(models_path / "openvino_text_embeddings_model.xml")) {
         embedder = std::make_shared<InputsEmbedder>(models_path, device, properties_without_draft_model_without_gguf);
     }
+
+    utils::print_scheduler_config_info(scheduler_config);
 
     if (is_prompt_lookup_enabled) {
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
@@ -135,7 +131,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     auto properties_without_draft_model = properties;
-    auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
+    auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto model = utils::singleton_core().read_model(model_str, weights_tensor);
 
@@ -149,6 +145,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
             embedder = std::make_shared<InputsEmbedder>(directory, device, properties_without_draft_model);
         }
     }
+
+    utils::print_scheduler_config_info(scheduler_config);
 
     if (is_prompt_lookup_enabled) {
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
@@ -178,7 +176,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     auto properties_without_draft_model = properties;
-    auto draft_model_desr = extract_draft_model_from_config(properties_without_draft_model);
+    auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
     auto model_pair = utils::get_model_weights_pair(models_map, "language");
     auto model = utils::singleton_core().read_model(model_pair.first, model_pair.second);
@@ -197,6 +195,8 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
             embedder = std::make_shared<InputsEmbedder>(directory, device, properties_without_draft_model);
         }
     }
+
+    utils::print_scheduler_config_info(scheduler_config);
 
     if (is_prompt_lookup_enabled) {
         OPENVINO_ASSERT(draft_model_desr.model == nullptr, "Speculative decoding and prompt lookup decoding are mutually exclusive");
@@ -243,6 +243,10 @@ GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, co
     return m_impl->add_request(request_id, prompt, images, sampling_params);
 }
 
+GenerationHandle ContinuousBatchingPipeline::add_request(uint64_t request_id, const std::string& prompt, const std::vector<ov::Tensor>& images, const std::vector<ov::Tensor>& videos, const ov::genai::GenerationConfig& sampling_params) {
+    return m_impl->add_request(request_id, prompt, images, videos, sampling_params);
+}
+
 void ContinuousBatchingPipeline::step() {
     m_impl->step();
 }
@@ -271,6 +275,21 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::ve
     return decoded_results;
 }
 
+std::vector<GenerationResult> ContinuousBatchingPipeline::generate(
+    const std::vector<ChatHistory>& histories,
+    const std::vector<ov::genai::GenerationConfig>&
+    sampling_params,
+    const StreamerVariant& streamer
+) {
+    auto decoded_results = m_impl->generate(histories, sampling_params, streamer);
+
+    for (auto& decoded_result : decoded_results) {
+        decoded_result.perf_metrics.load_time = m_impl->m_load_time_ms;
+    }
+
+    return decoded_results;
+}
+
 std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
              const std::vector<std::string>& prompts,
              const std::vector<std::vector<ov::Tensor>>& images,
@@ -279,6 +298,14 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     return m_impl->generate(prompts, images, sampling_params, streamer);
 }
 
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
+    const std::vector<std::string>& prompts,
+    const std::vector<std::vector<ov::Tensor>>& images,
+    const std::vector<std::vector<ov::Tensor>>& videos,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer) {
+    return m_impl->generate(prompts, images, videos, sampling_params, streamer);
+}
 
 void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {
     m_impl->finish_chat();

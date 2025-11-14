@@ -16,7 +16,7 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const ov::InferRequest& request,
     const ov::genai::Tokenizer& tokenizer,
     OptionalGenerationConfig generation_config)
-    : LLMPipelineImplBase(tokenizer, generation_config.has_value() ? *generation_config : GenerationConfig()),
+    : LLMPipelineImplBase(tokenizer, generation_config.value_or(GenerationConfig())),
     m_model_runner(request) {
     auto compiled_model = m_model_runner.get_compiled_model();
     auto execution_devices = compiled_model.get_property(ov::execution_devices);
@@ -96,6 +96,47 @@ StatefulLLMPipeline::StatefulLLMPipeline(
     const ov::AnyMap& plugin_config)
     : StatefulLLMPipeline{models_path, Tokenizer(models_path, plugin_config), device, plugin_config} {}
 
+GenerationConfig StatefulLLMPipeline::resolve_generation_config(OptionalGenerationConfig generation_config) const {
+    GenerationConfig config = generation_config.value_or(m_generation_config);
+    // If stop_token_ids were not provided, take value from default m_generation_config
+    if (config.stop_token_ids.empty())
+        config.stop_token_ids = m_generation_config.stop_token_ids;
+    // If eos_token_id was not provided, take value from default m_generation_config
+    if (config.eos_token_id == -1)
+        config.set_eos_token_id(m_generation_config.eos_token_id);
+    config.validate();
+    return config;
+}
+
+DecodedResults StatefulLLMPipeline::get_decoded_results(
+    TokenizedInputs encoded_input,
+    OptionalGenerationConfig generation_config,
+    StreamerVariant streamer,
+    std::chrono::steady_clock::time_point start_time
+) {
+    auto encode_stop_time =  std::chrono::steady_clock::now();
+    auto encoded_results = generate(encoded_input, generation_config, streamer);
+
+    auto decode_start_time =  std::chrono::steady_clock::now();
+    DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
+    auto decode_stop_time =  std::chrono::steady_clock::now();
+
+    // generate_durations
+    decoded_results.perf_metrics = encoded_results.perf_metrics;
+
+    auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
+    auto stop_time = std::chrono::steady_clock::now();
+    raw_counters.generate_durations.clear();
+    raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
+    raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
+
+    // Added tokenization/detokenization times, and updated generate duration, need to reevaluate statistics.
+    decoded_results.perf_metrics.m_evaluated = false;
+    decoded_results.perf_metrics.evaluate_statistics(start_time);
+    return decoded_results;
+}
+
 DecodedResults StatefulLLMPipeline::generate(
     StringInputs inputs,
     OptionalGenerationConfig generation_config,
@@ -104,24 +145,30 @@ DecodedResults StatefulLLMPipeline::generate(
         m_chat_input_type = ov::genai::utils::GenerationChatInputsType::STRING;
 
     if (is_chat_conversation)
-        OPENVINO_ASSERT(m_chat_input_type != ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS,
-                        "Chat doesn't support switching between input types. Please, continue using EncodedInputs or restart the chat.");
+        OPENVINO_ASSERT(m_chat_input_type == ov::genai::utils::GenerationChatInputsType::STRING,
+                        "Chat doesn't support switching between input types. Please, continue using StringInputs or restart the chat.");
 
     auto start_time = std::chrono::steady_clock::now();
-    GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
-    // If stop_token_ids were not provided, take value from default m_generation_config
-    if (config.stop_token_ids.empty())
-        config.stop_token_ids = m_generation_config.stop_token_ids;
-    // If eos_token_id was not provided, take value from default m_generation_config
-    if (config.eos_token_id == -1)
-        config.set_eos_token_id(m_generation_config.eos_token_id);
-    config.validate();
+
+    GenerationConfig config = resolve_generation_config(generation_config);
 
     TokenizedInputs encoded_input;
 
     if (auto input_vector = std::get_if<std::vector<std::string>>(&inputs)) {
-        OPENVINO_ASSERT(!is_chat_conversation, "Can't chat with multiple prompts");
-        if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
+        if (is_chat_conversation) {
+            OPENVINO_ASSERT(input_vector->size() == 1, "Can't chat with multiple prompts");
+            m_history.push_back({{"role", "user"}, {"content", (*input_vector)[0]}});
+            constexpr bool add_generation_prompt = true;
+            auto new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+            auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
+
+            if (m_use_full_chat_history) {
+                encoded_input = new_chat_tokens;
+            } else {
+                ov::genai::align_kv_cache_and_history(new_chat_tokens.input_ids, m_kv_cache_state);
+                encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_kv_cache_state);
+            }
+        } else if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
             std::vector<std::string> templated_input_vector;
             for (auto& input : *input_vector) {
                 ChatHistory history({{{"role", "user"}, {"content", input}}});
@@ -151,7 +198,6 @@ DecodedResults StatefulLLMPipeline::generate(
             }
             // TODO: Forbid LoRA config change if we are in the chat mode, because it requires regenerating the history with LoRA applied
         } else {
-            std::string& prompt = *input_prompt;
             if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
                 ChatHistory history({{{"role", "user"}, {"content", prompt}}});
                 constexpr bool add_generation_prompt = true;
@@ -164,12 +210,7 @@ DecodedResults StatefulLLMPipeline::generate(
         }
     }
 
-    auto encode_stop_time =  std::chrono::steady_clock::now();
-    auto encoded_results = generate(encoded_input, config, streamer);
-
-    auto decode_start_time =  std::chrono::steady_clock::now();
-    DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
-    auto decode_stop_time =  std::chrono::steady_clock::now();
+    DecodedResults decoded_results = get_decoded_results(encoded_input, config, streamer, start_time);
 
     if (is_chat_conversation) {
         if (m_chat_generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
@@ -183,20 +224,44 @@ DecodedResults StatefulLLMPipeline::generate(
         }
     }
 
-    // generate_durations
-    decoded_results.perf_metrics = encoded_results.perf_metrics;
-
-    auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
-    auto stop_time = std::chrono::steady_clock::now();
-    raw_counters.generate_durations.clear();
-    raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
-    raw_counters.tokenization_durations.emplace_back(PerfMetrics::get_microsec(encode_stop_time - start_time));
-    raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_stop_time - decode_start_time));
-
-    // Added tokenization/detokenization times, and updated generate duration, need to reevaluate statistics.
-    decoded_results.perf_metrics.m_evaluated = false;
-    decoded_results.perf_metrics.evaluate_statistics(start_time);
     return decoded_results;
+}
+
+DecodedResults StatefulLLMPipeline::generate(
+    const ChatHistory& history,
+    OptionalGenerationConfig generation_config,
+    StreamerVariant streamer
+) {
+    is_chat_conversation = true;
+    m_history = history;
+    
+    if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::UNDEF)
+        m_chat_input_type = ov::genai::utils::GenerationChatInputsType::CHAT_HISTORY;
+
+    if (is_chat_conversation)
+        OPENVINO_ASSERT(m_chat_input_type == ov::genai::utils::GenerationChatInputsType::CHAT_HISTORY,
+                        "Chat doesn't support switching between input types. Please, continue using ChatHistory or restart the chat.");
+
+    auto start_time = std::chrono::steady_clock::now();
+    
+    GenerationConfig config = resolve_generation_config(generation_config);
+
+    OPENVINO_ASSERT(config.apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
+    OPENVINO_ASSERT(!m_tokenizer.get_chat_template().empty(), "Chat template must not be empty when using ChatHistory in generate method.");
+    OPENVINO_ASSERT(!history.empty(), "Chat history must not be empty when using ChatHistory in generate method.");
+
+    constexpr bool add_generation_prompt = true;
+    auto new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
+    auto new_chat_tokens = m_tokenizer.encode(new_templated_chat_history, ov::genai::add_special_tokens(false));
+
+    TokenizedInputs encoded_input;
+    if (m_use_full_chat_history) {
+        encoded_input = new_chat_tokens;
+    } else {
+        ov::genai::align_kv_cache_and_history(new_chat_tokens.input_ids, m_kv_cache_state);
+        encoded_input = get_chat_encoded_input(new_chat_tokens.input_ids, m_kv_cache_state);
+    }
+    return get_decoded_results(encoded_input, config, streamer, start_time);
 }
 
 EncodedResults StatefulLLMPipeline::generate(
@@ -208,7 +273,7 @@ EncodedResults StatefulLLMPipeline::generate(
 
     if (is_chat_conversation)
         // if chat was run in StringInputs mode, but it was called EncodedInputs generate, last m_history entry will be with assistant role
-        OPENVINO_ASSERT(m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS || m_history.back()["role"] == "user",
+        OPENVINO_ASSERT(m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS || m_history.last()["role"] == "user",
                         "Chat doesn't support switching between input types. Please, continue using StringInputs or restart the chat.");
 
     if (!is_chat_conversation) {
@@ -255,6 +320,9 @@ EncodedResults StatefulLLMPipeline::generate(
 
     size_t real_input_ids_size = input_ids.get_shape().at(1);
 
+    if (is_chat_conversation && m_use_full_chat_history)
+        m_kv_cache_state.reset_state();
+
     // Tail of previous output in chat mode is missing in KV cache.
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) {
         ov::Tensor new_chat_tokens = ov::Tensor{ov::element::i64, {1, m_tokenized_chat_history.size()}, m_tokenized_chat_history.data()};
@@ -265,15 +333,7 @@ EncodedResults StatefulLLMPipeline::generate(
         attention_mask = encoded_input.attention_mask;
     }
 
-    GenerationConfig config = (generation_config.has_value()) ? *generation_config : m_generation_config;
-
-    // If stop_token_ids were not provided, take value from default m_generation_config
-    if (config.stop_token_ids.empty())
-        config.stop_token_ids = m_generation_config.stop_token_ids;
-    // If eos_token_id was not provided, take value from default m_generation_config
-    if (config.eos_token_id == -1)
-        config.set_eos_token_id(m_generation_config.eos_token_id);
-    config.validate();
+    GenerationConfig config = resolve_generation_config(generation_config);
 
     auto batch_size = input_ids.get_shape().at(0);
 

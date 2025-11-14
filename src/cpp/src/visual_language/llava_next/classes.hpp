@@ -16,6 +16,10 @@ public:
     using VisionEncoder::VisionEncoder;
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
+
+protected:
+    ov::Tensor get_pixel_values_llava_next(const ov::Tensor& image, const ProcessorConfig& config);
+
 };
 
 class InputsEmbedderLLaVANext : public InputsEmbedderLLaVA {
@@ -26,13 +30,13 @@ public:
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
 
-    std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_prompt_ids(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {}) override;
-
-    std::pair<std::string, std::vector<size_t>> normalize_prompt(
+    NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images
     ) const override;
+
+    ov::Tensor pack_image_features_llava_next(const EncodedImage& encoded_image, const ov::Tensor& image_newline) const;
 };
 
 } // namespace ov::genai

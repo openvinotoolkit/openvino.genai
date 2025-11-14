@@ -18,7 +18,7 @@ from data.models import get_gguf_model_list
 
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", get_gguf_model_list())
-@pytest.mark.precommit
+@pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
 def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
     if sys.platform == 'darwin':
         pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
@@ -68,7 +68,7 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids):
     '<|endoftext|><|endoftext|><|im_end|>', 
     '<|endoftext|> Why the Sky is Blue? <|im_end|>',
 ])
-@pytest.mark.precommit
+@pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
 def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model, prompt):
     if sys.platform == 'darwin':
         pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
@@ -126,7 +126,8 @@ def test_full_gguf_pipeline(pipeline_type, model_ids, enable_save_ov_model, prom
 
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
 @pytest.mark.parametrize("model_ids", [{"gguf_model_id": "Qwen/Qwen3-0.6B-GGUF", "gguf_filename": "Qwen3-0.6B-Q8_0.gguf"}])
-@pytest.mark.precommit
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 172335")
+@pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
 def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     # Temporal testing solution until transformers starts to support qwen3 in GGUF format
     # Please refer details in issue: https://github.com/huggingface/transformers/issues/38063

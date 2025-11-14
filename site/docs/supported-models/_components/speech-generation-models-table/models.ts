@@ -2,7 +2,6 @@ type SpeechGenerationModelType = {
   architecture: string;
   models: Array<{
     name: string;
-    loraSupport: boolean;
     links: string[];
   }>;
 };
@@ -13,7 +12,6 @@ export const SPEECH_GENERATION_MODELS: SpeechGenerationModelType[] = [
     models: [
       {
         name: 'SpeechT5 TTS',
-        loraSupport: false,
         links: ['https://huggingface.co/microsoft/speecht5_tts'],
       },
     ],
