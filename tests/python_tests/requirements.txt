@@ -29,4 +29,4 @@ datasets==3.6.0; sys_platform != "linux"
 torchcodec==0.7.0; sys_platform == "linux"
 rouge==1.0.1
 # - microsoft/Phi-4-multimodal-instruct
-peft==0.17.1
+peft==0.18.0
