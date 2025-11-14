@@ -766,11 +766,8 @@ SIMPLIFIED_QWEN2_VL_2B = "{% for message in messages %}{{ message['content'] }}{
 
 def test_set_special_runtime_template(tmp_path):
     tokenizer = generate_tokenizer(tmp_path, ChatTemplates(None, None, None, None, None))
-    try:
-        tokenizer.chat_template = QWEN2_VL_2B
-        assert tokenizer.chat_template == SIMPLIFIED_QWEN2_VL_2B
-    finally:
-        del tokenizer
+    tokenizer.chat_template = QWEN2_VL_2B
+    assert tokenizer.chat_template == SIMPLIFIED_QWEN2_VL_2B
 
 
 @pytest.mark.parametrize(

@@ -194,6 +194,8 @@ def test_greedy(
             "stop_strings": {"Einstein", "sunny", "geothermal"},
             "include_stop_str_in_output": True
         },
+        {"max_new_tokens": 1, "min_new_tokens": 0, "echo": True},
+        {"max_new_tokens": 30, "num_beams": 2, "echo": True},
     ],
     ids=[
         "single_group_stop_criteria_heuristic",
@@ -204,6 +206,8 @@ def test_greedy(
         "multiple_groups",
         "single_group_min_new_tokens",
         "single_group_with_multiple_stop_strings_no_match",
+        "echo_with_generation",
+        "single_group_with_echo",
     ]
 )
 def test_beam_search(
@@ -274,6 +278,7 @@ def get_current_platform_ref_texts(ref_texts: PlatformsRefTexts) -> list[list[st
     if not result:
         raise RuntimeError("No ref_texts were provided")
     return result
+
 
 
 @dataclass
