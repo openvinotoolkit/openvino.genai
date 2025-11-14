@@ -10,6 +10,7 @@
 
 #include "visual_language/qwen2vl/classes.hpp"
 #include "visual_language/qwen2_5_vl/classes.hpp"
+#include "visual_language/qwen2_5_vl/classes_custom_vit.hpp"
 #include "visual_language/phi3_vision/classes.hpp"
 #include "visual_language/phi4mm/classes.hpp"
 #include "visual_language/minicpm/classes.hpp"
@@ -240,7 +241,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_em
 bool InputsEmbedder::IInputsEmbedder::has_token_type_ids() const { return false; }
 
 /// Public InputsEmbedder class
-
+extern bool g_enable_custom_vit;
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const std::string& device,
                                const ov::AnyMap device_config) {
@@ -265,7 +266,10 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
     } else if (vlm_config.model_type == VLMModelType::QWEN2_VL) {
         m_impl = std::make_shared<InputsEmbedderQwen2VL>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::QWEN2_5_VL) {
-        m_impl = std::make_shared<InputsEmbedderQwen2_5_VL>(vlm_config, model_dir, device, device_config);
+        if (g_enable_custom_vit)
+            m_impl = std::make_shared<InputsEmbedderQwen2_5_VL_CustomVIT>(vlm_config, model_dir, device, device_config);
+        else
+            m_impl = std::make_shared<InputsEmbedderQwen2_5_VL>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, model_dir, device, device_config);
     } else {

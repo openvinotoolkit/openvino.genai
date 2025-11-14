@@ -7,6 +7,7 @@
 
 #include "visual_language/qwen2vl/classes.hpp"
 #include "visual_language/qwen2_5_vl/classes.hpp"
+#include "visual_language/qwen2_5_vl/classes_custom_vit.hpp"
 #include "visual_language/phi3_vision/classes.hpp"
 #include "visual_language/phi4mm/classes.hpp"
 #include "visual_language/minicpm/classes.hpp"
@@ -19,14 +20,18 @@
 
 namespace ov::genai {
 
+extern bool g_enable_custom_vit;
+
 VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties) {
-    auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, properties);
-    ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
-    m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled_model.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_model]() -> ov::InferRequest {
-            return compiled_model.create_infer_request();
-        });
+    if (!g_enable_custom_vit) {
+        auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_embeddings_model.xml", device, properties);
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
+        m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+            compiled_model.get_property(ov::optimal_number_of_infer_requests),
+            [&compiled_model]() -> ov::InferRequest {
+                return compiled_model.create_infer_request();
+            });
+    }
     m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(model_dir, "preprocessor_config.json");
 }
 
@@ -35,22 +40,24 @@ VisionEncoder::VisionEncoder(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap device_config) {
-    const auto& vision_encoder_model = utils::get_model_weights_pair(models_map, "vision_embeddings").first;
-    const auto& vision_encoder_weights = utils::get_model_weights_pair(models_map, "vision_embeddings").second;
-    auto compiled_model = utils::singleton_core().compile_model(vision_encoder_model, vision_encoder_weights, device, device_config);
-    ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
-    m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
-        compiled_model.get_property(ov::optimal_number_of_infer_requests),
-        [&compiled_model]() -> ov::InferRequest {
-            return compiled_model.create_infer_request();
-        });
+    if (!g_enable_custom_vit) {
+        const auto& vision_encoder_model = utils::get_model_weights_pair(models_map, "vision_embeddings").first;
+        const auto& vision_encoder_weights = utils::get_model_weights_pair(models_map, "vision_embeddings").second;
+        auto compiled_model = utils::singleton_core().compile_model(vision_encoder_model, vision_encoder_weights, device, device_config);
+        ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
+        m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+            compiled_model.get_property(ov::optimal_number_of_infer_requests),
+            [&compiled_model]() -> ov::InferRequest {
+                return compiled_model.create_infer_request();
+            });
+    }
     m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(config_dir_path, "preprocessor_config.json");
 }
 
 ProcessorConfig VisionEncoder::get_processor_config() const {
     return m_processor_config;
 }
-
+extern bool g_enable_custom_vit;
 VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir, const VLMModelType model_type, const std::string& device, const ov::AnyMap properties) {
     if (model_type == VLMModelType::MINICPM) {
         return std::make_shared<VisionEncoderMiniCPM>(model_dir, device, properties);
@@ -71,7 +78,10 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
     } else if (model_type == VLMModelType::QWEN2_VL) {
         return std::make_shared<VisionEncoderQwen2VL>(model_dir, device, properties);
     } else if (model_type == VLMModelType::QWEN2_5_VL) {
-        return std::make_shared<VisionEncoderQwen2_5_VL>(model_dir, device, properties);
+        if (g_enable_custom_vit)
+            return std::make_shared<VisionEncoderQwen2_5_VL_CustomVIT>(model_dir, device, properties);
+        else
+            return std::make_shared<VisionEncoderQwen2_5_VL>(model_dir, device, properties);
     } else if (model_type == VLMModelType::GEMMA3) {
         return std::make_shared<VisionEncoderGemma3>(model_dir, device, properties);
     } else {

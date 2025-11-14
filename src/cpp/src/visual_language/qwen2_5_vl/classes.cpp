@@ -153,6 +153,12 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2_5_VL::run_video_image_embe
     ov::Tensor processed_vision_embeds = vision_embeddings_merger.get_output_tensor();
 
     auto out_vision_shape = processed_vision_embeds.get_shape();
+    {
+        FILE* pf = fopen("dump_embedding.dat", "wb");
+        fwrite(processed_vision_embeds.data(), processed_vision_embeds.get_byte_size(), 1, pf);
+        fclose(pf);
+        std::cout << "out_vision_shape = " << out_vision_shape << std::endl;
+    }
 
     // Split Video and Image's features.
     auto video_fea_num = calc_vec_tokens_num(reordered_videos_grid_thw);
@@ -174,6 +180,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2_5_VL::run_video_image_embe
     std::memcpy(res_image.data(),
                 reinterpret_cast<uint8_t*>(processed_vision_embeds.data()) + res_video.get_byte_size(),
                 res_image.get_byte_size());
+
     return {res_video, res_image};
 }
 
