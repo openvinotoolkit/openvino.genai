@@ -266,7 +266,7 @@ describe("tokenizer functions", async () => {
     tokenizer.setChatTemplate(originalTemplate);
   });
 
-  // TODO Fix getOriginalChatTemplate
+  // Fix getOriginalChatTemplate issue CVS-176638
   it.skip("getOriginalChatTemplate return the original string", () => {
     const originalTemplate = tokenizer.getChatTemplate();
     tokenizer.setChatTemplate("Custom template: {{ messages }}");
@@ -304,7 +304,7 @@ describe("tokenizer functions", async () => {
       1000,
       "input_ids should be padded to maxLength",
     );
-    // TODO Uncomment after fixing padding issue
+    // Uncomment after fixing padding issue CVS-176636
     // assert.strictEqual(
     //   result.input_ids.getData()[0],
     //   padTokenId,
@@ -327,8 +327,8 @@ describe("tokenizer functions", async () => {
     assert.strictEqual(typeof decoded, "string");
   });
 
-  // TODO Fix skip_special_tokens functionality
-  it.skip("decode with skip_special_tokens option", () => {
+  // Change model to fix skip_special_tokens functionality CVS-176639
+  it("decode with skip_special_tokens option", () => {
     const eos = tokenizer.getEosToken();
     const eosId = tokenizer.getEosTokenId();
     const tokenIds = [10n, 20n, 30n, eosId];
@@ -359,7 +359,7 @@ describe("tokenizer functions", async () => {
   });
 });
 
-// TODO Add model with paired input support
+// Add model with paired input support CVS-176639
 describe.skip("tokenizer with paired input", () => {
   let tokenizer = null;
 
