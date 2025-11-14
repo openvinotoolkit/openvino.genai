@@ -6,14 +6,20 @@ import type { Tensor } from "openvino-node";
 import type { ChatHistory } from "./chatHistory.js";
 
 /**
- * TokenizedInputs contains input_ids and attention_mask tensors.
+ * TokenizedInputs contains input_ids, attention_mask and (optionally) token_type_ids tensors.
+ * token_type_ids is returned if the tokenizer supports paired input, otherwise the field is undefined.
  * This is the result of encoding prompts using the Tokenizer.
  */
 export interface TokenizedInputs {
-  /** Tensor containing token IDs for the encoded input */
+  /** Tensor containing token IDs of the encoded input */
   input_ids: Tensor;
   /** Tensor containing attention mask (1 for real tokens, 0 for padding) */
   attention_mask: Tensor;
+  /**
+   * Optional tensor with token type IDs (segment ids) for paired inputs.
+   * Present only if the model/tokenizer supports paired input.
+   */
+  token_type_ids?: Tensor;
 }
 
 /**
@@ -111,7 +117,7 @@ export interface Tokenizer {
    * Encodes a single prompt or a list of prompts into tokenized inputs.
    * @param prompts - single prompt string or array of prompts
    * @param options - encoding options
-   * @returns TokenizedInputs object containing input_ids and attention_mask tensors.
+  * @returns TokenizedInputs object containing input_ids, attention_mask and optional token_type_ids tensors.
    */
   encode(prompts: string | string[], options?: EncodeOptions): TokenizedInputs;
 
@@ -123,7 +129,7 @@ export interface Tokenizer {
    * @param prompts1 - first list of prompts to encode
    * @param prompts2 - second list of prompts to encode
    * @param options - encoding options
-   * @returns TokenizedInputs object containing input_ids and attention_mask tensors.
+  * @returns TokenizedInputs object containing input_ids, attention_mask and optional token_type_ids tensors.
    */
   encode(prompts1: string[], prompts2: string[], options?: EncodeOptions): TokenizedInputs;
 
@@ -132,7 +138,7 @@ export interface Tokenizer {
    * Input format is same as for HF paired input [[prompt_1, prompt_2], ...].
    * @param prompts - list of paired prompts to encode
    * @param options - encoding options
-   * @returns TokenizedInputs object containing input_ids and attention_mask tensors.
+  * @returns TokenizedInputs object containing input_ids, attention_mask and optional token_type_ids tensors.
    */
   encode(prompts: [string, string][], options?: EncodeOptions): TokenizedInputs;
 

@@ -484,6 +484,10 @@ Napi::Value cpp_to_js<ov::genai::TokenizedInputs, Napi::Value>(const Napi::Env& 
 
     js_object.Set("input_ids", cpp_to_js<ov::Tensor, Napi::Value>(env, tokenized_inputs.input_ids));
     js_object.Set("attention_mask", cpp_to_js<ov::Tensor, Napi::Value>(env, tokenized_inputs.attention_mask));
+    // token_type_ids is optional and present only for paired inputs
+    if (tokenized_inputs.token_type_ids.has_value()) {
+        js_object.Set("token_type_ids", cpp_to_js<ov::Tensor, Napi::Value>(env, tokenized_inputs.token_type_ids.value()));
+    }
 
     return js_object;
 }

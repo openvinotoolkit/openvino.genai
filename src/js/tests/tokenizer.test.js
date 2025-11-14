@@ -266,10 +266,8 @@ describe("tokenizer functions", async () => {
     tokenizer.setChatTemplate(originalTemplate);
   });
 
-  it("getOriginalChatTemplate return the original string", (testContext) => {
-    testContext.skip("Invalid test");
-    return;
-    // eslint-disable-next-line no-unreachable
+  // TODO Fix getOriginalChatTemplate
+  it.skip("getOriginalChatTemplate return the original string", () => {
     const originalTemplate = tokenizer.getChatTemplate();
     tokenizer.setChatTemplate("Custom template: {{ messages }}");
 
@@ -393,5 +391,14 @@ describe.skip("tokenizer with paired input", () => {
 
     assert.strictEqual(result.input_ids.getShape()[0], pairs.length);
     assert.strictEqual(result.attention_mask.getShape()[0], pairs.length);
+  });
+
+  it("encode paired prompts broadcasting second array", () => {
+    const prompts1 = ["Question 1", "Question 2", "Question 3"]; // batch size 3
+    const prompts2 = ["Single answer"]; // will be broadcast
+    const result = tokenizer.encode(prompts1, prompts2);
+
+    assert.strictEqual(result.input_ids.getShape()[0], prompts1.length);
+    assert.strictEqual(result.attention_mask.getShape()[0], prompts1.length);
   });
 });
