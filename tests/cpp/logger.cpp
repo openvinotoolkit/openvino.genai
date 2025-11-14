@@ -48,17 +48,6 @@ TEST_F(LoggerTests, KeepsSingleTrailingNewline) {
     EXPECT_EQ(1, std::count(output.begin(), output.end(), '\n'));
 }
 
-TEST_F(LoggerTests, InvalidFormatThrows) {
-    EXPECT_THROW(GenAILogPrint(ov::log::Level::DEBUG, "%q"), std::runtime_error);
-    EXPECT_THROW(GenAILogPrint(ov::log::Level::INFO, "The value of %s"), std::runtime_error);
-    EXPECT_THROW(GenAILogPrint(ov::log::Level::INFO, "The value of %s is %d", "alpha"), std::runtime_error);
-    EXPECT_THROW(GenAILogPrint(ov::log::Level::INFO, "The value of %s", "alpha", 42), std::runtime_error);
-    EXPECT_THROW(GenAILogPrint(ov::log::Level::INFO, "The value with width %*d", 5, 42), std::runtime_error);
-    EXPECT_THROW(GenAILogPrint(ov::log::Level::INFO, "Incomplete percent %"), std::runtime_error);
-    EXPECT_THROW(GenAILogPrint(ov::log::Level::INFO, "Unsupported spec %k", 1), std::runtime_error);
-    EXPECT_THROW(GenAILogPrint(ov::log::Level::INFO, "Disallowed spec %n"), std::runtime_error);
-}
-
 TEST_F(LoggerTests, ValidFormatDoesNotThrow) {
     EXPECT_NO_THROW(GenAILogPrint(ov::log::Level::INFO, "Hello, %s", "world"));
     EXPECT_NO_THROW(GenAILogPrint(ov::log::Level::INFO, "Hello, %s\n", "world"));

@@ -69,81 +69,6 @@ void Logger::log_format(ov::log::Level level, const char* file, int line, const 
     va_end(args);
 }
 
-void Logger::validate_format_string(const char* format, size_t arg_count) const {
-    if (!format) {
-        if (arg_count != 0) {
-            throw std::runtime_error("Logger format error: null format string with arguments");
-        }
-        return;
-    }
-
-    size_t placeholder_count = 0;
-    const char* ptr = format;
-    while (*ptr != '\0') {
-        if (*ptr != '%') {
-            ++ptr;
-            continue;
-        }
-        ++ptr;
-        if (*ptr == '%') {
-            ++ptr;
-            continue;
-        }
-        if (*ptr == '\0') {
-            throw std::runtime_error("Logger format error: dangling '%' at end of format string");
-        }
-
-        while (*ptr && std::strchr("-+ #0'", *ptr)) {
-            ++ptr;
-        }
-
-        if (*ptr == '*') {
-            throw std::runtime_error("Logger format error: '*' width specifier is not supported");
-        }
-        while (*ptr && std::isdigit(static_cast<unsigned char>(*ptr))) {
-            ++ptr;
-        }
-
-        if (*ptr == '.') {
-            ++ptr;
-            if (*ptr == '*') {
-                throw std::runtime_error("Logger format error: '*' precision specifier is not supported");
-            }
-            while (*ptr && std::isdigit(static_cast<unsigned char>(*ptr))) {
-                ++ptr;
-            }
-        }
-
-        if (*ptr == 'h' || *ptr == 'l' || *ptr == 'j' || *ptr == 'z' || *ptr == 't' || *ptr == 'L') {
-            char length_modifier = *ptr;
-            ++ptr;
-            if ((length_modifier == 'h' || length_modifier == 'l') && *ptr == length_modifier) {
-                ++ptr;
-            }
-        }
-
-        if (*ptr == '\0') {
-            throw std::runtime_error("Logger format error: incomplete format specifier");
-        }
-
-        char conversion = *ptr;
-        const char* allowed = "diuoxXfFeEgGaAcsp";
-        if (conversion == 'n') {
-            throw std::runtime_error("Logger format error: '%n' specifier is not supported");
-        }
-        if (!std::strchr(allowed, conversion)) {
-            throw std::runtime_error(std::string{"Logger format error: unsupported specifier '%"} + conversion + "'");
-        }
-
-        ++placeholder_count;
-        ++ptr;
-    }
-
-    if (placeholder_count != arg_count) {
-        throw std::runtime_error("Logger format error: argument count mismatch");
-    }
-}
-
 void Logger::set_log_level(ov::log::Level level) {
     log_level.store(level, std::memory_order_relaxed);
 }
@@ -177,13 +102,16 @@ std::string Logger::format_from_variadic(const char* format, va_list args) const
     int required = std::vsnprintf(nullptr, 0, format, args_copy);
     va_end(args_copy);
     if (required < 0) {
-        throw std::runtime_error("Failed to format log message");
+        throw std::runtime_error("Logger format error: invalid format string or arguments");
     }
     if (required == 0) {
         return {};
     }
     std::vector<char> buffer(static_cast<size_t>(required) + 1u, '\0');
-    std::vsnprintf(buffer.data(), buffer.size(), format, args);
+    int result = std::vsnprintf(buffer.data(), buffer.size(), format, args);
+    if (result < 0) {
+        throw std::runtime_error("Logger format error: failed to format message");
+    }
     return std::string(buffer.data(), static_cast<size_t>(required));
 }
 

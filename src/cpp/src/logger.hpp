@@ -38,8 +38,6 @@ public:
 #endif
     void log_format(ov::log::Level level, const char* file, int line, const char* format, ...);
 
-    void validate_format_string(const char* format, size_t arg_count) const;
-
     void set_log_level(ov::log::Level level);
 
     bool should_log(ov::log::Level level) const;
@@ -47,7 +45,7 @@ public:
 private:
     std::atomic<ov::log::Level> log_level{ov::log::Level::NO};
     std::mutex log_mutex;
-    static std::once_flag init_flag;
+    inline static std::once_flag init_flag;
     void write_message(ov::log::Level level, const char* file, int line, const std::string& msg);
     void log_format_impl(ov::log::Level level, const char* file, int line, const char* format, va_list args);
     std::string format_from_variadic(const char* format, va_list args) const;
@@ -66,9 +64,6 @@ inline void log_message(ov::log::Level level, const char* file, int line, const 
     if (!logger->should_log(level)) {
         return;
     }
-    if (msg) {
-        logger->validate_format_string(msg, 0);
-    }
     logger->do_log(level, file, line, msg ? std::string(msg) : std::string());
 }
 
@@ -78,7 +73,6 @@ inline void log_message(ov::log::Level level, const char* file, int line, const 
     if (!logger->should_log(level)) {
         return;
     }
-    logger->validate_format_string(format, sizeof...(Args));
     logger->log_format(level, file, line, format, std::forward<Args>(args)...);
 }
 
