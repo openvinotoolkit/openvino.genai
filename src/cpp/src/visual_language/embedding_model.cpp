@@ -45,15 +45,13 @@ EmbeddingsModel::EmbeddingsModel(const std::filesystem::path& model_dir,
                                  const std::string& device,
                                  const ov::AnyMap& properties) {
     ov::Core core = utils::singleton_core();
-    auto extensions = utils::extract_extensions(properties);
-    for (const auto& extension : extensions) {
-        core.add_extension(extension);
-    }
-    std::shared_ptr<ov::Model> m_model = core.read_model(model_dir / "openvino_text_embeddings_model.xml", {}, properties);
+    auto properties_copy = properties;
+    utils::add_extensions_to_core(properties_copy);
+    std::shared_ptr<ov::Model> m_model = core.read_model(model_dir / "openvino_text_embeddings_model.xml", {}, properties_copy);
     // apply embedding postprocessing step by merging them into the model
     merge_postprocess(m_model, scale_emb);
 
-    ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
+    ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties_copy);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "text embeddings model");
     m_embeddings_requests_queue = init(compiled_model);
 }
@@ -64,15 +62,13 @@ EmbeddingsModel::EmbeddingsModel(const std::string& model,
                                  const std::string& device,
                                  const ov::AnyMap& properties) {
     ov::Core core = utils::singleton_core();
-    auto extensions = utils::extract_extensions(properties);
-    for (const auto& extension : extensions) {
-        core.add_extension(extension);
-    }
+    auto properties_copy = properties;
+    utils::add_extensions_to_core(properties_copy);
     std::shared_ptr<ov::Model> m_model = core.read_model(model, weights);
     // apply embedding postprocessing step by merging them into the model
     merge_postprocess(m_model, scale_emb);
 
-    ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties);
+    ov::CompiledModel compiled_model = core.compile_model(m_model, device, properties_copy);
     m_embeddings_requests_queue = init(compiled_model);
 }
 

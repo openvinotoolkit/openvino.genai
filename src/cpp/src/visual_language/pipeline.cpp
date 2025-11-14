@@ -82,10 +82,7 @@ public:
 
         auto properties_copy = properties;
         auto language_model_path = models_dir / "openvino_language_model.xml";
-        auto extensions = utils::extract_extensions(properties_copy);
-        for (const auto& extension : extensions) {
-            utils::singleton_core().add_extension(extension);
-        }
+        utils::add_extensions_to_core(properties_copy);
         auto language_model = utils::singleton_core().read_model(language_model_path, {}, properties_copy);
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
 
@@ -161,14 +158,11 @@ public:
         m_embedding = m_inputs_embedder->get_embedding_model();
 
         auto m_language_pair = utils::get_model_weights_pair(models_map, "language");
-
-        auto extensions = utils::extract_extensions(properties);
-        for (const auto& extension : extensions) {
-            utils::singleton_core().add_extension(extension);
-        }
+        auto properties_without_extensions = properties;
+        utils::add_extensions_to_core(properties_without_extensions);
 
         m_language = utils::singleton_core().compile_model(
-            m_language_pair.first, m_language_pair.second, device, properties
+            m_language_pair.first, m_language_pair.second, device, properties_without_extensions
         ).create_infer_request();
 
         m_language.get_tensor("attention_mask").set_shape({1, 0});

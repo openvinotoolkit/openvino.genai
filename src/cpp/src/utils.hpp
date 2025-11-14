@@ -103,6 +103,7 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
 const std::string STREAMER_ARG_NAME = "streamer";
 const std::string CONFIG_ARG_NAME = "generation_config";
 const std::string DRAFT_MODEL_ARG_NAME = "draft_model";
+const std::string EXTENSIONS_ARG_NAME = "EXTENSIONS";
 
 template<typename Config = ov::genai::GenerationConfig>
 Config from_config_json_if_exists(const std::filesystem::path& models_path, const char config_name[] = "generation_config.json") {
@@ -286,7 +287,7 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
 
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties, bool is_npu_requested = false);
 
-std::vector<std::string> extract_extensions(const ov::AnyMap& properties);
+void add_extensions_to_core(ov::AnyMap& properties);
 
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
 
