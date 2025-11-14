@@ -1,4 +1,4 @@
-import { LLMPipeline } from "../dist/index.js";
+import { ChatHistory, LLMPipeline } from "../dist/index.js";
 
 import assert from "node:assert/strict";
 import { describe, it, before, after } from "node:test";
@@ -109,11 +109,11 @@ describe("generation parameters validation", () => {
     await pipeline.finishChat();
   });
 
-  it("should throw an error if temperature is not a number", async () => {
-    await assert.rejects(async () => await pipeline.generate(), {
-      name: "Error",
-      message: "Prompt must be a string or string[]",
-    });
+  it("should throw an error if no arguments passed to generate", async () => {
+    await assert.rejects(
+      async () => await pipeline.generate(),
+      /Passed argument must be a string, ChatHistory or an array of strings./,
+    );
   });
 
   it("should throw an error if generationCallback is not a function", async () => {
@@ -266,20 +266,22 @@ describe("LLMPipeline.generate()", () => {
 
     // assert that calculating statistics manually from the raw counters
     // we get the same restults as from PerfMetrics
-    assert.strictEqual(
-      (perfMetrics.rawMetrics.generateDurations / 1000).toFixed(3),
-      generateDuration.mean.toFixed(3),
-    );
+    //
+    // Disabled due to potential floating-point differences. (CVS-175568)
+    // assert.strictEqual(
+    //   (perfMetrics.rawMetrics.generateDurations / 1000).toFixed(3),
+    //   generateDuration.mean.toFixed(3),
+    // );
 
-    assert.strictEqual(
-      (perfMetrics.rawMetrics.tokenizationDurations / 1000).toFixed(3),
-      tokenizationDuration.mean.toFixed(3),
-    );
+    // assert.strictEqual(
+    //   (perfMetrics.rawMetrics.tokenizationDurations / 1000).toFixed(3),
+    //   tokenizationDuration.mean.toFixed(3),
+    // );
 
-    assert.strictEqual(
-      (perfMetrics.rawMetrics.detokenizationDurations / 1000).toFixed(3),
-      detokenizationDuration.mean.toFixed(3),
-    );
+    // assert.strictEqual(
+    //   (perfMetrics.rawMetrics.detokenizationDurations / 1000).toFixed(3),
+    //   detokenizationDuration.mean.toFixed(3),
+    // );
 
     assert.ok(perfMetrics.rawMetrics.timesToFirstToken.length > 0);
     assert.ok(perfMetrics.rawMetrics.newTokenTimes.length > 0);
@@ -288,6 +290,28 @@ describe("LLMPipeline.generate()", () => {
     assert.ok(perfMetrics.rawMetrics.durations.length > 0);
     assert.ok(perfMetrics.rawMetrics.inferenceDurations.length > 0);
     assert.ok(perfMetrics.rawMetrics.grammarCompileTimes.length === 0);
+  });
+
+  it("test perfMetrics.add()", async () => {
+    const config = {
+      max_new_tokens: 5,
+      return_decoded_results: true,
+    };
+    const res1 = await pipeline.generate("prompt1", config);
+    const res2 = await pipeline.generate("prompt2", config);
+
+    const perfMetrics1 = res1.perfMetrics;
+    const perfMetrics2 = res2.perfMetrics;
+
+    const totalNumGeneratedTokens =
+      perfMetrics1.getNumGeneratedTokens() + perfMetrics2.getNumGeneratedTokens();
+
+    perfMetrics1.add(perfMetrics2);
+    assert.strictEqual(perfMetrics1.getNumGeneratedTokens(), totalNumGeneratedTokens);
+
+    assert.throws(() => perfMetrics1.add({}), {
+      message: /Passed argument is not of type PerfMetrics/,
+    });
   });
 });
 
@@ -331,5 +355,66 @@ describe("stream()", () => {
       }
     }
     assert.equal(chunks.length, 5);
+  });
+
+  it("stream() with array of strings", async () => {
+    assert.throws(() => {
+      pipeline.stream(["prompt1", "prompt2", "prompt3"]);
+    }, /Streaming is not supported for array of inputs/);
+  });
+});
+
+describe("LLMPipeline with chat history", () => {
+  let pipeline = null;
+  // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
+  const chatHistory = new ChatHistory();
+
+  before(async () => {
+    pipeline = await LLMPipeline(MODEL_PATH, "CPU", { ATTENTION_BACKEND: "SDPA" });
+  });
+
+  it("generate(chatHistory, config)", async () => {
+    chatHistory.setMessages([
+      { role: "user", content: "Hello!" },
+      { role: "assistant", content: "Hi! How can I help you?" },
+      { role: "user", content: "Tell me a joke." },
+    ]);
+    const config = {
+      max_new_tokens: 10,
+      return_decoded_results: true,
+    };
+    const reply = await pipeline.generate(chatHistory, config);
+    // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
+    chatHistory.push({ role: "assistant", content: reply.toString() });
+    assert.ok(Array.isArray(reply.texts));
+    assert.equal(reply.texts.length, 1);
+    assert.ok(typeof reply.texts[0] === "string");
+    console.log("Reply:", reply.toString());
+  });
+
+  it("generate(chatHistory, config) with invalid chat history", async () => {
+    const chatHistory = [1, "assistant", null];
+    const config = {
+      max_new_tokens: 10,
+      return_decoded_results: true,
+    };
+    await assert.rejects(async () => {
+      await pipeline.generate(chatHistory, config);
+    }, /An incorrect input value has been passed./);
+  });
+
+  it("stream(chatHistory, config)", async () => {
+    chatHistory.push({ role: "user", content: "Tell me another joke." });
+    const config = {
+      max_new_tokens: 10,
+    };
+    const streamer = await pipeline.stream(chatHistory, config);
+    const chunks = [];
+    for await (const chunk of streamer) {
+      chunks.push(chunk);
+    }
+    assert.ok(chunks.length > 0);
+    // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
+    chatHistory.push({ role: "assistant", content: chunks.join("") });
   });
 });

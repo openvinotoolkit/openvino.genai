@@ -43,23 +43,9 @@ class TextRerankerOptimum(CommonPipeline):
         task = "Given a web search query, retrieve relevant passages that answer the query"
         max_length = self.max_length or 8192
         pairs = []
-        if self.use_case.is_qwen_causallm_arch(self.model.config):
-            for doc in self.texts:
-                pairs.append(f"<Instruct>: {task}\n<Query>: {input_text}\n<Document>: {doc}")
-
-            prefix_tokens = self.tokenizer.encode(prefix, add_special_tokens=False)
-            suffix_tokens = self.tokenizer.encode(suffix, add_special_tokens=False)
-            inputs = self.tokenizer(
-                pairs, padding=False, truncation="longest_first", return_attention_mask=False,
-                max_length=max_length - len(prefix_tokens) - len(suffix_tokens)
-            )
-            for i, ele in enumerate(inputs["input_ids"]):
-                inputs["input_ids"][i] = prefix_tokens + ele + suffix_tokens
-            inputs = self.tokenizer.pad(inputs, padding=True, return_tensors="pt", max_length=max_length, padding_side='left').to(self.model.device)
-        else:
-            for doc in self.texts:
-                pairs.append(f"{prefix}<Instruct>: {task}\n<Query>: {input_text}\n<Document>: {doc}{suffix}")
-            inputs = self.tokenizer(pairs, padding=True, truncation=True, max_length=max_length, return_tensors="pt", padding_side='left')
+        for doc in self.texts:
+            pairs.append(f"{prefix}<Instruct>: {task}\n<Query>: {input_text}\n<Document>: {doc}{suffix}")
+        inputs = self.tokenizer(pairs, padding=True, truncation=True, max_length=max_length, return_tensors="pt", padding_side='left')
         return inputs
 
     @execution_time_in_sec

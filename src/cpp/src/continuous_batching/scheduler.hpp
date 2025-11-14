@@ -80,7 +80,7 @@ public:
         // map of src -> dst blocks copies, which need to be performed by CacheManager
         std::map<size_t, std::list<size_t>> block_copy_map;
 
-        // free some blocks taken by non-confirmed condidates in SD / prompt look-up
+        // free some blocks taken by non-confirmed candidates in SD / prompt look-up
         clean_empty_blocks(sequence_groups);
 
         if (m_block_manager->get_total_number_of_kv_blocks() == 0) {
@@ -515,7 +515,7 @@ private:
         size_t blocks_sum = 0;
         for (auto idx = 0; idx < sequence_groups.size(); idx++) {
             auto seq_length = sequence_groups[idx]->get_prompt_len() * m_kv_blocks_initial_multiplier;
-            auto gen_config = sequence_groups[idx]->get_sampling_parameters();
+            const auto& gen_config = sequence_groups[idx]->get_sampling_parameters();
             seq_length = std::min(seq_length, sequence_groups[idx]->get_prompt_len() + sequence_groups[idx]->get_max_new_tokens());
             size_t blocks_num = std::ceil(static_cast<float>(seq_length) / m_block_manager->get_block_size());
             if (gen_config.is_beam_search()) {

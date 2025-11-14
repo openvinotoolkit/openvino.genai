@@ -66,7 +66,7 @@ public:
 
     void finish_chat() override;
 
-    NormlizedPrompt normalize_prompt(
+    NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images

@@ -22,7 +22,7 @@ struct OPENVINO_GENAI_EXPORTS VLMPerfMetrics : public PerfMetrics {
 
     VLMPerfMetrics() = default;
 
-    VLMPerfMetrics(PerfMetrics& perf_metrics) : PerfMetrics(perf_metrics){};
+    VLMPerfMetrics(PerfMetrics& perf_metrics) : PerfMetrics(perf_metrics), prepare_embeddings_duration(){};
 
     void evaluate_statistics(std::optional<TimePoint> start_time = std::nullopt) override;
 

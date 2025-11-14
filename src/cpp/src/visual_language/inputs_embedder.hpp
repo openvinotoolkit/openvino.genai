@@ -22,7 +22,7 @@ namespace ov::genai {
 struct VLMPerfMetrics;
 const static std::regex UNIVERSAL_PATTERN{R"(<ov_genai_image_(\d+)>)"};
 
-struct NormlizedPrompt {
+struct NormalizedPrompt {
     std::string unified_prompt;
     std::vector<size_t> images_sequence;
     std::vector<size_t> videos_sequence;
@@ -44,24 +44,41 @@ public:
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
 
     ov::Tensor get_inputs_embeds(const std::string& prompt,
-                            const std::vector<ov::genai::EncodedImage>& images,
-                            const std::vector<ov::genai::EncodedVideo>& videos,
-                            ov::genai::VLMPerfMetrics& metrics,
-                            bool recalculate_merged_embeddings = true,
-                            const std::vector<size_t>& image_sequence = {},
-                            const std::vector<size_t>& videos_sequence = {});
+                                 const std::vector<ov::genai::EncodedImage>& images,
+                                 const std::vector<ov::genai::EncodedVideo>& videos,
+                                 ov::genai::VLMPerfMetrics& metrics,
+                                 bool recalculate_merged_embeddings = true,
+                                 const std::vector<size_t>& image_sequence = {},
+                                 const std::vector<size_t>& videos_sequence = {},
+                                 const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
     // compute input embedding and token_type_ids
     std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
 
+    std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(
+        const std::string& prompt,
+        const std::vector<ov::genai::EncodedImage>& images,
+        const std::vector<ov::genai::EncodedVideo>& videos,
+        ov::genai::VLMPerfMetrics& metrics,
+        bool recalculate_merged_embeddings = true,
+        const std::vector<size_t>& image_sequence = {},
+        const std::vector<size_t>& videos_sequence = {},
+        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
+
     bool has_token_type_ids() const;
-    
+
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
     std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos);
 
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
+
+    void set_position_ids(const ov::Tensor& position_ids);
+
+    void set_rope_delta(int64_t rope_delta);
+
+    std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta);
 
     // returns embedding model which converts token_id(s) to embedding vectors
     EmbeddingsModel::Ptr get_embedding_model() const;
@@ -81,22 +98,21 @@ public:
     // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
     void set_apply_chat_template_status(bool apply_chat_template);
 
-    // finishes chat and clears a chat history 
+    // finishes chat and clears a chat history
     void finish_chat();
 
-    virtual NormlizedPrompt normalize_prompt(
+    virtual NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images
     ) const;
 
-    virtual NormlizedPrompt normalize_prompt(
+    virtual NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_image_id,
         size_t base_video_id,
         const std::vector<EncodedImage>& images,
         const std::vector<EncodedVideo>& videos) const;
-
 
 private:
     class IInputsEmbedder {
@@ -127,6 +143,9 @@ private:
         bool m_add_special_tokens = true;
         // True, if m_add_special_tokens was set, otherwise default behaviour is used
         bool m_add_special_tokens_is_set = false;
+        // position ids
+        ov::Tensor m_position_ids;
+        int64_t m_rope_delta = 0;
         virtual ~IInputsEmbedder() = default;
 
     public:
@@ -138,30 +157,50 @@ private:
                                              ov::genai::VLMPerfMetrics& metrics,
                                              bool recalculate_merged_embeddings = true,
                                              const std::vector<size_t>& image_sequence = {},
-                                             const std::vector<size_t>& videos_sequence = {});
+                                             const std::vector<size_t>& videos_sequence = {},
+                                             const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
         virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
+        virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(
+            const std::string& prompt,
+            const std::vector<ov::genai::EncodedImage>& images,
+            const std::vector<ov::genai::EncodedVideo>& videos,
+            ov::genai::VLMPerfMetrics& metrics,
+            bool recalculate_merged_embeddings = true,
+            const std::vector<size_t>& image_sequence = {},
+            const std::vector<size_t>& videos_sequence = {},
+            const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
         virtual bool has_token_type_ids() const;
 
         virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
         virtual std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos);
-    
+
         virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
-    
+        
+        void set_position_ids(const ov::Tensor& position_ids) {
+            m_position_ids = position_ids;
+        }
+
+        void set_rope_delta(int64_t rope_delta) {
+            m_rope_delta = rope_delta;
+        }
+
+        virtual std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta);
+
         EmbeddingsModel::Ptr get_embedding_model() const {
             return m_embedding;
         }
-    
+
         Tokenizer get_tokenizer() const {
             return m_tokenizer;
         }
-    
+
         utils::KVCacheState& get_kv_cache_state() {
             return m_kv_cache_state;
         }
-    
+
         void set_apply_chat_template_status(bool apply_chat_template) {
             m_apply_chat_template = apply_chat_template;
         }
@@ -170,33 +209,32 @@ private:
             m_add_special_tokens = value;
             m_add_special_tokens_is_set = true;
         }
-    
+
         virtual void start_chat(const std::string& system_message);
-    
+
         virtual void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
-    
+
         virtual void finish_chat();
 
-        virtual NormlizedPrompt normalize_prompt(
+        virtual NormalizedPrompt normalize_prompt(
             const std::string& prompt,
             size_t base_id,
             const std::vector<EncodedImage>& images
         ) const = 0;
-    
-        virtual NormlizedPrompt normalize_prompt(
+        virtual NormalizedPrompt normalize_prompt(
             const std::string& prompt,
             size_t base_image_id,
             size_t base_video_id,
             const std::vector<EncodedImage>& images,
             const std::vector<EncodedVideo>& videos) const;
-    
+
     protected:
         IInputsEmbedder(
             const VLMConfig& vlm_config,
             const std::filesystem::path& model_dir,
             const std::string& device,
             const ov::AnyMap device_config);
-        
+
         IInputsEmbedder(
             const VLMConfig& vlm_config,
             const ModelsMap& models_map,
@@ -204,9 +242,9 @@ private:
             const std::filesystem::path& config_dir_path,
             const std::string& device,
             const ov::AnyMap device_config);
-    
+
         virtual ov::Tensor apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
-    
+
         ov::Tensor update_history(const ov::Tensor& new_chat_tokens);
 
         ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
@@ -271,8 +309,8 @@ void verify_ids(const std::vector<size_t>& image_ids, size_t base_id, size_t n_i
 /// 4. If no tags were found, prepend native tags and assume incremental
 /// ordering.
 /// @param automatic_tag MiniCPM-V-2_6 inserts
-/// (<image>./</image>)\n per image but it only replaces
-/// <image>./</image> leaving ()\n untouched.
+/// <image>./</image>\n per image but it only replaces
+/// <image>./</image> leaving \n untouched.
 /// automatic_tag allows to handle this by being separated
 /// from native_tag param.
 std::pair<std::string, std::vector<size_t>> normalize_prompt(

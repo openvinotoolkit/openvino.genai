@@ -227,58 +227,58 @@ ov::Tensor calculate_patch_position_ids(
     ov::Shape image_embeds_shape = input_image_embeds.get_shape();
     // image_attention_mask: [batch, num_images, mask_height, mask_width]
     ov::Shape image_attention_mask_shape = image_attention_mask.get_shape();
-    
+
     size_t batch_size = image_embeds_shape[0];
     size_t num_images = image_embeds_shape[1];
     size_t mask_height = image_attention_mask_shape[2];
     size_t mask_width = image_attention_mask_shape[3];
-    
+
     size_t flattened_batch_size = batch_size * num_images;
     size_t total_mask_elements = mask_height * mask_width;
-    
+
     std::vector<float> boundaries;
     boundaries.reserve(num_patches_per_side - 1);
     for (size_t i = 1; i < num_patches_per_side; ++i) {
         boundaries.push_back(static_cast<float>(i) / num_patches_per_side);
     }
-    
+
     ov::Tensor position_ids{ov::element::i64, {flattened_batch_size, total_mask_elements}};
     int64_t* position_ids_data = position_ids.data<int64_t>();
-    
+
     std::fill_n(position_ids_data, flattened_batch_size * total_mask_elements, 0);
-    
+
     const float* image_attention_mask_data = image_attention_mask.data<float>();
-    
+
     for (size_t flat_batch_idx = 0; flat_batch_idx < flattened_batch_size; ++flat_batch_idx) {
         size_t mask_offset = flat_batch_idx * mask_height * mask_width;
         const float* current_mask = image_attention_mask_data + mask_offset;
-        
+
         size_t num_patches_h = 0;
         size_t num_patches_w = 0;
-        
+
         for (size_t h = 0; h < mask_height; ++h) {
             if (current_mask[h * mask_width] > 0.0f) {
                 num_patches_h++;
             }
         }
-        
+
         for (size_t w = 0; w < mask_width; ++w) {
             if (current_mask[w] > 0.0f) {
                 num_patches_w++;
             }
         }
-        
+
         if (num_patches_h == 0 || num_patches_w == 0) {
             continue;
         }
-        
+
         std::vector<float> fractional_coords_h;
         std::vector<float> fractional_coords_w;
         fractional_coords_h.reserve(num_patches_h);
         fractional_coords_w.reserve(num_patches_w);
-        
+
         const float eps = 1e-6f;
-        
+
         for (size_t i = 0; i < num_patches_h; ++i) {
             float coord = static_cast<float>(i) / num_patches_h;
             if (coord >= 1.0f - eps) {
@@ -286,7 +286,7 @@ ov::Tensor calculate_patch_position_ids(
             }
             fractional_coords_h.push_back(coord);
         }
-        
+
         for (size_t i = 0; i < num_patches_w; ++i) {
             float coord = static_cast<float>(i) / num_patches_w;
             if (coord >= 1.0f - eps) {
@@ -294,13 +294,13 @@ ov::Tensor calculate_patch_position_ids(
             }
             fractional_coords_w.push_back(coord);
         }
-        
+
         // Bucket coordinates (equivalent to torch.bucketize with right=True)
         std::vector<size_t> bucket_coords_h;
         std::vector<size_t> bucket_coords_w;
         bucket_coords_h.reserve(fractional_coords_h.size());
         bucket_coords_w.reserve(fractional_coords_w.size());
-        
+
         for (float coord : fractional_coords_h) {
             size_t bucket = 0;
             for (size_t i = 0; i < boundaries.size(); ++i) {
@@ -312,7 +312,7 @@ ov::Tensor calculate_patch_position_ids(
             }
             bucket_coords_h.push_back(bucket);
         }
-        
+
         for (float coord : fractional_coords_w) {
             size_t bucket = 0;
             for (size_t i = 0; i < boundaries.size(); ++i) {
@@ -324,26 +324,26 @@ ov::Tensor calculate_patch_position_ids(
             }
             bucket_coords_w.push_back(bucket);
         }
-        
+
         std::vector<int64_t> pos_ids;
         pos_ids.reserve(bucket_coords_h.size() * bucket_coords_w.size());
-        
+
         for (size_t h_coord : bucket_coords_h) {
             for (size_t w_coord : bucket_coords_w) {
                 pos_ids.push_back(static_cast<int64_t>(h_coord * num_patches_per_side + w_coord));
             }
         }
-        
+
         int64_t* batch_position_ids = position_ids_data + flat_batch_idx * total_mask_elements;
         size_t pos_idx = 0;
-        
+
         for (size_t i = 0; i < total_mask_elements && pos_idx < pos_ids.size(); ++i) {
             if (current_mask[i] > 0.0f) {
                 batch_position_ids[i] = pos_ids[pos_idx++];
             }
         }
     }
-    
+
     return position_ids;
 }
 
@@ -650,7 +650,7 @@ VisionEncoderPhi4MM::VisionEncoderPhi4MM(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap properties
-) : 
+) :
 VisionEncoder(models_map, config_dir_path, device, properties),
 m_image_preprocessors{create_image_preprocessors()},
 m_separator_inserters{create_separator_inserters()} {
@@ -675,7 +675,7 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
         CircularBufferQueueElementGuard<ov::InferRequest> lock{m_image_preprocessors.get()};
         ov::InferRequest& image_preprocessor = lock.get();
         image_preprocessor.set_tensor("image", image);
-        
+
         ov::Tensor new_size_tensor{ov::element::i64, {2}};
         new_size_tensor.data<int64_t>()[0] = target_sizes.width;
         new_size_tensor.data<int64_t>()[1] = target_sizes.height;
@@ -690,7 +690,7 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
         image_preprocessor.set_tensor("padding_height", padding_height_tensor);
 
         image_preprocessor.set_tensor("attention_mask", target_sizes.attention_mask);
-        
+
         image_preprocessor.infer();
         image_preprocessor.get_tensor("input_image_embeds").copy_to(input_image_embeds);
         image_preprocessor.get_tensor("image_attention_mask").copy_to(image_attention_mask);
@@ -747,6 +747,7 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
     EncodedImage encoded_image;
     encoded_image.resized_source = img_features_with_separators;
     encoded_image.images_features_projection = ov::Tensor{ov::element::f32, {}};
+    encoded_image.num_image_tokens = num_img_tokens;
     {
         CircularBufferQueueElementGuard<ov::InferRequest> lock{m_ireq_queue_vision_projection.get()};
         ov::InferRequest& projector = lock.get();
@@ -776,7 +777,7 @@ InputsEmbedderPhi4MM::InputsEmbedderPhi4MM(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
-NormlizedPrompt InputsEmbedderPhi4MM::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormalizedPrompt InputsEmbedderPhi4MM::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     return {phi_utils::normalize_prompt(prompt, base_id, images.size(), NATIVE_PATTERN, write_native), {}, {}};
 }
 
@@ -857,7 +858,7 @@ ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(
 }
 
 void InputsEmbedderPhi4MM::update_chat_history(
-    const std::string& decoded_results, 
+    const std::string& decoded_results,
     const ov::genai::GenerationStatus generation_finish_status
 ) {
     IInputsEmbedder::update_chat_history(decoded_results, generation_finish_status);
