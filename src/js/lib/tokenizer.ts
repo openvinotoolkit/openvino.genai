@@ -117,7 +117,7 @@ export interface Tokenizer {
    * Encodes a single prompt or a list of prompts into tokenized inputs.
    * @param prompts - single prompt string or array of prompts
    * @param options - encoding options
-  * @returns TokenizedInputs object containing input_ids, attention_mask and optional token_type_ids tensors.
+   * @returns TokenizedInputs object containing input_ids, attention_mask and optional token_type_ids tensors.
    */
   encode(prompts: string | string[], options?: EncodeOptions): TokenizedInputs;
 
