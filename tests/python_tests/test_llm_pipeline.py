@@ -766,7 +766,7 @@ def test_perf_metrics(
 
     mean_tpot, std_tpot = perf_metrics.get_tpot()
     assert (mean_tpot, std_tpot) == (perf_metrics.get_tpot().mean, perf_metrics.get_tpot().std)
-    assert 0 < mean_tpot < generate_time
+    assert 0 < mean_tpot < generate_time / num_generated_tokens
 
     mean_throughput, std_throughput = perf_metrics.get_throughput()
     assert (mean_throughput, std_throughput) == (perf_metrics.get_throughput().mean, perf_metrics.get_throughput().std)
