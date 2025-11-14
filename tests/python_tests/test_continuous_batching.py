@@ -63,8 +63,8 @@ def model_facebook_opt_125m() -> OVConvertedModelSchema:
     return download_and_convert_model(model_id)
 
 
-@pytest.mark.parametrize("llm_model", read_models_list(FILE_DIR_NAME / "models" / "precommit"), indirect=True)
-def test_e2e_precommit(llm_model: OVConvertedModelSchema):
+@pytest.mark.parametrize("llm_model", read_models_list(FILE_DIR_NAME / "models" / "lightweight"), indirect=True)
+def test_e2e_lightweight_models(llm_model: OVConvertedModelSchema):
     prompts, generation_configs = get_test_dataset()
     generate_and_compare(
         model_schema=llm_model,

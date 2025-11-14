@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 
 from utils.network import retry_request
 from utils.constants import get_ov_cache_dir
+from utils.atomic_download import AtomicDownloadManager
 
 
 # Configure logging
@@ -217,10 +218,12 @@ def download_gguf_model(model: Dict[str, Any], model_path: str) -> None:
     model_name = model["name"]
     model_gguf_filename = model["gguf_filename"]
     dest_dir = Path(model_path)
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    command = ["huggingface-cli", "download", model_name, model_gguf_filename, "--local-dir", str(dest_dir)]
-    logger.info(f"Downloading command: {' '.join(command)}")
-    try:
+    
+    manager = AtomicDownloadManager(dest_dir)
+    
+    def download_to_temp(temp_path: Path) -> None:
+        command = ["huggingface-cli", "download", model_name, model_gguf_filename, "--local-dir", str(temp_path)]
+        logger.info(f"Downloading command: {' '.join(command)}")
         result = retry_request(
             lambda: subprocess.run(
                 command,
@@ -231,11 +234,13 @@ def download_gguf_model(model: Dict[str, Any], model_path: str) -> None:
                 stdout=subprocess.PIPE,
             )
         )
+        logger.info(f"Downloaded GGUF model: {result.stdout}")
+    
+    try:
+        manager.execute(download_to_temp)
     except subprocess.CalledProcessError as error:
         logger.error(f"huggingface-cli returned {error.returncode}. Output:\n{error.output}")
         raise
-    else:
-        logger.info(f"Downloaded GGUF model: {result.stdout}")
 
 
 def optimum_cli_convert(model, model_path):
@@ -243,16 +248,23 @@ def optimum_cli_convert(model, model_path):
     sub_env = os.environ.copy()
     model_name = model["name"]
     model_args = model["convert_args"]
-    command = [
-        "optimum-cli", "export", "openvino",
-        "--model", model_name, 
-        model_path
-    ]
-    if model_args:
-        command.extend(model_args)
-    logger.info(f"Conversion command: {' '.join(command)}")
-    try:
+    dest_path = Path(model_path)
+    
+    manager = AtomicDownloadManager(dest_path, marker_name=".convert_complete")
+    
+    def convert_to_temp(temp_path: Path) -> None:
+        command = [
+            "optimum-cli", "export", "openvino",
+            "--model", model_name, 
+            str(temp_path)
+        ]
+        if model_args:
+            command.extend(model_args)
+        logger.info(f"Conversion command: {' '.join(command)}")
         retry_request(lambda: subprocess.run(command, check=True, text=True, env=sub_env, stderr=subprocess.STDOUT, stdout=subprocess.PIPE))
+    
+    try:
+        manager.execute(convert_to_temp)
     except subprocess.CalledProcessError as error:
         logger.error(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
         raise
@@ -270,17 +282,14 @@ def convert_model(request):
         model_path = model_cache
         gguf_file_path = os.path.join(model_path, model["gguf_filename"])
         logger.info(f"Preparing GGUF model: {model_name}")
-        if not os.path.exists(gguf_file_path):
-            download_gguf_model(model, model_path)
+        download_gguf_model(model, model_path)
         yield gguf_file_path
     else:
         model_path = os.path.join(model_cache, model_name)
         logger.info(f"Preparing model: {model_name}")
-        if not os.path.exists(model_path):
-            optimum_cli_convert(model, model_path)
+        optimum_cli_convert(model, model_path)
         yield model_path
 
-    # Cleanup the model after tests
     if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
         if os.path.exists(model_cache):
             logger.info(f"Removing cached model: {model_cache}")
@@ -294,18 +303,21 @@ def download_model(request):
     model_name = MODELS[model_id]["name"]
     model_cache = os.path.join(models_cache, model_id)
     model_path = os.path.join(model_cache, model_name)
+    
     logger.info(f"Preparing model: {model_name}")
-    # Download the model if not already downloaded
-    if not os.path.exists(model_path):
-        logger.info(f"Downloading the model: {model_name}")
-        sub_env=os.environ.copy()
-        command = ["huggingface-cli", "download", model_name, "--local-dir", model_path]
+    
+    manager = AtomicDownloadManager(Path(model_path))
+    
+    def download_to_temp(temp_path: Path) -> None:
+        sub_env = os.environ.copy()
+        command = ["huggingface-cli", "download", model_name, "--local-dir", str(temp_path)]
         logger.info(f"Downloading command: {' '.join(command)}")
         retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, env=sub_env))
+    
+    manager.execute(download_to_temp)
             
     yield model_path
     
-    # Cleanup the model after tests
     if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
         if os.path.exists(model_cache):
             logger.info(f"Removing converted model: {model_cache}")

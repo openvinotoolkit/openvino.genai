@@ -37,8 +37,9 @@ def retry_request(func, retries=7):
             return func()
         except (CalledProcessError, RequestException, HfHubHTTPError) as e:
             if isinstance(e, CalledProcessError):
-                if e.stderr is not None and any(pattern in e.stderr for pattern in network_error_patterns):
-                    logger.warning(f"CalledProcessError occurred: {e.stderr}")
+                error_output = (e.stdout or "") + (e.stderr or "")
+                if error_output and any(pattern in error_output for pattern in network_error_patterns):
+                    logger.warning(f"CalledProcessError occurred: {error_output}")
                 else:
                     raise
             if attempt < retries - 1:
