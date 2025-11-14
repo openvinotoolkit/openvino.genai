@@ -290,7 +290,6 @@ def run_text_rerank_pipeline_with_ref(
 
 
 @pytest.mark.parametrize("download_and_convert_embeddings_models", ["BAAI/bge-small-en-v1.5"], indirect=True)
-@pytest.mark.precommit
 def test_embedding_constructors(download_and_convert_embeddings_models):
     _, _, models_path = download_and_convert_embeddings_models
 
@@ -325,7 +324,6 @@ def test_embedding_constructors(download_and_convert_embeddings_models):
         TextEmbeddingPipeline.Config(normalize=False, pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN),
     ],
 )
-@pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
 def test_qwen3_embedding(download_and_convert_embeddings_models, dataset_documents, config):
     opt_model, hf_tokenizer, models_path = download_and_convert_embeddings_models
@@ -355,7 +353,6 @@ def test_qwen3_embedding(download_and_convert_embeddings_models, dataset_documen
         "embed_instruction",
     ],
 )
-@pytest.mark.precommit
 def test_embed_documents(download_and_convert_embeddings_models, dataset_documents, config):
     if (
         sys.platform == "linux"
@@ -389,7 +386,6 @@ def test_embed_documents(download_and_convert_embeddings_models, dataset_documen
         "query_instruction",
     ],
 )
-@pytest.mark.precommit
 def test_embed_query(download_and_convert_embeddings_models, dataset_documents, config):
     _, _, models_path = download_and_convert_embeddings_models
     run_text_embedding_pipeline_with_ref(models_path, dataset_documents[:1], config, "embed_query")
@@ -414,7 +410,6 @@ def dataset_embeddings_genai_default_config_refs(download_and_convert_embeddings
         TextEmbeddingPipeline.Config(max_length=64, pad_to_max_length=True, batch_size=1),
     ],
 )
-@pytest.mark.precommit
 def test_fixed_shapes_configs(download_and_convert_embeddings_models, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
     _, _, models_path = download_and_convert_embeddings_models
 
@@ -438,7 +433,6 @@ def test_fixed_shapes_configs(download_and_convert_embeddings_models, dataset_do
     ],
 )
 @pytest.mark.xfail()
-@pytest.mark.precommit
 def test_fixed_shapes_configs_xfail(download_and_convert_embeddings_models, dataset_documents, config, dataset_embeddings_genai_default_config_refs):
     _, _, models_path = download_and_convert_embeddings_models
 
@@ -457,7 +451,6 @@ def test_fixed_shapes_configs_xfail(download_and_convert_embeddings_models, data
         TextEmbeddingPipeline.Config(max_length=50, pad_to_max_length=True, batch_size=4),
     ],
 )
-@pytest.mark.precommit
 @pytest.mark.skipif(
     sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
     reason="NPU plugin is available only on Linux and Windows x86_64",
@@ -476,7 +469,6 @@ def test_npu_fallback(download_and_convert_embeddings_models, dataset_documents,
 
 
 @pytest.mark.parametrize("download_and_convert_rerank_model", [RERANK_TEST_MODELS[0]], indirect=True)
-@pytest.mark.precommit
 def test_rerank_constructors(download_and_convert_rerank_model):
     _, _, models_path = download_and_convert_rerank_model
 
@@ -514,7 +506,6 @@ def test_rerank_constructors(download_and_convert_rerank_model):
         "top_n=10",
     ],
 )
-@pytest.mark.precommit
 def test_rerank_documents(download_and_convert_rerank_model, dataset_documents, query, config):
     _, _, models_path = download_and_convert_rerank_model
     run_text_rerank_pipeline_with_ref(models_path, query, dataset_documents, config)
@@ -544,7 +535,6 @@ def test_rerank_documents(download_and_convert_rerank_model, dataset_documents, 
         "top_n=4",
     ],
 )
-@pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
 def test_qwen3_seq_cls_rerank_documents(download_and_convert_rerank_model, query, task, documents, config):
     opt_model, hf_tokenizer, models_path = download_and_convert_rerank_model
@@ -581,7 +571,6 @@ def test_qwen3_seq_cls_rerank_documents(download_and_convert_rerank_model, query
         "top_n=4",
     ],
 )
-@pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
 def test_qwen3_rerank_documents(download_and_convert_model_fixture, query, task, documents, config):
     opt_model, hf_tokenizer, models_path = download_and_convert_model_fixture
