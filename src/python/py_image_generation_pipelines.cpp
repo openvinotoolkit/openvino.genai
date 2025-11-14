@@ -208,7 +208,7 @@ public:
                 throw std::runtime_error{"Unexpected number of bytes was requested to allocate."};
             }
 
-            void deallocate(void*, size_t bytes, size_t) noexcept {
+            void deallocate(void*, size_t, size_t) noexcept {
             }
 
             bool is_equal(const TorchTensorAllocator& other) const noexcept {
