@@ -89,14 +89,6 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "llava-hf/llava-v1.6-mistral-7b-hf",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
-    "dreamlike-anime-1.0": {
-        "name": "dreamlike-art/dreamlike-anime-1.0",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16', "--task", "stable-diffusion"]
-    },
-    "LCM_Dreamshaper_v7-int8-ov": {
-        "name": "OpenVINO/LCM_Dreamshaper_v7-int8-ov",
-        "convert_args": []
-    },
     "tiny-random-minicpmv-2_6": {
         "name": "katuni4ka/tiny-random-minicpmv-2_6",
         "convert_args": ['--trust-remote-code', "--task", "image-text-to-text"]
@@ -284,6 +276,19 @@ def convert_model(request):
         logger.info(f"Preparing GGUF model: {model_name}")
         download_gguf_model(model, model_path)
         yield gguf_file_path
+    elif not model["convert_args"]:
+        model_path = os.path.join(model_cache, model_name)
+        logger.info(f"Downloading pre-converted model: {model_name}")
+        manager = AtomicDownloadManager(Path(model_path))
+        
+        def download_to_temp(temp_path: Path) -> None:
+            sub_env = os.environ.copy()
+            command = ["huggingface-cli", "download", model_name, "--local-dir", str(temp_path)]
+            logger.info(f"Downloading command: {' '.join(command)}")
+            retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, env=sub_env))
+        
+        manager.execute(download_to_temp)
+        yield model_path
     else:
         model_path = os.path.join(model_cache, model_name)
         logger.info(f"Preparing model: {model_name}")
