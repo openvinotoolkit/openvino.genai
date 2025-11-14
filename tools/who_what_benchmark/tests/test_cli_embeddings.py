@@ -129,7 +129,7 @@ def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
         "CPU",
         "--model-type",
         model_type,
-        "--batch_size",
+        "--embeds_batch_size",
         str(batch_size),
         "--hf",
     ])
@@ -146,7 +146,7 @@ def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
         "CPU",
         "--model-type",
         model_type,
-        "--batch_size",
+        "--embeds_batch_size",
         str(batch_size),
     ])
 
@@ -165,7 +165,7 @@ def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
         "--genai",
         "--output",
         tmp_path,
-        "--batch_size",
+        "--embeds_batch_size",
         str(batch_size),
     ])
 
@@ -182,6 +182,6 @@ def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
         "--model-type",
         model_type,
         "--genai",
-        "--batch_size",
+        "--embeds_batch_size",
         str(batch_size),
     ])

@@ -220,6 +220,11 @@ def parse_args():
         default=None,
         help="Side to use for padding 'left' or 'right'. Applicable only for text embeddings")
     parser.add_argument(
+        "--embeds_batch_size",
+        type=int,
+        default=None,
+        help="Batch size value. Applicable only for text embeddings")
+    parser.add_argument(
         "--rag-config",
         type=str,
         default=None,
@@ -261,13 +266,6 @@ def parse_args():
         default=None,
         help="Config option assistant_confidence_threshold for Speculative decoding.",
     )
-
-    parser.add_argument(
-        '-bs', '--batch_size',
-        type=int,
-        default=None,
-        help='Batch size value')
-
     return parser.parse_args()
 
 
@@ -641,7 +639,7 @@ def create_evaluator(base_model, args):
                 pooling_type=args.embeds_pooling_type,
                 normalize=args.embeds_normalize,
                 padding_side=args.embeds_padding_side,
-                batch_size=args.batch_size,
+                batch_size=args.embeds_batch_size,
             )
         elif task == "text-reranking":
             return EvaluatorCLS(
@@ -761,8 +759,6 @@ def main():
     logger.info(version_str)
 
     kwargs = {}
-    kwargs["batch_size"] = args.batch_size
-
     if args.cb_config:
         kwargs["cb_config"] = read_cb_config(args.cb_config)
     if args.from_onnx:
@@ -780,6 +776,7 @@ def main():
         kwargs["embeds_pooling"] = args.embeds_pooling_type
         kwargs["embeds_normalize"] = args.embeds_normalize
         kwargs["embeds_padding_side"] = args.embeds_padding_side
+        kwargs["embeds_batch_size"] = args.embeds_batch_size
 
     if args.draft_model is not None:
         kwargs["draft_model"] = args.draft_model
