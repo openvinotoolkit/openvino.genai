@@ -129,7 +129,7 @@ export interface Tokenizer {
    * @param prompts1 - first list of prompts to encode
    * @param prompts2 - second list of prompts to encode
    * @param options - encoding options
-  * @returns TokenizedInputs object containing input_ids, attention_mask and optional token_type_ids tensors.
+   * @returns TokenizedInputs object containing input_ids, attention_mask and optional token_type_ids tensors.
    */
   encode(prompts1: string[], prompts2: string[], options?: EncodeOptions): TokenizedInputs;
 
@@ -138,7 +138,7 @@ export interface Tokenizer {
    * Input format is same as for HF paired input [[prompt_1, prompt_2], ...].
    * @param prompts - list of paired prompts to encode
    * @param options - encoding options
-  * @returns TokenizedInputs object containing input_ids, attention_mask and optional token_type_ids tensors.
+   * @returns TokenizedInputs object containing input_ids, attention_mask and optional token_type_ids tensors.
    */
   encode(prompts: [string, string][], options?: EncodeOptions): TokenizedInputs;
 

@@ -267,7 +267,7 @@ describe("tokenizer functions", async () => {
   });
 
   // Fix getOriginalChatTemplate issue CVS-176638
-  it.skip("getOriginalChatTemplate return the original string", () => {
+  it.skip("getOriginalChatTemplate returns the original string", () => {
     const originalTemplate = tokenizer.getChatTemplate();
     tokenizer.setChatTemplate("Custom template: {{ messages }}");
 
