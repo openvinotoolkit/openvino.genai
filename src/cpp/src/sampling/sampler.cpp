@@ -274,7 +274,6 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
     for (Group& group : m_groups) {
         if (!group.done) {
             for (Beam& beam : group.ongoing) {
-                sampler_output.num_generated_tokens++;
                 uint64_t parent_seq_id = beam.m_sequence->get_id();
 
                 // here we need to map index of sequence in beam search group(s) and sequence group
@@ -425,7 +424,7 @@ void Sampler::GroupBeamSearcher::select_next_tokens(const ov::Tensor& logits,
             parent_2_num_childs_map[candidate.m_sequence->get_id()] += 1;
             child_beams_per_group[group_id].push_back(candidate);
 
-            // if num childs are enough
+            // if num children are enough
             if (child_beams_per_group[group_id].size() == group_size) {
                 break;
             }
@@ -901,6 +900,10 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                 m_beam_search_info.emplace(request_id, GroupBeamSearcher(sequence_group, m_tokenizer));
             }
             beam_searcher = &m_beam_search_info.at(request_id);
+        }
+
+        if (!sequence_group->has_finished()) {
+            sg_sampling_info.sampler_output.num_generated_tokens++;
         }
 
         // current algorithm already adds new tokens to running sequences and

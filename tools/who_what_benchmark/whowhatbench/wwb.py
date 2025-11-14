@@ -232,13 +232,42 @@ def parse_args():
         "If the base/target model is a local path, gguf-file should be just the filename (e.g., 'model.gguf'). "
         "If the base/target model is a HuggingFace model ID, gguf-file should be a relative path.",
     )
+    parser.add_argument(
+        "--draft-model",
+        default=None,
+        help="Path to draft model folder including IR files for Speculative decoding generation.",
+    )
+    parser.add_argument(
+        "--draft-device",
+        type=str,
+        default=None,
+        help="Inference device for Speculative decoding of draft model, e.g. 'CPU', 'GPU'.",
+    )
+    parser.add_argument(
+        "--draft-cb-config",
+        type=str,
+        default=None,
+        help="Path to file with Continuous Batching Scheduler settings or dict for Speculative decoding of draft model",
+    )
+    parser.add_argument(
+        "--num-assistant-tokens",
+        type=int,
+        default=None,
+        help="Config option num_assistant_tokens for Speculative decoding and Prompt Lookup decoding.",
+    )
+    parser.add_argument(
+        "--assistant-confidence-threshold",
+        type=float,
+        default=None,
+        help="Config option assistant_confidence_threshold for Speculative decoding.",
+    )
 
     return parser.parse_args()
 
 
 def check_args(args):
     if args.base_model is None and args.gt_data is None:
-        raise ValueError("Wether --base-model or --gt-data should be provided")
+        raise ValueError("Whether --base-model or --gt-data should be provided")
     if args.target_model is None and args.gt_data is None and args.target_data:
         raise ValueError(
             "Whether --target-model, --target-data or --gt-data should be provided")
@@ -387,16 +416,26 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
     return "".join(output)
 
 
-def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, empty_adapters=False):
+def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, empty_adapters=False,
+                   num_assistant_tokens=0, assistant_confidence_threshold=0.0):
     kwargs = {}
     if empty_adapters:
         import openvino_genai
         kwargs["adapters"] = openvino_genai.AdapterConfig()
 
-    return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens, apply_chat_template=use_chat_template, **kwargs)
+    return model.generate(
+        question,
+        do_sample=False,
+        max_new_tokens=max_new_tokens,
+        apply_chat_template=use_chat_template,
+        num_assistant_tokens=num_assistant_tokens,
+        assistant_confidence_threshold=assistant_confidence_threshold,
+        **kwargs,
+    )
 
 
-def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False):
+def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, num_assistant_tokens=0,
+                      assistant_confidence_threshold=0.0):
     if use_chat_template:
         output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
         text = output["choices"][0]["message"]["content"]
@@ -523,6 +562,14 @@ def create_evaluator(base_model, args):
                 gen_answer_fn=gen_answer_fn,
                 use_chat_template=use_chat_template,
                 long_prompt=args.long_prompt,
+                num_assistant_tokens=(
+                    int(args.num_assistant_tokens)
+                    if args.num_assistant_tokens is not None else 0
+                ),
+                assistant_confidence_threshold=(
+                    float(args.assistant_confidence_threshold)
+                    if args.assistant_confidence_threshold is not None else 0.0
+                ),
             )
         elif task == "text-to-image":
             return EvaluatorCLS(
@@ -711,7 +758,6 @@ def main():
         kwargs["cb_config"] = read_cb_config(args.cb_config)
     if args.from_onnx:
         kwargs["from_onnx"] = args.from_onnx
-        kwargs["use_cache"] = False
     if args.gguf_file:
         kwargs["gguf_file"] = args.gguf_file
     if args.adapters is not None:
@@ -721,9 +767,18 @@ def main():
         else:
             kwargs["alphas"] = [1.0] * len(args.adapters)
     kwargs["empty_adapters"] = args.empty_adapters
-    kwargs["embeds_pooling"] = args.embeds_pooling_type
-    kwargs["embeds_normalize"] = args.embeds_normalize
-    kwargs["embeds_padding_side"] = args.embeds_padding_side
+    if args.model_type == "text-embedding":
+        kwargs["embeds_pooling"] = args.embeds_pooling_type
+        kwargs["embeds_normalize"] = args.embeds_normalize
+        kwargs["embeds_padding_side"] = args.embeds_padding_side
+
+    if args.draft_model is not None:
+        kwargs["draft_model"] = args.draft_model
+        kwargs["draft_device"] = args.draft_device
+        draft_cb_config = None
+        if args.draft_cb_config is not None:
+            draft_cb_config = read_cb_config(args.draft_cb_config)
+        kwargs["draft_cb_config"] = draft_cb_config
 
     if args.gt_data and os.path.exists(args.gt_data):
         evaluator = create_evaluator(None, args)
