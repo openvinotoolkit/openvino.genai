@@ -129,7 +129,7 @@ public:
              const StreamerVariant& streamer,
              const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
              const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
-             std::optional<std::vector<ov::Tensor>> prompt_ids = std::nullopt) = 0;
+             const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt) = 0;
 
     /**
      * Performs monolitic generation based on text prompts

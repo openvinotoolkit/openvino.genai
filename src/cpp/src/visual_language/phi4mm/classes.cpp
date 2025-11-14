@@ -781,11 +781,7 @@ NormalizedPrompt InputsEmbedderPhi4MM::normalize_prompt(const std::string& promp
     return {phi_utils::normalize_prompt(prompt, base_id, images.size(), NATIVE_PATTERN, write_native), {}, {}};
 }
 
-ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(const std::string& image_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
-    return get_inputs_embeds_with_prompt_ids(image_prompt, images, metrics, recalculate_merged_embeddings, image_sequence).first;
-}
-
-std::pair<ov::Tensor, ov::Tensor> InputsEmbedderPhi4MM::get_inputs_embeds_with_prompt_ids(
+ov::Tensor InputsEmbedderPhi4MM::get_inputs_embeds(
     const std::string& image_prompt,
     const std::vector<ov::genai::EncodedImage>& images,
     ov::genai::VLMPerfMetrics& metrics,
@@ -858,7 +854,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderPhi4MM::get_inputs_embeds_with_p
         m_tokens_per_images.clear();
     }
 
-    return {inputs_embeds, new_merged_tokens};
+    return inputs_embeds;
 }
 
 void InputsEmbedderPhi4MM::update_chat_history(

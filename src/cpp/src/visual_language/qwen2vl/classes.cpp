@@ -1116,7 +1116,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     if (images.empty() && videos.empty()) {
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
         std::memcpy(inputs_embeds.data(), text_embeds.data(), text_embeds.get_byte_size());
-        return {inputs_embeds, input_ids};
+        return inputs_embeds;
     }
     ov::Tensor merged_video_embeddings_tensor;
     ov::Tensor merged_image_embeddings_tensor;
