@@ -1,0 +1,21 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="cpp" showLineNumbers>
+{`#include "audio_utils.hpp"
+#include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
+
+int main(int argc, char* argv[]) {
+    std::string models_path = argv[1];
+    ov::genai::Text2SpeechPipeline pipeline(model_path, "${props.device || 'CPU'}");
+
+    auto result = pipeline.generate("Hello OpenVINO GenAI");
+
+    auto waveform_size = result.speeches[0].get_size();
+    auto waveform_ptr = result.speeches[0].data<const float>();
+    auto bits_per_sample = result.speeches[0].get_element_type().bitwidth();
+    utils::audio::save_to_wav(waveform_ptr, waveform_size, "output_audio.wav", bits_per_sample);
+
+    return 0;
+}
+`}
+</CodeBlock>

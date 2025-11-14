@@ -5,6 +5,7 @@ import Heading from '@theme/Heading';
 import Link from '@docusaurus/Link';
 import { ImageGeneration } from './components/image-generation';
 import { ImageProcessing } from './components/image-processing';
+import { SpeechGeneration } from './components/speech-generation';
 import { SpeechRecognition } from './components/speech-recognition';
 import { TextGeneration } from './components/text-generation';
 import { TextRerank } from './components/text-rerank';
@@ -19,6 +20,7 @@ export const UseCasesSection = () => (
       <TextGeneration />
       <ImageGeneration />
       <SpeechRecognition />
+      <SpeechGeneration />
       <ImageProcessing />
       <TextEmbedding />
       <TextRerank />

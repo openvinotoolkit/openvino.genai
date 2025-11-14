@@ -6,6 +6,7 @@ type OptimumCLIProps = {
   weightFormat?: 'fp32' | 'fp16' | 'int8' | 'int4';
   task?: string;
   trustRemoteCode?: boolean;
+  modelKwargs?: Record<string, string>;
 };
 
 export default function OptimumCLI({
@@ -14,6 +15,7 @@ export default function OptimumCLI({
   weightFormat,
   task,
   trustRemoteCode,
+  modelKwargs,
 }: OptimumCLIProps): React.JSX.Element {
   const args = [`--model ${model}`];
   if (weightFormat) {
@@ -24,6 +26,10 @@ export default function OptimumCLI({
   }
   if (trustRemoteCode) {
     args.push('--trust-remote-code');
+  }
+  if (modelKwargs) {
+    const kwargsString = JSON.stringify(modelKwargs);
+    args.push(`--model-kwargs '${kwargsString}'`);
   }
   return (
     <CodeBlock language="bash">{`optimum-cli export openvino ${args.join(
