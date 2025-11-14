@@ -21,6 +21,7 @@ def main():
     pipeline = openvino_genai.TextRerankPipeline(args.model_dir, device, config)
 
     rerank_result = pipeline.rerank(args.query, args.texts)
+    print(rerank_result)
 
     print("Reranked documents:")
     for index, score in rerank_result:
