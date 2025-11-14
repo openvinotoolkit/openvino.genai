@@ -89,10 +89,7 @@ jobs:
       with:
         platform: windows
         commit_packages_to_provide: wheels,openvino_node_npm_package.zip
-        revision: d0a810e97cd98e6e008e89ba213a1728e3c1eddb
-        # Set specific revision and uncomment to use OV from its PR build:
-        # branch_name: master
-        event_name: pull_request
+        revision: latest_available_commit
 
   genai_build_cpack:
     name: genai cpack (${{ matrix.build-type }})
