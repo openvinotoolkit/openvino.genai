@@ -90,6 +90,10 @@ async function main() {
     pipe = await LLMPipeline(modelsPath, device, { schedulerConfig: schedulerConfig });
   }
 
+  const inputData = await pipe.getTokenizer().encode(prompt);
+  const promptTokenSize = inputData.input_ids.getShape()[1];
+  console.log(`Prompt token size: ${promptTokenSize}`);
+
   for (let i = 0; i < numWarmup; i++) {
     await pipe.generate(prompt, config);
   }
