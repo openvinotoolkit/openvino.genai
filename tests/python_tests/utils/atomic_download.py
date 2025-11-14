@@ -8,7 +8,7 @@ from typing import Callable
 logger = logging.getLogger(__name__)
 
 RETRY_WAIT_SECONDS = 5
-MAX_WAIT_FOR_OTHER_PROCESS = 5
+MAX_WAIT_FOR_OTHER_PROCESS = 120
 
 
 class AtomicDownloadManager:
@@ -61,9 +61,10 @@ class AtomicDownloadManager:
                     raise
 
     def _wait_for_other_process_or_cleanup(self) -> bool:
+        max_wait_seconds = MAX_WAIT_FOR_OTHER_PROCESS * RETRY_WAIT_SECONDS
         logger.info(
             f"Destination exists but incomplete: {self.final_path}. "
-            f"Waiting up to {MAX_WAIT_FOR_OTHER_PROCESS * RETRY_WAIT_SECONDS}s for other process to complete..."
+            f"Waiting up to {max_wait_seconds}s for other process to complete..."
         )
         
         for attempt in range(MAX_WAIT_FOR_OTHER_PROCESS):
@@ -80,7 +81,7 @@ class AtomicDownloadManager:
             logger.info(f"Still waiting... (attempt {attempt + 1}/{MAX_WAIT_FOR_OTHER_PROCESS})")
         
         logger.warning(
-            f"Other process did not complete after {MAX_WAIT_FOR_OTHER_PROCESS * RETRY_WAIT_SECONDS}s. "
+            f"Other process did not complete after {max_wait_seconds}s. "
             "Assuming it failed, removing incomplete directory."
         )
         self._remove_directory_with_retry(self.final_path)
