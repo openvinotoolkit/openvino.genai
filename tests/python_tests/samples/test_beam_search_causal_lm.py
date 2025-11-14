@@ -1,7 +1,6 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
  
-import os
 import pytest
 import sys
 
@@ -24,17 +23,17 @@ class TestBeamSearchCausalLM:
         if sys.platform == 'darwin':
             pytest.xfail("Ticket 173586")
         # C++ test
-        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'beam_search_causal_lm')
+        cpp_sample = SAMPLES_CPP_DIR / 'beam_search_causal_lm'
         cpp_command = [cpp_sample, convert_model, f'"{sample_args}"']
         cpp_result = run_sample(cpp_command)
 
         # Python test
-        py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/beam_search_causal_lm.py")
+        py_script = SAMPLES_PY_DIR / "text_generation/beam_search_causal_lm.py"
         py_command = [sys.executable, py_script, convert_model, f'"{sample_args}"']
         py_result = run_sample(py_command)
 
         # Test JS sample
-        js_sample = os.path.join(SAMPLES_JS_DIR, "text_generation/beam_search_causal_lm.js")
+        js_sample = SAMPLES_JS_DIR / "text_generation/beam_search_causal_lm.js"
         js_command =['node', js_sample, convert_model, f'"{sample_args}"']
         js_result = run_sample(js_command)
 
@@ -64,19 +63,19 @@ class TestBeamSearchCausalLM:
         if sys.platform == 'darwin':
             pytest.xfail("Ticket 173586")
         # C++ test
-        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'beam_search_causal_lm')
+        cpp_sample = SAMPLES_CPP_DIR / 'beam_search_causal_lm'
         cpp_command = [cpp_sample, convert_model] + [f'"{arg}"' for arg in sample_args]
         cpp_result = run_sample(cpp_command)
         cpp_predictions = cpp_result.stdout
 
         # Python test
-        py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/beam_search_causal_lm.py")
+        py_script = SAMPLES_PY_DIR / "text_generation/beam_search_causal_lm.py"
         py_command = [sys.executable, py_script, convert_model] + [f'"{arg}"' for arg in sample_args]
         py_result = run_sample(py_command)
         py_predictions = py_result.stdout
 
         # Test JS sample
-        js_sample = os.path.join(SAMPLES_JS_DIR, "text_generation/beam_search_causal_lm.js")
+        js_sample = SAMPLES_JS_DIR / "text_generation/beam_search_causal_lm.js"
         js_command =['node', js_sample, convert_model] + [f'"{arg}"' for arg in sample_args]
         js_result = run_sample(js_command)
         js_predictions = js_result.stdout
