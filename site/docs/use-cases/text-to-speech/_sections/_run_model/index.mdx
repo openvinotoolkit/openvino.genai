@@ -50,15 +50,14 @@ You can generate a speaker embedding using the [create_speaker_embedding.py](htt
 
 <LanguageTabs>
   <TabItemPython>
-    <CodeBlock language="python" showLineNumbers>
-{`import openvino_genai
-import numpy as np
-
-pipeline = openvino_genai.Text2SpeechPipeline("speecht5_tts", "CPU")
-speaker_embedding = np.fromfile("speaker_embedding.bin", dtype=np.float32)
-result = pipeline.generate("Hello OpenVINO GenAI", speaker_embedding=speaker_embedding)
-`}
-    </CodeBlock>
+    ```python
+    import openvino_genai
+    import numpy as np
+    
+    pipeline = openvino_genai.Text2SpeechPipeline("speecht5_tts", "CPU")
+    speaker_embedding = np.fromfile("speaker_embedding.bin", dtype=np.float32)
+    result = pipeline.generate("Hello OpenVINO GenAI", speaker_embedding=speaker_embedding)
+    ```
   </TabItemPython>
 
   <TabItemCpp>
