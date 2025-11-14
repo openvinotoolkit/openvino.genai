@@ -36,9 +36,8 @@ def read_models_list(file_name: str):
             models.append(model_name)
     return models
 
-@pytest.mark.precommit
-@pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "precommit")))
-def test_e2e_precommit(model_id):
+@pytest.mark.parametrize("model_id", read_models_list(os.path.join(os.path.dirname(os.path.realpath(__file__)), "models", "lightweight")))
+def test_e2e_lightweight_models(model_id):
     prompts, generation_configs = get_test_dataset()
     generate_and_compare(prompts=prompts,
                          generation_config=generation_configs,
@@ -73,7 +72,6 @@ batched_prompts = [
 ]
 @pytest.mark.parametrize("generation_config", test_configs)
 @pytest.mark.parametrize("prompt", batched_prompts[1:])  # num_beams=15 diverges on the first prompt.
-@pytest.mark.precommit
 @pytest.mark.skip(reason="CVS-162891: Fix test_continuous_batching_vs_stateful tests after we started to compare cb vs sdpa")
 def test_continuous_batching_vs_stateful(prompt, generation_config):
     model_id = "facebook/opt-125m"
@@ -93,7 +91,6 @@ def test_continuous_batching_vs_stateful(prompt, generation_config):
 
 prompts = ['The Sun is yellow because', 'Difference between Jupiter and Mars is that', 'table is made of']
 @pytest.mark.parametrize("prompt", prompts)
-@pytest.mark.precommit
 def test_cb_streamer_vs_return_vs_stateful(prompt):
     model_id = "facebook/opt-125m"
     _, _, models_path = download_and_convert_model(model_id)
@@ -124,7 +121,6 @@ questions = [
 @pytest.mark.parametrize("input_type", [
     GenerationChatInputsType.STRING,
     GenerationChatInputsType.CHAT_HISTORY])
-@pytest.mark.precommit
 def test_chat_scenario_vs_stateful(model_id, generation_config_kwargs: dict, pipeline_type, input_type: GenerationChatInputsType):
     _, _, models_path = download_and_convert_model(model_id)
 
@@ -175,7 +171,6 @@ questions = [
 @pytest.mark.parametrize("generation_config_kwargs", generation_configs)
 @pytest.mark.parametrize("model_id", get_chat_models_list())
 @pytest.mark.parametrize("pipeline_type", [PipelineType.CONTINUOUS_BATCHING, PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING,])
-@pytest.mark.precommit
 def test_continuous_batching_add_request_health_check(model_id, generation_config_kwargs: dict, pipeline_type):
     _, _, models_path = download_and_convert_model(model_id)
 
@@ -206,7 +201,6 @@ invalid_generation_configs = [
 @pytest.mark.parametrize("generation_config_kwargs", invalid_generation_configs)
 @pytest.mark.parametrize("model_id", get_chat_models_list())
 @pytest.mark.parametrize("pipeline_type", [PipelineType.CONTINUOUS_BATCHING, PipelineType.SPECULATIVE_DECODING, PipelineType.PROMPT_LOOKUP_DECODING,])
-@pytest.mark.precommit
 def test_continuous_batching_add_request_fails(model_id, generation_config_kwargs: dict, pipeline_type):
     _, _, models_path = download_and_convert_model(model_id)
 
@@ -228,7 +222,6 @@ def test_continuous_batching_add_request_fails(model_id, generation_config_kwarg
 #
 
 # todo: iefode: bug reproducer!!!
-@pytest.mark.precommit
 @pytest.mark.parametrize("sampling_config", [get_greedy(), get_beam_search(), get_multinomial_all_parameters()],
                          ids=["greedy", "beam_search", "multinomial_all_parameters"])
 def test_post_oom_health(sampling_config):
@@ -289,7 +282,6 @@ scheduler_params_list = [({"num_kv_blocks": 2, "dynamic_split_fuse": True, "max_
                          ({"num_kv_blocks": 100, "dynamic_split_fuse": True}, get_beam_search_seq_len_300()),
                          ({"num_kv_blocks": 100, "dynamic_split_fuse": False}, get_beam_search_seq_len_300())]
 @pytest.mark.parametrize("params", scheduler_params_list)
-@pytest.mark.precommit
 def test_preemption(params):
     model_id = "facebook/opt-125m"
     scheduler_params = params[0]
@@ -342,7 +334,6 @@ multinomial_params = RandomSamplingTestStruct(
 
 # todo: Anastasiia Pnevskaya: fix the test because it is hanging according max_new_tokens = std::numeric_limits<std::size_t>::max()
 @pytest.mark.parametrize("dynamic_split_fuse", [True, False])
-@pytest.mark.precommit
 @pytest.mark.skip(reason="Random sampling results are non deterministic due to: discrete_distribution impl depends on platform, model inference results may depend on CPU. Test passes on CI but fails locally.")
 def test_preemption_with_multinomial(dynamic_split_fuse):
     generation_configs = multinomial_params.generation_config
@@ -425,7 +416,6 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
 
 
 @pytest.mark.parametrize("dynamic_split_fuse", [True, False])
-@pytest.mark.precommit
 @pytest.mark.skip(reason="Random sampling results are non deterministic due to: discrete_distribution impl depends on platform, model inference results may depend on CPU. Test passes on CI but fails locally.")
 def test_preemption_with_multinomial_n_seq(dynamic_split_fuse):
     model_id : str = "facebook/opt-125m"
@@ -442,7 +432,6 @@ def test_preemption_with_multinomial_n_seq(dynamic_split_fuse):
 
 
 @pytest.mark.parametrize("pipeline_type", [PipelineType.PROMPT_LOOKUP_DECODING])
-@pytest.mark.precommit
 def test_dynamic_split_fuse_doesnt_affect_generated_text(pipeline_type):
     model_id : str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
     _, _, models_path = download_and_convert_model(model_id)
@@ -496,7 +485,6 @@ def run_extended_perf_metrics_collection(model_id, generation_config: Generation
 
 
 @pytest.mark.parametrize("pipeline_type", [PipelineType.PAGED_ATTENTION, PipelineType.SPECULATIVE_DECODING])
-@pytest.mark.precommit
 def test_speculative_decoding_extended_perf_metrics(pipeline_type):
     import time
     start_time = time.perf_counter()
