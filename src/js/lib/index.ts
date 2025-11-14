@@ -40,4 +40,5 @@ export const { LLMPipeline, TextEmbeddingPipeline } = PipelineFactory;
 export { DecodedResults } from "./pipelines/llmPipeline.js";
 export * from "./utils.js";
 export * from "./addon.js";
-export * from "./tokenizer.js";
+export type { TokenizedInputs, EncodeOptions, DecodeOptions } from "./tokenizer.js";
+export type { ChatMessage, ExtraContext, ToolDefinition } from "./chatHistory.js";

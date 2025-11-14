@@ -2,6 +2,7 @@ import { createRequire } from "module";
 import { platform } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import type { ChatHistory as IChatHistory } from "./chatHistory.js";
+import type { Tokenizer as ITokenizer } from "./tokenizer.js";
 import { addon as ovAddon } from "openvino-node";
 
 export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
@@ -61,6 +62,7 @@ interface OpenVINOGenAIAddon {
   TextEmbeddingPipeline: TextEmbeddingPipelineWrapper;
   LLMPipeline: any;
   ChatHistory: IChatHistory;
+  Tokenizer: ITokenizer;
   setOpenvinoAddon: (ovAddon: any) => void;
 }
 
@@ -82,5 +84,6 @@ function getGenAIAddon(): OpenVINOGenAIAddon {
 const addon = getGenAIAddon();
 addon.setOpenvinoAddon(ovAddon);
 
-export const { TextEmbeddingPipeline, LLMPipeline, ChatHistory } = addon;
+export const { TextEmbeddingPipeline, LLMPipeline, ChatHistory, Tokenizer } = addon;
 export type ChatHistory = IChatHistory;
+export type Tokenizer = ITokenizer;

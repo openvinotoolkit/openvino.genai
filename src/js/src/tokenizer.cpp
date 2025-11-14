@@ -2,7 +2,51 @@
 #include "include/helper.hpp"
 #include "include/tokenizer.hpp"
 
-TokenizerWrapper::TokenizerWrapper(const Napi::CallbackInfo& info) : Napi::ObjectWrap<TokenizerWrapper>(info) {};
+TokenizerWrapper::TokenizerWrapper(const Napi::CallbackInfo& info) : Napi::ObjectWrap<TokenizerWrapper>(info) {
+    if (info.Length() == 0) {
+        return;
+    }
+
+    auto env = info.Env();
+    try {
+        if (info.Length() == 1 || info.Length() == 2) {
+            OPENVINO_ASSERT(info[0].IsString(), "Tokenizer constructor expects 'tokenizerPath' to be a string");
+            const auto tokenizer_path = js_to_cpp<std::string>(env, info[0]);
+            ov::AnyMap properties;
+            if (info.Length() == 2) {
+                properties = js_to_cpp<ov::AnyMap>(env, info[1]);
+            }
+            this->_tokenizer = ov::genai::Tokenizer(tokenizer_path, properties);
+            return;
+        }
+
+        OPENVINO_ASSERT(info.Length() == 4 || info.Length() == 5,
+                        "Tokenizer constructor expects 1-2 arguments (path[, properties]) or 4-5 arguments (models, tensors[, properties])");
+        OPENVINO_ASSERT(info[0].IsString(), "The argument 'tokenizerModel' must be a string");
+        OPENVINO_ASSERT(info[1].IsObject(), "The argument 'tokenizerWeights' must be an OpenVINO Tensor");
+        OPENVINO_ASSERT(info[2].IsString(), "The argument 'detokenizerModel' must be a string");
+        OPENVINO_ASSERT(info[3].IsObject(), "The argument 'detokenizerWeights' must be an OpenVINO Tensor");
+
+        const auto tokenizer_model = js_to_cpp<std::string>(env, info[0]);
+        const auto tokenizer_weights = js_to_cpp<ov::Tensor>(env, info[1]);
+        const auto detokenizer_model = js_to_cpp<std::string>(env, info[2]);
+        const auto detokenizer_weights = js_to_cpp<ov::Tensor>(env, info[3]);
+        ov::AnyMap properties;
+        if (info.Length() == 5) {
+            properties = js_to_cpp<ov::AnyMap>(env, info[4]);
+        }
+
+        this->_tokenizer = ov::genai::Tokenizer(
+            tokenizer_model,
+            tokenizer_weights,
+            detokenizer_model,
+            detokenizer_weights,
+            properties
+        );
+    } catch (const std::exception& err) {
+        Napi::Error::New(env, err.what()).ThrowAsJavaScriptException();
+    }
+}
 
 Napi::Function TokenizerWrapper::get_class(Napi::Env env) {
     return DefineClass(env,
@@ -82,7 +126,7 @@ Napi::Value TokenizerWrapper::get_bos_token(const Napi::CallbackInfo& info) {
 
 Napi::Value TokenizerWrapper::get_bos_token_id(const Napi::CallbackInfo& info) {
     try {
-        return Napi::Number::New(info.Env(), this->_tokenizer.get_bos_token_id());
+        return Napi::BigInt::New(info.Env(), this->_tokenizer.get_bos_token_id());
     } catch (std::exception& err) {
         Napi::Error::New(info.Env(), err.what()).ThrowAsJavaScriptException();
         return info.Env().Undefined();
@@ -100,7 +144,7 @@ Napi::Value TokenizerWrapper::get_eos_token(const Napi::CallbackInfo& info) {
 
 Napi::Value TokenizerWrapper::get_eos_token_id(const Napi::CallbackInfo& info) {
     try {
-        return Napi::Number::New(info.Env(), this->_tokenizer.get_eos_token_id());
+        return Napi::BigInt::New(info.Env(), this->_tokenizer.get_eos_token_id());
     } catch (std::exception& err) {
         Napi::Error::New(info.Env(), err.what()).ThrowAsJavaScriptException();
         return info.Env().Undefined();
@@ -118,7 +162,7 @@ Napi::Value TokenizerWrapper::get_pad_token(const Napi::CallbackInfo& info) {
 
 Napi::Value TokenizerWrapper::get_pad_token_id(const Napi::CallbackInfo& info) {
     try {
-        return Napi::Number::New(info.Env(), this->_tokenizer.get_pad_token_id());
+        return Napi::BigInt::New(info.Env(), this->_tokenizer.get_pad_token_id());
     } catch (std::exception& err) {
         Napi::Error::New(info.Env(), err.what()).ThrowAsJavaScriptException();
         return info.Env().Undefined();
@@ -201,7 +245,7 @@ Napi::Value TokenizerWrapper::decode(const Napi::CallbackInfo& info) {
             
             // Check if it's a 2D array (batch of sequences)
             if (arr.Length() > 0 && arr.Get(uint32_t(0)).IsArray()) {
-                // Batch decoding: number[][]
+                // Batch decoding: number[][] | bigint[][]
                 std::vector<std::vector<int64_t>> batch_tokens;
                 for (uint32_t i = 0; i < arr.Length(); ++i) {
                     batch_tokens.push_back(js_to_cpp<std::vector<int64_t>>(env, arr.Get(i)));
@@ -209,7 +253,7 @@ Napi::Value TokenizerWrapper::decode(const Napi::CallbackInfo& info) {
                 auto result = this->_tokenizer.decode(batch_tokens, detokenization_params);
                 return cpp_to_js<std::vector<std::string>, Napi::Value>(env, result);
             } else {
-                // Single sequence: number[]
+                // Single sequence: number[] | bigint[]
                 auto tokens = js_to_cpp<std::vector<int64_t>>(env, info[0]);
                 auto result = this->_tokenizer.decode(tokens, detokenization_params);
                 return Napi::String::New(env, result);

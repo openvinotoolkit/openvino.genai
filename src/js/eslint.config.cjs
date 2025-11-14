@@ -58,6 +58,8 @@ module.exports = defineConfig([
             "pad_to_max_length",
             "max_length",
             "padding_side",
+            "add_second_input",
+            "number_of_inputs",
           ],
         },
       ],

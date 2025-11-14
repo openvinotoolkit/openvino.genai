@@ -1,8 +1,9 @@
+/* eslint-disable @typescript-eslint/no-misused-new */
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-import { Tensor } from "openvino-node";
-import { ChatHistory } from "./addon.js";
+import type { Tensor } from "openvino-node";
+import type { ChatHistory } from "./chatHistory.js";
 
 /**
  * TokenizedInputs contains input_ids and attention_mask tensors.
@@ -67,6 +68,29 @@ export interface DecodeOptions {
  */
 export interface Tokenizer {
   /**
+   * Load tokenizer and detokenizer IRs by path.
+   * @param tokenizerPath Path to a directory containing tokenizer/detokenizer XML/BIN files.
+   * @param properties Optional OpenVINO compilation properties.
+   */
+  new (tokenizerPath: string, properties?: Record<string, unknown>): Tokenizer;
+
+  /**
+   * Create tokenizer from already loaded IR contents.
+   * @param tokenizerModel Tokenizer XML string.
+   * @param tokenizerWeights Tokenizer weights tensor.
+   * @param detokenizerModel Detokenizer XML string.
+   * @param detokenizerWeights Detokenizer weights tensor.
+   * @param properties Optional OpenVINO compilation properties.
+   */
+  new (
+    tokenizerModel: string,
+    tokenizerWeights: Tensor,
+    detokenizerModel: string,
+    detokenizerWeights: Tensor,
+    properties?: Record<string, unknown>,
+  ): Tokenizer;
+
+  /**
    * Applies a chat template to format chat history into a prompt string.
    * @param chatHistory - chat history as an array of message objects or ChatHistory instance
    * @param addGenerationPrompt - whether to add a generation prompt at the end
@@ -119,7 +143,7 @@ export interface Tokenizer {
    * @param options - decoding options
    * @returns decoded string.
    */
-  decode(tokens: number[], options?: DecodeOptions): string;
+  decode(tokens: number[] | bigint[], options?: DecodeOptions): string;
 
   /**
    * Decode a batch of token sequences (as Tensor or array of arrays) into a list of string prompts.
@@ -128,7 +152,7 @@ export interface Tokenizer {
    * @param options - decoding options
    * @returns list of decoded strings.
    */
-  decode(tokens: Tensor | number[][], options?: DecodeOptions): string[];
+  decode(tokens: Tensor | number[][] | bigint[][], options?: DecodeOptions): string[];
 
   /**
    * Returns the BOS (Beginning of Sequence) token string.
@@ -140,7 +164,7 @@ export interface Tokenizer {
    * Returns the BOS (Beginning of Sequence) token ID.
    * @returns BOS token ID
    */
-  getBosTokenId(): number;
+  getBosTokenId(): bigint;
 
   /**
    * Returns the EOS (End of Sequence) token string.
@@ -152,7 +176,7 @@ export interface Tokenizer {
    * Returns the EOS (End of Sequence) token ID.
    * @returns EOS token ID
    */
-  getEosTokenId(): number;
+  getEosTokenId(): bigint;
 
   /**
    * Returns the PAD (Padding) token string.
@@ -164,7 +188,7 @@ export interface Tokenizer {
    * Returns the PAD (Padding) token ID.
    * @returns PAD token ID
    */
-  getPadTokenId(): number;
+  getPadTokenId(): bigint;
 
   /**
    * Returns the current chat template string.
