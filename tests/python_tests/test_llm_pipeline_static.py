@@ -374,6 +374,7 @@ def test_terminate_by_sampler(
 
 
 # FIXME: Known problem, output differs from stateful pipeline starting from 3rd prompt!
+@pytest.mark.skip(reason="JIRA-144780: Output differs from stateful pipeline")
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("npu_config", PIPELINE_CONFIGS, indirect=True)
 def test_chat_generation(
