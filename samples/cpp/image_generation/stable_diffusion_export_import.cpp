@@ -38,7 +38,7 @@ void dedicated_models_export_import(const std::filesystem::path& root_dir) {
     auto unet = ov::genai::UNet2DConditionModel(root_dir / "unet", device);
     unet.export_model(blob_path / "unet");
 
-    auto vae = ov::genai::AutoencoderKL(root_dir / "vae_decoder", "CPU", ov::AnyMap{});
+    auto vae = ov::genai::AutoencoderKL(root_dir / "vae_decoder", device, ov::AnyMap{});
     vae.export_model(blob_path);
     // AutoencoderKL can be composed with decoder and encoder models
     // exported/
