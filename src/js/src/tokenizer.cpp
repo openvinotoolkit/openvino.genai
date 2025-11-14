@@ -132,25 +132,11 @@ Napi::Value TokenizerWrapper::encode(const Napi::CallbackInfo& info) {
 
         // Parse encoding options from the last argument if it's an object
         ov::AnyMap tokenization_params;
-        size_t last_text_arg_idx = info.Length() - 1;
+        auto count_text_args = info.Length();
         
-        if (info[last_text_arg_idx].IsObject() && !info[last_text_arg_idx].IsArray()) {
-            auto options = info[last_text_arg_idx].As<Napi::Object>();
-            
-            if (options.Has("addSpecialTokens")) {
-                tokenization_params["add_special_tokens"] = options.Get("addSpecialTokens").ToBoolean().Value();
-            }
-            if (options.Has("padToMaxLength")) {
-                tokenization_params["pad_to_max_length"] = options.Get("padToMaxLength").ToBoolean().Value();
-            }
-            if (options.Has("maxLength")) {
-                tokenization_params["max_length"] = static_cast<size_t>(options.Get("maxLength").ToNumber().Int64Value());
-            }
-            if (options.Has("paddingSide")) {
-                tokenization_params["padding_side"] = options.Get("paddingSide").ToString().Utf8Value();
-            }
-            
-            last_text_arg_idx--;
+        if (info[count_text_args - 1].IsObject() && !info[count_text_args - 1].IsArray()) {
+            tokenization_params = js_to_cpp<ov::AnyMap>(env, info[count_text_args - 1]);
+            count_text_args--;
         }
 
         ov::genai::TokenizedInputs result;
@@ -160,7 +146,7 @@ Napi::Value TokenizerWrapper::encode(const Napi::CallbackInfo& info) {
             // Single string
             auto text = js_to_cpp<std::string>(env, info[0]);
             result = this->_tokenizer.encode(text, tokenization_params);
-        } else if (info[0].IsArray()) {
+        } else if (count_text_args == 1 && info[0].IsArray()) {
             auto arr = info[0].As<Napi::Array>();
             
             // Check if it's array of pairs [[str, str], ...]
@@ -182,7 +168,7 @@ Napi::Value TokenizerWrapper::encode(const Napi::CallbackInfo& info) {
                 auto prompts = js_to_cpp<std::vector<std::string>>(env, info[0]);
                 result = this->_tokenizer.encode(prompts, tokenization_params);
             }
-        } else if (last_text_arg_idx >= 1 && info[0].IsArray() && info[1].IsArray()) {
+        } else if (count_text_args == 2 && info[0].IsArray() && info[1].IsArray()) {
             // Two arrays (paired input: prompts_1, prompts_2)
             auto prompts1 = js_to_cpp<std::vector<std::string>>(env, info[0]);
             auto prompts2 = js_to_cpp<std::vector<std::string>>(env, info[1]);
@@ -204,8 +190,9 @@ Napi::Value TokenizerWrapper::decode(const Napi::CallbackInfo& info) {
         OPENVINO_ASSERT(info.Length() >= 1, "Tokenizer.decode requires at least one argument: tokens");
 
         ov::AnyMap detokenization_params;
-        if (info.Length() >= 2 && info[1].IsBoolean()) {
-            detokenization_params["skip_special_tokens"] = info[1].ToBoolean().Value();
+        if (info.Length() >= 2) {
+            const auto& options_candidate = info[1];
+            detokenization_params = js_to_cpp<ov::AnyMap>(env, options_candidate);
         }
 
         // Handle different input types

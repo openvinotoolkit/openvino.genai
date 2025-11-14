@@ -131,19 +131,16 @@ std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& en
 
 template <>
 std::vector<int64_t> js_to_cpp<std::vector<int64_t>>(const Napi::Env& env, const Napi::Value& value) {
-    if (value.IsArray()) {
-        auto array = value.As<Napi::Array>();
-        size_t arrayLength = array.Length();
+    OPENVINO_ASSERT(value.IsArray(), "Passed argument must be of type Array.");
+    auto array = value.As<Napi::Array>();
+    size_t arrayLength = array.Length();
 
-        std::vector<int64_t> vector;
-        vector.reserve(arrayLength);
-        for (uint32_t i = 0; i < arrayLength; ++i) {
-            vector.push_back(js_to_cpp<int64_t>(env, array[i]));
-        }
-        return vector;
-    } else {
-        OPENVINO_THROW("Passed argument must be of type Array.");
+    std::vector<int64_t> vector;
+    vector.reserve(arrayLength);
+    for (uint32_t i = 0; i < arrayLength; ++i) {
+        vector.push_back(js_to_cpp<int64_t>(env, array[i]));
     }
+    return vector;
 }
 
 template <>

@@ -20,7 +20,7 @@ void init_class(Napi::Env env,
     exports.Set(class_name, prototype);
 }
 
-Napi::Value init_ov_addon(const Napi::CallbackInfo& info) {
+Napi::Value set_ov_addon(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     if (info.Length() < 1) {
         Napi::TypeError::New(env, "setOpenvinoAddon expects one argument").ThrowAsJavaScriptException();
@@ -54,7 +54,7 @@ Napi::Object init_module(Napi::Env env, Napi::Object exports) {
     init_class(env, exports, "ChatHistory", &ChatHistoryWrap::get_class, addon_data->chat_history);
 
     // Expose a helper to set the openvino-node addon from JS (useful for ESM)
-    exports.Set("setOpenvinoAddon", Napi::Function::New(env, init_ov_addon));
+    exports.Set("setOpenvinoAddon", Napi::Function::New(env, set_ov_addon));
 
     return exports;
 }

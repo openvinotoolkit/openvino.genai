@@ -23,25 +23,36 @@ export interface EncodeOptions {
    * Whether to add special tokens like BOS, EOS, PAD.
    * @defaultValue true
    */
-  addSpecialTokens?: boolean;
+  add_special_tokens?: boolean;
 
   /**
    * Whether to pad the sequence to the maximum length.
    * @defaultValue false
    */
-  padToMaxLength?: boolean;
+  pad_to_max_length?: boolean;
 
   /**
    * Maximum length of the sequence.
    * If undefined, the value will be taken from the IR.
    */
-  maxLength?: number;
+  max_length?: number;
 
   /**
    * Side to pad the sequence, can be 'left' or 'right'.
    * If undefined, the value will be taken from the IR.
    */
-  paddingSide?: "left" | "right";
+  padding_side?: "left" | "right";
+}
+
+/**
+ * Options for decode method.
+ */
+export interface DecodeOptions {
+  /**
+   * Whether to skip special tokens like BOS, EOS, PAD during detokenization.
+   * @defaultValue true
+   */
+  skip_special_tokens?: boolean;
 }
 
 /**
@@ -101,22 +112,23 @@ export interface Tokenizer {
    */
   encode(prompts: [string, string][], options?: EncodeOptions): TokenizedInputs;
 
-  // TODO: move decode options to another interface
   /**
    * Decode a sequence of token IDs into a string prompt.
+   *
    * @param tokens - sequence of token IDs to decode
-   * @param skipSpecialTokens - whether to skip special tokens. Default is true.
+   * @param options - decoding options
    * @returns decoded string.
    */
-  decode(tokens: number[], skipSpecialTokens?: boolean): string;
+  decode(tokens: number[], options?: DecodeOptions): string;
 
   /**
    * Decode a batch of token sequences (as Tensor or array of arrays) into a list of string prompts.
+   *
    * @param tokens - tensor containing token IDs or batch of token ID sequences
-   * @param skipSpecialTokens - whether to skip special tokens. Default is true.
+   * @param options - decoding options
    * @returns list of decoded strings.
    */
-  decode(tokens: Tensor | number[][], skipSpecialTokens?: boolean): string[];
+  decode(tokens: Tensor | number[][], options?: DecodeOptions): string[];
 
   /**
    * Returns the BOS (Beginning of Sequence) token string.
