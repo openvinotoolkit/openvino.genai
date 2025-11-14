@@ -48,6 +48,16 @@ Apart from improving the generation accuracy, this also makes it possible to eff
 ### XAttention
 For the XAttention algorithm, the prefill computation is accelerated by selectively attending only to the most important regions of the attention matrix, determined dynamically through antidiagonal-based importance estimation. During the prefill stage, each query block attends only to the subset of key blocks whose cumulative estimated attention mass exceeds a predefined threshold, while the rest of the KV cache blocks are excluded from the attention computation.
 
+To enable XAttention with default settings, select `SparseAttentionMode.XATTENTION` in `SparseAttentionConfig.mode` within the `SchedulerConfig` and set `use_sparse_attention=True`:
+```python
+cb_config = SchedulerConfig(
+    use_sparse_attention=True,
+    sparse_attention_config=SparseAttentionConfig(
+        mode=SparseAttentionMode.XATTENTION
+    )
+)
+```
+
 The importance estimation procedure consists of two stages. In the first stage, using stride-based reshaping, the query and key tensors are permuted along antidiagonal patterns, with the stride value determined by the `SparseAttentionConfig.xattention_stride` parameter. The reshaped tensors are then used to compute a coarse estimate of the attention mass per block, with the block size defined by `SparseAttentionConfig.xattention_block_size`. The attention values within each block are summed to produce an importance score that represents the approximate total attention mass associated with that block. In the second stage, for each query block, the corresponding key blocks are sorted in descending order of their estimated attention mass. The algorithm then identifies the minimal subset of blocks whose cumulative antidiagonal attention exceeds the predefined threshold `SparseAttentionConfig.xattention_threshold`. The block selection process always retains the diagonal blocks - corresponding to the most recently processed query positions, as well as the least recent KV cache block.
 
 ![XAttention sparse prefill illustrated](./../../../static/img/xattention.svg)
