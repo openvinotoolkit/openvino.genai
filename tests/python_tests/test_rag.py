@@ -90,7 +90,7 @@ def llm_model(request: pytest.FixtureRequest) -> OVConvertedModelSchema:
 def run_gc_after_test():
     """
     Fixture to run garbage collection after each test.
-    This is a workaround to minimize memory consumption 
+    This is a workaround to minimize memory consumption
     during tests and allow the use of less powerful CI runners.
     """
     yield
