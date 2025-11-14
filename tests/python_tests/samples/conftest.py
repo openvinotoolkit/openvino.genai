@@ -140,6 +140,14 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "cross-encoder/ms-marco-TinyBERT-L2-v2",
         "convert_args": ["--trust-remote-code", "--task", "text-classification"],
     },
+    "Qwen3-Embedding-0.6B": {
+        "name": "Qwen/Qwen3-Embedding-0.6B",
+        "convert_args": ["--trust-remote-code"]
+    },
+    "Qwen3-Reranker-0.6B": {
+        "name": "Qwen/Qwen3-Reranker-0.6B",
+        "convert_args": ["--trust-remote-code"]
+    },
     "tiny-random-SpeechT5ForTextToSpeech": {
         "name": "hf-internal-testing/tiny-random-SpeechT5ForTextToSpeech",
         "convert_args": ["--model-kwargs",  json.dumps({"vocoder": "fxmarty/speecht5-hifigan-tiny"})]
