@@ -8,6 +8,7 @@ from typing import Callable
 logger = logging.getLogger(__name__)
 
 RETRY_WAIT_SECONDS = 5
+MAX_WAIT_FOR_OTHER_PROCESS = 5
 
 
 class AtomicDownloadManager:
@@ -59,13 +60,43 @@ class AtomicDownloadManager:
                     )
                     raise
 
+    def _wait_for_other_process_or_cleanup(self) -> bool:
+        logger.info(
+            f"Destination exists but incomplete: {self.final_path}. "
+            f"Waiting up to {MAX_WAIT_FOR_OTHER_PROCESS * RETRY_WAIT_SECONDS}s for other process to complete..."
+        )
+        
+        for attempt in range(MAX_WAIT_FOR_OTHER_PROCESS):
+            time.sleep(RETRY_WAIT_SECONDS)
+            
+            if self.is_complete():
+                logger.info("Other process completed successfully")
+                return True
+            
+            if not self.final_path.exists():
+                logger.info("Other process cleaned up, we can proceed")
+                return False
+                
+            logger.info(f"Still waiting... (attempt {attempt + 1}/{MAX_WAIT_FOR_OTHER_PROCESS})")
+        
+        logger.warning(
+            f"Other process did not complete after {MAX_WAIT_FOR_OTHER_PROCESS * RETRY_WAIT_SECONDS}s. "
+            "Assuming it failed, removing incomplete directory."
+        )
+        self._remove_directory_with_retry(self.final_path)
+        return False
+
     def _move_to_final_location(self) -> None:
         if self.final_path.exists():
-            logger.info(
-                "Destination already exists (created by another process), "
-                f"skipping move: {self.final_path}"
-            )
-            return
+            if self.is_complete():
+                logger.info(
+                    "Destination already exists and is complete (created by another process), "
+                    f"skipping move: {self.final_path}"
+                )
+                return
+            
+            if self._wait_for_other_process_or_cleanup():
+                return
 
         logger.info(f"Moving from temp to final location: {self.temp_path} -> {self.final_path}")
         
@@ -73,10 +104,14 @@ class AtomicDownloadManager:
             shutil.move(str(self.temp_path), str(self.final_path))
         except Exception:
             logger.exception(f"Error during move - possibly due to concurrent access")
+            raise
 
     def _mark_complete(self) -> None:
-        self.completion_marker.touch()
-        logger.info(f"Operation complete, marker created: {self.completion_marker}")
+        if not self.is_complete():
+            self.completion_marker.touch()
+            logger.info(f"Operation complete, marker created: {self.completion_marker}")
+        else:
+            logger.info(f"Already marked complete: {self.completion_marker}")
 
     def _cleanup_temp(self) -> None:
         if self.temp_path.exists():
