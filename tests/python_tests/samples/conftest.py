@@ -139,7 +139,7 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "Qwen3-Reranker-0.6B": {
         "name": "Qwen/Qwen3-Reranker-0.6B",
-        "convert_args": ["--trust-remote-code"]
+        "convert_args": ["--trust-remote-code", "--task", "text-classification"]
     },
     "tiny-random-SpeechT5ForTextToSpeech": {
         "name": "hf-internal-testing/tiny-random-SpeechT5ForTextToSpeech",

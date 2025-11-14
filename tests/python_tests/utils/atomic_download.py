@@ -45,11 +45,11 @@ class AtomicDownloadManager:
             try:
                 shutil.rmtree(path)
                 return
-            except Exception:
+            except Exception as e:
                 if attempt < max_retries - 1:
                     logger.warning(
                         "Failed to remove directory "
-                        f"(attempt {attempt + 1}/{max_retries}): {e}. "
+                        f"(attempt {attempt + 1}/{max_retries}): {e}"
                         f"Retrying in {RETRY_WAIT_SECONDS}s..."
                     )
                     time.sleep(RETRY_WAIT_SECONDS)
