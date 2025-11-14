@@ -66,7 +66,7 @@ OpenVINO™ GenAI library provides a transparent way to use state-of-the-art gen
 - KVCache token eviction algorithm that reduces the size of the KVCache by pruning less impacting tokens.
 
 Additionally, OpenVINO™ GenAI library implements a continuous batching approach to use OpenVINO within LLM serving. The continuous batching library could be used in LLM serving frameworks and supports the following features:
-- Prefix caching that caches fragments of previous generation requests and corresponding KVCache entries internally and uses them in case of repeated query. See [here](https://google.com) for more detailed overview
+- Prefix caching that caches fragments of previous generation requests and corresponding KVCache entries internally and uses them in case of repeated query.
 
 Continuous batching functionality is used within OpenVINO Model Server (OVMS) to serve LLMs, see [here](https://docs.openvino.ai/2025/openvino-workflow/model-server/ovms_what_is_openvino_model_server.html) for more details.
 
