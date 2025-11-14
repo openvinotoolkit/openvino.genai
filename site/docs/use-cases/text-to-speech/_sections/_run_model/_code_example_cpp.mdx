@@ -7,7 +7,7 @@ import CodeBlock from '@theme/CodeBlock';
 int main() {
     ov::genai::Text2SpeechPipeline pipeline("speecht5_tts", "${props.device || 'CPU'}");
     auto result = pipeline.generate("Hello OpenVINO GenAI");
-    std::cout << "Audio samples: " << result.speeches[0].size() << "\\n";
+    std::cout << "Audio samples: " << result.speeches[0].size() << "\n";
 }
 `}
 </CodeBlock>

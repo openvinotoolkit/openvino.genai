@@ -12,7 +12,7 @@ import RunModelSection from './_sections/_run_model/index.mdx';
     Download and convert model (e.g. [speecht5_tts](https://huggingface.co/microsoft/speecht5_tts)) and its vocoder to OpenVINO format from Hugging Face. SpeechT5 requires specifying a vocoder via `--model-kwargs`:
 
 
-    <OptimumCLI model='microsoft/speecht5_tts' outputDir='speecht5_tts' weightFormat='int4' trustRemoteCode extraArgs={{
+    <OptimumCLI model='microsoft/speecht5_tts' outputDir='speecht5_tts' weightFormat='int4' trustRemoteCode params={{
         "--model-kwargs": JSON.stringify({ vocoder: "microsoft/speecht5_hifigan" })
     }} />
 
