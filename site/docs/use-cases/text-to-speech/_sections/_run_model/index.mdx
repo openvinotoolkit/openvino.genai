@@ -62,20 +62,19 @@ result = pipeline.generate("Hello OpenVINO GenAI", speaker_embedding=speaker_emb
   </TabItemPython>
 
   <TabItemCpp>
-    <CodeBlock language="cpp" showLineNumbers>
-{`#include "openvino/genai/text2speech_pipeline.hpp"
-#include <vector>
+    ```cpp
+    #include "openvino/genai/text2speech_pipeline.hpp"
+    #include <vector>
 
-int main() {
-    ov::genai::Text2SpeechPipeline pipeline("speecht5_tts", "CPU");
+    int main() {
+        ov::genai::Text2SpeechPipeline pipeline("speecht5_tts", "CPU");
 
-    std::vector<float> embedding(512); // load your embedding into this vector
-    auto result = pipeline.generate("Hello OpenVINO GenAI", embedding);
+        std::vector<float> embedding(512); // load your embedding into this vector
+        auto result = pipeline.generate("Hello OpenVINO GenAI", embedding);
 
-    return 0;
-}
-`}
-    </CodeBlock>
+        return 0;
+    }
+    ```
   </TabItemCpp>
 </LanguageTabs>
 
