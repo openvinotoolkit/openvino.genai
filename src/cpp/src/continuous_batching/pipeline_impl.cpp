@@ -108,6 +108,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
     }
 }
 
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::generate_candidates() {}
+
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests() {
     std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
     m_requests.insert(m_requests.end(), m_awaiting_requests.begin(), m_awaiting_requests.end());
@@ -255,7 +257,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
     const ov::genai::GenerationConfig& sampling_params,
-    std::optional<ov::Tensor> token_type_ids) {
+    std::optional<ov::Tensor> token_type_ids,
+    std::optional<ov::Tensor> prompt_ids) {
     auto sampling_params_copy = sampling_params;
     // If stop_token_ids were not provided, take value from default m_generation_config
     if (sampling_params_copy.stop_token_ids.empty())
@@ -281,7 +284,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
                                                          m_block_size, 
                                                          token_type_ids, 
                                                          position_ids, 
-                                                         rope_delta);
+                                                         rope_delta,
+                                                         prompt_ids);
     }
     else {
         sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params_copy, m_block_size, token_type_ids);
@@ -424,7 +428,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
 
         free_fork_timer.end();
     }
-    
+
+    {
+        static ManualTimer candidates_timer("generate_candidates()");
+        candidates_timer.start();
+        generate_candidates();
+        candidates_timer.end();
+    }
+
     // append embeddings for generated tokens
     if (m_model_input_type == ModelInputType::EMBEDDINGS)
         m_model_runner->append_embeddings(m_requests, scheduler_output);
@@ -460,7 +471,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
                                                              const std::vector<GenerationConfig>& sampling_params,
                                                              const StreamerVariant& streamer,
                                                              const std::optional<std::vector<ov::Tensor>>& token_type_ids,
-                                                             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list) {
+                                                             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list,
+                                                             const std::optional<std::vector<ov::Tensor>>& prompt_ids) {
 
     _reset_cache_usage_statistics();
     ManualTimer generate_timer("generate()");
