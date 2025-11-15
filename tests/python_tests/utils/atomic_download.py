@@ -103,8 +103,15 @@ class AtomicDownloadManager:
         
         try:
             shutil.move(str(self.temp_path), str(self.final_path))
-        except Exception:
-            logger.exception(f"Error during move - possibly due to concurrent access")
+        except (OSError, FileExistsError) as e:
+            if self.final_path.exists() and self.is_complete():
+                logger.info(
+                    f"Move failed but destination now exists and is complete "
+                    f"(another process completed it): {self.final_path}"
+                )
+                self._cleanup_temp()
+                return
+            logger.exception(f"Error during move: {e}")
             raise
 
     def _mark_complete(self) -> None:
