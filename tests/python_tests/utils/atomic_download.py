@@ -44,7 +44,9 @@ class AtomicDownloadManager:
             self._cleanup_temp()
             raise
 
-    def _remove_directory_with_retry(self, path: Path, max_retries: int = 5) -> None:
+    def _remove_directory_with_retry(self, path: Path, max_retries: int = None) -> None:
+        if max_retries is None:
+            max_retries = DIRECTORY_REMOVE_MAX_RETRIES
         for attempt in range(max_retries):
             try:
                 shutil.rmtree(path)
@@ -136,6 +138,6 @@ class AtomicDownloadManager:
         if self.temp_path.exists():
             logger.info(f"Cleaning up temp directory: {self.temp_path}")
             try:
-                self._remove_directory_with_retry(self.temp_path, max_retries=3)
+                self._remove_directory_with_retry(self.temp_path)
             except Exception:
                 logger.exception("Could not clean up temp directory")
