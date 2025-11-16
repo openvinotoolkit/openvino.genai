@@ -9,6 +9,9 @@ logger = logging.getLogger(__name__)
 
 RETRY_WAIT_SECONDS = 5
 MAX_WAIT_FOR_OTHER_PROCESS = 120
+MOVE_COMPLETION_CHECK_RETRIES = 3
+MOVE_COMPLETION_CHECK_WAIT_SECONDS = 2
+DIRECTORY_REMOVE_MAX_RETRIES = 5
 
 
 class AtomicDownloadManager:
@@ -103,14 +106,22 @@ class AtomicDownloadManager:
         
         try:
             shutil.move(str(self.temp_path), str(self.final_path))
-        except (OSError, FileExistsError) as e:
-            if self.final_path.exists() and self.is_complete():
-                logger.info(
-                    f"Move failed but destination now exists and is complete "
-                    f"(another process completed it): {self.final_path}"
-                )
-                self._cleanup_temp()
-                return
+        except Exception as e:
+            if self.final_path.exists():
+                logger.warning(f"Move failed but destination exists, checking if complete: {e}")
+                for retry in range(MOVE_COMPLETION_CHECK_RETRIES):
+                    if self.is_complete():
+                        logger.info(
+                            f"Move failed but destination is now complete "
+                            f"(another process completed it): {self.final_path}"
+                        )
+                        self._cleanup_temp()
+                        return
+                    logger.info(
+                        f"Destination exists but not complete yet, waiting... "
+                        f"(retry {retry + 1}/{MOVE_COMPLETION_CHECK_RETRIES})"
+                    )
+                    time.sleep(MOVE_COMPLETION_CHECK_WAIT_SECONDS)
             logger.exception(f"Error during move: {e}")
             raise
 
