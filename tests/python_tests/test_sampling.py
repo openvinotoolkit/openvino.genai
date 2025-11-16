@@ -9,57 +9,148 @@ from typing import TypedDict
 
 from openvino_genai import GenerationConfig, StopCriteria
 
-from utils.ov_genai_pipelines import generate_and_compare, run_ov_pipeline, get_main_pipeline_types
-from utils.hugging_face import download_and_convert_model
+from utils.ov_genai_pipelines import generate_and_compare, run_ov_pipeline, MAIN_PIPELINE_TYPES
+from utils.hugging_face import OVConvertedModelSchema, download_and_convert_model
 
-@pytest.mark.parametrize("generation_config,prompt",
-                         [(dict(max_new_tokens=30), 'table is made of'),
-                          (dict(max_new_tokens=30, min_new_tokens=30), '你好！ 你好嗎？'),
-                          (dict(max_new_tokens=30, ignore_eos=True), 'Alan Turing was a'),
-                          (dict(max_length=30, ignore_eos=True), 'table is made of'),
-                          (dict(stop_token_ids={28998}, apply_chat_template=False), 'The Sun is yellow because'), # since a test does not hang, it means stop token is met, skip chat template to generate long answer
-                        #   (dict(max_new_tokens=1, min_new_tokens=0, echo=True), 'What is OpenVINO?')
-                          ],
-                         ids=["max_new_tokens",
-                              "min_and_max_new_tokens",
-                              "max_new_tokens_and_ignore_eos_true",
-                              "max_length",
-                              "stop_token_ids",
-                            #   "echo_with_generation",
-                              ])
-def test_basic_stop_criteria(generation_config, prompt):
+
+
+@pytest.fixture(scope="module")
+def model_facebook_opt_125m() -> OVConvertedModelSchema:
+    model_id : str = "facebook/opt-125m"
+    return download_and_convert_model(model_id)
+
+
+@pytest.fixture(scope="module")
+def model_katuni4ka_tiny_random_phi3() -> OVConvertedModelSchema:
     model_id : str = "katuni4ka/tiny-random-phi3"
-    generate_and_compare(model_id, [prompt], generation_config)
+    return download_and_convert_model(model_id)
 
 
-@pytest.mark.parametrize("generation_config,model_id",
-                         [(dict(max_new_tokens=50, min_new_tokens=15, stop_strings={"anag"}, include_stop_str_in_output=True), 'facebook/opt-125m'), # expected match on "manage"
-                          (dict(max_new_tokens=50, min_new_tokens=1, stop_strings={".", "software", "Intel"}, include_stop_str_in_output=True), 'facebook/opt-125m'),
-                          (dict(max_new_tokens=50, min_new_tokens=1, stop_strings={"Einstein", "sunny", "geothermal"}, include_stop_str_in_output=True), 'facebook/opt-125m'), # expected no match
-                          (dict(max_new_tokens=30, stop_strings={ "machines" }, include_stop_str_in_output=False),'facebook/opt-125m'),
-                          (dict(max_new_tokens=30, stop_strings={ "machines" }, include_stop_str_in_output=True), 'facebook/opt-125m'),
-                          (dict(max_new_tokens=30, stop_strings={ "machines", "manage" }, include_stop_str_in_output=False), 'facebook/opt-125m'),
-                          (dict(max_new_tokens=30, stop_strings={ "machines", "manage" }, include_stop_str_in_output=True), 'facebook/opt-125m'),
-                          (dict(max_new_tokens=30, stop_strings={ "software toolkit developed 1 by", "Intel" }, include_stop_str_in_output=False), 'TinyLlama/TinyLlama-1.1B-Chat-v1.0')],
-                         ids=["single_stop_string",
-                              "multiple_stop_strings_match",
-                              "multiple_stop_strings_no_match",
-                              "single_stop_string_exclude_from_output",
-                              "single_stop_string_include_to_output",
-                              "multiple_stop_strings_exclude_from_output",
-                              "multiple_stop_strings_include_to_output",
-                              "multiple_stop_strings_one_no_match_and_long_exclude_from_output"])
-@pytest.mark.parametrize("pipeline_type", get_main_pipeline_types())
-def test_stop_strings(generation_config, model_id, pipeline_type):
+@pytest.fixture(scope="module")
+def model_tinyllama_1_1b_chat() -> OVConvertedModelSchema:
+    model_id : str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    return download_and_convert_model(model_id)
+
+
+@pytest.mark.parametrize(
+    "generation_config,prompt",
+    [
+        ({"max_new_tokens": 30}, 'table is made of'),
+        ({"max_new_tokens": 30, "min_new_tokens": 30}, '你好！ 你好嗎？'),
+        ({"max_new_tokens": 30, "ignore_eos": True}, 'Alan Turing was a'),
+        ({"max_length": 30, "ignore_eos": True}, 'table is made of'),
+        ({"stop_token_ids": {28998}, "apply_chat_template": False}, 'The Sun is yellow because'),
+    ],
+    ids=[
+        "max_new_tokens",
+        "min_and_max_new_tokens",
+        "max_new_tokens_and_ignore_eos_true",
+        "max_length",
+        "stop_token_ids",
+    ]
+)
+def test_basic_stop_criteria(
+    model_katuni4ka_tiny_random_phi3: OVConvertedModelSchema,
+    generation_config: GenerationConfig,
+    prompt
+):
+    generate_and_compare(model_katuni4ka_tiny_random_phi3, [prompt], generation_config)
+
+
+@pytest.mark.parametrize(
+    "generation_config",
+    [
+        {
+            "max_new_tokens": 50,
+            "min_new_tokens": 15,
+            "stop_strings": {"anag"},
+            "include_stop_str_in_output": True
+        },
+        {
+            "max_new_tokens": 50,
+            "min_new_tokens": 1,
+            "stop_strings": {".", "software", "Intel"},
+            "include_stop_str_in_output": True
+        },
+        {
+            "max_new_tokens": 50,
+            "min_new_tokens": 1,
+            "stop_strings": {"Einstein", "sunny", "geothermal"},
+            "include_stop_str_in_output": True
+        },
+        {
+            "max_new_tokens": 30,
+            "stop_strings": {"machines"},
+            "include_stop_str_in_output": False
+        },
+        {
+            "max_new_tokens": 30,
+            "stop_strings": {"machines"},
+            "include_stop_str_in_output": True
+        },
+        {
+            "max_new_tokens": 30,
+            "stop_strings": {"machines", "manage"},
+            "include_stop_str_in_output": False
+        },
+        {
+            "max_new_tokens": 30,
+            "stop_strings": {"machines", "manage"},
+            "include_stop_str_in_output": True
+        },
+    ],
+    ids=[
+        "single_stop_string",
+        "multiple_stop_strings_match",
+        "multiple_stop_strings_no_match",
+        "single_stop_string_exclude_from_output",
+        "single_stop_string_include_to_output",
+        "multiple_stop_strings_exclude_from_output",
+        "multiple_stop_strings_include_to_output",
+    ]
+)
+@pytest.mark.parametrize("pipeline_type", MAIN_PIPELINE_TYPES)
+def test_stop_strings_facebook_opt(
+    model_facebook_opt_125m: OVConvertedModelSchema,
+    generation_config: GenerationConfig,
+    pipeline_type
+):
     prompts = [ "What is OpenVINO?" ]
-    generate_and_compare(model_id, prompts, generation_config, pipeline_type=pipeline_type)
+    generate_and_compare(model_facebook_opt_125m, prompts, generation_config, pipeline_type=pipeline_type)
 
 
-@pytest.mark.parametrize("generation_config",
-                         [dict(max_new_tokens=30),
-                          dict(max_new_tokens=30, repetition_penalty=2.0),
-                          dict(max_new_tokens=300, apply_chat_template=False)],
-                         ids=["basic", "repetition_penalty", "long_max_new_tokens"])
+@pytest.mark.parametrize(
+    "generation_config",
+    [
+        {
+            "max_new_tokens": 30,
+            "stop_strings": {"software toolkit developed 1 by", "Intel"},
+            "include_stop_str_in_output": False
+        },
+    ],
+    ids=[
+        "multiple_stop_strings_one_no_match_and_long_exclude_from_output",
+    ]
+)
+@pytest.mark.parametrize("pipeline_type", MAIN_PIPELINE_TYPES)
+def test_stop_strings_tinyllama(
+    model_tinyllama_1_1b_chat: OVConvertedModelSchema,
+    generation_config: GenerationConfig,
+    pipeline_type
+):
+    prompts = [ "What is OpenVINO?" ]
+    generate_and_compare(model_tinyllama_1_1b_chat, prompts, generation_config, pipeline_type=pipeline_type)
+
+
+@pytest.mark.parametrize(
+    "generation_config",
+    [
+        {"max_new_tokens": 30},
+        {"max_new_tokens": 30, "repetition_penalty": 2.0},
+        {"max_new_tokens": 300, "apply_chat_template": False},
+    ],
+    ids=["basic", "repetition_penalty", "long_max_new_tokens"]
+)
 @pytest.mark.parametrize("prompt", [
     'What is OpenVINO?',
     'table is made of', 
@@ -67,38 +158,65 @@ def test_stop_strings(generation_config, model_id, pipeline_type):
     '你好！ 你好嗎？'.encode('unicode_escape'),  # to escape Win limitation on Unicode tmp path
     'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
 ])
-def test_greedy(generation_config, prompt):
-    model_id : str = "katuni4ka/tiny-random-phi3"
+def test_greedy(
+    model_katuni4ka_tiny_random_phi3: OVConvertedModelSchema,
+    generation_config,
+    prompt
+):
     prompt = prompt.decode('unicode_escape') if isinstance(prompt, bytes) else prompt
 
-    generate_and_compare(model=model_id, 
-                         prompts=prompt, 
-                         generation_config=generation_config)
+    generate_and_compare(
+        model_katuni4ka_tiny_random_phi3, 
+        prompt, 
+        generation_config
+    )
 
 
-@pytest.mark.parametrize("generation_config",
-                         [dict(max_new_tokens=30, num_beams=2),
-                          dict(max_new_tokens=30, num_beams=2, stop_criteria=StopCriteria.NEVER),
-                          dict(max_new_tokens=30, num_beams=2, stop_criteria=StopCriteria.EARLY),
-                        #   dict(max_new_tokens=30, num_beams=2, echo=True),
-                          dict(max_new_tokens=30, num_beams=2, length_penalty=1.0),
-                          dict(max_new_tokens=30, num_beams=2, no_repeat_ngram_size=2),
-                          dict(max_new_tokens=30, num_beams=6, num_beam_groups=3, diversity_penalty=1.2, num_return_sequences=3),
-                          dict(max_new_tokens=30, min_new_tokens=15, num_beams=2, num_return_sequences=1),
-                          dict(max_new_tokens=30, num_beams=2, stop_strings={"Einstein", "sunny", "geothermal"}, include_stop_str_in_output=True),],
-                         ids=["single_group_stop_criteria_heuristic",
-                              "single_group_stop_criteria_never",
-                              "single_group_stop_criteria_early",
-                            #   "single_group_with_echo",
-                              "single_group_lenght_penalty",
-                              "single_group_no_repeat_ngram_size",
-                              "multiple_groups",
-                              "single_group_min_new_tokens",
-                              "single_group_with_multiple_stop_strings_no_match",])
-def test_beam_search(generation_config):
+@pytest.mark.parametrize(
+    "generation_config",
+    [
+        {"max_new_tokens": 30, "num_beams": 2},
+        {"max_new_tokens": 30, "num_beams": 2, "stop_criteria": StopCriteria.NEVER},
+        {"max_new_tokens": 30, "num_beams": 2, "stop_criteria": StopCriteria.EARLY},
+        {"max_new_tokens": 30, "num_beams": 2, "length_penalty": 1.0},
+        {"max_new_tokens": 30, "num_beams": 2, "no_repeat_ngram_size": 2},
+        {
+            "max_new_tokens": 30,
+            "num_beams": 6,
+            "num_beam_groups": 3,
+            "diversity_penalty": 1.2,
+            "num_return_sequences": 3
+        },
+        {"max_new_tokens": 30, "min_new_tokens": 15, "num_beams": 2, "num_return_sequences": 1},
+        {
+            "max_new_tokens": 30,
+            "num_beams": 2,
+            "stop_strings": {"Einstein", "sunny", "geothermal"},
+            "include_stop_str_in_output": True
+        },
+        {"max_new_tokens": 1, "min_new_tokens": 0, "echo": True},
+        {"max_new_tokens": 30, "num_beams": 2, "echo": True},
+    ],
+    ids=[
+        "single_group_stop_criteria_heuristic",
+        "single_group_stop_criteria_never",
+        "single_group_stop_criteria_early",
+        "single_group_lenght_penalty",
+        "single_group_no_repeat_ngram_size",
+        "multiple_groups",
+        "single_group_min_new_tokens",
+        "single_group_with_multiple_stop_strings_no_match",
+        "echo_with_generation",
+        "single_group_with_echo",
+    ]
+)
+def test_beam_search(
+    model_facebook_opt_125m: OVConvertedModelSchema, 
+    generation_config: GenerationConfig
+):
     prompts = [ "What is OpenVINO?" ]
-    model_id : str = "facebook/opt-125m"
-    generate_and_compare(model_id, prompts, generation_config)
+    generate_and_compare(model_facebook_opt_125m, prompts, generation_config)
+
 
 
 @pytest.mark.xfail(
@@ -106,27 +224,39 @@ def test_beam_search(generation_config):
     reason="Stop strings do not seem to work as expected with beam search in HF, so comparison will fail. If it changes, these cases shall be merged to the test above.",
     strict=True,
 )
-@pytest.mark.parametrize("generation_config",
-                         [dict(max_new_tokens=50, num_beams=6, num_beam_groups=3, diversity_penalty=1.0, num_return_sequences=6, stop_strings={"open sour"}, include_stop_str_in_output=True),
-                          dict(max_new_tokens=50, num_beams=6, num_beam_groups=3, diversity_penalty=1.0, num_return_sequences=6, stop_strings={".", "software", "Intel"}, include_stop_str_in_output=True),],
-                         ids=["single_stop_string_match", "multiple_stop_strings_match"])
-def test_beam_search_with_stop_string(generation_config):
+@pytest.mark.parametrize(
+    "generation_config",
+    [
+        {
+            "max_new_tokens": 50,
+            "num_beams": 6,
+            "num_beam_groups": 3,
+            "diversity_penalty": 1.0,
+            "num_return_sequences": 6,
+            "stop_strings": {"open sour"},
+            "include_stop_str_in_output": True
+        },
+        {
+            "max_new_tokens": 50,
+            "num_beams": 6,
+            "num_beam_groups": 3,
+            "diversity_penalty": 1.0,
+            "num_return_sequences": 6,
+            "stop_strings": {".", "software", "Intel"},
+            "include_stop_str_in_output": True
+        },
+    ],
+    ids=[
+        "single_stop_string_match",
+        "multiple_stop_strings_match",
+    ]
+)
+def test_beam_search_with_stop_string(
+    model_facebook_opt_125m: OVConvertedModelSchema, 
+    generation_config: GenerationConfig
+):
     prompts = [ "What is OpenVINO?" ]
-    model_id : str = "facebook/opt-125m"
-    generate_and_compare(model_id, prompts, generation_config)
-
-
-@pytest.mark.parametrize("generation_config",
-                         [dict(max_new_tokens=1, min_new_tokens=0, echo=True),
-                          dict(max_new_tokens=30, num_beams=2, echo=True),],
-                         ids=["echo_with_generation",
-                              "single_group_with_echo",])
-def test_echo(generation_config):
-    prompts = [ "What is OpenVINO?" ]
-    model_id : str = "facebook/opt-125m"
-    # TODO: support in stateful mode and remove 'use_cb=True' and this test at all
-    # as we can enable new parameters set in other tests
-    generate_and_compare(model_id, prompts, generation_config)
+    generate_and_compare(model_facebook_opt_125m, prompts, generation_config)
 
 
 # TODO: remove platform specific reference texts once CVS-159912 is done and use comparison with HF
@@ -148,6 +278,7 @@ def get_current_platform_ref_texts(ref_texts: PlatformsRefTexts) -> list[list[st
     if not result:
         raise RuntimeError("No ref_texts were provided")
     return result
+
 
 
 @dataclass
@@ -306,31 +437,38 @@ RANDOM_SAMPLING_TEST_CASES = [
 ]
 
 
-@pytest.mark.parametrize("test_struct", RANDOM_SAMPLING_TEST_CASES,
-        ids=["multinomial_temperature",
-             "multinomial_temperature_and_top_p",
-             "multinomial_temperature_and_top_k",
-             "multinomial_temperature_top_p_and_top_k",
-             "multinomial_temperature_and_repetition_penalty",
-             "multinomial_temperature_and_num_return_sequence",
-             "multinomial_all_parameters",
-             "multinomial_temperature_and_presence_penalty",
-             "multinomial_temperature_and_frequence_penalty",
-             "greedy_with_penalties",
-             "multinomial_max_and_min_token"])
-def test_multinomial_sampling_against_reference(test_struct: RandomSamplingTestStruct):
+@pytest.mark.parametrize(
+    "test_struct", 
+    RANDOM_SAMPLING_TEST_CASES,
+    ids=[
+        "multinomial_temperature",
+        "multinomial_temperature_and_top_p",
+        "multinomial_temperature_and_top_k",
+        "multinomial_temperature_top_p_and_top_k",
+        "multinomial_temperature_and_repetition_penalty",
+        "multinomial_temperature_and_num_return_sequence",
+        "multinomial_all_parameters",
+        "multinomial_temperature_and_presence_penalty",
+        "multinomial_temperature_and_frequence_penalty",
+        "greedy_with_penalties",
+        "multinomial_max_and_min_token",
+    ]
+)
+def test_multinomial_sampling_against_reference(
+    model_facebook_opt_125m: OVConvertedModelSchema,
+    test_struct: RandomSamplingTestStruct
+):
     generation_config = test_struct.generation_config
 
     prompts = test_struct.prompts
     generation_config.rng_seed = 0
 
-    model_id : str = "facebook/opt-125m"
-    _, _, models_path = download_and_convert_model(model_id)
-
     # Run multinomial without comparison with HF reference.
-    _ = run_ov_pipeline(models_path=models_path,
-                        prompt=prompts,
-                        generation_config=generation_config)
+    run_ov_pipeline(
+        models_path=model_facebook_opt_125m.models_path,
+        prompt=prompts,
+        generation_config=generation_config
+    )
 
     # Reference comparison is not performed as sampling results are non-deterministic.
     # Discrete_distribution impl depends on platform, model inference results may depend on CPU.

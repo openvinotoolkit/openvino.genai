@@ -327,7 +327,7 @@ def test_final_parser_llama_32_json(hf_ov_genai_models):
 @pytest.mark.parametrize("model_id", ["microsoft/Phi-4-mini-reasoning"])
 @pytest.mark.nightly
 def test_custom_parser(tmp_path, model_id):
-    _, _, models_path = download_and_convert_model(model_id, padding_side="left")
+    models_path = download_and_convert_model(model_id, padding_side="left").models_path
     pipe = create_ov_pipeline(models_path)
     tok = pipe.get_tokenizer()
     
@@ -368,7 +368,7 @@ def test_custom_parser(tmp_path, model_id):
 @pytest.mark.parametrize("model_id", ["microsoft/Phi-4-mini-reasoning"])
 @pytest.mark.nightly
 def test_reset_incremental_parser(tmp_path, model_id):
-    _, _, models_path = download_and_convert_model(model_id, padding_side="left")
+    models_path = download_and_convert_model(model_id, padding_side="left").models_path
     pipe = create_ov_pipeline(models_path)
     tok = pipe.get_tokenizer()
     
