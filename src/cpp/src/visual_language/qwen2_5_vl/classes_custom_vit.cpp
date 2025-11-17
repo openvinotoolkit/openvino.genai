@@ -20,21 +20,124 @@ inline bool init_global_var() {
 }
 bool g_enable_custom_vit = init_global_var();
 
-InputsEmbedderQwen2_5_VL_CustomVIT::InputsEmbedderQwen2_5_VL_CustomVIT(
-    const VLMConfig& vlm_config,
-    const std::filesystem::path& model_dir,
-    const std::string& device,
-    const ov::AnyMap device_config) :
-    InputsEmbedderQwen2_5_VL(vlm_config, model_dir, device, device_config) {}
+inline std::string init_custom_vit_path() {
+    auto env = std::getenv("CUSTOM_VIT_PATH");
+    if (env) {
+        std::cout << "== CUSTOM_VIT_PATH = " << env << std::endl;
+        return std::string(env);
+    }
+    return std::string();
+}
+static std::string custom_vit_path = init_custom_vit_path();
 
-InputsEmbedderQwen2_5_VL_CustomVIT::InputsEmbedderQwen2_5_VL_CustomVIT(
-    const VLMConfig& vlm_config,
-    const ModelsMap& models_map,
-    const Tokenizer& tokenizer, 
-    const std::filesystem::path& config_dir_path,
-    const std::string& device,
-    const ov::AnyMap device_config) :
-    InputsEmbedderQwen2_5_VL(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
+inline bool file_exists(const std::string& name) {
+    std::ifstream file(name);
+    return file.good(); 
+}
+
+void InputsEmbedderQwen2_5_VL_CustomVIT::load_custom_vit_lib() {
+    int32_t err;
+#if defined(_MSC_VER)
+    m = LoadLibraryA(custom_vit_path + "\\cm.ocl.qwen2vl.lib.dll");
+#else
+    m = dlopen((custom_vit_path + std::string("/libcm.ocl.qwen2vl.lib.so")).c_str(), RTLD_LAZY);
+    if (!m) {
+        fprintf(stderr, "%s\n", dlerror());
+        exit(1);
+    }
+#endif
+
+#if defined(_MSC_VER)
+    create = (pfnCreateQwen2vl*)GetProcAddress(m, "createModelQwen2vl");
+    release = (pfnReleaseQwen2vl*)GetProcAddress(m, "releaseModelQwen2vl");
+    inference = (pfnInferenceVitQwen2vl*)GetProcAddress(m, "inferenceVitQwen2vl");
+#else
+    create = (pfnCreateQwen2vl*)dlsym(m, "createModelQwen2vl");
+    release = (pfnReleaseQwen2vl*)dlsym(m, "releaseModelQwen2vl");
+    inference = (pfnInferenceVitQwen2vl*)dlsym(m, "inferenceVitQwen2vl");
+#endif
+
+    std::string model_weight_fn = (custom_vit_path + "/weights/qwen2p5.3b.bf16vit.q40llm");
+    size_t len = model_weight_fn.length();
+    char_weight_fn = new char[len + 1];
+    std::strcpy(char_weight_fn, model_weight_fn.c_str());
+
+    uint32_t flag = 1;
+    qwen2vlModel = create(batchSize, char_weight_fn, flag);
+    if (nullptr == qwen2vlModel) {
+        std::cout << "== create custom vit fail." << std::endl;
+        exit(0);
+    }
+
+    outputEmbeds = (char**)malloc(batchSize * sizeof(char*));
+    outputRope = (uint32_t**)malloc(batchSize * sizeof(uint32_t*));
+
+    embedLength = (uint32_t*)malloc(batchSize * sizeof(uint32_t));
+    ropeLength = (uint32_t*)malloc(batchSize * sizeof(uint32_t));
+
+    size_t maxEmbedSize = ((1008 / 28) * (1008 / 28) + 800) * 3584 * sizeof(float);
+    size_t maxRopeSize = ((1008 / 28) * (1008 / 28) + 800) * 3 * sizeof(uint32_t);
+    for (int32_t ii = 0; ii < batchSize; ii++) {
+        outputEmbeds[ii] = (char*)malloc(maxEmbedSize);
+    }
+    for (int32_t ii = 0; ii < batchSize; ii++) {
+        outputRope[ii] = (uint32_t*)malloc(maxRopeSize);
+    }
+
+    inputFiles = (char**)malloc(batchSize * sizeof(char*));
+    memset(inputFiles, 0, batchSize * sizeof(char*));
+    std::string img_fn = custom_vit_path + "/input_img.jpg";
+    if (!file_exists(img_fn)) {
+        std::cout << "Fail, img file does't exit:" << img_fn << std::endl;
+        exit(0);
+    }
+
+    for (int32_t ii = 0; ii < batchSize; ii++) {
+        size_t len = img_fn.length();
+        inputFiles[ii] = (char*)malloc(sizeof(char) * (len + 1));
+        img_fn.copy(inputFiles[ii], len, 0);
+        inputFiles[ii][len] = '\0';
+    }
+}
+
+InputsEmbedderQwen2_5_VL_CustomVIT::~InputsEmbedderQwen2_5_VL_CustomVIT() {
+    free(embedLength);
+    free(ropeLength);
+    for (int32_t ii = 0; ii < batchSize; ii++) {
+      free(outputEmbeds[ii]);
+      free(outputRope[ii]);
+      free(inputFiles[ii]);
+    }
+    if (nullptr != m) {
+  #if defined(_MSC_VER)
+      FreeLibrary(m);
+  #else
+      dlclose(m);
+  #endif
+    }
+    free(outputEmbeds);
+    free(outputRope);
+    free(inputFiles);
+    free(char_weight_fn);
+}
+
+InputsEmbedderQwen2_5_VL_CustomVIT::InputsEmbedderQwen2_5_VL_CustomVIT(const VLMConfig& vlm_config,
+                                                                       const std::filesystem::path& model_dir,
+                                                                       const std::string& device,
+                                                                       const ov::AnyMap device_config)
+    : InputsEmbedderQwen2_5_VL(vlm_config, model_dir, device, device_config) {
+    load_custom_vit_lib();
+}
+
+InputsEmbedderQwen2_5_VL_CustomVIT::InputsEmbedderQwen2_5_VL_CustomVIT(const VLMConfig& vlm_config,
+                                                                       const ModelsMap& models_map,
+                                                                       const Tokenizer& tokenizer,
+                                                                       const std::filesystem::path& config_dir_path,
+                                                                       const std::string& device,
+                                                                       const ov::AnyMap device_config)
+    : InputsEmbedderQwen2_5_VL(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
+    load_custom_vit_lib();
+}
 
 static ImageSize smart_resize(size_t height, size_t width, size_t factor, size_t min_pixels, size_t max_pixels) {
     if (height < factor || width < factor) {
@@ -107,11 +210,17 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2_5_VL_CustomVIT::run_video_
 
     ov::Shape image_fea_shape({1215,2048});
     ov::Tensor res_image(ov::element::f32, image_fea_shape);
-    {
-        FILE* pf = fopen("dump_embedding.dat", "rb");
-        fread(res_image.data(), res_image.get_byte_size(), 1, pf);
-        fclose(pf);
-    }
+
+    // (char*)promptIn.c_str()
+    size_t remaining = 1;
+    inference(qwen2vlModel, inputFiles, nullptr, (uint8_t**)outputEmbeds, outputRope, embedLength, ropeLength, remaining);
+    std::memcpy(res_image.data(), outputEmbeds[0], res_image.get_byte_size());
+
+    // {
+    //     FILE* pf = fopen("dump_embedding.dat", "rb");
+    //     fread(res_image.data(), res_image.get_byte_size(), 1, pf);
+    //     fclose(pf);
+    // }
 
     return {res_video, res_image};
 }
