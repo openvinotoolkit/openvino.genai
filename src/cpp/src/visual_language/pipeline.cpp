@@ -542,11 +542,11 @@ VLMDecodedResults VLMPipeline::generate(
 
 VLMDecodedResults VLMPipeline::generate(
     const std::string& prompt,
-    const ov::Tensor& rgb,
+    const ov::Tensor& image,
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
 ) {
-    return m_pimpl->generate(prompt, {rgb}, generation_config, streamer);
+    return m_pimpl->generate(prompt, {image}, generation_config, streamer);
 }
 
 VLMDecodedResults VLMPipeline::generate(
