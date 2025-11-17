@@ -15,7 +15,6 @@ export const SpeechGeneration = () => (
     <UseCaseCard.Features>
       <li>Generate natural and expressive speech from text prompts</li>
       <li>Use speaker embeddings for personalized voice synthesis</li>
-      <li>Support multiple languages and accents</li>
     </UseCaseCard.Features>
     <UseCaseCard.Code>
       <LanguageTabs>
