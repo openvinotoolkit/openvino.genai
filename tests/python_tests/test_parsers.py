@@ -4,7 +4,7 @@ import json
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
 from utils.ov_genai_pipelines import create_ov_pipeline
 import pytest
-from openvino_genai import Tokenizer, IncrementalParser, Parser, TextParserStreamer, StreamingStatus, Llama3JsonToolParser, Phi4ReasoningParser, Phi4ReasoningIncrementalParser, DeepSeekR1ReasoningIncrementalParser, GenerationConfig, ReasoningIncrementalParser
+from openvino_genai import Tokenizer, IncrementalParser, Parser, TextParserStreamer, StreamingStatus, Llama3JsonToolParser, Phi4ReasoningParser, ReasoningParser, Phi4ReasoningIncrementalParser, DeepSeekR1ReasoningIncrementalParser, GenerationConfig, ReasoningIncrementalParser
 from transformers import AutoTokenizer
 import re
 
@@ -51,13 +51,13 @@ def test_incremental_phi4_reason_parser_1(hf_ov_genai_models, answer):
             return StreamingStatus.RUNNING
     streamer = CustomStreamer(genai_tokenizer, parsers=[Phi4ReasoningIncrementalParser()])
     
-    msg = {}
     for subword in stream_string:
         streamer._write(subword)
 
     think_content = answer.split("</think>")[0].replace("<think>", "")
     content = answer
-
+    
+    msg = streamer.get_parsed_message()
     assert msg['reasoning_content'] == think_content
     assert msg['content'] == content
 
@@ -161,17 +161,17 @@ def test_incremental_phi4_reason_parser_2(hf_ov_genai_models, split_answer):
     
     class CustomStreamer(TextParserStreamer):
         def write(self, message):
-            msg.update(message)
+            # will be accumulated automatically inside streamer
             return StreamingStatus.RUNNING
     streamer = CustomStreamer(genai_tokenizer, parsers=[Phi4ReasoningIncrementalParser()])
     
-    msg = {}
     for subword in split_answer:
         streamer._write(subword)
 
     think_content = (''.join(split_answer)).split("</think>")[0].replace("<think>", "")
-    content = ''.join(split_answer)
+    content = (''.join(split_answer).split("</think>")[1])
 
+    msg = streamer.get_parsed_message()
     assert msg['reasoning_content'] == think_content
     assert msg['content'] == content
 
@@ -378,7 +378,7 @@ def test_reset_incremental_parser(tmp_path, model_id):
     streamer = CustomStreamer(tok, parsers=[Phi4ReasoningIncrementalParser()])
 
     prompt = "Please say \"hello\""
-    res = pipe.generate([prompt], max_new_tokens=600, parsers=[Phi4ReasoningParser()])
+    res = pipe.generate([prompt], max_new_tokens=600, parsers=[ReasoningParser(keep_original_content=False)])
     
     # extract manually reasoning content from the parsed result
     content = res.texts[0]

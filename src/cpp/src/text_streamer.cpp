@@ -141,7 +141,22 @@ std::vector<std::shared_ptr<IncrementalParser>> m_parsers;
 JsonContainer m_parsed_message;
 
 TextParserStreamerImpl(std::vector<std::shared_ptr<IncrementalParser>> parsers) : m_parsers{parsers} {}
+
 };
+
+void concatenate_json_containers(JsonContainer& from, const JsonContainer& to, std::vector<std::string> keys_to_concatenate) {
+    for (const auto& key : keys_to_concatenate) {
+        if (to.contains(key) && from.contains(key)) {
+            // If both are strings, concatenate
+            if (to[key].is_string() && from[key].is_string()) {
+                to[key] = to[key].get_string() + from[key].get_string();
+            }
+        } else if (from.contains(key)) {
+            auto r = from[key];
+            to[key] = from[key];
+        }
+    }
+}
 
 TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::shared_ptr<IncrementalParser>> parsers) 
     : TextStreamer(tokenizer, [this](std::string s) -> CallbackTypeVariant {
@@ -177,13 +192,18 @@ CallbackTypeVariant TextParserStreamer::write(std::string message) {
         }
     }
 
+    JsonContainer msg;
     // Iterate over all parsers and apply them to the message
     for (auto& parser: m_pimpl->m_parsers) {
-        message = parser->parse(m_pimpl->m_parsed_message, message, flushed_tokens);
+        message = parser->parse(msg, message, flushed_tokens);
         // Message can be modified inside parser, if parser for example extracted tool calling from message content
-        m_pimpl->m_parsed_message["content"] = m_pimpl->m_parsed_message["content"].get_string() + message;
     }
-    return write(m_pimpl->m_parsed_message);
+    
+    // concatenate msg with m_parsed_message
+    concatenate_json_containers(msg, m_pimpl->m_parsed_message, {"content", "reasoning_content"});
+
+    // return write(m_pimpl->m_parsed_message);
+    return write(msg);
 }
 
 JsonContainer TextParserStreamer::get_parsed_message() const {
