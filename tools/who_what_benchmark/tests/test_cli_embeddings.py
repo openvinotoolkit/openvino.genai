@@ -100,7 +100,7 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
             sys.platform == 'darwin', reason="Hangs. Ticket 175534", run=False
         )),
         ("Qwen/Qwen3-Embedding-0.6B", "text-embedding", 1),
-        ("Qwen/Qwen3-Embedding-0.6B", "text-embedding", 2),
+        ("Qwen/Qwen3-Embedding-0.6B", "text-embedding", 12),
     ],
 )
 def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
