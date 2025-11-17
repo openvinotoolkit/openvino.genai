@@ -39,6 +39,24 @@ Explore blogs to setup your first hands-on experience with OpenVINO GenAI:
 
 <a id="ai-scenarios"></a>
 
+## Quick Start
+
+1. Install OpenVINO GenAI from PyPI:
+    ```sh
+    pip install openvino-genai
+    ```
+2. Obtain model, e.g. export model to OpenVINO IR format from Hugging Face (see [Model Preparation Guide](https://openvinotoolkit.github.io/openvino.genai/docs/category/model-preparation) for more details):
+    ```sh
+    optimum-cli export openvino --model TinyLlama/TinyLlama-1.1B-Chat-v1.0 --weight-format int4 --trust-remote-code TinyLlama_1_1b_v1_ov
+    ```
+3. Run inference:
+    ```python
+    import openvino_genai as ov_genai
+
+    pipe = ov_genai.LLMPipeline("TinyLlama_1_1b_v1_ov", "CPU")  # Use CPU or GPU as devices without any other code change
+    print(pipe.generate("What is OpenVINO?", max_new_tokens=100))
+    ```
+
 ## Supported Generative AI Scenarios
 
 OpenVINO™ GenAI library provides very lightweight C++ and Python APIs to run the following Generative AI Scenarios:
