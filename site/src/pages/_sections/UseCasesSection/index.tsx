@@ -19,9 +19,9 @@ export const UseCasesSection = () => (
     <div className={styles.sectionContent}>
       <TextGeneration />
       <ImageGeneration />
+      <ImageProcessing />
       <SpeechRecognition />
       <SpeechGeneration />
-      <ImageProcessing />
       <TextEmbedding />
       <TextRerank />
     </div>
