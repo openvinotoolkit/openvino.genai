@@ -239,6 +239,161 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_em
 
 bool InputsEmbedder::IInputsEmbedder::has_token_type_ids() const { return false; }
 
+// Default implementations for CDPruner-related methods
+ov::Tensor InputsEmbedder::IInputsEmbedder::extract_text_features_for_pruning(const ov::Tensor& text_embeds,
+                                                                              const ov::Tensor& input_ids,
+                                                                              int64_t vision_start_token_id,
+                                                                              int64_t vision_end_token_id) const {
+    // Default implementation: return empty tensor
+    // Models that support CDPruner should override this method
+    return ov::Tensor();
+}
+
+std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::convert_visual_features_for_pruning(
+    const ov::Tensor& vision_embeds,
+    size_t chunk_count) const {
+    // Default implementation: return single tensor in vector
+    return {vision_embeds};
+}
+
+ov::Tensor InputsEmbedder::IInputsEmbedder::apply_visual_token_pruning(
+    const ov::Tensor& vision_embeds,
+    const std::vector<std::vector<bool>>& keep_flags_per_region,
+    const std::vector<std::array<size_t, 3>>& grid_thw_per_region) const {
+    // Default implementation: return as-is
+    return vision_embeds;
+}
+
+void InputsEmbedder::IInputsEmbedder::adjust_position_ids_after_pruning(
+    ov::Tensor& position_ids_inout,
+    const ov::Tensor& input_ids,
+    int64_t vision_start_token_id,
+    int64_t image_pad_token_id,
+    const std::vector<std::array<size_t, 3>>& images_grid_thw,
+    const std::vector<size_t>& images_sequence,
+    std::vector<std::vector<bool>>& keep_flags_per_region_out) const {
+    // Default implementation: do nothing (position_ids remain unchanged)
+    return;
+}
+
+ov::Tensor InputsEmbedder::IInputsEmbedder::merge_text_visual_embeddings_with_pruning(
+    const ov::Tensor& text_embeds,
+    const ov::Tensor& pruned_vision_embeds,
+    const ov::Tensor& adjusted_position_ids,
+    int64_t image_pad_token_id) const {
+    // Default implementation: should not be called
+    OPENVINO_THROW("merge_text_visual_embeddings_with_pruning not implemented for this model");
+}
+
+ov::Tensor InputsEmbedder::IInputsEmbedder::generate_pruned_input_ids(
+    const ov::Tensor& input_ids,
+    const std::vector<std::vector<bool>>& keep_flags_per_region,
+    int64_t image_pad_token_id,
+    int64_t vision_start_token_id,
+    int64_t vision_end_token_id) const {
+    // Default implementation: return as-is
+    return input_ids;
+}
+
+bool InputsEmbedder::IInputsEmbedder::is_cdpruner_active(const std::vector<ov::genai::EncodedImage>& images) const {
+    if (!m_vision_encoder || images.empty()) {
+        return false;
+    }
+
+    auto current_pruning_config = m_vision_encoder->get_pruning_config();
+    bool pruner_enabled = current_pruning_config.has_value() && current_pruning_config->pruning_ratio > 0;
+    return m_vision_encoder->is_pruning_available() && pruner_enabled;
+}
+
+InputsEmbedder::IInputsEmbedder::PruningResult InputsEmbedder::IInputsEmbedder::execute_cdpruner_pipeline(
+    const ov::Tensor& input_ids,
+    const ov::Tensor& text_embeds,
+    const ov::Tensor& merged_visual_embeddings,
+    const std::vector<ov::genai::EncodedImage>& images,
+    const std::vector<std::array<size_t, 3>>& images_grid_thw,
+    const std::vector<size_t>& images_sequence,
+    int64_t image_pad_token_id,
+    int64_t vision_start_token_id,
+    int64_t vision_end_token_id) {
+    PruningResult result;
+    result.is_pruned = false;
+    result.original_visual_tokens = merged_visual_embeddings.get_shape()[0];
+
+    // Retrieve current pruning configuration
+    auto current_pruning_config = m_vision_encoder->get_pruning_config();
+    OPENVINO_ASSERT(current_pruning_config.has_value(),
+                    "execute_cdpruner_pipeline should only be called when pruning config is available");
+    // Step 1: Extract text features for relevance calculation
+    // Virtual function allows model-specific text feature extraction
+    ov::Tensor text_features =
+        extract_text_features_for_pruning(text_embeds, input_ids, vision_start_token_id, vision_end_token_id);
+
+    // Step 2: Convert visual features to CDPruner format
+    // May split by frames/chunks for video or multi-image scenarios
+    size_t chunk_count = current_pruning_config->enable_frame_chunking ? images.size() : 1;
+    std::vector<ov::Tensor> visual_features =
+        convert_visual_features_for_pruning(merged_visual_embeddings, chunk_count);
+
+    // Step 3: Apply CDPruner algorithm
+    // Computes text-image relevance and prunes low-relevance visual tokens
+    ov::Tensor pruned_visual_features = m_vision_encoder->apply_pruning(visual_features, text_features);
+
+    // Step 4: Reshape from 3D [1, num_tokens, hidden_size] to 2D [num_tokens, hidden_size]
+    ov::Shape pruned_shape = pruned_visual_features.get_shape();
+    result.pruned_visual_tokens = pruned_shape[1];
+    size_t hidden_size = pruned_shape[2];
+
+    ov::Tensor pruned_2d_tensor(pruned_visual_features.get_element_type(), {result.pruned_visual_tokens, hidden_size});
+    const float* src_data = pruned_visual_features.data<const float>();
+    float* dst_data = pruned_2d_tensor.data<float>();
+    std::memcpy(dst_data, src_data, result.pruned_visual_tokens * hidden_size * sizeof(float));
+
+    result.pruned_embeddings = pruned_2d_tensor;
+
+    if (result.original_visual_tokens == result.pruned_visual_tokens) {
+        return result;
+    }
+
+    result.is_pruned = true;
+
+    // Step 5: Adjust position_ids to account for removed visual tokens
+    // Populates keep_flags_per_region indicating which tokens were retained
+    // Directly modifies m_position_ids in-place via mutable reference
+    adjust_position_ids_after_pruning(m_position_ids,
+                                      input_ids,
+                                      vision_start_token_id,
+                                      image_pad_token_id,
+                                      images_grid_thw,
+                                      images_sequence,
+                                      result.keep_flags_per_region);
+
+    // Step 6: Validate pruning metadata consistency
+    OPENVINO_ASSERT(result.keep_flags_per_region.size() > 0, "Vision region metadata not available for pruning");
+
+    size_t total_original_tokens = 0;
+    size_t total_pruned_tokens = 0;
+    for (const auto& mask : result.keep_flags_per_region) {
+        total_original_tokens += mask.size();
+        total_pruned_tokens += static_cast<size_t>(std::count(mask.begin(), mask.end(), true));
+    }
+
+    OPENVINO_ASSERT(total_original_tokens == result.original_visual_tokens,
+                    "Original visual token metadata mismatch after pruning");
+    OPENVINO_ASSERT(total_pruned_tokens == result.pruned_visual_tokens,
+                    "Pruned visual token metadata mismatch after pruning");
+    OPENVINO_ASSERT(result.keep_flags_per_region.size() == images_sequence.size(),
+                    "Kept visual token mask count mismatch with vision regions");
+
+    // Step 7: Generate pruned input_ids with visual tokens removed
+    result.pruned_input_ids = generate_pruned_input_ids(input_ids,
+                                                        result.keep_flags_per_region,
+                                                        image_pad_token_id,
+                                                        vision_start_token_id,
+                                                        vision_end_token_id);
+
+    return result;
+}
+
 /// Public InputsEmbedder class
 
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
