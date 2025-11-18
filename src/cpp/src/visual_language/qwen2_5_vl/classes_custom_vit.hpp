@@ -4,7 +4,6 @@
 #pragma once
 
 #include <filesystem>
-#include <dlfcn.h>
 
 #include "visual_language/vlm_config.hpp"
 

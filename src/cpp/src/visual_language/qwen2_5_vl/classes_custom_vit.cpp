@@ -5,6 +5,7 @@
 
 #include "utils.hpp"
 
+#include <dlfcn.h>
 namespace ov::genai {
 
 inline bool init_global_var() {
