@@ -758,7 +758,6 @@ def main():
         kwargs["cb_config"] = read_cb_config(args.cb_config)
     if args.from_onnx:
         kwargs["from_onnx"] = args.from_onnx
-        kwargs["use_cache"] = False
     if args.gguf_file:
         kwargs["gguf_file"] = args.gguf_file
     if args.adapters is not None:
@@ -768,9 +767,10 @@ def main():
         else:
             kwargs["alphas"] = [1.0] * len(args.adapters)
     kwargs["empty_adapters"] = args.empty_adapters
-    kwargs["embeds_pooling"] = args.embeds_pooling_type
-    kwargs["embeds_normalize"] = args.embeds_normalize
-    kwargs["embeds_padding_side"] = args.embeds_padding_side
+    if args.model_type == "text-embedding":
+        kwargs["embeds_pooling"] = args.embeds_pooling_type
+        kwargs["embeds_normalize"] = args.embeds_normalize
+        kwargs["embeds_padding_side"] = args.embeds_padding_side
 
     if args.draft_model is not None:
         kwargs["draft_model"] = args.draft_model
