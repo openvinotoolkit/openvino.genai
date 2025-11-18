@@ -172,6 +172,8 @@ jobs:
           cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
                 -DENABLE_PYTHON=OFF \
                 -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+                -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+                -DCMAKE_C_COMPILER_LAUNCHER=sccache \
                 -S ${{ env.SRC_DIR }} \
                 -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
@@ -192,6 +194,8 @@ jobs:
             cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
                   -DENABLE_PYTHON=ON \
                   -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+                  -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+                  -DCMAKE_C_COMPILER_LAUNCHER=sccache \
                   -S ${{ env.SRC_DIR }} \
                   -B ${{ env.BUILD_DIR }}
             echo "Configuring cmake done for python$py_version"
@@ -291,6 +295,7 @@ jobs:
           python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
               --config-settings='override=wheel.build_tag="${{ github.run_number }}"' \
               --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
+              --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache" \
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
         working-directory: ${{ env.OV_INSTALL_DIR }}
@@ -306,6 +311,7 @@ jobs:
             python_exec_path=$(python$py_version -c "import sys; print(sys.executable)")
             $python_exec_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
                 --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
+                --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache" \
                 ${{ needs.openvino_download.outputs.ov_wheel_source }} \
                 ${{ env.SRC_DIR }}
           done
@@ -427,7 +433,10 @@ jobs:
         if: ${{ 'Release' != matrix.build-type }}
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.OV_INSTALL_DIR }}/samples/cpp/ -B ${{ env.BUILD_DIR }}
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+                -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+                -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+                -S ${{ env.OV_INSTALL_DIR }}/samples/cpp/ -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc)
           cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --component samples_bin --prefix ${{ env.INSTALL_DIR }}
 
@@ -486,6 +495,8 @@ jobs:
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
             -DENABLE_JS=ON -DCPACK_GENERATOR=NPM \
             -DENABLE_PYTHON=OFF -DENABLE_WHEEL=OFF \
             -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }}
@@ -915,6 +926,8 @@ jobs:
                 -DENABLE_XGRAMMAR=OFF \
                 -BUILD_TOKENIZERS=OFF \
                 -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+                -DCMAKE_C_COMPILER_LAUNCHER=sccache \
                 -S ${{ env.SRC_DIR}} \
                 -B ${{ env.BUILD_DIR }}
           cmake --build ${{ env.BUILD_DIR}} --config Release --parallel $(nproc) --target py_openvino_genai --verbose
