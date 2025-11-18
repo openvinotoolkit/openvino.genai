@@ -4,13 +4,11 @@
 
 def create_base_prompt(json_data, key='prompt'):
     prompt_data = {}
-    if key in json_data:
-        if json_data[key] != "":
-            prompt_data[key] = json_data[key]
-        else:
-            raise RuntimeError(f"== {key} should not be empty string ==")
-    else:
+    if key not in json_data:
         raise RuntimeError(f"== key word '{key}' does not exist ==")
+    if json_data[key] == "":
+        raise RuntimeError(f"== {key} should not be empty string ==")
+    prompt_data[key] = json_data[key]
     return prompt_data
 
 
@@ -26,8 +24,6 @@ def parse_vlm_json_data(json_data_list):
     text_param_list = []
     for json_data in json_data_list:
         prompt_data = create_base_prompt(json_data)
-        if ("media" in json_data) and ("video" in json_data):
-            raise ValueError("only one key is available from media & video")
         if "media" in json_data:
             prompt_data["media"] = json_data["media"]
         if "video" in json_data:
