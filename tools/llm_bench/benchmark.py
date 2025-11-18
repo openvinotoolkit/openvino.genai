@@ -78,7 +78,7 @@ def get_argprser():
         'if the value equals 0 (default), execute the warm-up iteration(0th iteration).',
     )
     parser.add_argument('-i', '--images', default=None, help='test images for vision tasks. Can be directory or path to single image')
-    parser.add_argument('-vp', '--videos', default=None, help='test videos for vision tasks. Can be directory or path to single video')
+    parser.add_argument('-v', '--video', default=None, help='test video for vision tasks. Can be directory or path to single video')
     parser.add_argument('-s', '--seed', type=int, default=42, required=False, help='specific random seed to generate fix result. Default 42.')
     parser.add_argument(
         '-lc',
@@ -231,7 +231,7 @@ def get_argprser():
     parser.add_argument("--vocoder_path", type=str, default=None,
                         help="Path to vocoder  for text to speech scenarios")
     parser.add_argument("-vf", "--video_frames", type=int, default=None,
-                        help="controller of video frames to process (required frame number or decymation factor if negative)")
+                        help="controller of video frames to process (required frame number if positive or decimation factor if negative)")
     return parser.parse_args()
 
 
@@ -316,10 +316,6 @@ def main():
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case'].task](
                 model_path, framework, args.device, args.tokens_len, args.streaming, model_args,
                 args.num_iters, memory_data_collector)
-        elif model_args['use_case'].task == "visual_text_gen":
-            iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case'].task](
-                model_path, framework, args.device, model_args, args.num_iters,
-                memory_data_collector, decym_frames=args.video_frames)
         else:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case'].task](
                 model_path, framework, args.device, model_args, args.num_iters, memory_data_collector)

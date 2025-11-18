@@ -27,14 +27,15 @@ FW_UTILS = {
 
 def run_visual_language_generation_optimum(
         inputs, num, model, processor, args, iter_data_list, md5_list, prompt_index,
-        bench_hook, model_precision, proc_id, mem_consumption, decym_frames=None):
+        bench_hook, model_precision, proc_id, mem_consumption):
     from optimum.intel.utils.import_utils import is_transformers_version
     set_seed(args['seed'])
     if args['batch_size'] != 1:
         log.warning("Only batch size 1 available for benchmarking")
         args["batch_size"] = 1
 
-    prompts, images, videos = extract_prompt_issues(inputs, decym_frames, False)
+    decim_frames = args["video_frames"]
+    prompts, images, videos = extract_prompt_issues(inputs, decim_frames, False)
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(prompts):
             llm_bench_utils.output_file.output_input_text(
@@ -180,13 +181,14 @@ def run_visual_language_generation_optimum(
 
 
 def run_visual_language_generation_genai(
-        inputs, num, model, processor, args, iter_data_list, md5_list, prompt_index,
-        streamer, model_precision, proc_id, mem_consumption, decym_frames=None):
+        inputs, num, model, processor, args, iter_data_list, md5_list,
+        prompt_index, streamer, model_precision, proc_id, mem_consumption):
     if args['batch_size'] != 1:
         log.warning("Only batch size 1 available for benchmarking")
         args["batch_size"] = 1
 
-    prompts, images, videos = extract_prompt_issues(inputs, decym_frames, True)
+    decim_frames = args["video_frames"]
+    prompts, images, videos = extract_prompt_issues(inputs, decim_frames, True)
     if args["output_dir"] is not None and num == 0:
         for bs_index, in_text in enumerate(prompts):
             llm_bench_utils.output_file.output_input_text(
@@ -294,9 +296,7 @@ def run_visual_language_generation_genai(
         metrics_print.print_generated(num, warm_up=(num == 0), generated=generated_text[0], prompt_idx=prompt_index)
 
 
-def run_visual_language_generation_benchmark(
-        model_path, framework, device, args, num_iters,
-        mem_consumption, decym_frames=None):
+def run_visual_language_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
     outs = FW_UTILS[framework].create_image_text_gen_model(model_path, device, mem_consumption, **args)
     model, processor, pretrain_time, bench_hook, use_genai = outs
     model_precision = model_utils.get_model_precision(model_path.parts)
@@ -335,7 +335,7 @@ def run_visual_language_generation_benchmark(
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 gen_fn(
                     input_text, num, model, processor, args, iter_data_list, md5_list,
-                    p_idx, bench_hook, model_precision, proc_id, mem_consumption, decym_frames)
+                    p_idx, bench_hook, model_precision, proc_id, mem_consumption)
                 iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
                 prefix = f"[warm-up][P{p_idx}]" if num == 0 else f"[{num}][P{p_idx}]"
                 log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
@@ -348,8 +348,8 @@ def run_visual_language_generation_benchmark(
                     metrics_print.print_unicode(prefix, max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 gen_fn(
-                    input_text, num, model, processor, args, iter_data_list, md5_list, prompt_idx_list[idx],
-                    bench_hook, model_precision, proc_id, mem_consumption, decym_frames)
+                    input_text, num, model, processor, args, iter_data_list, md5_list,
+                    prompt_idx_list[idx], bench_hook, model_precision, proc_id, mem_consumption)
                 iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
                 prefix = f"[warm-up][P{p_idx}]" if num == 0 else f"[{num}][P{p_idx}]"
                 log.info(f"{prefix} start: {iter_timestamp[num][p_idx]['start']}, end: {iter_timestamp[num][p_idx]['end']}")
