@@ -3195,286 +3195,6 @@ function copyFile(srcFile, destFile, force) {
 
 /***/ }),
 
-/***/ 9380:
-/***/ ((module) => {
-
-"use strict";
-
-module.exports = balanced;
-function balanced(a, b, str) {
-  if (a instanceof RegExp) a = maybeMatch(a, str);
-  if (b instanceof RegExp) b = maybeMatch(b, str);
-
-  var r = range(a, b, str);
-
-  return r && {
-    start: r[0],
-    end: r[1],
-    pre: str.slice(0, r[0]),
-    body: str.slice(r[0] + a.length, r[1]),
-    post: str.slice(r[1] + b.length)
-  };
-}
-
-function maybeMatch(reg, str) {
-  var m = str.match(reg);
-  return m ? m[0] : null;
-}
-
-balanced.range = range;
-function range(a, b, str) {
-  var begs, beg, left, right, result;
-  var ai = str.indexOf(a);
-  var bi = str.indexOf(b, ai + 1);
-  var i = ai;
-
-  if (ai >= 0 && bi > 0) {
-    if(a===b) {
-      return [ai, bi];
-    }
-    begs = [];
-    left = str.length;
-
-    while (i >= 0 && !result) {
-      if (i == ai) {
-        begs.push(i);
-        ai = str.indexOf(a, i + 1);
-      } else if (begs.length == 1) {
-        result = [ begs.pop(), bi ];
-      } else {
-        beg = begs.pop();
-        if (beg < left) {
-          left = beg;
-          right = bi;
-        }
-
-        bi = str.indexOf(b, i + 1);
-      }
-
-      i = ai < bi && ai >= 0 ? ai : bi;
-    }
-
-    if (begs.length) {
-      result = [ left, right ];
-    }
-  }
-
-  return result;
-}
-
-
-/***/ }),
-
-/***/ 4691:
-/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
-
-var balanced = __nccwpck_require__(9380);
-
-module.exports = expandTop;
-
-var escSlash = '\0SLASH'+Math.random()+'\0';
-var escOpen = '\0OPEN'+Math.random()+'\0';
-var escClose = '\0CLOSE'+Math.random()+'\0';
-var escComma = '\0COMMA'+Math.random()+'\0';
-var escPeriod = '\0PERIOD'+Math.random()+'\0';
-
-function numeric(str) {
-  return parseInt(str, 10) == str
-    ? parseInt(str, 10)
-    : str.charCodeAt(0);
-}
-
-function escapeBraces(str) {
-  return str.split('\\\\').join(escSlash)
-            .split('\\{').join(escOpen)
-            .split('\\}').join(escClose)
-            .split('\\,').join(escComma)
-            .split('\\.').join(escPeriod);
-}
-
-function unescapeBraces(str) {
-  return str.split(escSlash).join('\\')
-            .split(escOpen).join('{')
-            .split(escClose).join('}')
-            .split(escComma).join(',')
-            .split(escPeriod).join('.');
-}
-
-
-// Basically just str.split(","), but handling cases
-// where we have nested braced sections, which should be
-// treated as individual members, like {a,{b,c},d}
-function parseCommaParts(str) {
-  if (!str)
-    return [''];
-
-  var parts = [];
-  var m = balanced('{', '}', str);
-
-  if (!m)
-    return str.split(',');
-
-  var pre = m.pre;
-  var body = m.body;
-  var post = m.post;
-  var p = pre.split(',');
-
-  p[p.length-1] += '{' + body + '}';
-  var postParts = parseCommaParts(post);
-  if (post.length) {
-    p[p.length-1] += postParts.shift();
-    p.push.apply(p, postParts);
-  }
-
-  parts.push.apply(parts, p);
-
-  return parts;
-}
-
-function expandTop(str) {
-  if (!str)
-    return [];
-
-  // I don't know why Bash 4.3 does this, but it does.
-  // Anything starting with {} will have the first two bytes preserved
-  // but *only* at the top level, so {},a}b will not expand to anything,
-  // but a{},b}c will be expanded to [a}c,abc].
-  // One could argue that this is a bug in Bash, but since the goal of
-  // this module is to match Bash's rules, we escape a leading {}
-  if (str.substr(0, 2) === '{}') {
-    str = '\\{\\}' + str.substr(2);
-  }
-
-  return expand(escapeBraces(str), true).map(unescapeBraces);
-}
-
-function embrace(str) {
-  return '{' + str + '}';
-}
-function isPadded(el) {
-  return /^-?0\d/.test(el);
-}
-
-function lte(i, y) {
-  return i <= y;
-}
-function gte(i, y) {
-  return i >= y;
-}
-
-function expand(str, isTop) {
-  var expansions = [];
-
-  var m = balanced('{', '}', str);
-  if (!m) return [str];
-
-  // no need to expand pre, since it is guaranteed to be free of brace-sets
-  var pre = m.pre;
-  var post = m.post.length
-    ? expand(m.post, false)
-    : [''];
-
-  if (/\$$/.test(m.pre)) {    
-    for (var k = 0; k < post.length; k++) {
-      var expansion = pre+ '{' + m.body + '}' + post[k];
-      expansions.push(expansion);
-    }
-  } else {
-    var isNumericSequence = /^-?\d+\.\.-?\d+(?:\.\.-?\d+)?$/.test(m.body);
-    var isAlphaSequence = /^[a-zA-Z]\.\.[a-zA-Z](?:\.\.-?\d+)?$/.test(m.body);
-    var isSequence = isNumericSequence || isAlphaSequence;
-    var isOptions = m.body.indexOf(',') >= 0;
-    if (!isSequence && !isOptions) {
-      // {a},b}
-      if (m.post.match(/,(?!,).*\}/)) {
-        str = m.pre + '{' + m.body + escClose + m.post;
-        return expand(str);
-      }
-      return [str];
-    }
-
-    var n;
-    if (isSequence) {
-      n = m.body.split(/\.\./);
-    } else {
-      n = parseCommaParts(m.body);
-      if (n.length === 1) {
-        // x{{a,b}}y ==> x{a}y x{b}y
-        n = expand(n[0], false).map(embrace);
-        if (n.length === 1) {
-          return post.map(function(p) {
-            return m.pre + n[0] + p;
-          });
-        }
-      }
-    }
-
-    // at this point, n is the parts, and we know it's not a comma set
-    // with a single entry.
-    var N;
-
-    if (isSequence) {
-      var x = numeric(n[0]);
-      var y = numeric(n[1]);
-      var width = Math.max(n[0].length, n[1].length)
-      var incr = n.length == 3
-        ? Math.abs(numeric(n[2]))
-        : 1;
-      var test = lte;
-      var reverse = y < x;
-      if (reverse) {
-        incr *= -1;
-        test = gte;
-      }
-      var pad = n.some(isPadded);
-
-      N = [];
-
-      for (var i = x; test(i, y); i += incr) {
-        var c;
-        if (isAlphaSequence) {
-          c = String.fromCharCode(i);
-          if (c === '\\')
-            c = '';
-        } else {
-          c = String(i);
-          if (pad) {
-            var need = width - c.length;
-            if (need > 0) {
-              var z = new Array(need + 1).join('0');
-              if (i < 0)
-                c = '-' + z + c.slice(1);
-              else
-                c = z + c;
-            }
-          }
-        }
-        N.push(c);
-      }
-    } else {
-      N = [];
-
-      for (var j = 0; j < n.length; j++) {
-        N.push.apply(N, expand(n[j], false));
-      }
-    }
-
-    for (var j = 0; j < N.length; j++) {
-      for (var k = 0; k < post.length; k++) {
-        var expansion = pre + N[j] + post[k];
-        if (!isTop || isSequence || expansion)
-          expansions.push(expansion);
-      }
-    }
-  }
-
-  return expansions;
-}
-
-
-
-/***/ }),
-
 /***/ 770:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
@@ -27836,6 +27556,275 @@ module.exports = parseParams
 
 /***/ }),
 
+/***/ 516:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.range = exports.balanced = void 0;
+const balanced = (a, b, str) => {
+    const ma = a instanceof RegExp ? maybeMatch(a, str) : a;
+    const mb = b instanceof RegExp ? maybeMatch(b, str) : b;
+    const r = ma !== null && mb != null && (0, exports.range)(ma, mb, str);
+    return (r && {
+        start: r[0],
+        end: r[1],
+        pre: str.slice(0, r[0]),
+        body: str.slice(r[0] + ma.length, r[1]),
+        post: str.slice(r[1] + mb.length),
+    });
+};
+exports.balanced = balanced;
+const maybeMatch = (reg, str) => {
+    const m = str.match(reg);
+    return m ? m[0] : null;
+};
+const range = (a, b, str) => {
+    let begs, beg, left, right = undefined, result;
+    let ai = str.indexOf(a);
+    let bi = str.indexOf(b, ai + 1);
+    let i = ai;
+    if (ai >= 0 && bi > 0) {
+        if (a === b) {
+            return [ai, bi];
+        }
+        begs = [];
+        left = str.length;
+        while (i >= 0 && !result) {
+            if (i === ai) {
+                begs.push(i);
+                ai = str.indexOf(a, i + 1);
+            }
+            else if (begs.length === 1) {
+                const r = begs.pop();
+                if (r !== undefined)
+                    result = [r, bi];
+            }
+            else {
+                beg = begs.pop();
+                if (beg !== undefined && beg < left) {
+                    left = beg;
+                    right = bi;
+                }
+                bi = str.indexOf(b, i + 1);
+            }
+            i = ai < bi && ai >= 0 ? ai : bi;
+        }
+        if (begs.length && right !== undefined) {
+            result = [left, right];
+        }
+    }
+    return result;
+};
+exports.range = range;
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ 1215:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.expand = expand;
+const balanced_match_1 = __nccwpck_require__(516);
+const escSlash = '\0SLASH' + Math.random() + '\0';
+const escOpen = '\0OPEN' + Math.random() + '\0';
+const escClose = '\0CLOSE' + Math.random() + '\0';
+const escComma = '\0COMMA' + Math.random() + '\0';
+const escPeriod = '\0PERIOD' + Math.random() + '\0';
+const escSlashPattern = new RegExp(escSlash, 'g');
+const escOpenPattern = new RegExp(escOpen, 'g');
+const escClosePattern = new RegExp(escClose, 'g');
+const escCommaPattern = new RegExp(escComma, 'g');
+const escPeriodPattern = new RegExp(escPeriod, 'g');
+const slashPattern = /\\\\/g;
+const openPattern = /\\{/g;
+const closePattern = /\\}/g;
+const commaPattern = /\\,/g;
+const periodPattern = /\\./g;
+function numeric(str) {
+    return !isNaN(str) ? parseInt(str, 10) : str.charCodeAt(0);
+}
+function escapeBraces(str) {
+    return str
+        .replace(slashPattern, escSlash)
+        .replace(openPattern, escOpen)
+        .replace(closePattern, escClose)
+        .replace(commaPattern, escComma)
+        .replace(periodPattern, escPeriod);
+}
+function unescapeBraces(str) {
+    return str
+        .replace(escSlashPattern, '\\')
+        .replace(escOpenPattern, '{')
+        .replace(escClosePattern, '}')
+        .replace(escCommaPattern, ',')
+        .replace(escPeriodPattern, '.');
+}
+/**
+ * Basically just str.split(","), but handling cases
+ * where we have nested braced sections, which should be
+ * treated as individual members, like {a,{b,c},d}
+ */
+function parseCommaParts(str) {
+    if (!str) {
+        return [''];
+    }
+    const parts = [];
+    const m = (0, balanced_match_1.balanced)('{', '}', str);
+    if (!m) {
+        return str.split(',');
+    }
+    const { pre, body, post } = m;
+    const p = pre.split(',');
+    p[p.length - 1] += '{' + body + '}';
+    const postParts = parseCommaParts(post);
+    if (post.length) {
+        ;
+        p[p.length - 1] += postParts.shift();
+        p.push.apply(p, postParts);
+    }
+    parts.push.apply(parts, p);
+    return parts;
+}
+function expand(str) {
+    if (!str) {
+        return [];
+    }
+    // I don't know why Bash 4.3 does this, but it does.
+    // Anything starting with {} will have the first two bytes preserved
+    // but *only* at the top level, so {},a}b will not expand to anything,
+    // but a{},b}c will be expanded to [a}c,abc].
+    // One could argue that this is a bug in Bash, but since the goal of
+    // this module is to match Bash's rules, we escape a leading {}
+    if (str.slice(0, 2) === '{}') {
+        str = '\\{\\}' + str.slice(2);
+    }
+    return expand_(escapeBraces(str), true).map(unescapeBraces);
+}
+function embrace(str) {
+    return '{' + str + '}';
+}
+function isPadded(el) {
+    return /^-?0\d/.test(el);
+}
+function lte(i, y) {
+    return i <= y;
+}
+function gte(i, y) {
+    return i >= y;
+}
+function expand_(str, isTop) {
+    /** @type {string[]} */
+    const expansions = [];
+    const m = (0, balanced_match_1.balanced)('{', '}', str);
+    if (!m)
+        return [str];
+    // no need to expand pre, since it is guaranteed to be free of brace-sets
+    const pre = m.pre;
+    const post = m.post.length ? expand_(m.post, false) : [''];
+    if (/\$$/.test(m.pre)) {
+        for (let k = 0; k < post.length; k++) {
+            const expansion = pre + '{' + m.body + '}' + post[k];
+            expansions.push(expansion);
+        }
+    }
+    else {
+        const isNumericSequence = /^-?\d+\.\.-?\d+(?:\.\.-?\d+)?$/.test(m.body);
+        const isAlphaSequence = /^[a-zA-Z]\.\.[a-zA-Z](?:\.\.-?\d+)?$/.test(m.body);
+        const isSequence = isNumericSequence || isAlphaSequence;
+        const isOptions = m.body.indexOf(',') >= 0;
+        if (!isSequence && !isOptions) {
+            // {a},b}
+            if (m.post.match(/,(?!,).*\}/)) {
+                str = m.pre + '{' + m.body + escClose + m.post;
+                return expand_(str);
+            }
+            return [str];
+        }
+        let n;
+        if (isSequence) {
+            n = m.body.split(/\.\./);
+        }
+        else {
+            n = parseCommaParts(m.body);
+            if (n.length === 1 && n[0] !== undefined) {
+                // x{{a,b}}y ==> x{a}y x{b}y
+                n = expand_(n[0], false).map(embrace);
+                //XXX is this necessary? Can't seem to hit it in tests.
+                /* c8 ignore start */
+                if (n.length === 1) {
+                    return post.map(p => m.pre + n[0] + p);
+                }
+                /* c8 ignore stop */
+            }
+        }
+        // at this point, n is the parts, and we know it's not a comma set
+        // with a single entry.
+        let N;
+        if (isSequence && n[0] !== undefined && n[1] !== undefined) {
+            const x = numeric(n[0]);
+            const y = numeric(n[1]);
+            const width = Math.max(n[0].length, n[1].length);
+            let incr = n.length === 3 && n[2] !== undefined ? Math.abs(numeric(n[2])) : 1;
+            let test = lte;
+            const reverse = y < x;
+            if (reverse) {
+                incr *= -1;
+                test = gte;
+            }
+            const pad = n.some(isPadded);
+            N = [];
+            for (let i = x; test(i, y); i += incr) {
+                let c;
+                if (isAlphaSequence) {
+                    c = String.fromCharCode(i);
+                    if (c === '\\') {
+                        c = '';
+                    }
+                }
+                else {
+                    c = String(i);
+                    if (pad) {
+                        const need = width - c.length;
+                        if (need > 0) {
+                            const z = new Array(need + 1).join('0');
+                            if (i < 0) {
+                                c = '-' + z + c.slice(1);
+                            }
+                            else {
+                                c = z + c;
+                            }
+                        }
+                    }
+                }
+                N.push(c);
+            }
+        }
+        else {
+            N = [];
+            for (let j = 0; j < n.length; j++) {
+                N.push.apply(N, expand_(n[j], false));
+            }
+        }
+        for (let j = 0; j < N.length; j++) {
+            for (let k = 0; k < post.length; k++) {
+                const expansion = pre + N[j] + post[k];
+                if (!isTop || isSequence || expansion) {
+                    expansions.push(expansion);
+                }
+            }
+        }
+    }
+    return expansions;
+}
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
 /***/ 2981:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
@@ -29263,18 +29252,20 @@ exports.GlobStream = GlobStream;
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.LRUCache = void 0;
-const perf = typeof performance === 'object' &&
+const defaultPerf = (typeof performance === 'object' &&
     performance &&
-    typeof performance.now === 'function'
-    ? performance
+    typeof performance.now === 'function') ?
+    performance
     : Date;
 const warned = new Set();
 /* c8 ignore start */
-const PROCESS = (typeof process === 'object' && !!process ? process : {});
+const PROCESS = (typeof process === 'object' && !!process ?
+    process
+    : {});
 /* c8 ignore start */
 const emitWarning = (msg, type, code, fn) => {
-    typeof PROCESS.emitWarning === 'function'
-        ? PROCESS.emitWarning(msg, type, code, fn)
+    typeof PROCESS.emitWarning === 'function' ?
+        PROCESS.emitWarning(msg, type, code, fn)
         : console.error(`[${code}] ${type}: ${msg}`);
 };
 let AC = globalThis.AbortController;
@@ -29338,16 +29329,11 @@ const isPosInt = (n) => n && n === Math.floor(n) && n > 0 && isFinite(n);
 // zeroes at init time is brutal when you get that big.
 // But why not be complete?
 // Maybe in the future, these limits will have expanded.
-const getUintArray = (max) => !isPosInt(max)
-    ? null
-    : max <= Math.pow(2, 8)
-        ? Uint8Array
-        : max <= Math.pow(2, 16)
-            ? Uint16Array
-            : max <= Math.pow(2, 32)
-                ? Uint32Array
-                : max <= Number.MAX_SAFE_INTEGER
-                    ? ZeroArray
+const getUintArray = (max) => !isPosInt(max) ? null
+    : max <= Math.pow(2, 8) ? Uint8Array
+        : max <= Math.pow(2, 16) ? Uint16Array
+            : max <= Math.pow(2, 32) ? Uint32Array
+                : max <= Number.MAX_SAFE_INTEGER ? ZeroArray
                     : null;
 /* c8 ignore stop */
 class ZeroArray extends Array {
@@ -29406,9 +29392,17 @@ class LRUCache {
     #max;
     #maxSize;
     #dispose;
+    #onInsert;
     #disposeAfter;
     #fetchMethod;
     #memoMethod;
+    #perf;
+    /**
+     * {@link LRUCache.OptionsBase.perf}
+     */
+    get perf() {
+        return this.#perf;
+    }
     /**
      * {@link LRUCache.OptionsBase.ttl}
      */
@@ -29487,6 +29481,7 @@ class LRUCache {
     #hasDispose;
     #hasFetchMethod;
     #hasDisposeAfter;
+    #hasOnInsert;
     /**
      * Do not call this method unless you need to inspect the
      * inner workings of the cache.  If anything returned by this
@@ -29564,13 +29559,25 @@ class LRUCache {
         return this.#dispose;
     }
     /**
+     * {@link LRUCache.OptionsBase.onInsert} (read-only)
+     */
+    get onInsert() {
+        return this.#onInsert;
+    }
+    /**
      * {@link LRUCache.OptionsBase.disposeAfter} (read-only)
      */
     get disposeAfter() {
         return this.#disposeAfter;
     }
     constructor(options) {
-        const { max = 0, ttl, ttlResolution = 1, ttlAutopurge, updateAgeOnGet, updateAgeOnHas, allowStale, dispose, disposeAfter, noDisposeOnSet, noUpdateTTL, maxSize = 0, maxEntrySize = 0, sizeCalculation, fetchMethod, memoMethod, noDeleteOnFetchRejection, noDeleteOnStaleGet, allowStaleOnFetchRejection, allowStaleOnFetchAbort, ignoreFetchAbort, } = options;
+        const { max = 0, ttl, ttlResolution = 1, ttlAutopurge, updateAgeOnGet, updateAgeOnHas, allowStale, dispose, onInsert, disposeAfter, noDisposeOnSet, noUpdateTTL, maxSize = 0, maxEntrySize = 0, sizeCalculation, fetchMethod, memoMethod, noDeleteOnFetchRejection, noDeleteOnStaleGet, allowStaleOnFetchRejection, allowStaleOnFetchAbort, ignoreFetchAbort, perf, } = options;
+        if (perf !== undefined) {
+            if (typeof perf?.now !== 'function') {
+                throw new TypeError('perf option must have a now() method if specified');
+            }
+        }
+        this.#perf = perf ?? defaultPerf;
         if (max !== 0 && !isPosInt(max)) {
             throw new TypeError('max option must be a nonnegative integer');
         }
@@ -29614,6 +29621,9 @@ class LRUCache {
         if (typeof dispose === 'function') {
             this.#dispose = dispose;
         }
+        if (typeof onInsert === 'function') {
+            this.#onInsert = onInsert;
+        }
         if (typeof disposeAfter === 'function') {
             this.#disposeAfter = disposeAfter;
             this.#disposed = [];
@@ -29623,6 +29633,7 @@ class LRUCache {
             this.#disposed = undefined;
         }
         this.#hasDispose = !!this.#dispose;
+        this.#hasOnInsert = !!this.#onInsert;
         this.#hasDisposeAfter = !!this.#disposeAfter;
         this.noDisposeOnSet = !!noDisposeOnSet;
         this.noUpdateTTL = !!noUpdateTTL;
@@ -29647,8 +29658,8 @@ class LRUCache {
         this.updateAgeOnGet = !!updateAgeOnGet;
         this.updateAgeOnHas = !!updateAgeOnHas;
         this.ttlResolution =
-            isPosInt(ttlResolution) || ttlResolution === 0
-                ? ttlResolution
+            isPosInt(ttlResolution) || ttlResolution === 0 ?
+                ttlResolution
                 : 1;
         this.ttlAutopurge = !!ttlAutopurge;
         this.ttl = ttl || 0;
@@ -29684,7 +29695,7 @@ class LRUCache {
         const starts = new ZeroArray(this.#max);
         this.#ttls = ttls;
         this.#starts = starts;
-        this.#setItemTTL = (index, ttl, start = perf.now()) => {
+        this.#setItemTTL = (index, ttl, start = this.#perf.now()) => {
             starts[index] = ttl !== 0 ? start : 0;
             ttls[index] = ttl;
             if (ttl !== 0 && this.ttlAutopurge) {
@@ -29702,7 +29713,7 @@ class LRUCache {
             }
         };
         this.#updateItemAge = index => {
-            starts[index] = ttls[index] !== 0 ? perf.now() : 0;
+            starts[index] = ttls[index] !== 0 ? this.#perf.now() : 0;
         };
         this.#statusTTL = (status, index) => {
             if (ttls[index]) {
@@ -29722,7 +29733,7 @@ class LRUCache {
         // that costly call repeatedly.
         let cachedNow = 0;
         const getNow = () => {
-            const n = perf.now();
+            const n = this.#perf.now();
             if (this.ttlResolution > 0) {
                 cachedNow = n;
                 const t = setTimeout(() => (cachedNow = 0), this.ttlResolution);
@@ -29959,9 +29970,7 @@ class LRUCache {
     find(fn, getOptions = {}) {
         for (const i of this.#indexes()) {
             const v = this.#valList[i];
-            const value = this.#isBackgroundFetch(v)
-                ? v.__staleWhileFetching
-                : v;
+            const value = this.#isBackgroundFetch(v) ? v.__staleWhileFetching : v;
             if (value === undefined)
                 continue;
             if (fn(value, this.#keyList[i], this)) {
@@ -29983,9 +29992,7 @@ class LRUCache {
     forEach(fn, thisp = this) {
         for (const i of this.#indexes()) {
             const v = this.#valList[i];
-            const value = this.#isBackgroundFetch(v)
-                ? v.__staleWhileFetching
-                : v;
+            const value = this.#isBackgroundFetch(v) ? v.__staleWhileFetching : v;
             if (value === undefined)
                 continue;
             fn.call(thisp, value, this.#keyList[i], this);
@@ -29998,9 +30005,7 @@ class LRUCache {
     rforEach(fn, thisp = this) {
         for (const i of this.#rindexes()) {
             const v = this.#valList[i];
-            const value = this.#isBackgroundFetch(v)
-                ? v.__staleWhileFetching
-                : v;
+            const value = this.#isBackgroundFetch(v) ? v.__staleWhileFetching : v;
             if (value === undefined)
                 continue;
             fn.call(thisp, value, this.#keyList[i], this);
@@ -30037,17 +30042,18 @@ class LRUCache {
         if (i === undefined)
             return undefined;
         const v = this.#valList[i];
-        const value = this.#isBackgroundFetch(v)
-            ? v.__staleWhileFetching
-            : v;
+        /* c8 ignore start - this isn't tested for the info function,
+         * but it's the same logic as found in other places. */
+        const value = this.#isBackgroundFetch(v) ? v.__staleWhileFetching : v;
         if (value === undefined)
             return undefined;
+        /* c8 ignore end */
         const entry = { value };
         if (this.#ttls && this.#starts) {
             const ttl = this.#ttls[i];
             const start = this.#starts[i];
             if (ttl && start) {
-                const remain = ttl - (perf.now() - start);
+                const remain = ttl - (this.#perf.now() - start);
                 entry.ttl = remain;
                 entry.start = Date.now();
             }
@@ -30075,9 +30081,7 @@ class LRUCache {
         for (const i of this.#indexes({ allowStale: true })) {
             const key = this.#keyList[i];
             const v = this.#valList[i];
-            const value = this.#isBackgroundFetch(v)
-                ? v.__staleWhileFetching
-                : v;
+            const value = this.#isBackgroundFetch(v) ? v.__staleWhileFetching : v;
             if (value === undefined || key === undefined)
                 continue;
             const entry = { value };
@@ -30085,7 +30089,7 @@ class LRUCache {
                 entry.ttl = this.#ttls[i];
                 // always dump the start relative to a portable timestamp
                 // it's ok for this to be a bit slow, it's a rare operation.
-                const age = perf.now() - this.#starts[i];
+                const age = this.#perf.now() - this.#starts[i];
                 entry.start = Math.floor(Date.now() - age);
             }
             if (this.#sizes) {
@@ -30115,7 +30119,7 @@ class LRUCache {
                 //
                 // it's ok for this to be a bit slow, it's a rare operation.
                 const age = Date.now() - entry.start;
-                entry.start = perf.now() - age;
+                entry.start = this.#perf.now() - age;
             }
             this.set(key, entry.value, entry);
         }
@@ -30172,12 +30176,9 @@ class LRUCache {
         let index = this.#size === 0 ? undefined : this.#keyMap.get(k);
         if (index === undefined) {
             // addition
-            index = (this.#size === 0
-                ? this.#tail
-                : this.#free.length !== 0
-                    ? this.#free.pop()
-                    : this.#size === this.#max
-                        ? this.#evict(false)
+            index = (this.#size === 0 ? this.#tail
+                : this.#free.length !== 0 ? this.#free.pop()
+                    : this.#size === this.#max ? this.#evict(false)
                         : this.#size);
             this.#keyList[index] = k;
             this.#valList[index] = v;
@@ -30190,6 +30191,9 @@ class LRUCache {
             if (status)
                 status.set = 'add';
             noUpdateTTL = false;
+            if (this.#hasOnInsert) {
+                this.#onInsert?.(v, k, 'add');
+            }
         }
         else {
             // update
@@ -30221,8 +30225,8 @@ class LRUCache {
                 this.#valList[index] = v;
                 if (status) {
                     status.set = 'replace';
-                    const oldValue = oldVal && this.#isBackgroundFetch(oldVal)
-                        ? oldVal.__staleWhileFetching
+                    const oldValue = oldVal && this.#isBackgroundFetch(oldVal) ?
+                        oldVal.__staleWhileFetching
                         : oldVal;
                     if (oldValue !== undefined)
                         status.oldValue = oldValue;
@@ -30230,6 +30234,9 @@ class LRUCache {
             }
             else if (status) {
                 status.set = 'update';
+            }
+            if (this.#hasOnInsert) {
+                this.onInsert?.(v, k, v === oldVal ? 'update' : 'replace');
             }
         }
         if (ttl !== 0 && !this.#ttls) {
@@ -30413,7 +30420,7 @@ class LRUCache {
             const bf = p;
             if (this.#valList[index] === p) {
                 if (v === undefined) {
-                    if (bf.__staleWhileFetching) {
+                    if (bf.__staleWhileFetching !== undefined) {
                         this.#valList[index] = bf.__staleWhileFetching;
                     }
                     else {
@@ -31615,16 +31622,13 @@ exports.escape = escape;
 /***/ }),
 
 /***/ 6507:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
 
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.unescape = exports.escape = exports.AST = exports.Minimatch = exports.match = exports.makeRe = exports.braceExpand = exports.defaults = exports.filter = exports.GLOBSTAR = exports.sep = exports.minimatch = void 0;
-const brace_expansion_1 = __importDefault(__nccwpck_require__(4691));
+const brace_expansion_1 = __nccwpck_require__(1215);
 const assert_valid_pattern_js_1 = __nccwpck_require__(7305);
 const ast_js_1 = __nccwpck_require__(1803);
 const escape_js_1 = __nccwpck_require__(800);
@@ -31777,7 +31781,7 @@ const braceExpand = (pattern, options = {}) => {
         // shortcut. no need to expand.
         return [pattern];
     }
-    return (0, brace_expansion_1.default)(pattern);
+    return (0, brace_expansion_1.expand)(pattern);
 };
 exports.braceExpand = braceExpand;
 exports.minimatch.braceExpand = exports.braceExpand;
@@ -35839,18 +35843,22 @@ async function installPackages(packages, localWheelDir, requirementsFiles) {
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         core.debug(`Attempt ${attempt} of 3`);
-        const { stdout, stderr } = await execAsync(
-          `python -m pip install ${installArgs.join(' ')}`,
-          {
-            stdio: 'inherit'
-          }
-        );
-        if (stdout) {
-          core.debug('stdout:', stdout);
-        }
-        if (stderr) {
-          core.error('stderr:', stderr);
-        }
+
+        await new Promise((resolve, reject) => {
+          const child = exec(
+            'python',
+            ['-m', 'pip', 'install', ...installArgs],
+            {
+              stdio: 'inherit'
+            }
+          );
+          child.on('close', code => {
+            if (code === 0) resolve();
+            else reject(new Error(`pip exited with code ${code}`));
+          });
+          child.on('error', reject);
+        });
+
         break;
       } catch (error) {
         core.error(`Attempt ${attempt + 1} failed:`, error.message);
