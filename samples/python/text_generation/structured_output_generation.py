@@ -78,9 +78,10 @@ def main():
             json_schema=json.dumps(ItemQuantities.model_json_schema())
         )
         config.do_sample = False
-        res = json.loads(pipe.generate(prompt, config))
+        json_response = pipe.generate(prompt, config)
+        res = json.loads(json_response)
         pipe.finish_chat()
-        print(f"Generated JSON with item quantities: {res}")
+        print(f"Generated JSON with item quantities: {json_response}")
 
         config.do_sample = True
         config.temperature = 0.8
@@ -94,7 +95,8 @@ def main():
             for _ in range(quantity):
                 generate_has_run = True
                 json_strs = pipe.generate(prompt, config)
-                print(json.loads(json_strs))
+                json.loads(json_strs)
+                print(json_strs)
         pipe.finish_chat()
         if not generate_has_run:
             print("No items generated. Please try again with a different request.")

@@ -1,3 +1,4 @@
+from pathlib import Path
 import logging
 import json
 import torch
@@ -98,6 +99,17 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
         for adapter, alpha in zip(kwargs['adapters'], kwargs['alphas']):
             ov_adapter = openvino_genai.Adapter(adapter)
             adapter_config.add(ov_adapter, alpha)
+
+    draft_model_path = kwargs.get("draft_model", '')
+    if draft_model_path:
+        if not Path(draft_model_path).exists():
+            raise RuntimeError(f"Error: Draft model path does not exist: {draft_model_path}")
+        draft_device = kwargs.get("draft_device", None) or device
+        draft_model_load_kwargs = (
+            {"scheduler_config": get_scheduler_config_genai(kwargs["draft_cb_config"])}
+            if kwargs["draft_cb_config"] is not None else {}
+        )
+        ov_config["draft_model"] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
 
     is_continuous_batching = kwargs.get("cb_config", None) is not None
 
@@ -210,6 +222,7 @@ def load_text_model(
                     use_cache=True,
                     device=device,
                     ov_config=ov_config,
+                    **kwargs
                 )
             except Exception:
                 config = AutoConfig.from_pretrained(model_id)
@@ -219,6 +232,7 @@ def load_text_model(
                     use_cache=True,
                     device=device,
                     ov_config=ov_config,
+                    **kwargs
                 )
 
     return model
@@ -270,18 +284,18 @@ def load_text2image_model(
         if 'adapters' in kwargs and kwargs['adapters'] is not None:
             raise ValueError("Adapters are not supported for OVPipelineForText2Image.")
 
+        model_kwargs = {"ov_config": ov_config, "safety_checker": None}
+        if kwargs.get('from_onnx'):
+            model_kwargs['from_onnx'] = kwargs['from_onnx']
         try:
-            model = TEXT2IMAGEPipeline.from_pretrained(
-                model_id, device=device, ov_config=ov_config, safety_checker=None,
-            )
+            model = TEXT2IMAGEPipeline.from_pretrained(model_id, device=device, **model_kwargs)
         except ValueError:
             model = TEXT2IMAGEPipeline.from_pretrained(
                 model_id,
                 trust_remote_code=True,
                 use_cache=True,
                 device=device,
-                ov_config=ov_config,
-                safety_checker=None,
+                **model_kwargs
             )
 
     return model
@@ -410,7 +424,7 @@ def load_image2image_genai_pipeline(model_dir, device="CPU", ov_config=None):
 
 
 def load_imagetext2image_model(
-    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
+    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs
 ):
     if use_hf:
         from diffusers import AutoPipelineForImage2Image
@@ -424,18 +438,18 @@ def load_imagetext2image_model(
     else:
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVPipelineForImage2Image
+        model_kwargs = {"ov_config": ov_config, "safety_checker": None}
+        if kwargs.get('from_onnx'):
+            model_kwargs['from_onnx'] = kwargs['from_onnx']
         try:
-            model = OVPipelineForImage2Image.from_pretrained(
-                model_id, device=device, ov_config=ov_config, safety_checker=None,
-            )
+            model = OVPipelineForImage2Image.from_pretrained(model_id, device=device, **model_kwargs)
         except ValueError:
             model = OVPipelineForImage2Image.from_pretrained(
                 model_id,
                 trust_remote_code=True,
                 use_cache=True,
                 device=device,
-                ov_config=ov_config,
-                safety_checker=None,
+                **model_kwargs
             )
     return model
 
@@ -455,7 +469,7 @@ def load_inpainting_genai_pipeline(model_dir, device="CPU", ov_config=None):
 
 
 def load_inpainting_model(
-    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
+    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs
 ):
     if use_hf:
         from diffusers import AutoPipelineForInpainting
@@ -469,10 +483,11 @@ def load_inpainting_model(
     else:
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVPipelineForInpainting
+        model_kwargs = {"ov_config": ov_config, "safety_checker": None}
+        if kwargs.get('from_onnx'):
+            model_kwargs['from_onnx'] = kwargs['from_onnx']
         try:
-            model = OVPipelineForInpainting.from_pretrained(
-                model_id, device=device, ov_config=ov_config, safety_checker=None,
-            )
+            model = OVPipelineForInpainting.from_pretrained(model_id, device=device, **model_kwargs)
         except ValueError as e:
             logger.error("Failed to load inpaiting pipeline. Details:\n", e)
             model = OVPipelineForInpainting.from_pretrained(
@@ -480,8 +495,7 @@ def load_inpainting_model(
                 trust_remote_code=True,
                 use_cache=True,
                 device=device,
-                ov_config=ov_config,
-                safety_checker=None,
+                **model_kwargs
             )
     return model
 
@@ -530,8 +544,7 @@ def load_embedding_model(model_id, device="CPU", ov_config=None, use_hf=False, u
             model = OVModelForFeatureExtraction.from_pretrained(
                 model_id, device=device, ov_config=ov_config, safety_checker=None,
             )
-        except ValueError as e:
-            logger.error("Failed to load embedding pipeline. Details:\n", e)
+        except ValueError:
             model = OVModelForFeatureExtraction.from_pretrained(
                 model_id,
                 trust_remote_code=True,
@@ -596,8 +609,7 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
             model = model_cls.from_pretrained(
                 model_id, device=device, ov_config=ov_config, safety_checker=None,
             )
-        except ValueError as e:
-            logger.error("Failed to load reranking pipeline, an attempt will be made again with updated parameters. Details:\n", e)
+        except ValueError:
             model = model_cls.from_pretrained(
                 model_id,
                 trust_remote_code=True,
@@ -631,9 +643,9 @@ def load_model(
     elif model_type == "visual-text":
         return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     elif model_type == "image-to-image":
-        return load_imagetext2image_model(model_id, device, ov_options, use_hf, use_genai)
+        return load_imagetext2image_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     elif model_type == "image-inpainting":
-        return load_inpainting_model(model_id, device, ov_options, use_hf, use_genai)
+        return load_inpainting_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     elif model_type == "text-embedding":
         return load_embedding_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     elif model_type == "text-reranking":

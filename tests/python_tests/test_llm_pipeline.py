@@ -40,7 +40,6 @@ test_cases = [
 @pytest.mark.parametrize("generation_config_dict,prompt", test_cases)
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.parametrize("pipeline_type", get_main_pipeline_types())
-@pytest.mark.precommit
 def test_string_inputs(model_id, generation_config_dict, prompt, pipeline_type):
     generate_and_compare(model=model_id, prompts=[prompt], generation_config=generation_config_dict, pipeline_type=pipeline_type)
 
@@ -52,7 +51,6 @@ input_tensors_list = [
 ]
 @pytest.mark.parametrize("inputs", input_tensors_list)
 @pytest.mark.parametrize("model_id", get_models_list())
-@pytest.mark.precommit
 def test_encoded_inputs(model_id, inputs):
     opt_model, hf_tokenizer, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
@@ -92,12 +90,10 @@ batched_prompts = [
 @pytest.mark.parametrize("prompts", batched_prompts)
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.parametrize("pipeline_type", get_main_pipeline_types())
-@pytest.mark.precommit
 def test_batch_string_inputs(model_id, generation_config_dict, prompts, pipeline_type):
     generate_and_compare(model=model_id, prompts=prompts, generation_config=generation_config_dict, pipeline_type=pipeline_type)
 
 
-@pytest.mark.precommit
 def test_batch_size_switch():
     model_id = 'katuni4ka/tiny-random-phi3'
     _, _, models_path = download_and_convert_model(model_id)
@@ -108,7 +104,6 @@ def test_batch_size_switch():
     ov_pipe.generate(["a"], max_new_tokens=2)
 
 
-@pytest.mark.precommit
 def test_empty_encoded_inputs_throw():
     model_id = 'katuni4ka/tiny-random-phi3'
     _, _, models_path = download_and_convert_model(model_id)
@@ -118,7 +113,6 @@ def test_empty_encoded_inputs_throw():
         ov_pipe.generate(ov.Tensor(np.array([[]], dtype=np.int64)), max_new_tokens=2)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_chat_models_list())
 def test_different_input_types_works_same_and_change_nothing(model_id):
     opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id)
@@ -164,7 +158,6 @@ questions = [
     GenerationChatInputsType.STRING,
     GenerationChatInputsType.ENCODED_INPUTS,
     GenerationChatInputsType.CHAT_HISTORY])
-@pytest.mark.precommit
 def test_chat_scenario(model_id, inputs, input_type):
     chat_history_hf = []
     chat_history_ov = ov_genai.ChatHistory() if input_type == GenerationChatInputsType.CHAT_HISTORY else []
@@ -236,7 +229,6 @@ def test_chat_scenario(model_id, inputs, input_type):
         assert_hf_equals_genai(chat_history_hf, chat_history_messages_ov)
 
 
-@pytest.mark.precommit
 def test_chat_scenario_several_chats_in_series():
     opt_model, hf_tokenizer, models_path  = download_and_convert_model(get_chat_models_list()[0])
     ov_pipe = create_ov_pipeline(models_path)
@@ -269,7 +261,6 @@ def test_chat_scenario_several_chats_in_series():
         assert_hf_equals_genai(chat_history_hf, chat_history_ov)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_chat_models_list())
 def test_chat_scenario_several_start(model_id):
     opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id)
@@ -284,7 +275,6 @@ def test_chat_scenario_several_start(model_id):
     ov_pipe.finish_chat()
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_chat_models_list())
 def test_generate_works_same_before_and_after_chat(model_id):
     opt_model, hf_tokenizer, models_path  = download_and_convert_model(model_id)
@@ -319,7 +309,6 @@ def user_defined_status_callback(subword):
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.parametrize("model_id", get_models_list())
-@pytest.mark.precommit
 def test_callback_one_string(callback, model_id):
     _, _, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
@@ -330,7 +319,6 @@ def test_callback_one_string(callback, model_id):
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.parametrize("model_id", get_models_list())
-@pytest.mark.precommit
 def test_callback_batch_throws(callback, model_id):
     _, _, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
@@ -340,7 +328,6 @@ def test_callback_batch_throws(callback, model_id):
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.parametrize("model_id", get_models_list())
-@pytest.mark.precommit
 def test_callback_kwargs_one_string(callback, model_id):
     _, _, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
@@ -349,7 +336,6 @@ def test_callback_kwargs_one_string(callback, model_id):
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.parametrize("model_id", get_models_list())
-@pytest.mark.precommit
 def test_callback_decoding_metallama(model_id, callback):
     # On metallama this prompt generates output which can shorten after adding new tokens.
     # Test that streamer correctly handles such cases.
@@ -363,7 +349,6 @@ def test_callback_decoding_metallama(model_id, callback):
 
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.parametrize("model_id", get_models_list())
-@pytest.mark.precommit
 def test_callback_kwargs_batch_throws(callback, model_id):
     _, _, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
@@ -371,7 +356,6 @@ def test_callback_kwargs_batch_throws(callback, model_id):
         ov_pipe.generate(['1', '2'], max_new_tokens=10, streamer=callback)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_callback_terminate_by_bool(model_id):
     _, _, models_path = download_and_convert_model(model_id)
@@ -395,7 +379,6 @@ def test_callback_terminate_by_bool(model_id):
     assert len(ov_output.tokens[0]) < max_new_tokens
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_callback_terminate_by_status(model_id):
     _, _, models_path = download_and_convert_model(model_id)
@@ -420,7 +403,6 @@ def test_callback_terminate_by_status(model_id):
 
 
 @pytest.mark.parametrize("model_id", get_chat_models_list())
-@pytest.mark.precommit
 def test_chat_scenario_callback_cancel(model_id):
     callback_questions = [
         '1+1=',
@@ -517,7 +499,6 @@ class PrinterStatus(ov_genai.StreamerBase):
 
 @pytest.mark.parametrize("streamer_base", [PrinterNone, PrinterBool, PrinterStatus])
 @pytest.mark.parametrize("model_id", get_models_list())
-@pytest.mark.precommit
 def test_streamer_one_string(streamer_base, model_id):
     _, _, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
@@ -527,7 +508,6 @@ def test_streamer_one_string(streamer_base, model_id):
     ov_pipe.generate('table is made of', generation_config, printer)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_streamer_batch_throws(model_id):
     _, _, models_path = download_and_convert_model(model_id)
@@ -537,7 +517,6 @@ def test_streamer_batch_throws(model_id):
         ov_pipe.generate(['1', '2'], ov_pipe.get_generation_config(), printer)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_streamer_kwargs_one_string(model_id):
     _, _, models_path = download_and_convert_model(model_id)
@@ -546,7 +525,6 @@ def test_streamer_kwargs_one_string(model_id):
     ov_pipe.generate('table is made of', max_new_tokens=10, do_sample=False, streamer=printer)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_streamer_kwargs_batch_throws(model_id):
     _, _, models_path = download_and_convert_model(model_id)
@@ -556,7 +534,6 @@ def test_streamer_kwargs_batch_throws(model_id):
         ov_pipe.generate('', num_beams=2, streamer=printer)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_operator_with_callback_one_string(callback, model_id):
@@ -567,7 +544,6 @@ def test_operator_with_callback_one_string(callback, model_id):
     ov_pipe('talbe is made of', ten_tokens, callback)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)])
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_operator_with_callback_batch_throws(callback, model_id):
@@ -579,7 +555,6 @@ def test_operator_with_callback_batch_throws(callback, model_id):
 
 @pytest.mark.parametrize("streamer_base", [PrinterNone, PrinterBool, PrinterStatus])
 @pytest.mark.parametrize("model_id", get_models_list())
-@pytest.mark.precommit
 def test_operator_with_streamer_kwargs_one_string(streamer_base, model_id):
     _, _, models_path = download_and_convert_model(model_id)
     ov_pipe = create_ov_pipeline(models_path)
@@ -587,7 +562,6 @@ def test_operator_with_streamer_kwargs_one_string(streamer_base, model_id):
     ov_pipe('hi', max_new_tokens=10, do_sample=True, streamer=printer)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_operator_with_streamer_kwargs_batch_throws(model_id):
     _, _, models_path = download_and_convert_model(model_id)
@@ -620,7 +594,6 @@ def load_genai_pipe_with_configs(configs: list[tuple], temp_path):
     return ov_pipe
 
 
-@pytest.mark.precommit
 def test_eos_token_is_inherited_from_default_generation_config(model_tmp_path):
     _, temp_path = model_tmp_path
     ov_pipe = load_genai_pipe_with_configs([({"eos_token_id": 37}, "config.json")], temp_path)
@@ -632,7 +605,6 @@ def test_eos_token_is_inherited_from_default_generation_config(model_tmp_path):
     assert 37 == ov_pipe.get_generation_config().eos_token_id
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_pipeline_validates_generation_config(model_id):
     _, _, models_path = download_and_convert_model(model_id)
@@ -645,7 +617,6 @@ def test_pipeline_validates_generation_config(model_id):
 # Work with Unicode in Python API
 #
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_unicode_pybind_decoding_one_string(model_id):
     # On this model this prompt generates unfinished utf string.
@@ -656,7 +627,6 @@ def test_unicode_pybind_decoding_one_string(model_id):
     assert '�' == res_str[-1]
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_unicode_pybind_decoding_batched(model_id):
     # On this model this prompt generates unfinished utf string.
@@ -667,7 +637,6 @@ def test_unicode_pybind_decoding_batched(model_id):
     assert '�' == res_str.texts[0][-1]
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_unicode_pybind_decoding_one_string_streamer(model_id):
     # On this model this prompt generates unfinished utf-8 string
@@ -682,71 +651,80 @@ def test_unicode_pybind_decoding_one_string_streamer(model_id):
 # Perf metrics
 #
 
-def run_perf_metrics_collection(model_id, generation_config_dict: dict, prompt: str) -> ov_genai.PerfMetrics:
-    _, _, models_path = download_and_convert_model(model_id)
-    ov_pipe = create_ov_pipeline(models_path)
-    return ov_pipe.generate([prompt], **generation_config_dict).perf_metrics
-
-
 test_cases = [
     (dict(max_new_tokens=20), 'table is made of'),
+    (dict(max_new_tokens=20, num_beams=4), 'table is made of'),
 ]
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
-@pytest.mark.precommit
-def test_perf_metrics(generation_config, prompt):
+@pytest.mark.parametrize("pipeline_type", [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION])
+def test_perf_metrics(generation_config, prompt, pipeline_type):
     import time
-    start_time = time.perf_counter()
+
     model_id = 'katuni4ka/tiny-random-gemma2'
-    perf_metrics = run_perf_metrics_collection(model_id, generation_config, prompt)
-    total_time = (time.perf_counter() - start_time) * 1000
+
+    _, _, models_path = download_and_convert_model(model_id)
+    start_time = time.perf_counter()
+    ov_pipe = create_ov_pipeline(models_path, pipeline_type)
+    load_time_in_test = (time.perf_counter() - start_time) * 1000
+    start_generate = time.perf_counter()
+    result = ov_pipe.generate([prompt], **generation_config)
+    generate_time = (time.perf_counter() - start_generate) * 1000
+
+    perf_metrics: ov_genai.PerfMetrics = result.perf_metrics
+    is_beam_search = generation_config.get('num_beams', 1) > 1
 
     # Check that load time is adequate.
     load_time = perf_metrics.get_load_time()
-    assert load_time > 0 and load_time < total_time
+    assert 0 < load_time < load_time_in_test
 
     # Check that num input and generated tokens are adequate.
     num_generated_tokens = perf_metrics.get_num_generated_tokens()
-    assert num_generated_tokens > 0 and num_generated_tokens <= generation_config['max_new_tokens']
+    assert 0 < num_generated_tokens <= generation_config['max_new_tokens']
 
     num_input_tokens = perf_metrics.get_num_input_tokens()
-    assert num_input_tokens > 0 and num_input_tokens <= len(prompt)
+    assert 0 < num_input_tokens <= len(prompt)
 
     mean_ttft, std_ttft = perf_metrics.get_ttft()
     assert (mean_ttft, std_ttft) == (perf_metrics.get_ttft().mean, perf_metrics.get_ttft().std)
-    assert mean_ttft > 0 and mean_ttft < 1000.0
+    assert 0 < mean_ttft < generate_time
 
     raw_metrics = perf_metrics.raw_metrics
     durations = np.array(raw_metrics.m_durations) / 1000
     # Check that prefill is not included in durations for TPOT calculation.
     # For the very long prompt prefill is slow and TTFT is much larger than any other token generation duration.
-    assert np.all(mean_ttft > durations)
+    # For beam search TTFT is sometimes smaller than the duration of subsequent token generations (CVS-176478).
+    if not is_beam_search:
+        assert np.all(mean_ttft > durations)
 
     mean_tpot, std_tpot = perf_metrics.get_tpot()
     assert (mean_tpot, std_tpot) == (perf_metrics.get_tpot().mean, perf_metrics.get_tpot().std)
-    assert mean_tpot > 0 and mean_ttft < 1000.0
+    assert 0 < mean_tpot < generate_time / num_generated_tokens
 
     mean_throughput, std_throughput = perf_metrics.get_throughput()
     assert (mean_throughput, std_throughput) == (perf_metrics.get_throughput().mean, perf_metrics.get_throughput().std)
-    assert mean_throughput > 0 and mean_throughput < 20000.0
+    assert 0 < mean_throughput
+    assert (num_generated_tokens - 1) / (
+        (generate_time - mean_ttft) / 1000.0
+    ) < mean_throughput
 
     mean_gen_duration, std_gen_duration = perf_metrics.get_generate_duration()
     assert (mean_gen_duration, std_gen_duration) == (perf_metrics.get_generate_duration().mean, perf_metrics.get_generate_duration().std)
-    assert mean_gen_duration > 0 and load_time + mean_gen_duration < total_time
+    assert 0 < mean_gen_duration < generate_time
     assert std_gen_duration == 0
 
     mean_tok_duration, std_tok_duration = perf_metrics.get_tokenization_duration()
     assert (mean_tok_duration, std_tok_duration) == (perf_metrics.get_tokenization_duration().mean, perf_metrics.get_tokenization_duration().std)
-    assert mean_tok_duration > 0 and mean_tok_duration < mean_gen_duration
+    assert 0 < mean_tok_duration < generate_time
     assert std_tok_duration == 0
 
     mean_detok_duration, std_detok_duration = perf_metrics.get_detokenization_duration()
     assert (mean_detok_duration, std_detok_duration) == (perf_metrics.get_detokenization_duration().mean, perf_metrics.get_detokenization_duration().std)
-    assert mean_detok_duration > 0 and mean_detok_duration < mean_gen_duration
+    assert 0 < mean_detok_duration < generate_time
     assert std_detok_duration == 0
 
     # assert that calculating statistics manually from the raw counters we get the same restults as from PerfMetrics
     assert np.allclose(mean_tpot, np.mean(durations))
-    assert np.allclose(std_tpot, np.std(durations), atol=0.00002)
+    assert np.allclose(std_tpot, np.std(durations))
 
     raw_dur = np.array(raw_metrics.generate_durations) / 1000
     assert np.allclose(mean_gen_duration, np.mean(raw_dur))
@@ -763,13 +741,13 @@ def test_perf_metrics(generation_config, prompt):
     assert len(raw_metrics.m_times_to_first_token) > 0
     assert len(raw_metrics.m_batch_sizes) > 0
     assert len(raw_metrics.m_durations) > 0
+    assert len(raw_metrics.m_durations) == num_generated_tokens - 1
 
 
 test_cases = [
     (dict(max_new_tokens=20), 'Generate json of a person'),
 ]
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
-@pytest.mark.precommit
 def test_perf_metrics_with_structured_output(generation_config, prompt):
     class Person(BaseModel):
         name: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
@@ -804,7 +782,6 @@ def test_perf_metrics_with_structured_output(generation_config, prompt):
 
 @pytest.mark.parametrize("pipeline_type", get_main_pipeline_types())
 @pytest.mark.parametrize("stop_str", {True, False})
-@pytest.mark.precommit
 def test_pipelines_generate_with_streaming(pipeline_type, stop_str):
     # streamer
     it_cnt = 0
