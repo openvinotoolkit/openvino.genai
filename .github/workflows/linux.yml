@@ -306,15 +306,39 @@ jobs:
       
       - name: Build GenAI Wheel
         run: |
+          # Build wheels in parallel for all Python versions
+          pids=()
           for py_version in "3.10" "3.11" "3.12" "3.13"
           do
             python_exec_path=$(python$py_version -c "import sys; print(sys.executable)")
-            $python_exec_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
-                --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
-                --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache" \
-                ${{ needs.openvino_download.outputs.ov_wheel_source }} \
-                ${{ env.SRC_DIR }}
+            (
+              echo "Starting build for Python $py_version"
+              $python_exec_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+                  --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
+                  --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache" \
+                  ${{ needs.openvino_download.outputs.ov_wheel_source }} \
+                  ${{ env.SRC_DIR }} 2>&1 | tee ${{ env.WHEELS_DIR }}/build_py${py_version}.log
+              echo "Completed build for Python $py_version"
+            ) &
+            pids+=($!)
           done
+          
+          # Wait for all builds to complete and check exit codes
+          failed=0
+          for i in "${!pids[@]}"; do
+            pid=${pids[$i]}
+            if wait $pid; then
+              echo "Build $i (PID $pid) succeeded"
+            else
+              echo "Build $i (PID $pid) failed"
+              failed=1
+            fi
+          done
+          
+          if [ $failed -eq 1 ]; then
+            echo "One or more builds failed"
+            exit 1
+          fi
         working-directory: ${{ env.OV_INSTALL_DIR }}
       
       - name: Upload Wheels
