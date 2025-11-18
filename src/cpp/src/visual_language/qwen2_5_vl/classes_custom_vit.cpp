@@ -4,8 +4,12 @@
 #include "visual_language/qwen2_5_vl/classes_custom_vit.hpp"
 
 #include "utils.hpp"
-
-#include <dlfcn.h>
+#ifdef _MSC_VER
+#    define NOMINMAX
+#    include <windows.h>
+#else
+#    include <dlfcn.h>
+#endif
 namespace ov::genai {
 
 inline bool init_global_var() {
@@ -49,9 +53,9 @@ void InputsEmbedderQwen2_5_VL_CustomVIT::load_custom_vit_lib() {
 #endif
 
 #if defined(_MSC_VER)
-    create = (pfnCreateQwen2vl*)GetProcAddress(m, "createModelQwen2vl");
-    release = (pfnReleaseQwen2vl*)GetProcAddress(m, "releaseModelQwen2vl");
-    inference = (pfnInferenceVitQwen2vl*)GetProcAddress(m, "inferenceVitQwen2vl");
+    create = (pfnCreateQwen2vl*)GetProcAddress(static_cast<HMODULE>(m), "createModelQwen2vl");
+    release = (pfnReleaseQwen2vl*)GetProcAddress(static_cast<HMODULE>(m), "releaseModelQwen2vl");
+    inference = (pfnInferenceVitQwen2vl*)GetProcAddress(static_cast<HMODULE>(m), "inferenceVitQwen2vl");
 #else
     create = (pfnCreateQwen2vl*)dlsym(m, "createModelQwen2vl");
     release = (pfnReleaseQwen2vl*)dlsym(m, "releaseModelQwen2vl");
@@ -111,7 +115,7 @@ InputsEmbedderQwen2_5_VL_CustomVIT::~InputsEmbedderQwen2_5_VL_CustomVIT() {
     }
     if (nullptr != m) {
   #if defined(_MSC_VER)
-      FreeLibrary(m);
+      FreeLibrary(static_cast<HMODULE>(m));
   #else
       dlclose(m);
   #endif

@@ -58,11 +58,8 @@ protected:
         const std::vector<size_t>& videos_sequence) override;
 
 private:
-#ifdef _MSC_VER
-    HMODULE m;
-#else
     void* m = nullptr;
-#endif
+
     pfnCreateQwen2vl* create = nullptr;
     pfnReleaseQwen2vl* release = nullptr;
     pfnInferenceVitQwen2vl* inference = nullptr;
