@@ -6,22 +6,17 @@
 #include "image_generation/schedulers/ischeduler.hpp"
 #include "image_generation/numpy_utils.hpp"
 #include "utils.hpp"
-#include <openvino/op/transpose.hpp>
 #include "openvino/op/add.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/divide.hpp"
-#include <nlohmann/json.hpp>
-#include <fstream>
-
 #include <openvino/op/transpose.hpp>
-#include <openvino/op/multiply.hpp>
-#include <openvino/op/add.hpp>
-#include <openvino/op/divide.hpp>
 #include <openvino/op/maximum.hpp>
 #include <openvino/op/minimum.hpp>
 #include <openvino/op/convert.hpp>
-#include <openvino/op/convert.hpp>
 #include <openvino/op/round.hpp>
+#include <nlohmann/json.hpp>
+#include <fstream>
+
 
 using namespace ov::genai;
 
@@ -214,7 +209,7 @@ ov::Tensor denormalize_latents(ov::Tensor latents,
     return result[0]; // [B, C, F, H, W]
 }
 
-// For debug only
+// TODO: For debug only - delete later
 void saveTensorToFile(const ov::Tensor& tensor, const std::string& filename) {
     std::ofstream file(filename);
     if (!file) {
@@ -235,7 +230,7 @@ void saveTensorToFile(const ov::Tensor& tensor, const std::string& filename) {
     file.close();
 }
 
-// for debug only
+// TODO: For debug only - delete later
 ov::Tensor loadTensorFromFile(const std::string& filename) {
     std::ifstream file(filename);
     if (!file) {
@@ -317,8 +312,8 @@ class Text2VideoPipeline::LTXPipeline {
                         m_latent_num_frames,
                         m_latent_height,
                         m_latent_width};
-        // ov::Tensor latents = generation_config.generator->randn_tensor(shape);
-        ov::Tensor latents = loadTensorFromFile("../latents_before_pack.txt");
+        ov::Tensor latents = generation_config.generator->randn_tensor(shape);
+        // ov::Tensor latents = loadTensorFromFile("../latents_before_pack.txt");
         return pack_latents(latents, transformer_spatial_patch_size, transformer_temporal_patch_size);
     }
 
@@ -640,15 +635,12 @@ public:
             // print_ov_tensor(latent, "latents after step");
         }
 
-        // latent = loadTensorFromFile("/home/alikh/projects/openvino.genai/transformer_output.txt");
-
         latent = unpack_latents(latent,
                                 m_latent_num_frames,
                                 m_latent_height,
                                 m_latent_width,
                                 transformer_spatial_patch_size,
                                 transformer_temporal_patch_size);
-        // print_ov_tensor(latent, "unpack_latents");
 
         auto tensor_from_vector = [](const std::vector<float>& data) -> ov::Tensor {
             ov::Tensor t{ov::element::f32, ov::Shape{data.size()}};
@@ -663,14 +655,11 @@ public:
                                     tensor_from_vector(m_vae->get_config().latents_std_data),
                                     m_vae->get_config().scaling_factor);
         print_ov_tensor(latent, "denormalize_latents");
-        // saveTensorToFile(latent, "denormalize_latents.txt");
-        // ov::Tensor postprocessed = postprocess_latents(latent);
 
         // TODO: if not self.vae.config.timestep_conditioning: ... else: ...
 
         const auto decode_start = std::chrono::steady_clock::now();
         ov::Tensor video = m_vae->decode(latent);
-        // print_ov_tensor(video, "video");
         m_perf_metrics.vae_decoder_inference_duration =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start).count();
 
