@@ -12,7 +12,7 @@ updates:
       time: "09:00"
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
-    
+
   #
   # Enable version updates for npm
   #
@@ -24,7 +24,7 @@ updates:
       timezone: "Europe/Dublin"
     open-pull-requests-limit: 3
     versioning-strategy: increase-if-necessary
-    
+
   #
   # Python dependencies
   #
@@ -35,7 +35,7 @@ updates:
       time: "09:00"
       timezone: "Europe/Dublin"
     versioning-strategy: increase-if-necessary
-      
+
   - package-ecosystem: "pip"
     directory: "./tools/llm_bench/"
     schedule:
@@ -43,7 +43,7 @@ updates:
       time: "09:00"
       timezone: "Europe/Dublin"
     versioning-strategy: increase-if-necessary
-      
+
   - package-ecosystem: "pip"
     directory: "./tools/who_what_benchmark/"
     schedule:
@@ -51,15 +51,15 @@ updates:
       time: "09:00"
       timezone: "Europe/Dublin"
     versioning-strategy: increase-if-necessary
-      
+
   - package-ecosystem: "pip"
-    directory: "samples/"
+    directory: "./samples/"
     schedule:
       interval: "daily"
       time: "09:00"
       timezone: "Europe/Dublin"
     versioning-strategy: increase-if-necessary
-      
+
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
