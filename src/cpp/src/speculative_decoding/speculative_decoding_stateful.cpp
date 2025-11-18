@@ -338,7 +338,7 @@ std::variant<int64_t, std::vector<int64_t>>
 
     auto sample_token = [&](const ov::Tensor& logits, std::size_t idx) {
         size_t sequence_offset = idx * vocab_size;
-        const float* logits_data = logits.data<float>() + sequence_offset;
+        const auto logits_data = logits.data<float>() + sequence_offset;
         return std::max_element(logits_data, logits_data + vocab_size) - logits_data;
     };
 
