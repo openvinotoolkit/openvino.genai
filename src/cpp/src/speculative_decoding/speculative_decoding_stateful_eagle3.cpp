@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "speculative_decoding_stateful_eagle3.hpp"
+#include "speculative_decoding_utils.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -38,17 +39,6 @@ ov::genai::StreamingStatus stream_generated_tokens(std::shared_ptr<ov::genai::St
     return ov::genai::StreamingStatus{};
 }
 
-// Format microseconds for logging
-std::string format_duration_us(uint64_t microseconds) {
-    if (microseconds < 1000) {
-        return std::to_string(microseconds) + "μs";
-    } else if (microseconds < 1000000) {
-        return std::to_string(microseconds / 1000.0) + "ms";
-    } else {
-        return std::to_string(microseconds / 1000000.0) + "s";
-    }
-}
-
 // Extract last token's hidden state using zero-copy ROI
 // Input: [batch=1, seq_len, hidden_size] -> Output: [1, 1, hidden_size]
 ov::Tensor extract_last_hidden_state(const ov::Tensor& hidden_features) {
@@ -66,20 +56,6 @@ ov::Tensor extract_last_hidden_state(const ov::Tensor& hidden_features) {
     std::size_t hidden_size = shape[2];
 
     return ov::Tensor(hidden_features, {0, seq_len - 1, 0}, {1, seq_len, hidden_size});
-}
-
-// Validate and set num_assistant_tokens
-void ensure_num_assistant_tokens_is_set(ov::genai::GenerationConfig& config, bool allow_zero = false) {
-    OPENVINO_ASSERT(config.assistant_confidence_threshold == 0.f,
-                    "Stateful Speculative Decoding only supports num_assistant_tokens, "
-                    "not assistant_confidence_threshold. Set it to 0.f.");
-
-    constexpr std::size_t DEFAULT_NUM_ASSISTANT_TOKENS = 4;
-    // If num_assistant_tokens is not explicitly set (is 0) and zero is not allowed, use default
-    if (config.num_assistant_tokens == 0 && !allow_zero) {
-        config.num_assistant_tokens = DEFAULT_NUM_ASSISTANT_TOKENS;
-    }
-    // If num_assistant_tokens is 0 and allow_zero is true, keep it as 0 (disabled speculative decoding)
 }
 
 }  // anonymous namespace
@@ -220,6 +196,8 @@ ov::Tensor Eagle3InferWrapperBase::create_hidden_state_placeholder(const ov::Sha
     return tensor;
 }
 
+// TODO: Use already provided Sampler API, that will support both greedy and
+//       multinomial decoding.
 std::variant<int64_t, std::vector<int64_t>> Eagle3InferWrapperBase::sample_tokens(const ov::Tensor& logits,
                                                                                   std::size_t count) {
     auto shape = logits.get_shape();
@@ -298,7 +276,6 @@ ov::Tensor Eagle3InferWrapperBase::get_hidden_features() const {
         return hidden_state;
     }
 
-    // Trim padding (NPU or other sources)
     OPENVINO_ASSERT(actual_seq_len <= output_seq_len,
                     "Actual length (",
                     actual_seq_len,
@@ -308,6 +285,7 @@ ov::Tensor Eagle3InferWrapperBase::get_hidden_features() const {
 
     log_debug("Trimming hidden: " + std::to_string(output_seq_len) + " -> " + std::to_string(actual_seq_len));
 
+    // if NPU device is used, the output may be padded, trim it via ROI
     std::size_t start_offset = output_seq_len - actual_seq_len;
     ov::Tensor trimmed(hidden_state, {0, start_offset, 0}, {1, output_seq_len, hidden_size});
 
@@ -328,7 +306,6 @@ uint64_t Eagle3InferWrapperBase::execute_inference() {
 }
 
 void Eagle3InferWrapperBase::update_performance_metrics(uint64_t inference_time_us, std::size_t tokens_count) {
-    // Use standard performance tracking approach consistent with other speculative decoding implementations
     m_raw_perf_metrics.m_durations.emplace_back(static_cast<float>(inference_time_us));
     m_raw_perf_metrics.m_inference_durations[0] += ov::genai::MicroSeconds(static_cast<float>(inference_time_us));
     m_raw_perf_metrics.m_batch_sizes.emplace_back(tokens_count);
@@ -363,8 +340,7 @@ void Eagle3InferWrapperBase::log_tensor_content(const std::string& name,
     auto shape = tensor.get_shape();
     std::size_t total_elements = tensor.get_size();
 
-    // For input_ids, position_ids, attention_mask, hidden_states, and internal_hidden_states, always show all elements,
-    // ignore max_elements
+    // For input_ids, position_ids, attention_mask, always show all elements, ignore max_elements
     bool show_all = (name == "input_ids" || name == "position_ids" || name == "attention_mask");
     std::size_t elements_to_show = show_all ? total_elements : std::min(max_elements, total_elements);
 
@@ -548,7 +524,7 @@ InferenceOutput Eagle3TargetModelWrapper::infer(const ov::Tensor& input_ids,
     output.hidden_features = get_hidden_features();
     log_model_outputs(output.logits, output.hidden_features);
 
-    log_debug("Target inference done: " + format_duration_us(time_us));
+    log_debug("Target inference done: " + std::to_string(time_us / 1000.0) + "ms");
     return output;
 }
 
@@ -648,7 +624,7 @@ InferenceOutput Eagle3DraftModelWrapper::infer(const ov::Tensor& input_ids,
     output.hidden_features = get_hidden_features();
     log_model_outputs(output.logits, output.hidden_features);
 
-    log_debug("Draft inference done: " + format_duration_us(time_us));
+    log_debug("Draft inference done: " + std::to_string(time_us / 1000.0) + "ms");
     return output;
 }
 
@@ -661,7 +637,7 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
                                                      const std::vector<int>& hidden_layers_to_abstract)
     : LLMPipelineImplBase(main_model_desc.tokenizer, main_model_desc.generation_config),
       m_hidden_layers_to_abstract(hidden_layers_to_abstract) {
-    ensure_num_assistant_tokens_is_set(m_generation_config);
+    ov::genai::speculative_decoding::ensure_num_assistant_tokens_is_set(m_generation_config);
     m_draft_iterations = m_generation_config.num_assistant_tokens;
 
     log_info("Initializing Eagle3: main=" + main_model_desc.device + ", draft=" + draft_model_desc.device +
@@ -682,6 +658,9 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
 
     set_draft_target_mapping(draft_model);
 
+    // Currently, the d2t node is stored in the draft model
+    // If it is not removed, it will affect the splitting and compilation of NPUW
+    // TODO: Root cause and better to remove this logic in model conversion step
     ov::genai::remove_d2t_result_node(draft_model);
     log_debug("Removed d2t node");
 
@@ -696,8 +675,8 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
     auto draft_desc = draft_model_desc;
     if (draft_desc.device == "NPU") {
         draft_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = validation_window;
-        // draft_desc.properties["NPUW_DEVICES"] = "CPU";
-        // TODO: Partition issue for draft model, low priority since it is has only one repeat block
+        draft_desc.properties["NPUW_DEVICES"] = "CPU";
+        // TODO: Partition issue for draft model, low priority since it has only one repeat block
         draft_desc.properties["NPUW_ONLINE_PIPELINE"] = "NONE";
     }
     m_draft_model = std::make_unique<Eagle3DraftModelWrapper>(draft_desc);
@@ -705,7 +684,7 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
     auto main_desc = main_model_desc;
     if (main_desc.device == "NPU") {
         main_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = validation_window;
-        // main_desc.properties["NPUW_DEVICES"] = "CPU";
+        main_desc.properties["NPUW_DEVICES"] = "CPU";
         // Set rt_info to identify Eagle3 mode in NPUW
         main_model->set_rt_info("true", "eagle3_mode");
     }
@@ -750,8 +729,7 @@ GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGe
     GenerationConfig config = generation_config.value_or(m_generation_config);
 
     std::size_t prev_draft_iterations = m_draft_iterations;
-    // Allow num_assistant_tokens to be 0 (disables speculative decoding)
-    ensure_num_assistant_tokens_is_set(config, /*allow_zero=*/true);
+    ov::genai::speculative_decoding::ensure_num_assistant_tokens_is_set(config);
     m_draft_iterations = config.num_assistant_tokens;
 
     // Log if draft_iterations changed from default
@@ -961,94 +939,56 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
     std::size_t total_draft_generated = 0;  // Total draft tokens generated (including rejected)
     std::size_t total_iterations = 0;       // Number of speculative iterations
 
-    // Check if speculative decoding is disabled
-    if (m_draft_iterations == 0) {
-        // Standard autoregressive generation with target model only
-        log_info("Running standard autoregressive generation (no speculative decoding)");
+    // Speculative decoding loop
+    std::size_t token_count = m_draft_model->get_sequence_length();
+    auto target_hidden_states = main_hidden_features;
 
-        int64_t current_token = initial_token;
-        while (!eos_reached && generated_tokens < max_new_tokens &&
-               m_main_model->get_sequence_length() < prompt_len + max_new_tokens &&
-               (streaming_status == ov::genai::StreamingStatus::RUNNING)) {
-            // Check for EOS
-            if (current_token == static_cast<int64_t>(config.eos_token_id)) {
-                eos_reached = true;
-                log_debug("EOS reached - terminating generation");
-                break;
-            }
+    while (!eos_reached && generated_tokens < max_new_tokens &&
+            m_main_model->get_sequence_length() < prompt_len + max_new_tokens &&
+            (streaming_status == ov::genai::StreamingStatus::RUNNING)) {
+        log_generation_step("Speculative Decoding Iteration", generated_tokens);
+        log_sequence_state("iteration start");
 
-            // Generate next token using target model
-            ov::Tensor next_input_ids, next_attention_mask, next_position_ids;
-            m_main_model->build_model_inputs(1, next_input_ids, next_attention_mask, next_position_ids);
+        auto result =
+            run_speculative_iteration(target_hidden_states, token_count, static_cast<int64_t>(config.eos_token_id));
 
-            auto output = m_main_model->infer(next_input_ids, next_attention_mask, next_position_ids);
-            current_token = std::get<int64_t>(m_main_model->sample_tokens(output.logits, 1));
+        // Stream validated tokens
+        streaming_status = stream_generated_tokens(streamer_ptr, result.validated_tokens);
 
-            m_main_model->append_tokens({current_token});
+        // Update iteration counter
+        total_iterations++;
 
-            // Stream the token
-            streaming_status = stream_generated_tokens(streamer_ptr, std::vector<int64_t>{current_token});
+        // Update draft token statistics
+        total_draft_generated += m_draft_iterations;  // Each iteration generates m_draft_iterations draft tokens
+        total_draft_accepted +=
+            result.accepted_tokens_count;  // Number of draft tokens accepted (not including main model's token)
 
-            generated_tokens++;
-            log_debug("Generated token " + std::to_string(generated_tokens) + ": " + std::to_string(current_token));
+        if (result.new_token == static_cast<int64_t>(config.eos_token_id) || result.eos_reached) {
+            eos_reached = true;
+            log_debug("EOS reached - terminating generation");
         }
-    } else {
-        // Speculative decoding loop
-        std::size_t token_count = m_draft_model->get_sequence_length();
-        auto target_hidden_states = main_hidden_features;
 
-        while (!eos_reached && generated_tokens < max_new_tokens &&
-               m_main_model->get_sequence_length() < prompt_len + max_new_tokens &&
-               (streaming_status == ov::genai::StreamingStatus::RUNNING)) {
-            log_generation_step("Speculative Decoding Iteration", generated_tokens);
-            log_sequence_state("iteration start");
+        // Validate that speculative iteration produced valid results
+        OPENVINO_ASSERT(result.new_token != -1, "Speculative iteration must produce a valid token");
+        OPENVINO_ASSERT(result.next_window_size > 0, "Speculative iteration must produce valid next_window_size");
+        OPENVINO_ASSERT(result.next_hidden_window && result.next_hidden_window.get_size() > 0,
+                        "Speculative iteration must produce valid next_hidden_window");
 
-            auto result =
-                run_speculative_iteration(target_hidden_states, token_count, static_cast<int64_t>(config.eos_token_id));
+        generated_tokens++;
+        log_debug("Generated token " + std::to_string(generated_tokens) + ": " +
+                    std::to_string(result.new_token) + ", accepted " +
+                    std::to_string(result.accepted_tokens_count) + " draft tokens out of " +
+                    std::to_string(m_draft_iterations));
 
-            // Stream validated tokens
-            streaming_status = stream_generated_tokens(streamer_ptr, result.validated_tokens);
+        // Prepare for next iteration
+        token_count = result.next_window_size;
+        target_hidden_states = result.next_hidden_window;
 
-            // Update iteration counter
-            total_iterations++;
+        log_debug("Next iteration: token_count=" + std::to_string(token_count) +
+                    ", hidden_states_size=" + std::to_string(target_hidden_states.get_size()));
 
-            // Update draft token statistics
-            total_draft_generated += m_draft_iterations;  // Each iteration generates m_draft_iterations draft tokens
-            total_draft_accepted +=
-                result.accepted_tokens_count;  // Number of draft tokens accepted (not including main model's token)
-
-            // Update metrics
-            if (result.new_token == static_cast<int64_t>(config.eos_token_id) || result.eos_reached) {
-                eos_reached = true;
-                log_debug("EOS reached - terminating generation");
-            }
-
-            if (result.new_token != -1) {
-                generated_tokens++;
-                log_debug("Generated token " + std::to_string(generated_tokens) + ": " +
-                          std::to_string(result.new_token) + ", accepted " +
-                          std::to_string(result.accepted_tokens_count) + " draft tokens out of " +
-                          std::to_string(m_draft_iterations));
-            }
-
-            // Prepare for next iteration
-            token_count = result.next_window_size > 0 ? result.next_window_size
-                                                      : std::min<std::size_t>(1, m_main_model->get_sequence_length());
-            target_hidden_states =
-                result.next_hidden_window ? result.next_hidden_window : m_main_model->get_hidden_features();
-
-            log_debug("Next iteration: token_count=" + std::to_string(token_count) + ", hidden_states_size=" +
-                      (target_hidden_states ? std::to_string(target_hidden_states.get_size()) : "0"));
-
-            // Safety check to prevent infinite loops
-            if (result.next_window_size == 0 && result.new_token == -1) {
-                log_debug("No progress made, terminating generation");
-                break;
-            }
-
-            log_sequence_state("iteration end");
-        }
-    }  // End of speculative decoding / standard generation branch
+        log_sequence_state("iteration end");
+    }
 
     m_streaming_was_cancelled = (streaming_status == ov::genai::StreamingStatus::CANCEL);
     if (streamer_ptr) {  // push streamer's cache
@@ -1231,33 +1171,30 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
               " draft tokens.");
 
     // Build next hidden window for next iteration
-    ov::Tensor next_hidden;
     auto current_hidden = val_output.hidden_features;
-    if (current_hidden && current_hidden.get_size() > 0) {
-        auto h_shape = current_hidden.get_shape();
-        OPENVINO_ASSERT(h_shape.size() == 3 && h_shape[0] == 1,
-                        "Invalid hidden state shape for next window construction");
+    OPENVINO_ASSERT(current_hidden && current_hidden.get_size() > 0,
+                    "Hidden features from validation output must exist");
 
-        std::size_t seq_len = h_shape[1];
-        std::size_t hidden_dim = h_shape[2];
-        std::size_t next_window_len = total_accepted_tokens;
+    auto h_shape = current_hidden.get_shape();
+    OPENVINO_ASSERT(h_shape.size() == 3 && h_shape[0] == 1,
+                    "Invalid hidden state shape for next window construction");
 
-        OPENVINO_ASSERT(seq_len >= next_window_len,
-                        "Hidden state seq_len (",
-                        seq_len,
-                        ") < next_window_len (",
-                        next_window_len,
-                        ")");
+    std::size_t seq_len = h_shape[1];
+    std::size_t hidden_dim = h_shape[2];
+    std::size_t next_window_len = total_accepted_tokens;
 
-        // Extract hidden states for accepted tokens
-        next_hidden = ov::Tensor(ov::element::f32, {1, next_window_len, hidden_dim});
-        const float* src_data = current_hidden.data<const float>();
-        float* dst_data = next_hidden.data<float>();
+    OPENVINO_ASSERT(seq_len >= next_window_len,
+                    "Hidden state seq_len (",
+                    seq_len,
+                    ") < next_window_len (",
+                    next_window_len,
+                    ")");
 
-        std::memcpy(dst_data, src_data, next_window_len * hidden_dim * sizeof(float));
+    // Extract hidden states for accepted tokens
+    // Input: [1, seq_len, hidden_dim] -> Output: [1, next_window_len, hidden_dim]
+    ov::Tensor next_hidden = ov::Tensor(current_hidden, {0, 0, 0}, {1, next_window_len, hidden_dim});
 
-        log_debug("Built next hidden window with " + std::to_string(next_window_len) + " positions");
-    }
+    log_debug("Built next hidden window with " + std::to_string(next_window_len) + " positions (ROI, zero-copy)");
 
     // Check for EOS token
     if (main_predicted_token == eos_token_id) {

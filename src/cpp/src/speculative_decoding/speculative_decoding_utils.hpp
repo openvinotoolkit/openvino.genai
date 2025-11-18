@@ -6,11 +6,17 @@
 #include <filesystem>
 #include <vector>
 
+#include "openvino/genai/generation_config.hpp"
+
 #include "openvino/runtime/core.hpp"
 
 namespace ov {
 namespace genai {
 namespace speculative_decoding {
+
+// Set num_assistant_tokens to default if not specified and check config validity
+constexpr std::size_t DEFAULT_NUM_ASSISTANT_TOKENS = 4;
+void ensure_num_assistant_tokens_is_set(ov::genai::GenerationConfig& config);
 
 /**
  * @brief Eagle3 runtime configuration information

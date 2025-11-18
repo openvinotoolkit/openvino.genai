@@ -19,7 +19,6 @@
 
 namespace ov::genai {
 
-// Forward declarations for Eagle3 transformation functions
 void share_embedding_weights(std::shared_ptr<ov::Model>& main_model, std::shared_ptr<ov::Model>& draft_model);
 void extract_hidden_state_generic(std::shared_ptr<ov::Model>& model, const std::vector<int>& hidden_layers_to_abstract, const std::string& device = "");
 std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(const std::shared_ptr<ov::Model>& model);
