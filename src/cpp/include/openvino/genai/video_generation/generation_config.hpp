@@ -26,6 +26,8 @@ struct VideoGenerationConfig : public ImageGenerationConfig {
     /// non-infinity makes the most sense. NaN corresponds to model default which is 25.0f for LTX-Video.
     float frame_rate = std::numeric_limits<float>::quiet_NaN();
 
+    size_t num_videos_per_prompt = 1;
+
     /**
      * Checks whether video generation config is valid, otherwise throws an exception.
      */
@@ -58,5 +60,7 @@ static constexpr ov::Property<double> guidance_rescale{"guidance_rescale"};
 /// The number of video frames to generate.
 static constexpr ov::Property<size_t> num_frames{"num_frames"};
 /// Video frame rate.
-static constexpr ov::Property<float> frame_rate{"guidance_rescale"};
+static constexpr ov::Property<float> frame_rate{"frame_rate"};
+/// The number of videos to generate.
+static constexpr ov::Property<float> num_videos_per_prompt{"num_videos_per_prompt"};
 }  // namespace ov::genai

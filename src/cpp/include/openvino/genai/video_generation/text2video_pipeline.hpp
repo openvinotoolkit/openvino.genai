@@ -81,7 +81,7 @@ public:
     /**
      * Reshapes pipeline based on a given set of reshape parameters, which affect shapes of models within pipeline
      * @note Reshaping can be useful to get maximum performance, but limit image generation to specific output sizes
-     * @param num_images_per_prompt A number of image to generate per 'generate()' call
+     * @param num_videos_per_prompt A number of image to generate per 'generate()' call
      * @param num_frames A number of video frames to generate per 'generate()' call
      * @param height A height of resulting video
      * @param width A width of resulting video
@@ -98,7 +98,7 @@ public:
      *  pipe.reshape(1, 25, 512, 512, default_config.guidance_scale); // reshape will bypass `max_sequence_length` to T5 encoder model
      * @endcode
      */
-    void reshape(const int num_images_per_prompt, const int num_frames, const int height, const int width, const float guidance_scale);
+    void reshape(const int64_t num_videos_per_prompt, const int64_t num_frames, const int64_t height, const int64_t width, const float guidance_scale);
 
     /**
      * Compiles video generation pipeline for a given device
@@ -164,7 +164,7 @@ public:
      *   - video: a video tensor decoded with VAE auto encoder shaped as [num_videos_per_prompt, num_frames, height, width, 3]
      *   - performance_stat: ov::genai::VideoGenerationPerfMetrics with timing and other performance metrics for the generation run.
      */
-    VideoGenerationResult decode(const ov::Tensor latent);
+    VideoGenerationResult decode(const ov::Tensor& latent);
 
     /**
      * @brief Exports compiled models to a specified directory.

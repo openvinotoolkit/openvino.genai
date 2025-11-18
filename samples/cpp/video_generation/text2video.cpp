@@ -52,22 +52,21 @@ int main(int32_t argc, char* argv[]) {
     const std::string device = "CPU";  // GPU can be used as well
 
     ov::genai::Text2VideoPipeline pipe(models_dir, device);
+    size_t frame_rate = 25;
     auto output = pipe.generate(
         prompt,
         ov::genai::negative_prompt("worst quality, inconsistent motion, blurry, jittery, distorted"),
-        ov::genai::height(128),
-        ov::genai::width(128),
-        ov::genai::num_frames(65),
-        ov::genai::num_inference_steps(15),
-        ov::genai::num_images_per_prompt(1),
+        ov::genai::height(480),
+        ov::genai::width(704),
+        ov::genai::num_frames(161),
+        ov::genai::num_inference_steps(25),
+        ov::genai::num_videos_per_prompt(1),
         ov::genai::callback(progress_bar),
-        ov::genai::frame_rate(25),
+        ov::genai::frame_rate(frame_rate),
         ov::genai::guidance_scale(3)
-        // num_frames: int = 161,
-        // frame_rate: int = 25,
     );
 
-    imwrite_video("genai_video.avi", output.video, 25);
+    imwrite_video("genai_video.avi", output.video, frame_rate);
 
     return EXIT_SUCCESS;
 // } catch (const std::exception& error) {

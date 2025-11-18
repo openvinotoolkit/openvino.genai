@@ -34,7 +34,7 @@ VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
         std::nullopt,  // negative_prompt
         std::nullopt,  // negative_prompt_2
         std::nullopt,  // negative_prompt_3
-        1,  // num_images_per_prompt
+        1,  // num_videos_per_prompt
         nullptr,  // generator
         42,  // rng_seed
         7.5f,  // guidance_scale
@@ -121,7 +121,7 @@ ov::Tensor pack_latents(ov::Tensor& latents, size_t patch_size, size_t patch_siz
 
 // Packed latents of shape [B, S, D] (S is the effective video sequence length, D is the effective feature dimensions)
 // are unpacked and reshaped into a video tensor of shape [B, C, F, H, W]. This is the inverse operation of what happens in the `_pack_latents` method.
-ov::Tensor unpack_latents(ov::Tensor& latents,
+ov::Tensor unpack_latents(const ov::Tensor& latents,
                           size_t num_frames,
                           size_t height,
                           size_t width,
@@ -135,14 +135,16 @@ ov::Tensor unpack_latents(ov::Tensor& latents,
     OPENVINO_ASSERT(feature_dimensions % patch_volume == 0, "D must be divisible by patch_size_t * patch_size * patch_size");
     const size_t num_channels = feature_dimensions / patch_volume;
 
-    latents.set_shape({batch_size, num_frames, height, width, num_channels, patch_size_t, patch_size, patch_size});
+    ov::Tensor reshaped{latents.get_element_type(), latents.get_shape()};
+    latents.copy_to(reshaped);
+    reshaped.set_shape({batch_size, num_frames, height, width, num_channels, patch_size_t, patch_size, patch_size});
 
     // permute(0, 4, 1, 5, 2, 6, 3, 7) -> [B, C, F//patch_size_t, patch_size_t, H//patch_size, patch_size, W//patch_size, patch_size]
     const std::array<int64_t, 8> order = {0, 4, 1, 5, 2, 6, 3, 7};
-    std::vector<ov::Tensor> outputs{ov::Tensor(latents.get_element_type(), {})};
+    std::vector<ov::Tensor> outputs{ov::Tensor(reshaped.get_element_type(), {})};
     ov::op::v1::Transpose{}.evaluate(
         outputs,
-        {latents, ov::Tensor(ov::element::i64, ov::Shape{order.size()}, const_cast<int64_t*>(order.data()))}
+        {reshaped, ov::Tensor(ov::element::i64, ov::Shape{order.size()}, const_cast<int64_t*>(order.data()))}
     );
 
     // (F//patch_size_t, patch_size_t) -> F, (H//patch_size, patch_size) -> H, (W//patch_size, patch_size) -> W
@@ -276,16 +278,14 @@ ov::Tensor loadTensorFromFile(const std::string& filename) {
     return tensor;
 }
 
-
-ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_config, size_t num_channels_latents, size_t spatial_compression_ratio, size_t temporal_compression_ratio, size_t transformer_spatial_patch_size, size_t transformer_temporal_patch_size) {
-    size_t height = generation_config.height / spatial_compression_ratio;
-    size_t width = generation_config.width / spatial_compression_ratio;
-    size_t latent_num_frames = (generation_config.num_frames - 1) / temporal_compression_ratio + 1;
-    ov::Shape shape{generation_config.num_images_per_prompt, num_channels_latents, latent_num_frames, height, width};
-    // ov::Tensor latents = generation_config.generator->randn_tensor(shape);
-    ov::Tensor latents = loadTensorFromFile("../latents_before_pack.txt");
-    return pack_latents(latents, transformer_spatial_patch_size, transformer_temporal_patch_size);
+inline ov::Tensor tensor_from_vector(const std::vector<float>& data) {
+    ov::Tensor t{ov::element::f32, ov::Shape{data.size()}};
+    if (!data.empty()) {
+        std::memcpy(t.data<float>(), data.data(), data.size() * sizeof(float));
+    }
+    return t;
 }
+
 }  // anonymous namespace
 
 class Text2VideoPipeline::LTXPipeline {
@@ -298,6 +298,52 @@ class Text2VideoPipeline::LTXPipeline {
     VideoGenerationPerfMetrics m_perf_metrics;
     double m_latent_timestep = -1.0;  // TODO: float?
     Ms m_load_time;
+
+    size_t m_latent_num_frames = -1;
+    size_t m_latent_height = -1;
+    size_t m_latent_width = -1;
+
+    ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_config,
+                               size_t num_channels_latents,
+                               size_t transformer_spatial_patch_size,
+                               size_t transformer_temporal_patch_size) {
+        OPENVINO_ASSERT(m_latent_num_frames > 0 && m_latent_height > 0 && m_latent_width > 0,
+                        "Latent sizes must be > 0 (got num_frames=", m_latent_num_frames,
+                        ", height=", m_latent_height,
+                        ", width=", m_latent_width, ").");
+
+        ov::Shape shape{generation_config.num_videos_per_prompt,
+                        num_channels_latents,
+                        m_latent_num_frames,
+                        m_latent_height,
+                        m_latent_width};
+        // ov::Tensor latents = generation_config.generator->randn_tensor(shape);
+        ov::Tensor latents = loadTensorFromFile("../latents_before_pack.txt");
+        return pack_latents(latents, transformer_spatial_patch_size, transformer_temporal_patch_size);
+    }
+
+    ov::Tensor postprocess_latents(const ov::Tensor& latent) {
+        OPENVINO_ASSERT(m_latent_num_frames > 0 && m_latent_height > 0 && m_latent_width > 0,
+                        "Latent sizes must be > 0 (got num_frames=", m_latent_num_frames,
+                        ", height=", m_latent_height,
+                        ", width=", m_latent_width, ").");
+
+
+
+        ov::Tensor decoded = unpack_latents(latent,
+                                            m_latent_num_frames,
+                                            m_latent_height,
+                                            m_latent_width,
+                                            m_transformer->get_config().patch_size,
+                                            m_transformer->get_config().patch_size_t);
+
+        decoded = denormalize_latents(decoded,
+                                      tensor_from_vector(m_vae->get_config().latents_mean_data),
+                                      tensor_from_vector(m_vae->get_config().latents_std_data),
+                                      m_vae->get_config().scaling_factor);
+
+        return decoded;
+    }
 
     void compute_hidden_states(const std::string& positive_prompt, const std::string& negative_prompt, const VideoGenerationConfig& generation_config) {
         auto infer_start = std::chrono::steady_clock::now();
@@ -321,8 +367,8 @@ class Text2VideoPipeline::LTXPipeline {
 
         ov::Tensor prompt_attention_mask = m_t5_text_encoder->get_prompt_attention_mask();
 
-        prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_images_per_prompt);
-        prompt_attention_mask = numpy_utils::repeat(prompt_attention_mask, generation_config.num_images_per_prompt);
+        prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_videos_per_prompt);
+        prompt_attention_mask = numpy_utils::repeat(prompt_attention_mask, generation_config.num_videos_per_prompt);
 
         m_transformer->set_hidden_states("encoder_hidden_states", prompt_embeds);
         m_transformer->set_hidden_states("encoder_attention_mask", prompt_attention_mask);
@@ -458,7 +504,7 @@ public:
         ov::op::v0::Convert{}.evaluate(out_vec, {rounded[0]});
 
         return out_vec[0];  // [B, F, H, W, C]
-}
+    }
 
     VideoGenerationResult generate(const std::string& positive_prompt, const ov::AnyMap& properties = {}) {
         const auto gen_start = std::chrono::steady_clock::now();
@@ -489,20 +535,20 @@ public:
         size_t transformer_spatial_patch_size = m_transformer->get_config().patch_size;
         size_t transformer_temporal_patch_size = m_transformer->get_config().patch_size_t;
 
+        m_latent_num_frames = (merged_generation_config.num_frames - 1) / temporal_compression_ratio + 1;
+        m_latent_height = merged_generation_config.height / spatial_compression_ratio;
+        m_latent_width = merged_generation_config.width / spatial_compression_ratio;
+
+
         ov::Tensor latent = prepare_latents(
             merged_generation_config,
             num_channels_latents,
-            spatial_compression_ratio,
-            temporal_compression_ratio,
             transformer_spatial_patch_size,
             transformer_temporal_patch_size
         );
 
         // Prepare timesteps
-        size_t latent_num_frames = (merged_generation_config.num_frames - 1) / temporal_compression_ratio + 1;
-        size_t latent_height = merged_generation_config.height / spatial_compression_ratio;  // TODO: prepare_latents() does the same
-        size_t latent_width = merged_generation_config.width / spatial_compression_ratio;
-        size_t video_sequence_length = latent_num_frames * latent_height * latent_width;
+        size_t video_sequence_length = m_latent_num_frames * m_latent_height * m_latent_width;
         m_scheduler->set_timesteps(video_sequence_length, merged_generation_config.num_inference_steps, merged_generation_config.strength);
         std::vector<float> timesteps = m_scheduler->get_float_timesteps();
 
@@ -520,9 +566,9 @@ public:
             scalar.data<int64_t>()[0] = value;
             return scalar;
         };
-        m_transformer->set_hidden_states("num_frames", make_scalar_tensor(latent_num_frames));
-        m_transformer->set_hidden_states("height", make_scalar_tensor(latent_height));
-        m_transformer->set_hidden_states("width", make_scalar_tensor(latent_width));
+        m_transformer->set_hidden_states("num_frames", make_scalar_tensor(m_latent_num_frames));
+        m_transformer->set_hidden_states("height", make_scalar_tensor(m_latent_height));
+        m_transformer->set_hidden_states("width", make_scalar_tensor(m_latent_width));
 
         // // Prepare timesteps
         // TODO: ov::Tensor timestep(ov::element::f32, {1}); is enough
@@ -539,8 +585,8 @@ public:
             auto step_start = std::chrono::steady_clock::now();
             // concat the same latent twice along a batch dimension in case of CFG
             if (batch_size_multiplier > 1) {
-                numpy_utils::batch_copy(latent, latent_cfg, 0, 0, merged_generation_config.num_images_per_prompt);
-                numpy_utils::batch_copy(latent, latent_cfg, 0, merged_generation_config.num_images_per_prompt, merged_generation_config.num_images_per_prompt);
+                numpy_utils::batch_copy(latent, latent_cfg, 0, 0, merged_generation_config.num_videos_per_prompt);
+                numpy_utils::batch_copy(latent, latent_cfg, 0, merged_generation_config.num_videos_per_prompt, merged_generation_config.num_videos_per_prompt);
             } else {
                 // just assign to save memory copy
                 latent_cfg = latent;
@@ -597,9 +643,9 @@ public:
         // latent = loadTensorFromFile("/home/alikh/projects/openvino.genai/transformer_output.txt");
 
         latent = unpack_latents(latent,
-                                latent_num_frames,
-                                latent_height,
-                                latent_width,
+                                m_latent_num_frames,
+                                m_latent_height,
+                                m_latent_width,
                                 transformer_spatial_patch_size,
                                 transformer_temporal_patch_size);
         // print_ov_tensor(latent, "unpack_latents");
@@ -616,8 +662,9 @@ public:
                                     tensor_from_vector(m_vae->get_config().latents_mean_data),
                                     tensor_from_vector(m_vae->get_config().latents_std_data),
                                     m_vae->get_config().scaling_factor);
-        // print_ov_tensor(latent, "denormalize_latents");
+        print_ov_tensor(latent, "denormalize_latents");
         // saveTensorToFile(latent, "denormalize_latents.txt");
+        // ov::Tensor postprocessed = postprocess_latents(latent);
 
         // TODO: if not self.vae.config.timestep_conditioning: ... else: ...
 
@@ -626,10 +673,23 @@ public:
         // print_ov_tensor(video, "video");
         m_perf_metrics.vae_decoder_inference_duration =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start).count();
+
         video = postprocess_video(video);
 
         m_perf_metrics.generate_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start).count();
+
+        return VideoGenerationResult{video, m_perf_metrics};
+    }
+
+    VideoGenerationResult decode(const ov::Tensor& latent) {
+        ov::Tensor postprocessed = postprocess_latents(latent);
+
+        const auto decode_start = std::chrono::steady_clock::now();
+        ov::Tensor video = m_vae->decode(postprocessed);
+        m_perf_metrics.vae_decoder_inference_duration =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start).count();
+        video = postprocess_video(video);
 
         return VideoGenerationResult{video, m_perf_metrics};
     }

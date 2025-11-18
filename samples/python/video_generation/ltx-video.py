@@ -14,11 +14,11 @@ def generate(pipeline, frame_rate):
     ltx_pipeline_output = pipeline(
         prompt=prompt,
         negative_prompt=negative_prompt,
-        height=128,
-        width=128,
-        num_frames=65,
+        height=480,
+        width=704,
+        num_frames=161,
         frame_rate=frame_rate,
-        num_inference_steps=15,
+        num_inference_steps=25,
         generator=torch.Generator(device="cpu").manual_seed(42),
         guidance_scale=3,
     )
