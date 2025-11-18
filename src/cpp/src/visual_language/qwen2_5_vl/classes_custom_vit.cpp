@@ -38,7 +38,7 @@ inline bool file_exists(const std::string& name) {
 void InputsEmbedderQwen2_5_VL_CustomVIT::load_custom_vit_lib() {
     int32_t err;
 #if defined(_MSC_VER)
-    m = LoadLibraryA(custom_vit_path + "\\cm.ocl.qwen2vl.lib.dll");
+    m = LoadLibraryA((custom_vit_path + "\\cm.ocl.qwen2vl.lib.dll").c_str());
 #else
     m = dlopen((custom_vit_path + std::string("/libcm.ocl.qwen2vl.lib.so")).c_str(), RTLD_LAZY);
     if (!m) {
