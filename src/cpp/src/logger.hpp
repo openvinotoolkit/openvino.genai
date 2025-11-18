@@ -74,13 +74,9 @@ inline void log_message(ov::log::Level level, const char* file, int line, const 
 
 }  // namespace detail
 
-#define GenAILogger ov::genai::Logger::get_instance()
-
-#define GenAILogPrint(level, ...) ::ov::genai::detail::log_message(level, __FILE__, __LINE__, __VA_ARGS__)
-
-#define GENAI_DEBUG_LOG(...)   GenAILogPrint(ov::log::Level::DEBUG, __VA_ARGS__)
-#define GENAI_INFO_LOG(...)    GenAILogPrint(ov::log::Level::INFO, __VA_ARGS__)
-#define GENAI_WARNING_LOG(...) GenAILogPrint(ov::log::Level::WARNING, __VA_ARGS__)
-#define GENAI_ERROR_LOG(...)   GenAILogPrint(ov::log::Level::ERR, __VA_ARGS__)
+#define OPENVINO_DEBUG(...) ::ov::genai::detail::log_message(ov::log::Level::DEBUG, __FILE__, __LINE__, __VA_ARGS__)
+#define OPENVINO_INFO(...)  ::ov::genai::detail::log_message(ov::log::Level::INFO, __FILE__, __LINE__, __VA_ARGS__)
+#define OPENVINO_WARN(...)  ::ov::genai::detail::log_message(ov::log::Level::WARNING, __FILE__, __LINE__, __VA_ARGS__)
+#define OPENVINO_ERR(...)   ::ov::genai::detail::log_message(ov::log::Level::ERR, __FILE__, __LINE__, __VA_ARGS__)
 
 }  // namespace ov::genai

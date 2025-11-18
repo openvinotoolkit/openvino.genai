@@ -18,11 +18,11 @@ void expect_contains(const std::string& haystack, const std::string& needle) {
 class LoggerTests : public ::testing::Test {
 protected:
     void SetUp() override {
-        GenAILogger.set_log_level(ov::log::Level::DEBUG);
+        ov::genai::Logger::get_instance().set_log_level(ov::log::Level::DEBUG);
     }
 
     void TearDown() override {
-        GenAILogger.set_log_level(ov::log::Level::NO);
+        ov::genai::Logger::get_instance().set_log_level(ov::log::Level::NO);
     }
 };
 
@@ -30,7 +30,7 @@ protected:
 
 TEST_F(LoggerTests, SupportsPrintfStyleFormatting) {
     testing::internal::CaptureStdout();
-    GenAILogPrint(ov::log::Level::INFO, "The value of %s is %d", "alpha", 42);
+    OPENVINO_INFO("The value of %s is %d", "alpha", 42);
     std::string output = testing::internal::GetCapturedStdout();
 
     expect_contains(output, "[INFO] ");
@@ -41,7 +41,7 @@ TEST_F(LoggerTests, SupportsPrintfStyleFormatting) {
 
 TEST_F(LoggerTests, KeepsSingleTrailingNewline) {
     testing::internal::CaptureStdout();
-    GenAILogPrint(ov::log::Level::INFO, "Message with newline\n");
+    OPENVINO_INFO("Message with newline\n");
     std::string output = testing::internal::GetCapturedStdout();
 
     expect_contains(output, "[INFO] ");
@@ -49,18 +49,18 @@ TEST_F(LoggerTests, KeepsSingleTrailingNewline) {
 }
 
 TEST_F(LoggerTests, ValidFormatDoesNotThrow) {
-    EXPECT_NO_THROW(GenAILogPrint(ov::log::Level::INFO, "Hello, %s", "world"));
-    EXPECT_NO_THROW(GenAILogPrint(ov::log::Level::INFO, "Hello, %s\n", "world"));
-    EXPECT_NO_THROW(GenAILogPrint(ov::log::Level::INFO, "%d + %d = %d", 1, 2, 3));
-    EXPECT_NO_THROW(GenAILogPrint(ov::log::Level::INFO, "Pi is approximately %.2f", 3.14159));
-    EXPECT_NO_THROW(GenAILogPrint(ov::log::Level::INFO, "Hex: 0x%X", 255));
-    EXPECT_NO_THROW(GenAILogPrint(ov::log::Level::INFO, "Pointer %p", static_cast<const void*>(this)));
+    EXPECT_NO_THROW(OPENVINO_INFO("Hello, %s", "world"));
+    EXPECT_NO_THROW(OPENVINO_INFO("Hello, %s\n", "world"));
+    EXPECT_NO_THROW(OPENVINO_INFO("%d + %d = %d", 1, 2, 3));
+    EXPECT_NO_THROW(OPENVINO_INFO("Pi is approximately %.2f", 3.14159));
+    EXPECT_NO_THROW(OPENVINO_INFO("Hex: 0x%X", 255));
+    EXPECT_NO_THROW(OPENVINO_INFO("Pointer %p", static_cast<const void*>(this)));
 }
 
 TEST_F(LoggerTests, NoOutputWhenLevelIsNo) {
-    GenAILogger.set_log_level(ov::log::Level::NO);
+    ov::genai::Logger::get_instance().set_log_level(ov::log::Level::NO);
     testing::internal::CaptureStdout();
-    GenAILogPrint(ov::log::Level::INFO, "Should not appear");
+    OPENVINO_INFO("Should not appear");
     std::string output = testing::internal::GetCapturedStdout();
 
     EXPECT_TRUE(output.empty());
@@ -70,11 +70,11 @@ TEST_F(LoggerTests, RespectsLogLevelFiltering) {
     testing::internal::CaptureStdout();
     testing::internal::CaptureStderr();
 
-    GenAILogger.set_log_level(ov::log::Level::WARNING);
-    GenAILogPrint(ov::log::Level::DEBUG, "debug message");
-    GenAILogPrint(ov::log::Level::INFO, "info message");
-    GenAILogPrint(ov::log::Level::WARNING, "warn message");
-    GenAILogPrint(ov::log::Level::ERR, "error message");
+    ov::genai::Logger::get_instance().set_log_level(ov::log::Level::WARNING);
+    OPENVINO_DEBUG("debug message");
+    OPENVINO_INFO("info message");
+    OPENVINO_WARN("warn message");
+    OPENVINO_ERR("error message");
 
     std::string output = testing::internal::GetCapturedStdout();
     std::string error_output = testing::internal::GetCapturedStderr();
@@ -89,15 +89,15 @@ TEST_F(LoggerTests, RespectsLogLevelFiltering) {
 }
 
 TEST_F(LoggerTests, EmitsAllLogLevelsWithoutErrors) {
-    GenAILogger.set_log_level(ov::log::Level::DEBUG);
+    ov::genai::Logger::get_instance().set_log_level(ov::log::Level::DEBUG);
 
     testing::internal::CaptureStdout();
     testing::internal::CaptureStderr();
 
-    GenAILogPrint(ov::log::Level::DEBUG, "debug level message");
-    GenAILogPrint(ov::log::Level::INFO, "info level message");
-    GenAILogPrint(ov::log::Level::WARNING, "warning level message");
-    GenAILogPrint(ov::log::Level::ERR, "error level message");
+    OPENVINO_DEBUG("debug level message");
+    OPENVINO_INFO("info level message");
+    OPENVINO_WARN("warning level message");
+    OPENVINO_ERR("error level message");
 
     std::string std_output = testing::internal::GetCapturedStdout();
     std::string err_output = testing::internal::GetCapturedStderr();
