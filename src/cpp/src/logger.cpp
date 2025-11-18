@@ -20,18 +20,18 @@ namespace ov::genai {
 ov::log::Level get_openvino_env_log_level() {
     const char* env = std::getenv("OPENVINO_LOG_LEVEL");
     if (!env) {
-        return ov::log::Level::NO;
+        return ov::log::Level::ERR;
     }
     try {
         std::string env_str(env);
         size_t idx = 0;
         const auto env_var_value = std::stoi(env_str, &idx);
         if (idx != env_str.size()) {
-            return ov::log::Level::NO;
+            return ov::log::Level::ERR;
         }
         return static_cast<ov::log::Level>(env_var_value);
     } catch (...) {
-        return ov::log::Level::NO;
+        return ov::log::Level::ERR;
     }
 }
 
@@ -84,7 +84,7 @@ void Logger::write_message(ov::log::Level level, const char* file, int line, con
     format_prefix(out, level, file, line);
     out << msg;
     if (msg.empty() || msg.back() != '\n') {
-        out << std::endl;
+        out << '\n';
     }
 }
 

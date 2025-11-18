@@ -20,17 +20,13 @@ ov::log::Level get_cur_log_level();
 
 class Logger {
 public:
-    Logger();
     Logger(const Logger&) = delete;
     Logger& operator=(const Logger&) = delete;
-    static std::shared_ptr<Logger>& get_instance() {
-        static std::shared_ptr<Logger> instance;
-        std::call_once(init_flag, [&]() {
-            instance = std::make_shared<Logger>();
-        });
+    static Logger& get_instance() {
+        static Logger instance;
         return instance;
     }
-    virtual ~Logger() = default;
+    ~Logger() = default;
     void do_log(ov::log::Level level, const char* file, int line, const std::string& msg);
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -43,9 +39,9 @@ public:
     bool should_log(ov::log::Level level) const;
 
 private:
+    Logger();
     std::atomic<ov::log::Level> log_level{ov::log::Level::NO};
     std::mutex log_mutex;
-    inline static std::once_flag init_flag;
     void write_message(ov::log::Level level, const char* file, int line, const std::string& msg);
     void log_format_impl(ov::log::Level level, const char* file, int line, const char* format, va_list args);
     std::string format_from_variadic(const char* format, va_list args) const;
@@ -56,24 +52,24 @@ namespace detail {
 
 inline void log_message(ov::log::Level level, const char* file, int line, const std::string& msg) {
     auto& logger = Logger::get_instance();
-    logger->do_log(level, file, line, msg);
+    logger.do_log(level, file, line, msg);
 }
 
 inline void log_message(ov::log::Level level, const char* file, int line, const char* msg) {
     auto& logger = Logger::get_instance();
-    if (!logger->should_log(level)) {
+    if (!logger.should_log(level)) {
         return;
     }
-    logger->do_log(level, file, line, msg ? std::string(msg) : std::string());
+    logger.do_log(level, file, line, msg ? std::string(msg) : std::string());
 }
 
 template <typename... Args, typename = std::enable_if_t<(sizeof...(Args) > 0)>>
 inline void log_message(ov::log::Level level, const char* file, int line, const char* format, Args&&... args) {
     auto& logger = Logger::get_instance();
-    if (!logger->should_log(level)) {
+    if (!logger.should_log(level)) {
         return;
     }
-    logger->log_format(level, file, line, format, std::forward<Args>(args)...);
+    logger.log_format(level, file, line, format, std::forward<Args>(args)...);
 }
 
 }  // namespace detail

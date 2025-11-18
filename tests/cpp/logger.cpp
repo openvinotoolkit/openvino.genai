@@ -18,11 +18,11 @@ void expect_contains(const std::string& haystack, const std::string& needle) {
 class LoggerTests : public ::testing::Test {
 protected:
     void SetUp() override {
-        GenAILogger->set_log_level(ov::log::Level::DEBUG);
+        GenAILogger.set_log_level(ov::log::Level::DEBUG);
     }
 
     void TearDown() override {
-        GenAILogger->set_log_level(ov::log::Level::NO);
+        GenAILogger.set_log_level(ov::log::Level::NO);
     }
 };
 
@@ -58,7 +58,7 @@ TEST_F(LoggerTests, ValidFormatDoesNotThrow) {
 }
 
 TEST_F(LoggerTests, NoOutputWhenLevelIsNo) {
-    GenAILogger->set_log_level(ov::log::Level::NO);
+    GenAILogger.set_log_level(ov::log::Level::NO);
     testing::internal::CaptureStdout();
     GenAILogPrint(ov::log::Level::INFO, "Should not appear");
     std::string output = testing::internal::GetCapturedStdout();
@@ -70,7 +70,7 @@ TEST_F(LoggerTests, RespectsLogLevelFiltering) {
     testing::internal::CaptureStdout();
     testing::internal::CaptureStderr();
 
-    GenAILogger->set_log_level(ov::log::Level::WARNING);
+    GenAILogger.set_log_level(ov::log::Level::WARNING);
     GenAILogPrint(ov::log::Level::DEBUG, "debug message");
     GenAILogPrint(ov::log::Level::INFO, "info message");
     GenAILogPrint(ov::log::Level::WARNING, "warn message");
@@ -89,7 +89,7 @@ TEST_F(LoggerTests, RespectsLogLevelFiltering) {
 }
 
 TEST_F(LoggerTests, EmitsAllLogLevelsWithoutErrors) {
-    GenAILogger->set_log_level(ov::log::Level::DEBUG);
+    GenAILogger.set_log_level(ov::log::Level::DEBUG);
 
     testing::internal::CaptureStdout();
     testing::internal::CaptureStderr();
