@@ -636,8 +636,8 @@ std::unique_ptr<CircularBufferQueue<ov::InferRequest>> create_vision_encoder_ire
     for (auto& v : a_image_scale)
         v = 1.0f / (v * 255.0f);
 
-    auto image_mean = ov::op::v0::Constant(ov::element::f32, ov::Shape{1, a_image_mean.size(), 1, 1}, a_image_mean.data());
-    auto image_scale = ov::op::v0::Constant(ov::element::f32, ov::Shape{1, a_image_scale.size(), 1, 1}, a_image_scale.data());
+    auto image_mean = ov::op::v0::Constant(ov::element::f32, ov::Shape{1, a_image_mean.size(), 1, 1}, const_cast<float*>(a_image_mean.data()));
+    auto image_scale = ov::op::v0::Constant(ov::element::f32, ov::Shape{1, a_image_scale.size(), 1, 1}, const_cast<float*>(a_image_scale.data()));
 
     auto model = patch_preprocess_into_model(model_org, image_mean, image_scale);
     auto compiled_model = utils::singleton_core().compile_model(model, device, config);
@@ -807,7 +807,7 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vector<ov::
     const float VIDEO_BRANCH_CONDITION = 0.f;
     const float IMAGE_BRANCH_CONDITION = 1.f;
     std::vector<float> cond_img_vid_data{images.size() == 2u ? VIDEO_BRANCH_CONDITION : IMAGE_BRANCH_CONDITION};
-    ov::Tensor cond_img_vid(ov::element::f32, ov::Shape{1}, cond_img_vid_data.data());
+    ov::Tensor cond_img_vid(ov::element::f32, ov::Shape{1}, const_cast<float*>(cond_img_vid_data.data()));
     ov::Tensor input_image_1(ov::element::u8, image_shape, images[0].data<uint8_t>());
     ov::Tensor input_image_2(ov::element::u8,
                              image_shape,
