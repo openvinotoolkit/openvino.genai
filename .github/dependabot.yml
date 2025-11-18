@@ -29,39 +29,12 @@ updates:
   # Python dependencies
   #
   - package-ecosystem: "pip"
-    directory: "./tests/python_tests/"
-    schedule:
-      interval: "daily"
-      time: "09:00"
-      timezone: "Europe/Dublin"
-    versioning-strategy: increase-if-necessary
-
-  - package-ecosystem: "pip"
-    directory: "./tools/llm_bench/"
-    schedule:
-      interval: "daily"
-      time: "09:00"
-      timezone: "Europe/Dublin"
-    versioning-strategy: increase-if-necessary
-
-  - package-ecosystem: "pip"
-    directory: "./tools/who_what_benchmark/"
-    schedule:
-      interval: "daily"
-      time: "09:00"
-      timezone: "Europe/Dublin"
-    versioning-strategy: increase-if-necessary
-
-  - package-ecosystem: "pip"
-    directory: "./samples/"
-    schedule:
-      interval: "daily"
-      time: "09:00"
-      timezone: "Europe/Dublin"
-    versioning-strategy: increase-if-necessary
-
-  - package-ecosystem: "pip"
-    directory: "/"
+    directories:
+      - "/"
+      - "./samples/"
+      - "./tests/python_tests/"
+      - "./tools/llm_bench/"
+      - "./tools/who_what_benchmark/"
     schedule:
       interval: "daily"
       time: "09:00"
