@@ -54,6 +54,9 @@ namespace detail {
 
 inline void log_message(ov::log::Level level, const char* file, int line, const std::string& msg) {
     auto& logger = Logger::get_instance();
+    if (!logger.should_log(level)) {
+        return;
+    }
     logger.do_log(level, file, line, msg);
 }
 
@@ -76,9 +79,9 @@ inline void log_message(ov::log::Level level, const char* file, int line, const 
 
 }  // namespace detail
 
-#define OPENVINO_DEBUG(...) ::ov::genai::detail::log_message(ov::log::Level::DEBUG, __FILE__, __LINE__, __VA_ARGS__)
-#define OPENVINO_INFO(...)  ::ov::genai::detail::log_message(ov::log::Level::INFO, __FILE__, __LINE__, __VA_ARGS__)
-#define OPENVINO_WARN(...)  ::ov::genai::detail::log_message(ov::log::Level::WARNING, __FILE__, __LINE__, __VA_ARGS__)
-#define OPENVINO_ERR(...)   ::ov::genai::detail::log_message(ov::log::Level::ERR, __FILE__, __LINE__, __VA_ARGS__)
+#define GENAI_DEBUG(...) ::ov::genai::detail::log_message(ov::log::Level::DEBUG, __FILE__, __LINE__, __VA_ARGS__)
+#define GENAI_INFO(...)  ::ov::genai::detail::log_message(ov::log::Level::INFO, __FILE__, __LINE__, __VA_ARGS__)
+#define GENAI_WARN(...)  ::ov::genai::detail::log_message(ov::log::Level::WARNING, __FILE__, __LINE__, __VA_ARGS__)
+#define GENAI_ERR(...)   ::ov::genai::detail::log_message(ov::log::Level::ERR, __FILE__, __LINE__, __VA_ARGS__)
 
 }  // namespace ov::genai

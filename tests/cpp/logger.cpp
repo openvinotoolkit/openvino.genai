@@ -30,7 +30,7 @@ protected:
 
 TEST_F(LoggerTests, SupportsPrintfStyleFormatting) {
     testing::internal::CaptureStdout();
-    OPENVINO_INFO("The value of %s is %d", "alpha", 42);
+    GENAI_INFO("The value of %s is %d", "alpha", 42);
     std::string output = testing::internal::GetCapturedStdout();
 
     expect_contains(output, "[INFO] ");
@@ -41,7 +41,7 @@ TEST_F(LoggerTests, SupportsPrintfStyleFormatting) {
 
 TEST_F(LoggerTests, KeepsSingleTrailingNewline) {
     testing::internal::CaptureStdout();
-    OPENVINO_INFO("Message with newline\n");
+    GENAI_INFO("Message with newline\n");
     std::string output = testing::internal::GetCapturedStdout();
 
     expect_contains(output, "[INFO] ");
@@ -49,18 +49,18 @@ TEST_F(LoggerTests, KeepsSingleTrailingNewline) {
 }
 
 TEST_F(LoggerTests, ValidFormatDoesNotThrow) {
-    EXPECT_NO_THROW(OPENVINO_INFO("Hello, %s", "world"));
-    EXPECT_NO_THROW(OPENVINO_INFO("Hello, %s\n", "world"));
-    EXPECT_NO_THROW(OPENVINO_INFO("%d + %d = %d", 1, 2, 3));
-    EXPECT_NO_THROW(OPENVINO_INFO("Pi is approximately %.2f", 3.14159));
-    EXPECT_NO_THROW(OPENVINO_INFO("Hex: 0x%X", 255));
-    EXPECT_NO_THROW(OPENVINO_INFO("Pointer %p", static_cast<const void*>(this)));
+    EXPECT_NO_THROW(GENAI_INFO("Hello, %s", "world"));
+    EXPECT_NO_THROW(GENAI_INFO("Hello, %s\n", "world"));
+    EXPECT_NO_THROW(GENAI_INFO("%d + %d = %d", 1, 2, 3));
+    EXPECT_NO_THROW(GENAI_INFO("Pi is approximately %.2f", 3.14159));
+    EXPECT_NO_THROW(GENAI_INFO("Hex: 0x%X", 255));
+    EXPECT_NO_THROW(GENAI_INFO("Pointer %p", static_cast<const void*>(this)));
 }
 
 TEST_F(LoggerTests, NoOutputWhenLevelIsNo) {
     ov::genai::Logger::get_instance().set_log_level(ov::log::Level::NO);
     testing::internal::CaptureStdout();
-    OPENVINO_INFO("Should not appear");
+    GENAI_INFO("Should not appear");
     std::string output = testing::internal::GetCapturedStdout();
 
     EXPECT_TRUE(output.empty());
@@ -71,10 +71,10 @@ TEST_F(LoggerTests, RespectsLogLevelFiltering) {
     testing::internal::CaptureStderr();
 
     ov::genai::Logger::get_instance().set_log_level(ov::log::Level::WARNING);
-    OPENVINO_DEBUG("debug message");
-    OPENVINO_INFO("info message");
-    OPENVINO_WARN("warn message");
-    OPENVINO_ERR("error message");
+    GENAI_DEBUG("debug message");
+    GENAI_INFO("info message");
+    GENAI_WARN("warn message");
+    GENAI_ERR("error message");
 
     std::string output = testing::internal::GetCapturedStdout();
     std::string error_output = testing::internal::GetCapturedStderr();
@@ -90,21 +90,23 @@ TEST_F(LoggerTests, RespectsLogLevelFiltering) {
 
 TEST_F(LoggerTests, EmitsAllLogLevelsWithoutErrors) {
     ov::genai::Logger::get_instance().set_log_level(ov::log::Level::DEBUG);
-
     testing::internal::CaptureStdout();
     testing::internal::CaptureStderr();
 
-    OPENVINO_DEBUG("debug level message");
-    OPENVINO_INFO("info level message");
-    OPENVINO_WARN("warning level message");
-    OPENVINO_ERR("error level message");
+    GENAI_DEBUG("debug level message");
+    GENAI_INFO("info level message");
+    GENAI_WARN("warning level message");
+    GENAI_ERR("error level message");
 
     std::string std_output = testing::internal::GetCapturedStdout();
     std::string err_output = testing::internal::GetCapturedStderr();
 
-    expect_contains(std_output, "[DEBUG][");
+    // DEBUG output should contain timestamp and file:line
+    expect_contains(std_output, "[DEBUG] ");
+    expect_contains(std_output, "T");  // Timestamp contains 'T'
     expect_contains(std_output, ":");
     expect_contains(std_output, "debug level message");
+    // INFO and WARNING should not contain timestamp
     expect_contains(std_output, "[INFO] info level message");
     expect_contains(std_output, "[WARNING] warning level message");
 

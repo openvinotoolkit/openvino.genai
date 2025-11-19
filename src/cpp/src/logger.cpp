@@ -4,9 +4,11 @@
 #include "logger.hpp"
 
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -45,16 +47,10 @@ Logger::Logger() {
 }
 
 void Logger::do_log(ov::log::Level level, const char* file, int line, const std::string& msg) {
-    if (!should_log(level)) {
-        return;
-    }
     write_message(level, file, line, msg);
 }
 
 void Logger::log_format(ov::log::Level level, const char* file, int line, const char* format, ...) {
-    if (!should_log(level)) {
-        return;
-    }
     va_list args;
     va_start(args, format);
     try {
@@ -84,7 +80,11 @@ void Logger::write_message(ov::log::Level level, const char* file, int line, con
     format_prefix(out, level, file, line);
     out << msg;
     if (msg.empty() || msg.back() != '\n') {
-        out << '\n';
+        if (level == ov::log::Level::ERR) {
+            out << std::endl;
+        } else {
+            out << '\n';
+        }
     }
 }
 
@@ -107,7 +107,7 @@ std::string Logger::format_from_variadic(const char* format, va_list args) const
     if (required == 0) {
         return {};
     }
-    std::vector<char> buffer(static_cast<size_t>(required) + 1u, '\0');
+    std::vector<char> buffer(static_cast<size_t>(required) + 1u);
     int result = std::vsnprintf(buffer.data(), buffer.size(), format, args);
     if (result < 0) {
         throw std::runtime_error("Logger format error: failed to format message");
@@ -126,7 +126,7 @@ std::string_view Logger::get_filename(std::string_view file_path) const {
 std::ostream& Logger::format_prefix(std::ostream& out, ov::log::Level level, const char* file, int line) const {
     switch (level) {
     case ov::log::Level::DEBUG:
-        out << "[DEBUG][" << get_filename(file) << ":" << line << "] ";
+        out << "[DEBUG] ";
         break;
     case ov::log::Level::INFO:
         out << "[INFO] ";
@@ -141,6 +141,23 @@ std::ostream& Logger::format_prefix(std::ostream& out, ov::log::Level level, con
         out << "[LOG] ";
         break;
     }
+
+    // Add timestamp and file info only for DEBUG level
+    if (level == ov::log::Level::DEBUG) {
+        {
+            static std::mutex m;
+            time_t tt = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+            std::lock_guard<std::mutex> lock(m);
+            auto tm = gmtime(&tt);
+            if (tm) {
+                char buffer[256];
+                strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%Sz", tm);
+                out << buffer << " ";
+            }
+        }
+        out << get_filename(file) << ":" << line << "\t";
+    }
+
     return out;
 }
 
