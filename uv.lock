@@ -2614,7 +2614,7 @@ wheels = [
 
 [[package]]
 name = "openvino"
-version = "2025.4.0.dev20251031"
+version = "2026.0.0.dev20251118"
 source = { registry = "https://storage.openvinotoolkit.org/simple/wheels/nightly" }
 dependencies = [
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13' and platform_machine == 'x86_64' and sys_platform == 'darwin'" },
@@ -2623,63 +2623,38 @@ dependencies = [
     { name = "packaging" },
 ]
 wheels = [
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp310-cp310-macosx_10_15_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp310-cp310-macosx_11_0_arm64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp310-cp310-manylinux2014_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp310-cp310-manylinux_2_35_aarch64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp310-cp310-win_amd64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp311-cp311-macosx_10_15_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp311-cp311-macosx_11_0_arm64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp311-cp311-manylinux2014_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp311-cp311-manylinux_2_35_aarch64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp311-cp311-win_amd64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp312-cp312-macosx_10_15_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp312-cp312-macosx_11_0_arm64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp312-cp312-manylinux2014_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp312-cp312-manylinux_2_35_aarch64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp312-cp312-win_amd64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp313-cp313-macosx_10_15_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp313-cp313-macosx_11_0_arm64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp313-cp313-manylinux2014_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp313-cp313-manylinux_2_35_aarch64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp313-cp313-win_amd64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp314-cp314-macosx_10_15_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp314-cp314-macosx_11_0_arm64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp314-cp314-manylinux2014_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp314-cp314t-macosx_10_15_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp314-cp314t-macosx_11_0_arm64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20352-cp314-cp314t-manylinux2014_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp310-cp310-macosx_10_15_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp310-cp310-macosx_11_0_arm64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp310-cp310-manylinux2014_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp310-cp310-manylinux_2_35_aarch64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp310-cp310-win_amd64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp311-cp311-macosx_10_15_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp311-cp311-macosx_11_0_arm64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp311-cp311-manylinux2014_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp311-cp311-manylinux_2_35_aarch64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp311-cp311-win_amd64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp312-cp312-macosx_10_15_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp312-cp312-macosx_11_0_arm64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp312-cp312-manylinux2014_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp312-cp312-manylinux_2_35_aarch64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp312-cp312-win_amd64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp313-cp313-macosx_10_15_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp313-cp313-macosx_11_0_arm64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp313-cp313-manylinux2014_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp313-cp313-manylinux_2_35_aarch64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp313-cp313-win_amd64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp314-cp314-macosx_10_15_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp314-cp314-macosx_11_0_arm64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp314-cp314-manylinux2014_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp314-cp314t-macosx_10_15_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp314-cp314t-macosx_11_0_arm64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2025.4.0.dev20251031-20355-cp314-cp314t-manylinux2014_x86_64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp310-cp310-macosx_10_15_x86_64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp310-cp310-macosx_11_0_arm64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp310-cp310-manylinux2014_x86_64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp310-cp310-manylinux_2_35_aarch64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp310-cp310-win_amd64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp311-cp311-macosx_10_15_x86_64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp311-cp311-macosx_11_0_arm64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp311-cp311-manylinux2014_x86_64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp311-cp311-manylinux_2_35_aarch64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp311-cp311-win_amd64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp312-cp312-macosx_10_15_x86_64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp312-cp312-macosx_11_0_arm64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp312-cp312-manylinux2014_x86_64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp312-cp312-manylinux_2_35_aarch64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp312-cp312-win_amd64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp313-cp313-macosx_10_15_x86_64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp313-cp313-macosx_11_0_arm64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp313-cp313-manylinux2014_x86_64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp313-cp313-manylinux_2_35_aarch64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp313-cp313-win_amd64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp314-cp314-macosx_10_15_x86_64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp314-cp314-macosx_11_0_arm64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp314-cp314-manylinux2014_x86_64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp314-cp314-win_amd64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp314-cp314t-macosx_10_15_x86_64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp314-cp314t-macosx_11_0_arm64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino/openvino-2026.0.0.dev20251118-20478-cp314-cp314t-manylinux2014_x86_64.whl" },
 ]
 
 [[package]]
 name = "openvino-genai"
-version = "2025.4.0.0"
+version = "2026.0.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "openvino" },
@@ -2687,11 +2662,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-testing = [
-    { name = "pytest" },
-]
-
-[package.dev-dependencies]
 dev = [
     { name = "pytest" },
     { name = "pytest-xdist" },
@@ -2720,6 +2690,9 @@ samples-export = [
     { name = "torchvision", version = "0.23.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(python_full_version >= '3.14' and sys_platform == 'linux') or (platform_machine != 'aarch64' and sys_platform == 'linux') or (platform_python_implementation != 'CPython' and sys_platform == 'linux') or (sys_platform != 'darwin' and sys_platform != 'linux')" },
     { name = "transformers" },
     { name = "transformers-stream-generator" },
+]
+testing = [
+    { name = "pytest" },
 ]
 testing-full = [
     { name = "datasets", version = "3.6.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux'" },
@@ -2750,64 +2723,54 @@ testing-full = [
 
 [package.metadata]
 requires-dist = [
-    { name = "openvino", specifier = "~=2025.4.0.0.dev0", index = "https://storage.openvinotoolkit.org/simple/wheels/nightly" },
-    { name = "openvino-tokenizers", specifier = "~=2025.4.0.0.dev0", index = "https://storage.openvinotoolkit.org/simple/wheels/nightly" },
+    { name = "backoff", marker = "extra == 'samples-export'", specifier = "==2.2.1" },
+    { name = "datasets", marker = "sys_platform == 'linux' and extra == 'testing-full'", specifier = "==4.1.1" },
+    { name = "datasets", marker = "sys_platform != 'linux' and extra == 'testing-full'", specifier = "==3.6.0" },
+    { name = "diffusers", marker = "extra == 'samples-export'", specifier = "==0.35.2" },
+    { name = "diffusers", marker = "extra == 'testing-full'", specifier = "==0.35.2" },
+    { name = "einops", marker = "extra == 'samples-export'", specifier = "==0.8.1" },
+    { name = "einops", marker = "extra == 'testing-full'", specifier = "==0.8.1" },
+    { name = "gguf", marker = "extra == 'testing-full'", specifier = "==0.17.1" },
+    { name = "hf-transfer", marker = "extra == 'samples-export'", specifier = "==0.1.9" },
+    { name = "hf-transfer", marker = "extra == 'testing-full'", specifier = "==0.1.9" },
+    { name = "json5", marker = "extra == 'samples'", specifier = "==0.12.1" },
+    { name = "langchain-community", marker = "extra == 'testing-full'", specifier = "==0.4" },
+    { name = "langchain-core", marker = "extra == 'testing-full'", specifier = "==1.0.1" },
+    { name = "librosa", marker = "extra == 'samples'", specifier = "==0.11.0" },
+    { name = "librosa", marker = "extra == 'testing-full'", specifier = "==0.11.0" },
+    { name = "numpy", marker = "python_full_version >= '3.13' and extra == 'samples-export'", specifier = ">=2.1.0" },
+    { name = "numpy", marker = "python_full_version >= '3.13' and extra == 'testing-full'", specifier = ">=2.1.0" },
+    { name = "numpy", marker = "python_full_version < '3.13' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra == 'samples-export'", specifier = "==1.26.4" },
+    { name = "numpy", marker = "python_full_version < '3.13' and platform_machine == 'x86_64' and sys_platform == 'darwin' and extra == 'testing-full'", specifier = "==1.26.4" },
+    { name = "openvino", specifier = "~=2026.0.0.0.dev0", index = "https://storage.openvinotoolkit.org/simple/wheels/nightly" },
+    { name = "openvino-tokenizers", specifier = "~=2026.0.0.0.dev0", index = "https://storage.openvinotoolkit.org/simple/wheels/nightly" },
+    { name = "optimum-intel", marker = "extra == 'testing-full'", specifier = "==1.26.0" },
+    { name = "optimum-intel", extras = ["nncf"], marker = "extra == 'samples-export'", specifier = "==1.26.0" },
+    { name = "peft", marker = "extra == 'samples-export'", specifier = "==0.17.1" },
+    { name = "peft", marker = "extra == 'testing-full'", specifier = "==0.17.1" },
+    { name = "pillow", marker = "extra == 'samples'", specifier = "==12.0.0" },
+    { name = "pydantic", marker = "extra == 'samples'", specifier = "==2.12.3" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=6.0" },
     { name = "pytest", marker = "extra == 'testing'", specifier = ">=6.0" },
+    { name = "pytest", marker = "extra == 'testing-full'", specifier = "==8.4.2" },
+    { name = "pytest-xdist", marker = "extra == 'dev'" },
+    { name = "rouge", marker = "extra == 'testing-full'", specifier = "==1.0.1" },
+    { name = "ruff", marker = "extra == 'dev'" },
+    { name = "safetensors", marker = "platform_machine == 'x86_64' and sys_platform == 'darwin' and extra == 'samples-export'", specifier = "==0.6.2" },
+    { name = "safetensors", marker = "platform_machine == 'x86_64' and sys_platform == 'darwin' and extra == 'testing-full'", specifier = "==0.6.2" },
+    { name = "soundfile", marker = "extra == 'testing-full'", specifier = "==0.13.1" },
+    { name = "timm", marker = "extra == 'samples-export'", specifier = "==1.0.21" },
+    { name = "timm", marker = "extra == 'testing-full'", specifier = "==1.0.21" },
+    { name = "torchcodec", marker = "sys_platform == 'linux' and extra == 'testing-full'", specifier = "==0.7.0" },
+    { name = "torchvision", marker = "platform_machine == 'x86_64' and sys_platform == 'darwin' and extra == 'samples-export'", specifier = "==0.17.2", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "torchvision", marker = "platform_machine == 'x86_64' and sys_platform == 'darwin' and extra == 'testing-full'", specifier = "==0.17.2", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "torchvision", marker = "(platform_machine != 'x86_64' and extra == 'samples-export') or (sys_platform != 'darwin' and extra == 'samples-export')", specifier = "==0.23.0", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "torchvision", marker = "(platform_machine != 'x86_64' and extra == 'testing-full') or (sys_platform != 'darwin' and extra == 'testing-full')", specifier = "==0.23.0", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "transformers", marker = "extra == 'samples-export'", specifier = "==4.55.4" },
+    { name = "transformers", marker = "extra == 'testing-full'", specifier = "==4.55.4" },
+    { name = "transformers-stream-generator", marker = "extra == 'samples-export'", specifier = "==0.0.5" },
 ]
-provides-extras = ["testing"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=6.0" },
-    { name = "pytest-xdist" },
-    { name = "ruff" },
-]
-samples = [
-    { name = "json5", specifier = "==0.12.1" },
-    { name = "librosa", specifier = "==0.11.0" },
-    { name = "pillow", specifier = "==12.0.0" },
-    { name = "pydantic", specifier = "==2.12.3" },
-]
-samples-export = [
-    { name = "backoff", specifier = "==2.2.1" },
-    { name = "diffusers", specifier = "==0.35.2" },
-    { name = "einops", specifier = "==0.8.1" },
-    { name = "hf-transfer", specifier = "==0.1.9" },
-    { name = "numpy", marker = "python_full_version >= '3.13'", specifier = ">=2.1.0" },
-    { name = "numpy", marker = "python_full_version < '3.13' and platform_machine == 'x86_64' and sys_platform == 'darwin'", specifier = "==1.26.4" },
-    { name = "optimum-intel", extras = ["nncf"], specifier = "==1.26.0" },
-    { name = "peft", specifier = "==0.17.1" },
-    { name = "safetensors", marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'", specifier = "==0.6.2" },
-    { name = "timm", specifier = "==1.0.21" },
-    { name = "torchvision", marker = "platform_machine != 'x86_64' or sys_platform != 'darwin'", specifier = "==0.23.0", index = "https://download.pytorch.org/whl/cpu" },
-    { name = "torchvision", marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'", specifier = "==0.17.2", index = "https://download.pytorch.org/whl/cpu" },
-    { name = "transformers", specifier = "==4.55.4" },
-    { name = "transformers-stream-generator", specifier = "==0.0.5" },
-]
-testing-full = [
-    { name = "datasets", marker = "sys_platform != 'linux'", specifier = "==3.6.0" },
-    { name = "datasets", marker = "sys_platform == 'linux'", specifier = "==4.1.1" },
-    { name = "diffusers", specifier = "==0.35.2" },
-    { name = "einops", specifier = "==0.8.1" },
-    { name = "gguf", specifier = "==0.17.1" },
-    { name = "hf-transfer", specifier = "==0.1.9" },
-    { name = "langchain-community", specifier = "==0.4" },
-    { name = "langchain-core", specifier = "==1.0.1" },
-    { name = "librosa", specifier = "==0.11.0" },
-    { name = "numpy", marker = "python_full_version >= '3.13'", specifier = ">=2.1.0" },
-    { name = "numpy", marker = "python_full_version < '3.13' and platform_machine == 'x86_64' and sys_platform == 'darwin'", specifier = "==1.26.4" },
-    { name = "optimum-intel", specifier = "==1.26.0" },
-    { name = "peft", specifier = "==0.17.1" },
-    { name = "pytest", specifier = "==8.4.2" },
-    { name = "rouge", specifier = "==1.0.1" },
-    { name = "safetensors", marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'", specifier = "==0.6.2" },
-    { name = "soundfile", specifier = "==0.13.1" },
-    { name = "timm", specifier = "==1.0.21" },
-    { name = "torchcodec", marker = "sys_platform == 'linux'", specifier = "==0.7.0" },
-    { name = "torchvision", marker = "platform_machine != 'x86_64' or sys_platform != 'darwin'", specifier = "==0.23.0", index = "https://download.pytorch.org/whl/cpu" },
-    { name = "torchvision", marker = "platform_machine == 'x86_64' and sys_platform == 'darwin'", specifier = "==0.17.2", index = "https://download.pytorch.org/whl/cpu" },
-    { name = "transformers", specifier = "==4.55.4" },
-]
+provides-extras = ["testing", "samples", "samples-export", "testing-full", "dev"]
 
 [[package]]
 name = "openvino-telemetry"
@@ -2820,17 +2783,17 @@ wheels = [
 
 [[package]]
 name = "openvino-tokenizers"
-version = "2025.4.0.0.dev20251031"
+version = "2026.0.0.0.dev20251118"
 source = { registry = "https://storage.openvinotoolkit.org/simple/wheels/nightly" }
 dependencies = [
     { name = "openvino" },
 ]
 wheels = [
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino-tokenizers/openvino_tokenizers-2025.4.0.0.dev20251031-py3-none-macosx_10_15_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino-tokenizers/openvino_tokenizers-2025.4.0.0.dev20251031-py3-none-macosx_11_0_arm64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino-tokenizers/openvino_tokenizers-2025.4.0.0.dev20251031-py3-none-manylinux2014_x86_64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino-tokenizers/openvino_tokenizers-2025.4.0.0.dev20251031-py3-none-manylinux_2_31_aarch64.whl" },
-    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino-tokenizers/openvino_tokenizers-2025.4.0.0.dev20251031-py3-none-win_amd64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino-tokenizers/openvino_tokenizers-2026.0.0.0.dev20251118-py3-none-macosx_10_15_x86_64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino-tokenizers/openvino_tokenizers-2026.0.0.0.dev20251118-py3-none-macosx_11_0_arm64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino-tokenizers/openvino_tokenizers-2026.0.0.0.dev20251118-py3-none-manylinux2014_x86_64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino-tokenizers/openvino_tokenizers-2026.0.0.0.dev20251118-py3-none-manylinux_2_31_aarch64.whl" },
+    { url = "https://storage.openvinotoolkit.org/wheels/nightly/openvino-tokenizers/openvino_tokenizers-2026.0.0.0.dev20251118-py3-none-win_amd64.whl" },
 ]
 
 [[package]]
