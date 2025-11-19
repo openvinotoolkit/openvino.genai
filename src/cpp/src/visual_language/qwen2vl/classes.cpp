@@ -660,10 +660,8 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const std::filesystem::path& model_di
     : VisionEncoder(model_dir, device, properties),
       use_ov_image_preprocess(check_image_preprocess_env()) {
     if (use_ov_image_preprocess) {
-        auto properties_without_extensions = properties;
-        utils::add_extensions_to_core(properties_without_extensions);
         auto model_org = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
-        m_ireq_queue_vision_encoder = create_vision_encoder_ireq(model_org, m_processor_config, device, properties_without_extensions);
+        m_ireq_queue_vision_encoder = create_vision_encoder_ireq(model_org, m_processor_config, device, properties);
     }
 }
 
@@ -676,10 +674,8 @@ VisionEncoderQwen2VL::VisionEncoderQwen2VL(const ModelsMap& models_map,
     if (use_ov_image_preprocess) {
         const auto& [vision_encoder_model, vision_encoder_weights] =
             utils::get_model_weights_pair(models_map, "vision_embeddings");
-        auto properties_without_extensions = properties;
-        utils::add_extensions_to_core(properties_without_extensions);
         auto model_org = utils::singleton_core().read_model(vision_encoder_model, vision_encoder_weights);
-        m_ireq_queue_vision_encoder = create_vision_encoder_ireq(model_org, m_processor_config, device, properties_without_extensions);
+        m_ireq_queue_vision_encoder = create_vision_encoder_ireq(model_org, m_processor_config, device, properties);
     }
 }
 
@@ -927,12 +923,10 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, model_dir, device, device_config) {
-    auto properties_without_extensions = device_config;
-    utils::add_extensions_to_core(properties_without_extensions);
     auto model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_merger_model.xml");
     utils::request_vl_sdpa_transformations(model);
 
-    auto compiled_model = utils::singleton_core().compile_model(model, device, properties_without_extensions);
+    auto compiled_model = utils::singleton_core().compile_model(model, device, device_config);
 
     m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
     ov::genai::utils::print_compiled_model_properties(compiled_model,
@@ -958,8 +952,6 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
-    auto properties_without_extensions = device_config;
-    utils::add_extensions_to_core(properties_without_extensions);
     auto model = utils::singleton_core().read_model(
         utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
         utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
@@ -967,7 +959,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
 
     auto compiled_model = utils::singleton_core().compile_model(model,
         device,
-        properties_without_extensions
+        device_config
     );
 
     m_with_cu_seqlens_input = utils::check_vl_sdpa_transformations(compiled_model);
