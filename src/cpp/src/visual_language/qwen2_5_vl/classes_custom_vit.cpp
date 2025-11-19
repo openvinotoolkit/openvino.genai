@@ -52,14 +52,17 @@ inline bool file_exists(const std::string& name) {
 void InputsEmbedderQwen2_5_VL_CustomVIT::load_custom_vit_lib() {
     int32_t err;
 #if defined(_MSC_VER)
-    m = LoadLibraryA((custom_vit_path + "\\cm.ocl.qwen2vl.lib.dll").c_str());
+    std::string vit_lib_path = custom_vit_path + "\\cm.ocl.qwen2vl.lib.dll";
+    m = LoadLibraryA(vit_lib_path.c_str());
 #else
-    m = dlopen((custom_vit_path + std::string("/libcm.ocl.qwen2vl.lib.so")).c_str(), RTLD_LAZY);
+    std::string vit_lib_path = custom_vit_path + std::string("/libcm.ocl.qwen2vl.lib.so");
+    m = dlopen(vit_lib_path.c_str(), RTLD_LAZY);
     if (!m) {
         fprintf(stderr, "%s\n", dlerror());
         exit(1);
     }
 #endif
+    std::cout << "== vit_lib_path = " << vit_lib_path.c_str() << std::endl;
 
 #if defined(_MSC_VER)
     create = (pfnCreateQwen2vl*)GetProcAddress(static_cast<HMODULE>(m), "createModelQwen2vl");
@@ -75,6 +78,8 @@ void InputsEmbedderQwen2_5_VL_CustomVIT::load_custom_vit_lib() {
     size_t len = model_weight_fn.length();
     char_weight_fn = new char[len + 1];
     std::strcpy(char_weight_fn, model_weight_fn.c_str());
+
+    std::cout << "== char_weight_fn = " << char_weight_fn << std::endl;
 
     uint32_t flag = 1;
     qwen2vlModel = create(batchSize, char_weight_fn, flag);
