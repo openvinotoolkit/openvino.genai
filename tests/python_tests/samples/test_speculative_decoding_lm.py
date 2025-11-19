@@ -57,7 +57,7 @@ class TestEagle3SpeculativeDecodingLM:
     @pytest.mark.parametrize(
         "convert_model, convert_draft_model, sample_args",
         [
-            pytest.param("Qwen3-1.7B", "qwen3_1.7b_eagle3", test_prompt, marks=pytest.mark.skip(reason = 'CVS-171947, CVS-171943, CVS-174959')),
+            pytest.param("Qwen3-1.7B", "qwen3_1.7b_eagle3", test_prompt, marks=pytest.mark.skip(reason='CVS-171947, CVS-171943, CVS-174959')),
         ],
         indirect=["convert_model", "convert_draft_model"],
     )
