@@ -534,7 +534,7 @@ def test_speculative_decoding_extended_perf_metrics(pipeline_type):
 
 @pytest.mark.precommit
 def test_continuous_batching_add_extension():
-    model_id = 'katuni4ka/tiny-random-phi3'
+    model_id = "katuni4ka/tiny-random-phi3"
     _, _, models_path = download_and_convert_model(model_id)
 
     scheduler_config = SchedulerConfig()
