@@ -719,28 +719,28 @@ private:
             return;
         }
 
+        // lambda to create ROI coordinates
+        auto make_roi = [](const std::vector<size_t>& shape, size_t first_dim_start, size_t first_dim_end) {
+            ov::Coordinate start(shape.size(), 0), end(shape.size(), 0);
+            start[0] = first_dim_start;
+            end[0] = first_dim_end;
+            for (size_t d = 1; d < shape.size(); ++d) {
+                start[d] = 0;
+                end[d] = shape[d];
+            }
+            return std::make_pair(start, end);
+        };
+
         // prepare source ROI coords
         const auto src_shape = src.get_shape();
         OPENVINO_ASSERT(!src_shape.empty(), "source tensor rank is zero");
-        ov::Coordinate src_start(src_shape.size(), 0), src_end(src_shape.size(), 0);
-        src_start[0] = src_start_idx;
-        src_end[0] = src_start_idx + copy_length;
-        for (size_t d = 1; d < src_shape.size(); ++d) {
-            src_start[d] = 0;
-            src_end[d] = src_shape[d];
-        }
+        auto [src_start, src_end] = make_roi(src_shape, src_start_idx, src_start_idx + copy_length);
         ov::Tensor src_roi(src, src_start, src_end);
 
         // prepare destination ROI coords
         const auto dst_shape = dst_base.get_shape();
         OPENVINO_ASSERT(!dst_shape.empty(), "destination tensor rank is zero");
-        ov::Coordinate tgt_start(dst_shape.size(), 0), tgt_end(dst_shape.size(), 0);
-        tgt_start[0] = dst_first_dim_start;
-        tgt_end[0] = dst_first_dim_start + copy_length;
-        for (size_t d = 1; d < dst_shape.size(); ++d) {
-            tgt_start[d] = 0;
-            tgt_end[d] = dst_shape[d];
-        }
+        auto [tgt_start, tgt_end] = make_roi(dst_shape, dst_first_dim_start, dst_first_dim_start + copy_length);
         ov::Tensor tgt_roi(dst_base, tgt_start, tgt_end);
 
         // bulk copy

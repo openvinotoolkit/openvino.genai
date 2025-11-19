@@ -34,8 +34,12 @@ extract_eagle_mode_from_config(ov::AnyMap& config, const std::filesystem::path& 
         eagle_rt_info.eagle3_mode = config.at("eagle3_mode").as<bool>();
         config.erase("eagle3_mode");
         if (config.find("hidden_layers_list") != config.end()) {
-            eagle_rt_info.hidden_layers_list = config.at("hidden_layers_list").as<std::vector<int>>();
-            config.erase("hidden_layers_list");
+            try {
+                eagle_rt_info.hidden_layers_list = config.at("hidden_layers_list").as<std::vector<int>>();
+                config.erase("hidden_layers_list");
+            } catch (const std::exception&) {
+                OPENVINO_THROW("please check the hidden layers input");
+            }
         } else {
             // compute the layers from number of hidden layers
             auto config_file_path = models_path / "config.json";
@@ -55,6 +59,7 @@ extract_eagle_mode_from_config(ov::AnyMap& config, const std::filesystem::path& 
             // If you wish to use different layers, provide the "hidden_layers_list" parameter in the config.
             eagle_rt_info.hidden_layers_list = { 2, num_decoder_layers / 2, num_decoder_layers - 3 };
         }
+        OPENVINO_ASSERT(eagle_rt_info.hidden_layers_list.size() == 3, "only exact 3 layer extraction are expected in eagle3");
     }
     return eagle_rt_info;
 }

@@ -228,6 +228,8 @@ bool EagleBaseTransform::apply(NodePtr node, std::vector<std::shared_ptr<v0::Res
 Eagle3Transform::Eagle3Transform(const std::vector<int>& layers, std::vector<Output<Node>>& hidden_state_outputs) : m_layers(layers) {
     auto is_target_pattern = [&](const Output<Node>& output) {
         auto add_node = ov::as_type_ptr<v1::Add>(output.get_node_shared_ptr());
+        if (!add_node)
+            return false;
         auto add_node_name = add_node->get_friendly_name();
         if (add_node_name.find("self_attn") != std::string::npos)
             return false; // Skip self-attention layers
@@ -333,7 +335,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
 
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_ids(const ov::Tensor& original_input_ids) {
     auto shape = original_input_ids.get_shape();
-    if (shape.size() == 0 || shape.back() <= 1) {
+    if (shape.size() == 0u || shape.back() <= 1u) {
         return ov::Tensor(original_input_ids);
     }
 
@@ -386,7 +388,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::add_request(uint64_t request_id,
     draft_sampling_params.ignore_eos = true;
     draft_sampling_params.stop_strings = {};
     // remove first token from input_ids to create draft_input_ids
-    // add_special_tokens is false for better compress rate
+    // add_special_tokens is false for better compression rate
     auto input_ids = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false)).input_ids;
     ov::Tensor draft_input_ids = create_draft_input_ids(input_ids);
     m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, draft_input_ids, draft_sampling_params)});
