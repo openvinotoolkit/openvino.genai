@@ -1,5 +1,6 @@
 from typing import Any, Union
 
+import itertools
 import os
 import torch
 import numpy as np
@@ -188,10 +189,7 @@ class EmbeddingsEvaluator(BaseEvaluator):
                 data_input = data[0][:batch_size]
             else:
                 # Duplicate data to reach batch_size
-                data_input = list(data[0])
-                while len(data_input) < batch_size:
-                    remaining = batch_size - len(data_input)
-                    data_input.extend(data[0][:min(remaining, data_len)])
+                data_input = list(itertools.islice(itertools.cycle(data[0]), batch_size))
 
             result = gen_answer_fn(model, self.tokenizer, data_input, **kwargs)
 
