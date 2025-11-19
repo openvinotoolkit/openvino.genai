@@ -66,11 +66,11 @@ ov::Tensor HD_transform(const ov::Tensor& uint8, size_t num_crops) {
     if (trans) {
         src = clip_image_u8{int(height), int(width), {uint8_data, uint8_data + uint8.get_size()}};
         bilinear_resize(src, dst, new_h, new_w);
-        return padding_336(ov::Tensor{ov::element::u8, {1, new_w, new_h, 3}, const_cast<uint8_t*>(dst.buf.data())});
+        return padding_336(ov::Tensor{ov::element::u8, {1, new_w, new_h, 3}, dst.buf.data()});
     }
     src = clip_image_u8{int(width), int(height), {uint8_data, uint8_data + uint8.get_size()}};
     bilinear_resize(src, dst, new_w, new_h);
-    return padding_336(ov::Tensor{ov::element::u8, {1, new_h, new_w, 3}, const_cast<uint8_t*>(dst.buf.data())});
+    return padding_336(ov::Tensor{ov::element::u8, {1, new_h, new_w, 3}, dst.buf.data()});
 }
 
 void bicubic_resize_phi3(const clip_image_u8& img, clip_image_u8& dst, int target_width, int target_height) {
@@ -304,7 +304,7 @@ std::tuple<ov::Tensor, ImageSize> get_pixel_values_phi3_v(const ov::Tensor& imag
     clip_image_u8 img{int(hd_image.get_shape().at(2)), int(hd_image.get_shape().at(1)), {hd_image.data<uint8_t>(), hd_image.data<uint8_t>() + hd_image.get_size()}};
     clip_image_u8 dst;
     bicubic_resize_phi3(img, dst, INPUT_IMAGE_SIZE, INPUT_IMAGE_SIZE);
-    ov::Tensor global_image{ov::element::u8, {1, INPUT_IMAGE_SIZE, INPUT_IMAGE_SIZE, 3}, const_cast<uint8_t*>(dst.buf.data())};
+    ov::Tensor global_image{ov::element::u8, {1, INPUT_IMAGE_SIZE, INPUT_IMAGE_SIZE, 3}, dst.buf.data()};
     global_image = mean_scale(global_image, config);
     hd_image = mean_scale(hd_image, config);
     global_image = channels_first(global_image);
