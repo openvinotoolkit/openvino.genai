@@ -35,6 +35,15 @@ inline std::string init_custom_vit_path() {
 }
 static std::string custom_vit_path = init_custom_vit_path();
 
+inline std::string get_img_path() {
+    auto env = std::getenv("CUSTOM_VIT_IMG_PATH");
+    if (env) {
+        std::cout << "== CUSTOM_VIT_IMG_PATH = " << env << std::endl;
+        return std::string(env);
+    }
+    return std::string();
+}
+
 inline bool file_exists(const std::string& name) {
     std::ifstream file(name);
     return file.good(); 
@@ -91,7 +100,7 @@ void InputsEmbedderQwen2_5_VL_CustomVIT::load_custom_vit_lib() {
 
     inputFiles = (char**)malloc(batchSize * sizeof(char*));
     memset(inputFiles, 0, batchSize * sizeof(char*));
-    std::string img_fn = custom_vit_path + "/input_img.jpg";
+    std::string img_fn = get_img_path();
     if (!file_exists(img_fn)) {
         std::cout << "Fail, img file does't exit:" << img_fn << std::endl;
         exit(0);
