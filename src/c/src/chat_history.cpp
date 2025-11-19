@@ -113,7 +113,6 @@ ov_genai_chat_history_status_e ov_genai_chat_history_get_messages(
                 return OV_GENAI_CHAT_HISTORY_OUT_OF_BOUNDS;
             }
             std::strncpy(output, json_str.c_str(), json_str.length() + 1);
-            output[json_str.length()] = '\0';
             *output_size = json_str.length() + 1;
         }
     } catch (const std::exception& e) {
@@ -146,7 +145,6 @@ ov_genai_chat_history_status_e ov_genai_chat_history_get_message(
                 return OV_GENAI_CHAT_HISTORY_OUT_OF_BOUNDS;
             }
             std::strncpy(output, json_str.c_str(), json_str.length() + 1);
-            output[json_str.length()] = '\0';
             *output_size = json_str.length() + 1;
         }
     } catch (const ov::Exception& e) {
@@ -180,7 +178,6 @@ ov_genai_chat_history_status_e ov_genai_chat_history_get_first(
                 return OV_GENAI_CHAT_HISTORY_OUT_OF_BOUNDS;
             }
             std::strncpy(output, json_str.c_str(), json_str.length() + 1);
-            output[json_str.length()] = '\0';
             *output_size = json_str.length() + 1;
         }
     } catch (const ov::Exception& e) {
@@ -214,7 +211,6 @@ ov_genai_chat_history_status_e ov_genai_chat_history_get_last(
                 return OV_GENAI_CHAT_HISTORY_OUT_OF_BOUNDS;
             }
             std::strncpy(output, json_str.c_str(), json_str.length() + 1);
-            output[json_str.length()] = '\0';
             *output_size = json_str.length() + 1;
         }
     } catch (const ov::Exception& e) {
@@ -313,7 +309,6 @@ ov_genai_chat_history_status_e ov_genai_chat_history_get_tools(
                 return OV_GENAI_CHAT_HISTORY_OUT_OF_BOUNDS;
             }
             std::strncpy(output, json_str.c_str(), json_str.length() + 1);
-            output[json_str.length()] = '\0';
             *output_size = json_str.length() + 1;
         }
     } catch (const std::exception& e) {
@@ -364,7 +359,6 @@ ov_genai_chat_history_status_e ov_genai_chat_history_get_extra_context(
                 return OV_GENAI_CHAT_HISTORY_OUT_OF_BOUNDS;
             }
             std::strncpy(output, json_str.c_str(), json_str.length() + 1);
-            output[json_str.length()] = '\0';
             *output_size = json_str.length() + 1;
         }
     } catch (const std::exception& e) {

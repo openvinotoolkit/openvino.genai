@@ -150,7 +150,7 @@ ov_status_e ov_genai_llm_pipeline_generate_with_history(ov_genai_llm_pipeline* p
                                                          const ov_genai_generation_config* config,
                                                          const streamer_callback* streamer,
                                                          ov_genai_decoded_results** results) {
-    if (!pipe || !(pipe->object) || !history || !(history->object) || !(streamer || results)) {
+    if (!pipe || !(pipe->object) || !history || !(history->object) || (!streamer && !results)) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
