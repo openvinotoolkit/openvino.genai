@@ -49,18 +49,10 @@ gptq = [
 ]
 
 [build-system]
-requires = ["hatchling", "hatch-cython"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 
 [tool.hatch.build.targets.wheel]
 packages = ["llm_bench"]
 
-
-[tool.hatch.build.hooks.cython]
-compile-args = ["-fpermissive"]
-
-[[tool.uv.index]]
-name = "openvino-nightly"
-url = "https://storage.openvinotoolkit.org/simple/wheels/nightly"
-explicit = true

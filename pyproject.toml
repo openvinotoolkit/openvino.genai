@@ -29,7 +29,6 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython"
 ]
 dependencies = [
-    "openvino~=2026.0.0.0.dev",
     "openvino-tokenizers~=2026.0.0.0.dev",
 ]
 
