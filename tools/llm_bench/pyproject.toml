@@ -1,5 +1,5 @@
 [project]
-name = "llm-bench"
+name = "llm_bench"
 version = "1.0.0"
 description = "Benchmark tool for LLM pipelines with OpenVINO"
 requires-python = ">=3.10"
@@ -35,6 +35,7 @@ dependencies = [
     "num2words",
 ]
 
+
 [project.optional-dependencies]
 conversion = [
     "einops",
@@ -48,5 +49,18 @@ gptq = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-cython"]
 build-backend = "hatchling.build"
+
+
+[tool.hatch.build.targets.wheel]
+packages = ["llm_bench"]
+
+
+[tool.hatch.build.hooks.cython]
+compile-args = ["-fpermissive"]
+
+[[tool.uv.index]]
+name = "openvino-nightly"
+url = "https://storage.openvinotoolkit.org/simple/wheels/nightly"
+explicit = true
