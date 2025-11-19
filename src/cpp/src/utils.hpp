@@ -287,6 +287,11 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
 
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties, bool is_npu_requested = false);
 
+/**
+ * @brief Extracts the "EXTENSIONS" key from the provided properties map, adds each extension path to the singleton
+ * core, and removes the key from the properties map. This function is used to dynamically add custom extensions to the
+ * OpenVINO core at runtime.
+ */
 void add_extensions_to_core(ov::AnyMap& properties);
 
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
