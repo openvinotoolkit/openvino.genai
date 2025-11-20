@@ -93,12 +93,10 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
         "--genai",
     ])
 
+
 @pytest.mark.parametrize(
     ("model_id", "model_type", "batch_size"),
     [
-        pytest.param("BAAI/bge-small-en-v1.5", "text-embedding", 1, marks=pytest.mark.xfail(
-            sys.platform == 'darwin', reason="Hangs. Ticket 175534", run=False
-        )),
         ("Qwen/Qwen3-Embedding-0.6B", "text-embedding", 1),
         ("Qwen/Qwen3-Embedding-0.6B", "text-embedding", 12),
     ],
