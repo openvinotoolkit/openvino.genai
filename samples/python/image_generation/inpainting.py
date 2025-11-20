@@ -20,7 +20,6 @@ def main():
     parser.add_argument('prompt')
     parser.add_argument('image')
     parser.add_argument('mask')
-    parser.add_argument('--show-progress', action='store_true', help='Show generation progress')
     args = parser.parse_args()
 
     device = 'CPU'  # GPU can be used as well
@@ -33,11 +32,7 @@ def main():
         print(f"Step {step + 1}/{num_steps}")
         return False
 
-    kwargs = {}
-    if args.show_progress:
-        kwargs['callback'] = callback
-
-    image_tensor = pipe.generate(args.prompt, image, mask_image, **kwargs)
+    image_tensor = pipe.generate(args.prompt, image, mask_image, callback=callback)
 
     image = Image.fromarray(image_tensor.data[0])
     image.save("image.bmp")
