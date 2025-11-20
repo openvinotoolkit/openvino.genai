@@ -82,10 +82,10 @@ namespace ov::genai {
 WhisperWithPastDecoder::WhisperWithPastDecoder(const std::filesystem::path& models_path,
                                                const std::string& device,
                                                const ov::AnyMap& properties) {
-    Logger::warn("Whisper decoder models with past is deprecated. Support will be removed in 2026.0.0 release.\n"
-                 "To obtain stateful decoder model use latest `optimum-intel` package:\n"
-                 "pip install optimum-intel@git+https://github.com/huggingface/optimum-intel.git@main\n"
-                 "optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny");
+    GENAI_WARN("Whisper decoder models with past is deprecated. Support will be removed in 2026.0.0 release.\n"
+               "To obtain stateful decoder model use latest `optimum-intel` package:\n"
+               "pip install optimum-intel@git+https://github.com/huggingface/optimum-intel.git@main\n"
+               "optimum-cli export openvino --trust-remote-code --model openai/whisper-tiny whisper-tiny");
 
     ov::Core core = utils::singleton_core();
 
