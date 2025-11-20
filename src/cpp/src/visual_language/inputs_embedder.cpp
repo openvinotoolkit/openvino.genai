@@ -172,12 +172,13 @@ std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::to_single_image_tensors
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
-    std::vector<EncodedImage> embeds;
+    std::vector<EncodedImage> encoded_images;
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
     for (const ov::Tensor& image : single_images) {
-        embeds.emplace_back(m_vision_encoder->encode(image));
+        encoded_images.emplace_back(m_vision_encoder->encode(image));
     }
-    return embeds;
+    OPENVINO_ASSERT(images.size() == encoded_images.size(), "Input images size and encoded images size mismatch!");
+    return encoded_images;
 }
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
