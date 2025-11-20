@@ -31,8 +31,10 @@ using ov::genai::get_version;
 
 void init_lora_adapter(py::module_& m);
 void init_perf_metrics(py::module_& m);
+void init_chat_history(py::module_& m);
 void init_tokenizer(py::module_& m);
 void init_streamers(py::module_& m);
+void init_parsers(py::module_& m);
 void init_generation_config(py::module_& m);
 
 void init_continuous_batching_pipeline(py::module_& m);
@@ -92,6 +94,13 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def(py::init<>())
         .def_property_readonly("texts", [](const DecodedResults &dr) -> py::typing::List<py::str> { return pyutils::handle_utf8((std::vector<std::string>)dr); })
         .def_readonly("scores", &DecodedResults::scores)
+        .def_property_readonly("parsed", [](const DecodedResults& dr) -> py::list {
+            py::list result_dicts;
+            for (const auto& parsed: dr.parsed) {
+                result_dicts.append(pyutils::json_container_to_py_object(parsed));
+            }
+            return result_dicts;
+        })
         .def_readonly("perf_metrics", &DecodedResults::perf_metrics)
         .def_readonly("extended_perf_metrics", &DecodedResults::extended_perf_metrics)
         .def("__str__", [](const DecodedResults &dr) -> py::str {
@@ -114,7 +123,9 @@ PYBIND11_MODULE(py_openvino_genai, m) {
         .def_readonly("extended_perf_metrics", &EncodedResults::extended_perf_metrics);
 
     init_lora_adapter(m);
+    init_parsers(m);
     init_generation_config(m);
+    init_chat_history(m);
     init_tokenizer(m);
     init_streamers(m);
 

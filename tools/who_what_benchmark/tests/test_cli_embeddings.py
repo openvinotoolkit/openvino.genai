@@ -1,4 +1,5 @@
 import subprocess  # nosec B404
+import sys
 import pytest
 import logging
 from test_cli_image import run_wwb
@@ -11,13 +12,15 @@ logger = logging.getLogger(__name__)
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [
-        ("BAAI/bge-small-en-v1.5", "text-embedding"),
+        pytest.param("BAAI/bge-small-en-v1.5", "text-embedding", marks=pytest.mark.xfail(
+            sys.platform == 'darwin', reason="Hangs. Ticket 175534", run=False
+        )),
         ("Qwen/Qwen3-Embedding-0.6B", "text-embedding"),
     ],
 )
 def test_embeddings_basic(model_id, model_type, tmp_path):
     GT_FILE = tmp_path / "gt.csv"
-    MODEL_PATH = tmp_path / model_id.replace("/", "--")
+    MODEL_PATH = tmp_path / model_id.replace("/", "_")
 
     result = subprocess.run(["optimum-cli", "export",
                              "openvino", "-m", model_id,

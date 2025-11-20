@@ -17,6 +17,7 @@ VLMModelType to_vlm_model_type(const std::string& value) {
         {"llava", VLMModelType::LLAVA},
         {"llava-qwen2", VLMModelType::NANOLLAVA},
         {"llava_next", VLMModelType::LLAVA_NEXT},
+        {"llava_next_video", VLMModelType::LLAVA_NEXT_VIDEO},
         {"internvl_chat", VLMModelType::INTERNVL_CHAT},
         {"phi3_v", VLMModelType::PHI3_V},
         {"phi4mm", VLMModelType::PHI4MM},
@@ -67,6 +68,7 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
 
     // Qwen2.5VL
     read_json_param(parsed, "vision_config.window_size", vision_config_window_size);
+    read_json_param(parsed, "vision_config.tokens_per_second", vision_config_tokens_per_second);
 }
 
 } // namespace ov::genai

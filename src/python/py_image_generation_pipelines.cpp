@@ -208,10 +208,7 @@ public:
                 throw std::runtime_error{"Unexpected number of bytes was requested to allocate."};
             }
 
-            void deallocate(void*, size_t bytes, size_t) {
-                if (m_total_size != bytes) {
-                    throw std::runtime_error{"Unexpected number of bytes was requested to deallocate."};
-                }
+            void deallocate(void*, size_t, size_t) noexcept {
             }
 
             bool is_equal(const TorchTensorAllocator& other) const noexcept {
@@ -465,7 +462,16 @@ void init_image_generation_pipelines(py::module_& m) {
             py::arg("prompt"), "Input string",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
         .def("decode", &ov::genai::Text2ImagePipeline::decode, py::arg("latent"))
-        .def("get_performance_metrics", &ov::genai::Text2ImagePipeline::get_performance_metrics);
+        .def("get_performance_metrics", &ov::genai::Text2ImagePipeline::get_performance_metrics)
+        .def("export_model",
+            &ov::genai::Text2ImagePipeline::export_model,
+            py::arg("export_path"),
+            R"(
+                Exports compiled models to a specified directory. Can significantly reduce model load time, especially for large models.
+                export_path (os.PathLike): A path to a directory to export compiled models to.
+
+                Use `blob_path` property to load previously exported models.
+            )");
 
 
     auto image2image_pipeline = py::class_<ov::genai::Image2ImagePipeline>(m, "Image2ImagePipeline", "This class is used for generation with image-to-image models.")

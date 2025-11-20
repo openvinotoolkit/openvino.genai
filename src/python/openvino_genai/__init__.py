@@ -18,7 +18,21 @@ from .py_openvino_genai import (
     StreamerBase,
     get_version,
     StreamingStatus,
-    TextStreamer
+    TextStreamer,
+    TextParserStreamer
+)
+
+from .py_openvino_genai import (
+    Parser,
+    ReasoningParser,
+    DeepSeekR1ReasoningParser,
+    Phi4ReasoningParser,
+    Llama3JsonToolParser,
+    Llama3PythonicToolParser,
+    IncrementalParser,
+    ReasoningIncrementalParser,
+    DeepSeekR1ReasoningIncrementalParser,
+    Phi4ReasoningIncrementalParser,
 )
 
 __version__ = get_version()
@@ -48,6 +62,11 @@ from .py_openvino_genai import (
     StructuralTagsConfig,
     StructuredOutputConfig,
     StopCriteria
+)
+
+# Chat history
+from .py_openvino_genai import (
+    ChatHistory
 )
 
 # Tokenizers

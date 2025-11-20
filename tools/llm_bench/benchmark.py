@@ -5,7 +5,6 @@ import os
 import sys
 import argparse
 import logging as log
-import llm_bench_utils.model_utils
 from openvino import get_version
 import torch
 import traceback
@@ -20,6 +19,11 @@ import task.speech_to_text_generation as bench_speech
 import task.text_embeddings as bench_text_embed
 import task.text_to_speech_generation as bench_text_to_speech
 import task.text_reranker as bench_text_rerank
+from llm_bench_utils.model_utils import (
+    analyze_args,
+    get_ir_conversion_frontend,
+    get_model_precision
+)
 
 DEFAULT_TORCH_THREAD_NUMS = 16
 
@@ -39,12 +43,18 @@ def num_infer_count_type(x):
 
 
 def get_argprser():
-    parser = argparse.ArgumentParser('LLM benchmarking tool', add_help=True, formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('-m', '--model', help='model folder including IR files or Pytorch files', required=TabError)
+    parser = argparse.ArgumentParser('LLM benchmarking tool', add_help=True, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument(
+        '-m',
+        '--model',
+        help='model folder including IR files or PyTorch files or path to GGUF model',
+        required=True,
+        default=argparse.SUPPRESS
+    )
     parser.add_argument('-d', '--device', default='cpu', help='inference device')
     parser.add_argument('-r', '--report', help='report csv')
     parser.add_argument('-rj', '--report_json', help='report json')
-    parser.add_argument('-f', '--framework', default='ov', help='framework')
+    parser.add_argument('-f', '--framework', default='ov', choices={"ov", "pt"}, help='inference framework, ov: OpenVINO, pt: PyTorch')
     parser.add_argument('-p', '--prompt', default=None, help='one prompt')
     parser.add_argument('-pf', '--prompt_file', nargs='+', default=None,
                         help='Prompt file(s) in jsonl format. Multiple prompt files should be separated with space(s).')
@@ -151,7 +161,7 @@ def get_argprser():
         help="Path to LoRA adapters for using OpenVINO GenAI optimized pipelines with LoRA for benchmarking")
     parser.add_argument('--lora_alphas', nargs='*', help='Alphas params for LoRA adapters.', required=False, default=[])
     parser.add_argument("--lora_mode", choices=["auto", "fuse", "static", "static_rank", "dynamic"], help="LoRA adapters loading mode")
-    parser.add_argument("--empty_lora", action="store_true", help="Inference without lora")
+    parser.add_argument("--empty_lora", action="store_true", help="Inference with empty LoRA config")
     parser.add_argument(
         "--use_cb",
         action="store_true",
@@ -169,7 +179,7 @@ def get_argprser():
     parser.add_argument("--assistant_confidence_threshold", required=False, default=None,
                         help="Config option assistant_confidence_threshold for Speculative decoding", type=float)
     parser.add_argument("--max_ngram_size", required=False, default=None,
-                        help="Config option assistant_confidence_threshold for Prompt Lookup decoding", type=int)
+                        help="Config option max_ngram_size for Prompt Lookup decoding", type=int)
     parser.add_argument(
         '--end_token_stopping',
         action='store_true',
@@ -184,7 +194,7 @@ def get_argprser():
     parser.add_argument(
         "--static_reshape",
         action="store_true",
-        help="Reshape image generation pipeline to specific width & height at pipline creation time. Applicable for Image Generation.")
+        help="Reshape image generation pipeline to specific width & height at pipeline creation time. Applicable for Image Generation.")
     parser.add_argument('-mi', '--mask_image', default=None,
                         help='Mask image for Inpainting pipelines. Can be directory or path to single image. Applicable for Image Generation.')
     parser.add_argument('-t', '--task', default=None,
@@ -193,8 +203,8 @@ def get_argprser():
                         help='The task to setup the pipeline type')
     parser.add_argument(
         '--strength', type=float, default=None,
-        help='Applicable for Image to imaage/Inpainting pipelines. Indicates extent to transform the reference `image`. Must be between 0 and 1.')
-    parser.add_argument("--disable_prompt_permutation", action="store_true", help="Disable modification prompt from run to run for avoid prefix caching")
+        help='Applicable for Image to image/Inpainting pipelines. Indicates extent to transform the reference `image`. Must be between 0 and 1.')
+    parser.add_argument("--disable_prompt_permutation", action="store_true", help="Disable modification prompt from run to run to allow prefix caching")
     parser.add_argument("--embedding_pooling", choices=["cls", "mean", "last_token"], default=None,
                         help="Pooling type CLS or MEAN for encoders, LAST_TOKEN for decoders. "
                              "Different post-processing is applied depending on the padding side. Applicable only for text embeddings")
@@ -251,8 +261,8 @@ def main():
     if args.streaming and args.tokens_len is None:
         log.error("--streaming requires --tokens_len to be set.")
         exit(1)
-    model_path, framework, model_args, model_name_or_id = (
-        llm_bench_utils.model_utils.analyze_args(args)
+    model_path, framework, model_args = (
+        analyze_args(args)
     )
     # Set the device for running OpenVINO backend for torch.compile()
     if model_args['torch_compile_backend']:
@@ -309,17 +319,14 @@ def main():
         if args.report is not None or args.report_json is not None:
             model_precision = ''
             if framework == 'ov':
-                ir_conversion_frontend = llm_bench_utils.model_utils.get_ir_conversion_frontend(model_name_or_id, model_path.parts)
+                ir_conversion_frontend = get_ir_conversion_frontend(model_args['model_name'], model_path.parts)
                 if ir_conversion_frontend != '':
                     framework = framework + '(' + ir_conversion_frontend + ')'
-                model_precision = llm_bench_utils.model_utils.get_model_precision(model_path.parts)
-            case, model_name = llm_bench_utils.model_utils.get_model_name(args.model, args.task)
-            if model_name is None:
-                model_name = llm_bench_utils.model_utils.get_model_name_with_path_part(args.model)
+                model_precision = get_model_precision(model_path.parts)
             if args.report is not None:
                 llm_bench_utils.output_csv.write_result(
                     args.report,
-                    model_name,
+                    model_args['model_name'],
                     framework,
                     args.device,
                     model_args,
@@ -332,7 +339,7 @@ def main():
             if args.report_json is not None:
                 llm_bench_utils.output_json.write_result(
                     args.report_json,
-                    model_name,
+                    model_args['model_name'],
                     framework,
                     args.device,
                     model_args,

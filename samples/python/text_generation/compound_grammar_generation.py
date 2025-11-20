@@ -7,12 +7,16 @@ import json
 from typing import Any
 
 from openvino_genai import (
-    LLMPipeline,
     GenerationConfig,
-    StructuredOutputConfig as SOC,
+    LLMPipeline,
     StreamingStatus,
+    Parser,
+    DecodedResults
 )
 
+from openvino_genai import (
+    StructuredOutputConfig as SOC,
+)
 from pydantic import BaseModel, Field
 
 
@@ -21,18 +25,16 @@ def streamer(subword):
     return StreamingStatus.RUNNING
 
 
-class booking_flight_tickets(BaseModel):
+class book_flight_ticket(BaseModel):
     """booking flights"""
 
     origin_airport_code: str = Field(description="The name of Departure airport code")
-    destination_airport_code: str = Field(
-        description="The name of Destination airport code"
-    )
+    destination_airport_code: str = Field(description="The name of Destination airport code")
     departure_date: str = Field(description="The date of outbound flight")
     return_date: str = Field(description="The date of return flight")
 
 
-class booking_hotels(BaseModel):
+class book_hotel(BaseModel):
     """booking hotel"""
 
     destination: str = Field(description="The name of the city")
@@ -65,30 +67,53 @@ def tool_to_dict(tool: BaseModel, with_description: bool = True) -> dict[str, An
     }
 
 
-def generate_system_prompt_tools(*tools: BaseModel) -> str:
-    """Generate part of the system prompt with available tools"""
-    return f"<|tool|>{json.dumps([tool_to_dict(tool) for tool in tools])}</|tool|>"
-
-
 def tools_to_array_schema(*tools: BaseModel) -> str:
     return json.dumps(
         {
             "type": "array",
-            "items": {
-                "anyOf": [tool_to_dict(tool, with_description=False) for tool in tools]
-            },
+            "items": {"anyOf": [tool_to_dict(tool, with_description=False) for tool in tools]},
         }
     )
+
+
+class CustomToolCallParser(Parser):
+    """parser to extract tool calls from the model output.
+
+    Custom parser should be inherited from Parser and implement 'parse' method.
+    """
+    def parse(self, msg: dict):
+        if "content" not in msg:
+            msg["content"] = ""
+        content = msg["content"]
+
+        start_tag = "functools"
+        start_index = content.find(start_tag)
+        if start_index == -1:
+            return
+
+        json_part = content[start_index + len(start_tag):]
+        try:
+            tool_calls = json.loads(json_part)
+            msg["tool_calls"] = tool_calls
+            return
+        except json.JSONDecodeError:
+            return
+
+
+def print_tool_call(answer: DecodedResults):
+    for tool_call in answer.parsed[0]["tool_calls"]:
+        print(f"""{tool_call["name"]}({", ".join(f'{key}="{value}"' for key, value in tool_call["arguments"].items())})""")
+
 
 # modified system message from:
 # https://github.com/vllm-project/vllm/blob/main/examples/tool_chat_template_phi4_mini.jinja
 sys_message = """You are a helpful AI assistant.
-You can answer yes or no to questions, or you can chose to call one or more of the provided functions.
+You can answer yes or no to questions, or you can choose to call one or more of the provided functions.
 
 Use the following rule to decide when to call a function:
     * if the response can be generated from your internal knowledge, do so, but use only yes or no as the response
     * if you need external information that can be obtained by calling one or more of the provided functions, generate function calls
-    
+
 If you decide to call functions:
     * prefix function calls with functools marker (no closing marker required)
     * all function calls should be generated in a single JSON list formatted as functools[{"name": [function name], "arguments": [function arguments as JSON]}, ...]
@@ -96,7 +121,6 @@ If you decide to call functions:
     * respect the argument type formatting. E.g., if the type is number and format is float, write value 7 as 7.0
     * make sure you pick the right functions that match the user intent
 """
-sys_message += generate_system_prompt_tools(booking_flight_tickets, booking_hotels)
 
 
 def main():
@@ -110,6 +134,7 @@ def main():
     pipe = LLMPipeline(args.model_dir, "CPU")
     tokenizer = pipe.get_tokenizer()
     chat_history = [{"role": "system", "content": sys_message}]
+    tools = [tool_to_dict(tool) for tool in [book_flight_ticket, book_hotel]]
 
     generation_config = GenerationConfig()
     generation_config.max_new_tokens = 300
@@ -118,42 +143,35 @@ def main():
     user_text_1 = "Do dolphins have fingers?"
     print("User: ", user_text_1)
     chat_history.append({"role": "user", "content": user_text_1})
-    model_input = tokenizer.apply_chat_template(
-        chat_history, add_generation_prompt=True
-    )
-
-    # the example grammar works the same as SOC.Regex("yes|no")
-    # but the Union grammar is more flexible and can be extended with more options
-    yes_or_no = SOC.Regex("yes") | SOC.Regex(
-        "no"
-    )  # SOC.Union(SOC.Regex("yes"), SOC.Regex("no"))
-    generation_config.structured_output_config = SOC(compound_grammar=yes_or_no)
+    model_input = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True, tools=tools)
+    # same as SOC.Union(SOC.ConstString("yes"), SOC.ConstString("no"))
+    yes_or_no_grammar = SOC.ConstString("yes") | SOC.ConstString("no")
+    generation_config.structured_output_config = SOC(structural_tags_config=yes_or_no_grammar)
     print("Assistant: ", end="")
     answer = pipe.generate(model_input, generation_config, streamer=streamer)
     chat_history.append({"role": "assistant", "content": answer})
     print()
 
     user_text_2 = (
-        "book flight ticket from Beijing to Paris(using airport code) in 2025-12-04 to 2025-12-10 , "
+        "book flight ticket from Beijing to Paris(using airport code) in 2025-12-04 to 2025-12-10, "
         "then book hotel from 2025-12-04 to 2025-12-10 in Paris"
     )
     print("User: ", user_text_2)
     chat_history.append({"role": "user", "content": user_text_2})
-    model_input = tokenizer.apply_chat_template(
-        chat_history, add_generation_prompt=True
-    )
+    model_input = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True, tools=tools)
 
-    start_tool_call_tag = SOC.Regex(r"functools")
-    tools_json = SOC.JSONSchema(
-        tools_to_array_schema(booking_flight_tickets, booking_hotels)
-    )
-    tool_call = (
-        start_tool_call_tag + tools_json
-    )  # SOC.Concat(start_tool_call_tag, tools_json)
-    generation_config.structured_output_config.compound_grammar = tool_call
+    start_tool_call_tag = SOC.ConstString(r"functools")
+    tools_json = SOC.JSONSchema(tools_to_array_schema(book_flight_ticket, book_hotel))
+    tool_call_grammar = start_tool_call_tag + tools_json  # SOC.Concat(start_tool_call_tag, tools_json)
+    generation_config.structured_output_config.structural_tags_config = tool_call_grammar
 
     print("Assistant: ", end="")
-    pipe.generate(model_input, generation_config, streamer=streamer)
+    answer = pipe.generate([model_input], generation_config, parsers=[CustomToolCallParser()])
+    
+    print("\n\nThe following tool calls were generated:")
+    print_tool_call(answer)
+
+    print()
 
 
 if __name__ == "__main__":
