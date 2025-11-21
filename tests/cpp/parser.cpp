@@ -9,6 +9,10 @@
 
 using namespace ov::genai;
 
+namespace ov::genai {
+    void concatenate_json_containers(const JsonContainer& from, JsonContainer& to, std::vector<std::string> keys_to_concatenate);
+}
+
 TEST(ParserTest, test_llama3_parser_1) {
     std::string prompt = R"(What's the weather in New York today?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n[get_weather(location="New York, NY", unit="celsius")]<|eom_id|>)";
     // By default content should keep original values.
@@ -92,12 +96,13 @@ TEST_F(DeepSeekR1ReasoningParserTest, ReasoningContentAccumulatesAcrossCalls) {
     std::string ref_res = "First, I recognize that the question is asking for the sum of 2 and 1.\n\nI know that addition involves combining two numbers to find their total.\n\nStarting with 2, I add 1 to it.\n\n2 plus 1 equals 3.\n";
     
     JsonContainer msg;
-    
+    JsonContainer accumulated_msg;
     for (int i = 1; i < input_stream.size(); i++) {
         std::string delta_text = input_stream[i];
         delta_text = parser.parse(msg, delta_text);
+        concatenate_json_containers(msg, accumulated_msg, {"reasoning_content", "content"});
     }
-    ASSERT_EQ(msg["reasoning_content"], ref_res);
+    ASSERT_EQ(accumulated_msg["reasoning_content"], ref_res);
 }
 
 TEST(ParserTest, test_custom_parser) {
