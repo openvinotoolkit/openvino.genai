@@ -1,0 +1,9 @@
+name: Code Checks
+on:
+  workflow_dispatch:
+  pull_request:
+  merge_group:
+  push:
+    branches:
+      - master
+      - 'releases/**'
