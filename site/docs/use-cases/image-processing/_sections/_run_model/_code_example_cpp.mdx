@@ -16,6 +16,9 @@ int main(int argc, char* argv[]) {
         ov::genai::max_new_tokens(100)
     );
     std::cout << result.texts[0] << std::endl;
+
+    // To input videos frames, use 'ov::genai::videos' property, frames tensor layout = [Frame, H, W, C]
+    // pipe.generate(prompt, ov::genai::videos(std::vector<ov::Tensor>{frames}), ov::genai::max_new_tokens(100));
 }
 `}
 </CodeBlock>
