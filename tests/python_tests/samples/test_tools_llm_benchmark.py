@@ -247,7 +247,7 @@ class TestBenchmarkLLM:
         ["-d", "cpu", "-n", "2", "--task", "text_embed", "--embedding_padding_side", "left", "--embedding_pooling", "last_token"],
         ["-d", "cpu", "-n", "2", "--task", "text_embed", "--embedding_padding_side", "left", "--embedding_pooling", "last_token", "--optimum"],
     ])
-    def test_python_tool_llm_benchmark_text_reranking(self, model_id, sample_args):
+    def test_python_tool_llm_benchmark_text_embeddings_qwen3(self, model_id, sample_args):
         models_path = download_and_convert_model_class(model_id, OVModelForFeatureExtraction).models_path
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [
