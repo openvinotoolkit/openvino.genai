@@ -32,13 +32,15 @@ class InputsEmbedder {
 public:
     InputsEmbedder(const std::filesystem::path& model_dir,
                    const std::string& device,
-                   const ov::AnyMap device_config);
+                   const ov::AnyMap device_config,
+                   const bool prompt_lookup = false);
 
     InputsEmbedder(const ModelsMap& models_map,
                    const Tokenizer& tokenizer,
                    const std::filesystem::path& config_dir_path,
                    const std::string& device,
-                   const ov::AnyMap device_config);
+                   const ov::AnyMap device_config,
+                   const bool prompt_lookup = false);
 
     // compute input embedding for prompt and multiple images
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
@@ -73,6 +75,8 @@ public:
 
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
+
+    ov::Tensor encode_prompt(const std::string& org_prompt);
 
     void set_position_ids(const ov::Tensor& position_ids);
 
@@ -139,6 +143,8 @@ private:
         utils::KVCacheState m_kv_cache_state;
         // length of attention_mask/kv cache at the beginning of generation()
         size_t m_prev_hist_length = 0;
+        // When enable prompt lookup, prompt token ids are required to generate condidate.
+        bool m_prompt_lookup = false;
         // True if tokenizer should add special tokens
         bool m_add_special_tokens = true;
         // True, if m_add_special_tokens was set, otherwise default behaviour is used
@@ -204,6 +210,12 @@ private:
         void set_apply_chat_template_status(bool apply_chat_template) {
             m_apply_chat_template = apply_chat_template;
         }
+
+        void set_prompt_lookup(const bool& prompt_lookup) {
+            m_prompt_lookup = prompt_lookup;
+        }
+
+        ov::Tensor encode_prompt(const std::string& org_prompt);
 
         void set_add_special_tokens(bool value) {
             m_add_special_tokens = value;

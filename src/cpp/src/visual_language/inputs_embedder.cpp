@@ -146,6 +146,11 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_encoded_input_ids(const std::str
     return new_input_ids;
 }
 
+// For prompt lookup, encode original prompt as lookup table.
+ov::Tensor InputsEmbedder::IInputsEmbedder::encode_prompt(const std::string& org_prompt) {
+    return m_tokenizer.encode(org_prompt).input_ids;
+}
+
 std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::to_single_image_tensors(const std::vector<ov::Tensor>& images) {
     std::vector<ov::Tensor> single_image_tensors;
     for (const auto& image : images) {
@@ -195,6 +200,14 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
     OPENVINO_THROW("Current model doesn't support video preprocess currently. Input images are processed as separate images.");
 }
 
+// std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_embeds_with_prompt_ids(
+//     const std::string& prompt,
+//     const std::vector<ov::Tensor>& images,
+//     ov::genai::VLMPerfMetrics& metrics,
+//     const std::vector<size_t>& image_sequence) {
+//     return get_inputs_embeds_with_prompt_ids(prompt, encode_images(images), metrics, true, image_sequence);
+// }
+
 std::vector<ov::genai::EncodedVideo> InputsEmbedder::IInputsEmbedder::encode_videos(const std::vector<ov::Tensor>& videos) {
     if (!videos.size()) {
         return {};
@@ -243,7 +256,8 @@ bool InputsEmbedder::IInputsEmbedder::has_token_type_ids() const { return false;
 
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const std::string& device,
-                               const ov::AnyMap device_config) {
+                               const ov::AnyMap device_config,
+                               const bool prompt_lookup) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
@@ -271,13 +285,16 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
+
+    m_impl->set_prompt_lookup(prompt_lookup);
 }
 
 InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
                                const Tokenizer& tokenizer,
                                const std::filesystem::path& config_dir_path,
                                const std::string& device,
-                               const ov::AnyMap device_config) {
+                               const ov::AnyMap device_config,
+                               const bool prompt_lookup) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
@@ -305,6 +322,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
+
+    m_impl->set_prompt_lookup(prompt_lookup);
 }
 
 ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
@@ -372,6 +391,10 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedder::encode_videos(const std::ve
 
 std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::get_position_ids(const size_t inputs_embeds_size, const size_t history_size) {
     return m_impl->get_position_ids(inputs_embeds_size, history_size);
+}
+
+ov::Tensor InputsEmbedder::encode_prompt(const std::string& org_prompt) {
+    return m_impl->encode_prompt(org_prompt);
 }
 
 void InputsEmbedder::set_position_ids(const ov::Tensor& position_ids) {
