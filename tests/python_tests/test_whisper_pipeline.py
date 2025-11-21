@@ -461,6 +461,20 @@ def test_return_timestamps_short_form(model_descr, sample_from_dataset):
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 1}], indirect=True)
+@pytest.mark.precommit
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
+def test_return_timestamps_on_cut_sample(model_descr, sample_from_dataset):
+    sample_from_dataset = sample_from_dataset[:30 * 16000]
+
+    run_pipeline_with_ref(
+        model_id=model_descr[0],
+        tmp_path=model_descr[1],
+        sample=sample_from_dataset,
+        generation_config=ov_genai.WhisperGenerationConfig(return_timestamps=True),
+    )
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=1)], indirect=True)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_return_timestamps_max_new_tokens_short_form(model_descr, sample_from_dataset):
