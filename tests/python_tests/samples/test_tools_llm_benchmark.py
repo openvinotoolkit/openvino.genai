@@ -10,8 +10,6 @@ from test_utils import run_sample
 from data.models import GGUF_MODEL_LIST
 from utils.hugging_face import download_gguf_model
 from conftest import SAMPLES_PY_DIR, convert_model, download_test_content
-from utils.hugging_face import download_and_convert_model_class, download_and_convert_model
-from optimum.intel import OVModelForFeatureExtraction
 
 convert_draft_model = convert_model
 download_mask_image = download_test_content
@@ -242,18 +240,17 @@ class TestBenchmarkLLM:
 
 
     @pytest.mark.samples
-    @pytest.mark.parametrize("model_id", ["Qwen/Qwen3-Embedding-0.6B"], indirect=True)
+    @pytest.mark.parametrize("convert_model", ["Qwen3-Embedding-0.6B"], indirect=True)
     @pytest.mark.parametrize("sample_args", [
         ["-d", "cpu", "-n", "2", "--task", "text_embed", "--embedding_padding_side", "left", "--embedding_pooling", "last_token"],
         ["-d", "cpu", "-n", "2", "--task", "text_embed", "--embedding_padding_side", "left", "--embedding_pooling", "last_token", "--optimum"],
     ])
-    def test_python_tool_llm_benchmark_text_embeddings_qwen3(self, model_id, sample_args):
-        models_path = download_and_convert_model_class(model_id, OVModelForFeatureExtraction).models_path
+    def test_python_tool_llm_benchmark_text_embeddings_qwen3(self, convert_model, sample_args):
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [
             sys.executable, 
             benchmark_script, 
-            "-m", models_path,
+            "-m", convert_model,
         ] + sample_args
         run_sample(benchmark_py_command)
 
@@ -277,18 +274,17 @@ class TestBenchmarkLLM:
 
 
     @pytest.mark.samples
-    @pytest.mark.parametrize("model_id", ["Qwen/Qwen3-Reranker-0.6B"])
+    @pytest.mark.parametrize("convert_model", ["Qwen3-Reranker-0.6B"], indirect=True)
     @pytest.mark.parametrize("sample_args", [
         ["-d", "cpu", "-n", "1", "--task", "text_rerank", "--optimum"],
     ])
-    def test_python_tool_llm_benchmark_text_reranking_qwen3(self, model_id, sample_args):
-        model_schema = download_and_convert_model(model_id)
+    def test_python_tool_llm_benchmark_text_reranking_qwen3(self, convert_model, sample_args):
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [
             sys.executable, 
             benchmark_script, 
             "-m", 
-            str(model_schema.models_path),
+            convert_model,
         ] + sample_args
         run_sample(benchmark_py_command)
 
