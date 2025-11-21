@@ -290,20 +290,23 @@ jobs:
           build_type: Release
           save_to: ${{ github.workspace }}
 
-      - name: Build Tokenizers Wheel
-        run: |
-          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
-              --config-settings='override=wheel.build_tag="${{ github.run_number }}"' \
-              --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
-              --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache" \
-              ${{ needs.openvino_download.outputs.ov_wheel_source }} \
-              ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
-        working-directory: ${{ env.OV_INSTALL_DIR }}
+      # - name: Build Tokenizers Wheel
+      #   run: |
+      #     python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+      #         --config-settings='override=wheel.build_tag="${{ github.run_number }}"' \
+      #         --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
+      #         --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache" \
+      #         ${{ needs.openvino_download.outputs.ov_wheel_source }} \
+      #         ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
+      #   working-directory: ${{ env.OV_INSTALL_DIR }}
 
-      - name: Build WWB Wheel
-        run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
-        working-directory: ${{ env.OV_INSTALL_DIR }}
+      # - name: Build WWB Wheel
+      #   run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
+      #   working-directory: ${{ env.OV_INSTALL_DIR }}
       
+      - name: Clean sccache stats
+        run: ${SCCACHE_PATH} --zero-stats
+
       - name: Build GenAI Wheel
         run: |
           for py_version in "3.10" "3.11" "3.12" "3.13"
@@ -317,6 +320,9 @@ jobs:
           done
         working-directory: ${{ env.OV_INSTALL_DIR }}
       
+      - name: Show sccache stats
+        run: ${SCCACHE_PATH} --show-stats
+
       - name: Upload Wheels
         if: ${{ always() }}
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
