@@ -259,7 +259,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
             }
         }
 
-        m_llm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {total_num_tokens}, next_beams.data()});
+        m_llm.set_tensor("beam_idx", ov::Tensor{ov::element::i32, {total_num_tokens}, const_cast<int32_t*>(next_beams.data())});
 
         const auto infer_start = std::chrono::steady_clock::now();
         m_llm.start_async();

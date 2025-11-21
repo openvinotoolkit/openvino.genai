@@ -36,7 +36,7 @@ protected:
 
 TEST_F(CBForSDTest, init_sequence_by_not_empty__one_sequence) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
-    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, const_cast<int64_t*>(input_vector.data()));
     m_pipeline.add_request(0, input_tensor);
 
     std::vector<int64_t> tokens = { 0, 1, 2 };
@@ -57,7 +57,7 @@ TEST_F(CBForSDTest, init_sequence_by_not_empty__one_sequence) {
 
 TEST_F(CBForSDTest, init_sequence_by_empty__one_sequence) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
-    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, const_cast<int64_t*>(input_vector.data()));
     m_pipeline.add_request(0, input_tensor);
 
     std::vector<int64_t> tokens = {};
@@ -78,7 +78,7 @@ TEST_F(CBForSDTest, init_sequence_by_empty__one_sequence) {
 
 TEST_F(CBForSDTest, no_updated_tokens__one_sequence) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
-    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, const_cast<int64_t*>(input_vector.data()));
     m_pipeline.add_request(0, input_tensor);
 
     std::vector<int64_t> tokens = { 0, 1, 2 };
@@ -105,7 +105,7 @@ TEST_F(CBForSDTest, no_updated_tokens__one_sequence) {
 
 TEST_F(CBForSDTest, remove_tokens__one_sequence) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
-    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, const_cast<int64_t*>(input_vector.data()));
     m_pipeline.add_request(0, input_tensor);
 
     std::vector<int64_t> tokens = { 0, 1, 2 };
@@ -134,7 +134,7 @@ TEST_F(CBForSDTest, remove_tokens__one_sequence) {
 
 TEST_F(CBForSDTest, remove_and_replace_tokens__one_sequence) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
-    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, const_cast<int64_t*>(input_vector.data()));
     m_pipeline.add_request(0, input_tensor);
 
     std::vector<int64_t> tokens = { 0, 1, 2 };
@@ -163,7 +163,7 @@ TEST_F(CBForSDTest, remove_and_replace_tokens__one_sequence) {
 
 TEST_F(CBForSDTest, add_tokens__one_sequence) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
-    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, const_cast<int64_t*>(input_vector.data()));
     m_pipeline.add_request(0, input_tensor);
 
     std::vector<int64_t> tokens = { 0, 1, 2 };
@@ -192,7 +192,7 @@ TEST_F(CBForSDTest, add_tokens__one_sequence) {
 
 TEST_F(CBForSDTest, update_empty_sequence_by_not_empty__two_sequence) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
-    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, const_cast<int64_t*>(input_vector.data()));
     m_pipeline.add_request(0, input_tensor);
 
     std::vector<int64_t> tokens_0 = { 0, 1, 2 },
@@ -221,7 +221,7 @@ TEST_F(CBForSDTest, update_empty_sequence_by_not_empty__two_sequence) {
 
 TEST_F(CBForSDTest, init_sequence_by_not_empty__two_sequence) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
-    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, const_cast<int64_t*>(input_vector.data()));
     m_pipeline.add_request(0, input_tensor);
 
     std::vector<int64_t> tokens_0 = { 0, 1, 2 },
@@ -250,7 +250,7 @@ TEST_F(CBForSDTest, init_sequence_by_not_empty__two_sequence) {
 
 TEST_F(CBForSDTest, init_sequence_by_empty__two_sequence) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
-    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, const_cast<int64_t*>(input_vector.data()));
     m_pipeline.add_request(0, input_tensor);
 
     std::vector<int64_t> tokens = {};
@@ -276,7 +276,7 @@ TEST_F(CBForSDTest, init_sequence_by_empty__two_sequence) {
 
 TEST_F(CBForSDTest, no_updated_tokens__two_sequence) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
-    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, const_cast<int64_t*>(input_vector.data()));
     m_pipeline.add_request(0, input_tensor);
 
     std::vector<int64_t> tokens_0 = { 0, 1, 2 }, tokens_1 = { 0, 1 };
@@ -309,7 +309,7 @@ TEST_F(CBForSDTest, no_updated_tokens__two_sequence) {
 
 TEST_F(CBForSDTest, remove_tokens__two_sequence) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
-    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, const_cast<int64_t*>(input_vector.data()));
     m_pipeline.add_request(0, input_tensor);
 
     std::vector<int64_t> tokens = { 0, 1, 2 };
@@ -348,7 +348,7 @@ TEST_F(CBForSDTest, remove_tokens__two_sequence) {
 
 TEST_F(CBForSDTest, remove_and_replace_tokens__two_sequence) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
-    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, const_cast<int64_t*>(input_vector.data()));
     m_pipeline.add_request(0, input_tensor);
 
     std::vector<int64_t> tokens = { 0, 1, 2 };
@@ -387,7 +387,7 @@ TEST_F(CBForSDTest, remove_and_replace_tokens__two_sequence) {
 
 TEST_F(CBForSDTest, add_tokens__two_sequence) {
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
-    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, const_cast<int64_t*>(input_vector.data()));
     m_pipeline.add_request(0, input_tensor);
 
     std::vector<int64_t> tokens = { 0, 1, 2 };
