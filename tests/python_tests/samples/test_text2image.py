@@ -9,12 +9,14 @@ from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
 from test_utils import run_sample
 
 class TestText2Image:
+    PROMPT = "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
+    
     @pytest.mark.samples
     @pytest.mark.dreamlike_anime_1_0
     @pytest.mark.parametrize(
         "convert_model, sample_args",
         [
-            pytest.param("dreamlike-anime-1.0", "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"),
+            pytest.param("dreamlike-anime-1.0", PROMPT),
         ],
         indirect=["convert_model"],
     )
@@ -28,7 +30,6 @@ class TestText2Image:
         cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'text2image')
         cpp_command = [cpp_sample, convert_model, sample_args]
         run_sample(cpp_command)
-
 
     @pytest.mark.samples
     @pytest.mark.dreamlike_anime_1_0

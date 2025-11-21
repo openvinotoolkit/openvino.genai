@@ -4,6 +4,7 @@
 #pragma once
 
 #include <thread>
+#include <variant>
 
 #include "synchronized_queue.hpp"
 
@@ -33,7 +34,7 @@ public:
             return CallbackStatus::STOP;
         }
 
-        m_squeue.push({step, num_steps, latent});
+        m_squeue.push(std::make_tuple(step, num_steps, latent));
 
         return CallbackStatus::RUNNING;
     }
@@ -44,7 +45,7 @@ public:
         }
 
         m_status = CallbackStatus::STOP;
-        m_squeue.empty();
+        m_squeue.push(std::monostate());
 
         if (m_worker_thread && m_worker_thread->joinable()) {
             m_worker_thread->join();
@@ -58,18 +59,23 @@ public:
 private:
     std::function<bool(size_t, size_t, ov::Tensor&)> m_callback = nullptr;
     std::shared_ptr<std::thread> m_worker_thread = nullptr;
-    SynchronizedQueue<std::tuple<size_t, size_t, ov::Tensor>> m_squeue;
+    SynchronizedQueue<std::variant<std::tuple<size_t, size_t, ov::Tensor>, std::monostate>> m_squeue;
 
     std::atomic<CallbackStatus> m_status = CallbackStatus::RUNNING;
 
     void _worker() {
         while (m_status == CallbackStatus::RUNNING) {
-            // wait for queue pull
-            auto [step, num_steps, latent] = m_squeue.pull();
+            auto item = m_squeue.pull();
 
-            if (m_callback(step, num_steps, latent)) {
-                m_status = CallbackStatus::STOP;
-                m_squeue.empty();
+            if (auto callback_data = std::get_if<std::tuple<size_t, size_t, ov::Tensor>>(&item)) {
+                auto& [step, num_steps, latent] = *callback_data;
+                const auto should_stop = m_callback(step, num_steps, latent);
+                
+                if (should_stop) {
+                    m_status = CallbackStatus::STOP;
+                }
+            } else if (std::get_if<std::monostate>(&item)) {
+                break;
             }
         }
     }
