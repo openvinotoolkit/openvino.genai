@@ -7,7 +7,19 @@ import pytest
 from openvino_genai import Tokenizer, IncrementalParser, Parser, TextParserStreamer, StreamingStatus, Llama3JsonToolParser, Phi4ReasoningParser, ReasoningParser, Phi4ReasoningIncrementalParser, DeepSeekR1ReasoningIncrementalParser, GenerationConfig, ReasoningIncrementalParser
 from transformers import AutoTokenizer
 import re
+from io import StringIO
 
+
+def concatenate_dicts(dst_dict, src_dict):
+    # keys that exist in both dictionaries    
+    keys = set(dst_dict.keys()).intersection(set(src_dict.keys()))
+    for key in keys:
+        dst_dict[key] += src_dict[key]
+    
+    # keys that exist in src_dict but missing in dst_dict
+    missing_keys = set(src_dict.keys()) - set(dst_dict.keys())
+    for key in missing_keys:
+        dst_dict[key] = src_dict[key]
 
 @pytest.fixture(scope="module")
 def hf_ov_genai_models(request, tmp_path_factory):
@@ -45,9 +57,13 @@ def test_incremental_phi4_reason_parser_1(hf_ov_genai_models, answer):
     
     stream_string = re.split(r"(\s+)", answer)
     
+    # manually accumulate content from streamer
+    content = ""
+
     class CustomStreamer(TextParserStreamer):
         def write(self, message):
-            msg.update(message)
+            nonlocal content
+            content += message['content']
             return StreamingStatus.RUNNING
     streamer = CustomStreamer(genai_tokenizer, parsers=[Phi4ReasoningIncrementalParser()])
     
@@ -55,11 +71,11 @@ def test_incremental_phi4_reason_parser_1(hf_ov_genai_models, answer):
         streamer._write(subword)
 
     think_content = answer.split("</think>")[0].replace("<think>", "")
-    content = answer
     
     msg = streamer.get_parsed_message()
     assert msg['reasoning_content'] == think_content
-    assert msg['content'] == content
+    assert msg['content'] == answer
+    assert msg['content'].endswith(content)
 
 
 @pytest.mark.parametrize(
@@ -70,13 +86,13 @@ def test_incremental_phi4_reason_parser_1(hf_ov_genai_models, answer):
 def test_incremental_phi4_reason_integer_token_ids(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
     
+    accumulated_msg = {}
     class CustomStreamer(TextParserStreamer):
         def write(self, message):
-            msg.update(message)
+            concatenate_dicts(accumulated_msg, message)
             return StreamingStatus.RUNNING
     streamer = CustomStreamer(genai_tokenizer, parsers=[Phi4ReasoningIncrementalParser()])
     
-    msg = {}
     answer = "<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \boxed{3}."
     encoded_tokens = genai_tokenizer.encode(answer).input_ids.data.tolist()[0]
     for token in encoded_tokens:
@@ -86,8 +102,11 @@ def test_incremental_phi4_reason_integer_token_ids(hf_ov_genai_models):
     think_content = answer.split("</think>")[0].replace("<think>", "")
     content = answer
     
+    msg = streamer.get_parsed_message()
     assert msg['reasoning_content'] == think_content
-    assert msg['content'] == content
+    assert msg['content'] == answer
+    assert accumulated_msg['reasoning_content'] == think_content
+    assert answer.endswith(accumulated_msg['content'])
 
 
 @pytest.mark.parametrize(
@@ -117,14 +136,15 @@ def test_incremental_integer_token_ids(hf_ov_genai_models):
             elif self.started_reasoning:
                 msg['reasoning_content'] += delta_text
                 delta_text = ''
-
+            
             # # Here we are only collecting ordinary text, therefore leave delta_text unchanged.
-            # # msg['content'] += delta_text will happen under the hood
+            msg['content'] += delta_text # will happen under the hood
             return delta_text
-        
+    
+    msg = {}
     class CustomStreamer(TextParserStreamer):
         def write(self, message):
-            msg.update(message)
+            concatenate_dicts(msg, message)
             return StreamingStatus.RUNNING
     streamer = CustomStreamer(genai_tokenizer, parsers=[CustomIncrementalParser()])
 
@@ -137,7 +157,7 @@ def test_incremental_integer_token_ids(hf_ov_genai_models):
     for token in encoded_tokens:
         streamer._write([token])
     streamer.end()
-
+    
     assert msg['reasoning_content'] == "\nOkay, the user is asking for the answer to 2 + 1"
     assert msg['content'] == " The answer to 2 + 1 is 3."
 
@@ -159,9 +179,11 @@ def test_incremental_phi4_reason_parser_2(hf_ov_genai_models, split_answer):
     # check that if thinking opening and closing tags are in the middle of the subword, it is still parsed correctly
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
     
+    msg_manual = {}
     class CustomStreamer(TextParserStreamer):
         def write(self, message):
             # will be accumulated automatically inside streamer
+            concatenate_dicts(msg_manual, message)
             return StreamingStatus.RUNNING
     streamer = CustomStreamer(genai_tokenizer, parsers=[Phi4ReasoningIncrementalParser()])
     
@@ -173,7 +195,10 @@ def test_incremental_phi4_reason_parser_2(hf_ov_genai_models, split_answer):
 
     msg = streamer.get_parsed_message()
     assert msg['reasoning_content'] == think_content
-    assert msg['content'] == content
+    assert msg['content'].endswith(content)  # since msg contains all accumulated content
+    assert msg_manual['reasoning_content'] == think_content
+    assert msg_manual['content'] == content
+
 
 
 @pytest.mark.parametrize("answer", [
@@ -184,18 +209,19 @@ def test_incremental_phi4_reason_parser_nostreamer(answer):
     parser = Phi4ReasoningIncrementalParser()
     
     stream_string = re.split(r"(\s+)", answer)
+    
     msg = {}
+    accumulated_msg = {}
     for subword in stream_string:
         parser.parse(msg, subword)
-        # When parser is called from streamer, it is expected that content is accumulated inside streamer.
-        # Here we are calling parser manually therefore we need to accumulate content manually.
-        msg['content'] += subword  
+        print(msg)
+        concatenate_dicts(accumulated_msg, msg)
 
     think_content = answer.split("</think>")[0].replace("<think>", "")
-    content = answer
+    content = answer.split("</think>")[1]
 
-    assert msg['reasoning_content'] == think_content
-    assert msg['content'] == content
+    assert accumulated_msg['reasoning_content'] == think_content
+    assert accumulated_msg['content'] == content
 
 
 @pytest.mark.parametrize("keep_original_content", [True, False])
@@ -213,14 +239,14 @@ def test_reasoning_parser_cut_content(hf_ov_genai_models, answer, keep_original_
     
     stream_string = re.split(r"(\s+)", answer)
     
+    msg = {}
     class CustomStreamer(TextParserStreamer):
         def write(self, message):
-            msg.update(message)
+            concatenate_dicts(msg, message)
             return StreamingStatus.RUNNING
     streamer = CustomStreamer(genai_tokenizer, parsers=[ReasoningIncrementalParser(expect_open_tag=True, keep_original_content=keep_original_content)])
     
     num_runs = 2
-    msg = {}
     for i in range(num_runs):
         if do_reset:
             streamer.reset()
@@ -256,12 +282,15 @@ def test_incremental_deepseek_parser():
     think_content = full_str.split("</think>")[0]
     content = full_str.split("</think>")[1]
 
+    msg = {}
+    accumulated_msg = {}
     parser = DeepSeekR1ReasoningIncrementalParser()
     for subword in stream_string:
-        msg = parser.parse(msg, subword)
+        parser.parse(msg, subword)
+        concatenate_dicts(accumulated_msg, msg)
     
-    assert msg['reasoning_content'] == think_content
-    assert msg['content'] == content
+    assert accumulated_msg['reasoning_content'] == think_content
+    assert accumulated_msg['content'] == content
 
 
 @pytest.mark.parametrize(
@@ -288,13 +317,13 @@ def test_custom_incremental_parser(hf_ov_genai_models):
             else:
                 if self.main_part_started:
                     msg['main_text'] += delta_text
-                
+            msg['content'] += delta_text
             return delta_text
 
     msg = {}
     class CustomStreamer(TextParserStreamer):
         def write(self, message):
-            msg.update(message)
+            concatenate_dicts(msg, message)
             return StreamingStatus.RUNNING
     streamer = CustomStreamer(genai_tokenizer, parsers=[CustomParser()])
 
@@ -302,7 +331,6 @@ def test_custom_incremental_parser(hf_ov_genai_models):
 
     for subword in stream_string:
         streamer._write(subword)
-
     assert msg['main_text'] == " world "
 
 

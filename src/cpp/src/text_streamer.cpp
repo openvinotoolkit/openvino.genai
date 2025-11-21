@@ -144,7 +144,7 @@ TextParserStreamerImpl(std::vector<std::shared_ptr<IncrementalParser>> parsers) 
 
 };
 
-void concatenate_json_containers(JsonContainer& from, const JsonContainer& to, std::vector<std::string> keys_to_concatenate) {
+void concatenate_json_containers(const JsonContainer& from, JsonContainer& to, std::vector<std::string> keys_to_concatenate) {
     for (const auto& key : keys_to_concatenate) {
         if (to.contains(key) && from.contains(key)) {
             // If both are strings, concatenate
@@ -152,7 +152,6 @@ void concatenate_json_containers(JsonContainer& from, const JsonContainer& to, s
                 to[key] = to[key].get_string() + from[key].get_string();
             }
         } else if (from.contains(key)) {
-            auto r = from[key];
             to[key] = from[key];
         }
     }
@@ -161,7 +160,9 @@ void concatenate_json_containers(JsonContainer& from, const JsonContainer& to, s
 TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::shared_ptr<IncrementalParser>> parsers) 
     : TextStreamer(tokenizer, [this](std::string s) -> CallbackTypeVariant {
                 return this->write(s);
-    }), m_pimpl{std::make_unique<TextParserStreamerImpl>(parsers)} {}
+    }), m_pimpl{std::make_unique<TextParserStreamerImpl>(parsers)} {
+        m_pimpl->m_parsed_message["content"] = "";
+    }
 
 CallbackTypeVariant TextParserStreamer::write(std::string message) {
     // When 'write' is called with string, it means new chunk of tokens is decoded into text
@@ -199,10 +200,18 @@ CallbackTypeVariant TextParserStreamer::write(std::string message) {
         // Message can be modified inside parser, if parser for example extracted tool calling from message content
     }
     
-    // concatenate msg with m_parsed_message
-    concatenate_json_containers(msg, m_pimpl->m_parsed_message, {"content", "reasoning_content"});
+    // std::cout << msg["content"].get_string() << std::endl;
+    // std::cout << msg["reasoning_content"].get_string() << std::endl;
 
-    // return write(m_pimpl->m_parsed_message);
+    // concatenate msg with m_parsed_message
+    concatenate_json_containers(msg, m_pimpl->m_parsed_message, {"reasoning_content"});
+
+    // We have to put into DeltaMessage's "content" fields only chunks that belong to content.
+    // But into m_parsed_message["content"] we need to accumulate full content if m_keep_original_content == True
+    // and if m_keep_original_content == False only part that is outside reasoning tags and outside tool calls.
+
+    m_pimpl->m_parsed_message["content"] = m_pimpl->m_parsed_message["content"].get_string() + message;
+
     return write(msg);
 }
 
@@ -212,6 +221,7 @@ JsonContainer TextParserStreamer::get_parsed_message() const {
 
 void TextParserStreamer::reset() {
     m_pimpl->m_parsed_message = JsonContainer();
+    m_pimpl->m_parsed_message["content"] = "";
     for (auto& parser : m_pimpl->m_parsers) {
         parser->reset();
     }
