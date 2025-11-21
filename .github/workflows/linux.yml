@@ -244,10 +244,111 @@ jobs:
           path: ${{ env.MANIFEST_PATH }}
           if-no-files-found: 'error'
 
-  genai_build_wheel:
-    name: Build Wheel
+  genai_build_tokenizers_wheel:
+    name: Build Tokenizers Wheel
     needs: [ openvino_download ]
-    timeout-minutes: 90
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-4-cores-16gb
+    container:
+      image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+      options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
+    env:
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      INSTALL_DIR: ${{ github.workspace }}/install
+      WHEELS_DIR: ${{ github.workspace }}/install/wheels
+      SRC_DIR: ${{ github.workspace }}/src
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          path: ${{ env.SRC_DIR }}
+          submodules: recursive
+
+      - name: Download OpenVINO package
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Build Tokenizers Wheel
+        run: |
+          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+              --config-settings='override=wheel.build_tag="${{ github.run_number }}"' \
+              --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
+              --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache" \
+              ${{ needs.openvino_download.outputs.ov_wheel_source }} \
+              ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
+        working-directory: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Upload Tokenizers Wheel
+        if: ${{ always() }}
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: genai_tokenizers_wheel
+          path: ${{ env.INSTALL_DIR }}
+          if-no-files-found: 'error'
+
+  genai_build_wwb_wheel:
+    name: Build WWB Wheel
+    needs: [ openvino_download ]
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-4-cores-16gb
+    container:
+      image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+    env:
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      INSTALL_DIR: ${{ github.workspace }}/install
+      WHEELS_DIR: ${{ github.workspace }}/install/wheels
+      SRC_DIR: ${{ github.workspace }}/src
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          path: ${{ env.SRC_DIR }}
+          submodules: recursive
+
+      - name: Download OpenVINO package
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Build WWB Wheel
+        run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
+        working-directory: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Upload WWB Wheel
+        if: ${{ always() }}
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: genai_wwb_wheel
+          path: ${{ env.INSTALL_DIR }}
+          if-no-files-found: 'error'
+
+  genai_build_genai_wheel:
+    name: Build GenAI Wheel - Python ${{ matrix.python-version }}
+    needs: [ openvino_download ]
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
     defaults:
       run:
         shell: bash
@@ -265,7 +366,6 @@ jobs:
       WHEELS_DIR: ${{ github.workspace }}/install/wheels
       SRC_DIR: ${{ github.workspace }}/src
       OpenVINODeveloperPackage_DIR: ${{ github.workspace }}/ov/developer_package/cmake
-
     steps:
       - name: Clone openvino.genai
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -289,45 +389,28 @@ jobs:
           target_arch: 'x86_64'
           build_type: Release
           save_to: ${{ github.workspace }}
-
-      # - name: Build Tokenizers Wheel
-      #   run: |
-      #     python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
-      #         --config-settings='override=wheel.build_tag="${{ github.run_number }}"' \
-      #         --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
-      #         --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache" \
-      #         ${{ needs.openvino_download.outputs.ov_wheel_source }} \
-      #         ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
-      #   working-directory: ${{ env.OV_INSTALL_DIR }}
-
-      # - name: Build WWB Wheel
-      #   run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
-      #   working-directory: ${{ env.OV_INSTALL_DIR }}
       
       - name: Clean sccache stats
         run: ${SCCACHE_PATH} --zero-stats
 
       - name: Build GenAI Wheel
         run: |
-          for py_version in "3.10" "3.11" "3.12" "3.13"
-          do
-            python_exec_path=$(python$py_version -c "import sys; print(sys.executable)")
-            $python_exec_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
-                --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
-                --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache" \
-                ${{ needs.openvino_download.outputs.ov_wheel_source }} \
-                ${{ env.SRC_DIR }}
-          done
+          python_exec_path=$(python${{ matrix.python-version }} -c "import sys; print(sys.executable)")
+          $python_exec_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+              --config-settings=override=cross.arch="manylinux_2_31_x86_64" \
+              --config-settings=cmake.args="-DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DCMAKE_C_COMPILER_LAUNCHER=sccache" \
+              ${{ needs.openvino_download.outputs.ov_wheel_source }} \
+              ${{ env.SRC_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
       
       - name: Show sccache stats
         run: ${SCCACHE_PATH} --show-stats
 
-      - name: Upload Wheels
+      - name: Upload GenAI Wheel
         if: ${{ always() }}
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
-          name: ${{ env.GENAI_WHEELS_ARTIFACT_NAME }}
+          name: genai_wheel_python_${{ matrix.python-version }}
           path: ${{ env.INSTALL_DIR }}
           if-no-files-found: 'error'
 
@@ -336,7 +419,7 @@ jobs:
     strategy:
       matrix:
         build-type: [Release]
-    needs: [openvino_download, genai_build_wheel, genai_build_cmake]
+    needs: [openvino_download, genai_build_tokenizers_wheel, genai_build_wwb_wheel, genai_build_genai_wheel, genai_build_cmake]
     timeout-minutes: 10
     defaults:
       run:
@@ -367,9 +450,15 @@ jobs:
       - name: Download manifest and wheels
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: '{${{ env.GENAI_WHEELS_ARTIFACT_NAME }},manifest_${{ matrix.build-type }}}'
+          pattern: '{genai_tokenizers_wheel,genai_wwb_wheel,genai_wheel_python_*,manifest_${{ matrix.build-type }}}'
           path: ${{ github.workspace }}
           merge-multiple: true
+
+      - name: Check directories
+        run: |
+          ls -laR ${{ github.workspace }}
+          echo "123"
+          ls -laR ${{ env.WHEEL_PACKAGE }}
 
       - name: Store ${{ matrix.build_type }} artifacts to a shared drive
         id: store_artifacts
@@ -519,7 +608,7 @@ jobs:
 
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
-    needs: [ smart_ci, openvino_download, genai_build_wheel ]
+    needs: [ smart_ci, openvino_download, genai_build_tokenizers_wheel, genai_build_wwb_wheel, genai_build_genai_wheel ]
     timeout-minutes: ${{ matrix.test.timeout }}
     strategy:
       fail-fast: false
@@ -596,7 +685,7 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_tokenizers_wheel,genai_wwb_wheel,genai_wheel_python_*}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
@@ -615,7 +704,7 @@ jobs:
 
   genai_samples_tests:
     name: Samples ${{ matrix.test.name }} (${{ matrix.build-type }})
-    needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
+    needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_tokenizers_wheel, genai_build_wwb_wheel, genai_build_genai_wheel, genai_build_samples, genai_build_nodejs ]
     strategy:
       fail-fast: false
       matrix:
@@ -688,7 +777,7 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_archive_${{ matrix.build-type }},genai_samples_${{ matrix.build-type }},genai_wheels}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_archive_${{ matrix.build-type }},genai_samples_${{ matrix.build-type }},genai_tokenizers_wheel,genai_wwb_wheel,genai_wheel_python_*}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
@@ -752,7 +841,7 @@ jobs:
       fail-fast: false
       matrix:
         build-type: [Release]
-    needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheel ]
+    needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_tokenizers_wheel, genai_build_wwb_wheel, genai_build_genai_wheel ]
     if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench || fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
     timeout-minutes: 90
     defaults:
@@ -781,7 +870,7 @@ jobs:
       - name: Download Build Artifacts
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_archive_${{ matrix.build-type }},genai_tools_${{ matrix.build-type }},genai_tests_${{ matrix.build-type }},genai_wheels}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_archive_${{ matrix.build-type }},genai_tools_${{ matrix.build-type }},genai_tests_${{ matrix.build-type }},genai_tokenizers_wheel,genai_wwb_wheel,genai_wheel_python_*}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
@@ -892,7 +981,7 @@ jobs:
 
   genai_xgrammar_off_tests:
     name: Build & Test when ENABLE_XGRAMMAR=OFF
-    needs: [smart_ci, openvino_download, genai_build_wheel]
+    needs: [smart_ci, openvino_download, genai_build_tokenizers_wheel]
     timeout-minutes: 45
     defaults:
       run:
@@ -920,7 +1009,7 @@ jobs:
       - name: Download Build Artifacts
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_tokenizers_wheel}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
@@ -954,7 +1043,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_linux
-    needs: [smart_ci, openvino_download, genai_build_cmake, genai_build_wheel, genai_build_samples, genai_build_nodejs, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_nodejs_tests, genai_xgrammar_off_tests]
+    needs: [smart_ci, openvino_download, genai_build_cmake, genai_build_tokenizers_wheel, genai_build_wwb_wheel, genai_build_genai_wheel, genai_build_samples, genai_build_nodejs, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_nodejs_tests, genai_xgrammar_off_tests]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
