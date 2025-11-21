@@ -304,12 +304,12 @@ parametrize_one_model_backends = pytest.mark.parametrize(
     ids=lambda p: f"{p[0]}/{p[1]}",
     indirect=["ov_pipe_model"],
 )
-    
+
 @pytest.fixture(scope="module")
 def ov_continious_batching_pipe() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[0])
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
-    
+
 @pytest.fixture(scope="module")
 def ov_continious_batching_pipe_gemma() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[8])
@@ -1366,7 +1366,7 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
     
     with pytest.raises(RuntimeError):
         ov_pipe.generate(image_tag(0))
-            
+        
 
 @pytest.mark.parametrize(
     "ov_pipe_model,has_image,has_video",
@@ -1508,3 +1508,14 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
     genai_text = genai_output.texts[0]
 
     assert optimum_text == genai_text
+
+@pytest.mark.precommit
+def test_vlm_pipeline_add_extension():
+    model_id = VIDEO_MODEL_IDS[1]
+    models_path = _get_ov_model(model_id)
+
+    properties = {"EXTENSIONS": ["fake_path"]}
+
+    with pytest.raises(RuntimeError) as exc_info:
+        VLMPipeline(models_path, "CPU", config=properties)
+    assert "Cannot find entry point to the extension library" in str(exc_info.value)
