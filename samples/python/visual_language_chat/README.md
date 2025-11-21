@@ -2,8 +2,9 @@
 
 This example showcases inference of text-generation Vision Language Models (VLMs): `miniCPM-V-2_6` and other models with the same signature. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `openvino_genai.VLMPipeline` and configures it for the chat scenario. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/minicpm-v-multimodal-chatbot) which provides an example of Visual-language assistant.
 
-There are two sample files:
+There are three sample files:
  - [`visual_language_chat.py`](./visual_language_chat.py) demonstrates basic usage of the VLM pipeline.
+ - [`video_to_text_chat.py`](./video_to_text_chat.py) demonstrates video to text usage of the VLM pipeline.
  - [`benchmark_vlm.py`](./benchmark_vlm.py) shows how to benchmark a VLM in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text and calculating various performance metrics.
 
 ## Download and convert the model and tokenizers
@@ -38,13 +39,21 @@ tokenizer = AutoTokenizer.from_pretrained("openbmb/MiniCPM-V-2_6")
 export_tokenizer(tokenizer, output_dir)
 ```
 
-## Run:
+Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` to run VLM samples.
+
+## Run image-to-text chat sample:
 
 [This image](https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11) can be used as a sample image.
 
-Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
-
 `python visual_language_chat.py ./miniCPM-V-2_6/ 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg`
+
+## Run video-to-text chat sample:
+
+To run this sample a model that supports video input is required, for example `llava-hf/LLaVA-NeXT-Video-7B-hf`.
+
+[This video](https://huggingface.co/datasets/raushan-testing-hf/videos-test/resolve/main/sample_demo_1.mp4) can be used as a sample video.
+
+`python video_to_text_chat.py ./LLaVA-NeXT-Video-7B-hf/ sample_demo_1.mp4`
 
 
 Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM. # TODO: examples of larger models
