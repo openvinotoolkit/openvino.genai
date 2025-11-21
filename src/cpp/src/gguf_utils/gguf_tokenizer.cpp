@@ -122,12 +122,26 @@ bool is_special_token(int32_t token_type) {
     return token_type == 3 || token_type == 4;
 }
 
+std::string quote_meta(const std::string& str) {
+    std::string result = "(";
+    
+    // todo: add also utf validate
+    for (char c : str) {
+        if (!std::isalnum(c) && c != '_') {
+            result += '\\';
+        }
+        result += c;
+    }
+    result += ")";
+    return result;
+}
+
 std::string join_special_tokens(const std::vector<std::string>& special_tokens) {
     std::ostringstream oss;
     for (size_t i = 0; i < special_tokens.size(); ++i) {
         if (i > 0)
             oss << "|";
-        oss << special_tokens[i];
+        oss << quote_meta(special_tokens[i]);
     }
     return oss.str();
 }
@@ -570,7 +584,7 @@ create_tokenizer_from_config(const std::shared_ptr<void>& shared_object_ov_token
 
 std::string patch_gguf_chat_template(const std::string& chat_template) {
     std::string patched_chat_template = chat_template;
-    // Define the exact pattern to find in orignal chat_template
+    // Define the exact pattern to find in original chat_template
     // Using C++ raw string literals (R"(...)") to correctly represent the literal content,
     const std::string qwen2_5_substring_to_find = R"({{\"name\": <function-name>, \"arguments\": <args-json-object>}})";
     // Define the exact replacement substring for str2

@@ -70,7 +70,7 @@ public:
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
     ) override {
-        // Get the currrent timestamp in order to evaluate total generate duration.
+        // Get the current timestamp in order to evaluate total generate duration.
         auto start_time =  std::chrono::steady_clock::now();
         
         std::vector<std::string> prompts = std::visit(overloaded{
@@ -81,7 +81,7 @@ public:
                 return prompts;
             }
         }, inputs);
-        const GenerationConfig& config = generation_config.has_value() ? *generation_config : m_generation_config;
+        const GenerationConfig& config = generation_config.value_or(m_generation_config);
         // -1 == config.eos_token_id and config.validate() are handled in m_impl.
         std::vector<GenerationResult> generated = m_impl->generate(prompts,
             std::vector<GenerationConfig>{prompts.size(), config},
@@ -125,12 +125,63 @@ public:
         return {std::move(plain_replies), std::move(plain_scores), std::move(perf_metrics), generated[0].extended_perf_metrics};
     }
 
+    DecodedResults generate(
+        const ChatHistory& history,
+        OptionalGenerationConfig generation_config,
+        StreamerVariant streamer
+    ) override {
+        auto start_time =  std::chrono::steady_clock::now();
+        const GenerationConfig& config = generation_config.value_or(m_generation_config);
+        std::vector<ChatHistory> histories = std::vector{history};
+        std::vector<GenerationResult> generated = m_impl->generate(histories,
+            std::vector<GenerationConfig>{histories.size(), config},
+            streamer
+        );
+        // TODO Consider moving to method and reuse
+        std::vector<std::string> plain_replies;
+        std::vector<float> plain_scores;
+        for (GenerationResult& res : generated) {
+            OPENVINO_ASSERT(res.m_status == GenerationStatus::FINISHED || res.m_status == GenerationStatus::STOP || res.m_status == GenerationStatus::CANCEL, "Got unfinished GenerationStatus");
+            std::move(res.m_generation_ids.begin(), res.m_generation_ids.end(), std::back_inserter(plain_replies));
+            std::move(res.m_scores.begin(), res.m_scores.end(), std::back_inserter(plain_scores));
+        }
+
+        PerfMetrics perf_metrics;
+        // For GenerationResults, all perf_metrics are the same except tokenization and detokenization durations.
+        // Since we return here only one perf_metrics, we should accumulate all tokenization and detokenization times.
+        OPENVINO_ASSERT(!generated.empty());
+        perf_metrics = generated[0].perf_metrics;
+        perf_metrics.load_time = m_load_time_ms;
+
+        // Tokenizations and detokenization times are dispersed across GenerationResult vector.
+        // Need to collect them into a single perf_metric for DecodedResult.
+        auto& raw_metrics = perf_metrics.raw_metrics;
+        for (size_t i = 1; i < generated.size(); ++i){
+            auto tok_durations = generated[i].perf_metrics.raw_metrics.tokenization_durations;
+            auto detok_durations = generated[i].perf_metrics.raw_metrics.detokenization_durations;
+            for (size_t j = 0; j < tok_durations.size(); ++j) {
+                raw_metrics.tokenization_durations.emplace_back(tok_durations[j]);
+            }
+            for (size_t j = 0; j < detok_durations.size(); ++j) {
+                raw_metrics.detokenization_durations.emplace_back(detok_durations[j]);
+            }
+        }
+
+        raw_metrics.generate_durations.clear();
+        raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start_time));
+        // Need to reevaluate statistics with the updated start_time which includes tokenization/detokenization durations.
+        perf_metrics.m_evaluated = false;
+        perf_metrics.evaluate_statistics(start_time);
+
+        return {std::move(plain_replies), std::move(plain_scores), std::move(perf_metrics), generated[0].extended_perf_metrics};
+    }
+
     EncodedResults generate(
         const EncodedInputs& inputs,
         OptionalGenerationConfig generation_config,
         StreamerVariant streamer
     ) override {
-        // Get the currrent timestamp in order to evaluate total generate duration.
+        // Get the current timestamp in order to evaluate total generate duration.
         auto start_time =  std::chrono::steady_clock::now();
 
         std::vector<ov::Tensor> input_ids = std::visit(overloaded{
@@ -174,7 +225,7 @@ public:
             }
         }, inputs);
 
-        const GenerationConfig& config = generation_config.has_value() ? *generation_config : m_generation_config;
+        const GenerationConfig& config = generation_config.value_or(m_generation_config);
         // -1 == config.eos_token_id and config.validate() are handled in m_impl.
         std::vector<EncodedGenerationResult> generated = m_impl->generate(input_ids, 
             std::vector<GenerationConfig>{input_ids.size(), config}, 

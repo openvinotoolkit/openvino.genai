@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import subprocess  # nosec B404
 import sys
 import tempfile
 
@@ -31,7 +32,6 @@ class TestTextToSpeechSample:
 
     @pytest.mark.speech_generation
     @pytest.mark.samples
-    @pytest.mark.precommit
     @pytest.mark.parametrize("convert_model", ["tiny-random-SpeechT5ForTextToSpeech"], indirect=True)
     @pytest.mark.parametrize("input_prompt", ["Hello everyone"])
     def test_sample_text_to_speech(self, convert_model, input_prompt):
@@ -53,7 +53,6 @@ class TestTextToSpeechSample:
 
     @pytest.mark.speech_generation
     @pytest.mark.samples
-    @pytest.mark.precommit
     @pytest.mark.parametrize("convert_model", ["tiny-random-SpeechT5ForTextToSpeech"], indirect=True)
     @pytest.mark.parametrize("input_prompt", ["Test text to speech without speaker embedding file"])
     def test_sample_text_to_speech_no_speaker_embedding_file(self, convert_model, input_prompt):

@@ -12,7 +12,6 @@ from openvino_genai import GenerationConfig, StopCriteria
 from utils.ov_genai_pipelines import generate_and_compare, run_ov_pipeline, get_main_pipeline_types
 from utils.hugging_face import download_and_convert_model
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("generation_config,prompt",
                          [(dict(max_new_tokens=30), 'table is made of'),
                           (dict(max_new_tokens=30, min_new_tokens=30), '你好！ 你好嗎？'),
@@ -33,7 +32,6 @@ def test_basic_stop_criteria(generation_config, prompt):
     generate_and_compare(model_id, [prompt], generation_config)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("generation_config,model_id",
                          [(dict(max_new_tokens=50, min_new_tokens=15, stop_strings={"anag"}, include_stop_str_in_output=True), 'facebook/opt-125m'), # expected match on "manage"
                           (dict(max_new_tokens=50, min_new_tokens=1, stop_strings={".", "software", "Intel"}, include_stop_str_in_output=True), 'facebook/opt-125m'),
@@ -57,7 +55,6 @@ def test_stop_strings(generation_config, model_id, pipeline_type):
     generate_and_compare(model_id, prompts, generation_config, pipeline_type=pipeline_type)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("generation_config",
                          [dict(max_new_tokens=30),
                           dict(max_new_tokens=30, repetition_penalty=2.0),
@@ -79,7 +76,6 @@ def test_greedy(generation_config, prompt):
                          generation_config=generation_config)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("generation_config",
                          [dict(max_new_tokens=30, num_beams=2),
                           dict(max_new_tokens=30, num_beams=2, stop_criteria=StopCriteria.NEVER),
@@ -105,7 +101,6 @@ def test_beam_search(generation_config):
     generate_and_compare(model_id, prompts, generation_config)
 
 
-@pytest.mark.precommit
 @pytest.mark.xfail(
     raises=AssertionError,
     reason="Stop strings do not seem to work as expected with beam search in HF, so comparison will fail. If it changes, these cases shall be merged to the test above.",
@@ -121,7 +116,6 @@ def test_beam_search_with_stop_string(generation_config):
     generate_and_compare(model_id, prompts, generation_config)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("generation_config",
                          [dict(max_new_tokens=1, min_new_tokens=0, echo=True),
                           dict(max_new_tokens=30, num_beams=2, echo=True),],
@@ -312,7 +306,6 @@ RANDOM_SAMPLING_TEST_CASES = [
 ]
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("test_struct", RANDOM_SAMPLING_TEST_CASES,
         ids=["multinomial_temperature",
              "multinomial_temperature_and_top_p",

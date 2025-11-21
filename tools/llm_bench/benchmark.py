@@ -5,11 +5,10 @@ import os
 import sys
 import argparse
 import logging as log
-import llm_bench_utils.model_utils
 from openvino import get_version
 import torch
 import traceback
-from llm_bench_utils.memory_monitor import MemMonitorWrapper
+from llm_bench_utils.memory_monitor import MemMonitorWrapper, MemoryDataSummarizer
 import llm_bench_utils.output_csv
 import llm_bench_utils.output_json
 import task.visual_language_generation as bench_vlm
@@ -19,9 +18,14 @@ import task.super_resolution_generation as bench_ldm_sr
 import task.speech_to_text_generation as bench_speech
 import task.text_embeddings as bench_text_embed
 import task.text_to_speech_generation as bench_text_to_speech
+import task.text_reranker as bench_text_rerank
+from llm_bench_utils.model_utils import (
+    analyze_args,
+    get_ir_conversion_frontend,
+    get_model_precision
+)
 
 DEFAULT_TORCH_THREAD_NUMS = 16
-memory_monitor = MemMonitorWrapper()
 
 
 def num_iters_type(x):
@@ -39,12 +43,18 @@ def num_infer_count_type(x):
 
 
 def get_argprser():
-    parser = argparse.ArgumentParser('LLM benchmarking tool', add_help=True, formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('-m', '--model', help='model folder including IR files or Pytorch files', required=TabError)
+    parser = argparse.ArgumentParser('LLM benchmarking tool', add_help=True, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument(
+        '-m',
+        '--model',
+        help='model folder including IR files or PyTorch files or path to GGUF model',
+        required=True,
+        default=argparse.SUPPRESS
+    )
     parser.add_argument('-d', '--device', default='cpu', help='inference device')
     parser.add_argument('-r', '--report', help='report csv')
     parser.add_argument('-rj', '--report_json', help='report json')
-    parser.add_argument('-f', '--framework', default='ov', help='framework')
+    parser.add_argument('-f', '--framework', default='ov', choices={"ov", "pt"}, help='inference framework, ov: OpenVINO, pt: PyTorch')
     parser.add_argument('-p', '--prompt', default=None, help='one prompt')
     parser.add_argument('-pf', '--prompt_file', nargs='+', default=None,
                         help='Prompt file(s) in jsonl format. Multiple prompt files should be separated with space(s).')
@@ -151,7 +161,7 @@ def get_argprser():
         help="Path to LoRA adapters for using OpenVINO GenAI optimized pipelines with LoRA for benchmarking")
     parser.add_argument('--lora_alphas', nargs='*', help='Alphas params for LoRA adapters.', required=False, default=[])
     parser.add_argument("--lora_mode", choices=["auto", "fuse", "static", "static_rank", "dynamic"], help="LoRA adapters loading mode")
-    parser.add_argument("--empty_lora", action="store_true", help="Inference without lora")
+    parser.add_argument("--empty_lora", action="store_true", help="Inference with empty LoRA config")
     parser.add_argument(
         "--use_cb",
         action="store_true",
@@ -169,7 +179,7 @@ def get_argprser():
     parser.add_argument("--assistant_confidence_threshold", required=False, default=None,
                         help="Config option assistant_confidence_threshold for Speculative decoding", type=float)
     parser.add_argument("--max_ngram_size", required=False, default=None,
-                        help="Config option assistant_confidence_threshold for Prompt Lookup decoding", type=int)
+                        help="Config option max_ngram_size for Prompt Lookup decoding", type=int)
     parser.add_argument(
         '--end_token_stopping',
         action='store_true',
@@ -184,19 +194,34 @@ def get_argprser():
     parser.add_argument(
         "--static_reshape",
         action="store_true",
-        help="Reshape image generation pipeline to specific width & height at pipline creation time. Applicable for Image Generation.")
+        help="Reshape image generation pipeline to specific width & height at pipeline creation time. Applicable for Image Generation.")
     parser.add_argument('-mi', '--mask_image', default=None,
                         help='Mask image for Inpainting pipelines. Can be directory or path to single image. Applicable for Image Generation.')
     parser.add_argument('-t', '--task', default=None,
-                        help='The task to setup the pipeline/config for. Applicable for Text to Image/Image to imaage/Inpainting pipelines.')
+                        choices=['text_gen', 'image_gen', "visual_text_gen", 'speech_to_text', 'image_cls', 'code_gen',
+                                 'ldm_super_resolution', 'text_embed', 'text_rerank', 'text_to_speech', "text-to-image", "image-to-image", "inpainting"],
+                        help='The task to setup the pipeline type')
     parser.add_argument(
         '--strength', type=float, default=None,
-        help='Applicable for Image to imaage/Inpainting pipelines. Indicates extent to transform the reference `image`. Must be between 0 and 1.')
-    parser.add_argument("--disable_prompt_permutation", action="store_true", help="Disable modification prompt from run to run for avoid prefix caching")
-    parser.add_argument("--embedding_pooling", choices=["cls", "mean"], default=None, help="Pooling type CLS or MEAN. Applicable only for text embeddings")
+        help='Applicable for Image to image/Inpainting pipelines. Indicates extent to transform the reference `image`. Must be between 0 and 1.')
+    parser.add_argument("--disable_prompt_permutation", action="store_true", help="Disable modification prompt from run to run to allow prefix caching")
+    parser.add_argument("--embedding_pooling", choices=["cls", "mean", "last_token"], default=None,
+                        help="Pooling type CLS or MEAN for encoders, LAST_TOKEN for decoders. "
+                             "Different post-processing is applied depending on the padding side. Applicable only for text embeddings")
     parser.add_argument("--embedding_normalize", action="store_true", help="Normalize embeddings. Applicable only for text embeddings")
     parser.add_argument("--embedding_max_length", type=int, default=None,
                         help="Max length for text embeddings. Input text will be padded or truncated to specified value")
+    parser.add_argument("--embedding_padding_side", choices=["left", "right"], default=None,
+                        help="Side to use for padding 'left' or 'right'. Applicable only for text embeddings")
+    parser.add_argument("--reranking_max_length", type=int, default=None,
+                        help="Max length for text reranking. Input text will be padded or truncated to specified value")
+    parser.add_argument("--reranking_top_n", type=int, default=3,
+                        help="Number of top results to return for text reranking")
+    parser.add_argument("--texts", nargs='+', default=None,
+                        help="List of candidates for reranking based on their relevance to a prompt(query). Applicable for Text Rerank pipeline.")
+    parser.add_argument('--texts_file', nargs='+', default=None,
+                        help='Texts file(s) in jsonl format with candidates for reranking based on relevance to a prompt(query). '
+                        'Multiple files should be separated with space(s). Applicable for Text Rerank pipeline.')
     parser.add_argument("--apply_chat_template", action="store_true",
                         help="Apply chat template for LLM. By default chat template is not applied. It's better to use with --disable_prompt_permutation,"
                              " otherwise the prompt will be modified after applying the chat template, so the structure of chat template will not be kept.")
@@ -212,10 +237,11 @@ CASE_TO_BENCH = {
     'image_gen': bench_image.run_image_generation_benchmark,
     'code_gen': bench_text.run_text_generation_benchmark,
     'ldm_super_resolution': bench_ldm_sr.run_ldm_super_resolution_benchmark,
-    'speech2text': bench_speech.run_speech_2_txt_benchmark,
-    "vlm": bench_vlm.run_visual_language_generation_benchmark,
+    'speech_to_text': bench_speech.run_speech_2_txt_benchmark,
+    "visual_text_gen": bench_vlm.run_visual_language_generation_benchmark,
     "text_embed": bench_text_embed.run_text_embddings_benchmark,
-    "text2speech": bench_text_to_speech.run_text_2_speech_benchmark
+    "text_to_speech": bench_text_to_speech.run_text_2_speech_benchmark,
+    "text_rerank": bench_text_rerank.run_text_reranker_benchmark
 }
 
 
@@ -235,8 +261,8 @@ def main():
     if args.streaming and args.tokens_len is None:
         log.error("--streaming requires --tokens_len to be set.")
         exit(1)
-    model_path, framework, model_args, model_name_or_id = (
-        llm_bench_utils.model_utils.analyze_args(args)
+    model_path, framework, model_args = (
+        analyze_args(args)
     )
     # Set the device for running OpenVINO backend for torch.compile()
     if model_args['torch_compile_backend']:
@@ -273,62 +299,63 @@ def main():
             log.info(f"The num_beams is {model_args['num_beams']}, update Torch thread num from "
                      f'{original_torch_thread_nums} to {torch.get_num_threads()}, avoid to use the CPU cores for OpenVINO inference.')
     log.info(out_str)
+    memory_data_collector = None
     if args.memory_consumption:
+        memory_monitor = MemMonitorWrapper()
         if args.memory_consumption_delay:
             memory_monitor.interval = args.memory_consumption_delay
         memory_monitor.create_monitors()
         if args.memory_consumption_dir:
             memory_monitor.set_dir(args.memory_consumption_dir)
-        memory_monitor.log_curent_memory_data(prefix="Start")
+        memory_data_collector = MemoryDataSummarizer(memory_monitor)
     try:
-        if model_args['use_case'] in ['text_gen', 'code_gen']:
-            iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case']](
+        if model_args['use_case'].task in ['text_gen', 'code_gen']:
+            iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case'].task](
                 model_path, framework, args.device, args.tokens_len, args.streaming, model_args,
-                args.num_iters, memory_monitor)
+                args.num_iters, memory_data_collector)
         else:
-            iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case']](
-                model_path, framework, args.device, model_args, args.num_iters, memory_monitor)
+            iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case'].task](
+                model_path, framework, args.device, model_args, args.num_iters, memory_data_collector)
         if args.report is not None or args.report_json is not None:
             model_precision = ''
             if framework == 'ov':
-                ir_conversion_frontend = llm_bench_utils.model_utils.get_ir_conversion_frontend(model_name_or_id, model_path.parts)
+                ir_conversion_frontend = get_ir_conversion_frontend(model_args['model_name'], model_path.parts)
                 if ir_conversion_frontend != '':
                     framework = framework + '(' + ir_conversion_frontend + ')'
-                model_precision = llm_bench_utils.model_utils.get_model_precision(model_path.parts)
-            case, model_name = llm_bench_utils.model_utils.get_model_name(args.model)
-            if model_name is None:
-                model_name = llm_bench_utils.model_utils.get_model_name_with_path_part(args.model)
+                model_precision = get_model_precision(model_path.parts)
             if args.report is not None:
                 llm_bench_utils.output_csv.write_result(
                     args.report,
-                    model_name,
+                    model_args['model_name'],
                     framework,
                     args.device,
                     model_args,
                     iter_data_list,
                     pretrain_time,
                     model_precision,
-                    iter_timestamp
+                    iter_timestamp,
+                    memory_data_collector
                 )
             if args.report_json is not None:
                 llm_bench_utils.output_json.write_result(
                     args.report_json,
-                    model_name,
+                    model_args['model_name'],
                     framework,
                     args.device,
                     model_args,
                     iter_data_list,
                     pretrain_time,
                     model_precision,
-                    iter_timestamp
+                    iter_timestamp,
+                    memory_data_collector
                 )
     except Exception:
         log.error('An exception occurred')
         log.info(traceback.format_exc())
         exit(1)
     finally:
-        if args.memory_consumption:
-            memory_monitor.stop()
+        if memory_data_collector:
+            memory_data_collector.memory_monitor.stop()
 
 
 if __name__ == '__main__':

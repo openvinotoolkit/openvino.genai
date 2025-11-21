@@ -42,6 +42,7 @@ public:
     std::string m_bos_token = {};
     std::string m_eos_token = {};
     std::string m_chat_template = {};
+    std::string m_original_chat_template = {};
     std::vector<std::string> m_vocab = {};
     std::shared_ptr<StructuredOutputController> m_structured_output_controller = nullptr;
 
@@ -72,12 +73,15 @@ public:
     std::vector<std::string> decode(const ov::Tensor& tokens, const ov::AnyMap& detokenization_params = {});
     std::vector<std::string> decode(const std::vector<std::vector<int64_t>>& lines, const ov::AnyMap& detokenization_params = {});
 
-    std::string apply_chat_template(ChatHistory history,
+    std::string apply_chat_template(const ChatHistory& history,
                                     bool add_generation_prompt,
-                                    const std::string& chat_template) const;
+                                    const std::string& chat_template,
+                                    const std::optional<JsonContainer>& tools,
+                                    const std::optional<JsonContainer>& extra_context) const;
 
     void set_chat_template(const std::string& chat_template);
-    std::string get_chat_template();
+    std::string get_chat_template() const;
+    std::string get_original_chat_template() const;
     std::shared_ptr<StructuredOutputController> get_structured_output_controller(std::optional<int> vocab_size = std::nullopt);
 };
 

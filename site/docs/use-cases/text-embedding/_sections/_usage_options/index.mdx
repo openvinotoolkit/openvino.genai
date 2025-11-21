@@ -1,7 +1,7 @@
 ## Additional Usage Options
 
 :::tip
-Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/rag) and [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/rag) text embedding samples.
+Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/rag), [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/rag), and [JavaScript](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/js/rag) text embedding samples.
 :::
 
 ### Pooling Strategies
@@ -10,12 +10,37 @@ Text embedding models support different pooling strategies to aggregate token em
 
 - `CLS`: Use the first token embedding (default for many models)
 - `MEAN`: Average all token embeddings
+- `LAST_TOKEN`: Use the last token embedding
 
 You can set the pooling strategy via the `pooling_type` parameter.
 
 ### L2 Normalization
 
 L2 normalization can be applied to the output embeddings for improved retrieval performance. Enable it with the `normalize` parameter.
+
+### Input Size and Padding
+
+You can control how input texts are tokenized and padded:
+
+- `max_length`: Maximum length of tokens passed to the embedding model. Longer texts will be truncated.
+- `pad_to_max_length`: If `true`, model input tensors are padded to the maximum length.
+- `padding_side`: Side to use for padding (`"left"` or `"right"`).
+
+### Batch Size Configuration
+
+The `batch_size` parameter is useful for optimizing performance during database population:
+
+- When set, the pipeline fixes the model shape for inference optimization.
+- The number of documents passed to the pipeline must equal `batch_size`.
+- For query embeddings, set `batch_size=1` or leave it unset.
+
+### Fixed Shape Optimization
+
+Setting `batch_size`, `max_length`, and `pad_to_max_length=true` together will fix the model shape for optimal inference performance.
+
+:::info
+Fixed shapes are required for NPU device inference.
+:::
 
 ### Query and Embed Instructions
 
@@ -32,6 +57,10 @@ Some models support special instructions for queries and documents. Use `query_i
             "CPU",
             pooling_type=ov_genai.TextEmbeddingPipeline.PoolingType.MEAN,
             normalize=True,
+            max_length=512,
+            pad_to_max_length=True,
+            padding_side="left",
+            batch_size=4,
             query_instruction="Represent this sentence for searching relevant passages: ",
             embed_instruction="Represent this passage for retrieval: "
         )
@@ -45,11 +74,35 @@ Some models support special instructions for queries and documents. Use `query_i
             "CPU",
             ov::genai::pooling_type(ov::genai::TextEmbeddingPipeline::PoolingType::MEAN),
             ov::genai::normalize(true),
+            ov::genai::max_length(512),
+            ov::genai::pad_to_max_length(true),
+            ov::genai::padding_side("left"),
+            ov::genai::batch_size(4),
             ov::genai::query_instruction("Represent this sentence for searching relevant passages: "),
             ov::genai::embed_instruction("Represent this passage for retrieval: ")
         );
         ```
     </TabItemCpp>
+    <TabItemJS>
+        ```js
+        import { TextEmbeddingPipeline, PoolingType } from "openvino-genai-node";
+        
+        const pipeline = await TextEmbeddingPipeline(
+            models_path,
+            "CPU",
+            {
+                pooling_type: PoolingType.MEAN,
+                normalize: true,
+                max_length: 512,
+                pad_to_max_length: true,
+                padding_side: "left",
+                batch_size: 4,
+                query_instruction: "Represent this sentence for searching relevant passages: ",
+                embed_instruction: "Represent this passage for retrieval: "
+            }
+        );
+        ```
+    </TabItemJS>
 </LanguageTabs>
 
 :::info

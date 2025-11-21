@@ -43,7 +43,11 @@ EulerDiscreteScheduler::Config::Config(const std::filesystem::path& scheduler_co
 EulerDiscreteScheduler::EulerDiscreteScheduler(const std::filesystem::path& scheduler_config_path)
     : EulerDiscreteScheduler(Config(scheduler_config_path)) {}
 
-EulerDiscreteScheduler::EulerDiscreteScheduler(const Config& scheduler_config) : m_config(scheduler_config) {
+EulerDiscreteScheduler::EulerDiscreteScheduler(const Config& scheduler_config) : 
+    m_config(scheduler_config), 
+    m_num_inference_steps(0),
+    m_step_index(-1),
+    m_begin_index(-1) {
     std::vector<float> alphas, betas;
 
     using numpy_utils::linspace;
@@ -100,9 +104,6 @@ EulerDiscreteScheduler::EulerDiscreteScheduler(const Config& scheduler_config) :
         "support.");
 
     m_sigmas.push_back(0);
-
-    m_step_index = -1;
-    m_begin_index = -1;
 }
 
 void EulerDiscreteScheduler::set_timesteps(size_t num_inference_steps, float strength) {

@@ -254,7 +254,7 @@ def genai_generate(streaming, model, tokens_len, gen_config, empty_lora, input_d
         generated_tokens = np.array(generation_result.tokens)
 
     perf_metrics = generation_result[0].perf_metrics if cb_pipeline else generation_result.perf_metrics
-    return generated_tokens, perf_metrics, start - end
+    return generated_tokens, perf_metrics, end - start
 
 
 def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data_list, md5_list, prompt_index,
@@ -294,7 +294,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
             "Enabled input prompt permutations. It means that generated results may vary on different steps. "
             "If it is not expected, please specify --disable_prompt_permutation in your benchmarking command to disable this behavior"
         )
-        from openvino_genai import TokenizedInputs, GenerationConfig
+        from openvino_genai import TokenizedInputs
         import openvino as ov
 
         input_ids = input_data.input_ids.data
@@ -315,6 +315,7 @@ def run_text_generation_genai(input_text, num, model, tokenizer, args, iter_data
         if args['infer_count'] is not None:
             out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
         log.info(out_str)
+    from openvino_genai import GenerationConfig
     gen_config = model.get_generation_config() if hasattr(model, 'get_generation_config') else GenerationConfig()
     gen_config.max_new_tokens = max_gen_tokens
     # llama-3-8b-instruct's generation_config.json has 4096 max_length.
@@ -619,7 +620,8 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
             for idx, input_text in enumerate(text_list):
                 p_idx = prompt_idx_list[idx]
                 if num == 0:
-                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text')
+                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
+                                                max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
                             p_idx, bench_hook, tokens_len, streaming, model_precision, proc_id, mem_consumption)
@@ -631,7 +633,8 @@ def run_text_generation_benchmark(model_path, framework, device, tokens_len, str
             p_idx = prompt_idx_list[idx]
             for num in range(num_iters + 1):
                 if num == 0:
-                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text')
+                    metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
+                                                max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 text_gen_fn(input_text, num, model, tokenizer, args, iter_data_list, md5_list,
                             prompt_idx_list[idx], bench_hook, model_precision, proc_id, mem_consumption)

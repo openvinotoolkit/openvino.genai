@@ -4,13 +4,16 @@
 #pragma once
 
 #include <cstddef>
+#include <unordered_map>
+#include <sstream>
 
 namespace ov::genai {
 
 enum class SparseAttentionMode {
     TRISHAPE, /** Sparse attention will be applied to prefill stage only, with a configurable number of start and recent
                *  cache tokens to be retained. A number of prefill tokens in the end of the prompt can be configured to
-               *  have dense attention applied to them instead, to retain generation accuracy.*/
+               *  have dense attention applied to them instead, to retain generation accuracy.
+               *  https://arxiv.org/pdf/2412.10319 */
     XATTENTION /** Following https://arxiv.org/pdf/2503.16428, introduces
                 *  importance score threshold-based block sparsity into the prefill stage.
                 *  Computing importance scores introduces an overhead, but the total inference
@@ -78,6 +81,42 @@ public:
      *  M time to be calculated, then the importance score calculation would be taking `M / xattention_stride` time as
      *  overhead. */
     size_t xattention_stride = 8;
+
+    /**
+     * @brief Returns a string representation of the SparseAttentionConfig.
+     *
+     * The returned string contains the values of all configuration fields in a human-readable format, e.g.:
+     * SparseAttentionConfig {
+     *   sparseAttentionMode: TRISHAPE
+     *   num_last_dense_tokens_in_prefill: 100
+     *   num_retained_start_tokens_in_cache: 128
+     *   num_retained_recent_tokens_in_cache: 1920
+     *   xattention_threshold: 0.8
+     *   xattention_block_size: 64
+     *   xattention_stride: 8
+     * }
+     *
+     * @return A string describing the current configuration.
+     */
+    std::string to_string() const {
+        static const std::unordered_map<SparseAttentionMode, std::string> sparse_attention_mode_to_string = {
+            {SparseAttentionMode::TRISHAPE, "TRISHAPE"},
+            {SparseAttentionMode::XATTENTION, "XATTENTION"},
+        };
+        std::ostringstream oss;
+        oss << "SparseAttentionConfig { " << "\n";
+        if (sparse_attention_mode_to_string.count(mode) > 0) {
+            oss << "  sparseAttentionMode: " << sparse_attention_mode_to_string.at(mode) << "\n";
+        }
+        oss << "  num_last_dense_tokens_in_prefill: " << num_last_dense_tokens_in_prefill << "\n";
+        oss << "  num_retained_start_tokens_in_cache: " << num_retained_start_tokens_in_cache << "\n";
+        oss << "  num_retained_recent_tokens_in_cache: " << num_retained_recent_tokens_in_cache << "\n";
+        oss << "  xattention_threshold: " << xattention_threshold << "\n";
+        oss << "  xattention_block_size: " << xattention_block_size << "\n";
+        oss << "  xattention_stride: " << xattention_stride << "\n";
+        oss << " }";
+        return oss.str();
+    }
 };
 
 }  // namespace ov::genai

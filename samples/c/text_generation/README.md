@@ -42,6 +42,12 @@ pip install huggingface-hub
 huggingface-cli download <model> --local-dir <output_folder>
 ```
 
+### Using GGUF models
+
+To run any samples with a GGUF model, simply provide the path to the .gguf file via the `model_dir` parameter.
+
+This capability is currently available in preview mode and supports a limited set of topologies, including SmolLM and Qwen2.5. For other models 
+and architectures, we still recommend converting the model to the IR format using the `optimum-intel` tool.
 
 ### Sample Descriptions
 
@@ -52,7 +58,7 @@ Multi-turn conversations with an interactive chat interface powered by OpenVINO.
 ./chat_sample_c model_dir
 ```
 
-#### LLMs benchamrking sample(`benchmark_genai_c`)
+#### LLMs benchmarking sample(`benchmark_genai_c`)
 The sample demonstrates how to benchmark LLMs in OpenVINO GenAI by using C language. 
 - **Run Command:**
 ```sh

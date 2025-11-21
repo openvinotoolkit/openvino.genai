@@ -5,6 +5,13 @@
 #include <thread>
 #include <optional>
 
+#ifdef __APPLE__
+#include <sys/types.h>
+#include <sys/sysctl.h>
+#elif !defined(_WIN32)
+#include <sys/sysinfo.h>
+#endif
+
 #include "openvino/genai/text_streamer.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
 #include "utils.hpp"
@@ -14,15 +21,38 @@
 
 namespace {
 
-ov::element::Type get_model_kv_cache_precision(std::shared_ptr<ov::Model> model) {
-    const std::vector<std::string> kv_cache_precision_path = { "runtime_options", ov::hint::kv_cache_precision.name() };
-    ov::element::Type ir_kv_cache_precision = ov::element::dynamic;
-
-    if (model->has_rt_info(kv_cache_precision_path)) {
-        ir_kv_cache_precision = model->get_rt_info<ov::element::Type>(kv_cache_precision_path);
+// Returns available RAM memory on system if possible, otherwise returns std::numeric_limits<std::streamsize>::max()
+size_t get_available_cpu_memory() {
+#ifdef __APPLE__ 
+    int64_t memsize;
+    size_t len = sizeof(memsize);
+    if (sysctlbyname("hw.memsize", &memsize, &len, NULL, 0) == 0) {
+        return memsize;
     }
+#endif 
 
-    return ir_kv_cache_precision;
+#if !defined(_WIN32)
+    std::string token;
+    std::ifstream file("/proc/meminfo");
+    if(file.is_open()) {
+        while(file >> token) {
+            if(token == "MemTotal:") {
+                size_t mem;
+                if(file >> mem) {
+                    constexpr auto max_bytes = std::numeric_limits<size_t>::max() / 1024;
+                    if (mem > max_bytes) {
+                        return std::numeric_limits<size_t>::max();
+                    }
+                    return mem * 1024;
+                } else {
+                    return std::numeric_limits<size_t>::max();
+                }
+            }
+            file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+        }
+    }
+#endif
+    return std::numeric_limits<size_t>::max();
 }
 
 } // namespace
@@ -62,7 +92,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     const ov::genai::GenerationConfig& generation_config,
     bool is_validation_mode_enabled) : ContinuousBatchingImpl(model, tokenizer, scheduler_config, device, properties, generation_config, is_validation_mode_enabled){
     m_inputs_embedder = inputs_embedder;
-    m_model_runner->set_embedding_model(inputs_embedder->get_embedding_model());
+    // Note: set_inputs_embedder also sets the embedding model internally.
+    m_model_runner->set_inputs_embedder(inputs_embedder);
     m_model_input_type = ModelInputType::EMBEDDINGS;
 }
 
@@ -125,9 +156,20 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
 
     // Scheduler configuration
     SchedulerConfig normalized_config = scheduler_config;
+    size_t total_mem_size;
+    if (execution_device.find("GPU") != std::string::npos) {
+        total_mem_size = utils::get_available_gpu_memory(execution_device, m_num_decoder_layers);
+    } else {
+        total_mem_size = get_available_cpu_memory();
+    }
     if (normalized_config.num_kv_blocks == 0 && normalized_config.cache_size > 0) {
         size_t size_in_bytes = normalized_config.cache_size * 1024 * 1024 * 1024; // convert GBs to bytes
+        OPENVINO_ASSERT(size_in_bytes <= total_mem_size, "Requested KV-cache size is larger than available memory size on the system.");
         normalized_config.num_kv_blocks = size_in_bytes / cache_manager->get_block_size_in_bytes();
+    }
+    if (normalized_config.num_kv_blocks > 0) {
+        size_t size_in_bytes = cache_manager->get_block_size_in_bytes() * normalized_config.num_kv_blocks;
+        OPENVINO_ASSERT(size_in_bytes <= total_mem_size, "Requested number of KV-blocks require more memory than available on the system.");
     }
 
     bool can_use_partial_preemption = true;
@@ -212,24 +254,38 @@ GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
     uint64_t request_id,
     const ov::Tensor& input_ids,
-    ov::genai::GenerationConfig sampling_params,
+    const ov::genai::GenerationConfig& sampling_params,
     std::optional<ov::Tensor> token_type_ids) {
+    auto sampling_params_copy = sampling_params;
     // If stop_token_ids were not provided, take value from default m_generation_config
-    if (sampling_params.stop_token_ids.empty())
-        sampling_params.stop_token_ids = m_generation_config.stop_token_ids;
+    if (sampling_params_copy.stop_token_ids.empty())
+        sampling_params_copy.stop_token_ids = m_generation_config.stop_token_ids;
     // If eos_token_id was not provided, take value from default m_generation_config
-    if (sampling_params.eos_token_id == -1)
-        sampling_params.set_eos_token_id(m_generation_config.eos_token_id);
-    sampling_params.validate();
+    if (sampling_params_copy.eos_token_id == -1)
+        sampling_params_copy.set_eos_token_id(m_generation_config.eos_token_id);
+    sampling_params_copy.validate();
     size_t prompt_len;
     if (input_ids.get_shape().size() > 1) {
         prompt_len = input_ids.get_shape()[1];
     } else {
         prompt_len = input_ids.get_size();
     }
-    OPENVINO_ASSERT(sampling_params.max_length > prompt_len, "'max_length' must be greater than the number of prompt tokens");
+    OPENVINO_ASSERT(sampling_params_copy.max_length > prompt_len, "'max_length' must be greater than the number of prompt tokens");
 
-    auto sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params, m_block_size, token_type_ids);
+    std::shared_ptr<SequenceGroup> sequence_group;
+    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        const auto [position_ids, rope_delta] = m_inputs_embedder->get_position_ids(input_ids.get_shape()[1], 0);
+        sequence_group = std::make_shared<SequenceGroup>(request_id, 
+                                                         input_ids, 
+                                                         sampling_params_copy, 
+                                                         m_block_size, 
+                                                         token_type_ids, 
+                                                         position_ids, 
+                                                         rope_delta);
+    }
+    else {
+        sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params_copy, m_block_size, token_type_ids);
+    }
 
     if (m_scheduler->get_config().enable_prefix_caching) {
         m_scheduler->restore_cached_blocks(sequence_group);
@@ -240,13 +296,13 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
         m_awaiting_requests.push_back(sequence_group);
     }
 
-    return std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params);
+    return std::make_shared<GenerationHandleImpl>(sequence_group->get_generation_stream(), sampling_params_copy);
 }
 
 GenerationHandle
 ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(uint64_t request_id,
                                                                 const std::string& prompt,
-                                                                ov::genai::GenerationConfig sampling_params) {
+                                                                const ov::genai::GenerationConfig& sampling_params) {
     ov::Tensor inputs;
     ov::genai::VLMPerfMetrics metrics;
     if (m_model_input_type == ModelInputType::TOKENS) {
@@ -403,7 +459,8 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                              const std::vector<GenerationConfig>& sampling_params,
                                                              const StreamerVariant& streamer,
-                                                             const std::optional<std::vector<ov::Tensor>> token_type_ids) {
+                                                             const std::optional<std::vector<ov::Tensor>>& token_type_ids,
+                                                             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids_list) {
 
     _reset_cache_usage_statistics();
     ManualTimer generate_timer("generate()");
@@ -411,6 +468,10 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
 
     OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
     OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
+
+    if (position_ids_list.has_value()) {
+        OPENVINO_ASSERT((*position_ids_list).size() == input_ids.size());
+    }
 
     auto start_time =  std::chrono::steady_clock::now();
     PerfMetrics perf_metrics;
@@ -433,6 +494,13 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
     std::vector<GenerationHandle> generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
+        if (position_ids_list.has_value()) {
+            const auto [position_ids, rope_delta] = (*position_ids_list)[request_id];
+            m_inputs_embedder->set_position_ids(position_ids);
+            if (rope_delta.has_value()) {
+                m_inputs_embedder->set_rope_delta(*rope_delta);
+            }
+        }
         bool has_valid_token = token_type_ids.has_value() && request_id < token_type_ids->size();
         generations.push_back(
             add_request(request_id, input_ids[request_id], sampling_params[request_id], has_valid_token ? std::make_optional((*token_type_ids)[request_id]) : std::nullopt)
@@ -474,7 +542,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
         raw_perf_counters.m_grammar_compile_times.emplace_back(t);
     }
 
-    // waiting for competion of streaming
+    // waiting for completion of streaming
     streamer_ptr->end();
 
     OPENVINO_ASSERT(m_requests.empty(), "Internal error: current request is supposed to be dropped within step() function as completed");

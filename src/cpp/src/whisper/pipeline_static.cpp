@@ -1,4 +1,4 @@
-// Copyright (C) 2024 Intel Corporation
+// Copyright (C) 2024-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "whisper/pipeline_static.hpp"
@@ -18,6 +18,7 @@
 #include "openvino/core/preprocess/pre_post_process.hpp"
 #include "openvino/pass/pattern/matcher.hpp"
 #include "openvino/pass/pattern/op/wrap_type.hpp"
+#include "openvino/pass/pattern/op/optional.hpp"
 #include "openvino/pass/graph_rewrite.hpp"
 #include "openvino/pass/manager.hpp"
 #include "openvino/op/range.hpp"
@@ -262,7 +263,7 @@ std::vector<int64_t> prepare_init_ids(ov::Tensor& encoder_hidden_state,
         }
     }
 
-    int64_t language_token_id;
+    int64_t language_token_id = 0;
     if (config.language.has_value()) {
         std::string language = *config.language;
         if (config.lang_to_id.count(language)) {
@@ -398,8 +399,48 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model) {
         }
     };
 
+    class AttentionMaskInput_2 : public ov::pass::MatcherPass {
+    public:
+        OPENVINO_MATCHER_PASS_RTTI("AttentionMaskInput_2");
+
+        AttentionMaskInput_2(std::shared_ptr<ov::Model> model) {
+            auto range = wrap_type<v4::Range>();
+            auto unsqueeze1 = wrap_type<v0::Unsqueeze>({range, any_input()});
+            auto unsqueeze2 = wrap_type<v0::Unsqueeze>({unsqueeze1, any_input()});
+            auto unsqueeze3 = wrap_type<v0::Unsqueeze>({unsqueeze2, any_input()});
+            auto opt_convert = optional<v0::Convert>({unsqueeze3->output(0)});
+            auto lessequal = wrap_type<v1::LessEqual>({opt_convert, any_input()});
+
+            register_matcher(std::make_shared<Matcher>(lessequal, this->get_type_info().name), [model](Matcher& m) {
+                auto node = m.get_match_root();
+                auto attention_mask = std::make_shared<v0::Parameter>(ov::element::f32, ov::PartialShape{1, -1});
+                attention_mask->get_output_tensor(0).set_names({"attention_mask"});
+                model->add_parameters({attention_mask});
+
+                auto cst_0_0 = std::make_shared<v0::Constant>(ov::element::f32, ov::Shape{1}, 0.0f);
+                auto cst_0 = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{1}, 0);
+                auto cst_1 = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{1}, 1);
+                auto cst_2 = std::make_shared<v0::Constant>(ov::element::i32, ov::Shape{1}, 2);
+
+                auto attn_mask_shape = std::make_shared<v3::ShapeOf>(attention_mask, ov::element::i32)->output(0);
+                auto gather = std::make_shared<v8::Gather>(attn_mask_shape, cst_1, cst_0)->output(0);
+                auto attn_mask_size_minus_one = std::make_shared<v1::Subtract>(gather, cst_1)->output(0);
+                auto slice = std::make_shared<v8::Slice>(attention_mask->output(0), cst_0, attn_mask_size_minus_one, cst_1, cst_1);
+
+                auto unsqueeze_1 = std::make_shared<v0::Unsqueeze>(slice->output(0), cst_1->output(0));
+                auto unsqueeze_2 = std::make_shared<v0::Unsqueeze>(unsqueeze_1->output(0), cst_2->output(0));
+
+                auto equal = std::make_shared<v1::Equal>(unsqueeze_2->output(0), cst_0_0->output(0));
+
+                ov::replace_node(node, equal);
+                return false;
+            });
+        }
+    };
+
     ov::pass::Manager pm;
     pm.register_pass<AttentionMaskInput>(model);
+    pm.register_pass<AttentionMaskInput_2>(model);
     pm.run_passes(model);
 }
 
@@ -413,9 +454,10 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model, bool transform_c
         AttentionMaskInput(std::shared_ptr<ov::Model> model, bool transform_cross_attn, const uint32_t& hidden_state_seq_size) {
             std::vector<std::shared_ptr<ov::Node>> self_attn_nodes;
             std::vector<std::shared_ptr<ov::Node>> cross_attn_nodes;
+            const auto kAttnMaskPort = 3;
             for (const auto &node : model->get_ops()) {
                 if (ov::is_type<ov::op::v13::ScaledDotProductAttention>(node)) {
-                    if (node->inputs().size() == 4u) {
+                    if (node->inputs().size() > kAttnMaskPort && ov::is_type<v8::Slice>(node->input(kAttnMaskPort).get_source_output().get_node())) {
                         self_attn_nodes.push_back(node);
                     } else {
                         cross_attn_nodes.push_back(node);
@@ -429,14 +471,6 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model, bool transform_c
             auto attention_mask = std::make_shared<v0::Parameter>(ov::element::i64, ov::PartialShape{-1, -1});
             attention_mask->get_output_tensor(0).set_names({"attention_mask"});
             model->add_parameters({attention_mask});
-
-            const auto kAttnMaskPort = 3;
-            auto slice = self_attn_nodes[0]->input(kAttnMaskPort).get_source_output().get_node();
-            auto cvt = std::make_shared<v0::Convert>(attention_mask->output(0), ov::element::f32);
-            auto add = std::make_shared<v1::Add>(slice->output(0), cvt->output(0));
-
-            auto trps = std::make_shared<v1::Transpose>(cvt->output(0), v0::Constant::create(ov::element::i32, ov::Shape{2}, std::vector<int>{1, 0}));
-            auto mtpl = std::make_shared<v1::Multiply>(trps->output(0), add->output(0));
 
             auto cst_ninf = std::make_shared<v0::Constant>(
                 ov::element::f32,
@@ -453,6 +487,18 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model, bool transform_c
                 ov::Shape{1},
                 std::vector<float>{0}
             );
+
+            auto slice = self_attn_nodes[0]->input(kAttnMaskPort).get_source_output().get_node_shared_ptr();
+            std::shared_ptr<ov::Node> slice_f32;
+            if (slice->get_element_type() == ov::element::boolean) {
+                slice_f32 = std::make_shared<v1::Select>(slice->output(0), cst_0->output(0), cst_ninf->output(0));
+            } else {
+                slice_f32 = slice;
+            }
+            auto cvt = std::make_shared<v0::Convert>(attention_mask->output(0), ov::element::f32);
+            auto add = std::make_shared<v1::Add>(slice_f32->output(0), cvt->output(0));
+            auto trps = std::make_shared<v1::Transpose>(cvt->output(0), v0::Constant::create(ov::element::i32, ov::Shape{2}, std::vector<int>{1, 0}));
+            auto mtpl = std::make_shared<v1::Multiply>(trps->output(0), add->output(0));
 
             auto equal = std::make_shared<v1::Equal>(mtpl->output(0), cst_1->output(0));
             auto select = std::make_shared<v1::Select>(
@@ -487,14 +533,18 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model, bool transform_c
                 auto unsq1 = std::make_shared<v0::Unsqueeze>(broadcast->output(0), cst_0->output(0));
                 auto unsq2 = std::make_shared<v0::Unsqueeze>(unsq1->output(0), cst_1->output(0));
                 for (const auto& cross_attn_node : cross_attn_nodes) {
-                    auto sdpa = std::make_shared<v13::ScaledDotProductAttention>(
-                        cross_attn_node->input(0).get_source_output(),
-                        cross_attn_node->input(1).get_source_output(),
-                        cross_attn_node->input(2).get_source_output(),
-                        unsq2->output(0),
-                        false
-                    );
-                    ov::replace_node(cross_attn_node, sdpa);
+                    if (cross_attn_node->inputs().size() == 3) {
+                        auto sdpa = std::make_shared<v13::ScaledDotProductAttention>(
+                            cross_attn_node->input(0).get_source_output(),
+                            cross_attn_node->input(1).get_source_output(),
+                            cross_attn_node->input(2).get_source_output(),
+                            unsq2->output(0),
+                            false
+                        );
+                        ov::replace_node(cross_attn_node, sdpa);
+                    } else {
+                        cross_attn_node->input(3).replace_source_output(unsq2->output(0));
+                    }
                 }
             }
         }
@@ -505,6 +555,48 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model, bool transform_c
     pm.run_passes(model);
 }
 
+void add_cache_position_input(std::shared_ptr<ov::Model> model) {
+    using namespace ov::pass::pattern;
+    using namespace ov::op;
+    class CachePositionInput : public ov::pass::MatcherPass {
+    public:
+        OPENVINO_MATCHER_PASS_RTTI("CachePositionInput");
+
+        CachePositionInput(std::shared_ptr<ov::Model> model) {
+            auto gather = wrap_type<v8::Gather>({any_input(), any_input(), any_input()});
+            auto add = wrap_type<v1::Add>({gather, any_input()});
+            auto range = wrap_type<v4::Range>({gather, add, any_input()});
+            auto unsqueeze = wrap_type<v0::Unsqueeze>({range, any_input()});
+            auto tile = wrap_type<v0::Tile>({unsqueeze, any_input()});
+
+            register_matcher(std::make_shared<Matcher>(tile, this->get_type_info().name),
+                [model, unsqueeze](Matcher& m) {
+                auto& node_to_output = m.get_pattern_value_map();
+                auto unsqueeze_node = node_to_output.at(unsqueeze).get_node_shared_ptr();
+                auto matched_unsqueeze = std::static_pointer_cast<v0::Unsqueeze>(unsqueeze_node);
+
+                auto cache_position = std::make_shared<v0::Parameter>(ov::element::i64, ov::Shape{1});
+                cache_position->get_output_tensor(0).set_names({"cache_position"});
+                cache_position->set_friendly_name("cache_position");
+                model->add_parameters({cache_position});
+                std::shared_ptr<ov::Node> cache_pos_unsqueeze_arg;
+                if (matched_unsqueeze->input(0).get_element_type() == ov::element::f32) {
+                    cache_pos_unsqueeze_arg = std::make_shared<v0::Convert>(cache_position, ov::element::f32);
+                } else {
+                    cache_pos_unsqueeze_arg = cache_position;
+                }
+
+                matched_unsqueeze->input(0).replace_source_output(cache_pos_unsqueeze_arg->output(0));
+                return false;
+            });
+        }
+    };
+
+    ov::pass::Manager pm;
+    pm.register_pass<CachePositionInput>(model);
+    pm.run_passes(model);
+    model->validate_nodes_and_infer_types();
+}
 
 ov::PartialShape get_encoder_hidden_state_shape(const std::shared_ptr<ov::Model>& encoder) {
     return encoder->output("last_hidden_state").get_partial_shape();
@@ -523,7 +615,7 @@ void reshape_to_static(std::shared_ptr<ov::Model> model,
             new_shape = ov::PartialShape({1, input_size});
         } else if (input_name.find("attention_mask") != std::string::npos) {
             if (with_past)
-                new_shape = ov::PartialShape({1, kvcache_size+1});
+                new_shape = ov::PartialShape({1, kvcache_size + 1});
             else
                 new_shape = ov::PartialShape({1, kvcache_size});
         } else if (input_name.find("position_ids") != std::string::npos) {
@@ -664,8 +756,8 @@ void remove_input_kv_tensors(std::shared_ptr<ov::Model>& model) {
                 auto result_to_add    = std::make_shared<ov::op::v0::Result>(concat_node->inputs()[CONCAT_CURR_KV_PORT].get_source_output());
                 set_name(result_to_add, result_to_remove->get_friendly_name());
 
-                results_to_remove.push_back(result_to_remove);
-                results_to_add.push_back(result_to_add);
+                results_to_remove.push_back(std::move(result_to_remove));
+                results_to_add.push_back(std::move(result_to_add));
             }
             if (strstr(cat_reader.get_node()->get_type_name(), "ScaledDotProductAttention") != nullptr || strstr(cat_reader.get_node()->get_type_name(), "FakeConvert") != nullptr) {
                 auto sdpa_in = cat_reader;
@@ -913,8 +1005,10 @@ std::shared_ptr<ov::Model> prepare_decoder_model(std::shared_ptr<ov::Model>& mod
     remove_input_kv_tensors(decoder_model);
     // 3) Expose all states that requires initialization on the first run as outputs
     expose_runtime_states_as_outputs(decoder_model);
-    // 4) Remove cache_position input
-    remove_cache_position(decoder_model);
+    // 4) Remove cache_position input if it exists
+    if (ov::genai::utils::has_input(decoder_model, "cache_position")) {
+        remove_cache_position(decoder_model);
+    }
     // 5) Normalize output names - should be done in stateful_to_stateless_transformation
     normalize_output_key_value_names(decoder_model);
 
@@ -967,6 +1061,10 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
 
     if (!decoder_model || !decoder_with_past_model)
         OPENVINO_THROW("Decoder/decoder_with_past model is not valid !");
+
+    if (!ov::genai::utils::has_input(decoder_with_past_model, "cache_position")) {
+        add_cache_position_input(decoder_with_past_model);
+    }
 
     add_attention_mask_input(decoder_model, true /* transform_cross_attn */, last_hidden_state_shape[1].get_length());
     // NB: Note, there is no need to transform cross attention for decoder_with_past_model
@@ -1112,9 +1210,6 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
             segment_offset = extracted_segments.last_offset;
         } else {
             output_tokens.insert(output_tokens.end(), chunk_output_tokens.begin(), chunk_output_tokens.end());
-        }
-
-        if (is_shortform) {
             segment_offset = input_features.n_frames;
         }
 

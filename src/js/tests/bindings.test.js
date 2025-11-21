@@ -12,13 +12,13 @@ describe("bindings", () => {
   before((_, done) => {
     pipeline = new addon.LLMPipeline();
 
-    pipeline.init(MODEL_PATH, "CPU", (err) => {
+    pipeline.init(MODEL_PATH, "CPU", {}, (err) => {
       if (err) {
         console.error(err);
         process.exit(1);
       }
 
-      pipeline.startChat((err) => {
+      pipeline.startChat("", (err) => {
         if (err) {
           console.error(err);
           process.exit(1);

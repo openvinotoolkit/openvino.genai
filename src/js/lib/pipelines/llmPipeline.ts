@@ -1,6 +1,6 @@
 import util from "node:util";
-import addon from "../addon.js";
-import { GenerationConfig, StreamingStatus } from "../utils.js";
+import addon, { ChatHistory } from "../addon.js";
+import { GenerationConfig, StreamingStatus, LLMPipelineProperties } from "../utils.js";
 
 export type ResolveFunction = (arg: { value: string; done: boolean }) => void;
 export type Options = {
@@ -9,11 +9,13 @@ export type Options = {
 };
 
 interface Tokenizer {
-  /** Embeds input prompts with special tags for a chat scenario. */
+  /** Applies a chat template to format chat history into a prompt string. */
   applyChatTemplate(
-    chatHistory: { role: string; content: string }[],
+    chatHistory: Record<string, any>[] | ChatHistory,
     addGenerationPrompt: boolean,
     chatTemplate?: string,
+    tools?: Record<string, any>[],
+    extraContext?: Record<string, any>,
   ): string;
   getBosToken(): string;
   getBosTokenId(): number;
@@ -110,6 +112,11 @@ export interface PerfMetrics {
   getGrammarCompileTime(): SummaryStats;
   /** A structure of RawPerfMetrics type that holds raw metrics. */
   rawMetrics: RawMetrics;
+
+  /** Adds the metrics from another PerfMetrics object to this one.
+   * @returns The current PerfMetrics instance.
+   */
+  add(other: PerfMetrics): this;
 }
 
 export class DecodedResults {
@@ -144,15 +151,17 @@ export class DecodedResults {
 }
 
 export class LLMPipeline {
-  modelPath: string | null = null;
-  device: string | null = null;
+  modelPath: string;
+  device: string;
   pipeline: any | null = null;
+  properties: LLMPipelineProperties;
   isInitialized = false;
   isChatStarted = false;
 
-  constructor(modelPath: string, device: string) {
+  constructor(modelPath: string, device: string, properties: LLMPipelineProperties) {
     this.modelPath = modelPath;
     this.device = device;
+    this.properties = properties;
   }
 
   async init() {
@@ -161,18 +170,18 @@ export class LLMPipeline {
     this.pipeline = new addon.LLMPipeline();
 
     const initPromise = util.promisify(this.pipeline.init.bind(this.pipeline));
-    const result = await initPromise(this.modelPath, this.device);
+    const result = await initPromise(this.modelPath, this.device, this.properties);
 
     this.isInitialized = true;
 
     return result;
   }
 
-  async startChat() {
+  async startChat(systemMessage: string = "") {
     if (this.isChatStarted) throw new Error("Chat is already started");
 
     const startChatPromise = util.promisify(this.pipeline.startChat.bind(this.pipeline));
-    const result = await startChatPromise();
+    const result = await startChatPromise(systemMessage);
 
     this.isChatStarted = true;
 
@@ -189,10 +198,13 @@ export class LLMPipeline {
     return result;
   }
 
-  stream(prompt: string, generationConfig: GenerationConfig = {}) {
+  stream(inputs: string | ChatHistory, generationConfig: GenerationConfig = {}) {
     if (!this.isInitialized) throw new Error("Pipeline is not initialized");
 
-    if (typeof prompt !== "string") throw new Error("Prompt must be a string");
+    if (Array.isArray(inputs))
+      throw new Error(
+        "Streaming is not supported for array of inputs. Please use LLMPipeline.generate() method.",
+      );
     if (typeof generationConfig !== "object") throw new Error("Options must be an object");
 
     let streamingStatus: StreamingStatus = StreamingStatus.RUNNING;
@@ -213,7 +225,7 @@ export class LLMPipeline {
       return streamingStatus;
     }
 
-    this.pipeline.generate(prompt, chunkOutput, generationConfig);
+    this.pipeline.generate(inputs, chunkOutput, generationConfig);
 
     return {
       async next() {
@@ -241,15 +253,10 @@ export class LLMPipeline {
   }
 
   async generate(
-    prompt: string | string[],
+    inputs: string | string[] | ChatHistory,
     generationConfig: GenerationConfig = {},
     callback: (chunk: string) => void | undefined,
   ) {
-    if (
-      typeof prompt !== "string" &&
-      !(Array.isArray(prompt) && prompt.every((item) => typeof item === "string"))
-    )
-      throw new Error("Prompt must be a string or string[]");
     if (typeof generationConfig !== "object") throw new Error("Options must be an object");
     if (callback !== undefined && typeof callback !== "function")
       throw new Error("Callback must be a function");
@@ -283,7 +290,7 @@ export class LLMPipeline {
 
         return StreamingStatus.RUNNING;
       };
-      this.pipeline.generate(prompt, chunkOutput, generationConfig, options);
+      this.pipeline.generate(inputs, chunkOutput, generationConfig, options);
     });
   }
 

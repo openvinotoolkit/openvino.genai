@@ -9,6 +9,7 @@
 
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/json_container.hpp"
 
 namespace py = pybind11;
 using ov::genai::StreamerBase;
@@ -22,7 +23,7 @@ using PyBindStreamerVariant = std::variant<
     std::shared_ptr<StreamerBase>,
     std::monostate>;
 
-ov::genai::StructuredOutputConfig::CompoundGrammar py_obj_to_compound_grammar(const py::object& py_obj);
+ov::genai::StructuredOutputConfig::CompoundGrammar py_obj_to_structural_tag(const py::object& py_obj);
 
 template <class... Ts>
 struct overloaded : Ts... {
@@ -41,8 +42,14 @@ ov::AnyMap kwargs_to_any_map(const py::kwargs& kwargs);
 
 std::filesystem::path ov_tokenizers_module_path();
 
-ov::genai::OptionalGenerationConfig update_config_from_kwargs(const ov::genai::OptionalGenerationConfig& config, const py::kwargs& kwargs);
+ov::genai::GenerationConfig update_config_from_kwargs(ov::genai::GenerationConfig config, const py::kwargs& kwargs);
 
 ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& py_streamer);
+
+ov::AnyMap py_object_to_any_map(const py::object& py_obj);
+
+ov::genai::JsonContainer py_object_to_json_container(const py::object& obj);
+
+py::object json_container_to_py_object(const ov::genai::JsonContainer& container);
 
 }  // namespace ov::genai::pybind::utils

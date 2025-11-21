@@ -48,6 +48,13 @@ pip install huggingface-hub
 huggingface-cli download <model> --local-dir <output_folder>
 ```
 
+### Using GGUF models
+
+To run any samples with a GGUF model, simply provide the path to the .gguf file via the `model_dir` parameter.
+
+This capability is currently available in preview mode and supports a limited set of topologies, including SmolLM and Qwen2.5. For other models 
+and architectures, we still recommend converting the model to the IR format using the `optimum-intel` tool.
+
 ## Sample Descriptions
 ### Common information
 Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html) to get common information about OpenVINO samples.
@@ -141,7 +148,7 @@ This approach reduces the need for multiple infer requests to the main model, en
 
 Here is a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/speculative-sampling) that provides an example of LLM-powered text generation in Python.
 
-Recommended models: meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLlama-1.1B-Chat-v1.0 as draft model, etc
+Recommended models: meta-llama/Llama-2-13b-hf as main model and TinyLlama/TinyLlama-1.1B-Chat-v1.0 as draft model. Note that GGUF models are not supported as draft models.
 - **Main Feature:** Reduces latency while generating high-quality text.
 - **Run Command:**
   ```bash
@@ -178,9 +185,9 @@ LLMPipeline and Tokenizer objects can be initialized directly from the memory bu
 
 ### 9. LLMs benchmarking sample (`benchmark_genai`)
 - **Description:** 
-This sample script demonstrates how to benchmark an LLMs in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text, and calculating various performance metrics.
+This sample script demonstrates how to benchmark LLMs in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text, and calculating various performance metrics.
 
-For more information how performance metrics are calculated please follow [performance-metrics tutorial](../../../src/README.md#performance-metrics).
+For more information how performance metrics are calculated, please follow the [performance-metrics tutorial](../../../src/README.md#performance-metrics).
 - **Main Feature:** Benchmark model via GenAI
 - **Run Command:**
   ```bash
@@ -272,14 +279,16 @@ If the model does not generate trigger strings there will be no structural const
 The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other models may not produce the expected results or might require different system prompt.
 
 
-### 13. Compound Grammar Generation Sample (`compound_grammar_generation`)
+### 13. Compound Grammar Generation with Parsing Sample (`compound_grammar_generation`)
 - **Description:**
-  This sample demonstrates advanced structured output generation using compound grammars in OpenVINO GenAI.
-  It showcases how to combine multiple grammar types - Regex, JSONSchema and EBNF - using Union (`|`) and Concat (`+`) operations to strictly control LLM output.
+  This sample demonstrates advanced structured output generation and results parsing using compound grammars in OpenVINO GenAI.
+  It showcases how to combine multiple grammar types - Regex, JSONSchema and EBNF - using Union (`|`) and Concat (`+`) operations to strictly control LLM output and
+  also shows how to write parsing logic to extract structured data from the generated output.
   It features multi-turn chat, switching grammar constraints between turns (e.g., "yes"/"no" answers and structured tool calls).
   Union (`|`) operation allows the model to choose which grammar to use during generation. 
   In the sample it is used to combine two regex grammars for `"yes"` or `"no"` answer.
-  Concat (`+`) operation allows to start with one grammar and continue with another. 
+  Concat (`+`) operation allows to start with one grammar and continue with another.
+  Also it demonstrates how to write custom parser to extract tool calls from the generated text.
   In the sample it used to create a `phi-4-mini-instruct` style tool calling answer - `functools[{tool_1_json}, ...]` - by combining regex and JSON schema grammars.
 
 - **Main Features:**
@@ -287,12 +296,13 @@ The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other mode
   - Combine grammars with Concat (`+`) and Union (`|`) operations
   - Multi-turn chat with grammar switching
   - Structured tool calling using Pydantic schemas
+  - Parse generated output to call tools from extracted structured data
 - **Run Command:**
   ```bash
   python compound_grammar_generation.py model_dir
   ```
 - **Notes:**
-  This sample is ideal for scenarios requiring strict control over LLM outputs, such as building agents that interact with APIs or require validated structured responses. It showcases how to combine regex triggers and JSON schema enforcement for robust output generation.
+  This sample is ideal for scenarios requiring strict control over LLM outputs, such as building agents that interact with APIs or require validated structured responses. It showcases how to combine regex triggers and JSON schema enforcement for robust output generation and parsing resulting output.
   The sample is verified with `microsoft/Phi-4-mini-instruct` model. Other models may not produce the expected results or might require different system prompt.
 
 
