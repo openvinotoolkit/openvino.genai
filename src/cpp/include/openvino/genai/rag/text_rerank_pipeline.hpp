@@ -22,6 +22,11 @@ public:
         std::optional<size_t> max_length;
 
         /**
+         * @brief Side to use for padding "left" or "right"
+         */
+        std::optional<std::string> padding_side;
+
+        /**
          * @brief Constructs text rerank pipeline configuration
          */
         Config() = default;
