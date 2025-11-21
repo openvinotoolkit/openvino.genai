@@ -166,9 +166,14 @@ def run_hugging_face(
 
 # download HF model or read converted model
 def get_huggingface_models(model_id: str | Path, model_class: Type[OVModel], local_files_only=False):
-    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, local_files_only=local_files_only))
-    opt_model = retry_request(lambda: model_class.from_pretrained(model_id, export=isinstance(model_id, str), compile=False, load_in_8bit=False, ov_config=get_default_llm_properties(), local_files_only=local_files_only))
-    return opt_model, hf_tokenizer
+    if "eagle3" not in str(model_id).lower():
+        hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, local_files_only=local_files_only))
+        opt_model = retry_request(lambda: model_class.from_pretrained(model_id, export=isinstance(model_id, str), compile=False, load_in_8bit=False, ov_config=get_default_llm_properties(), local_files_only=local_files_only))
+        return opt_model, hf_tokenizer
+    else:
+        hf_tokenizer = None
+        opt_model = retry_request(lambda: model_class.from_pretrained(model_id, eagle3=True, export=isinstance(model_id, str), compile=False, load_in_8bit=False, ov_config=get_default_llm_properties(), local_files_only=local_files_only))
+        return opt_model, hf_tokenizer
 
 
 def convert_and_save_tokenizer(hf_tokenizer : AutoTokenizer,
@@ -192,9 +197,10 @@ def convert_models(opt_model : OVModelForCausalLM,
     opt_model.config.save_pretrained(models_path)
 
     # to store tokenizer config jsons with special tokens
-    hf_tokenizer.save_pretrained(models_path)
-    # convert tokenizers as well
-    convert_and_save_tokenizer(hf_tokenizer, models_path, **tokenizer_kwargs)
+    if hf_tokenizer:
+        hf_tokenizer.save_pretrained(models_path)
+        # convert tokenizers as well
+        convert_and_save_tokenizer(hf_tokenizer, models_path, **tokenizer_kwargs)
 
 
 def download_and_convert_model(model_id: str, **tokenizer_kwargs):
