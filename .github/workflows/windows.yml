@@ -672,13 +672,22 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
+      - name: Setup UV
+        if: ${{ matrix.test.run_condition }}
+        uses: astral-sh/setup-uv@v4
+
       - name: Install GenAI Wheels
         if: ${{ matrix.test.run_condition }}
         uses: ./src/.github/actions/install_wheel
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai;whowhatbench"
-          requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
+      
+      - name: Sync dependency groups
+        if: ${{ matrix.test.run_condition }}
+        working-directory: ${{ github.workspace }}/src
+        shell: bash
+        run: uv sync --extra testing-full --no-install-project --prerelease=allow
 
       - name: Tests
         if: ${{ matrix.test.run_condition }}
@@ -771,13 +780,24 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
+      - name: Setup UV
+        if: ${{ matrix.test.run_condition }}
+        uses: astral-sh/setup-uv@v4
+
       - name: Install GenAI wheels
         if: ${{ matrix.test.run_condition }}
         uses: ./src/.github/actions/install_wheel
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai[testing]"
-          requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
+      
+      - name: Sync dependency groups
+        if: ${{ matrix.test.run_condition }}
+        working-directory: ${{ github.workspace }}/src
+        shell: bash
+        run: |
+          uv sync --extra samples --no-install-project --prerelease=allow
+          uv sync --extra testing-full --no-install-project --prerelease=allow
 
       - name: Setup NodeJS
         if: ${{ matrix.test.run_condition }}
@@ -850,12 +870,21 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
 
+      - name: Setup UV
+        uses: astral-sh/setup-uv@v4
+
       - name: Install GenAI wheels
         uses: ./src/.github/actions/install_wheel
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai[testing]"
-          requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
+      
+      - name: Sync dependency groups
+        working-directory: ${{ github.workspace }}/src
+        shell: bash
+        run: |
+          uv sync --extra samples --no-install-project --prerelease=allow
+          uv sync --extra testing-full --no-install-project --prerelease=allow
 
       - name: gtests unit tests
         run: |

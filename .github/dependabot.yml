@@ -1,4 +1,4 @@
-# See help here: https://docs.github.com/en/free-pro-team@latest/github/administering-a-repository/enabling-and-disabling-version-updates
+ See help here: https://docs.github.com/en/free-pro-team@latest/github/administering-a-repository/enabling-and-disabling-version-updates
 
 version: 2
 updates:
@@ -26,17 +26,12 @@ updates:
     versioning-strategy: increase-if-necessary
 
   #
-  # Python dependencies
+  # Python dependencies (UV workspace)
   #
-  - package-ecosystem: "pip"
-    directories:
-      - "/"
-      - "./samples/"
-      - "./tests/python_tests/"
-      - "./tools/llm_bench/"
-      - "./tools/who_what_benchmark/"
+  - package-ecosystem: "uv"
+    directory: "/"
     schedule:
       interval: "daily"
       time: "09:00"
       timezone: "Europe/Dublin"
-    versioning-strategy: increase-if-necessary
+    open-pull-requests-limit: 5
