@@ -1,4 +1,5 @@
 import os
+import gc
 import pytest
 import shutil
 import logging
@@ -16,12 +17,12 @@ def setup_and_teardown():
     ov_cache_models_dir = get_ov_cache_models_dir()
 
     logger.info(f"Creating directory: {ov_cache_models_dir}")
-    os.makedirs(ov_cache_models_dir, exist_ok=True)
+    ov_cache_models_dir.mkdir(exist_ok=True, parents=True)
 
     yield
 
     if os.environ.get("CLEANUP_CACHE", "false").lower() != "false":
-        if os.path.exists(ov_cache_models_dir):
+        if ov_cache_models_dir.exists():
             logger.info(f"Removing temporary directory: {ov_cache_models_dir}")
             shutil.rmtree(ov_cache_models_dir)
         else:
@@ -54,3 +55,14 @@ def pytest_addoption(parser):
 
 def pytest_configure(config: pytest.Config):
     pytest.selected_model_ids = config.getoption("--model_ids", default=None)
+
+
+@pytest.fixture(scope="module", autouse=True)
+def run_gc_after_test():
+    """
+    Fixture to run garbage collection after each test module.
+    This is a workaround to minimize memory consumption during tests 
+    and allow the use of less powerful CI runners.
+    """
+    yield
+    gc.collect()
