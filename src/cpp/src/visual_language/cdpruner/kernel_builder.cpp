@@ -38,8 +38,8 @@ ConditionalKernelBuilder::ConditionalKernelBuilder(const Config& config)
         m_requests_initialized = true;
 
     } catch (const std::exception& e) {
-        Logger::warn("[CDPruner] ConditionalKernelBuilder: InferRequest initialization failed, will use fallback: " +
-                     std::string(e.what()));
+        GENAI_WARN("[CDPruner] ConditionalKernelBuilder: InferRequest initialization failed, will use fallback: " +
+                   std::string(e.what()));
         m_requests_initialized = false;
     }
 }
@@ -57,8 +57,8 @@ ov::Tensor ConditionalKernelBuilder::build(const ov::Tensor& visual_features, co
     try {
         conditional_kernel = build_with_ov_model(visual_features, input_param);
     } catch (const std::exception& e) {
-        Logger::warn("[CDPruner] ConditionalKernelBuilder: OV model failed, falling back to normal pipeline: " +
-                     std::string(e.what()));
+        GENAI_WARN("[CDPruner] ConditionalKernelBuilder: OV model failed, falling back to normal pipeline: " +
+                   std::string(e.what()));
         conditional_kernel = build_with_normal_pipeline(visual_features, input_param);
     }
 
@@ -115,7 +115,7 @@ ov::Tensor ConditionalKernelBuilder::compute_similarity_matrix_with_model(const 
 
     if (!m_requests_initialized) {
         // Fallback to CPU implementation if infer requests not initialized
-        Logger::warn("[CDPruner] Using CPU fallback for similarity matrix computation");
+        GENAI_WARN("[CDPruner] Using CPU fallback for similarity matrix computation");
         return compute_similarity_matrix(features);
     }
 
@@ -129,7 +129,7 @@ ov::Tensor ConditionalKernelBuilder::compute_similarity_matrix_with_model(const 
 
     } catch (const std::exception& e) {
         // Fallback to CPU implementation if GPU fails
-        Logger::warn("[CDPruner] GPU MatMul failed, falling back to CPU.");
+        GENAI_WARN("[CDPruner] GPU MatMul failed, falling back to CPU.");
         return compute_similarity_matrix(features);
     }
 }

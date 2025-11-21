@@ -21,7 +21,7 @@
  *      a) Token similarity: S[i,j] = visual[i] · visual[j]
  *      b) Text relevance: R[i] = max(relevance_scores[i])
  *    - Kernel formula: K[i,j] = λ·R[i]·R[j]·S[i,j] + (1-λ)·S[i,j]
- *    - λ = relevance_weight (default: 1.0)
+ *    - λ = relevance_weight (default: 0.5)
  *    - Output: Kernel matrix [N, N]
  *
  * 3. DPP-based Token Selection (FastGreedyDPP)

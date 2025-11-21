@@ -432,11 +432,11 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_cpu_internal(const ov::Te
         static bool simd_logged = false;
         if (!simd_logged) {
 #ifdef __AVX__
-            Logger::warn("[CDPruner] Using AVX SIMD instructions for vector operations (8 floats/operation)");
+            GENAI_WARN("[CDPruner] Using AVX SIMD instructions for vector operations (8 floats/operation)");
 #elif defined(__SSE2__)
-            Logger::warn("[CDPruner] Using SSE2 SIMD instructions for vector operations (4 floats/operation)");
+            GENAI_WARN("[CDPruner] Using SSE2 SIMD instructions for vector operations (4 floats/operation)");
 #else
-            Logger::warn("[CDPruner] Using scalar operations (no SIMD acceleration)");
+            GENAI_WARN("[CDPruner] Using scalar operations (no SIMD acceleration)");
 #endif
             simd_logged = true;
         }
@@ -646,7 +646,7 @@ bool OpenCLDPP::initialize_opencl() {
         cl::Platform::get(&platforms);
 
         if (platforms.empty()) {
-            Logger::warn("[OpenCLDPP] No OpenCL platforms found");
+            GENAI_WARN("[OpenCLDPP] No OpenCL platforms found");
             return false;
         }
 
@@ -659,7 +659,7 @@ bool OpenCLDPP::initialize_opencl() {
         m_state->device.getInfo(CL_DEVICE_NAME, &device_name);
         return load_and_compile_kernels();
     } catch (const std::exception& e) {
-        Logger::warn("[OpenCLDPP] OpenCL initialization failed: " + std::string(e.what()));
+        GENAI_WARN("[OpenCLDPP] OpenCL initialization failed: " + std::string(e.what()));
         return false;
     }
 }
@@ -679,14 +679,14 @@ bool OpenCLDPP::load_and_compile_kernels() {
             // Get build log for debugging
             std::string build_log;
             m_state->program.getBuildInfo(m_state->device, CL_PROGRAM_BUILD_LOG, &build_log);
-            Logger::warn("[OpenCLDPP] Kernel compilation failed with error: " + std::to_string(result));
-            Logger::warn("[OpenCLDPP] Build log: " + build_log);
+            GENAI_WARN("[OpenCLDPP] Kernel compilation failed with error: " + std::to_string(result));
+            GENAI_WARN("[OpenCLDPP] Build log: " + build_log);
             return false;
         }
 
         return true;
     } catch (const std::exception& e) {
-        Logger::warn("[OpenCLDPP] Kernel compilation failed: " + std::string(e.what()));
+        GENAI_WARN("[OpenCLDPP] Kernel compilation failed: " + std::string(e.what()));
         return false;
     }
 }
