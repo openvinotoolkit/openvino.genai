@@ -244,8 +244,8 @@ jobs:
           path: ${{ env.MANIFEST_PATH }}
           if-no-files-found: 'error'
 
-  genai_build_tokenizers_wheel:
-    name: Build Tokenizers Wheel
+  genai_build_wheels:
+    name: Build Tokenizers & WWB Wheels
     needs: [ openvino_download ]
     timeout-minutes: 30
     defaults:
@@ -288,56 +288,15 @@ jobs:
               ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
-      - name: Upload Tokenizers Wheel
-        if: ${{ always() }}
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
-        with:
-          name: genai_tokenizers_wheel
-          path: ${{ env.INSTALL_DIR }}
-          if-no-files-found: 'error'
-
-  genai_build_wwb_wheel:
-    name: Build WWB Wheel
-    needs: [ openvino_download ]
-    timeout-minutes: 10
-    defaults:
-      run:
-        shell: bash
-    runs-on: aks-linux-4-cores-16gb
-    container:
-      image: openvinogithubactions.azurecr.io/ov_build/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
-      volumes:
-        - /mount:/mount
-        - ${{ github.workspace }}:${{ github.workspace }}
-    env:
-      OV_INSTALL_DIR: ${{ github.workspace }}/ov
-      INSTALL_DIR: ${{ github.workspace }}/install
-      WHEELS_DIR: ${{ github.workspace }}/install/wheels
-      SRC_DIR: ${{ github.workspace }}/src
-
-    steps:
-      - name: Clone openvino.genai
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
-        with:
-          path: ${{ env.SRC_DIR }}
-          submodules: recursive
-
-      - name: Download OpenVINO package
-        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
-        with:
-          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
-          path: ${{ env.OV_INSTALL_DIR }}
-          merge-multiple: true
-
       - name: Build WWB Wheel
         run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
-      - name: Upload WWB Wheel
+      - name: Upload Wheels
         if: ${{ always() }}
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
-          name: genai_wwb_wheel
+          name: genai_wheels
           path: ${{ env.INSTALL_DIR }}
           if-no-files-found: 'error'
 
@@ -419,7 +378,7 @@ jobs:
     strategy:
       matrix:
         build-type: [Release]
-    needs: [openvino_download, genai_build_tokenizers_wheel, genai_build_wwb_wheel, genai_build_genai_wheel, genai_build_cmake]
+    needs: [openvino_download, genai_build_wheels, genai_build_genai_wheel, genai_build_cmake]
     timeout-minutes: 10
     defaults:
       run:
@@ -450,15 +409,9 @@ jobs:
       - name: Download manifest and wheels
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: '{genai_tokenizers_wheel,genai_wwb_wheel,genai_wheel_python_*,manifest_${{ matrix.build-type }}}'
+          pattern: '{genai_wheels,genai_wheel_python_*,manifest_${{ matrix.build-type }}}'
           path: ${{ github.workspace }}
           merge-multiple: true
-
-      - name: Check directories
-        run: |
-          ls -laR ${{ github.workspace }}
-          echo "123"
-          ls -laR ${{ env.WHEEL_PACKAGE }}
 
       - name: Store ${{ matrix.build_type }} artifacts to a shared drive
         id: store_artifacts
@@ -608,7 +561,7 @@ jobs:
 
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
-    needs: [ smart_ci, openvino_download, genai_build_tokenizers_wheel, genai_build_wwb_wheel, genai_build_genai_wheel ]
+    needs: [ smart_ci, openvino_download, genai_build_wheels, genai_build_genai_wheel ]
     timeout-minutes: ${{ matrix.test.timeout }}
     strategy:
       fail-fast: false
@@ -685,7 +638,7 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_tokenizers_wheel,genai_wwb_wheel,genai_wheel_python_*}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
@@ -704,7 +657,7 @@ jobs:
 
   genai_samples_tests:
     name: Samples ${{ matrix.test.name }} (${{ matrix.build-type }})
-    needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_tokenizers_wheel, genai_build_wwb_wheel, genai_build_genai_wheel, genai_build_samples, genai_build_nodejs ]
+    needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel, genai_build_samples, genai_build_nodejs ]
     strategy:
       fail-fast: false
       matrix:
@@ -777,7 +730,7 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_archive_${{ matrix.build-type }},genai_samples_${{ matrix.build-type }},genai_tokenizers_wheel,genai_wwb_wheel,genai_wheel_python_*}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_archive_${{ matrix.build-type }},genai_samples_${{ matrix.build-type }},genai_wheels,genai_wheel_python_*}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
@@ -841,7 +794,7 @@ jobs:
       fail-fast: false
       matrix:
         build-type: [Release]
-    needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_tokenizers_wheel, genai_build_wwb_wheel, genai_build_genai_wheel ]
+    needs: [ smart_ci, openvino_download, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel ]
     if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench || fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching }}
     timeout-minutes: 90
     defaults:
@@ -870,7 +823,7 @@ jobs:
       - name: Download Build Artifacts
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_archive_${{ matrix.build-type }},genai_tools_${{ matrix.build-type }},genai_tests_${{ matrix.build-type }},genai_tokenizers_wheel,genai_wwb_wheel,genai_wheel_python_*}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_archive_${{ matrix.build-type }},genai_tools_${{ matrix.build-type }},genai_tests_${{ matrix.build-type }},genai_wheels,genai_wheel_python_*}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
@@ -981,7 +934,7 @@ jobs:
 
   genai_xgrammar_off_tests:
     name: Build & Test when ENABLE_XGRAMMAR=OFF
-    needs: [smart_ci, openvino_download, genai_build_tokenizers_wheel]
+    needs: [smart_ci, openvino_download, genai_build_wheels]
     timeout-minutes: 45
     defaults:
       run:
@@ -1009,7 +962,7 @@ jobs:
       - name: Download Build Artifacts
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_tokenizers_wheel}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
@@ -1043,7 +996,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_linux
-    needs: [smart_ci, openvino_download, genai_build_cmake, genai_build_tokenizers_wheel, genai_build_wwb_wheel, genai_build_genai_wheel, genai_build_samples, genai_build_nodejs, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_nodejs_tests, genai_xgrammar_off_tests]
+    needs: [smart_ci, openvino_download, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel, genai_build_samples, genai_build_nodejs, genai_tests_wheel, genai_samples_tests, genai_tools_tests, genai_nodejs_tests, genai_xgrammar_off_tests]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
