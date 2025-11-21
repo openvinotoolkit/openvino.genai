@@ -24,6 +24,12 @@ Node.js bindings currently support:
   - Structured output
   - ReAct agent support
 - `TextEmbeddingPipeline`: Generate text embeddings for semantic search and RAG applications
+- `Tokenizer`: Fast tokenization / detokenization and chat prompt formatting
+  - Encode strings into token id and attention mask tensors
+  - Decode token sequences
+  - Apply chat template
+  - Access special tokens (BOS/EOS/PAD)
+  - Supports paired input
 
 ## Installation
 

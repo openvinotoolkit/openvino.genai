@@ -37,9 +37,13 @@ ov::AnyMap js_to_cpp<ov::AnyMap>(const Napi::Env& env, const Napi::Value& value)
 /** @brief  A template specialization for TargetType std::string */
 template <>
 std::string js_to_cpp<std::string>(const Napi::Env& env, const Napi::Value& value);
+template <>
+int64_t js_to_cpp<int64_t>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType std::vector<std::string> */
 template <>
 std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& env, const Napi::Value& value);
+template <>
+std::vector<int64_t> js_to_cpp<std::vector<int64_t>>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType GenerateInputs */
 template <>
 GenerateInputs js_to_cpp<GenerateInputs>(const Napi::Env& env, const Napi::Value& value);
@@ -58,6 +62,8 @@ ov::genai::StructuredOutputConfig::Tag js_to_cpp<ov::genai::StructuredOutputConf
 /** @brief  A template specialization for TargetType ov::genai::StructuredOutputConfig::StructuralTag */
 template <>
 ov::genai::StructuredOutputConfig::StructuralTag js_to_cpp<ov::genai::StructuredOutputConfig::StructuralTag>(const Napi::Env& env, const Napi::Value& value);
+template <>
+ov::Tensor js_to_cpp<ov::Tensor>(const Napi::Env& env, const Napi::Value& value);
 /**
  * @brief  Unwraps a C++ object from a JavaScript wrapper.
  * @tparam TargetType The C++ class type to extract.
@@ -110,6 +116,12 @@ Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env, co
 
 template <>
 Napi::Value cpp_to_js<ov::genai::JsonContainer, Napi::Value>(const Napi::Env& env, const ov::genai::JsonContainer& json_container);
+
+template <>
+Napi::Value cpp_to_js<ov::Tensor, Napi::Value>(const Napi::Env& env, const ov::Tensor& tensor);
+
+template <>
+Napi::Value cpp_to_js<ov::genai::TokenizedInputs, Napi::Value>(const Napi::Env& env, const ov::genai::TokenizedInputs& tokenized_inputs);
 /**
  * @brief  Template function to convert C++ map into Javascript Object. Map key must be std::string.
  * @tparam MapElementType C++ data type of map elements.
@@ -130,3 +142,5 @@ bool is_chat_history(const Napi::Env& env, const Napi::Value& value);
 std::string json_stringify(const Napi::Env& env, const Napi::Value& value);
 
 Napi::Value json_parse(const Napi::Env& env, const std::string& value);
+
+Napi::Function get_prototype_from_ov_addon(const Napi::Env& env, const std::string& ctor_name);
