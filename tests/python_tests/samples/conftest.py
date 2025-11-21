@@ -7,6 +7,7 @@ import logging
 import gc
 import requests
 from pathlib import Path
+import tempfile
 
 from utils.network import retry_request
 from utils.constants import get_ov_cache_dir
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 # - "name": the model's name or path
 # - "convert_args": a list of arguments for the conversion command
 MODELS = {
-    "TinyLlama-1.1B-Chat-v1.0": { 
+    "TinyLlama-1.1B-Chat-v1.0": {
         "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
         "convert_args": ['--weight-format', 'fp16']
     },
@@ -41,7 +42,7 @@ MODELS = {
     "SmolLM2-360M": {
         "name": "HuggingFaceTB/SmolLM2-360M",
         "convert_args": ['--trust-remote-code']
-    },  
+    },
     "WhisperTiny": {
         "name": "openai/whisper-tiny",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
@@ -79,11 +80,11 @@ MODELS = {
     "LCM_Dreamshaper_v7-int8-ov": {
         "name": "OpenVINO/LCM_Dreamshaper_v7-int8-ov",
         "convert_args": []
-    },   
+    },
     "llava-1.5-7b-hf": {
         "name": "llava-hf/llava-1.5-7b-hf",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
-    },    
+    },
     "llava-v1.6-mistral-7b-hf": {
         "name": "llava-hf/llava-v1.6-mistral-7b-hf",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
@@ -132,6 +133,10 @@ MODELS = {
         "name": "katuni4ka/tiny-random-llava",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
     },
+    "tiny-random-qwen2vl": {
+        "name": "katuni4ka/tiny-random-qwen2vl",
+        "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
+    },
     "bge-small-en-v1.5": {
         "name": "BAAI/bge-small-en-v1.5",
         "convert_args": ["--trust-remote-code"]
@@ -159,7 +164,8 @@ TEST_FILES = {
     "cat.png": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/cat.png",
     "cat": "https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11",
     "3283_1447_000.tar.gz": "https://huggingface.co/datasets/facebook/multilingual_librispeech/resolve/main/data/mls_polish/train/audio/3283_1447_000.tar.gz",
-    "cmu_us_awb_arctic-wav-arctic_a0001.bin": "https://huggingface.co/datasets/Xenova/cmu-arctic-xvectors-extracted/resolve/main/cmu_us_awb_arctic-wav-arctic_a0001.bin"
+    "cmu_us_awb_arctic-wav-arctic_a0001.bin": "https://huggingface.co/datasets/Xenova/cmu-arctic-xvectors-extracted/resolve/main/cmu_us_awb_arctic-wav-arctic_a0001.bin",
+    "video0.pm4": "https://storage.openvinotoolkit.org/repositories/openvino_notebooks/data/data/video/Coco%20Walking%20in%20Berkeley.mp4"
 }
 
 SAMPLES_PY_DIR = Path(os.environ.get("SAMPLES_PY_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/python"))))
@@ -167,24 +173,25 @@ SAMPLES_CPP_DIR = Path(os.environ.get("SAMPLES_CPP_DIR", os.getcwd()))
 SAMPLES_C_DIR = os.environ.get("SAMPLES_C_DIR", os.getcwd())
 SAMPLES_JS_DIR = Path(os.environ.get("SAMPLES_JS_DIR", os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../samples/js"))))
 
+
 @pytest.fixture(scope="session", autouse=True)
 def setup_and_teardown(request, tmp_path_factory):
     """Fixture to set up and tear down the temporary directories."""
-    
-    ov_cache = get_ov_cache_dir(tmp_path_factory.mktemp("ov_cache"))  
+
+    ov_cache = get_ov_cache_dir(tmp_path_factory.mktemp("ov_cache"))
     models_dir = os.path.join(ov_cache, "test_models")
     test_data = os.path.join(ov_cache, "test_data")
-    
+
     logger.info(f"Creating directories: {models_dir} and {test_data}")
     os.makedirs(models_dir, exist_ok=True)
     os.makedirs(test_data, exist_ok=True)
-    
+
     request.config.cache.set("OV_CACHE", str(ov_cache))
     request.config.cache.set("MODELS_DIR", str(models_dir))
     request.config.cache.set("TEST_DATA", str(test_data))
-    
+
     yield
-    
+
     if os.environ.get("CLEANUP_CACHE", "false").lower() != "false":
         if os.path.exists(ov_cache):
             logger.info(f"Removing temporary directory: {ov_cache}")
@@ -269,9 +276,9 @@ def download_model(request):
         command = ["huggingface-cli", "download", model_name, "--local-dir", model_path]
         logger.info(f"Downloading command: {' '.join(command)}")
         retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, env=sub_env))
-            
+
     yield model_path
-    
+
     # Cleanup the model after tests
     if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
         if os.path.exists(model_cache):
@@ -281,13 +288,13 @@ def download_model(request):
 @pytest.fixture(scope="session")
 def download_test_content(request):
     """Download the test content from the given URL and return the file path or extracted folder."""
-    
+
     test_data = request.config.cache.get("TEST_DATA", None)
-    
+
     file_name = request.param
     file_url = TEST_FILES[file_name]
     file_path = os.path.join(test_data, file_name)
-    
+
     if not os.path.exists(file_path):
         logger.info(f"Downloading test content from {file_url} to {file_path}...")
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -327,9 +334,9 @@ def download_test_content(request):
 @pytest.fixture(scope="session")
 def generate_test_content(request):
     """Generate an image of lines and return the file path."""
-    
+
     test_data = request.config.cache.get("TEST_DATA", None)
-    
+
     file_name = request.param
     file_path = os.path.join(test_data, file_name)
     if not os.path.exists(file_path):
@@ -355,24 +362,24 @@ def generate_test_content(request):
 @pytest.fixture(scope="session")
 def generate_image_generation_jsonl(request):
     """Generate a JSONL file for image generation prompts."""
-    
+
     test_data = request.config.cache.get("TEST_DATA", None)
     file_name, json_entries = request.param
     file_path = os.path.join(test_data, file_name)
-    
+
     if not os.path.exists(file_path):
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        
+
         with open(file_path, "w", encoding="utf-8") as f:
             for entry in json_entries:
                 f.write(json.dumps(entry) + "\n")
-        
+
         logger.info(f"Generated image generation JSONL file at {file_path}")
     else:
         logger.info(f"Image generation JSONL file already exists at {file_path}")
-    
+
     yield file_path
-    
+
     # Cleanup the JSONL file after tests
     if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
         if os.path.exists(file_path):
@@ -387,3 +394,21 @@ def run_gc_after_test():
     """
     yield
     gc.collect()
+
+@pytest.fixture(scope="session")
+def download_test_video():
+    video_v0_url = TEST_FILES["video0.pm4"]
+    response = requests.get(video_v0_url, stream=True)
+    response.raise_for_status()
+
+    temp_dir = tempfile.mkdtemp()
+    video_path = os.path.join(temp_dir, "v0.mp4")
+    with open(video_path, 'wb') as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
+    yield video_path
+
+    if os.path.exists(video_path):
+        os.remove(video_path)
+    os.rmdir(temp_dir)
+
