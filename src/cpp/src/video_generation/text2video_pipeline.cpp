@@ -209,70 +209,6 @@ ov::Tensor denormalize_latents(ov::Tensor latents,
     return result[0]; // [B, C, F, H, W]
 }
 
-// TODO: For debug only - delete later
-void saveTensorToFile(const ov::Tensor& tensor, const std::string& filename) {
-    std::ofstream file(filename);
-    if (!file) {
-        throw std::runtime_error("Failed to open file: " + filename);
-    }
- 
-    ov::Shape shape = tensor.get_shape();
-    for (size_t dim : shape) {
-        file << dim << " ";
-    }
-    file << "\n";
- 
-    float* data = tensor.data<float>();
-    for (size_t i = 0; i < tensor.get_size(); ++i) {
-        file << data[i] << " ";
-    }
-    file << "\n";
-    file.close();
-}
-
-// TODO: For debug only - delete later
-ov::Tensor loadTensorFromFile(const std::string& filename) {
-    std::ifstream file(filename);
-    if (!file) {
-        throw std::runtime_error("Failed to open file: " + filename);
-    }
-
-    std::string line;
-    if (!std::getline(file, line)) {
-        throw std::runtime_error("File format error: missing shape line");
-    }
-
-    std::istringstream shape_stream(line);
-    std::vector<size_t> shape_vec;
-    size_t dim;
-    while (shape_stream >> dim) {
-        shape_vec.push_back(dim);
-    }
-    ov::Shape shape(shape_vec);
-
-
-    std::vector<float> data;
-    while (std::getline(file, line)) {
-        std::istringstream data_stream(line);
-        float value;
-        while (data_stream >> value) {
-            data.push_back(value);
-        }
-    }
-
-    size_t expected_size = ov::shape_size(shape);
-    if (data.size() != expected_size) {
-        throw std::runtime_error("Data size mismatch: expected " +
-                                std::to_string(expected_size) +
-                                ", but got " + std::to_string(data.size()));
-    }
-
-    ov::Tensor tensor(ov::element::f32, shape);
-    std::memcpy(tensor.data<float>(), data.data(), data.size() * sizeof(float));
-
-    return tensor;
-}
-
 inline ov::Tensor tensor_from_vector(const std::vector<float>& data) {
     ov::Tensor t{ov::element::f32, ov::Shape{data.size()}};
     if (!data.empty()) {
@@ -313,7 +249,6 @@ class Text2VideoPipeline::LTXPipeline {
                         m_latent_height,
                         m_latent_width};
         ov::Tensor latents = generation_config.generator->randn_tensor(shape);
-        // ov::Tensor latents = loadTensorFromFile("../latents_before_pack.txt");
         return pack_latents(latents, transformer_spatial_patch_size, transformer_temporal_patch_size);
     }
 
@@ -341,6 +276,11 @@ class Text2VideoPipeline::LTXPipeline {
     }
 
     void compute_hidden_states(const std::string& positive_prompt, const std::string& negative_prompt, const VideoGenerationConfig& generation_config) {
+        OPENVINO_ASSERT(m_latent_num_frames > 0 && m_latent_height > 0 && m_latent_width > 0,
+                        "Latent sizes must be > 0 (got num_frames=", m_latent_num_frames,
+                        ", height=", m_latent_height,
+                        ", width=", m_latent_width, ").");
+
         auto infer_start = std::chrono::steady_clock::now();
         bool do_classifier_free_guidance = generation_config.guidance_scale > 1.0;
 
@@ -367,58 +307,19 @@ class Text2VideoPipeline::LTXPipeline {
 
         m_transformer->set_hidden_states("encoder_hidden_states", prompt_embeds);
         m_transformer->set_hidden_states("encoder_attention_mask", prompt_attention_mask);
+
+        auto make_scalar_tensor = [](size_t value) {
+            ov::Tensor scalar(ov::element::i64, {});
+            scalar.data<int64_t>()[0] = value;
+            return scalar;
+        };
+        m_transformer->set_hidden_states("num_frames", make_scalar_tensor(m_latent_num_frames));
+        m_transformer->set_hidden_states("height", make_scalar_tensor(m_latent_height));
+        m_transformer->set_hidden_states("width", make_scalar_tensor(m_latent_width));
     }
 
 public:
     VideoGenerationConfig m_generation_config;
-
-    // for debug only
-    void print_ov_tensor(const ov::Tensor& tensor, const std::string& name = "") {
-        if (!name.empty())
-            std::cout << name << ": ";
-
-        std::cout << "shape = [";
-        for (size_t i = 0; i < tensor.get_shape().size(); ++i) {
-            std::cout << tensor.get_shape()[i];
-            if (i + 1 < tensor.get_shape().size())
-                std::cout << ", ";
-        }
-        std::cout << "], type = " << tensor.get_element_type() << ", values = [";
-
-        const size_t limit = 10;
-        const size_t size = tensor.get_size();
-
-        if (tensor.get_element_type() == ov::element::f32) {
-            const float* data = tensor.data<const float>();
-            for (size_t i = 0; i < std::min(size, limit); ++i) {
-                std::cout << std::fixed << std::setprecision(4) << data[i];
-                if (i + 1 < std::min(size, limit))
-                    std::cout << ", ";
-            }
-        } else if (tensor.get_element_type() == ov::element::i64) {
-            const int64_t* data = tensor.data<const int64_t>();
-            for (size_t i = 0; i < std::min(size, limit); ++i) {
-                std::cout << data[i];
-                if (i + 1 < std::min(size, limit))
-                    std::cout << ", ";
-            }
-        } 
-        else if (tensor.get_element_type() == ov::element::u8) {
-            const uint8_t* data = tensor.data<const uint8_t>();
-            for (size_t i = 0; i < std::min(size, limit); ++i) {
-                std::cout << static_cast<int>(data[i]);
-                if (i + 1 < std::min(size, limit))
-                    std::cout << ", ";
-            }
-        } else {
-            std::cout << "<unsupported type>";
-        }
-
-        if (size > limit)
-            std::cout << ", ...";
-
-        std::cout << "]" << std::endl;
-    }
 
     LTXPipeline(
         const std::filesystem::path& models_dir,
@@ -522,8 +423,6 @@ public:
             callback = callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>();
         }
 
-        compute_hidden_states(positive_prompt, merged_generation_config.negative_prompt.value_or(""), merged_generation_config);
-
         size_t num_channels_latents = m_transformer->get_config().in_channels;
         size_t spatial_compression_ratio = m_vae->get_config().patch_size * std::pow(2, std::reduce(m_vae->get_config().spatio_temporal_scaling.begin(), m_vae->get_config().spatio_temporal_scaling.end(), 0));
         size_t temporal_compression_ratio = m_vae->get_config().patch_size_t * std::pow(2, std::reduce(m_vae->get_config().spatio_temporal_scaling.begin(), m_vae->get_config().spatio_temporal_scaling.end(), 0));
@@ -534,6 +433,7 @@ public:
         m_latent_height = merged_generation_config.height / spatial_compression_ratio;
         m_latent_width = merged_generation_config.width / spatial_compression_ratio;
 
+        compute_hidden_states(positive_prompt, merged_generation_config.negative_prompt.value_or(""), merged_generation_config);
 
         ov::Tensor latent = prepare_latents(
             merged_generation_config,
@@ -554,16 +454,6 @@ public:
         rope_interpolation_scale.data<float>()[1] = spatial_compression_ratio;
         rope_interpolation_scale.data<float>()[2] = spatial_compression_ratio;
         m_transformer->set_hidden_states("rope_interpolation_scale", rope_interpolation_scale);
-        // print_ov_tensor(rope_interpolation_scale, "rope_interpolation_scale");
-
-        auto make_scalar_tensor = [](size_t value) {
-            ov::Tensor scalar(ov::element::i64, {});
-            scalar.data<int64_t>()[0] = value;
-            return scalar;
-        };
-        m_transformer->set_hidden_states("num_frames", make_scalar_tensor(m_latent_num_frames));
-        m_transformer->set_hidden_states("height", make_scalar_tensor(m_latent_height));
-        m_transformer->set_hidden_states("width", make_scalar_tensor(m_latent_width));
 
         // // Prepare timesteps
         // TODO: ov::Tensor timestep(ov::element::f32, {1}); is enough
@@ -590,17 +480,10 @@ public:
             timestep_data[0] = timesteps[inference_step];
             timestep_data[1] = timesteps[inference_step];
 
-            // print_ov_tensor(latent_cfg, "latent input");
-            // saveTensorToFile(latent_cfg, "latent_cfg_" + std::to_string(timestep_data[0]) +".txt");
-            // saveTensorToFile(timestep, "timestep_" + std::to_string(timestep_data[0]) +".txt");
-            // std::cout << "timestep " << timestep_data[0] << std::endl;
-
             auto infer_start = std::chrono::steady_clock::now();
             ov::Tensor noise_pred_tensor = m_transformer->infer(latent_cfg, timestep);
             auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
             m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
-            // print_ov_tensor(noise_pred_tensor, "noise_pred");
-            // saveTensorToFile(noise_pred_tensor, "noise_pred_tensor_" + std::to_string(timestep_data[0]) +".txt");
 
             ov::Shape noise_pred_shape = noise_pred_tensor.get_shape();
             noise_pred_shape[0] /= batch_size_multiplier;
@@ -621,18 +504,11 @@ public:
                 noisy_residual_tensor = noise_pred_tensor;
             }
 
-            // print_ov_tensor(noisy_residual_tensor, "noise_pred 2");
-            // print_ov_tensor(latent, "latents before step");
-            // saveTensorToFile(latent, "latents_before_step_" + std::to_string(timestep_data[0]) +".txt");
-
             auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, merged_generation_config.generator);
             latent = scheduler_step_result["latent"];
 
             auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
             m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
-
-            // saveTensorToFile(latent, "latents_after_step_" + std::to_string(timestep_data[0]) +".txt");
-            // print_ov_tensor(latent, "latents after step");
         }
 
         latent = unpack_latents(latent,
@@ -654,7 +530,6 @@ public:
                                     tensor_from_vector(m_vae->get_config().latents_mean_data),
                                     tensor_from_vector(m_vae->get_config().latents_std_data),
                                     m_vae->get_config().scaling_factor);
-        print_ov_tensor(latent, "denormalize_latents");
 
         // TODO: if not self.vae.config.timestep_conditioning: ... else: ...
 
