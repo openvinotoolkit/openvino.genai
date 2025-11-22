@@ -22,12 +22,12 @@ class TestText2Image:
     )
     def test_sample_text2image(self, convert_model, sample_args):
         # Run Python sample
-        py_script = os.path.join(SAMPLES_PY_DIR, "image_generation/text2image.py")
+        py_script = SAMPLES_PY_DIR / "image_generation/text2image.py"
         py_command = [sys.executable, py_script, convert_model, sample_args]
         run_sample(py_command)
 
         # Run C++ sample
-        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'text2image')
+        cpp_sample = SAMPLES_CPP_DIR / 'text2image'
         cpp_command = [cpp_sample, convert_model, sample_args]
         run_sample(cpp_command)
 
@@ -45,6 +45,6 @@ class TestText2Image:
     )
     def test_sample_text2image_concurrency(self, convert_model, sample_args):
         # Run C++ sample
-        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'text2image_concurrency')
+        cpp_sample = SAMPLES_CPP_DIR / 'text2image_concurrency'
         cpp_command = [cpp_sample, convert_model, *sample_args]
         run_sample(cpp_command)

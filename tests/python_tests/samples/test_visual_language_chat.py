@@ -25,7 +25,7 @@ class TestVisualLanguageChat:
     )
     def test_sample_visual_language_chat(self, convert_model, download_test_content, questions):
         # Test CPP sample
-        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'visual_language_chat')
+        cpp_sample = SAMPLES_CPP_DIR / 'visual_language_chat'
         cpp_command =[cpp_sample, convert_model, download_test_content]
         cpp_result = run_sample(cpp_command, questions)
 
@@ -35,7 +35,7 @@ class TestVisualLanguageChat:
         c_result = run_sample(c_command, questions)
 
         # Test Python sample
-        py_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/visual_language_chat.py")
+        py_script = SAMPLES_PY_DIR / "visual_language_chat/visual_language_chat.py"
         py_command = [sys.executable, py_script, convert_model, download_test_content]
         py_result = run_sample(py_command, questions)
 
@@ -56,12 +56,12 @@ class TestVisualLanguageChat:
     @pytest.mark.parametrize("generate_test_content", ["images/lines.png"], indirect=True)
     def test_sample_visual_language_chat_images(self, convert_model, download_test_content, generate_test_content, questions):
         # Test Python sample
-        py_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/visual_language_chat.py")
+        py_script = SAMPLES_PY_DIR / "visual_language_chat/visual_language_chat.py"
         py_command = [sys.executable, py_script, convert_model, os.path.dirname(generate_test_content)]
         py_result = run_sample(py_command, questions)
 
         # Test CPP sample
-        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'visual_language_chat')
+        cpp_sample = SAMPLES_CPP_DIR / 'visual_language_chat'
         cpp_command =[cpp_sample, convert_model, os.path.dirname(generate_test_content)]
         cpp_result = run_sample(cpp_command, questions)
 
