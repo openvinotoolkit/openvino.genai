@@ -3,7 +3,11 @@ import gc
 import pytest
 import shutil
 import logging
-from utils.constants import get_ov_cache_models_dir
+from utils.constants import (
+    get_ov_cache_dir,
+    get_ov_cache_downloaded_models_dir,
+    get_ov_cache_converted_models_dir,
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -14,20 +18,23 @@ logger = logging.getLogger(__name__)
 def setup_and_teardown():
     """Fixture to set up and tear down the temporary directories."""
 
-    ov_cache_models_dir = get_ov_cache_models_dir()
+    ov_cache_dir = get_ov_cache_dir()
+    ov_cache_downloaded_dir = get_ov_cache_downloaded_models_dir()
+    ov_cache_converted_dir = get_ov_cache_converted_models_dir()
 
-    logger.info(f"Creating directory: {ov_cache_models_dir}")
-    ov_cache_models_dir.mkdir(exist_ok=True, parents=True)
+    logger.info(f"Creating directories: {ov_cache_downloaded_dir}, {ov_cache_converted_dir}")
+    ov_cache_downloaded_dir.mkdir(exist_ok=True, parents=True)
+    ov_cache_converted_dir.mkdir(exist_ok=True, parents=True)
 
     yield
 
     if os.environ.get("CLEANUP_CACHE", "false").lower() != "false":
-        if ov_cache_models_dir.exists():
-            logger.info(f"Removing temporary directory: {ov_cache_models_dir}")
-            shutil.rmtree(ov_cache_models_dir)
+        if ov_cache_dir.exists():
+            logger.info(f"Removing temporary directory: {ov_cache_dir}")
+            shutil.rmtree(ov_cache_dir)
         else:
             logger.info(
-                f"Skipped temporary directory cleanup because it doesn't exist: {ov_cache_models_dir}"
+                f"Skipped temporary directory cleanup because it doesn't exist: {ov_cache_dir}"
             )
 
 

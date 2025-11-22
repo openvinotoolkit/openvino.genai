@@ -63,8 +63,8 @@ def model_facebook_opt_125m() -> OVConvertedModelSchema:
     return download_and_convert_model(model_id)
 
 
-@pytest.mark.parametrize("llm_model", read_models_list(FILE_DIR_NAME / "models" / "precommit"), indirect=True)
-def test_e2e_precommit(llm_model: OVConvertedModelSchema):
+@pytest.mark.parametrize("llm_model", read_models_list(FILE_DIR_NAME / "models" / "lightweight"), indirect=True)
+def test_e2e_lightweight_models(llm_model: OVConvertedModelSchema):
     prompts, generation_configs = get_test_dataset()
     generate_and_compare(
         model_schema=llm_model,
@@ -505,12 +505,10 @@ multinomial_params_n_seq = RandomSamplingTestStruct(
 @pytest.mark.parametrize("dynamic_split_fuse", [True, False])
 @pytest.mark.skip(reason="Random sampling results are non deterministic due to: discrete_distribution impl depends on platform, model inference results may depend on CPU. Test passes on CI but fails locally.")
 def test_preemption_with_multinomial_n_seq(model_facebook_opt_125m: OVConvertedModelSchema, dynamic_split_fuse):
-    models_path = model_facebook_opt_125m.models_path
-
     # needed kv_blocks - 16 (2 blocks per sequence (30 tokens to generated text + prompt (> 2 tokens)) * (1 + 3 + 4) seq )
     scheduler_config = dict_to_scheduler_config({"num_kv_blocks": 8, "dynamic_split_fuse": dynamic_split_fuse, "max_num_batched_tokens": 256, "max_num_seqs": 256})
     generate_and_compare(
-        model=models_path,
+        model_schema=model_facebook_opt_125m,
         pipeline_type=PipelineType.CONTINUOUS_BATCHING,
         prompts=multinomial_params_n_seq.prompts,
         ref=multinomial_params_n_seq.ref_texts,

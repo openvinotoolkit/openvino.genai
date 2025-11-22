@@ -46,11 +46,23 @@ def get_ov_cache_dir(temp_dir=TemporaryDirectory()):
             ov_cache = os.path.join(ov_cache, f"optimum-intel-{optimum_intel_version}_transformers-{transformers_version}")
         except metadata.PackageNotFoundError:
             pass
+        ov_cache_path = Path(ov_cache)
+        ov_cache_path.mkdir(parents=True, exist_ok=True)
+        return ov_cache_path
     else:
         ov_cache = temp_dir.name
-    return Path(ov_cache)
+        return Path(ov_cache)
 
 
-def get_ov_cache_models_dir(temp_dir=TemporaryDirectory()):
+def get_ov_cache_downloaded_models_dir(temp_dir=TemporaryDirectory()):
     ov_cache = get_ov_cache_dir(temp_dir)
-    return Path(ov_cache) / "test_models"
+    downloaded_dir = Path(ov_cache) / "downloaded_models"
+    downloaded_dir.mkdir(parents=True, exist_ok=True)
+    return downloaded_dir
+
+
+def get_ov_cache_converted_models_dir(temp_dir=TemporaryDirectory()):
+    ov_cache = get_ov_cache_dir(temp_dir)
+    converted_dir = Path(ov_cache) / "converted_models"
+    converted_dir.mkdir(parents=True, exist_ok=True)
+    return converted_dir

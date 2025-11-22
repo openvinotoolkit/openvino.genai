@@ -9,7 +9,12 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from utils.network import retry_request
-from utils.constants import get_ov_cache_dir
+from utils.constants import (
+    get_ov_cache_dir,
+    get_ov_cache_downloaded_models_dir,
+    get_ov_cache_converted_models_dir,
+)
+from utils.atomic_download import AtomicDownloadManager
 
 
 # Configure logging
@@ -87,14 +92,6 @@ MODELS: Dict[str, Dict[str, Any]] = {
     "llava-v1.6-mistral-7b-hf": {
         "name": "llava-hf/llava-v1.6-mistral-7b-hf",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
-    },
-    "dreamlike-anime-1.0": {
-        "name": "dreamlike-art/dreamlike-anime-1.0",
-        "convert_args": ['--trust-remote-code', '--weight-format', 'fp16', "--task", "stable-diffusion"]
-    },
-    "LCM_Dreamshaper_v7-int8-ov": {
-        "name": "OpenVINO/LCM_Dreamshaper_v7-int8-ov",
-        "convert_args": []
     },
     "tiny-random-minicpmv-2_6": {
         "name": "katuni4ka/tiny-random-minicpmv-2_6",
@@ -190,15 +187,14 @@ def setup_and_teardown(request, tmp_path_factory):
     """Fixture to set up and tear down the temporary directories."""
     
     ov_cache = get_ov_cache_dir(tmp_path_factory.mktemp("ov_cache"))  
-    models_dir = os.path.join(ov_cache, "test_models")
-    test_data = os.path.join(ov_cache, "test_data")
+    downloaded_models_dir = get_ov_cache_downloaded_models_dir()
+    converted_models_dir = get_ov_cache_converted_models_dir()
+    test_data = ov_cache / "test_data"
     
-    logger.info(f"Creating directories: {models_dir} and {test_data}")
-    os.makedirs(models_dir, exist_ok=True)
-    os.makedirs(test_data, exist_ok=True)
+    logger.info(f"Creating directories: {downloaded_models_dir}, {converted_models_dir}, and {test_data}")
+    test_data.mkdir(parents=True, exist_ok=True)
     
     request.config.cache.set("OV_CACHE", str(ov_cache))
-    request.config.cache.set("MODELS_DIR", str(models_dir))
     request.config.cache.set("TEST_DATA", str(test_data))
     
     yield
@@ -217,10 +213,12 @@ def download_gguf_model(model: Dict[str, Any], model_path: str) -> None:
     model_name = model["name"]
     model_gguf_filename = model["gguf_filename"]
     dest_dir = Path(model_path)
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    command = ["huggingface-cli", "download", model_name, model_gguf_filename, "--local-dir", str(dest_dir)]
-    logger.info(f"Downloading command: {' '.join(command)}")
-    try:
+    
+    manager = AtomicDownloadManager(dest_dir)
+    
+    def download_to_temp(temp_path: Path) -> None:
+        command = ["huggingface-cli", "download", model_name, model_gguf_filename, "--local-dir", str(temp_path)]
+        logger.info(f"Downloading command: {' '.join(command)}")
         result = retry_request(
             lambda: subprocess.run(
                 command,
@@ -231,11 +229,13 @@ def download_gguf_model(model: Dict[str, Any], model_path: str) -> None:
                 stdout=subprocess.PIPE,
             )
         )
+        logger.info(f"Downloaded GGUF model: {result.stdout}")
+    
+    try:
+        manager.execute(download_to_temp)
     except subprocess.CalledProcessError as error:
         logger.error(f"huggingface-cli returned {error.returncode}. Output:\n{error.output}")
         raise
-    else:
-        logger.info(f"Downloaded GGUF model: {result.stdout}")
 
 
 def optimum_cli_convert(model, model_path):
@@ -243,16 +243,23 @@ def optimum_cli_convert(model, model_path):
     sub_env = os.environ.copy()
     model_name = model["name"]
     model_args = model["convert_args"]
-    command = [
-        "optimum-cli", "export", "openvino",
-        "--model", model_name, 
-        model_path
-    ]
-    if model_args:
-        command.extend(model_args)
-    logger.info(f"Conversion command: {' '.join(command)}")
-    try:
+    dest_path = Path(model_path)
+    
+    manager = AtomicDownloadManager(dest_path)
+    
+    def convert_to_temp(temp_path: Path) -> None:
+        command = [
+            "optimum-cli", "export", "openvino",
+            "--model", model_name, 
+            str(temp_path)
+        ]
+        if model_args:
+            command.extend(model_args)
+        logger.info(f"Conversion command: {' '.join(command)}")
         retry_request(lambda: subprocess.run(command, check=True, text=True, env=sub_env, stderr=subprocess.STDOUT, stdout=subprocess.PIPE))
+    
+    try:
+        manager.execute(convert_to_temp)
     except subprocess.CalledProcessError as error:
         logger.error(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
         raise
@@ -260,55 +267,72 @@ def optimum_cli_convert(model, model_path):
 @pytest.fixture(scope="session")
 def convert_model(request):
     """Fixture to convert the model once for the session."""
-    models_cache = request.config.cache.get("MODELS_DIR", None)
     model_id = request.param
     model = MODELS[model_id]
     model_name = model["name"]
-    model_cache = os.path.join(models_cache, model_id)
     
     if "gguf_filename" in model:
+        downloaded_models_dir = get_ov_cache_downloaded_models_dir()
+        model_cache = downloaded_models_dir / model_id
         model_path = model_cache
-        gguf_file_path = os.path.join(model_path, model["gguf_filename"])
+        gguf_file_path = model_path / model["gguf_filename"]
         logger.info(f"Preparing GGUF model: {model_name}")
-        if not os.path.exists(gguf_file_path):
-            download_gguf_model(model, model_path)
-        yield gguf_file_path
+        download_gguf_model(model, str(model_path))
+        yield str(gguf_file_path)
+    elif not model["convert_args"]:
+        downloaded_models_dir = get_ov_cache_downloaded_models_dir()
+        model_cache = downloaded_models_dir / model_id
+        model_path = model_cache / model_name
+        logger.info(f"Downloading pre-converted model: {model_name}")
+        manager = AtomicDownloadManager(model_path)
+        
+        def download_to_temp(temp_path: Path) -> None:
+            sub_env = os.environ.copy()
+            command = ["huggingface-cli", "download", model_name, "--local-dir", str(temp_path)]
+            logger.info(f"Downloading command: {' '.join(command)}")
+            retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, env=sub_env))
+        
+        manager.execute(download_to_temp)
+        yield str(model_path)
     else:
-        model_path = os.path.join(model_cache, model_name)
+        converted_models_dir = get_ov_cache_converted_models_dir()
+        model_cache = converted_models_dir / model_id
+        model_path = model_cache / model_name
         logger.info(f"Preparing model: {model_name}")
-        if not os.path.exists(model_path):
-            optimum_cli_convert(model, model_path)
-        yield model_path
+        optimum_cli_convert(model, str(model_path))
+        yield str(model_path)
 
-    # Cleanup the model after tests
     if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
-        if os.path.exists(model_cache):
+        if model_cache.exists():
             logger.info(f"Removing cached model: {model_cache}")
             shutil.rmtree(model_cache)
 
 @pytest.fixture(scope="session")
 def download_model(request):
     """Fixture to download the model once for the session."""
-    models_cache = request.config.cache.get("MODELS_DIR", None)
+    downloaded_models_dir = get_ov_cache_downloaded_models_dir()
     model_id = request.param
     model_name = MODELS[model_id]["name"]
-    model_cache = os.path.join(models_cache, model_id)
-    model_path = os.path.join(model_cache, model_name)
+    model_cache = downloaded_models_dir / model_id
+    model_path = model_cache / model_name
+    
     logger.info(f"Preparing model: {model_name}")
-    # Download the model if not already downloaded
-    if not os.path.exists(model_path):
-        logger.info(f"Downloading the model: {model_name}")
-        sub_env=os.environ.copy()
-        command = ["huggingface-cli", "download", model_name, "--local-dir", model_path]
+    
+    manager = AtomicDownloadManager(model_path)
+    
+    def download_to_temp(temp_path: Path) -> None:
+        sub_env = os.environ.copy()
+        command = ["huggingface-cli", "download", model_name, "--local-dir", str(temp_path)]
         logger.info(f"Downloading command: {' '.join(command)}")
         retry_request(lambda: subprocess.run(command, check=True, capture_output=True, text=True, env=sub_env))
-            
-    yield model_path
     
-    # Cleanup the model after tests
+    manager.execute(download_to_temp)
+            
+    yield str(model_path)
+    
     if os.environ.get("CLEANUP_CACHE", "false").lower() == "true":
-        if os.path.exists(model_cache):
-            logger.info(f"Removing converted model: {model_cache}")
+        if model_cache.exists():
+            logger.info(f"Removing downloaded model: {model_cache}")
             shutil.rmtree(model_cache)
 
 @pytest.fixture(scope="session")
