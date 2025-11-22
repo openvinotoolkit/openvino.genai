@@ -26,13 +26,20 @@ def main():
 
     image = read_image(args.image)
 
-    image_tensor = pipe.generate(args.prompt, image,
-        strength=0.8 # controls how initial image is noised after being converted to latent space. `1` means initial image is fully noised
+    def callback(step, num_steps, latent):
+        print(f"Step {step + 1}/{num_steps}")
+        return False
+
+    image_tensor = pipe.generate(
+        args.prompt,
+        image,
+        strength=0.8,
+        callback=callback
     )
 
     image = Image.fromarray(image_tensor.data[0])
     image.save("image.bmp")
 
 
-if '__main__' == __name__:
+if __name__ == '__main__':
     main()
