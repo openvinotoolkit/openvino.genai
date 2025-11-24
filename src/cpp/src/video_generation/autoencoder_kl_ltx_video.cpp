@@ -102,13 +102,8 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::compile(const std::string& device,
     std::optional<AdapterConfig> unused;
     auto filtered_properties = extract_adapters_from_properties(properties, &unused);
 
-    // if (m_encoder_model) {
-    //     ov::CompiledModel encoder_compiled_model = core.compile_model(m_encoder_model, device, handle_scale_factor(m_encoder_model, device, *filtered_properties));
-    //     ov::genai::utils::print_compiled_model_properties(encoder_compiled_model, "Auto encoder KL LTX video encoder model");
-    //     m_encoder_request = encoder_compiled_model.create_infer_request();
-    //     // release the original model
-    //     m_encoder_model.reset();
-    // }
+    // TODO: for img2video
+    // if (m_encoder_model) {...}
 
     ov::CompiledModel decoder_compiled_model = core.compile_model(m_decoder_model, device, handle_scale_factor(m_decoder_model, device, *filtered_properties));
     ov::genai::utils::print_compiled_model_properties(decoder_compiled_model, "Auto encoder KL LTX video decoder model");

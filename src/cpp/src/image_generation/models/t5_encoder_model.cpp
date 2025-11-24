@@ -85,17 +85,12 @@ ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, const std::strin
     OPENVINO_ASSERT(m_request, "T5 encoder model must be compiled first. Cannot infer non-compiled model");
 
     const int32_t pad_token_id = m_tokenizer.get_pad_token_id();
-    std::cout << "pad_token_id " << pad_token_id << std::endl;
-
     auto perform_tokenization = [&](const std::string& prompt,
                                 ov::Tensor input_ids,
                                 std::optional<ov::Tensor> prompt_attention_mask = std::nullopt) {
         auto m_tokenizer_output = m_tokenizer.encode(prompt, tokenization_params);
         ov::Tensor input_ids_token = m_tokenizer_output.input_ids;
         ov::Tensor prompt_attention_mask_token = m_tokenizer_output.attention_mask;
-
-        std::cout << "prompt " << prompt << std::endl;
-        std::cout << "attention_mask out shape " << prompt_attention_mask_token.get_shape() << std::endl;
 
         size_t min_length = std::min(input_ids.get_size(), input_ids_token.get_size());
 
@@ -126,15 +121,12 @@ ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, const std::strin
 
     // reshape in case of dynamic model
     ov::Shape input_ids_shape = input_ids.get_shape();
-    // ov::Tensor prompt_attention_mask(input_ids.get_element_type(), input_ids_shape);
     m_prompt_attention_mask = ov::Tensor(input_ids.get_element_type(), input_ids_shape);
 
 
     OPENVINO_ASSERT(input_ids_shape[1] == 0 || max_sequence_length == input_ids_shape[1],
         "In case of T5EncoderModel was reshaped before, reshape's max_sequence_length ", input_ids_shape[1], " must be equal to ",
         "infer's max_sequence_length ", max_sequence_length);
-
-    std::cout << "max_sequence_length " << max_sequence_length << std::endl;
 
     if (input_ids_shape[0] == 0 || input_ids_shape[1] == 0) {
         size_t batch_size = do_classifier_free_guidance ? 2 : 1;
@@ -160,8 +152,6 @@ ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, const std::strin
                                                {current_batch_idx + 1, input_ids.get_shape()[1]}),
                          ov::Tensor(m_prompt_attention_mask, {current_batch_idx    , 0},
                                                {current_batch_idx + 1, input_ids.get_shape()[1]}));
-
-    std::cout << "prompt_attention_mask shape " << m_prompt_attention_mask.get_shape() << std::endl;
 
     // text embeddings
     m_request.infer();

@@ -12,7 +12,7 @@
 
 #include <openvino/genai/video_generation/text2video_pipeline.hpp>
 
-int main(int32_t argc, char* argv[]) {
+int main(int32_t argc, char* argv[]) try {
     OPENVINO_ASSERT(argc == 3, "Usage: ", argv[0], " <MODEL_DIR> '<PROMPT>'");
 
     std::filesystem::path models_dir = argv[1];
@@ -49,6 +49,7 @@ int main(int32_t argc, char* argv[]) {
     // TODO: throw if num_frames isn't devisable by 8 + 1. Similar value for resolution. The model works on resolutions that are divisible by 32 and number of frames that are divisible by 8 + 1 (e.g. 257). The model works best on resolutions under 720 x 1280 and number of frames below 257.
     // OVLTXPipeline()(num_inference_steps=1) fails. 2 passes. Would be nice to avoid that bug in genai.
     // Verify tiny resolution like 32x32
+
     const std::string device = "CPU";  // GPU can be used as well
 
     ov::genai::Text2VideoPipeline pipe(models_dir, device);
@@ -65,18 +66,17 @@ int main(int32_t argc, char* argv[]) {
         ov::genai::frame_rate(frame_rate),
         ov::genai::guidance_scale(3)
     );
-
     imwrite_video("genai_video.avi", output.video, frame_rate);
 
     return EXIT_SUCCESS;
-// } catch (const std::exception& error) {
-//     try {
-//         std::cerr << error.what() << '\n';
-//     } catch (const std::ios_base::failure&) {}
-//     return EXIT_FAILURE;
-// } catch (...) {
-//     try {
-//         std::cerr << "Non-exception object thrown\n";
-//     } catch (const std::ios_base::failure&) {}
-//     return EXIT_FAILURE;
+} catch (const std::exception& error) {
+    try {
+        std::cerr << error.what() << '\n';
+    } catch (const std::ios_base::failure&) {}
+    return EXIT_FAILURE;
+} catch (...) {
+    try {
+        std::cerr << "Non-exception object thrown\n";
+    } catch (const std::ios_base::failure&) {}
+    return EXIT_FAILURE;
 }
