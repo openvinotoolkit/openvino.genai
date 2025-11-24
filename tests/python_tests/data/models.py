@@ -50,4 +50,8 @@ def get_gguf_model_list():
             # Dummy gguf model accuracy is sensitive for dynamic quantization w/ small group size 32 (default), set group size as 64 explicitly instead
             "dynamic_quantization_group_size": "64",
         },
+        {
+            "gguf_model_id": "unsloth/Llama-3.2-1B-Instruct-GGUF",
+            "gguf_filename": "Llama-3.2-1B-Instruct-Q8_0.gguf"
+        },
     ]
