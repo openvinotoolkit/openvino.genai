@@ -11,19 +11,23 @@ from test_utils import run_sample
 download_mask_image = download_test_content
 
 class TestInpainting:
+    PROMPT = "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"
+    IMAGE_PATH = "images/image.png"
+    MASK_PATH = "mask_image.png"
+    
     @pytest.mark.samples
     @pytest.mark.LCM_Dreamshaper_v7_int8_ov
     @pytest.mark.parametrize(
         "download_model, prompt",
         [
-            pytest.param("LCM_Dreamshaper_v7-int8-ov", "cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting"),
+            pytest.param("LCM_Dreamshaper_v7-int8-ov", PROMPT),
         ],
         indirect=["download_model"],
     )
     @pytest.mark.parametrize(
         "download_test_content, download_mask_image",
         [
-            pytest.param("images/image.png", "mask_image.png"),
+            pytest.param(IMAGE_PATH, MASK_PATH),
         ],
         indirect=["download_test_content", "download_mask_image"],
     )
