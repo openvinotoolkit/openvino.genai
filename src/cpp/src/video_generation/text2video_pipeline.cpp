@@ -518,14 +518,6 @@ public:
                                 transformer_spatial_patch_size,
                                 transformer_temporal_patch_size);
 
-        auto tensor_from_vector = [](const std::vector<float>& data) -> ov::Tensor {
-            ov::Tensor t{ov::element::f32, ov::Shape{data.size()}};
-            if (!data.empty()) {
-                std::memcpy(t.data<float>(), data.data(), data.size() * sizeof(float));
-            }
-            return t;
-        };
-
         latent = denormalize_latents(latent,
                                     tensor_from_vector(m_vae->get_config().latents_mean_data),
                                     tensor_from_vector(m_vae->get_config().latents_std_data),
