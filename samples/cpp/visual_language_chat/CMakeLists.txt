@@ -8,6 +8,8 @@ find_package(OpenVINOGenAI REQUIRED
     NO_CMAKE_FIND_ROOT_PATH
 )
 
+find_package(OpenCV REQUIRED)
+
 file(DOWNLOAD
     https://raw.githubusercontent.com/nothings/stb/f75e8d1cad7d90d72ef7a4661f1b994ef78b4e31/stb_image.h
     ${CMAKE_BINARY_DIR}/stb_image.h
@@ -55,3 +57,9 @@ install(TARGETS benchmark_vlm
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
+
+# create video_to_text_chat executable
+add_executable(video_to_text_chat video_to_text_chat.cpp)
+
+target_include_directories(video_to_text_chat PRIVATE ${OpenCV_INCLUDE_DIRS} "${CMAKE_BINARY_DIR}")
+target_link_libraries(video_to_text_chat PRIVATE ${OpenCV_LIBS} openvino::genai cxxopts::cxxopts)

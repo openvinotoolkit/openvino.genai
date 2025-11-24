@@ -45,7 +45,6 @@ def read_video(path: str, num_frames: int = 10) -> Tensor:
             break
 
         frames.append(np.array(frame))
-    cap.release()
 
     indices = np.arange(0, len(frames), len(frames) / num_frames).astype(int)
     frames = [frames[i] for i in indices]
@@ -67,7 +66,7 @@ def main():
     parser.add_argument('device', nargs='?', default='CPU', help="Device to run the model on (default: CPU)")
     args = parser.parse_args()
 
-    video = read_videos(args.video_dir)
+    videos = read_videos(args.video_dir)
 
     # GPU and NPU can be used as well.
     # Note: If NPU is selected, only the language model will be run on the NPU.
@@ -84,7 +83,7 @@ def main():
 
     pipe.start_chat()
     prompt = input('question:\n')
-    pipe.generate(prompt, videos=video, generation_config=config, streamer=streamer)
+    pipe.generate(prompt, videos=videos, generation_config=config, streamer=streamer)
 
     while True:
         try:
