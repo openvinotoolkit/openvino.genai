@@ -1,12 +1,19 @@
 import subprocess  # nosec B404
 import sys
 import pytest
+import shutil
 import logging
-from test_cli_image import run_wwb
+from pathlib import Path
+from test_cli_image import run_wwb, get_similarity
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def remove_artifacts(artifacts_path: Path, file_type="outputs"):
+    logger.info(f"Remove {file_type}")
+    shutil.rmtree(artifacts_path)
 
 
 @pytest.mark.parametrize(
@@ -21,6 +28,7 @@ logger = logging.getLogger(__name__)
 def test_embeddings_basic(model_id, model_type, tmp_path):
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = tmp_path / model_id.replace("/", "_")
+    SIMILARITY_THRESHOLD = 0.99
 
     result = subprocess.run(["optimum-cli", "export",
                              "openvino", "-m", model_id,
@@ -47,8 +55,9 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
         "--hf",
     ])
 
+    outputs_path = tmp_path / "optimum"
     # test Optimum
-    run_wwb([
+    outputs = run_wwb([
         "--target-model",
         MODEL_PATH,
         "--num-samples",
@@ -59,10 +68,24 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
         "CPU",
         "--model-type",
         model_type,
+        "--output",
+        outputs_path,
     ])
 
+    assert (outputs_path / "target").exists()
+    assert (outputs_path / "target.csv").exists()
+    assert (outputs_path / "metrics_per_question.csv").exists()
+    assert (outputs_path / "metrics.csv").exists()
+    assert "Metrics for model" in outputs
+
+    similarity = get_similarity(outputs)
+    assert similarity >= SIMILARITY_THRESHOLD
+
+    remove_artifacts(outputs_path)
+
+    outputs_path = tmp_path / "genai"
     # test GenAI
-    run_wwb([
+    outputs = run_wwb([
         "--target-model",
         MODEL_PATH,
         "--num-samples",
@@ -75,13 +98,22 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
         model_type,
         "--genai",
         "--output",
-        tmp_path,
+        outputs_path,
     ])
+
+    assert (outputs_path / "target").exists()
+    assert (outputs_path / "target.csv").exists()
+    assert (outputs_path / "metrics_per_question.csv").exists()
+    assert (outputs_path / "metrics.csv").exists()
+    assert "Metrics for model" in outputs
+
+    similarity = get_similarity(outputs)
+    assert similarity >= SIMILARITY_THRESHOLD
 
     # test w/o models
     run_wwb([
         "--target-data",
-        tmp_path / "target.csv",
+        outputs_path / "target.csv",
         "--num-samples",
         "1",
         "--gt-data",
@@ -92,3 +124,6 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
         model_type,
         "--genai",
     ])
+
+    remove_artifacts(outputs_path)
+    remove_artifacts(MODEL_PATH, "model")
