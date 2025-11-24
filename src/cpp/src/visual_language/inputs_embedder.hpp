@@ -143,7 +143,7 @@ private:
         utils::KVCacheState m_kv_cache_state;
         // length of attention_mask/kv cache at the beginning of generation()
         size_t m_prev_hist_length = 0;
-        // When enable prompt lookup, prompt token ids are required to generate condidate.
+        // When enable prompt lookup, prompt token ids are required to generate candidate.
         bool m_prompt_lookup = false;
         // True if tokenizer should add special tokens
         bool m_add_special_tokens = true;

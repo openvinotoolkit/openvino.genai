@@ -150,9 +150,7 @@ public:
             m_cumulative_log_prob -= m_generated_log_probs.back();
             m_generated_log_probs.pop_back();
             m_generated_ids.pop_back();
-        }
-        if (m_type == SequenceGroupType::EMBEDDINGS) {
-            for (int i = 0; i < n; i++) {
+            if (m_type == SequenceGroupType::EMBEDDINGS) {
                 m_generated_ids_embeds.pop_back();
             }
         }

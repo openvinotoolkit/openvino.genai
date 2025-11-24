@@ -200,14 +200,6 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
     OPENVINO_THROW("Current model doesn't support video preprocess currently. Input images are processed as separate images.");
 }
 
-// std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_embeds_with_prompt_ids(
-//     const std::string& prompt,
-//     const std::vector<ov::Tensor>& images,
-//     ov::genai::VLMPerfMetrics& metrics,
-//     const std::vector<size_t>& image_sequence) {
-//     return get_inputs_embeds_with_prompt_ids(prompt, encode_images(images), metrics, true, image_sequence);
-// }
-
 std::vector<ov::genai::EncodedVideo> InputsEmbedder::IInputsEmbedder::encode_videos(const std::vector<ov::Tensor>& videos) {
     if (!videos.size()) {
         return {};
