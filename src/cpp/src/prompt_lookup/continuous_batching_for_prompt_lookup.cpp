@@ -23,8 +23,8 @@ TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::gene
     }
 
     const size_t input_length = input_ids.size();
-    const size_t adjusted_ngram_size = std::min(max_ngram_size, input_length);
-    for (int32_t ngram_size = static_cast<int32_t>(adjusted_ngram_size); ngram_size > 0; ngram_size--) {
+    const int32_t adjusted_ngram_size = static_cast<int32_t>(std::min(max_ngram_size, input_length));
+    for (int32_t ngram_size = adjusted_ngram_size; ngram_size > 0; ngram_size--) {
         // extract last ngram_size tokens as search ngram
         std::vector<int64_t> ngram = std::vector<int64_t>{input_ids.cend() - ngram_size, input_ids.cend()};
 
@@ -79,12 +79,11 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
             // Padding to candidate token,
             // Avoid shape checking and increasing the amount of computation when the shape changes.
             if (candidates.size() < sampling_params.num_assistant_tokens) {
-                if (full_input_ids.size() > 0) {
-                    int token_sz = static_cast<int>(candidates.size());
-                    for (int ci = 0; ci < static_cast<int>(sampling_params.num_assistant_tokens) - token_sz; ci++) {
-                        // Padding with last token.
-                        candidates.push_back(full_input_ids.back());
-                    }
+                OPENVINO_ASSERT(!full_input_ids.empty(), "full_input_ids should not be empty");
+                int token_sz = static_cast<int>(candidates.size());
+                for (int ci = 0; ci < static_cast<int>(sampling_params.num_assistant_tokens) - token_sz; ci++) {
+                    // Padding with last token.
+                    candidates.push_back(full_input_ids.back());
                 }
             }
 
