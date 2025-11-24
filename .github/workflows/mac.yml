@@ -1,7 +1,6 @@
 name: macOS (14, Python 3.11)
 on:
   workflow_dispatch:
-  pull_request:
   merge_group:
   push:
     branches:
@@ -146,7 +145,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-${{ matrix.build-type }}-cpack
           path: ${{ env.CCACHE_DIR }}
-        
+
       - name: Generate product manifest
         id: create_manifest
         uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
@@ -159,7 +158,7 @@ jobs:
 
       - name: Clean ccache stats
         run: ccache --zero-stats --show-config
-          
+
       - name: CMake Build
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
@@ -205,7 +204,7 @@ jobs:
           name: genai_tests_${{ matrix.build-type }}
           path: ${{ env.INSTALL_TESTS_DIR }}
           if-no-files-found: 'error'
-          
+
       - name: Upload manifest
         if: always()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
@@ -263,7 +262,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-wheel
           path: ${{ env.CCACHE_DIR }}\
-          
+
       - name: Set CI environment
         id: create_manifest
         uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
