@@ -18,8 +18,14 @@ from openvino import save_model
 from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
 from openvino_tokenizers import convert_tokenizer
 
-from utils.constants import get_default_llm_properties, extra_generate_kwargs, get_ov_cache_models_dir
+from utils.constants import (
+    get_default_llm_properties,
+    extra_generate_kwargs,
+    get_ov_cache_converted_models_dir,
+    get_ov_cache_downloaded_models_dir,
+)
 from utils.network import retry_request
+from utils.atomic_download import AtomicDownloadManager
 
 from utils.constants import OV_MODEL_FILENAME
 
@@ -243,17 +249,22 @@ def download_and_convert_model_class(
     dir_name = sanitize_model_id(model_id)
     if model_class.__name__ not in ["OVModelForCausalLM"]:
         dir_name = f"{dir_name}_{model_class.__name__}"
-    ov_cache_models_dir = get_ov_cache_models_dir()
-    models_path = ov_cache_models_dir / dir_name
+    ov_cache_converted_dir = get_ov_cache_converted_models_dir()
+    models_path = ov_cache_converted_dir / dir_name
 
-    if (models_path / OV_MODEL_FILENAME).exists():
+    manager = AtomicDownloadManager(models_path)
+
+    if manager.is_complete() or (models_path / OV_MODEL_FILENAME).exists():
         opt_model, hf_tokenizer = get_huggingface_models(models_path, model_class, local_files_only=True)
     else:
         opt_model, hf_tokenizer = get_huggingface_models(model_id, model_class, local_files_only=False)
         if "padding_side" in tokenizer_kwargs:
             hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
-        # ov tokenizer padding side aligns with hf tokenizer during conversion
-        convert_models(opt_model, hf_tokenizer, models_path)
+
+        def convert_to_temp(temp_path: Path) -> None:
+            convert_models(opt_model, hf_tokenizer, temp_path)
+
+        manager.execute(convert_to_temp)
 
     if "padding_side" in tokenizer_kwargs:
         hf_tokenizer.padding_side = tokenizer_kwargs["padding_side"]
@@ -271,15 +282,23 @@ def download_gguf_model(
     gguf_filename: str,
 ):
     gguf_dir_name = sanitize_model_id(gguf_model_id)
-    ov_cache_models_dir = get_ov_cache_models_dir()
-    models_path_gguf = ov_cache_models_dir / gguf_dir_name
+    ov_cache_downloaded_dir = get_ov_cache_downloaded_models_dir()
+    models_path_gguf = ov_cache_downloaded_dir / gguf_dir_name
 
-    gguf_path = hf_hub_download(
-        repo_id=gguf_model_id,
-        filename=gguf_filename,
-        local_dir=models_path_gguf # Optional: Specify download directory
-    )
+    manager = AtomicDownloadManager(models_path_gguf)
 
+    def download_to_temp(temp_path: Path) -> None:
+        retry_request(
+            lambda: hf_hub_download(
+                repo_id=gguf_model_id,
+                filename=gguf_filename,
+                local_dir=temp_path
+            )
+        )
+
+    manager.execute(download_to_temp)
+
+    gguf_path = models_path_gguf / gguf_filename
     return gguf_path
 
 

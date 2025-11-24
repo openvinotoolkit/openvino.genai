@@ -734,9 +734,11 @@ def test_perf_metrics(
     ov_pipe = create_ov_pipeline(llm_model.models_path, pipeline_type)
     load_time_in_test = (time.perf_counter() - start_time) * 1000
     start_generate = time.perf_counter()
-    ov_pipe.generate([prompt], **generation_config)
+    
+    result = ov_pipe.generate([prompt], **generation_config)
+
     generate_time = (time.perf_counter() - start_generate) * 1000
-    perf_metrics = ov_pipe.generate([prompt], **generation_config).perf_metrics
+    perf_metrics = result.perf_metrics
     is_beam_search = generation_config.get('num_beams', 1) > 1
 
     # Check that load time is adequate.

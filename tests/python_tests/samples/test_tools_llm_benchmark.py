@@ -274,17 +274,19 @@ class TestBenchmarkLLM:
 
 
     @pytest.mark.samples
-    @pytest.mark.parametrize("convert_model", ["Qwen3-Reranker-0.6B"], indirect=True)
+    @pytest.mark.parametrize("model_id", ["Qwen/Qwen3-Reranker-0.6B"])
     @pytest.mark.parametrize("sample_args", [
         ["-d", "cpu", "-n", "1", "--task", "text_rerank", "--optimum"],
     ])
-    def test_python_tool_llm_benchmark_text_reranking_qwen3(self, convert_model, sample_args):
+    def test_python_tool_llm_benchmark_text_reranking_qwen3(self, model_id, sample_args):
+        from utils.hugging_face import download_and_convert_model
+        model_schema = download_and_convert_model(model_id)
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [
             sys.executable, 
             benchmark_script, 
             "-m", 
-            convert_model,
+            model_schema.models_path,
         ] + sample_args
         run_sample(benchmark_py_command)
 
