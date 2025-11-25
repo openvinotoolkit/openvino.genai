@@ -373,7 +373,24 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     } else if (py::isinstance<ov::genai::Generator>(py_obj)) {
         return py::cast<std::shared_ptr<ov::genai::Generator>>(py_obj);
     } else if (py::isinstance<py::function>(py_obj) && property_name == "callback") {
-        return py::cast<std::function<bool(size_t, size_t, ov::Tensor&)>>(py_obj);
+        auto py_callback = py::cast<py::function>(py_obj);
+        auto shared_callback = std::shared_ptr<py::function>(
+            new py::function(py_callback),
+            [](py::function* f) {
+                if (Py_IsInitialized()) {
+                    PyGILState_STATE gstate = PyGILState_Ensure();
+                    delete f;
+                    PyGILState_Release(gstate);
+                }
+            }
+        );
+
+        return std::function<bool(size_t, size_t, ov::Tensor&)>(
+            [shared_callback](size_t step, size_t num_steps, ov::Tensor& latent) -> bool {
+                py::gil_scoped_acquire acquire;
+                return (*shared_callback)(step, num_steps, latent).cast<bool>();
+            }
+        );
     } else if ((py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::StreamerBase>(py_obj) || py::isinstance<std::monostate>(py_obj)) && property_name == "streamer") {
         auto streamer = py::cast<ov::genai::pybind::utils::PyBindStreamerVariant>(py_obj);
         return ov::genai::streamer(pystreamer_to_streamer(streamer)).second;
@@ -437,12 +454,25 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
 
     std::visit(overloaded {
         [&streamer](const std::function<std::optional<uint16_t>(py::str)>& py_callback){
-            // Wrap python streamer with manual utf-8 decoding. Do not rely
-            // on pybind automatic decoding since it raises exceptions on incomplete strings.
-            auto callback_wrapped = [py_callback](std::string subword) -> ov::genai::StreamingStatus {
+            auto shared_callback = std::shared_ptr<std::function<std::optional<uint16_t>(py::str)>>(
+                new std::function<std::optional<uint16_t>(py::str)>(py_callback),
+                [](std::function<std::optional<uint16_t>(py::str)>* f) {
+                    if (Py_IsInitialized()) {
+                        PyGILState_STATE gstate = PyGILState_Ensure();
+                        delete f;
+                        PyGILState_Release(gstate);
+                    }
+                }
+            );
+
+            auto callback_wrapped = [shared_callback](std::string subword) -> ov::genai::StreamingStatus {
                 py::gil_scoped_acquire acquire;
-                auto py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
-                std::optional<uint16_t> callback_output = py_callback(py::reinterpret_borrow<py::str>(py_str));
+                PyObject* py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
+                if (!py_str) {
+                    PyErr_Clear();
+                    return StreamingStatus::RUNNING;
+                }
+                std::optional<uint16_t> callback_output = (*shared_callback)(py::reinterpret_steal<py::str>(py_str));
                 if (callback_output.has_value()) {
                     if (*callback_output == (uint16_t)StreamingStatus::RUNNING)
                         return StreamingStatus::RUNNING;
