@@ -40,18 +40,20 @@ def main():
     parser.add_argument('model_dir')
     parser.add_argument('image_dir', help="Image file or dir with images")
     parser.add_argument('prompt')
+    parser.add_argument('enable_lookup', help="Eanble lookup decoding. Default: True", default=True, type=bool)
     args = parser.parse_args()
 
-    device = 'GPU'
+    device = 'CPU'
 
-    pipe = openvino_genai.VLMPipeline(args.model_dir, device, prompt_lookup=True)
+    pipe = openvino_genai.VLMPipeline(args.model_dir, device, prompt_lookup=args.enable_lookup)
     
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
-    # add parameter to enable prompt lookup decoding to generate `num_assistant_tokens` candidates per iteration
-    config.num_assistant_tokens = 5
-    # Define max_ngram_size
-    config.max_ngram_size = 3
+    if args.enable_lookup:
+        # add parameter to enable prompt lookup decoding to generate `num_assistant_tokens` candidates per iteration
+        config.num_assistant_tokens = 5
+        # Define max_ngram_size
+        config.max_ngram_size = 3
 
     rgbs = read_images(args.image_dir)
 
