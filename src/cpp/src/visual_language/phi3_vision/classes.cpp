@@ -646,17 +646,18 @@ ov::Tensor insert_image_placeholders(
     return merged;
 }
 
-std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::Tensor& tokens) {
+std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(int64_t* tokens, const ov::Shape& shape) {
     std::vector<std::variant<ov::Tensor, size_t>> chunks;
-    int64_t last_token = tokens.data<int64_t>()[0];
+    size_t full_length = shape.at(1);
+    int64_t last_token = tokens[0];
     size_t text_start = 0;
-    for (size_t offset = 1; offset < tokens.get_shape().at(1); ++offset) {
+    for (size_t offset = 1; offset < full_length; ++offset) {
         // If last_token and next_token are not negative, it's continuation of the current chunk text - skip
         // If last_token is negative and next_token is not negative, it's a start of text - save the offset, add image placeholder
         // If last token is not negative and next_token is negative, it's an end of text - push_back a chunk
         // If last_token and next_token are negative, it's continuation of an image placeholder - skip
         // if last_token and next_token are negative but different, it's a start of a new image placeholder - save the previous image placeholder
-        int64_t next_token = tokens.data<int64_t>()[offset];
+        int64_t next_token = tokens[offset];
         if (last_token < 0 && next_token >= 0) {
             text_start = offset;
             chunks.push_back(size_t(-(last_token + 1)));
@@ -665,7 +666,7 @@ std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::
                 std::in_place_type<ov::Tensor>,
                 ov::element::i64,
                 ov::Shape{1, offset - text_start},
-                tokens.data<int64_t>() + text_start
+                tokens + text_start
             );
         } else if (last_token < 0 && next_token < 0 && last_token != next_token) {
             chunks.push_back(size_t(-(last_token + 1)));
@@ -673,13 +674,12 @@ std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::
         last_token = next_token;
     }
     // Add the last chunk
-    size_t full_length = tokens.get_shape().at(1);
     if (last_token >= 0) {
         chunks.emplace_back(
             std::in_place_type<ov::Tensor>,
             ov::element::i64,
             ov::Shape{1, full_length - text_start},
-            tokens.data<int64_t>() + text_start
+            tokens + text_start
         );
     } else {
         chunks.push_back(size_t(-(last_token + 1)));
@@ -806,7 +806,7 @@ ov::Tensor InputsEmbedderPhi3V::get_inputs_embeds(const std::string& image_promp
     m_prev_hist_length = m_kv_cache_state.get_state().size();
     m_kv_cache_state.add_inputs(new_tokens);
 
-    std::vector<std::variant<ov::Tensor, size_t>> tokens = phi_utils::drop_image_placeholders(new_tokens);
+    std::vector<std::variant<ov::Tensor, size_t>> tokens = phi_utils::drop_image_placeholders(new_tokens.data<int64_t>(), new_tokens.get_shape());
     ov::Tensor inputs_embeds{ov::element::f32, {1, new_tokens.get_shape().at(1), m_vlm_config.hidden_size}};
     size_t offset = 0;
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
