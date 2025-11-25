@@ -47,6 +47,8 @@ Install [deployment-requirements.txt](../../deployment-requirements.txt) via `pi
 
 `python visual_language_chat.py ./miniCPM-V-2_6/ 319483352-d5fbbd1a-d484-415c-88cb-9986625b7b11.jpg`
 
+See https://github.com/openvinotoolkit/openvino.genai/blob/master/src/README.md#supported-models for the list of supported models.
+
 ## Run video-to-text chat sample:
 
 To run this sample a model that supports video input is required, for example `llava-hf/LLaVA-NeXT-Video-7B-hf`.
@@ -55,11 +57,10 @@ To run this sample a model that supports video input is required, for example `l
 
 `python video_to_text_chat.py ./LLaVA-NeXT-Video-7B-hf/ sample_demo_1.mp4`
 
+Supported models with video input are listed in [this section](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt).
 
 Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is recommended to run larger models on a dGPU with 32GB+ RAM. # TODO: examples of larger models
 Modify the source code to change the device for inference to the GPU.
-
-See https://github.com/openvinotoolkit/openvino.genai/blob/master/src/README.md#supported-models for the list of supported models.
 
 ## Run benchmark:
 

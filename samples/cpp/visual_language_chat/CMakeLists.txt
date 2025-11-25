@@ -61,7 +61,7 @@ include(FetchContent)
 FetchContent_Declare(
         opencv
         GIT_REPOSITORY https://github.com/opencv/opencv.git
-        GIT_TAG 4.6.0
+        GIT_TAG 4.12.0
         GIT_SHALLOW TRUE
         GIT_PROGRESS TRUE
 )
