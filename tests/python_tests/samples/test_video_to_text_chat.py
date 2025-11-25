@@ -21,10 +21,9 @@ class TestVisualLanguageChat:
     )
     def test_sample_visual_language_chat(self, convert_model, download_test_content, questions):
         # Test CPP sample
-        # TODO
-
-        # Test C sample
-        # TODO
+        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'video_to_text_chat')
+        cpp_command = [cpp_sample, convert_model, download_test_content]
+        cpp_result = run_sample(cpp_command, questions)
 
         # Test Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/video_to_text_chat.py")
@@ -32,5 +31,4 @@ class TestVisualLanguageChat:
         py_result = run_sample(py_command, questions)
 
         # Compare results
-        # assert py_result.stdout == cpp_result.stdout, f"Results should match"
-        # assert cpp_result.stdout == c_result.stdout, f"Results should match"
+        assert py_result.stdout == cpp_result.stdout, f"Results should match"
