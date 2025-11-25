@@ -110,6 +110,8 @@ def get_ignore_parameters_flag():
 
 
 def get_json_config(config):
+    if config is None or (isinstance(config, str) and config.strip() == ""):
+        raise ValueError("Config must be a non-empty string or path to a JSON file.")
     json_config = {}
     if Path(config).is_file():
         with open(config, 'r') as f:
