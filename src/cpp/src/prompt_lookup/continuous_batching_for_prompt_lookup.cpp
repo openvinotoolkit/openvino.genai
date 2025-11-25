@@ -76,7 +76,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
             }
             TokenIds candidates = generate_candidates(full_input_ids, min_num_assistant_tokens, sampling_params.max_ngram_size);
 
-            // Padding to candidate token,
+            // Padding to candidate tokens,
             // Avoid shape checking and increasing the amount of computation when the shape changes.
             if (candidates.size() < sampling_params.num_assistant_tokens) {
                 OPENVINO_ASSERT(!full_input_ids.empty(), "full_input_ids should not be empty");
