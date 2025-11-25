@@ -325,7 +325,7 @@ EncodedResults StatefulLLMPipeline::generate(
 
     // Tail of previous output in chat mode is missing in KV cache.
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::ENCODED_INPUTS) {
-        ov::Tensor new_chat_tokens = ov::Tensor{ov::element::i64, {1, m_tokenized_chat_history.size()}, m_tokenized_chat_history.data()};
+        ov::Tensor new_chat_tokens = ov::Tensor{ov::element::i64, {1, m_tokenized_chat_history.size()}, const_cast<int64_t*>(m_tokenized_chat_history.data())};
         ov::genai::align_kv_cache_and_history(new_chat_tokens, m_kv_cache_state);
 
         auto encoded_input = get_chat_encoded_input(new_chat_tokens, m_kv_cache_state);
@@ -414,7 +414,7 @@ EncodedResults StatefulLLMPipeline::generate(
             tokenized_chat_hist.reserve(state.size() + input_ids.get_size());
             std::copy(state.begin(), state.end(), std::back_inserter(tokenized_chat_hist));
             std::copy(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_size(), std::back_inserter(tokenized_chat_hist));
-            sequence_group = std::make_shared<SequenceGroup>(request_id,  ov::Tensor(ov::element::i64, {1, tokenized_chat_hist.size()}, tokenized_chat_hist.data()), config, block_size);
+            sequence_group = std::make_shared<SequenceGroup>(request_id,  ov::Tensor(ov::element::i64, {1, tokenized_chat_hist.size()}, const_cast<int64_t*>(tokenized_chat_hist.data())), config, block_size);
         } else {
             size_t seq_len = input_ids.get_shape().at(1);
             size_t batch_offset = request_id * seq_len;
