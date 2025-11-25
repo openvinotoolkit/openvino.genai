@@ -665,7 +665,7 @@ std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::
                 std::in_place_type<ov::Tensor>,
                 ov::element::i64,
                 ov::Shape{1, offset - text_start},
-                tokens.data<int64_t>() + text_start
+                const_cast<int64_t*>(tokens.data<int64_t>()) + text_start
             );
         } else if (last_token < 0 && next_token < 0 && last_token != next_token) {
             chunks.push_back(size_t(-(last_token + 1)));
@@ -679,7 +679,7 @@ std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::
             std::in_place_type<ov::Tensor>,
             ov::element::i64,
             ov::Shape{1, full_length - text_start},
-            tokens.data<int64_t>() + text_start
+            const_cast<int64_t*>(tokens.data<int64_t>()) + text_start
         );
     } else {
         chunks.push_back(size_t(-(last_token + 1)));
