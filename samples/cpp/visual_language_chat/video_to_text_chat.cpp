@@ -24,7 +24,7 @@ std::vector<size_t> make_indices(size_t total_frames, size_t num_frames) {
 }
 
 ov::Tensor load_video(const std::filesystem::path& video_path, size_t num_frames = 10) {
-    cv::VideoCapture cap(video_path);
+    cv::VideoCapture cap(video_path.string());
 
     if (!cap.isOpened()) {
         OPENVINO_THROW("Could not open the video file.");
