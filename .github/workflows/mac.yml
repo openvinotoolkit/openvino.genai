@@ -36,7 +36,7 @@ jobs:
       skip_workflow: "${{ steps.smart_ci.outputs.skip_workflow }}"
     steps:
       - name: checkout action
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         timeout-minutes: 15
         with:
           sparse-checkout: .github
@@ -85,7 +85,7 @@ jobs:
         platform: macos_14_7
         arch: 'arm64'
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
-        revision: latest_available_commit
+        revision: fcf7c2964cf460ecfcb039f748d1f4028626d58c
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
@@ -117,7 +117,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -234,7 +234,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -332,7 +332,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -389,7 +389,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
@@ -490,7 +490,7 @@ jobs:
     steps:
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -564,7 +564,7 @@ jobs:
     steps:
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -663,7 +663,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -721,7 +721,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive

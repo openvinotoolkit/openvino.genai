@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from utils.network import retry_request
+from utils.atomic_download import AtomicDownloadManager
 from test_whisper_pipeline import get_whisper_models_list, sample_from_dataset, get_fixture_params_for_n_whisper_dataset_samples
 from transformers import WhisperProcessor, AutoTokenizer
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
@@ -24,34 +25,38 @@ def load_and_save_whisper_model(params, stateful=False, **tokenizer_kwargs):
     if not stateful:
         path = pathlib.Path(f"{path}_with_past")
 
-    if not (path / "openvino_encoder_model.xml").exists():
-        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
-            tokenizer,
-            with_detokenizer=True,
-            clean_up_tokenization_spaces=False,
-            **tokenizer_kwargs,
-        )
+    manager = AtomicDownloadManager(path)
+    
+    if not manager.is_complete() and not (path / "openvino_encoder_model.xml").exists():
+        def convert_to_temp(temp_path: pathlib.Path) -> None:
+            tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+            ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
+                tokenizer,
+                with_detokenizer=True,
+                clean_up_tokenization_spaces=False,
+                **tokenizer_kwargs,
+            )
 
-        openvino.save_model(ov_tokenizer, path / "openvino_tokenizer.xml")
-        openvino.save_model(ov_detokenizer, path / "openvino_detokenizer.xml")
+            openvino.save_model(ov_tokenizer, temp_path / "openvino_tokenizer.xml")
+            openvino.save_model(ov_detokenizer, temp_path / "openvino_detokenizer.xml")
 
-        # to store tokenizer config jsons with special tokens
-        tokenizer.save_pretrained(path)
+            tokenizer.save_pretrained(temp_path)
 
-        opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
-            model_id,
-            export=True,
-            trust_remote_code=True,
-            stateful=stateful,
-            compile=False,
-            device="CPU",
-            load_in_8bit=False,
-        ))
-        opt_model.generation_config.save_pretrained(path)
-        opt_model.config.save_pretrained(path)
-        opt_model.save_pretrained(path)
-        processor.save_pretrained(path)
+            opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
+                model_id,
+                export=True,
+                trust_remote_code=True,
+                stateful=stateful,
+                compile=False,
+                device="CPU",
+                load_in_8bit=False,
+            ))
+            opt_model.generation_config.save_pretrained(temp_path)
+            opt_model.config.save_pretrained(temp_path)
+            opt_model.save_pretrained(temp_path)
+            processor.save_pretrained(temp_path)
+        
+        manager.execute(convert_to_temp)
     
     return model_id, path
 
@@ -76,7 +81,6 @@ def compare_results_with_assert(expected, actual_out):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_generation_compare_with_cpu(model_descr, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(model_descr)
 
@@ -89,7 +93,6 @@ def test_static_whisper_generation_compare_with_cpu(model_descr, sample_from_dat
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, language="fr"),
                                                  *get_fixture_params_for_n_whisper_dataset_samples(n=2, language="de"),
                                                  *get_fixture_params_for_n_whisper_dataset_samples(n=2, language="es")], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_autodetect(model_descr, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(model_descr)
 
@@ -100,7 +103,6 @@ def test_static_whisper_autodetect(model_descr, sample_from_dataset):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='de', n=3)], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_language_de(model_descr, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(model_descr)
 
@@ -111,7 +113,6 @@ def test_static_whisper_language_de(model_descr, sample_from_dataset):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='fr', n=3)], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_language_fr(model_descr, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(model_descr)
 
@@ -122,7 +123,6 @@ def test_static_whisper_language_fr(model_descr, sample_from_dataset):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='ru', n=3)], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_language_ru(model_descr, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(model_descr)
 
@@ -133,7 +133,6 @@ def test_static_whisper_language_ru(model_descr, sample_from_dataset):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0, "long_form": True}], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_generation_long(model_descr, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(model_descr)
 
@@ -144,7 +143,6 @@ def test_static_whisper_generation_long(model_descr, sample_from_dataset):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_stateful_generation_compare_with_cpu(model_descr, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(model_descr, stateful=True)
 
@@ -157,7 +155,6 @@ def test_static_whisper_stateful_generation_compare_with_cpu(model_descr, sample
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, language="fr"),
                                                  *get_fixture_params_for_n_whisper_dataset_samples(n=2, language="de"),
                                                  *get_fixture_params_for_n_whisper_dataset_samples(n=2, language="es")], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_stateful_autodetect(model_descr, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(model_descr, stateful=True)
 
@@ -168,7 +165,6 @@ def test_static_whisper_stateful_autodetect(model_descr, sample_from_dataset):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='de', n=3)], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_stateful_language_de(model_descr, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(model_descr, stateful=True)
 
@@ -179,7 +175,6 @@ def test_static_whisper_stateful_language_de(model_descr, sample_from_dataset):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='fr', n=3)], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_stateful_language_fr(model_descr, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(model_descr, stateful=True)
 
@@ -190,7 +185,6 @@ def test_static_whisper_stateful_language_fr(model_descr, sample_from_dataset):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='ru', n=3)], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_stateful_language_ru(model_descr, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(model_descr, stateful=True)
 
@@ -201,7 +195,6 @@ def test_static_whisper_stateful_language_ru(model_descr, sample_from_dataset):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0, "long_form": True}], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_stateful_generation_long(model_descr, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(model_descr, stateful=True)
 

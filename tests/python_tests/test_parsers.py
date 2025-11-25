@@ -23,7 +23,6 @@ def hf_ov_genai_models(request, tmp_path_factory):
     return hf_tokenizer, genai_tokenizer
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
     ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
@@ -63,7 +62,6 @@ def test_incremental_phi4_reason_parser_1(hf_ov_genai_models, answer):
     assert msg['content'] == content
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
     ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
@@ -92,7 +90,6 @@ def test_incremental_phi4_reason_integer_token_ids(hf_ov_genai_models):
     assert msg['content'] == content
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
     ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
@@ -145,7 +142,6 @@ def test_incremental_integer_token_ids(hf_ov_genai_models):
     assert msg['content'] == " The answer to 2 + 1 is 3."
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
     ["katuni4ka/tiny-random-phi3"],
@@ -180,7 +176,6 @@ def test_incremental_phi4_reason_parser_2(hf_ov_genai_models, split_answer):
     assert msg['content'] == content
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("answer", [
     "<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \boxed{3}.",
 ])
@@ -203,7 +198,6 @@ def test_incremental_phi4_reason_parser_nostreamer(answer):
     assert msg['content'] == content
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("keep_original_content", [True, False])
 @pytest.mark.parametrize("do_reset", [False])
 @pytest.mark.parametrize(
@@ -270,7 +264,6 @@ def test_incremental_deepseek_parser():
     assert msg['content'] == content
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
     ["katuni4ka/tiny-random-phi3"],
@@ -313,7 +306,6 @@ def test_custom_incremental_parser(hf_ov_genai_models):
     assert msg['main_text'] == " world "
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
     ["katuni4ka/tiny-random-phi3"],
@@ -335,7 +327,7 @@ def test_final_parser_llama_32_json(hf_ov_genai_models):
 @pytest.mark.parametrize("model_id", ["microsoft/Phi-4-mini-reasoning"])
 @pytest.mark.nightly
 def test_custom_parser(tmp_path, model_id):
-    _, _, models_path = download_and_convert_model(model_id, padding_side="left")
+    models_path = download_and_convert_model(model_id, padding_side="left").models_path
     pipe = create_ov_pipeline(models_path)
     tok = pipe.get_tokenizer()
     
@@ -376,7 +368,7 @@ def test_custom_parser(tmp_path, model_id):
 @pytest.mark.parametrize("model_id", ["microsoft/Phi-4-mini-reasoning"])
 @pytest.mark.nightly
 def test_reset_incremental_parser(tmp_path, model_id):
-    _, _, models_path = download_and_convert_model(model_id, padding_side="left")
+    models_path = download_and_convert_model(model_id, padding_side="left").models_path
     pipe = create_ov_pipeline(models_path)
     tok = pipe.get_tokenizer()
     
