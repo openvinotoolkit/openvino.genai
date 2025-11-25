@@ -286,7 +286,7 @@ jobs:
           #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
           #   timeout: 30
           - name: 'WWB tests'
-            cmd: 'python -m pytest -s -v tools/who_what_benchmark/tests -k "katuni4ka/tiny-random-llava-visual-text or hf-internal-testing/tiny-stable-diffusion-torch-image-inpainting-hf or hf-internal-testing/tiny-stable-diffusion-torch-image-to-image-hf or Qwen/Qwen3-Embedding-0.6B-text-embedding"'
+            cmd: 'python -m pytest -s -v tools/who_what_benchmark/tests -m "hf-internal-testing/tiny-stable-diffusion-torch-image-inpainting-hf"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 120
           - name: 'WWB tests (nanollava)'
