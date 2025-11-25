@@ -771,6 +771,7 @@ def main():
         draft_cb_config = None
         if args.draft_cb_config is not None:
             draft_cb_config = get_json_config(args.draft_cb_config)
+            logger.info(f"draft_cb_config: {draft_cb_config}")
         kwargs["draft_cb_config"] = draft_cb_config
 
     if args.gt_data and os.path.exists(args.gt_data):
