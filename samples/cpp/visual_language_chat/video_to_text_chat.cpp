@@ -41,6 +41,7 @@ ov::Tensor load_video(const std::filesystem::path& video_path, size_t num_frames
 
     size_t frame_idx = 0;
     while (cap.read(frame)) {
+        OPENVINO_ASSERT(frame.cols == width && frame.rows == height && frame.channels() == 3);
         if (std::find(indices.begin(), indices.end(), frame_idx) != indices.end()) {
             memcpy(video_tensor_data, frame.data, frame.total() * 3 * sizeof(uint8_t));
             video_tensor_data += frame.total() * 3;
