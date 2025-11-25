@@ -258,7 +258,7 @@ def test_text_genai_json_string_config():
         pytest.xfail("Ticket 173169")
 
     cb_json_string = "{\"max_num_batched_tokens\": 4096}"
-    ov_json_string = "{\"KV_CACHE_PRECISION\":\"f16\", \"ATTENTION_BACKEND\": \"SDPA\"}"
+    ov_json_string = "{\"KV_CACHE_PRECISION\":\"f16\", \"ATTENTION_BACKEND\": \"PA\"}"
 
     output = run_wwb([
         "--base-model",
