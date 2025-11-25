@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <openvino/genai/visual_language/pipeline.hpp>
-#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/videoio.hpp>
 #include <iostream>
 #include <filesystem>
 
