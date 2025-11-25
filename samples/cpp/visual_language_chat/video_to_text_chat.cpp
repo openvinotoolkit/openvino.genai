@@ -48,6 +48,7 @@ ov::Tensor load_video(const std::filesystem::path& video_path, size_t num_frames
         }
         frame_idx++;
     }
+    OPENVINO_ASSERT(frame_idx == total_num_frames);
     
     return video_tensor;
 }
