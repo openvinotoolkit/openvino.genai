@@ -228,7 +228,7 @@ def test_text_genai_cb_model(tmp_path):
     ov_config_path = tmp_path / "ov_config.json"
     with open(ov_config_path, "w") as f:
         config = {
-            "KV_CACHE_PRECISION":"f16",
+            "KV_CACHE_PRECISION": "f16",
             "ATTENTION_BACKEND": "PA"
         }
         json.dump(config, f)
