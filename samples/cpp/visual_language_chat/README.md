@@ -35,7 +35,7 @@ Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai
 
 ## Run video to text chat:
 
-To run this sample a model that supports video input is required, for example `llava-hf/LLaVA-NeXT-Video-7B-hf`.
+A model that supports video input is required to run this sample, for example `llava-hf/LLaVA-NeXT-Video-7B-hf`.
 
 [This video](https://huggingface.co/datasets/raushan-testing-hf/videos-test/resolve/main/sample_demo_1.mp4) can be used as a sample video.
 
