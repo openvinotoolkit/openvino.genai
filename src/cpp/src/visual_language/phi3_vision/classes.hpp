@@ -19,7 +19,7 @@ std::string normalize_prompt(
 );
 std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& text, ov::genai::Tokenizer& tokenizer, const std::regex& native_pattern);
 ov::Tensor insert_image_placeholders(const std::vector<std::variant<ov::Tensor, size_t>>& chunks, const std::vector<size_t>& tokens_per_images);
-std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::Tensor& tokens);
+std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(int64_t* tokens, const ov::Shape& shape);
 
 }
 
