@@ -31,8 +31,11 @@ devices = [
 @pytest.mark.parametrize("main_device,draft_device", devices)
 def test_string_inputs(main_model, main_device, draft_model, draft_device, prompt):
     # Download and convert model:
-    main_opt_model, main_hf_tokenizer, main_model_path = download_and_convert_model(main_model)
-    __, __, draft_model_path = download_and_convert_model(draft_model)
+    main_model_schema = download_and_convert_model(main_model)
+    main_opt_model = main_model_schema.opt_model
+    main_hf_tokenizer = main_model_schema.hf_tokenizer
+    main_model_path = main_model_schema.models_path
+    draft_model_path = download_and_convert_model(draft_model).models_path
 
     # Create OpenVINO GenAI pipeline:
     draft_config = get_npu_llm_properties_for_test() \
@@ -59,8 +62,6 @@ def test_string_inputs(main_model, main_device, draft_model, draft_device, promp
     ov_chat_history_decoded_results = ov_pipe.generate(chat_history, ov_generation_config)
     ov_chat_history_gen_results = convert_decoded_results_to_generation_result(ov_chat_history_decoded_results, 1, 1, False)
 
-    del ov_pipe
-
     # Compare results:
     compare_generation_results([prompt], ref_gen_results, ov_gen_results, ov_generation_config)
     compare_generation_results([prompt], ref_gen_results, ov_chat_history_gen_results, ov_generation_config)
@@ -70,7 +71,7 @@ def test_perf_metrics():
     import time
     start_time = time.perf_counter()
     model_id = 'katuni4ka/tiny-random-gemma2'
-    _, _, model_path = download_and_convert_model(model_id)
+    model_path = download_and_convert_model(model_id).models_path
 
     # Create OpenVINO GenAI pipeline:
     ov_draft_model = ov_genai.draft_model(model_path, "NPU", **get_npu_llm_properties_for_test())
@@ -149,7 +150,7 @@ def test_extended_perf_metrics():
     import time
     start_time = time.perf_counter()
     model_id : str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-    _, _, model_path = download_and_convert_model(model_id)
+    model_path = download_and_convert_model(model_id).models_path
 
     ov_draft_model = ov_genai.draft_model(model_path, "NPU", **get_npu_llm_properties_for_test())
     ov_pipe = ov_genai.LLMPipeline(model_path, "NPU", get_npu_llm_properties_for_test(), draft_model=ov_draft_model)
