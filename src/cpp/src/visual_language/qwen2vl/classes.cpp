@@ -807,7 +807,8 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vector<ov::
     const float VIDEO_BRANCH_CONDITION = 0.f;
     const float IMAGE_BRANCH_CONDITION = 1.f;
     std::vector<float> cond_img_vid_data{images.size() == 2u ? VIDEO_BRANCH_CONDITION : IMAGE_BRANCH_CONDITION};
-    ov::Tensor cond_img_vid(ov::element::f32, ov::Shape{1}, const_cast<float*>(cond_img_vid_data.data()));
+    ov::Tensor cond_img_vid(ov::element::f32, ov::Shape{1}, cond_img_vid_data.data());
+    // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
     ov::Tensor input_image_1(
         ov::element::u8, 
         image_shape, 
