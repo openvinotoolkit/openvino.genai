@@ -1,25 +1,35 @@
 from typing import Any, Union
 
 import os
+import random
+import tarfile
 import datasets
+
+import numpy as np
 import pandas as pd
-from transformers.image_utils import load_image
+
 from tqdm import tqdm
+from typing import Literal
+from itertools import zip_longest
 from transformers import set_seed
+from transformers.image_utils import load_image
 
 from .registry import register_evaluator
 from .text_evaluator import TextEvaluator
 from .utils import get_ignore_parameters_flag
+
+DEF_VIDEO_FRAMES_AMOUNT = 10
 
 
 def preprocess_fn(example):
     return {
         "prompts": example["instruction"],
         "images": load_image(example["image_url"]),
+        "videos": None,
     }
 
 
-def prepare_default_data(num_samples=None):
+def prepare_default_data_image(num_samples=None):
     DATASET_NAME = "ucla-contextual/contextual_test"
     NUM_SAMPLES = 24 if num_samples is None else num_samples
     set_seed(42)
@@ -29,6 +39,53 @@ def prepare_default_data(num_samples=None):
     return default_dataset.map(
         lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
     )
+
+
+def prepare_default_data_video(num_samples=None, num_frames=DEF_VIDEO_FRAMES_AMOUNT):
+    from huggingface_hub import hf_hub_download
+    from transformers.video_utils import load_video
+
+    DATASET_NAME = "lmms-lab/LLaVA-Video-178K"
+    SUBSET = "30_60_s_academic_v0_1"
+    NUM_SAMPLES = 24 if num_samples is None else num_samples
+
+    questions_per_video_set = datasets.load_dataset(DATASET_NAME, SUBSET,
+                                                    split="open_ended",
+                                                    data_files={"open_ended": f"{SUBSET}/30_60_s_academic_oe_v0_1_qa_processed.json"})
+    questions_per_video = {val['video']: val for val in questions_per_video_set}
+
+    # 30_60_s_academic_v0_1_videos_10.tar.gz - just the most lightweight chunk among subset
+    # https://huggingface.co/datasets/lmms-lab/LLaVA-Video-178K/tree/main/30_60_s_academic_v0_1
+    # the archive contains 56 videos
+    videos_arc_path = hf_hub_download(repo_id="lmms-lab/LLaVA-Video-178K",
+                                      filename=f"{SUBSET}/{SUBSET}_videos_10.tar.gz",
+                                      repo_type="dataset")
+
+    video_samples = []
+    extract_dir = "./videos"
+    os.makedirs(extract_dir, exist_ok=True)
+    with tarfile.open(videos_arc_path, "r:gz") as tar:
+        all_videos = tar.getnames()
+
+        random.seed(42)  # nosec
+        video_samples = random.sample(all_videos, NUM_SAMPLES)  # nosec
+        for sample in video_samples:
+            tar.extract(sample, path=extract_dir)
+
+    # if num_frames < total_num_frames, sample each total_num_frames/num_frames frames or sample all frames
+    def default_sample_indices_fn(metadata, **kwargs):
+        total_num_frames = metadata.total_num_frames
+        if num_frames < total_num_frames:
+            return np.arange(0, total_num_frames, total_num_frames / num_frames, dtype=int)
+        return np.arange(0, total_num_frames, dtype=int)
+
+    data = []
+    for video_rel_path in video_samples:
+        video_tensor = load_video(os.path.join(extract_dir, video_rel_path), backend="opencv", sample_indices_fn=default_sample_indices_fn)
+        prompt = questions_per_video[video_rel_path]['conversations'][0]['value'].replace("<image>\n", "")
+        data.append({'prompts': prompt, "images": None, 'videos': video_tensor[0]})
+
+    return data
 
 
 def fix_phi3_v_eos_token_id(model_type, tokenizer):
@@ -44,7 +101,7 @@ def fix_phi3_v_eos_token_id(model_type, tokenizer):
         return dict()
 
 
-@register_evaluator("visual-text")
+@register_evaluator("visual-text", "visual-video-text")
 class VisualTextEvaluator(TextEvaluator):
     def __init__(
         self,
@@ -60,8 +117,12 @@ class VisualTextEvaluator(TextEvaluator):
         gen_answer_fn=None,
         generation_config=None,
         seqs_per_request=None,
+        task_type: Literal['visual-text', 'visual-video-text'] = "visual-text",
+        frames_num: int | None = None,
     ) -> None:
         self.processor = processor
+        self.is_image_input = (task_type == "visual-text")
+        self.frames_num = frames_num or DEF_VIDEO_FRAMES_AMOUNT
         super().__init__(
             base_model=base_model,
             tokenizer=tokenizer,
@@ -124,7 +185,7 @@ class VisualTextEvaluator(TextEvaluator):
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
         def default_gen_answer(
-            model, prompt, image, processor, tokenizer, max_new_tokens, crop_question
+            model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question
         ):
 
             from optimum.intel.openvino.modeling_visual_language import \
@@ -132,7 +193,7 @@ class VisualTextEvaluator(TextEvaluator):
             preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[
                 model.config.model_type
             ].preprocess_inputs
-            inputs = preprocess_inputs(prompt, image, processor, tokenizer, config=model.config)
+            inputs = preprocess_inputs(prompt, image, processor, tokenizer, config=model.config, video=video)
             tokens = model.generate(
                 **inputs,
                 **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
@@ -160,24 +221,29 @@ class VisualTextEvaluator(TextEvaluator):
                 if isinstance(self.test_data, dict):
                     assert "prompts" in self.test_data
                     assert "images" in self.test_data
+                    assert "videos" in self.test_data
                     data = dict(self.test_data)
                 data = pd.DataFrame.from_dict(data)
         else:
-            data = pd.DataFrame.from_dict(prepare_default_data(self.num_samples))
+            input_data = prepare_default_data_image(self.num_samples) if self.is_image_input else prepare_default_data_video(self.num_samples, self.frames_num)
+            data = pd.DataFrame.from_dict(input_data)
 
         prompt_data = data["prompts"]
         image_data = data["images"]
+        videos_data = data["videos"]
 
         answers = []
         prompts = prompt_data.values
         images = image_data.values
+        videos = videos_data.values
 
-        for p, i in tqdm(zip(prompts, images), desc="Evaluate pipeline"):
+        for p, i, v in tqdm(zip_longest(prompts, images, videos), desc="Evaluate pipeline"):
             answers.append(
                 gen_answer_fn(
                     model,
                     p,
                     i,
+                    v,
                     self.processor,
                     self.tokenizer,
                     self.max_new_tokens,
