@@ -728,8 +728,8 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
     {
         ov::Tensor height{ov::element::i32, {}};
         ov::Tensor width{ov::element::i32, {}};
-        ov::Tensor sub_GN{ov::element::f32, {1, 1, 1, m_vlm_config.sub_GN.size()}, m_vlm_config.sub_GN.data()};
-        ov::Tensor glb_GN{ov::element::f32, {1, 1, m_vlm_config.glb_GN.size()}, m_vlm_config.glb_GN.data()};
+        ov::Tensor sub_GN{ov::element::f32, {1, 1, 1, m_vlm_config.sub_GN.size()}, const_cast<float*>(m_vlm_config.sub_GN.data())};
+        ov::Tensor glb_GN{ov::element::f32, {1, 1, m_vlm_config.glb_GN.size()}, const_cast<float*>(m_vlm_config.glb_GN.data())};
         height.data<int32_t>()[0] = image_height;
         width.data<int32_t>()[0] = image_width;
         CircularBufferQueueElementGuard<ov::InferRequest> lock{m_separator_inserters.get()};
@@ -777,7 +777,7 @@ InputsEmbedderPhi4MM::InputsEmbedderPhi4MM(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
-NormlizedPrompt InputsEmbedderPhi4MM::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormalizedPrompt InputsEmbedderPhi4MM::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     return {phi_utils::normalize_prompt(prompt, base_id, images.size(), NATIVE_PATTERN, write_native), {}, {}};
 }
 

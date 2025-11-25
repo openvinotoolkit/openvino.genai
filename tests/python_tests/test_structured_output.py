@@ -12,7 +12,7 @@ from utils.ov_genai_pipelines import create_ov_pipeline
 
 @pytest.fixture(scope="module")
 def ov_pipe(request):
-    _, _, models_path = download_and_convert_model(request.param)
+    models_path = download_and_convert_model(request.param).models_path
     return create_ov_pipeline(models_path)
 
 
@@ -39,7 +39,6 @@ structured_id_models = [
 ]
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("ov_pipe", structured_id_models, indirect=True)
 @pytest.mark.parametrize(
     "prompt_and_scheme",
@@ -70,7 +69,6 @@ def test_structured_json(ov_pipe, prompt_and_scheme, use_compound_grammar, capfd
         pytest.fail(f"Output {res_str} is not valid json schema {SchemeType.model_json_schema()}: {e}")
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("ov_pipe", structured_id_models, indirect=True)
 @pytest.mark.parametrize(
     "prompt_and_regex",
@@ -98,7 +96,6 @@ def test_structured_regex(ov_pipe, prompt_and_regex, use_compound_grammar):
     assert re.match(regex_str, res_str), f"Output {res_str} does not match regex {regex_str}"
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("ov_pipe", structured_id_models, indirect=True)
 @pytest.mark.parametrize(
     "prompt_and_ebnf",
@@ -138,7 +135,6 @@ def test_structured_ebnf(ov_pipe, prompt_and_ebnf, use_compound_grammar):
     assert re.match(r"^\d{4}-\d{2}-\d{2}$", res_str), f"Output {res_str} does not match date format"
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "ov_pipe", [model_id for model_id in structured_id_models if "random" not in model_id], indirect=True
 )
@@ -173,7 +169,6 @@ def test_structural_tags_old(ov_pipe, prompt_and_structural_tag):
     RESTAPIResponse.model_validate_json(match.group(1))
 
 
-@pytest.mark.precommit
 # use only non-random model for stable output in TriggeredTags test
 @pytest.mark.parametrize("ov_pipe", ["TinyLlama/TinyLlama-1.1B-Chat-v1.0"], indirect=True)
 @pytest.mark.parametrize(
