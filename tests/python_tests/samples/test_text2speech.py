@@ -37,12 +37,12 @@ class TestTextToSpeechSample:
     def test_sample_text_to_speech(self, convert_model, input_prompt):
         # Example: text2speech spt5_model_dir "Hello everyone" --speaker_embedding_file_path xvector.bin
         # Run C++ sample
-        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'text2speech')
+        cpp_sample = SAMPLES_CPP_DIR / 'text2speech'
         cpp_command = [cpp_sample, convert_model, input_prompt, self.temp_speaker_embedding_file.name]
         cpp_result = run_sample(cpp_command)
 
         # Run Python sample
-        py_script = os.path.join(SAMPLES_PY_DIR, "speech_generation/text2speech.py")
+        py_script = SAMPLES_PY_DIR / "speech_generation/text2speech.py"
         py_command = [sys.executable, py_script, convert_model, input_prompt,
                       "--speaker_embedding_file_path", self.temp_speaker_embedding_file.name]
         py_result = run_sample(py_command)
@@ -58,12 +58,12 @@ class TestTextToSpeechSample:
     def test_sample_text_to_speech_no_speaker_embedding_file(self, convert_model, input_prompt):
         # Run C++ sample
         # Example: text2speech spt5_model_dir "Hello everyone" --speaker_embedding_file_path xvector.bin
-        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'text2speech')
+        cpp_sample = SAMPLES_CPP_DIR / 'text2speech'
         cpp_command = [cpp_sample, convert_model, input_prompt]
         cpp_result = run_sample(cpp_command)
 
         # Run Python sample
-        py_script = os.path.join(SAMPLES_PY_DIR, "speech_generation/text2speech.py")
+        py_script = SAMPLES_PY_DIR / "speech_generation/text2speech.py"
         py_command = [sys.executable, py_script, convert_model, input_prompt]
         py_result = run_sample(py_command)
 
