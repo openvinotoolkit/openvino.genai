@@ -631,6 +631,7 @@ def load_model(
 
     if ov_config:
         ov_options = get_json_config(ov_config)
+        logger.info(f"OpenVINO Config: {ov_options}")
     else:
         ov_options = {}
 

@@ -246,7 +246,7 @@ def test_text_genai_json_string_config():
         pytest.xfail("Ticket 173169")
 
     cb_json_string = "{\"max_num_batched_tokens\": 4096}"
-    ov_json_string = "{\"KV_CACHE_PRECISION\":\"f16\"}"
+    ov_json_string = "{\"KV_CACHE_PRECISION\":\"f16\", \"ATTENTION_BACKEND\": \"SDPA\"}"
 
     output = run_wwb([
         "--base-model",
@@ -262,6 +262,8 @@ def test_text_genai_json_string_config():
         cb_json_string,
         "--ov-config",
         ov_json_string
-    ], env={"OPENVINO_LOG_LEVEL": "5"})
-    assert "'max_num_batched_tokens': 4096" in output
-    assert "KV_CACHE_PRECISION: f16" in output
+    ])
+
+    # Test with WWB log info to make sure the configurations are passed from strings to the GenAI APIs
+    assert "INFO:whowhatbench.wwb:cb_config: {'max_num_batched_tokens': 4096}" in output
+    assert "INFO:whowhatbench.model_loaders:OpenVINO Config: {'KV_CACHE_PRECISION': 'f16', 'ATTENTION_BACKEND': 'PA'}" in output

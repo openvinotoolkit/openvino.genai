@@ -747,6 +747,7 @@ def main():
     kwargs = {}
     if args.cb_config:
         kwargs["cb_config"] = get_json_config(args.cb_config)
+        logger.info(f"cb_config: {kwargs['cb_config']}")
     if args.from_onnx:
         kwargs["from_onnx"] = args.from_onnx
     if args.gguf_file:
