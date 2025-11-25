@@ -23,7 +23,7 @@ std::vector<size_t> make_indices(size_t total_frames, size_t num_frames) {
     return indices;
 }
 
-ov::Tensor load_video(const std::filesystem::path& video_path, size_t num_frames = 10) {
+ov::Tensor load_video(const std::filesystem::path& video_path, size_t num_frames = 8) {
     cv::VideoCapture cap(video_path.string());
 
     if (!cap.isOpened()) {

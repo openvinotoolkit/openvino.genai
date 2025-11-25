@@ -26,11 +26,12 @@ def streamer(subword: str) -> bool:
     # "return None" will be treated the same as "return openvino_genai.StreamingStatus.RUNNING".
 
 
-def read_video(path: str, num_frames: int = 10) -> Tensor:
+def read_video(path: str, num_frames: int = 8) -> Tensor:
     '''
 
     Args:
         path: The path to the video.
+        num_frames: Number of frames sampled from the video.
 
     Returns: the ov.Tensor containing the video.
 
