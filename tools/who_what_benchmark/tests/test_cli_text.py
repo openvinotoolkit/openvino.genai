@@ -224,6 +224,15 @@ def test_text_genai_cb_model(tmp_path):
             }
         }
         json.dump(config, f)
+
+    ov_config_path = tmp_path / "ov_config.json"
+    with open(ov_config_path, "w") as f:
+        config = {
+            "KV_CACHE_PRECISION":"f16",
+            "ATTENTION_BACKEND": "PA"
+        }
+        json.dump(config, f)
+
     output = run_wwb([
         "--base-model",
         base_model_path,
@@ -235,10 +244,13 @@ def test_text_genai_cb_model(tmp_path):
         "CPU",
         "--genai",
         "--cb-config",
-        config_path
+        config_path,
+        "--ov-config",
+        ov_config_path
     ])
     assert "Metrics for model" in output
     assert "## Reference text" not in output
+    assert "INFO:whowhatbench.model_loaders:OpenVINO Config: {'KV_CACHE_PRECISION': 'f16', 'ATTENTION_BACKEND': 'PA'}" in output
 
 
 def test_text_genai_json_string_config():
