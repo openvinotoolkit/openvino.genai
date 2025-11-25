@@ -713,7 +713,7 @@ def test_unicode_pybind_decoding_batched(ov_pipe: ov_genai.LLMPipeline) -> None:
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 def test_unicode_pybind_decoding_one_string_streamer(ov_pipe: ov_genai.LLMPipeline) -> None:
     res_str = []
-    ov_pipe.generate(prompt, max_new_tokens=max_new_tokens, apply_chat_template=False, streamer=lambda x: res_str.append(x))
+    ov_pipe.generate(",", max_new_tokens=4, apply_chat_template=False, streamer=lambda x: res_str.append(x))
     assert '�' == ''.join(res_str)[-1]
 
 #
