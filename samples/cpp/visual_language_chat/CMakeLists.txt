@@ -76,3 +76,12 @@ target_include_directories(video_to_text_chat PRIVATE
         ${OPENCV_MODULE_opencv_videoio_LOCATION}/include
         )
 target_link_libraries(video_to_text_chat opencv_core opencv_videoio openvino::genai cxxopts::cxxopts)
+
+set_target_properties(video_to_text_chat PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS video_to_text_chat
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
