@@ -191,7 +191,7 @@ int64_t LLMInferWrapper::infer_next(int64_t token, bool append_perf_stat) {
     ++m_new_position_id;
     // However, attention_mask changes its shape on each iteration, it should be re-set explicitly
     m_new_atten_mask_data.push_back(1);
-    m_request.set_tensor("attention_mask", ov::Tensor(ov::element::i64, ov::Shape{1,m_new_atten_mask_data.size()}, (void*)&m_new_atten_mask_data[0]));
+    m_request.set_tensor("attention_mask", ov::Tensor(ov::element::i64, ov::Shape{1,m_new_atten_mask_data.size()}, const_cast<int64_t*>(m_new_atten_mask_data.data())));
 
     const auto infer_start = std::chrono::steady_clock::now();
     m_request.infer();
