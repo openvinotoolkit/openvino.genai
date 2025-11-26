@@ -12,7 +12,6 @@ import numpy as np
 from sentence_transformers import SentenceTransformer, util
 from transformers import CLIPImageProcessor, CLIPModel
 from tqdm import tqdm
-import math
 
 
 def evaluate_similarity(model, data_gold, data_prediction):
@@ -199,6 +198,8 @@ class EmbedsSimilarity:
 
 
 class RerankingSimilarity:
+    MISSING_DOCUMENT_PENALTY = 1
+
     def evaluate(self, data_gold, data_prediction):
         gold_results = data_gold["top_n_scores_path"].values
         prediction_results = data_prediction["top_n_scores_path"].values

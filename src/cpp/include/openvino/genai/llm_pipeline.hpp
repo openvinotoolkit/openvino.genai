@@ -15,12 +15,13 @@
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/scheduler_config.hpp"
 #include "openvino/genai/common_types.hpp"
+#include "openvino/genai/json_container.hpp"
 
 namespace ov {
 namespace genai {
 
 // Return flag corresponds whether generation should be stopped. It could be:
-// ov::genai::StreamingStatus flag, RUNNING means continue generation, STOP means stop generation, CANCEL means stop generation and remove last propmt and answer from history
+// ov::genai::StreamingStatus flag, RUNNING means continue generation, STOP means stop generation, CANCEL means stop generation and remove last prompt and answer from history
 // *DEPRECATED* bool flag, false means continue generation, true means stop. Please, use `ov::genai::StreamingStatus` instead.
 using StreamerVariant = std::variant<std::function<bool(std::string)>, std::function<StreamingStatus(std::string)>, std::shared_ptr<StreamerBase>, std::monostate>;
 using OptionalGenerationConfig = std::optional<GenerationConfig>;
@@ -68,6 +69,7 @@ public:
     std::vector<float> scores;
     PerfMetrics perf_metrics;
     std::shared_ptr<ExtendedPerfMetrics> extended_perf_metrics;
+    std::vector<JsonContainer> parsed;
 
     // @brief Convert DecodedResults to a string.
     operator std::string() const {
@@ -231,6 +233,57 @@ public:
             StringInputs inputs,
             Properties&&... properties) {
         return generate(inputs, AnyMap{std::forward<Properties>(properties)...});
+    }
+
+    /**
+    * @brief High level generate that receives ChatHistory and returns decoded output.
+    *
+    * @param history ChatHistory with messages
+    * @param generation_config optional GenerationConfig
+    * @param streamer optional streamer
+    * @return DecodedResults decoded resulting text
+    * 
+    * Chat template will be applied to the prompt, run `pipe.get_tokenizer().set_chat_template(custom_chat_template)` to update it.
+    * To disable chat template set `generation_config.apply_chat_template` to `false`.
+    */
+    DecodedResults generate(
+        const ChatHistory& history,
+        OptionalGenerationConfig generation_config = std::nullopt,
+        StreamerVariant streamer=std::monostate()
+    );
+
+    /**
+    * @brief High level generate that receives ChatHistory and returns decoded output.
+    * Properties can be in any order pipe.generate(..., ov::genai::max_new_tokens(100), ov::genai::streamer(lambda_func)).
+    *
+    * @param history ChatHistory with messages
+    * @param properties properties
+    * @return DecodedResults decoded resulting text
+    * 
+    * Chat template will be applied to the prompt, run `pipe.get_tokenizer().set_chat_template(custom_chat_template)` to update it.
+    * To disable chat template set `generation_config.apply_chat_template` to `false`.
+    */
+    template <typename... Properties>
+    util::EnableIfAllStringAny<DecodedResults, Properties...> generate(
+            const ChatHistory& history,
+            Properties&&... properties) {
+        return generate(history, AnyMap{std::forward<Properties>(properties)...});
+    }
+    DecodedResults generate(const ChatHistory& history, const ov::AnyMap& config_map);
+
+    DecodedResults operator()(
+        const ChatHistory& history,
+        OptionalGenerationConfig generation_config = std::nullopt,
+        StreamerVariant streamer=std::monostate()
+    ) {
+        return generate(history, generation_config, streamer);
+    }
+
+    template <typename... Properties>
+    util::EnableIfAllStringAny<DecodedResults, Properties...> operator()(
+            const ChatHistory& history,
+            Properties&&... properties) {
+        return generate(history, AnyMap{std::forward<Properties>(properties)...});
     }
 
     /**

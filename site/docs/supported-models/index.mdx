@@ -9,26 +9,22 @@ import TextRerankModelsTable from './_components/text-rerank-models-table';
 
 # Supported Models
 
-:::info
-
+:::info Models Compatibility
 Other models with similar architectures may also work successfully even if not explicitly validated.
 Consider testing any unlisted models to verify compatibility with your specific use case.
-
 :::
 
 ## Large Language Models (LLMs)
 
-<LLMModelsTable />
-
-:::info
-
-LoRA adapters are supported.
-
+:::tip LoRA Support
+LLM pipeline supports LoRA adapters.
 :::
+
+<LLMModelsTable />
 
 ::::info
 
-The pipeline can work with other similar topologies produced by `optimum-intel` with the same model signature.
+The LLM pipeline can work with other similar topologies produced by `optimum-intel` with the same model signature.
 The model is required to have the following inputs after the conversion:
 
 1. `input_ids` contains the tokens.
@@ -50,6 +46,10 @@ Models should belong to the same family and have the same tokenizers.
 
 ## Visual Language Models (VLMs)
 
+:::info LoRA Support
+VLM pipeline does **not** support LoRA adapters.
+:::
+
 <VLMModelsTable />
 
 :::warning VLM Models Notes
@@ -62,7 +62,7 @@ pip install timm einops
 ```
 #### MiniCPMO {#minicpm-o-notes}
 
-1. `openbmb/MiniCPM-o-2_6` doesn't support transformers>=4.52 which is required for `optimum-cli` export.
+1. `openbmb/MiniCPM-o-2_6` doesn't support `transformers>=4.52` which is required for `optimum-cli` export.
 2. `--task image-text-to-text` is required for `optimum-cli export openvino --trust-remote-code` because `image-text-to-text` isn't `MiniCPM-o-2_6`'s native task.
 
 #### phi3_v {#phi3_v-notes}
@@ -73,33 +73,53 @@ generation_config.set_eos_token_id(pipe.get_tokenizer().get_eos_token_id())
 ```
 #### phi4mm {#phi4mm-notes}
 
-Apply https://huggingface.co/microsoft/Phi-4-multimodal-instruct/discussions/78/files to fix the model export for transformers>=4.50
+Apply https://huggingface.co/microsoft/Phi-4-multimodal-instruct/discussions/78/files to fix the model export for `transformers>=4.50`
 :::
 
 ## Speech Recognition Models (Whisper-based)
 
+:::info LoRA Support
+Speech recognition pipeline does **not** support LoRA adapters.
+:::
+
 <WhisperModelsTable />
-
-## Text Embeddings Models
-
-<TextEmbeddingsModelsTable />
 
 ## Speech Generation Models
 
+:::info LoRA Support
+Speech generation pipeline does **not** support LoRA adapters.
+:::
+
 <SpeechGenerationModelsTable />
+
+## Text Embeddings Models
+
+:::info LoRA Support
+Text embeddings pipeline does **not** support LoRA adapters.
+:::
+
+<TextEmbeddingsModelsTable />
+
+:::warning Text Embeddings Models Notes
+Qwen3 Embedding models require `--task feature-extraction` during the conversion with `optimum-cli`.
+:::
 
 ## Text Rerank Models
 
-<TextRerankModelsTable />
-
-:::info
-LoRA adapters are not supported.
+:::info LoRA Support
+Text rerank pipeline does **not** support LoRA adapters.
 :::
 
-:::info
+<TextRerankModelsTable />
 
+:::warning Text Rerank Models Notes
+Text Rerank models require appropriate `--task` provided during the conversion with `optimum-cli`. Task can be found in the table above.
+:::
+
+___
+
+:::info Hugging Face Notes
 Some models may require access request submission on the Hugging Face page to be downloaded.
 
 If https://huggingface.co/ is down, the conversion step won't be able to download the models.
-
 :::

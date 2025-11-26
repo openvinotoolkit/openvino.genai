@@ -12,13 +12,20 @@ import datasets
 import numpy as np
 
 
+# we would like to evalute score for all documents
+# In GenAI, top_k is set at the pipeline creation stage, but data is collected after the pipeline creation stage
+# let's set potential big top_k(avg amount of documents in default dataset is 10) so that all documents are included in the final ranking
 DEFAULT_TOP_K = 100
 DEFAULT_MAX_LENGTH = 200
 DEFAULT_MAX_LENGTH_QWEN = 8192
 
 
-def reranking_base_on_causallm_arch(config):
-    return config.model_type == "qwen3" and "Qwen3ForCausalLM" in config.architectures
+def is_qwen3(config):
+    return config.model_type == "qwen3"
+
+
+def is_qwen3_causallm(config):
+    return is_qwen3(config) and "Qwen3ForCausalLM" in config.architectures
 
 
 def preprocess_fn(example):
@@ -109,38 +116,11 @@ class RerankingEvaluator(BaseEvaluator):
 
     def _generate_data(self, model, gen_answer_fn=None, result_dir="reference_rerank_qwen"):
         def default_gen_answer(model, tokenizer, query, passages):
-            device = "cpu"
-            if hasattr(model, "device"):
-                device = model.device
-
             # post/pre processing for qwen models added according to transformers Qwen3-Embedding-0.6B model card:
             # https://huggingface.co/Qwen/Qwen3-Reranker-0.6B#transformers-usage
-            if model.config.model_type == "qwen3":
-                prefix = '<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the '\
-                         + 'Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n'
-                suffix = "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
-                task = "Given a web search query, retrieve relevant passages that answer the query"
-                pairs = []
-                if reranking_base_on_causallm_arch(model.config):
-                    for doc in passages:
-                        pairs.append(f"<Instruct>: {task}\n<Query>: {query}\n<Document>: {doc}")
-                    prefix_tokens = tokenizer.encode(prefix, add_special_tokens=False)
-                    suffix_tokens = tokenizer.encode(suffix, add_special_tokens=False)
-                    input_data = tokenizer(
-                        pairs, padding=False, truncation="longest_first", return_attention_mask=False,
-                        max_length=DEFAULT_MAX_LENGTH_QWEN - len(prefix_tokens) - len(suffix_tokens)
-                    )
-                    for i, ele in enumerate(input_data["input_ids"]):
-                        input_data["input_ids"][i] = prefix_tokens + ele + suffix_tokens
-                    input_data = tokenizer.pad(input_data,
-                                               padding=True,
-                                               return_tensors="pt",
-                                               max_length=DEFAULT_MAX_LENGTH_QWEN,
-                                               padding_side="left").to(device)
-                else:
-                    for doc in passages:
-                        pairs.append(f"{prefix}<Instruct>: {task}\n<Query>: {query}\n<Document>: {doc}{suffix}")
-                    input_data = tokenizer(pairs, padding=True, truncation=True, max_length=DEFAULT_MAX_LENGTH_QWEN, return_tensors="pt", padding_side="left")
+            if is_qwen3(model.config):
+                pairs = [f"{query}{passage}" for passage in passages]
+                input_data = tokenizer(pairs, padding=True, truncation=True, max_length=DEFAULT_MAX_LENGTH_QWEN, return_tensors="pt", padding_side="left")
             else:
                 tokenizer_kwargs = {"truncation": True, "padding": True, "max_length": DEFAULT_MAX_LENGTH}
                 inputs = [query] * len(passages)
@@ -180,7 +160,7 @@ class RerankingEvaluator(BaseEvaluator):
 
         scores_path = []
         passages = []
-        query = []
+        queries = []
         inputs = (
             df.values
             if self.num_samples is None
@@ -189,17 +169,21 @@ class RerankingEvaluator(BaseEvaluator):
 
         if not os.path.exists(result_dir):
             os.makedirs(result_dir)
-
         for i, data in tqdm(enumerate(inputs), desc="Evaluate pipeline"):
-            result = gen_answer_fn(model, self.tokenizer, data[0], data[1])
-            query.append(data[0])
+            query = data[0]
+            documents = data[1]
+            if is_qwen3(model.config):
+                query, documents = self._apply_qwen3_template(data[0], data[1])
+            result = gen_answer_fn(model, self.tokenizer, query, documents)
+
+            queries.append(data[0])
             passages.append(data[1])
             result_path = os.path.join(result_dir, f"scores_{i}.npy")
             with open(result_path, 'wb') as f:
                 np.save(f, result)
             scores_path.append(result_path)
 
-        res_data = {"query": query, "passages": passages, "top_n_scores_path": scores_path}
+        res_data = {"query": queries, "passages": passages, "top_n_scores_path": scores_path}
         df_result = pd.DataFrame(res_data)
 
         return df_result
