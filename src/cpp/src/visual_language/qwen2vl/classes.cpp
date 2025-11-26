@@ -1154,35 +1154,15 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
                                                                  vision_start_token_id,
                                                                  vision_end_token_id);
 
-        // [CDPruner] Handle pruned visual tokens case
-        if (pruning_result.is_pruned) {
-            // Calculate rope_delta for Qwen2VL's 3D RoPE to maintain position continuity in generation phase
-            const int64_t* pos_data = m_position_ids.data<const int64_t>();
-            int64_t max_pos = *std::max_element(pos_data, pos_data + m_position_ids.get_size());
-            size_t seq_len = m_position_ids.get_shape().at(2);
-            m_rope_delta = max_pos + 1 - static_cast<int64_t>(seq_len);
-
-            // Update KV cache with pruned input_ids
-            auto& kv_history = m_kv_cache_state.get_state();
-            OPENVINO_ASSERT(kv_history.size() >= input_ids.get_size(),
-                            "KV cache history does not contain expected original prompt length");
-            OPENVINO_ASSERT(kv_history.size() >= m_prev_hist_length,
-                            "KV cache history is shorter than recorded previous history length");
-            kv_history.resize(m_prev_hist_length);
-            m_kv_cache_state.add_inputs(pruning_result.pruned_input_ids);
-
-            // Return merged embeddings with pruning
-            return merge_text_and_image_embeddings_with_pruning(input_ids,
-                                                                text_embeds,
-                                                                pruning_result.pruned_embeddings,
-                                                                image_pad_token_id,
-                                                                vision_start_token_id,
-                                                                vision_end_token_id,
-                                                                pruning_result.keep_flags_per_region);
-        }
+        return merge_text_and_image_embeddings_with_pruning(input_ids,
+                                                            text_embeds,
+                                                            pruning_result.pruned_embeddings,
+                                                            image_pad_token_id,
+                                                            vision_start_token_id,
+                                                            vision_end_token_id,
+                                                            pruning_result.keep_flags_per_region);
     }
 
-    // No pruning or no images, use original function
     return qwen2_vl_utils::merge_text_and_video_image_embeddings(input_ids,
                                                                  text_embeds,
                                                                  merged_image_embeddings_tensor,

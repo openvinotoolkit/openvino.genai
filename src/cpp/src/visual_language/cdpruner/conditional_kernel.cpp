@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "kernel_builder.hpp"
+#include "conditional_kernel.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -123,7 +123,11 @@ ov::Tensor ConditionalKernelBuilder::compute_similarity_matrix_with_model(const 
         // Use preinitialized infer request
         m_similarity_infer_request.set_input_tensor(features);
         m_similarity_infer_request.infer();
-        auto output_tensor = m_similarity_infer_request.get_output_tensor();
+        auto output_tensor_ref = m_similarity_infer_request.get_output_tensor();
+
+        // Create deep copy to avoid data corruption when InferRequest is reused
+        ov::Tensor output_tensor(output_tensor_ref.get_element_type(), output_tensor_ref.get_shape());
+        std::memcpy(output_tensor.data(), output_tensor_ref.data(), output_tensor_ref.get_byte_size());
 
         return output_tensor;
 
@@ -332,12 +336,18 @@ ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_with_model(const
                     "Conditional kernel infer request not initialized. Cannot use GPU acceleration.");
 
     // Use preinitialized infer request
-    m_conditional_kernel_infer_request.set_input_tensor(0, visual_features);  // visual features
-    m_conditional_kernel_infer_request.set_input_tensor(1, text_features);    // text features
+    m_conditional_kernel_infer_request.set_input_tensor(0, visual_features);
+    m_conditional_kernel_infer_request.set_input_tensor(1, text_features);
     m_conditional_kernel_infer_request.infer();
 
-    // Get output tensor
-    auto conditional_kernel = m_conditional_kernel_infer_request.get_output_tensor(0);
+    // Get output tensor reference
+    auto conditional_kernel_ref = m_conditional_kernel_infer_request.get_output_tensor(0);
+
+    // CRITICAL: Create a deep copy to avoid data corruption when InferRequest is reused
+    // The InferRequest may reuse or modify its output tensor on the next inference call,
+    // which would invalidate any references to this tensor
+    ov::Tensor conditional_kernel(conditional_kernel_ref.get_element_type(), conditional_kernel_ref.get_shape());
+    std::memcpy(conditional_kernel.data(), conditional_kernel_ref.data(), conditional_kernel_ref.get_byte_size());
 
     return conditional_kernel;
 }

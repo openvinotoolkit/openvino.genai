@@ -8,8 +8,8 @@
 #include <vector>
 
 #include "cdpruner_config.hpp"
+#include "conditional_kernel.hpp"
 #include "fast_dpp.hpp"
-#include "kernel_builder.hpp"
 #include "openvino/runtime/tensor.hpp"
 #include "relevance_calculator.hpp"
 

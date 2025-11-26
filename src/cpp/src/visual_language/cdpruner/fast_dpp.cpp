@@ -145,12 +145,14 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel,
 
         // Use OpenCL if available
         if (m_opencl_dpp && m_opencl_dpp->is_available()) {
+            GENAI_DEBUG("[CDPruner] Using OpenCL DPP kernel for selection");
             return select_opencl_internal(kernel, num_tokens);
         }
     }
 #endif
 
     // Use CPU implementation
+    GENAI_DEBUG("[CDPruner] Using DPP native CPU implementation for selection");
     return select_cpu_internal(kernel, num_tokens);
 }
 
@@ -165,6 +167,7 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel_
 #ifdef ENABLE_OPENCL_DPP
     // Check if OpenCL DPP is enabled and available
     if (m_config.use_cl_kernel) {
+        GENAI_DEBUG("[CDPruner] Using OpenCL DPP parallel selection");
         return select_parallel_opencl(kernel_matrix_first,
                                       kernel_matrix_second,
                                       tokens_first_half,
@@ -173,6 +176,7 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel_
     }
 #endif
     // Fallback to parallel CPU processing
+    GENAI_DEBUG("[CDPruner] Using DPP native CPU parallel selection");
     return this->select_parallel(kernel_matrix_first,
                                  kernel_matrix_second,
                                  tokens_first_half,
