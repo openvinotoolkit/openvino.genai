@@ -259,6 +259,7 @@ jobs:
         - ${{ github.workspace }}:${{ github.workspace }}
       options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
     env:
+      CMAKE_GENERATOR: Ninja
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       INSTALL_DIR: ${{ github.workspace }}/install
       WHEELS_DIR: ${{ github.workspace }}/install/wheels
@@ -319,7 +320,7 @@ jobs:
         - ${{ github.workspace }}:${{ github.workspace }}
       options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
     env:
-      CMAKE_GENERATOR: Ninja Multi-Config
+      CMAKE_GENERATOR: Ninja
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       INSTALL_DIR: ${{ github.workspace }}/install
       WHEELS_DIR: ${{ github.workspace }}/install/wheels

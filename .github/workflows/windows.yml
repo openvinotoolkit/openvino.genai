@@ -292,6 +292,7 @@ jobs:
         shell: pwsh
     runs-on: aks-win-8-cores-16gb
     env:
+      CMAKE_GENERATOR: Ninja
       OV_INSTALL_DIR: ${{ github.workspace }}\ov
       SRC_DIR: ${{ github.workspace }}\src
       BUILD_DIR: ${{ github.workspace }}\build
@@ -394,6 +395,7 @@ jobs:
         shell: pwsh
     runs-on: aks-win-8-cores-16gb
     env:
+      CMAKE_GENERATOR: Ninja
       OV_INSTALL_DIR: ${{ github.workspace }}\ov
       SRC_DIR: ${{ github.workspace }}\src
       BUILD_DIR: ${{ github.workspace }}\build
