@@ -32,7 +32,7 @@ public:
         OPENVINO_ASSERT(shape[0] == 1, "Batch size must be 1");
         shape[1] /= 2;
 
-        m_mean = ov::Tensor(parameters.get_element_type(), shape, parameters.data());
+        m_mean = ov::Tensor(parameters.get_element_type(), shape, const_cast<void*>(parameters.data()));
         m_std = ov::Tensor(m_mean.get_element_type(), shape);
         ov::Tensor logvar(parameters.get_element_type(), shape, m_mean.data<float>() + m_mean.get_size());
 
