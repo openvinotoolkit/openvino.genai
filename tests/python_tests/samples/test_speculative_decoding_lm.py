@@ -11,21 +11,24 @@ from test_utils import run_sample
 convert_draft_model = convert_model
 
 def _run_spec_case(convert_model, convert_draft_model, sample_args, env):
-    cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'speculative_decoding_lm')
+    # Test CPP sample
+    cpp_sample = SAMPLES_CPP_DIR / 'speculative_decoding_lm'
     cpp_command =[cpp_sample, convert_model, convert_draft_model, sample_args]
     cpp_result = run_sample(cpp_command, env=env)
 
-    py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/speculative_decoding_lm.py")
+    # Test Python sample
+    py_script = SAMPLES_PY_DIR / "text_generation/speculative_decoding_lm.py"
     py_command = [sys.executable, py_script, convert_model, convert_draft_model, sample_args]
     py_result = run_sample(py_command, env=env)
-
-    cpp_sample_ref = os.path.join(SAMPLES_CPP_DIR, 'greedy_causal_lm')
+    
+    # Greedy decoding
+    cpp_sample_ref = SAMPLES_CPP_DIR / 'greedy_causal_lm'
     cpp_command_ref = [cpp_sample_ref, convert_model, sample_args]
     cpp_result_ref = run_sample(cpp_command_ref, env=env)
 
+    # Compare results
     assert cpp_result_ref.stdout.strip() in py_result.stdout.strip(), "Python and CPP results should match"
     assert cpp_result_ref.stdout.strip() in cpp_result.stdout.strip(), "Greedy and speculative decoding results should match"
-    return cpp_result, py_result, cpp_result_ref
 
 class TestSpeculativeDecodingLM:
     @pytest.mark.llm
