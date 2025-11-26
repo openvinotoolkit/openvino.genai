@@ -88,7 +88,7 @@ encoded_prompts = [
     # '\n\n# 利用re.sub()方法，�' with UTF8 invalid for "microsoft/phi-1_5"
     [198, 198, 2, 10263, 230, 102, 18796, 101, 260, 13],
 
-    # '룅튜룅튜�' causes error on "openbmb/MiniCPM-o-2_6" / "katuni4ka/tiny-random-minicpmv-2_6"
+    # '룅튜룅튜�' causes error on "openbmb/MiniCPM-o-2_6" / "optimum-intel-internal-testing/tiny-random-minicpmv-2_6"
     [167, 96, 227, 169, 232, 250, 167, 96, 227, 169, 232, 250, 167]
 ]
 @pytest.mark.parametrize("model_id", tokenizer_model_ids)
