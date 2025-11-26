@@ -698,22 +698,28 @@ def test_pipeline_validates_generation_config(ov_pipe: ov_genai.LLMPipeline) -> 
 # Work with Unicode in Python API
 #
 
-@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
-def test_unicode_pybind_decoding_one_string(ov_pipe: ov_genai.LLMPipeline) -> None:
-    res_str = ov_pipe.generate(',', max_new_tokens=4, apply_chat_template=False)
+# Model, prompt and max_new_tokens that generate unfinished utf-8 string
+UNICODE_PYBIND_DECODING_TEST_CASES: list[tuple[str, str, int]] = [
+    ("optimum-intel-internal-testing/tiny-random-PhiForCausalLM", ",", 3)
+]
+
+
+@pytest.mark.parametrize("llm_model,prompt,max_new_tokens", UNICODE_PYBIND_DECODING_TEST_CASES, indirect=["llm_model"])
+def test_unicode_pybind_decoding_one_string(ov_pipe: ov_genai.LLMPipeline, prompt: str, max_new_tokens: int) -> None:
+    res_str = ov_pipe.generate(prompt, max_new_tokens=max_new_tokens, apply_chat_template=False)
     assert '�' == res_str[-1]
 
 
-@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
-def test_unicode_pybind_decoding_batched(ov_pipe: ov_genai.LLMPipeline) -> None:
-    res_str = ov_pipe.generate([","], max_new_tokens=4, apply_chat_template=False)
+@pytest.mark.parametrize("llm_model,prompt,max_new_tokens", UNICODE_PYBIND_DECODING_TEST_CASES, indirect=["llm_model"])
+def test_unicode_pybind_decoding_batched(ov_pipe: ov_genai.LLMPipeline, prompt: str, max_new_tokens: int) -> None:
+    res_str = ov_pipe.generate([prompt], max_new_tokens=max_new_tokens, apply_chat_template=False)
     assert '�' == res_str.texts[0][-1]
 
 
-@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
-def test_unicode_pybind_decoding_one_string_streamer(ov_pipe: ov_genai.LLMPipeline) -> None:
+@pytest.mark.parametrize("llm_model,prompt,max_new_tokens", UNICODE_PYBIND_DECODING_TEST_CASES, indirect=["llm_model"])
+def test_unicode_pybind_decoding_one_string_streamer(ov_pipe: ov_genai.LLMPipeline, prompt: str, max_new_tokens: int) -> None:
     res_str = []
-    ov_pipe.generate(",", max_new_tokens=4, apply_chat_template=False, streamer=lambda x: res_str.append(x))
+    ov_pipe.generate(prompt, max_new_tokens=max_new_tokens, apply_chat_template=False, streamer=lambda x: res_str.append(x))
     assert '�' == ''.join(res_str)[-1]
 
 #
