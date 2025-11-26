@@ -41,9 +41,7 @@ class Transaction(BaseModel):
 ])
 def test_python_structured_output_sample(convert_model, prompt, expected_quantities):
     user_input = prompt + "\n"
-
-    # Python test
-    py_script = os.path.join(SAMPLES_PY_DIR, "text_generation/structured_output_generation.py")
+    py_script = SAMPLES_PY_DIR / "text_generation/structured_output_generation.py"
     py_command = [sys.executable, py_script, convert_model]
     py_result = run_sample(py_command, user_input)
     py_output = py_result.stdout
@@ -106,7 +104,7 @@ def test_python_structured_output_sample(convert_model, prompt, expected_quantit
 def test_cpp_structured_output_sample(convert_model, prompt, final_answer):
     if sys.platform == 'darwin':
             pytest.xfail("Ticket 173586")
-    cpp_sample = os.path.join(SAMPLES_CPP_DIR, "structured_output_generation")
+    cpp_sample = SAMPLES_CPP_DIR / "structured_output_generation"
     cpp_command = [cpp_sample, convert_model]
 
     user_input = prompt + "\n"
