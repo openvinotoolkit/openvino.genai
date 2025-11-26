@@ -46,9 +46,9 @@ void share_embedding_weights(std::shared_ptr<ov::Model>& main_model, std::shared
     try {
         draft_weight_node->output(0).replace(main_weight_node->output(0));
     } catch (const std::exception& e) {
-        GENAI_WARN(std::string("Error: failed to import embedding weights from main model to draft model. Exception: ") + e.what());
+        Logger::warn(std::string("Error: failed to import embedding weights from main model to draft model. Exception: ") + e.what());
     } catch (...) {
-        GENAI_WARN("Error: failed to import embedding weights from main model to draft model due to unknown exception.");
+        Logger::warn("Error: failed to import embedding weights from main model to draft model due to unknown exception.");
     }
 }
 
@@ -280,7 +280,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     // because it requires hidden state interaction from main model to draft model
     // to be implemented future
     if (scheduler_configs.first.dynamic_split_fuse) {
-        GENAI_WARN(
+        Logger::warn(
             "Note: disable dynamic split fuse for eagle3 speculative decoding"
         );
         scheduler_configs.first.dynamic_split_fuse = false;
