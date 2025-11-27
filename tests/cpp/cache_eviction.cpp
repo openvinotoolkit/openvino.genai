@@ -1596,3 +1596,186 @@ INSTANTIATE_TEST_SUITE_P(VariousPOCDumps,
                                          "cache_rotation_poc_ref_coefficients_per_block_1.txt",
                                          "cache_rotation_poc_ref_coefficients_per_block_2.txt",
                                          "cache_rotation_poc_ref_coefficients_per_block_3.txt"));
+
+struct AdaptiveRKVBlockCalculatorGetDiversityBlocksTestStruct {
+    double attention_mass;
+    size_t max_num_blocks_kept;
+    std::vector<double> evictable_area_token_scores;
+    std::set<size_t> ref_diversity_block_set;
+    size_t ref_num_blocks_kept;
+};
+
+// clang-format off
+const std::vector<AdaptiveRKVBlockCalculatorGetDiversityBlocksTestStruct> ADAPTIVE_RKV_BLOCK_CALCULATOR_GET_DIVERSITY_BLOCKS_TEST_CASES = {
+    {
+        1.0, 5,
+        { 4.0408, 1.6519, 2.3575, 4.3858, 2.4409 },
+        {}, 5
+    },
+    {
+        1.0, 2,
+        { 4.0408, 1.6519, 2.3575, 4.3858, 2.4409 },
+        // { 4.0408, 1.6519, 2.3575, 4.3858, 2.4409, 2.4905, 4.7918, 1.7324, 4.2104, 2.2942 },
+        // 5.69, 6.73, 4.93, 6.52, 6.50
+        {1, 2, 4}, 2
+    },
+    {
+        0.5, 5,
+        { 4.0408, 1.6519, 2.3575, 4.3858, 2.4409 },
+        {1, 2, 4}, 2
+    },
+    {
+        0.5, 1,
+        { 4.0408, 1.6519, 2.3575, 4.3858, 2.4409 },
+        {0, 1, 2, 4}, 1
+    },
+    {
+        0.1, 3,
+        { 4.0408, 1.6519, 2.3575, 4.3858, 2.4409 },
+        {0, 1, 2, 4}, 1
+    },
+    {
+        0.8, 5,
+        { 4.0408, 1.6519, 2.3575, 4.3858, 2.4409 },
+        {1}, 4
+    },
+};
+// clang-format on
+
+using AdaptiveRKVBlockCalculatorGetDiversityBlocksParameterizedTest =
+    ::testing::TestWithParam<AdaptiveRKVBlockCalculatorGetDiversityBlocksTestStruct>;
+
+
+TEST_P(AdaptiveRKVBlockCalculatorGetDiversityBlocksParameterizedTest, GetsCorrectDiversityBlocks) {
+    const auto& test_struct = GetParam();
+
+    auto calc = ov::genai::AdaptiveRKVBlockCalculator(test_struct.attention_mass, DEFAULT_BLOCK_SIZE);
+
+    auto retval_pair = calc.get_diversity_block_set(test_struct.max_num_blocks_kept, test_struct.evictable_area_token_scores);
+
+    EXPECT_EQ(retval_pair.first, test_struct.ref_diversity_block_set);
+    EXPECT_EQ(retval_pair.second, test_struct.ref_num_blocks_kept);
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousInputs,
+                         AdaptiveRKVBlockCalculatorGetDiversityBlocksParameterizedTest,
+                         testing::ValuesIn(ADAPTIVE_RKV_BLOCK_CALCULATOR_GET_DIVERSITY_BLOCKS_TEST_CASES));
+
+
+struct AdaptiveRKVBlockCalculatorGetFilteredDiversityTestStruct {
+    size_t eviction_size;
+    size_t block_size;
+    std::vector<double> unfiltered_diversity;
+    std::set<size_t> diversity_set;
+    std::vector<double> ref_filtered_diversity;
+};
+
+// clang-format off
+const std::vector<AdaptiveRKVBlockCalculatorGetFilteredDiversityTestStruct> ADAPTIVE_RKV_BLOCK_CALCULATOR_GET_FILTERED_DIVERSITY_TEST_CASES = {
+    {
+         8, 2,
+         {
+             -3.7740, -3.6064, -2.9294, -1.5446, -3.7901, -2.0820, -1.5273, -3.2758,
+             -2.7462, -2.7403, -3.9867, -3.2725, -3.3477, -4.9939, -0.2414, -4.5271,
+             -3.1281, -0.7258, -4.6696, -2.1654, -4.0911, -4.7095, -3.9171, -1.2475,
+             -1.0666, -3.8479, -2.1679, -3.5915, -1.2447, -4.5385, -1.1481, -0.2810
+         },
+         { 0 },
+         {
+             -3.6902,
+             -2.74325,
+             -1.92695,
+             -2.45725
+         }
+    },
+    {
+         8, 2,
+         {
+             -3.7740, -3.6064, -2.9294, -1.5446, -3.7901, -2.0820, -1.5273, -3.2758,
+             -2.7462, -2.7403, -3.9867, -3.2725, -3.3477, -4.9939, -0.2414, -4.5271,
+             -3.1281, -0.7258, -4.6696, -2.1654, -4.0911, -4.7095, -3.9171, -1.2475,
+             -1.0666, -3.8479, -2.1679, -3.5915, -1.2447, -4.5385, -1.1481, -0.2810
+         },
+         { 1, 3 },
+         {
+             -2.319275,
+             -3.006925,
+             -2.9999,
+             -1.797125
+         }
+    }
+};
+// clang-format on
+
+using AdaptiveRKVBlockCalculatorGetFilteredDiversityParameterizedTest =
+    ::testing::TestWithParam<AdaptiveRKVBlockCalculatorGetFilteredDiversityTestStruct>;
+
+
+TEST_P(AdaptiveRKVBlockCalculatorGetFilteredDiversityParameterizedTest, FiltersDiversityCorrectly) {
+    const auto& test_struct = GetParam();
+    ASSERT_EQ(test_struct.ref_filtered_diversity.size(), test_struct.eviction_size / test_struct.block_size);
+
+    auto calc = ov::genai::AdaptiveRKVBlockCalculator(0.5, test_struct.block_size);
+
+    auto test_filtered_diversity = calc.get_filtered_block_diversity(test_struct.unfiltered_diversity, test_struct.eviction_size, test_struct.diversity_set);
+
+    ASSERT_EQ(test_filtered_diversity.size(), test_struct.eviction_size / test_struct.block_size);
+    EXPECT_THAT(test_filtered_diversity, ::testing::Pointwise(::testing::DoubleNear(1e-6), test_struct.ref_filtered_diversity));
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousInputs,
+                         AdaptiveRKVBlockCalculatorGetFilteredDiversityParameterizedTest,
+                         testing::ValuesIn(ADAPTIVE_RKV_BLOCK_CALCULATOR_GET_FILTERED_DIVERSITY_TEST_CASES));
+
+struct AdaptiveRKVBlockCalculatorGetMostDiverseBlocksTestStruct {
+    size_t num_blocks_left_to_fill;
+    std::set<size_t> diversity_set;
+    std::vector<double> filtered_diversity;
+    std::set<size_t> ref_most_diverse_blocks;
+};
+
+// clang-format off
+const std::vector<AdaptiveRKVBlockCalculatorGetMostDiverseBlocksTestStruct> ADAPTIVE_RKV_BLOCK_CALCULATOR_GET_MOST_DIVERSE_BLOCKS_TEST_CASES = {
+    {
+        1,
+        { 0, 2, 4 },
+        { -3.6685, -2.8817, -1.8225, -2.8728, -3.0952 },
+        { 2 }
+    },
+    {
+        1,
+        { 0, 3, 4 },
+        { -3.6685, -2.8817, -1.8225, -2.8728, -3.0952 },
+        { 3 }
+    },
+    {
+        3,
+        { 1, 2, 4 },
+        { -3.6685, -2.8817, -1.8225, -2.8728, -3.0952 },
+        { 1, 2, 4 }
+    },
+    {
+        2,
+        { 0, 1, 2, 4 },
+        { -3.6685, -2.8817, -1.8225, -2.8728, -3.0952 },
+        { 1, 2 }
+    }
+};
+// clang-format on
+
+using AdaptiveRKVBlockCalculatorGetMostDiverseBlocksParameterizedTest =
+    ::testing::TestWithParam<AdaptiveRKVBlockCalculatorGetMostDiverseBlocksTestStruct>;
+
+
+TEST_P(AdaptiveRKVBlockCalculatorGetMostDiverseBlocksParameterizedTest, GetsMostDiverseBlocksCorrectly) {
+    const auto& test_struct = GetParam();
+    auto calc = ov::genai::AdaptiveRKVBlockCalculator(0.5, DEFAULT_BLOCK_SIZE);
+
+    auto test_most_diverse_blocks = calc.get_most_diverse_blocks(test_struct.num_blocks_left_to_fill, test_struct.diversity_set, test_struct.filtered_diversity);
+
+    EXPECT_EQ(test_most_diverse_blocks, test_struct.ref_most_diverse_blocks);
+}
+
+INSTANTIATE_TEST_SUITE_P(VariousInputs,
+                         AdaptiveRKVBlockCalculatorGetMostDiverseBlocksParameterizedTest,
+                         testing::ValuesIn(ADAPTIVE_RKV_BLOCK_CALCULATOR_GET_MOST_DIVERSE_BLOCKS_TEST_CASES));

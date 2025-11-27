@@ -349,7 +349,7 @@ public:
      * @return The set of block indices that will NOT be retained for preserving attention mass (indexed from the beginning of the block area corresponding
      * to evictable_area_token_scores) and the number of blocks that WERE kept for preserving attention mass.
      */
-    std::pair<std::set<size_t>, size_t> get_unselected_block_set(size_t max_num_blocks_kept, const std::vector<double>& evictable_area_token_scores);
+    std::pair<std::set<size_t>, size_t> get_diversity_block_set(size_t max_num_blocks_kept, const std::vector<double>& evictable_area_token_scores);
 
 
     /**
@@ -365,7 +365,7 @@ public:
      * which the masked reduction will occur.
      * @return The vector of size [eviction_size / block_size] with final per-block diversity values for each block of the eviction area.
      */
-    std::vector<double> get_filtered_block_diversity(const std::vector<double>& unfiltered_diversity, size_t eviction_size, const std::set<size_t>& unselected_blocks);
+    std::vector<double> get_filtered_block_diversity(const std::vector<double>& unfiltered_diversity, size_t eviction_size, const std::set<size_t>& diversity_blocks);
 
 
     /**
@@ -377,7 +377,7 @@ public:
      * @param filtered_block_diversity Per-block diversity values for each block in eviction area.
      * @return The set of block indices that should be retained as most diverse in addition to the attention-mass-preserving blocks.
      */
-    std::set<size_t> get_diverse_blocks(size_t num_blocks_left_to_fill, const std::set<size_t>& diversity_set, const std::vector<double>& filtered_block_diversity);
+    std::set<size_t> get_most_diverse_blocks(size_t num_blocks_left_to_fill, const std::set<size_t>& diversity_set, const std::vector<double>& filtered_block_diversity);
 
 private:
     double m_attention_mass;
