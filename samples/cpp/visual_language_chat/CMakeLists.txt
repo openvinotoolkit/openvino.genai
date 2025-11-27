@@ -1,6 +1,10 @@
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+if (MSVC)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+endif()
+
 find_package(OpenVINOGenAI REQUIRED
     PATHS
         "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
@@ -83,5 +87,11 @@ set_target_properties(video_to_text_chat PROPERTIES
 
 install(TARGETS video_to_text_chat
         RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
+
+install(DIRECTORY ${opencv_BINARY_DIR}/lib/
+        DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
