@@ -16,7 +16,7 @@ from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_tex
 from utils.generation_config import get_greedy, get_beam_search, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
-from utils.hugging_face import OVConvertedModelSchema, download_and_convert_model
+from utils.hugging_face import OVConvertedModelSchema, download_and_convert_model, run_hugging_face
 from utils.ov_genai_pipelines import create_ov_pipeline, create_ov_cb_pipeline, PipelineType, dict_to_scheduler_config, generate_and_compare, prepare_generation_config_by_pipe_type, convert_decoded_results_to_generation_result, GenerationChatInputsType
 from utils.comparation import compare_generation_results
 from data.models import CHAT_MODELS_LIST
@@ -573,7 +573,7 @@ def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType,
         model_path = download_and_convert_model(model_id).models_path
         draft_model_path = None
         if draft_model_id is not None:
-            _,_, draft_model_path = download_and_convert_model(draft_model_id)
+            draft_model_path = download_and_convert_model(draft_model_id).models_path
         ov_pipe = create_ov_pipeline(model_path, pipeline_type=pipeline_type, draft_model_path = draft_model_path)
         return ov_pipe.generate([prompt], generation_config).extended_perf_metrics
 
@@ -585,7 +585,7 @@ def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType,
         ignore_eos=True, 
         num_assistant_tokens=5,
     )
-    if  draft_model_id is None:
+    if draft_model_id is None:
         extended_perf_metrics = run_extended_perf_metrics_collection(
             main_model_id, generation_config, prompt, pipeline_type, draft_model_id
         )
@@ -646,8 +646,12 @@ devices = [
 @pytest.mark.precommit
 def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_device, prompt):
     # Download and convert model:
-    main_opt_model, main_hf_tokenizer, main_model_path = download_and_convert_model(main_model)
-    __, __, draft_model_path = download_and_convert_model(draft_model)
+    main_model_schema = download_and_convert_model(main_model)
+    main_opt_model = main_model_schema.opt_model
+    main_hf_tokenizer = main_model_schema.hf_tokenizer
+    main_model_path = main_model_schema.models_path
+
+    draft_model_path = download_and_convert_model(draft_model).models_path
 
     # Create OpenVINO GenAI pipeline:
 

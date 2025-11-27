@@ -318,6 +318,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         size_t generated_len = request->get_context_len() >= request->get_prompt_len() ? request->get_context_len() - request->get_prompt_len() + 1 : 0;
         if (validate_length > 0) {
             if (generated_len > 0) {
+                // in eagle3 speculative mode, to rewind the processed tokens num to the stable kv position
                 request->update_processed_tokens_num(num_processed_tokens - result.removed_tokens_cnt + 1 - (validate_length - 1));
             }
         } else { // fast draft or main model for eagle speculative
