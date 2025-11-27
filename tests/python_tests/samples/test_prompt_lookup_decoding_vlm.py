@@ -33,8 +33,8 @@ class TestPromptLookupDecodingVLM:
 
         # Test Python sample, disable lookup decoding.
         cpp_sample_ref = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/prompt_lookup_decoding_vlm.py")
-        cpp_command_ref = [sys.executable, py_script, convert_model, download_test_content, question]
-        cpp_result_ref = run_sample(py_command, env=env)
+        cpp_command_ref = [sys.executable, cpp_sample_ref, convert_model, download_test_content, question, "False"]
+        cpp_result_ref = run_sample(cpp_command_ref, env=env)
 
         # Compare results
         assert py_result.stdout == cpp_result.stdout, "Python and CPP results should match"
