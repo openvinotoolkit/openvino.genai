@@ -28,14 +28,15 @@ struct Eagle3RTInfo {
 };
 
 Eagle3RTInfo
-extract_eagle_mode_from_config(ov::AnyMap& config, const std::filesystem::path& models_path) {
+extract_eagle3_mode_from_config(ov::AnyMap& config, const std::filesystem::path& models_path) {
     Eagle3RTInfo eagle_rt_info;
     if (config.find("eagle3_mode") != config.end()) {
         eagle_rt_info.eagle3_mode = config.at("eagle3_mode").as<bool>();
         config.erase("eagle3_mode");
-        if (config.find("hidden_layers_list") != config.end()) {
+        auto it = config.find("hidden_layers_list");
+        if (it != config.end()) {
             try {
-                eagle_rt_info.hidden_layers_list = config.at("hidden_layers_list").as<std::vector<int>>();
+                eagle_rt_info.hidden_layers_list = it->second.as<std::vector<int>>();
                 config.erase("hidden_layers_list");
             } catch (const std::exception&) {
                 OPENVINO_THROW("please check the hidden layers input");
