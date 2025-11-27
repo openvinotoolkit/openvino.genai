@@ -421,7 +421,7 @@ void JsonContainer::concatenate(JsonContainer& dst, const JsonContainer& src) {
             continue;
         }
         
-        OPENVINO_ASSERT(src_val.is_string(), "JsonContainer concatenate  supports only string concatenation for object values.");
+        OPENVINO_ASSERT(src_val.is_string(), "JsonContainer concatenate supports only string concatenation for object values.");
         auto& dst_val = (*dst_)[it.key()];
         dst_val = dst_val.get<std::string>() + src_val.get<std::string>();
     }

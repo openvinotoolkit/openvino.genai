@@ -114,7 +114,9 @@ private:
             // Keep potential partial close tag in cache
             m_text_cache = std::string(txt_chunk.substr(txt_chunk.size() - num_chars_to_keep));
             reason_str = txt_chunk.substr(0, txt_chunk.size() - num_chars_to_keep);
-            delta_text = std::string(txt_chunk.substr(0, txt_chunk.size() - num_chars_to_keep));
+            if (m_keep_original_content) {
+                delta_text = std::string(txt_chunk.substr(0, txt_chunk.size() - num_chars_to_keep));
+            }
         } else {
             // No partial close tag, accumulate all text
             reason_str = txt_chunk;
