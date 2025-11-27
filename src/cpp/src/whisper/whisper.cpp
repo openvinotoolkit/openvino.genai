@@ -77,7 +77,8 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
     ov::Tensor beam_idx = decoder->create_host_tensor(ov::element::i32, {batch_size});
     std::fill_n(beam_idx.data<int32_t>(), batch_size, 0);
 
-    const ov::Tensor input_ids_tensor{ov::element::i64, {1, input_ids.size()}, (void*)input_ids.data()};
+    // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
+    const ov::Tensor input_ids_tensor{ov::element::i64, {1, input_ids.size()}, const_cast<int64_t*>(input_ids.data())};
 
     const auto infer_start = std::chrono::steady_clock::now();
     decoder->start_async(encoder_hidden_state, input_ids_tensor, beam_idx);
