@@ -189,22 +189,27 @@ def get_huggingface_models(
             local_files_only=local_files_only,
         )
 
-    def auto_model_from_pretrained() -> OptimizedModel:
-        return model_class.from_pretrained(
-            model_id, 
-            export=isinstance(model_id, str), 
-            compile=False, 
-            load_in_8bit=False, 
-            ov_config=get_default_llm_properties(), 
-            local_files_only=local_files_only,
-        )
-    if "eagle3" not in str(model_id).lower():
-        return retry_request(auto_model_from_pretrained), retry_request(auto_tokenizer_from_pretrained)
-    else:
-        hf_tokenizer = None
-        opt_model = retry_request(auto_model_from_pretrained)
-        return opt_model, hf_tokenizer
+    is_eagle_model = "eagle3" in str(model_id).lower()
 
+    def auto_model_from_pretrained() -> OptimizedModel:
+        params = {
+            "export": isinstance(model_id, str),
+            "compile": False,
+            "load_in_8bit": False,
+            "ov_config": get_default_llm_properties(),
+            "local_files_only": local_files_only,
+        }
+        if is_eagle_model:
+            params["eagle3"] = True
+        return model_class.from_pretrained(model_id, **params)
+
+    opt_model = retry_request(auto_model_from_pretrained)
+
+    if is_eagle_model:
+        return opt_model, None
+    else:
+        hf_tokenizer = retry_request(auto_tokenizer_from_pretrained)
+        return opt_model, hf_tokenizer
 
 def convert_and_save_tokenizer(
     hf_tokenizer : AutoTokenizer,

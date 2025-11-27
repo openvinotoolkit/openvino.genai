@@ -585,6 +585,7 @@ def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType,
         ignore_eos=True, 
         num_assistant_tokens=5,
     )
+    extended_perf_metrics = None
     if draft_model_id is None:
         extended_perf_metrics = run_extended_perf_metrics_collection(
             main_model_id, generation_config, prompt, pipeline_type, draft_model_id
