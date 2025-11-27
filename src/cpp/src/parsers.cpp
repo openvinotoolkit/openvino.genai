@@ -176,8 +176,9 @@ public:
             // Think tag was not opened yet and not found in the current delta_text.
             // Accumulate text in the cache to detect if <think> is split between several delta_text pieces.
             m_text_cache += delta_text;
+            // Intentionally clear delta_text: no delta content is returned to the user during this phase
+            // (we are waiting for the <think> tag to be fully detected in the cache).
             delta_text.clear();
-        }
         
         return delta_text;
     }
