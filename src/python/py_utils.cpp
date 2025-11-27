@@ -381,6 +381,8 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                     PyGILState_STATE gstate = PyGILState_Ensure();
                     delete f;
                     PyGILState_Release(gstate);
+                } else {
+                    delete f;
                 }
             }
         );
@@ -461,6 +463,8 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
                         PyGILState_STATE gstate = PyGILState_Ensure();
                         delete f;
                         PyGILState_Release(gstate);
+                    } else {
+                        delete f;
                     }
                 }
             );
