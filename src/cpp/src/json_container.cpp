@@ -409,5 +409,23 @@ void* JsonContainer::_get_json_value_ptr() const {
     return m_impl->get_json_value_ptr(m_path, AccessMode::Read);
 }
 
+void JsonContainer::concatenate(JsonContainer& dst, const JsonContainer& src) {
+    auto dst_ = static_cast<nlohmann::ordered_json*>(dst._get_json_value_ptr());
+    auto src_ = static_cast<const nlohmann::ordered_json*>(src._get_json_value_ptr());
+
+    for (auto it = src_->begin(); it != src_->end(); ++it) {
+        const auto& src_val = it.value();
+        
+        if (!dst_->contains(it.key())) {
+            (*dst_)[it.key()] = src_val;
+            continue;
+        }
+        
+        OPENVINO_ASSERT(src_val.is_string(), "JsonContainer concatenate  supports only string concatenation for object values.");
+        auto& dst_val = (*dst_)[it.key()];
+        dst_val = dst_val.get<std::string>() + src_val.get<std::string>();
+    }
+}
+
 } // namespace genai
 } // namespace ov

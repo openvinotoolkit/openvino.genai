@@ -81,6 +81,14 @@ public:
     static JsonContainer from_json_string(const std::string& json_str);
     
     /**
+     * @brief Concatenate two JsonContainers.
+     * @param dst Destination JsonContainer to append to
+     * @param src Source JsonContainer to append from
+     * @throw ov::Exception if keys in both containers are not strings.
+     */
+    static void concatenate(JsonContainer& dst, const JsonContainer& src);
+    
+    /**
      * @brief Create JsonContainer as an empty JSON object.
      */
     static JsonContainer object();

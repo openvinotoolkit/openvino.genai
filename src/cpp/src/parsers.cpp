@@ -64,10 +64,9 @@ private:
     /**
      * @brief Handle the case where only the open tag is found.
      */
-    void handle_open_tag(JsonContainer& message, std::string& reason_str, 
-                        std::string_view txt_chunk, size_t open_idx, std::string& delta_text) {
+    void handle_open_tag(JsonContainer& delta_message, std::string_view txt_chunk, size_t open_idx, std::string& delta_text) {
         // Start accumulating reasoning content
-        message["reasoning_content"] = std::string(txt_chunk.substr(open_idx + m_open_tag.size()));
+        delta_message["reasoning_content"] = std::string(txt_chunk.substr(open_idx + m_open_tag.size()));
         
         if (!m_keep_original_content) {
             delta_text.clear();
@@ -82,14 +81,14 @@ private:
     /**
      * @brief Handle the case where the close tag is found.
      */
-    void handle_close_tag(JsonContainer& message, std::string_view txt_chunk, size_t close_idx, std::string& delta_text) {
+    void handle_close_tag(JsonContainer& delta_message, std::string_view txt_chunk, size_t close_idx, std::string& delta_text) {
         // Append text before close tag to reasoning content
-        message["reasoning_content"] = std::move(std::string(txt_chunk.substr(0, close_idx)));
+        delta_message["reasoning_content"] = std::move(std::string(txt_chunk.substr(0, close_idx)));
         auto content = std::string(txt_chunk.substr(close_idx + m_close_tag.size()));
-        message["content"] = content;
+        delta_message["content"] = content;
         
         if (!m_keep_original_content) {
-            // Despite the fact that we put txt_chung to delta_text it's correct.
+            // Despite the fact that we put txt_chunk to delta_text it's correct.
             // Since txt_chunk contains some cached parts from the previous calls that were not yet processed yet
             // and we kept them in cache until we decide what to do with them. Here we definitely know that that cached parts
             // belonged to reasoning_content so we can discard them.
@@ -106,10 +105,11 @@ private:
     /**
      * @brief Handle accumulating text while inside reasoning tags.
      */
-    void handle_inside_reasoning(JsonContainer& message, std::string& reason_str, std::string_view txt_chunk, std::string& delta_text) {
+    void handle_inside_reasoning(JsonContainer& delta_message, std::string_view txt_chunk, std::string& delta_text) {
         // Find if the end of txt_chunk might be the start of a close tag
         const size_t num_chars_to_keep = find_close_tag_prefix_length(txt_chunk);
         
+        std::string reason_str;
         if (num_chars_to_keep > 0) {
             // Keep potential partial close tag in cache
             m_text_cache = std::string(txt_chunk.substr(txt_chunk.size() - num_chars_to_keep));
@@ -120,7 +120,7 @@ private:
             reason_str = txt_chunk;
             m_text_cache.clear();
         }
-        message["reasoning_content"] = std::move(reason_str);
+        delta_message["reasoning_content"] = std::move(reason_str);
         if (!m_keep_original_content) {
             delta_text.clear();
         }
@@ -139,7 +139,7 @@ public:
           m_close_tag(close_tag) {}
 
     std::string parse(
-        JsonContainer&  message,
+        JsonContainer&  delta_message,
         std::string& delta_text,
         const std::optional<std::vector<int64_t>>& delta_tokens
     ) {
@@ -153,7 +153,6 @@ public:
 
         
         std::string txt_chunk = m_text_cache + delta_text;
-        std::string reason_str = message.contains("reasoning_content") ? std::move(message["reasoning_content"].get_string()) : "";
 
         // Cache find() results to avoid redundant searches
         const auto open_idx = txt_chunk.find(m_open_tag);
@@ -165,14 +164,14 @@ public:
                                                ? close_idx : std::string::npos;
             
             if (close_idx_after_open != std::string::npos) {
-                handle_complete_reasoning(message, txt_chunk, open_idx, close_idx_after_open, delta_text);
+                handle_complete_reasoning(delta_message, txt_chunk, open_idx, close_idx_after_open, delta_text);
             } else {
-                handle_open_tag(message, reason_str, txt_chunk, open_idx, delta_text);
+                handle_open_tag(delta_message, txt_chunk, open_idx, delta_text);
             }
         } else if (m_think_tag_opened && close_idx != std::string::npos) {
-            handle_close_tag(message, txt_chunk, close_idx, delta_text);
+            handle_close_tag(delta_message, txt_chunk, close_idx, delta_text);
         } else if (m_think_tag_opened) {
-            handle_inside_reasoning(message, reason_str, txt_chunk, delta_text);
+            handle_inside_reasoning(delta_message, txt_chunk, delta_text);
         } else {
             // Think tag was not opened yet and not found in the current delta_text.
             // Accumulate text in the cache to detect if <think> is split between several delta_text pieces.
@@ -198,11 +197,11 @@ ReasoningIncrementalParser::ReasoningIncrementalParser(bool expect_open_tag, boo
 ReasoningIncrementalParser::~ReasoningIncrementalParser() = default;
 
 std::string ReasoningIncrementalParser::parse(
-    JsonContainer& message,
+    JsonContainer& delta_message,
     std::string& delta_text,
     const std::optional<std::vector<int64_t>>& delta_tokens
 ) {
-    return m_impl->parse(message, delta_text, delta_tokens);
+    return m_impl->parse(delta_message, delta_text, delta_tokens);
 }
 
 void ReasoningIncrementalParser::reset() {

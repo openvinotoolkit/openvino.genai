@@ -175,7 +175,7 @@ public:
      * @return std::string Filtered text that should be added to the content
      */
     virtual std::string parse(
-        JsonContainer& message,
+        JsonContainer& delta_message,
         std::string& delta_text,
         const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
     ) = 0;
@@ -222,7 +222,7 @@ public:
      * @return std::string Filtered text with reasoning content processed according to configuration
      */
     std::string parse(
-        JsonContainer& message,
+        JsonContainer& delta_message,
         std::string& delta_text,
         const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
     ) override;
