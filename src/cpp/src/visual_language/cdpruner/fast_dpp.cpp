@@ -126,6 +126,8 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select(const ov::Tensor& kernel,
                     "]");
 
 #ifdef ENABLE_OPENCL_DPP
+    // For small token counts, CPU implementation is faster due to GPU kernel launch overhead
+    // Empirically determined threshold where GPU acceleration becomes beneficial
     if (total_tokens < 16) {
         return select_cpu_internal(kernel, num_tokens);
     }

@@ -60,24 +60,26 @@ ov::Tensor RelevanceCalculator::l2_normalize(const ov::Tensor& input) {
     const float* input_data = input.data<const float>();
     float* result_data = result.data<float>();
 
-    if (shape.size() == 2) {
+    if (shape.size() == 2u) {
         // For 2D tensor [M, C], normalize along last dimension
         size_t num_tokens = shape[0];
         size_t feature_dim = shape[1];
 
         for (size_t i = 0; i < num_tokens; ++i) {
+            const float* input_ptr = input_data + i * feature_dim;
+            float* result_ptr = result_data + i * feature_dim;
+
             // Compute L2 norm for token i
             float norm = 0.0f;
             for (size_t j = 0; j < feature_dim; ++j) {
-                size_t idx = i * feature_dim + j;
-                norm += input_data[idx] * input_data[idx];
+                norm += input_ptr[j] * input_ptr[j];
             }
             norm = std::sqrt(norm + m_config.numerical_threshold);  // Add small epsilon for stability
 
             // Normalize token i
+            const float inv_norm = 1.0f / norm;
             for (size_t j = 0; j < feature_dim; ++j) {
-                size_t idx = i * feature_dim + j;
-                result_data[idx] = input_data[idx] / norm;
+                result_ptr[j] = input_ptr[j] * inv_norm;
             }
         }
     } else if (shape.size() == 3) {
@@ -88,18 +90,20 @@ ov::Tensor RelevanceCalculator::l2_normalize(const ov::Tensor& input) {
 
         for (size_t b = 0; b < batch_size; ++b) {
             for (size_t i = 0; i < num_tokens; ++i) {
+                const float* input_ptr = input_data + (b * num_tokens + i) * feature_dim;
+                float* result_ptr = result_data + (b * num_tokens + i) * feature_dim;
+
                 // Compute L2 norm for token (b, i)
                 float norm = 0.0f;
                 for (size_t j = 0; j < feature_dim; ++j) {
-                    size_t idx = b * num_tokens * feature_dim + i * feature_dim + j;
-                    norm += input_data[idx] * input_data[idx];
+                    norm += input_ptr[j] * input_ptr[j];
                 }
                 norm = std::sqrt(norm + m_config.numerical_threshold);
 
                 // Normalize token (b, i)
+                const float inv_norm = 1.0f / norm;
                 for (size_t j = 0; j < feature_dim; ++j) {
-                    size_t idx = b * num_tokens * feature_dim + i * feature_dim + j;
-                    result_data[idx] = input_data[idx] / norm;
+                    result_ptr[j] = input_ptr[j] * inv_norm;
                 }
             }
         }
@@ -117,7 +121,7 @@ ov::Tensor RelevanceCalculator::min_max_normalize(const ov::Tensor& input) {
     const float* input_data = input.data<const float>();
     float* result_data = result.data<float>();
 
-    if (shape.size() == 2) {
+    if (shape.size() == 2u) {
         // For 2D tensor [B, N], normalize each batch independently
         size_t batch_size = shape[0];
         size_t num_tokens = shape[1];
@@ -142,7 +146,7 @@ ov::Tensor RelevanceCalculator::min_max_normalize(const ov::Tensor& input) {
             // Normalize batch b
             for (size_t i = 0; i < num_tokens; ++i) {
                 size_t idx = b * num_tokens + i;
-                result_data[idx] = (input_data[idx] - min_val + m_config.numerical_threshold) / range;
+                result_data[idx] = (input_data[idx] - min_val) / range;
             }
         }
     } else {

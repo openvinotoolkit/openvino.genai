@@ -89,8 +89,6 @@ bool OpenCLDPP::initialize_opencl() {
         m_state->context = cl::Context(m_state->device);
         m_state->queue = cl::CommandQueue(m_state->context, m_state->device);
 
-        std::string device_name;
-        m_state->device.getInfo(CL_DEVICE_NAME, &device_name);
         return load_and_compile_kernels();
     } catch (const std::exception& e) {
         GENAI_WARN("[OpenCLDPP] OpenCL initialization failed: %s", e.what());

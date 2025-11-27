@@ -77,38 +77,36 @@ CDPruner::CDPruner(const Config& config)
 std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visual_features,
                                                          const ov::Tensor& text_features,
                                                          bool silent) {
-    const auto& visual_shape = visual_features.get_shape();
-    const auto& text_shape = text_features.get_shape();
+    validate_input_tensors(visual_features, text_features);
 
+    const auto& visual_shape = visual_features.get_shape();
+    size_t batch_size = visual_shape[0];
     size_t total_tokens = visual_shape[1];
+    size_t feature_dim = visual_shape[2];
+
     size_t raw_tokens_to_keep = static_cast<size_t>(std::round(total_tokens * (1.0 - m_config.pruning_ratio / 100.0)));
     // Round up to the next even number of tokens to keep
     // This is required for DPP OpenCL implementation
     size_t num_tokens_to_keep = (raw_tokens_to_keep % 2 == 0) ? raw_tokens_to_keep : raw_tokens_to_keep + 1;
 
-    validate_input_tensors(visual_features, text_features);
-
     try {
         std::vector<std::vector<size_t>> selected_tokens;
-        size_t batch_size = visual_shape[0];
-        size_t total_visual_tokens = visual_shape[1];
-        size_t feature_dim = visual_shape[2];
 
         // Determine whether to use token splitting strategy
         // Splitting is introduced to handle large token sequences more efficiently:
         // 1. Computational efficiency: Greedy DPP algorithm complexity is O(N×M²) where N is total
         //    tokens and M is tokens to select. Splitting into halves could provide ~4× speedup for large sequences.
         // 2. Parallel processing: Two halves can be processed independently, enabling parallelization.
-        bool use_splitting = m_config.split_threshold > 0 && total_visual_tokens > m_config.split_threshold;
+        bool use_splitting = m_config.split_threshold > 0 && total_tokens > m_config.split_threshold;
 
         size_t split_point = 0;
         size_t first_half_size = 0;
         size_t second_half_size = 0;
 
         if (use_splitting) {
-            split_point = total_visual_tokens / 2;
+            split_point = total_tokens / 2;
             first_half_size = split_point;
-            second_half_size = total_visual_tokens - split_point;
+            second_half_size = total_tokens - split_point;
         }
 
         const float* visual_data = visual_features.data<const float>();
@@ -222,17 +220,16 @@ ov::Tensor CDPruner::apply_pruning(const ov::Tensor& visual_features, const ov::
     const float* input_data = visual_features.data<const float>();
     float* output_data = pruned_features.data<float>();
 
+    const size_t feature_size_bytes = feature_dim * sizeof(float);
+
     for (size_t b = 0; b < batch_size; ++b) {
         const auto& batch_selected = selected_tokens[b];
 
         for (size_t t = 0; t < batch_selected.size(); ++t) {
             size_t src_token_idx = batch_selected[t];
-
-            for (size_t f = 0; f < feature_dim; ++f) {
-                size_t src_idx = b * total_tokens * feature_dim + src_token_idx * feature_dim + f;
-                size_t dst_idx = b * actual_selected_tokens * feature_dim + t * feature_dim + f;
-                output_data[dst_idx] = input_data[src_idx];
-            }
+            const float* src_ptr = input_data + b * total_tokens * feature_dim + src_token_idx * feature_dim;
+            float* dst_ptr = output_data + b * actual_selected_tokens * feature_dim + t * feature_dim;
+            std::memcpy(dst_ptr, src_ptr, feature_size_bytes);
         }
     }
 
@@ -251,7 +248,7 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
     }
 
     // Handle single feature case by calling existing method
-    if (visual_features_list.size() == 1) {
+    if (visual_features_list.size() == 1u) {
         return apply_pruning(visual_features_list[0], text_features);
     }
 
