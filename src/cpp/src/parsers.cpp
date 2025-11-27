@@ -20,18 +20,6 @@ private:
     bool m_think_tag_opened = false;
     std::string m_text_cache = "";
     bool m_deactivated = false;
-    
-    /**
-     * @brief Ensure required fields exist in the message container.
-     */
-    void ensure_message_fields(JsonContainer& message) {
-        // if (!message.contains("reasoning_content")) {
-            message["reasoning_content"] = "";
-        // }
-        // if (!message.contains("content")) {
-            message["content"] = "";
-        // }
-    }
 
     /**
      * @brief Find the longest suffix of text that is a prefix of the close tag.
@@ -155,9 +143,7 @@ public:
         std::string& delta_text,
         const std::optional<std::vector<int64_t>>& delta_tokens
     ) {
-        ensure_message_fields(message);
         if (m_deactivated) {
-            message["content"] = delta_text;
             return delta_text;
         }
         if (!m_expect_open_tag && m_first_run) {

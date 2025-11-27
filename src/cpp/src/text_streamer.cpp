@@ -164,11 +164,11 @@ TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<s
         m_pimpl->m_parsed_message["content"] = "";
     }
 
-CallbackTypeVariant TextParserStreamer::write(std::string message) {
+CallbackTypeVariant TextParserStreamer::write(std::string delta_text) {
     // When 'write' is called with string, it means new chunk of tokens is decoded into text
 
     auto flushed_tokens = std::vector<int64_t>();
-    if (message.back() == '\n') {
+    if (delta_text.back() == '\n') {
         // Flush all tokens
         flushed_tokens.assign(m_tokens_cache.begin(), m_tokens_cache.end());
     } else if (m_decoded_lengths.size() >= delay_n_tokens) {
@@ -196,22 +196,29 @@ CallbackTypeVariant TextParserStreamer::write(std::string message) {
     JsonContainer msg;
     // Iterate over all parsers and apply them to the message
     for (auto& parser: m_pimpl->m_parsers) {
-        message = parser->parse(msg, message, flushed_tokens);
+        delta_text = parser->parse(msg, delta_text, flushed_tokens);
         // Message can be modified inside parser, if parser for example extracted tool calling from message content
     }
+    msg["content"] = delta_text;
     
-    // std::cout << msg["content"].get_string() << std::endl;
-    // std::cout << msg["reasoning_content"].get_string() << std::endl;
-
     // concatenate msg with m_parsed_message
-    concatenate_json_containers(msg, m_pimpl->m_parsed_message, {"reasoning_content"});
+    concatenate_json_containers(msg, m_pimpl->m_parsed_message, {"reasoning_content", "content", "tool_calls"});
 
     // We have to put into DeltaMessage's "content" fields only chunks that belong to content.
     // But into m_parsed_message["content"] we need to accumulate full content if m_keep_original_content == True
     // and if m_keep_original_content == False only part that is outside reasoning tags and outside tool calls.
 
-    m_pimpl->m_parsed_message["content"] = m_pimpl->m_parsed_message["content"].get_string() + message;
+    // fill in msg["content"] with delta_text
+    // The line below should be removed and it's function should be performed inside concatenate_json_containers
+    // m_pimpl->m_parsed_message["content"] = m_pimpl->m_parsed_message["content"].get_string() + delta_text;
 
+
+    // TODO: on each for cycle iteration they receive an empty delta_message
+    // and pipe iterates though every parser. They should neither delete fields nor rewrite 
+    // they should only append or add new fields.
+    // The only field is updated automaticall is "content" 
+    // The remaining delta_text is put there.
+    // It's parsers responsibility to ensure fields are proper.
     return write(msg);
 }
 
