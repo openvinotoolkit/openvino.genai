@@ -248,8 +248,7 @@ bool InputsEmbedder::IInputsEmbedder::has_token_type_ids() const { return false;
 
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
                                const std::string& device,
-                               const ov::AnyMap device_config,
-                               const bool prompt_lookup) {
+                               const ov::AnyMap device_config) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
@@ -277,16 +276,13 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
-
-    m_impl->set_prompt_lookup(prompt_lookup);
 }
 
 InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
                                const Tokenizer& tokenizer,
                                const std::filesystem::path& config_dir_path,
                                const std::string& device,
-                               const ov::AnyMap device_config,
-                               const bool prompt_lookup) {
+                               const ov::AnyMap device_config) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(config_dir_path, "config.json");
 
     if (vlm_config.model_type == VLMModelType::MINICPM) {
@@ -314,8 +310,6 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
-
-    m_impl->set_prompt_lookup(prompt_lookup);
 }
 
 ov::Tensor InputsEmbedder::get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
