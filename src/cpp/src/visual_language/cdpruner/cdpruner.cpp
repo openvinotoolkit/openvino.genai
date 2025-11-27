@@ -59,6 +59,7 @@
 #include <stdexcept>
 #include <thread>
 
+#include "logger.hpp"
 #include "openvino/openvino.hpp"
 #include "utils.hpp"
 
@@ -131,15 +132,26 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
 
         try {
             // OpenVINO ops model approach - compute relevance scores and build kernel matrix via OV model
+            auto kernel_start = std::chrono::high_resolution_clock::now();
+
             // Building single kernel matrix for all the tokens or first half.
             kernel_matrix_first = m_kernel_builder.build(visual_first_half, text_features);
             if (use_splitting) {
                 // Building kernel matrix for second half
                 kernel_matrix_second = m_kernel_builder.build(visual_second_half, text_features);
             }
+
+            auto kernel_end = std::chrono::high_resolution_clock::now();
+            auto kernel_duration =
+                std::chrono::duration_cast<std::chrono::milliseconds>(kernel_end - kernel_start).count();
+            if (!silent) {
+                GENAI_DEBUG("Kernel building (OV model) time: %ld ms", kernel_duration);
+            }
         } catch (const std::exception&) {
             // Fallback to CPU-based kernel construction when GPU/OV model approach fails
             // Using traditional step-by-step computation:
+            auto fallback_start = std::chrono::high_resolution_clock::now();
+
             if (use_splitting) {
                 // Compute relevance scores for both halves
                 ov::Tensor relevance_scores_first = m_relevance_calc.compute(visual_first_half, text_features);
@@ -155,9 +167,18 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
                 // Build single kernel matrix using relevance scores
                 kernel_matrix_first = m_kernel_builder.build(visual_first_half, relevance_scores);
             }
+
+            auto fallback_end = std::chrono::high_resolution_clock::now();
+            auto fallback_duration =
+                std::chrono::duration_cast<std::chrono::milliseconds>(fallback_end - fallback_start).count();
+            if (!silent) {
+                GENAI_DEBUG("Kernel building (CPU fallback) time: %ld ms", fallback_duration);
+            }
         }
 
-        // CDPruner Step 3: Apply DPP selection
+        // Apply DPP selection
+        auto dpp_start = std::chrono::high_resolution_clock::now();
+
         if (use_splitting) {
             // Use parallel DPP selection for split processing
             selected_tokens =
@@ -165,6 +186,12 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
         } else {
             // Direct DPP selection for single tensor processing
             selected_tokens = m_dpp_selector.select(kernel_matrix_first, num_tokens_to_keep);
+        }
+
+        auto dpp_end = std::chrono::high_resolution_clock::now();
+        auto dpp_duration = std::chrono::duration_cast<std::chrono::milliseconds>(dpp_end - dpp_start).count();
+        if (!silent) {
+            GENAI_DEBUG("DPP selection time: %ld ms", dpp_duration);
         }
 
         return selected_tokens;

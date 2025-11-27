@@ -316,6 +316,8 @@ InputsEmbedder::IInputsEmbedder::PruningResult InputsEmbedder::IInputsEmbedder::
     int64_t image_pad_token_id,
     int64_t vision_start_token_id,
     int64_t vision_end_token_id) {
+    auto pruning_start = std::chrono::high_resolution_clock::now();
+    
     PruningResult result;
     result.is_pruned = false;
     result.original_visual_tokens = merged_visual_embeddings.get_shape()[0];
@@ -335,14 +337,6 @@ InputsEmbedder::IInputsEmbedder::PruningResult InputsEmbedder::IInputsEmbedder::
     std::vector<ov::Tensor> visual_features =
         convert_visual_features_for_pruning(merged_visual_embeddings, chunk_count);
 
-    // CDPruner Overview
-    GENAI_INFO("CDPruner configuration:");
-    GENAI_INFO("\tPruning Ratio: %d%%", current_pruning_config->pruning_ratio);
-    GENAI_INFO("\tUse Relevance Weight: %.1f", current_pruning_config->relevance_weight);
-    GENAI_INFO("\tUse CL Kernel: %s", current_pruning_config->use_cl_kernel ? "true" : "false");
-    GENAI_INFO("\tEnable Frame Chunking: %s", current_pruning_config->enable_frame_chunking ? "true" : "false");
-    GENAI_INFO("\tUse Negative Relevance: %s", current_pruning_config->use_negative_relevance ? "true" : "false");
-    GENAI_INFO("\tSplit Threshold: %d", current_pruning_config->split_threshold);
     // Step 3: Apply CDPruner algorithm
     // Computes text-image relevance and prunes low-relevance visual tokens
     ov::Tensor pruned_visual_features = m_vision_encoder->apply_pruning(visual_features, text_features);
@@ -351,14 +345,6 @@ InputsEmbedder::IInputsEmbedder::PruningResult InputsEmbedder::IInputsEmbedder::
     ov::Shape pruned_shape = pruned_visual_features.get_shape();
     result.pruned_visual_tokens = pruned_shape[1];
     size_t hidden_size = pruned_shape[2];
-
-    // CDPruner Summary
-    GENAI_INFO("CDPruner Summary:");
-    GENAI_INFO("\tOriginal Visual Tokens: %zu", result.original_visual_tokens);
-    GENAI_INFO("\tRemoved Visual Tokens: %zu", result.original_visual_tokens - result.pruned_visual_tokens);
-    GENAI_INFO("\tPruning Ratio: %.2f%%",
-               static_cast<float>(result.original_visual_tokens - result.pruned_visual_tokens) /
-               result.original_visual_tokens * 100.0f);
 
     ov::Tensor pruned_2d_tensor(pruned_visual_features.get_element_type(), {result.pruned_visual_tokens, hidden_size});
     const float* src_data = pruned_visual_features.data<const float>();
@@ -424,6 +410,26 @@ InputsEmbedder::IInputsEmbedder::PruningResult InputsEmbedder::IInputsEmbedder::
                     "KV cache history is shorter than recorded previous history length");
     kv_history.resize(m_prev_hist_length);
     m_kv_cache_state.add_inputs(result.pruned_input_ids);
+
+    auto pruning_end = std::chrono::high_resolution_clock::now();
+    auto pruning_duration = std::chrono::duration_cast<std::chrono::milliseconds>(pruning_end - pruning_start).count();
+
+    // CDPruner Summary
+    GENAI_INFO("CDPruner Summary:");
+    GENAI_INFO("\tConfiguration:");
+    GENAI_INFO("\t  Pruning Ratio: %d%%", current_pruning_config->pruning_ratio);
+    GENAI_INFO("\t  Relevance Weight: %.1f", current_pruning_config->relevance_weight);
+    GENAI_INFO("\t  Use CL Kernel: %s", current_pruning_config->use_cl_kernel ? "true" : "false");
+    GENAI_INFO("\t  Enable Frame Chunking: %s", current_pruning_config->enable_frame_chunking ? "true" : "false");
+    GENAI_INFO("\t  Use Negative Relevance: %s", current_pruning_config->use_negative_relevance ? "true" : "false");
+    GENAI_INFO("\t  Split Threshold: %d", current_pruning_config->split_threshold);
+    GENAI_INFO("\tResults:");
+    GENAI_INFO("\t  Original Visual Tokens: %zu", result.original_visual_tokens);
+    GENAI_INFO("\t  Removed Visual Tokens: %zu", result.original_visual_tokens - result.pruned_visual_tokens);
+    GENAI_INFO("\t  Actual Pruning Ratio: %.2f%%",
+               static_cast<float>(result.original_visual_tokens - result.pruned_visual_tokens) /
+                   result.original_visual_tokens * 100.0f);
+    GENAI_INFO("\tTotal Pruning Time: %ld ms", pruning_duration);
 
     return result;
 }
