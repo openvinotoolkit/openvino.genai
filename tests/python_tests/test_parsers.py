@@ -4,14 +4,14 @@ import json
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
 from utils.ov_genai_pipelines import create_ov_pipeline
 import pytest
-from openvino_genai import Tokenizer, IncrementalParser, Parser, TextParserStreamer, StreamingStatus, Llama3JsonToolParser, ReasoningParser, Phi4ReasoningIncrementalParser, DeepSeekR1ReasoningIncrementalParser, GenerationConfig, ReasoningIncrementalParser
+from openvino_genai import Tokenizer, IncrementalParser, Parser, TextParserStreamer, StreamingStatus, Llama3JsonToolParser, Phi4ReasoningIncrementalParser, DeepSeekR1ReasoningIncrementalParser, GenerationConfig, ReasoningIncrementalParser
 from transformers import AutoTokenizer
 import re
 from io import StringIO
 
 
 def concatenate_dicts(dst_dict, src_dict):
-    # keys that exist in both dictionaries    
+    # keys that exist in both dictionaries
     keys = set(dst_dict.keys()).intersection(set(src_dict.keys()))
     for key in keys:
         dst_dict[key] += src_dict[key]
@@ -219,7 +219,6 @@ def test_incremental_integer_token_ids(hf_ov_genai_models):
             return StreamingStatus.RUNNING
     streamer = CustomStreamer(genai_tokenizer, parsers=[CustomIncrementalParser()])
 
-    accumulated_message = {}
     # All closing tags </s>, <|/inst|>, <|endoftext|>, etc. in tiny-random-phi3 add strange \x0c\x0c characters 
     # so we avoid them in this test. 
     answer = "<s>\nOkay, the user is asking for the answer to 2 + 1.<s>The answer to 2 + 1 is 3."
@@ -265,7 +264,6 @@ def test_incremental_phi4_reason_parser_2(hf_ov_genai_models, split_answer):
     content = ''.join(split_answer)
 
     msg = streamer.get_parsed_message()
-    # breakpoint()
     assert msg["reasoning_content"] == think_content
     assert msg["content"].endswith(content)  # since msg contains all accumulated content
     assert msg_manual["reasoning_content"] == think_content

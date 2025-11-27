@@ -181,7 +181,7 @@ public:
             // Intentionally clear delta_text: no delta content is returned to the user during this phase
             // (we are waiting for the <think> tag to be fully detected in the cache).
             delta_text.clear();
-        
+        }
         return delta_text;
     }
 
