@@ -39,7 +39,6 @@ void set_ov_addon(const Napi::CallbackInfo& info) {
 
     auto ov_addon = info[0].As<Napi::Object>();
     addon_data->openvino_addon = Napi::Persistent(ov_addon);
-    return;
 }
 
 // Define the addon initialization function
