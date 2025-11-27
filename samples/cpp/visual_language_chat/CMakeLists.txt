@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 if (MSVC)
-  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
 find_package(OpenVINOGenAI REQUIRED
