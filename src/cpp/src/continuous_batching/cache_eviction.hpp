@@ -245,9 +245,6 @@ private:
     EvictionScoreManager m_score_manager;
 
     std::vector<std::vector<double>> m_last_block_diversity;
-    std::pair<std::set<size_t>, size_t> get_adaptive_rkv_unselected_block_set(size_t max_num_blocks_kept, const std::vector<double>& evictable_area_token_scores);
-    std::set<size_t> get_adaptive_rkv_diverse_blocks(size_t num_blocks_left_to_fill, const std::set<size_t>& diversity_set, const std::vector<double>& filtered_block_diversity);
-    std::vector<double> get_filtered_adaptive_rkv_block_diversity(const std::vector<double>& unfiltered_diversity, size_t eviction_size, const std::set<size_t>& unselected_blocks);
 };
 
 
@@ -335,6 +332,56 @@ private:
     size_t m_head_size;
     std::vector<std::vector<float>> m_rope_sin_lut;  // dimensions: [ max_context_length, head_size / 2]
     std::vector<std::vector<float>> m_rope_cos_lut;  // dimensions: [ max_context_length, head_size / 2]
+};
+
+
+class AdaptiveRKVBlockCalculator {
+public:
+
+    AdaptiveRKVBlockCalculator(double attention_mass, size_t block_size) : m_attention_mass(attention_mass), m_block_size(block_size) {}
+
+    /**
+     * Computes the set of blocks that will NOT be retained as part of preserving the predefined attention mass and are therefore
+     * candidates for eviction based on diversity. Also returns the number of blocks kept for attention mass preservation.
+     * @param max_num_blocks_kept Maximum number of blocks to keep for purposes of preserving the attention mass.
+     * @param evictable_area_token_scores Vector of per-token attention scores from the currently evictable blocks.
+     * @param deltas_only If true, the sines and cosines fields in each returned BlockRotationData will be left empty.
+     * @return The set of block indices that will NOT be retained for preserving attention mass (indexed from the beginning of the block area corresponding
+     * to evictable_area_token_scores) and the number of blocks that WERE kept for preserving attention mass.
+     */
+    std::pair<std::set<size_t>, size_t> get_unselected_block_set(size_t max_num_blocks_kept, const std::vector<double>& evictable_area_token_scores);
+
+
+    /**
+     * Filters and reduces the kernel-provided diversity values so that the resulting values provide correct diversity
+     * over the non-retained-by-attention-mass block set. The kernel-provided diversity is given for the entire eviction area
+     * as an array with shape [eviction_size / block_size, eviction_size] and requires masked reduction on the diversity block set
+     * along the last dimension, since the kernel currently does not use the information about the selected/non-selected blocks to do
+     * this masked reduction on its own.
+     *
+     * @param unfiltered_diversity Diversity values as output by the kernel (model), corresponding to shape [eviction_size / block_size, eviction_size]
+     * @param eviction_size The size, in tokens, of the currently evictable area of the sequence KV cache.
+     * @param diversity_blocks The set of block indices that correspond to the diversity block set in this eviction area, i.e. the block indices along
+     * which the masked reduction will occur.
+     * @return The vector of size [eviction_size / block_size] with final per-block diversity values for each block of the eviction area.
+     */
+    std::vector<double> get_filtered_block_diversity(const std::vector<double>& unfiltered_diversity, size_t eviction_size, const std::set<size_t>& unselected_blocks);
+
+
+    /**
+     * Computes the set of blocks that will be retained as most diverse blocks in addition to those that were already selected to be retained
+     * to preserve the predefined attention mass.
+     * @param num_blocks_left_to_fill Number of blocks remaining to preserve after the attention mass-retaining blocks have been selected.
+     * @param diversity_set Indices of blocks in the eviction area (indexed from the eviction area start) that are candidates for diversity-based
+     * selection.
+     * @param filtered_block_diversity Per-block diversity values for each block in eviction area.
+     * @return The set of block indices that should be retained as most diverse in addition to the attention-mass-preserving blocks.
+     */
+    std::set<size_t> get_diverse_blocks(size_t num_blocks_left_to_fill, const std::set<size_t>& diversity_set, const std::vector<double>& filtered_block_diversity);
+
+private:
+    double m_attention_mass;
+    size_t m_block_size;
 };
 
 } // namespace ov::genai

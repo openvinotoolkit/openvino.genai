@@ -329,12 +329,13 @@ namespace ov::genai {
             auto scores_for_all_evictable_blocks = get_scores_for_all_evictable_blocks(decoder_layer_idx);
             std::vector<size_t> evicted_block_indices;
             if (m_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV) {
+                auto arkv_calc = AdaptiveRKVBlockCalculator(m_eviction_config.adaptive_rkv_config.attention_mass, m_block_size);
                 OPENVINO_ASSERT(!m_last_block_diversity.empty(), "Token diversity must be registered before each eviction in the Adaptive R-KV scenario");
                 size_t num_evictable_blocks = get_num_evictable_blocks(decoder_layer_idx);
                 size_t num_expected_diversity_values = num_evictable_blocks * num_evictable_blocks / m_block_size;
                 size_t num_diversity_values_registered = m_last_block_diversity[0].size();
                 OPENVINO_ASSERT(num_diversity_values_registered == num_expected_diversity_values, "Diversity score size mismatch - registered ", num_diversity_values_registered, " diversity scores, but expected ", num_evictable_blocks, "*", num_evictable_blocks, "/", m_block_size, "=", num_expected_diversity_values, " scores");
-                auto unselected_blocks_and_num_blocks_kept = get_adaptive_rkv_unselected_block_set(num_evictable_blocks, scores_for_all_evictable_blocks);
+                auto unselected_blocks_and_num_blocks_kept = arkv_calc.get_unselected_block_set(num_evictable_blocks, scores_for_all_evictable_blocks);
 
                 const auto& unselected_blocks = unselected_blocks_and_num_blocks_kept.first;
                 size_t num_blocks_kept = unselected_blocks_and_num_blocks_kept.second;
@@ -343,8 +344,8 @@ namespace ov::genai {
                 OPENVINO_ASSERT(num_blocks_kept <= num_evictable_blocks_to_keep_after_eviction);
                 size_t num_blocks_left_to_fill =  num_evictable_blocks_to_keep_after_eviction - num_blocks_kept;
 
-                auto filtered_block_diversity = get_filtered_adaptive_rkv_block_diversity(m_last_block_diversity[decoder_layer_idx], num_evictable_blocks, unselected_blocks);
-                auto most_diverse_set = get_adaptive_rkv_diverse_blocks(num_blocks_left_to_fill, unselected_blocks, filtered_block_diversity);
+                auto filtered_block_diversity = arkv_calc.get_filtered_block_diversity(m_last_block_diversity[decoder_layer_idx], num_evictable_blocks, unselected_blocks);
+                auto most_diverse_set = arkv_calc.get_diverse_blocks(num_blocks_left_to_fill, unselected_blocks, filtered_block_diversity);
 
                 for (size_t potentially_evicted_idx : unselected_blocks) {
                     if (most_diverse_set.find(potentially_evicted_idx) == most_diverse_set.end()) {
@@ -403,87 +404,6 @@ namespace ov::genai {
         return retval;
     }
 
-    std::pair<std::set<size_t>, size_t> CacheEvictionAlgorithm::get_adaptive_rkv_unselected_block_set(size_t max_num_blocks_kept, const std::vector<double>& evictable_area_block_scores) {
-        struct ScoreAndBlockIdx {
-            double score;
-            size_t block_idx;
-            bool operator<(const ScoreAndBlockIdx& rhs) const { return score < rhs.score; }
-        };
-        std::priority_queue<ScoreAndBlockIdx> score_block_queue;
-        double total_sum = 0.0;
-        for (size_t i = 0; i < evictable_area_block_scores.size(); i++) {
-            total_sum += evictable_area_block_scores[i];
-            score_block_queue.push({evictable_area_block_scores[i], i});
-        }
-
-        double expected_sum = total_sum * m_eviction_config.adaptive_rkv_config.attention_mass;
-        std::set<size_t> retval;
-
-        double sum = 0.0;
-        size_t num_blocks_kept = 0;
-        while (sum < expected_sum && !score_block_queue.empty() && num_blocks_kept <= max_num_blocks_kept) {
-            // Blocks with most attention mass are kept
-            auto score_and_idx = score_block_queue.top();
-            sum += score_and_idx.score;
-            score_block_queue.pop();
-            num_blocks_kept += 1;
-        }
-
-        // The rest will be further filtered according to their cosine similarity-based diversity separately
-        while (!score_block_queue.empty()) {
-            auto score_and_idx = score_block_queue.top();
-            retval.insert(score_and_idx.block_idx);
-            score_block_queue.pop();
-        }
-        return {retval, num_blocks_kept};
-    }
-
-    std::vector<double> CacheEvictionAlgorithm::get_filtered_adaptive_rkv_block_diversity(const std::vector<double>& unfiltered_diversity, size_t eviction_size, const std::set<size_t>& unselected_blocks) {
-        // finish computing per-block diversity values by reducing kernel-returned current [eviction_size / block_size, eviction_size] shape
-        // into [eviction_size / block_size] with masked mean on the last dimension, masked on the logical block indices that are present
-        // in `unselected_blocks`
-        std::vector<double> retval(eviction_size);
-        OPENVINO_ASSERT(eviction_size % m_block_size == 0);
-        OPENVINO_ASSERT(unfiltered_diversity.size() == eviction_size / m_block_size * eviction_size);
-        OPENVINO_ASSERT(unselected_blocks.size() * m_block_size <= unfiltered_diversity.size());
-        auto it_b = unfiltered_diversity.begin();
-        for (size_t row_idx = 0; row_idx < eviction_size / m_block_size; row_idx++) {
-            double accumulated_value = 0.0;
-            for (size_t col_idx = 0; col_idx < eviction_size; col_idx += m_block_size) {
-                size_t logical_block_idx_in_evictable_area = col_idx / m_block_size;
-                if (unselected_blocks.find(logical_block_idx_in_evictable_area) != unselected_blocks.end()) {
-                    accumulated_value += std::reduce(it_b + col_idx, it_b + col_idx + m_block_size);
-                }
-            }
-            retval[row_idx] = accumulated_value / (eviction_size - unselected_blocks.size() * m_block_size);
-        }
-
-        return retval;
-    }
-
-
-    std::set<size_t> CacheEvictionAlgorithm::get_adaptive_rkv_diverse_blocks(size_t num_blocks_left_to_fill, const std::set<size_t>& unselected_blocks, const std::vector<double>& filtered_block_diversity) {
-
-        OPENVINO_ASSERT(num_blocks_left_to_fill <= unselected_blocks.size());
-        struct ScoreAndBlockIdx {
-            double score;
-            size_t block_idx;
-            bool operator<(const ScoreAndBlockIdx& rhs) const { return score < rhs.score; } // sic!
-        };
-        std::priority_queue<ScoreAndBlockIdx> score_block_queue;
-        for (size_t block_idx : unselected_blocks) {
-            score_block_queue.push({filtered_block_diversity[block_idx], block_idx});
-        }
-
-        std::set<size_t> retval;
-
-        while (retval.size() < num_blocks_left_to_fill && !score_block_queue.empty()) {
-            auto score_and_idx = score_block_queue.top();
-            retval.insert(score_and_idx.block_idx);
-            score_block_queue.pop();
-        }
-        return retval;
-    }
 
     CacheEvictionAlgorithm::CacheEvictionRange CacheEvictionAlgorithm::get_evictable_block_range() const {
         return get_evictable_block_range(0);
@@ -730,6 +650,85 @@ size_t SnapKVScoreAggregationCalculator::get_num_token_scores_to_aggregate(size_
 
     }
     return num_scored_token_positions_in_this_chunk;
+}
+
+std::pair<std::set<size_t>, size_t> AdaptiveRKVBlockCalculator::get_unselected_block_set(size_t max_num_blocks_kept, const std::vector<double>& evictable_area_block_scores) {
+    struct ScoreAndBlockIdx {
+        double score;
+        size_t block_idx;
+        bool operator<(const ScoreAndBlockIdx& rhs) const { return score < rhs.score; }
+    };
+    std::priority_queue<ScoreAndBlockIdx> score_block_queue;
+    double total_sum = 0.0;
+    for (size_t i = 0; i < evictable_area_block_scores.size(); i++) {
+        total_sum += evictable_area_block_scores[i];
+        score_block_queue.push({evictable_area_block_scores[i], i});
+    }
+
+    double expected_sum = total_sum * m_attention_mass;
+    std::set<size_t> retval;
+
+    double sum = 0.0;
+    size_t num_blocks_kept = 0;
+    while (sum < expected_sum && !score_block_queue.empty() && num_blocks_kept <= max_num_blocks_kept) {
+        // Blocks with most attention mass are kept
+        auto score_and_idx = score_block_queue.top();
+        sum += score_and_idx.score;
+        score_block_queue.pop();
+        num_blocks_kept += 1;
+    }
+
+    // The rest will be further filtered according to their cosine similarity-based diversity separately
+    while (!score_block_queue.empty()) {
+        auto score_and_idx = score_block_queue.top();
+        retval.insert(score_and_idx.block_idx);
+        score_block_queue.pop();
+    }
+    return {retval, num_blocks_kept};
+}
+
+std::vector<double> AdaptiveRKVBlockCalculator::get_filtered_block_diversity(const std::vector<double>& unfiltered_diversity, size_t eviction_size, const std::set<size_t>& diversity_blocks) {
+    std::vector<double> retval(eviction_size);
+    OPENVINO_ASSERT(eviction_size % m_block_size == 0);
+    OPENVINO_ASSERT(unfiltered_diversity.size() == eviction_size / m_block_size * eviction_size);
+    OPENVINO_ASSERT(diversity_blocks.size() * m_block_size <= unfiltered_diversity.size());
+    auto it_b = unfiltered_diversity.begin();
+    for (size_t row_idx = 0; row_idx < eviction_size / m_block_size; row_idx++) {
+        double accumulated_value = 0.0;
+        for (size_t col_idx = 0; col_idx < eviction_size; col_idx += m_block_size) {
+            size_t logical_block_idx_in_evictable_area = col_idx / m_block_size;
+            if (diversity_blocks.find(logical_block_idx_in_evictable_area) != diversity_blocks.end()) {
+                accumulated_value += std::reduce(it_b + col_idx, it_b + col_idx + m_block_size);
+            }
+        }
+        retval[row_idx] = accumulated_value / (eviction_size - diversity_blocks.size() * m_block_size);
+    }
+
+    return retval;
+}
+
+
+std::set<size_t> AdaptiveRKVBlockCalculator::get_diverse_blocks(size_t num_blocks_left_to_fill, const std::set<size_t>& unselected_blocks, const std::vector<double>& filtered_block_diversity) {
+
+    OPENVINO_ASSERT(num_blocks_left_to_fill <= unselected_blocks.size());
+    struct ScoreAndBlockIdx {
+        double score;
+        size_t block_idx;
+        bool operator<(const ScoreAndBlockIdx& rhs) const { return score > rhs.score; } // sic!
+    };
+    std::priority_queue<ScoreAndBlockIdx> score_block_queue;
+    for (size_t block_idx : unselected_blocks) {
+        score_block_queue.push({filtered_block_diversity[block_idx], block_idx});
+    }
+
+    std::set<size_t> retval;
+
+    while (retval.size() < num_blocks_left_to_fill && !score_block_queue.empty()) {
+        auto score_and_idx = score_block_queue.top();
+        retval.insert(score_and_idx.block_idx);
+        score_block_queue.pop();
+    }
+    return retval;
 }
 
 }
