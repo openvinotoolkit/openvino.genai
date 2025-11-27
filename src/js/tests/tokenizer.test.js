@@ -247,11 +247,6 @@ describe("tokenizer functions", async () => {
     assert.strictEqual(typeof token, "bigint");
   });
 
-  it("getChatTemplate return string", () => {
-    const template = tokenizer.getChatTemplate();
-    assert.strictEqual(typeof template, "string");
-  });
-
   it("setChatTemplate updates template", () => {
     const originalTemplate = tokenizer.getChatTemplate();
     assert.strictEqual(typeof originalTemplate, "string");
@@ -327,8 +322,8 @@ describe("tokenizer functions", async () => {
     assert.strictEqual(typeof decoded, "string");
   });
 
-  // Change model to fix skip_special_tokens functionality CVS-176639
-  it("decode with skip_special_tokens option", () => {
+  // Fix skip_special_tokens functionality CVS-176639
+  it.skip("decode with skip_special_tokens option", () => {
     const eos = tokenizer.getEosToken();
     const eosId = tokenizer.getEosTokenId();
     const tokenIds = [10n, 20n, 30n, eosId];

@@ -20,26 +20,26 @@ void init_class(Napi::Env env,
     exports.Set(class_name, prototype);
 }
 
-Napi::Value set_ov_addon(const Napi::CallbackInfo& info) {
+void set_ov_addon(const Napi::CallbackInfo& info) {
     Napi::Env env = info.Env();
     if (info.Length() < 1) {
         Napi::TypeError::New(env, "setOpenvinoAddon expects one argument").ThrowAsJavaScriptException();
-        return env.Undefined();
+        return;
     }
     if (info[0].IsUndefined() || info[0].IsNull() || !info[0].IsObject()) {
         Napi::TypeError::New(env, "Passed addon must be an object").ThrowAsJavaScriptException();
-        return env.Undefined();
+        return;
     }
 
     auto addon_data = env.GetInstanceData<AddonData>();
     if (!addon_data) {
         Napi::TypeError::New(env, "Addon data is not initialized").ThrowAsJavaScriptException();
-        return env.Undefined();
+        return;
     }
 
     auto ov_addon = info[0].As<Napi::Object>();
     addon_data->openvino_addon = Napi::Persistent(ov_addon);
-    return env.Undefined();
+    return;
 }
 
 // Define the addon initialization function

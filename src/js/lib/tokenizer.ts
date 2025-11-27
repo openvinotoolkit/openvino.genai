@@ -106,11 +106,11 @@ export interface Tokenizer {
    * @returns formatted prompt string
    */
   applyChatTemplate(
-    chatHistory: Record<string, any>[] | ChatHistory,
+    chatHistory: Record<string, unknown>[] | ChatHistory,
     addGenerationPrompt: boolean,
     chatTemplate?: string,
-    tools?: Record<string, any>[],
-    extraContext?: Record<string, any>,
+    tools?: Record<string, unknown>[],
+    extraContext?: Record<string, unknown>,
   ): string;
 
   /**

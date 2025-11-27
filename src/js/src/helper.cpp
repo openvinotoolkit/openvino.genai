@@ -104,7 +104,7 @@ std::string js_to_cpp<std::string>(const Napi::Env& env, const Napi::Value& valu
 
 template <>
 int64_t js_to_cpp<int64_t>(const Napi::Env& env, const Napi::Value& value) {
-    OPENVINO_ASSERT(value.IsNumber() || value.IsBigInt(), "Passed argument must be of type Number.");
+    OPENVINO_ASSERT(value.IsNumber() || value.IsBigInt(), "Passed argument must be of type Number or BigInt.");
     if (value.IsNumber()) {
         return value.As<Napi::Number>().Int64Value();
     } 
