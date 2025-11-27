@@ -14,7 +14,7 @@ class TestPromptLookupDecodingVLM:
     @pytest.mark.parametrize(
         "convert_model, download_test_content, question",
         [
-            pytest.param("Qwen2-VL-2B-Instruct", "monalisa.jpg", "Who drew this painting? Please answer the answer in JSON format: {\"Painter\":\"Van Gogh\"}."),
+            pytest.param("Qwen2-VL-2B-Instruct", "monalisa.jpg", "Who drew this painting? Please answer in JSON format: {\"Painter\":\"Van Gogh\"}."),
         ],
         indirect=["convert_model", "download_test_content"],
     )
