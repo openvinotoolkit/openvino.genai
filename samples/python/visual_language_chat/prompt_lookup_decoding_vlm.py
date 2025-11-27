@@ -40,12 +40,18 @@ def main():
     parser.add_argument('model_dir')
     parser.add_argument('image_dir', help="Image file or dir with images")
     parser.add_argument('prompt')
-    parser.add_argument('enable_lookup', help="Enable lookup decoding. Default: True", default=True, type=bool)
+    parser.add_argument('--disable_lookup',
+                        action='store_false',
+                        dest='enable_lookup',
+                        default=True,
+                        help="Disable lookup decoding (i.e., set enable_lookup to False).")
+
     args = parser.parse_args()
 
     device = 'CPU'
 
-    pipe = openvino_genai.VLMPipeline(args.model_dir, device, prompt_lookup=args.enable_lookup)
+    # Current only for  ATTENTION_BACKEND="PA", PLD is enabled.
+    pipe = openvino_genai.VLMPipeline(args.model_dir, device, prompt_lookup=args.enable_lookup, ATTENTION_BACKEND="PA")
     
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100

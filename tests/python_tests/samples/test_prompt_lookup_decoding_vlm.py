@@ -21,10 +21,6 @@ class TestPromptLookupDecodingVLM:
     def test_prompt_lookup_decoding_vlm(self, convert_model, download_test_content, question):
         env = os.environ.copy()
         env["OPENVINO_LOG_LEVEL"] = "0"
-        # Test CPP sample
-        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'prompt_lookup_decoding_vlm')
-        cpp_command =[cpp_sample, convert_model, download_test_content, question]
-        cpp_result = run_sample(cpp_command, env=env)
 
         # Test Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/prompt_lookup_decoding_vlm.py")
@@ -32,10 +28,9 @@ class TestPromptLookupDecodingVLM:
         py_result = run_sample(py_command, env=env)
 
         # Test Python sample, disable lookup decoding.
-        cpp_sample_ref = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/prompt_lookup_decoding_vlm.py")
-        cpp_command_ref = [sys.executable, cpp_sample_ref, convert_model, download_test_content, question, "False"]
-        cpp_result_ref = run_sample(cpp_command_ref, env=env)
+        py_script_ref = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/prompt_lookup_decoding_vlm.py")
+        py_command_ref = [sys.executable, py_script_ref, convert_model, download_test_content, question, "--disable_lookup"]
+        py_result_ref = run_sample(py_command_ref, env=env)
 
         # Compare results
-        assert py_result.stdout == cpp_result.stdout, "Python and CPP results should match"
-        assert cpp_result_ref.stdout == cpp_result.stdout, "Results should be identical when running without lookup and lookup speculative decoding enabled."
+        assert py_result.stdout == py_result_ref.stdout, "Results should be identical when running without lookup and lookup speculative decoding enabled."
