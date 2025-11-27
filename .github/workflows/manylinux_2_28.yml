@@ -93,7 +93,7 @@ jobs:
       with:
         platform: almalinux8
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
-        revision: fcf7c2964cf460ecfcb039f748d1f4028626d58c
+        revision: 17efa42572fcac28b14cde43c8af1ca79fc2f800
 
     - name: Clone docker tag from OpenVINO repo
       uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1

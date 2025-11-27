@@ -34,6 +34,20 @@ It can be initialized from the path, in-memory IR representation or obtained fro
         auto tokenzier = pipe.get_tokenizer();
         ```
     </TabItemCpp>
+    <TabItemJS>
+        ```js
+        import { LLMPipeline, Tokenizer } from 'openvino-genai-node';
+
+        let tokenizer;
+
+        // Initialize from the path
+        tokenizer = new Tokenizer(models_path);
+
+        // Or get tokenizer instance from LLMPipeline
+        const pipe = await LLMPipeline(models_path, "CPU");
+        tokenizer = pipe.getTokenizer();
+        ```
+    </TabItemJS>
 </LanguageTabs>
 
 `Tokenizer` has `encode()` and `decode()` methods which support the following arguments: `add_special_tokens`, `skip_special_tokens`, `pad_to_max_length`, `max_length`.
@@ -51,6 +65,11 @@ It can be initialized from the path, in-memory IR representation or obtained fro
         auto tokens = tokenizer.encode("The Sun is yellow because", ov::genai::add_special_tokens(false));
         ```
     </TabItemCpp>
+    <TabItemJS>
+        ```js
+        const tokens = tokenizer.encode("The Sun is yellow because", { add_special_tokens: false });
+        ```
+    </TabItemJS>
 </LanguageTabs>
 
 The `encode()` method returns a [`TokenizedInputs`](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.TokenizedInputs.html) object containing `input_ids` and `attention_mask`, both stored as `ov::Tensor`.
@@ -121,4 +140,40 @@ If `pad_to_max_length` is set to true, then instead of padding to the longest se
         // out_shape: [1, 128]
         ```
     </TabItemCpp>
+    <TabItemJS>
+        ```js
+        import { Tokenizer } from 'openvino-genai-node';
+
+        const tokenizer = new Tokenizer(models_path);
+        const prompts = ["The Sun is yellow because", "The"];
+        let tokens;
+
+        // Since prompt is definitely shorter than maximal length (which is taken from IR) will not affect shape.
+        // Resulting shape is defined by length of the longest tokens sequence.
+        // Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="longest", truncation=True)
+        tokens = tokenizer.encode(["The Sun is yellow because", "The"]);
+        // or is equivalent to
+        tokens = tokenizer.encode(["The Sun is yellow because", "The"], { pad_to_max_length: false });
+        console.log(tokens.input_ids.getShape());
+        // out_shape: [2, 6]
+        
+        // Resulting tokens tensor will be padded to 1024, sequences which exceed this length will be truncated.
+        // Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="max_length", truncation=True, max_length=1024)
+        tokens = tokenizer.encode([
+            "The Sun is yellow because",
+            "The",
+            "The longest string ever".repeat(2000),
+        ], {
+            pad_to_max_length: true,
+            max_length: 1024,
+        });
+        console.log(tokens.input_ids.getShape());
+        // out_shape: [3, 1024]
+
+        // For single string prompts truncation and padding are also applied.
+        tokens = tokenizer.encode("The Sun is yellow because", { pad_to_max_length: true, max_length: 128 });
+        console.log(tokens.input_ids.getShape());
+        // out_shape: [1, 128]
+        ```
+    </TabItemJS>
 </LanguageTabs>
