@@ -45,6 +45,24 @@ ov::AnyMap handle_scale_factor(std::shared_ptr<ov::Model> model, const std::stri
 
 } // namespace
 
+void get_patch_size(const std::filesystem::path& config_path, int64_t& patch_size, int64_t& patch_size_t);
+
+void get_compression_ratio(const std::filesystem::path& config_path, int64_t& spatial_compression_ratio, int64_t& temporal_compression_ratio) {
+    std::ifstream file(config_path);
+    OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
+    nlohmann::json data = nlohmann::json::parse(file);
+
+    std::vector<bool> spatio_temporal_scaling;
+    int64_t patch_size, patch_size_t;
+
+    utils::read_json_param(data, "spatio_temporal_scaling", spatio_temporal_scaling);
+    utils::read_json_param(data, "patch_size", patch_size);
+    utils::read_json_param(data, "patch_size_t", patch_size_t);
+
+    spatial_compression_ratio = patch_size * std::pow(2, std::reduce(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
+    temporal_compression_ratio = patch_size_t * std::pow(2, std::reduce(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
+}
+
 AutoencoderKLLTXVideo::Config::Config(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
@@ -70,6 +88,7 @@ AutoencoderKLLTXVideo::Config::Config(const std::filesystem::path& config_path) 
 AutoencoderKLLTXVideo::AutoencoderKLLTXVideo(const std::filesystem::path& vae_decoder_path)
     : m_config(vae_decoder_path / "config.json") {
     m_decoder_model = utils::singleton_core().read_model(vae_decoder_path / "openvino_model.xml");
+    get_patch_size(vae_decoder_path.parent_path() / "transformer" / "config.json", m_patch_size, m_patch_size_t);
     // apply VaeImageProcessor postprocessing steps by merging them into the VAE decoder model
     // merge_vae_image_post_processing(); // TODO: check if it's the same - not the same, fix!!!
 }
@@ -110,6 +129,45 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::compile(const std::string& device,
     m_decoder_request = decoder_compiled_model.create_infer_request();
     // release the original model
     m_decoder_model.reset();
+
+    return *this;
+}
+
+AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
+                                                      int64_t num_frames,
+                                                      int64_t height,
+                                                      int64_t width) {
+    OPENVINO_ASSERT(m_decoder_model, "Model has been already compiled. Cannot reshape already compiled model");
+    OPENVINO_ASSERT(height > 0, "Height must be positive");
+    OPENVINO_ASSERT(height % 32 == 0, "Height have to be divisible by 32 but got ", height);
+    OPENVINO_ASSERT(width > 0, "Width must be positive");
+    OPENVINO_ASSERT(width % 32 == 0, "Width have to be divisible by 32 but got ", width);
+
+    // TODO: for img2video
+    // if (m_encoder_model) {
+    //     ov::PartialShape input_shape = m_encoder_model->input(0).get_partial_shape();
+    //     std::map<size_t, ov::PartialShape> idx_to_shape{{0, {batch_size, input_shape[1], height, width}}};
+    //     m_encoder_model->reshape(idx_to_shape);
+    // }
+
+    int64_t spatial_compression_ratio =
+        get_config().patch_size *
+        std::pow(
+            2,
+            std::reduce(get_config().spatio_temporal_scaling.begin(), get_config().spatio_temporal_scaling.end(), 0));
+    int64_t temporal_compression_ratio =
+        get_config().patch_size_t *
+        std::pow(
+            2,
+            std::reduce(get_config().spatio_temporal_scaling.begin(), get_config().spatio_temporal_scaling.end(), 0));
+
+    num_frames = ((num_frames - 1) / temporal_compression_ratio + 1) / m_patch_size_t;
+    height /= (spatial_compression_ratio * m_patch_size);
+    width /= (spatial_compression_ratio * m_patch_size);
+
+    ov::PartialShape input_shape = m_decoder_model->input(0).get_partial_shape();
+    std::map<size_t, ov::PartialShape> idx_to_shape{{0, {batch_size, input_shape[1], num_frames, height, width}}};
+    m_decoder_model->reshape(idx_to_shape);
 
     return *this;
 }

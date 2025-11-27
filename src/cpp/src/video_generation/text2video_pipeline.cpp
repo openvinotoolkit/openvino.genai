@@ -134,6 +134,10 @@ ov::Tensor unpack_latents(const ov::Tensor& latents,
     latents.copy_to(reshaped);
     reshaped.set_shape({batch_size, num_frames, height, width, num_channels, patch_size_t, patch_size, patch_size});
 
+    std::cout << "reshaped " << reshaped.get_shape() << std::endl;
+
+    // {batch_size, num_channels, num_frames, patch_size_t, height, patch_size, width, patch_size}
+
     // permute(0, 4, 1, 5, 2, 6, 3, 7) -> [B, C, F//patch_size_t, patch_size_t, H//patch_size, patch_size, W//patch_size, patch_size]
     const std::array<int64_t, 8> order = {0, 4, 1, 5, 2, 6, 3, 7};
     std::vector<ov::Tensor> outputs{ov::Tensor(reshaped.get_element_type(), {})};
@@ -219,6 +223,7 @@ inline ov::Tensor tensor_from_vector(const std::vector<float>& data) {
 
 }  // anonymous namespace
 
+
 class Text2VideoPipeline::LTXPipeline {
     using Ms = std::chrono::duration<float, std::ratio<1, 1000>>;
 
@@ -295,6 +300,7 @@ class Text2VideoPipeline::LTXPipeline {
                 ov::genai::add_special_tokens(true)
             }
         );
+
         auto infer_end = std::chrono::steady_clock::now();
         m_perf_metrics.encoder_inference_duration["text_encoder"] = Ms{infer_end - infer_start}.count();
 
@@ -302,6 +308,9 @@ class Text2VideoPipeline::LTXPipeline {
 
         prompt_embeds = numpy_utils::repeat(prompt_embeds, generation_config.num_videos_per_prompt);
         prompt_attention_mask = numpy_utils::repeat(prompt_attention_mask, generation_config.num_videos_per_prompt);
+
+        print_ov_tensor(prompt_embeds, "encoder_hidden_states");
+        print_ov_tensor(prompt_attention_mask, "encoder_attention_mask");
 
         m_transformer->set_hidden_states("encoder_hidden_states", prompt_embeds);
         m_transformer->set_hidden_states("encoder_attention_mask", prompt_attention_mask);
@@ -318,6 +327,56 @@ class Text2VideoPipeline::LTXPipeline {
 
 public:
     VideoGenerationConfig m_generation_config;
+
+    LTXPipeline(
+        const std::filesystem::path& root_dir,
+        std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now()
+    ) {
+        const std::filesystem::path model_index_path = root_dir / "model_index.json";
+
+        std::cout << model_index_path << std::endl;
+        std::ifstream file(model_index_path);
+        OPENVINO_ASSERT(file.is_open(), "Failed to open ", model_index_path);
+
+
+        nlohmann::json data = nlohmann::json::parse(file);
+        // using utils::read_json_param;
+
+        OPENVINO_ASSERT("LTXPipeline" == data["_class_name"].get<std::string>());
+
+        m_scheduler = cast_scheduler(Scheduler::from_config(root_dir / "scheduler/scheduler_config.json"));
+
+        const std::string t5_text_encoder = data["text_encoder"][1].get<std::string>();
+        if (t5_text_encoder == "T5EncoderModel") {
+            m_t5_text_encoder = std::make_shared<T5EncoderModel>(root_dir / "text_encoder");
+        } else {
+            OPENVINO_THROW("Unsupported '", t5_text_encoder, "' text encoder type");
+        }
+
+        const std::string vae = data["vae"][1].get<std::string>();
+        if (vae == "AutoencoderKLLTXVideo") {
+            m_vae = std::make_shared<AutoencoderKLLTXVideo>(root_dir / "vae_decoder");
+        } else {
+            OPENVINO_THROW("Unsupported '", vae, "' VAE decoder type");
+        }
+
+        const std::string transformer = data["transformer"][1].get<std::string>();
+        if (transformer == "LTXVideoTransformer3DModel") {
+            m_transformer = std::make_shared<LTXVideoTransformer3DModel>(root_dir / "transformer");
+        } else {
+            OPENVINO_THROW("Unsupported '", transformer, "' Transformer type");
+        }
+
+        m_generation_config = LTX_VIDEO_DEFAULT_CONFIG;
+
+            // m_scheduler{cast_scheduler(Scheduler::from_config(models_dir / "scheduler/scheduler_config.json"))},
+            // m_t5_text_encoder{std::make_shared<T5EncoderModel>(models_dir / "text_encoder", device, properties)},
+            // m_transformer{std::make_shared<LTXVideoTransformer3DModel>(models_dir / "transformer", device, properties)},
+            // m_vae{std::make_shared<AutoencoderKLLTXVideo>(models_dir / "vae_decoder", device, properties)},
+            // m_generation_config{LTX_VIDEO_DEFAULT_CONFIG} {
+
+        m_load_time = Ms{std::chrono::steady_clock::now() - start_time};
+    }
 
     LTXPipeline(
         const std::filesystem::path& models_dir,
@@ -421,11 +480,11 @@ public:
             callback = callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>();
         }
 
-        size_t num_channels_latents = m_transformer->get_config().in_channels;
+        size_t num_channels_latents = transformer_config.in_channels;
         size_t spatial_compression_ratio = m_vae->get_config().patch_size * std::pow(2, std::reduce(m_vae->get_config().spatio_temporal_scaling.begin(), m_vae->get_config().spatio_temporal_scaling.end(), 0));
         size_t temporal_compression_ratio = m_vae->get_config().patch_size_t * std::pow(2, std::reduce(m_vae->get_config().spatio_temporal_scaling.begin(), m_vae->get_config().spatio_temporal_scaling.end(), 0));
-        size_t transformer_spatial_patch_size = m_transformer->get_config().patch_size;
-        size_t transformer_temporal_patch_size = m_transformer->get_config().patch_size_t;
+        size_t transformer_spatial_patch_size = transformer_config.patch_size;
+        size_t transformer_temporal_patch_size = transformer_config.patch_size_t;
 
         m_latent_num_frames = (merged_generation_config.num_frames - 1) / temporal_compression_ratio + 1;
         m_latent_height = merged_generation_config.height / spatial_compression_ratio;
@@ -455,7 +514,7 @@ public:
 
         // // Prepare timesteps
         // TODO: ov::Tensor timestep(ov::element::f32, {1}); is enough
-        ov::Tensor timestep(ov::element::f32, {2});
+        ov::Tensor timestep(ov::element::f32, {1});
         float* timestep_data = timestep.data<float>();
 
         ov::Shape latent_shape_cfg = latent.get_shape();
@@ -476,9 +535,10 @@ public:
             }
 
             timestep_data[0] = timesteps[inference_step];
-            timestep_data[1] = timesteps[inference_step];
+            // timestep_data[1] = timesteps[inference_step];
 
             auto infer_start = std::chrono::steady_clock::now();
+            // print_ov_tensor(latent_cfg, "hidden_states");
             ov::Tensor noise_pred_tensor = m_transformer->infer(latent_cfg, timestep);
             auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
             m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
@@ -550,7 +610,56 @@ public:
 
         return VideoGenerationResult{video, m_perf_metrics};
     }
+
+    void reshape(int64_t num_videos_per_prompt,
+                  int64_t num_frames,
+                  int64_t height,
+                  int64_t width,
+                  float guidance_scale) {
+        check_video_size(height, width);
+
+        const size_t batch_size_multiplier = do_classifier_free_guidance(guidance_scale) ? 2 : 1;  // Transformer accepts 2x batch in case of CFG
+        m_t5_text_encoder->reshape(batch_size_multiplier, m_generation_config.max_sequence_length);
+        m_transformer->reshape(num_videos_per_prompt * batch_size_multiplier, num_frames, height, width, m_generation_config.max_sequence_length);
+        m_vae->reshape(num_videos_per_prompt, num_frames, height, width);
+    }
+
+    void save_load_time(std::chrono::steady_clock::time_point start_time) {
+        m_load_time += Ms{std::chrono::steady_clock::now() - start_time};
+    }
+
+    void compile(const std::string& text_encode_device,
+                 const std::string& denoise_device,
+                 const std::string& vae_device,
+                 const ov::AnyMap& properties) {
+        m_t5_text_encoder->compile(text_encode_device, properties);
+        m_vae->compile(vae_device, properties);
+        m_transformer->compile(denoise_device, properties);
+    }
+
+    void compile(const std::string& device,
+                 const ov::AnyMap& properties) {
+        compile(device, device, device, properties);
+    }
+
+    private:
+        void check_video_size(const int height, const int width) const {
+            OPENVINO_ASSERT(m_transformer != nullptr);
+            const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
+            OPENVINO_ASSERT((height % vae_scale_factor == 0 || height < 0) && (width % vae_scale_factor == 0 || width < 0),
+                            "Both 'width' and 'height' must be divisible by ",
+                            vae_scale_factor);
+
+            OPENVINO_ASSERT(height > 0, "Height must be positive");
+            OPENVINO_ASSERT(height % 32 == 0, "Height have to be divisible by 32 but got ", height);
+            OPENVINO_ASSERT(width > 0, "Width must be positive");
+            OPENVINO_ASSERT(width % 32 == 0, "Width have to be divisible by 32 but got ", width);
+        }
 };
+
+Text2VideoPipeline::Text2VideoPipeline(
+    const std::filesystem::path& model_path
+) : m_impl{std::make_unique<ov::genai::Text2VideoPipeline::LTXPipeline>(model_path)} {}
 
 Text2VideoPipeline::Text2VideoPipeline(
     const std::filesystem::path& models_dir,
@@ -575,6 +684,38 @@ void Text2VideoPipeline::set_generation_config(const VideoGenerationConfig& gene
     generation_config.validate();
     m_impl->m_generation_config = generation_config;
     replace_defaults(m_impl->m_generation_config);
+}
+
+void Text2VideoPipeline::reshape(int64_t num_videos_per_prompt, int64_t num_frames, int64_t height, int64_t width, float guidance_scale) {
+    auto start_time = std::chrono::steady_clock::now();
+    m_impl->reshape(num_videos_per_prompt, num_frames, height, width, guidance_scale);
+    m_impl->save_load_time(start_time);
+
+    // update config with the specified parameters, so that the user doesn't need to explicitly pass these as properties
+    // to generate()
+    auto config = m_impl->m_generation_config;
+    config.num_videos_per_prompt = num_videos_per_prompt;
+    config.num_frames = num_frames;
+    config.height = height;
+    config.width = width;
+    config.guidance_scale = guidance_scale;
+
+    set_generation_config(config);
+}
+
+void Text2VideoPipeline::compile(const std::string& device, const ov::AnyMap& properties) {
+    auto start_time = std::chrono::steady_clock::now();
+    m_impl->compile(device, properties);
+    m_impl->save_load_time(start_time);
+}
+
+void Text2VideoPipeline::compile(const std::string& text_encode_device,
+    const std::string& denoise_device,
+    const std::string& vae_device,
+    const ov::AnyMap& properties) {
+    auto start_time = std::chrono::steady_clock::now();
+    m_impl->compile(text_encode_device, denoise_device, vae_device, properties);
+    m_impl->save_load_time(start_time);
 }
 
 Text2VideoPipeline::~Text2VideoPipeline() = default;

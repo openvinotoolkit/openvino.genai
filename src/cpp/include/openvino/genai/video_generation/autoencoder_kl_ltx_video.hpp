@@ -62,12 +62,18 @@ public:
 
     size_t get_vae_scale_factor() const;
 
+    void get_compression_ratio(const std::filesystem::path& config_path, int64_t& spatial_compression_ratio, int64_t& temporal_compression_ratio);
+
+    AutoencoderKLLTXVideo& reshape(int64_t batch_size, int64_t num_frames, int64_t height, int64_t width);
+
 private:
     void merge_vae_image_post_processing() const;
 
     Config m_config;
     ov::InferRequest m_encoder_request, m_decoder_request;
     std::shared_ptr<ov::Model> m_encoder_model = nullptr, m_decoder_model = nullptr;
+
+    int64_t m_patch_size, m_patch_size_t;
 };
 
 } // namespace genai

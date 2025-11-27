@@ -49,6 +49,10 @@ public:
 
     ov::Tensor infer(const ov::Tensor latent, const ov::Tensor timestep);
 
+    LTXVideoTransformer3DModel& reshape(int64_t batch_size, int64_t num_frames, int64_t height, int64_t width, int64_t tokenizer_model_max_length);
+
+    void get_patch_size(const std::filesystem::path& config_path, int64_t& patch_size, int64_t& patch_size_t);
+
 private:
     class Inference;
     std::shared_ptr<Inference> m_impl;
@@ -56,7 +60,7 @@ private:
     Config m_config;
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
-    size_t m_vae_scale_factor;
+    int64_t m_spatial_compression_ratio, m_temporal_compression_ratio; // calculated based on vae config, needed for reshape
 
     class InferenceDynamic;
     class InferenceStaticBS1;

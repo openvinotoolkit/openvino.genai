@@ -12,6 +12,17 @@
 namespace ov {
 namespace genai {
 
+void get_compression_ratio(const std::filesystem::path& config_path, int64_t& spatial_compression_ratio, int64_t& temporal_compression_ratio);
+
+void get_patch_size(const std::filesystem::path& config_path, int64_t& patch_size, int64_t& patch_size_t) {
+    std::ifstream file(config_path);
+    OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
+    nlohmann::json data = nlohmann::json::parse(file);
+
+    utils::read_json_param(data, "patch_size", patch_size);
+    utils::read_json_param(data, "patch_size_t", patch_size_t);
+}
+
 LTXVideoTransformer3DModel::Config::Config(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
@@ -27,6 +38,7 @@ LTXVideoTransformer3DModel::Config::Config(const std::filesystem::path& config_p
 LTXVideoTransformer3DModel::LTXVideoTransformer3DModel(const std::filesystem::path& root_dir)
     : m_config(root_dir / "config.json") {
     m_model = utils::singleton_core().read_model(root_dir / "openvino_model.xml");
+    get_compression_ratio(root_dir.parent_path() / "vae_decoder" / "config.json", m_spatial_compression_ratio, m_temporal_compression_ratio);
 }
 
 LTXVideoTransformer3DModel::LTXVideoTransformer3DModel(const std::filesystem::path& root_dir,
@@ -69,6 +81,50 @@ ov::Tensor LTXVideoTransformer3DModel::infer(const ov::Tensor latent_model_input
     m_request.infer();
 
     return m_request.get_output_tensor();
+}
+
+LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_size,
+                                                            int64_t num_frames,
+                                                            int64_t height,
+                                                            int64_t width,
+                                                            int64_t tokenizer_model_max_length) {
+    OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot reshape already compiled model");
+
+    // hidden_states=latent_model_input,
+    // timestep=timestep,
+    // encoder_hidden_states=prompt_embeds,
+    // pooled_projections=pooled_prompt_embeds,
+
+    size_t patch_size = get_config().patch_size;
+    size_t patch_size_t = get_config().patch_size_t;
+
+    num_frames = ((num_frames - 1) / m_temporal_compression_ratio + 1) / patch_size_t;
+    height /=  (m_spatial_compression_ratio * patch_size);
+    width /=  (m_spatial_compression_ratio * patch_size);
+
+    std::cout << "m_spatial_compression_ratio " << m_spatial_compression_ratio << std::endl;
+    std::cout << "m_temporal_compression_ratio " << m_temporal_compression_ratio << std::endl;
+
+    std::map<std::string, ov::PartialShape> name_to_shape;
+
+    for (auto&& input : m_model->inputs()) {
+        std::string input_name = input.get_any_name();
+        name_to_shape[input_name] = input.get_partial_shape();
+        std::cout << input_name << std::endl;
+        if (input_name == "timestep") {
+            name_to_shape[input_name][0] = 1;
+        } else if (input_name == "encoder_hidden_states") {
+            name_to_shape[input_name] = {batch_size, tokenizer_model_max_length, name_to_shape[input_name][2]};
+        } else if (input_name == "hidden_states") {
+            name_to_shape[input_name] = {batch_size, num_frames * height * width, name_to_shape[input_name][2]};
+        } else if (input_name == "encoder_attention_mask") {
+            name_to_shape[input_name] = {batch_size, tokenizer_model_max_length};
+        }
+    }
+
+    m_model->reshape(name_to_shape);
+
+    return *this;
 }
 
 }  // namespace genai
