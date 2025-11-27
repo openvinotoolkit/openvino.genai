@@ -25,26 +25,19 @@ bool are_tokenizers_equal(Tokenizer& lhs, Tokenizer& rhs) {
            lhs.get_bos_token_id() == rhs.get_bos_token_id() && lhs.get_pad_token_id() == rhs.get_pad_token_id();
 }
 
-ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc, 
-                                                                             const ov::genai::ModelDesc& draft_model_desc) {
-    auto main_model = main_model_desc.model;
-    auto draft_model = draft_model_desc.model;
+std::pair<ov::genai::SchedulerConfig, ov::genai::SchedulerConfig>
+ContinuousBatchingPipeline::SpeculativeDecodingImpl::init_speculative_models(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc) {
+    OPENVINO_ASSERT(main_model_desc.model != nullptr, "Main model cannot be null");
+    OPENVINO_ASSERT(draft_model_desc.model != nullptr, "Draft model cannot be null");
+    utils::apply_paged_attention_transformations(main_model_desc.model, main_model_desc.scheduler_config.use_cache_eviction);
+    utils::apply_paged_attention_transformations(draft_model_desc.model, main_model_desc.scheduler_config.use_cache_eviction);
 
-    OPENVINO_ASSERT(main_model != nullptr, "Main model cannot be null");
-    OPENVINO_ASSERT(draft_model != nullptr, "Draft model cannot be null");
+    utils::apply_gather_before_matmul_transformation(main_model_desc.model);
+    utils::apply_gather_before_matmul_transformation(draft_model_desc.model);
 
-    auto main_scheduler_config = main_model_desc.scheduler_config;
-    auto main_device = main_model_desc.device;
-
-    utils::apply_paged_attention_transformations(main_model, main_model_desc.scheduler_config.use_cache_eviction);
-    utils::apply_paged_attention_transformations(draft_model, main_model_desc.scheduler_config.use_cache_eviction);
-
-    utils::apply_gather_before_matmul_transformation(main_model);
-    utils::apply_gather_before_matmul_transformation(draft_model);
-
-    std::string draft_device = draft_model_desc.device.empty() ? main_model_desc.device : draft_model_desc.device;
     bool is_draft_scheduler_undefined = draft_model_desc.scheduler_config == SchedulerConfig();
 
+    auto main_scheduler_config = main_model_desc.scheduler_config;
     ov::genai::SchedulerConfig main_scheduler_config_updated = main_scheduler_config,
                                draft_scheduler_config = is_draft_scheduler_undefined ? main_scheduler_config : draft_model_desc.scheduler_config;
 
@@ -63,8 +56,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
             }
             return total_hidden_size;
         };
-        float main_model_hidden_size = compute_total_hidden_size(main_model),
-              draft_model_hidden_size = compute_total_hidden_size(draft_model);
+        float main_model_hidden_size = compute_total_hidden_size(main_model_desc.model),
+              draft_model_hidden_size = compute_total_hidden_size(draft_model_desc.model);
         auto k = draft_model_hidden_size / (main_model_hidden_size + draft_model_hidden_size);
 
         // TODO: work with KV blocks as it will be more precise instead of GBs
@@ -82,8 +75,15 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
         draft_scheduler_config.max_num_batched_tokens = main_scheduler_config_updated.max_num_batched_tokens;
     }
 
-    ov::AnyMap draft_properties = draft_model_desc.properties.empty() ? main_model_desc.properties : draft_model_desc.properties;
+    return std::make_pair(main_scheduler_config_updated, draft_scheduler_config);
+}
 
+ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(const ov::genai::ModelDesc& main_model_desc,
+                                                                             const ov::genai::ModelDesc& draft_model_desc) {
+    auto scheduler_configs = init_speculative_models(main_model_desc, draft_model_desc);
+
+    auto main_device = main_model_desc.device;
+    std::string draft_device = draft_model_desc.device.empty() ? main_model_desc.device : draft_model_desc.device;
     // main and draft model can have different tokenizers
     // to do: support retokenization: 154103
     Tokenizer main_model_tokenizer = main_model_desc.tokenizer;
@@ -91,16 +91,15 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
 
     // todo: remove this condition after support of CVS-154103
     OPENVINO_ASSERT(are_tokenizers_equal(main_model_tokenizer, draft_model_tokenizer), "Tokenizers for draft and main models are different!");
-    
     m_tokenizer = main_model_tokenizer;
-
+    ov::AnyMap draft_properties = draft_model_desc.properties.empty() ? main_model_desc.properties : draft_model_desc.properties;
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
     m_main_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(
-        main_model, main_model_tokenizer, main_model_desc.generation_config,
-        main_scheduler_config_updated, main_device, main_model_desc.properties, true);
+        main_model_desc.model, main_model_tokenizer, main_model_desc.generation_config,
+        scheduler_configs.first, main_device, main_model_desc.properties, true);
     m_draft_pipeline = std::make_shared<ContinuousBatchingForSpeculativeDecodingImpl>(
-        draft_model, draft_model_tokenizer, draft_model_desc.generation_config,
-        draft_scheduler_config, draft_device, draft_properties, false);
+        draft_model_desc.model, draft_model_tokenizer, draft_model_desc.generation_config,
+        scheduler_configs.second, draft_device, draft_properties, false);
 
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
     m_draft_pipeline->raw_perf_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
@@ -241,116 +240,37 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
                                                               const StreamerVariant& streamer,
                                                               const std::optional<std::vector<ov::Tensor>>& token_type_ids,
                                                               const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids) {
-    OPENVINO_ASSERT(!token_type_ids.has_value());
-    m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
-    m_draft_pipeline->raw_perf_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
-
-    OPENVINO_ASSERT(!has_non_finished_requests(), "Generate cannot be called while ContinuousBatchingPipeline is already in running state. Use ContinuousBatchingPipeline::add_request");
-    OPENVINO_ASSERT(input_ids.size() == sampling_params.size());
-
-    const auto generate_start = std::chrono::steady_clock::now();
-
-    // checks that all requests has the same LoRA adapters property value
-    for (size_t i = 1; i < sampling_params.size(); ++i) {
-        OPENVINO_ASSERT(sampling_params[i - 1].adapters == sampling_params[i].adapters,
-            "LoRA adapters value must be the same for all requests");
-    }
-    m_main_pipeline->set_adapters(sampling_params[0].adapters);
-    m_draft_pipeline->set_adapters(sampling_params[0].adapters);
-
-    const auto streamer_ptr = std::make_shared<ThreadedStreamerWrapper>(streamer, m_tokenizer);
-
-    OPENVINO_ASSERT(!streamer_ptr->has_callback() || input_ids.size() == 1 && (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial()),
-        "Currently streaming is possible only with batch size=1 and only for greedy or multinomial decoding");
-
-    std::vector<GenerationHandle> main_generations;
-    for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
-        OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
-        auto main_sampling_params = sampling_params[request_id];
-        if (main_sampling_params.assistant_confidence_threshold == 0.f) {
-            if (main_sampling_params.num_assistant_tokens == 0) {
-                main_sampling_params.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
+    GenerateStrategy strategy;
+    strategy.prepare_request = [this](size_t,
+                                  const ov::Tensor& in_ids,
+                                  GenerationConfig& main_cfg,
+                                  GenerationConfig& draft_cfg,
+                                  ov::Tensor& main_in,
+                                  ov::Tensor& draft_in) {
+        if (main_cfg.assistant_confidence_threshold == 0.f) {
+            if (main_cfg.num_assistant_tokens == 0) {
+                main_cfg.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
             }
         }
-        main_generations.push_back(m_main_pipeline->add_request(request_id, input_ids[request_id], main_sampling_params));
+        draft_cfg.ignore_eos = true;
+        draft_cfg.stop_strings = {};
+        main_in = in_ids;
+        draft_in = in_ids;
+    };
+    strategy.check_streaming = [](const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr,
+                                  const std::vector<ov::Tensor>& input_ids,
+                                  const std::vector<GenerationConfig>& sampling_params) {
+        OPENVINO_ASSERT(!streamer_ptr->has_callback() ||
+                        (input_ids.size() == 1 &&
+                         (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_multinomial())),
+                        "Streaming only supports batch size=1 with greedy/multinomial");
+    };
+    strategy.start_timer = [](){ return std::chrono::steady_clock::now(); };
+    strategy.stop_timer  = [](TimePoint start){
+        return PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start);
+    };
 
-        auto draft_sampling_params = main_sampling_params;
-        // set the parameters do not stop draft generation without stopping of the same request for main pipeline
-        draft_sampling_params.ignore_eos = true;
-        draft_sampling_params.stop_strings = {};
-        std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
-        m_draft_generations.insert({request_id, m_draft_pipeline->add_request(request_id, input_ids[request_id], draft_sampling_params)});
-    }
-    auto all_requests = get_awaiting_requests();
-
-    GenerationHandle& generation = main_generations.at(0);
-
-    streamer_ptr->start();
-
-    while (has_non_finished_requests()) {
-        try {
-            step();
-        } catch (...) {
-            drop_requests(); // remove all requests from pipeline state in case of exception
-            streamer_ptr->end();
-            std::rethrow_exception(std::current_exception());
-        }
-        stream_tokens(streamer_ptr, generation);
-    }
-
-    // waiting for completion of streaming
-    streamer_ptr->end();
-
-    OPENVINO_ASSERT(is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");
-
-    std::vector<EncodedGenerationResult> results;
-    results.reserve(all_requests.size());
-
-    m_perf_metrics.draft_model_metrics.raw_metrics = m_draft_pipeline->raw_perf_metrics;
-
-    const auto generate_end = std::chrono::steady_clock::now();
-    const auto generate_duration = PerfMetrics::get_microsec(generate_end - generate_start);
-
-    for (size_t request_id = 0; request_id < all_requests.size(); ++request_id) {
-        const auto& request = all_requests[request_id];
-        auto sampling_params = request->get_sampling_parameters();
-        const auto& sequences = request->get_finished_sequences();
-        size_t num_outputs = std::min(sampling_params.num_return_sequences, sequences.size());
-
-        EncodedGenerationResult result;
-        result.m_request_id = request_id;
-        result.m_generation_ids.resize(num_outputs);
-        result.m_scores.resize(num_outputs);
-        result.m_status = request->get_generation_stream()->get_status();
-
-        for (size_t i = 0; i < num_outputs; ++i) {
-            const auto & sequence = sequences[i];
-            const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params) : sequence->get_cumulative_log_prob();
-            const auto & generated_ids = sequence->get_generated_ids();
-
-            if (sampling_params.echo) {
-                result.m_generation_ids[i] = request->get_prompt_ids();
-            }
-            std::copy(generated_ids.begin(), generated_ids.end(), std::back_inserter(result.m_generation_ids[i]));
-            result.m_scores[i] = score;
-        }
-
-        result.m_status = main_generations[request_id]->get_status();
-
-        // The same perf metrics for each sequence, only tokenization/detokenization will differ.
-        m_perf_metrics.raw_metrics.generate_durations.clear();
-        m_perf_metrics.raw_metrics.generate_durations.emplace_back(generate_duration);
-        m_perf_metrics.num_input_tokens = request->get_prompt_len();
-        m_perf_metrics.evaluate_statistics(generate_start);
-
-        result.perf_metrics = m_perf_metrics;
-        result.extended_perf_metrics = std::make_shared<SDPerModelsPerfMetrics>(m_perf_metrics);
-        results.push_back(std::move(result));
-    }
-
-    OPENVINO_ASSERT(results.size() == input_ids.size());
-
-    return results;
+    return generate_common(this, input_ids, sampling_params, streamer, token_type_ids, strategy);
 }
 
 SpeculativeDecodingMetrics
@@ -375,4 +295,5 @@ std::vector<SequenceGroup::Ptr> ContinuousBatchingPipeline::SpeculativeDecodingI
     OPENVINO_ASSERT(main_awaiting_requests.size() == draft_awaiting_requests.size());
     return main_awaiting_requests;
 }
+
 }
