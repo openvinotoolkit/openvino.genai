@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
-import subprocess
+import subprocess  # nosec B404
 import os
 import numpy as np
 import openvino as ov
