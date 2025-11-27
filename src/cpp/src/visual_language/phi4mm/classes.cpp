@@ -728,6 +728,7 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
     {
         ov::Tensor height{ov::element::i32, {}};
         ov::Tensor width{ov::element::i32, {}};
+        // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
         ov::Tensor sub_GN{ov::element::f32, {1, 1, 1, m_vlm_config.sub_GN.size()}, const_cast<float*>(m_vlm_config.sub_GN.data())};
         ov::Tensor glb_GN{ov::element::f32, {1, 1, m_vlm_config.glb_GN.size()}, const_cast<float*>(m_vlm_config.glb_GN.data())};
         height.data<int32_t>()[0] = image_height;
