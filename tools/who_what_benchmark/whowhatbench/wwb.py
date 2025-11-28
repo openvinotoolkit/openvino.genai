@@ -62,10 +62,11 @@ def parse_args():
     parser.add_argument(
         "--model-type",
         type=str,
-        choices=["text", "text-to-image", "visual-text", "image-to-image", "image-inpainting", "text-embedding", "text-reranking"],
+        choices=["text", "text-to-image", "visual-text", "visual-video-text", "image-to-image", "image-inpainting", "text-embedding", "text-reranking"],
         default="text",
         help="Indicated the model type: 'text' - for causal text generation, 'text-to-image' - for image generation, "
-        "visual-text - for Visual Language Models, image-to-image - for image generation based on image and prompt "
+        "visual-text - for Visual Language Models with image inpust, visual-video-text - for Visual Language Models with video inputs, "
+        "image-to-image - for image generation based on image and prompt "
         "image-inpainting - for image generation based on image, mask and prompt, text-reranking - for reranking a list of texts based on relevance to query",
     )
     parser.add_argument(
@@ -266,6 +267,14 @@ def parse_args():
         default=None,
         help="Config option assistant_confidence_threshold for Speculative decoding.",
     )
+    parser.add_argument(
+        "--video-frames-num",
+        type=int,
+        default=None,
+        help="The number of frames that will be taken from video for input, the frames will be taken evenly across the entire length, "
+             "applicable for Visual Language Models with video inputs",
+    )
+
     return parser.parse_args()
 
 
@@ -507,15 +516,22 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
     return image
 
 
-def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question):
-    image_data = ov.Tensor(np.array(image)[None])
+def genai_gen_visual_text(model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question):
+    kwargs = {
+        "do_sample": False,
+        "max_new_tokens": max_new_tokens
+    }
+    if image is not None:
+        kwargs['image'] = ov.Tensor(np.array(image)[None])
+    if video is not None:
+        kwargs['videos'] = [ov.Tensor(np.array(video))]
+
     out = model.generate(
         prompt,
         **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
-        image=image_data,
-        do_sample=False,
-        max_new_tokens=max_new_tokens
+        **kwargs
     )
+
     return out.texts[0]
 
 
@@ -588,7 +604,7 @@ def create_evaluator(base_model, args):
                 is_genai=args.genai,
                 seed=args.seed,
             )
-        elif task == "visual-text":
+        elif task == "visual-text" or task == "visual-video-text":
             processor, config = load_processor(args)
             tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
             if config and is_model_with_automatic_crop(config) and args.hf:
@@ -605,6 +621,8 @@ def create_evaluator(base_model, args):
                 gen_answer_fn=genai_gen_visual_text if args.genai else None,
                 processor=processor,
                 crop_question=crop_question,
+                task_type=task,
+                frames_num=args.video_frames_num
             )
         elif task == "image-to-image":
             return EvaluatorCLS(
@@ -840,7 +858,7 @@ def main():
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
 
     if args.verbose and (args.target_model or args.target_data):
-        if args.model_type == "text" or args.model_type == "visual-text":
+        if args.model_type in ["text", "visual-text", "visual-video-text"]:
             print_text_results(evaluator)
         elif "text-to-image" in args.model_type or "image-to-image" in args.model_type:
             print_image_results(evaluator)
