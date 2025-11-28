@@ -259,6 +259,7 @@ def run_qwen3_rerank_optimum(
         truncation=True,
         return_tensors="pt",
     )
+    print(inputs["attention_mask"])
     logits = model(**inputs).logits
 
     # support seq-cls reranker
@@ -576,9 +577,13 @@ def test_rerank_documents(rerank_model, dataset_documents, query, config):
     "config",
     [
         TextRerankPipeline.Config(top_n=4),
+        TextRerankPipeline.Config(top_n=4, padding_side="left"),
+        TextRerankPipeline.Config(top_n=4, padding_side="right"),
     ],
     ids=[
         "top_n=4",
+        "top_n=4,padding_side=left",
+        "top_n=4,padding_side=right",
     ],
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
@@ -599,6 +604,11 @@ def test_qwen3_seq_cls_rerank_documents(rerank_model: OVConvertedModelSchema, qu
         formatted_documents,
         config,
     )
+
+    for opt, genai in zip(opt_result, genai_result):
+        print(f"Optimum: {opt}")
+        print(f"GenAI:   {genai}")
+        print("-----")
 
     assert_rerank_results(opt_result, genai_result)
 
@@ -621,9 +631,13 @@ def test_qwen3_seq_cls_rerank_documents(rerank_model: OVConvertedModelSchema, qu
     "config",
     [
         TextRerankPipeline.Config(top_n=4),
+        TextRerankPipeline.Config(top_n=4, padding_side="left"),
+        TextRerankPipeline.Config(top_n=4, padding_side="right"),
     ],
     ids=[
         "top_n=4",
+        "top_n=4, padding_side=left",
+        "top_n=4, padding_side=right",
     ],
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
@@ -644,5 +658,10 @@ def test_qwen3_rerank_documents(llm_model: OVConvertedModelSchema, query, task, 
         formatted_documents,
         config,
     )
+
+    for opt, genai in zip(opt_result, genai_result):
+        print(f"Optimum: {opt}")
+        print(f"GenAI:   {genai}")
+        print("-----")
 
     assert_rerank_results(opt_result, genai_result)
