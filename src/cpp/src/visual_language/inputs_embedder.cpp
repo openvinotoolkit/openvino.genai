@@ -245,27 +245,17 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::extract_text_features_for_pruning(co
                                                                               const ov::Tensor& input_ids,
                                                                               int64_t vision_start_token_id,
                                                                               int64_t vision_end_token_id) const {
-    // Default implementation: return empty tensor
-    // Models that support CDPruner should override this method
-    GENAI_WARN("extract_text_features_for_pruning not implemented for this model");
-    return ov::Tensor();
+    OPENVINO_THROW("extract_text_features_for_pruning must be implemented for CDPruner support");
 }
 
 std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::convert_visual_features_for_pruning(
     const ov::Tensor& vision_embeds,
     size_t chunk_count) const {
-    // Default implementation: return single tensor in vector
-    GENAI_WARN("convert_visual_features_for_pruning not implemented for this model");
+    // Default implementation only supports single chunk (chunk_count = 1)
+    OPENVINO_ASSERT(
+        chunk_count == 1,
+        "convert_visual_features_for_pruning must be implemented for frame chunking support (chunk_count > 1)");
     return {vision_embeds};
-}
-
-ov::Tensor InputsEmbedder::IInputsEmbedder::apply_visual_token_pruning(
-    const ov::Tensor& vision_embeds,
-    const std::vector<std::vector<bool>>& keep_flags_per_region,
-    const std::vector<std::array<size_t, 3>>& grid_thw_per_region) const {
-    // Default implementation: return as-is
-    GENAI_WARN("apply_visual_token_pruning not implemented for this model");
-    return vision_embeds;
 }
 
 void InputsEmbedder::IInputsEmbedder::adjust_position_ids_after_pruning(
@@ -276,9 +266,7 @@ void InputsEmbedder::IInputsEmbedder::adjust_position_ids_after_pruning(
     const std::vector<std::array<size_t, 3>>& images_grid_thw,
     const std::vector<size_t>& images_sequence,
     std::vector<std::vector<bool>>& keep_flags_per_region_out) const {
-    // Default implementation: do nothing (position_ids remain unchanged)
-    GENAI_WARN("adjust_position_ids_after_pruning not implemented for this model");
-    return;
+    OPENVINO_THROW("adjust_position_ids_after_pruning must be implemented for CDPruner support");
 }
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::merge_text_visual_embeddings_with_pruning(
@@ -296,9 +284,7 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::generate_pruned_input_ids(
     int64_t image_pad_token_id,
     int64_t vision_start_token_id,
     int64_t vision_end_token_id) const {
-    // Default implementation: return as-is
-    GENAI_WARN("generate_pruned_input_ids not implemented for this model");
-    return input_ids;
+    OPENVINO_THROW("generate_pruned_input_ids must be implemented for CDPruner support");
 }
 
 bool InputsEmbedder::IInputsEmbedder::is_cdpruner_active(const std::vector<ov::genai::EncodedImage>& images) const {

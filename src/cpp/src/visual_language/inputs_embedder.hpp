@@ -311,15 +311,6 @@ private:
                                                                             size_t chunk_count) const;
 
         /**
-         * @brief Apply visual token pruning based on keep flags.
-         * Default implementation returns input as-is.
-         */
-        virtual ov::Tensor apply_visual_token_pruning(
-            const ov::Tensor& vision_embeds,
-            const std::vector<std::vector<bool>>& keep_flags_per_region,
-            const std::vector<std::array<size_t, 3>>& grid_thw_per_region) const;
-
-        /**
          * @brief Adjust position IDs after visual token pruning.
          * Default implementation does nothing. Models supporting CDPruner should override.
          * @param position_ids_inout The position IDs to adjust (modified in-place)
