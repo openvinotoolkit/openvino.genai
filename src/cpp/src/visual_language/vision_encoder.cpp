@@ -28,6 +28,11 @@ VisionEncoder::VisionEncoder(const std::filesystem::path& model_dir, const std::
             return compiled_model.create_infer_request();
         });
     m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(model_dir, "preprocessor_config.json");
+
+    // [CDPruner] Initialize CDPruner with default configuration
+    ov::genai::cdpruner::Config cdpruner_config;
+    cdpruner_config.device = device;             // Use same device as the model
+    m_cdpruner = std::make_unique<ov::genai::cdpruner::CDPruner>(cdpruner_config);
 }
 
 VisionEncoder::VisionEncoder(
@@ -45,6 +50,11 @@ VisionEncoder::VisionEncoder(
             return compiled_model.create_infer_request();
         });
     m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(config_dir_path, "preprocessor_config.json");
+
+    // [CDPruner] Initialize CDPruner with default configuration
+    ov::genai::cdpruner::Config cdpruner_config;
+    cdpruner_config.device = device;  // Use same device as the model
+    m_cdpruner = std::make_unique<ov::genai::cdpruner::CDPruner>(cdpruner_config);
 }
 
 ProcessorConfig VisionEncoder::get_processor_config() const {
@@ -110,6 +120,64 @@ VisionEncoder::Ptr VisionEncoder::create(
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }
+}
+
+ov::Tensor VisionEncoder::apply_pruning(const std::vector<ov::Tensor>& visual_features,
+                                        const ov::Tensor& text_features) {
+    if (!m_cdpruner) {
+        return ov::Tensor();
+    }
+
+    // Delegate the entire multi-frame processing to CDPruner
+    return m_cdpruner->apply_pruning(visual_features, text_features);
+}
+
+bool VisionEncoder::is_pruning_available() {
+    return (m_cdpruner != nullptr);
+}
+
+std::optional<cdpruner::PruningStatistics> VisionEncoder::get_last_pruning_statistics() const {
+    if (!m_cdpruner) {
+        return std::nullopt;
+    }
+
+    try {
+        return m_cdpruner->get_last_pruning_statistics();
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to get pruning statistics: " << e.what() << std::endl;
+        return std::nullopt;
+    }
+}
+
+std::vector<std::vector<size_t>> VisionEncoder::get_last_selected_token_indices() const {
+    if (!m_cdpruner) {
+        return {};
+    }
+
+    try {
+        return m_cdpruner->get_last_selected_tokens();
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to get selected token indices: " << e.what() << std::endl;
+        return {};
+    }
+}
+
+std::optional<cdpruner::Config> VisionEncoder::set_pruning_config(const cdpruner::Config& config) {
+    if (!m_cdpruner || m_cdpruner->get_config() != config)
+        m_cdpruner = std::make_unique<cdpruner::CDPruner>(config);
+    try {
+        return std::optional<cdpruner::Config>(m_cdpruner->get_config());
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to set CDPruner config: " << e.what() << std::endl;
+        return std::nullopt;
+    }
+}
+
+std::optional<cdpruner::Config> VisionEncoder::get_pruning_config() const {
+    if (!m_cdpruner) {
+        return std::optional<cdpruner::Config>(cdpruner::Config{});
+    }
+    return std::optional<cdpruner::Config>(m_cdpruner->get_config());
 }
 
 } // namespace ov::genai

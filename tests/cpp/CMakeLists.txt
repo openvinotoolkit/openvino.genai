@@ -27,6 +27,16 @@ set(TEST_TARGET_NAME "tests_continuous_batching")
 add_executable(${TEST_TARGET_NAME} ${tests_src} $<TARGET_OBJECTS:openvino_genai_obj>)
 
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE $<TARGET_PROPERTY:openvino::genai,LINK_LIBRARIES> gtest_main gmock_main)
+
+# Add OpenCL support if enabled via OpenVINO configuration (consistent with main library)
+if(ENABLE_SYSTEM_OPENCL)
+    find_package(OpenCL QUIET)
+    if(TARGET OpenCL::OpenCL)
+        target_link_libraries(${TEST_TARGET_NAME} PRIVATE OpenCL::OpenCL)
+        target_compile_definitions(${TEST_TARGET_NAME} PRIVATE ENABLE_OPENCL_DPP)
+    endif()
+endif()
+
 target_include_directories(${TEST_TARGET_NAME} PRIVATE "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src"
                                                        $<TARGET_PROPERTY:openvino::genai,INTERFACE_INCLUDE_DIRECTORIES>)
 

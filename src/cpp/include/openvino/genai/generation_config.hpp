@@ -609,6 +609,10 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  * @param top_k the number of highest probability vocabulary tokens to keep for top-k-filtering.
  * @param rng_seed initializes random generator.
  *
+ * CDPruner configuration:
+ * @param pruning_ratio the percentage of visual tokens to prune [0-100). Set to 0 to disable pruning.
+ * @param relevance_weight the weight of relevance for visual tokens.
+ *
  * Assisting generation parameters:
  * @param assistant_confidence_threshold the lower token probability of candidate to be validated by main model in case of dynamic strategy candidates number update.
           NOTE: `assistant_confidence_threshold` is supported only by ContinuousBatching backend for Speculative Decode.
@@ -661,6 +665,10 @@ public:
     size_t top_k = std::numeric_limits<size_t>::max();
     bool do_sample = false;
     size_t rng_seed = 0;
+
+    // CDPruner config
+    size_t pruning_ratio = 0;  // 0 means disabled, and values from 1 to 100 represent the percentage to prune.
+    float relevance_weight = 0.5f;
 
     // Assisting generation parameters
     float assistant_confidence_threshold = 0.f;
@@ -735,6 +743,10 @@ static constexpr ov::Property<float> repetition_penalty{"repetition_penalty"};
 static constexpr ov::Property<int64_t> eos_token_id{"eos_token_id"};
 static constexpr ov::Property<float> presence_penalty{"presence_penalty"};
 static constexpr ov::Property<float> frequency_penalty{"frequency_penalty"};
+
+static constexpr ov::Property<size_t> pruning_ratio{"pruning_ratio"};
+static constexpr ov::Property<float> relevance_weight{"relevance_weight"};
+
 extern OPENVINO_GENAI_EXPORTS ov::Property<size_t> rng_seed;
 
 static constexpr ov::Property<float> assistant_confidence_threshold{"assistant_confidence_threshold"};
