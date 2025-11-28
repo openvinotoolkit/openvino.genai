@@ -40,6 +40,10 @@ public:
         const ov::AnyMap properties);
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
+
+private:
+    bool use_ov_image_preprocess = true; // default use ov image preprocessing, control by env IMAGE_PREPROCESS=CPP to use CPU image preprocessing
+
 };
 
 class InputsEmbedderPhi3V : public InputsEmbedder::IInputsEmbedder {
