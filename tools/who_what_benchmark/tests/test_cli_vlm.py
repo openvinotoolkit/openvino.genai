@@ -115,11 +115,11 @@ def test_vlm_nanollava(model_id, model_type, optimum_threshold, genai_threshold,
 
 
 @pytest.mark.parametrize(
-    ("model_id", "model_type", "threshold"),
+    ("model_id", "model_type"),
     [
         ("katuni4ka/tiny-random-qwen2vl", "visual-text"),
         ("katuni4ka/tiny-random-llava-next-video", "visual-text"),
     ],
 )
-def test_vlm_video(model_id, model_type, threshold, tmp_path):
+def test_vlm_video(model_id, model_type, tmp_path):
     run_test(model_id, model_type, None, None, tmp_path)
