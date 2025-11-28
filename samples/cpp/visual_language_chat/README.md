@@ -22,7 +22,7 @@ optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code Mi
 
 Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html) to run samples.
 
-## Run visual language chat:
+## Run image-to-text chat sample:
 
 [This image](https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11) can be used as a sample image.
 
@@ -33,7 +33,7 @@ Discrete GPUs (dGPUs) usually provide better performance compared to CPUs. It is
 Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#visual-language-models-vlms) for more details.
 
 
-## Run video to text chat:
+## Run video-to-text chat sample:
 
 A model that supports video input is required to run this sample, for example `llava-hf/LLaVA-NeXT-Video-7B-hf`.
 
