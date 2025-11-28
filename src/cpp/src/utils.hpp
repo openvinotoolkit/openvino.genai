@@ -9,6 +9,7 @@
 
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
+#include "openvino/genai/visual_language/inputs_embedder.hpp"
 #include "openvino/runtime/core.hpp"
 
 #include "openvino/genai/generation_handle.hpp"
@@ -30,6 +31,7 @@ struct ModelDesc {
     ov::AnyMap properties;
     ov::genai::GenerationConfig generation_config;
     std::shared_ptr<ov::Model> model = nullptr;
+    std::shared_ptr<ov::genai::InputsEmbedder> inputs_embedder;
     ov::genai::Tokenizer tokenizer;
 
     ModelDesc(const std::shared_ptr<ov::Model>& model,
@@ -44,7 +46,20 @@ struct ModelDesc {
         properties(properties),
         scheduler_config(scheduler_config),
         generation_config(generation_config) {}
-    
+
+    ModelDesc(const std::shared_ptr<ov::Model>& model,
+              std::shared_ptr<ov::genai::InputsEmbedder> inputs_embedder,
+              const std::string& device = {},
+              const ov::AnyMap& properties = {},
+              const ov::genai::SchedulerConfig& scheduler_config = {},
+              const ov::genai::GenerationConfig& generation_config = {})
+        : model(model),
+          inputs_embedder(inputs_embedder),
+          device(device),
+          properties(properties),
+          scheduler_config(scheduler_config),
+          generation_config(generation_config) {}
+
     ModelDesc() = default;
 };
 }  // namespace genai
