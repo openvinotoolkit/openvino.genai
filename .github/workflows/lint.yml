@@ -1,0 +1,38 @@
+name: Lint
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+
+env:
+  OV_BRANCH: master
+
+jobs:
+  lint:
+    name: Lint Changed Files
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Run pre-commit on changed files
+        uses: pre-commit/action@v3.0.1
+        with:
+          extra_args: --from-ref origin/${{ github.base_ref || 'master' }} --to-ref HEAD
