@@ -17,6 +17,7 @@
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/vision_encoder.hpp"
+#include "visual_language/cdpruner/cdpruner_config.hpp"
 
 namespace ov::genai {
 struct VLMPerfMetrics;
@@ -101,6 +102,9 @@ public:
     // finishes chat and clears a chat history
     void finish_chat();
 
+    // set CDPruner setting
+    virtual void set_visual_token_pruning_config(size_t pruning_ratio,
+                                                 float relevance_weight);
     virtual NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
@@ -197,6 +201,15 @@ private:
             return m_tokenizer;
         }
 
+        virtual void set_visual_token_pruning_config(size_t pruning_ratio, float relevance_weight) {
+            if (!m_vision_encoder)
+                return;
+            auto pruner_config = m_vision_encoder->get_pruning_config();
+            pruner_config->pruning_ratio = pruning_ratio;
+            pruner_config->relevance_weight = relevance_weight;
+            m_vision_encoder->set_pruning_config(pruner_config.value());
+        }
+
         utils::KVCacheState& get_kv_cache_state() {
             return m_kv_cache_state;
         }
@@ -264,6 +277,104 @@ private:
         * @return A vector of tensors where each tensor represents a single image with a shape of [1, H, W, C].
         */
         std::vector<ov::Tensor> to_single_image_tensors(const std::vector<ov::Tensor>& images);
+
+        /**
+         * @brief Result structure for CDPruner visual token pruning pipeline.
+         * Contains all necessary information about the pruning operation and its results.
+         */
+        struct PruningResult {
+            bool is_pruned = false;                                ///< Whether pruning was actually applied
+            size_t original_visual_tokens = 0;                     ///< Original number of visual tokens before pruning
+            size_t pruned_visual_tokens = 0;                       ///< Number of visual tokens after pruning
+            ov::Tensor pruned_embeddings;                          ///< Pruned visual embeddings tensor
+            ov::Tensor pruned_input_ids;                           ///< Input IDs with pruned visual tokens removed
+            std::vector<std::vector<bool>> keep_flags_per_region;  ///< Keep flags for each visual region
+        };
+
+        /**
+         * @brief Extract text features for CDPruner relevance calculation.
+         * Default implementation returns empty tensor. Models supporting CDPruner should override.
+         */
+        virtual ov::Tensor extract_text_features_for_pruning(const ov::Tensor& text_embeds,
+                                                             const ov::Tensor& input_ids,
+                                                             int64_t vision_start_token_id,
+                                                             int64_t vision_end_token_id) const;
+
+        /**
+         * @brief Convert visual features to CDPruner format.
+         * Default implementation returns single tensor in vector. Models supporting CDPruner should override.
+         * @param vision_embeds The visual embeddings to convert
+         * @param chunk_count Number of chunks for processing (for frame-based chunking)
+         * @return Vector of visual feature tensors
+         */
+        virtual std::vector<ov::Tensor> convert_visual_features_for_pruning(const ov::Tensor& vision_embeds,
+                                                                            size_t chunk_count) const;
+
+        /**
+         * @brief Adjust position IDs after visual token pruning.
+         * Default implementation does nothing. Models supporting CDPruner should override.
+         * @param position_ids_inout The position IDs to adjust (modified in-place)
+         * @param input_ids The input token IDs
+         * @param vision_start_token_id Vision region start token ID
+         * @param image_pad_token_id Image padding token ID
+         * @param images_grid_thw Grid dimensions for each image
+         * @param images_sequence Image sequence
+         * @param keep_flags_per_region_out Output parameter for keep flags
+         */
+        virtual void adjust_position_ids_after_pruning(ov::Tensor& position_ids_inout,
+                                                       const ov::Tensor& input_ids,
+                                                       int64_t vision_start_token_id,
+                                                       int64_t image_pad_token_id,
+                                                       const std::vector<std::array<size_t, 3>>& images_grid_thw,
+                                                       const std::vector<size_t>& images_sequence,
+                                                       std::vector<std::vector<bool>>& keep_flags_per_region_out) const;
+
+        /**
+         * @brief Merge text and visual embeddings after pruning.
+         * Default implementation throws error. Models supporting CDPruner must override.
+         */
+        virtual ov::Tensor merge_text_visual_embeddings_with_pruning(const ov::Tensor& text_embeds,
+                                                                     const ov::Tensor& pruned_vision_embeds,
+                                                                     const ov::Tensor& adjusted_position_ids,
+                                                                     int64_t image_pad_token_id) const;
+
+        /**
+         * @brief Generate pruned input_ids based on keep_flags.
+         * Default implementation returns input as-is. Models supporting CDPruner should override.
+         */
+        virtual ov::Tensor generate_pruned_input_ids(const ov::Tensor& input_ids,
+                                                     const std::vector<std::vector<bool>>& keep_flags_per_region,
+                                                     int64_t image_pad_token_id,
+                                                     int64_t vision_start_token_id,
+                                                     int64_t vision_end_token_id) const;
+
+        /**
+         * @brief Check if CDPruner should be active for current configuration.
+         * @param images Vector of encoded images (empty check)
+         * @return true if CDPruner is available, enabled, and has images to process
+         */
+        bool is_cdpruner_active(const std::vector<ov::genai::EncodedImage>& images) const;
+
+        /**
+         * @brief Execute the full CDPruner pipeline (Template Method).
+         * This method orchestrates the entire pruning workflow:
+         * 1. Extract text features
+         * 2. Convert visual features
+         * 3. Apply CDPruner
+         * 4. Adjust position IDs
+         * 5. Generate pruned input_ids
+         *
+         * Implementation in base class calls virtual functions that derived classes can override.
+         */
+        virtual PruningResult execute_cdpruner_pipeline(const ov::Tensor& input_ids,
+                                                        const ov::Tensor& text_embeds,
+                                                        const ov::Tensor& merged_visual_embeddings,
+                                                        const std::vector<ov::genai::EncodedImage>& images,
+                                                        const std::vector<std::array<size_t, 3>>& images_grid_thw,
+                                                        const std::vector<size_t>& images_sequence,
+                                                        int64_t image_pad_token_id,
+                                                        int64_t vision_start_token_id,
+                                                        int64_t vision_end_token_id);
     };
 
     std::shared_ptr<IInputsEmbedder> m_impl;
