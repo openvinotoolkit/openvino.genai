@@ -5,6 +5,8 @@ if (MSVC)
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
+set(BUILD_SHARED_LIBS ON)
+
 find_package(OpenVINOGenAI REQUIRED
     PATHS
         "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
