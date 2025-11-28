@@ -35,6 +35,7 @@ def read_images(path: str) -> list[Tensor]:
 def main():
     parser = argparse.ArgumentParser(description="Help command")
     parser.add_argument("-m", "--model", type=str, help="Path to model and tokenizers base directory")
+    parser.add_argument("-dm", "--draft_model", type=str, help="Path to draft model and tokenizers base directory")
     parser.add_argument("-p", "--prompt", type=str, default=None, help="Prompt")
     parser.add_argument("-pf", "--prompt_file", type=str, help="Read prompt from file")
     parser.add_argument("-i", "--image", type=str, default="image.jpg", help="Image")
@@ -61,6 +62,7 @@ def main():
     # Perf metrics is stored in VLMDecodedResults.
     # In order to get VLMDecodedResults instead of a string input should be a list.
     models_path = args.model
+    draft_model_path = args.draft_model
     images = read_images(args.image)
     device = args.device
     num_warmup = args.num_warmup
@@ -76,7 +78,13 @@ def main():
         scheduler_config = ov_genai.SchedulerConfig()
         scheduler_config.enable_prefix_caching = False
         scheduler_config.max_num_batched_tokens = sys.maxsize
-        pipe = ov_genai.VLMPipeline(models_path, device, scheduler_config=scheduler_config)
+
+        print("draft_model_path=", draft_model_path)
+        print("device=", device)
+        draft_model = ov_genai.draft_model(str(draft_model_path), device)
+        #pipe = ov_genai.VLMPipeline(models_path, device, scheduler_config=scheduler_config)
+        pipe = ov_genai.VLMPipeline(models_path, device, scheduler_config=scheduler_config, draft_model=draft_model)
+
 
     input_data = pipe.get_tokenizer().encode(prompt)
     prompt_token_size = input_data.input_ids.get_shape()[1]
