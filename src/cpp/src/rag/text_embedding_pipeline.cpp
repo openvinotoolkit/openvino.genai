@@ -239,7 +239,9 @@ public:
         ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
 
         utils::print_compiled_model_properties(compiled_model, "text embedding model");
-        m_request = compiled_model.create_infer_request();
+        for (int i = 0; i < (m_config.streams.has_value() ? *m_config.streams : 1); ++i) {
+            m_request.push_back(compiled_model.create_infer_request());
+        }
     };
 
     EmbeddingResults embed_documents(const std::vector<std::string>& texts) {
@@ -279,8 +281,10 @@ public:
     };
 
 private:
+    std::chrono::steady_clock::time_point m_start_time;
+    std::chrono::steady_clock::time_point m_end_time;
     Tokenizer m_tokenizer;
-    InferRequest m_request;
+    std::vector<InferRequest> m_request;
     Config m_config;
     AnyMap m_tokenization_params;
     std::optional<size_t> m_max_position_embeddings;
@@ -322,36 +326,54 @@ private:
     }
 
     void start_embed_async(std::vector<std::string>& texts) {
-        if (m_config.batch_size.has_value()) {
-            // if batch_size is set, model shape is fixed
-            // provide user friendly error message if number of texts is not equal to batch_size
-            OPENVINO_ASSERT(texts.size() == *m_config.batch_size,
-                            "Number of texts passed to pipeline should be equal to batch_size(",
-                            *m_config.batch_size,
-                            ")");
+        std::cout << "Streams amount: " << m_request.size() << std::endl;
+        std::cout << "Batch size: " << m_config.batch_size.value_or(1) << std::endl;
+
+        for (int i = 0; i < m_request.size(); i++) {
+            auto& request = m_request[i];
+            ov::genai::TokenizedInputs encoded;
+            if (m_config.batch_size.has_value()) {
+                    OPENVINO_ASSERT(texts.size() == *m_config.batch_size,
+                                   "Number of texts (",
+                                   texts.size(),
+                                   ") should be equal to batch_size (",
+                                   *m_config.batch_size,
+                                   ")");
+                encoded = m_tokenizer.encode(texts, m_tokenization_params);
+            } else {
+                encoded = m_tokenizer.encode(texts[i], m_tokenization_params);
+            }
+            // const auto shape = encoded.input_ids.get_shape();
+            // for (int i = 0; i < shape.size(); i++) {
+            //     std::cout << "input_ids shape[" << i << "] = " << shape[i] << std::endl;
+            // }
+            request.set_tensor("input_ids", encoded.input_ids);
+            request.set_tensor("attention_mask", encoded.attention_mask);
+            // fill token_type_ids
+            // todo: pass token_type_ids from tokenizer
+            if (has_token_type_ids_input(request.get_compiled_model().inputs())) {
+                ov::Tensor token_type_ids{ov::element::i64, encoded.input_ids.get_shape()};
+                std::fill_n(token_type_ids.data<int64_t>(), encoded.input_ids.get_size(), 0);
+                request.set_tensor("token_type_ids", token_type_ids);
+            }
         }
-
-        const auto encoded = m_tokenizer.encode(texts, m_tokenization_params);
-
-        m_request.set_tensor("input_ids", encoded.input_ids);
-        m_request.set_tensor("attention_mask", encoded.attention_mask);
-
-        // fill token_type_ids
-        // todo: pass token_type_ids from tokenizer
-        if (has_token_type_ids_input(m_request.get_compiled_model().inputs())) {
-            ov::Tensor token_type_ids{ov::element::i64, encoded.input_ids.get_shape()};
-            std::fill_n(token_type_ids.data<int64_t>(), encoded.input_ids.get_size(), 0);
-            m_request.set_tensor("token_type_ids", token_type_ids);
+        m_start_time = std::chrono::steady_clock::now();
+        for (auto& request : m_request) {
+            request.start_async();
         }
-
-        m_request.start_async();
     };
 
     EmbeddingResults wait_embed() {
-        m_request.wait();
+        for (auto& request : m_request) {
+            request.wait();
+        }
+        m_end_time = std::chrono::steady_clock::now();
+        std::cout << "Inference time: "
+                    << std::chrono::duration_cast<std::chrono::milliseconds>(m_end_time - m_start_time).count()
+                    << " ms" << std::endl;
 
         // [batch_size, hidden_size]
-        const Tensor last_hidden_state = m_request.get_tensor("last_hidden_state");
+        const Tensor last_hidden_state = m_request[0].get_tensor("last_hidden_state");
 
         return to_embedding_result(last_hidden_state);
     };

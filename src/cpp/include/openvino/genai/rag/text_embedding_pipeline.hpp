@@ -59,6 +59,7 @@ public:
          * For query embeddings, batch_size should be set to 1 or not set.
          */
         std::optional<size_t> batch_size;
+        std::optional<size_t> streams;
 
         /**
          * @brief Pooling strategy applied to model output tensor
