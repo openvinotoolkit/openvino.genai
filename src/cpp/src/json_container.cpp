@@ -415,14 +415,20 @@ void JsonContainer::concatenate(JsonContainer& dst, const JsonContainer& src) {
 
     for (auto it = src_->begin(); it != src_->end(); ++it) {
         const auto& src_val = it.value();
-        
+        // Check if both values are of string type only if need to concatenate them. 
+        // Otherwise just write the source value to destination. Extra check is not needed.
+
         if (!dst_->contains(it.key())) {
             (*dst_)[it.key()] = src_val;
             continue;
         }
         
-        OPENVINO_ASSERT(src_val.is_string(), "JsonContainer concatenate supports only string concatenation for object values.");
         auto& dst_val = (*dst_)[it.key()];
+        OPENVINO_ASSERT(
+            src_val.is_string() && dst_val.is_string(),
+            "JsonContainer concatenate supports only string concatenation for object values. "
+            "Key: '", it.key(), "', src_val type: '", src_val.type_name(), "', dst_val type: '", dst_val.type_name(), "'."
+        );
         dst_val = dst_val.get<std::string>() + src_val.get<std::string>();
     }
 }

@@ -4,7 +4,7 @@ import json
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
 from utils.ov_genai_pipelines import create_ov_pipeline
 import pytest
-from openvino_genai import Tokenizer, IncrementalParser, Parser, TextParserStreamer, StreamingStatus, Llama3JsonToolParser, Phi4ReasoningIncrementalParser, DeepSeekR1ReasoningIncrementalParser, GenerationConfig, ReasoningIncrementalParser
+from openvino_genai import Tokenizer, IncrementalParser, Parser, TextParserStreamer, StreamingStatus, Llama3JsonToolParser, Phi4ReasoningParser, Phi4ReasoningIncrementalParser, DeepSeekR1ReasoningIncrementalParser, GenerationConfig, ReasoningIncrementalParser
 from transformers import AutoTokenizer
 import re
 from io import StringIO
@@ -464,7 +464,7 @@ def test_reset_incremental_parser(tmp_path, model_id):
     streamer = CustomStreamer(tok, parsers=[Phi4ReasoningIncrementalParser()])
 
     prompt = "Please say \"hello\""
-    res = pipe.generate([prompt], max_new_tokens=600, parsers=[ReasoningParser(keep_original_content=False)])
+    res = pipe.generate([prompt], max_new_tokens=600, parsers=[Phi4ReasoningParser()])
     
     # extract manually reasoning content from the parsed result
     content = res.texts[0]
