@@ -6,9 +6,18 @@ This tests aim to validate support for vanilla and continuous batching GenAI API
 
 In order to run tests first of all build or install OpenVINO GenAI library, follow instructions [GenAI Library README](../../src/README.md).
 
-Then install requirements for tests:
+Then install test dependencies:
+
+**Using UV (recommended)**:
 ```sh
-pip install -r tests/python_tests/requirements.txt
+uv sync --group testing-full
+uv run pytest tests/python_tests/ -m precommit
+```
+
+**Using pip**:
+```sh
+pip install -e .[testing]
+python -m pytest tests/python_tests/ -m precommit
 ```
 
 ## Run Tests

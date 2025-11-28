@@ -6,7 +6,7 @@ This example showcases inference of Text Embedding Models. The application limit
 
 The `--upgrade-strategy eager` option is needed to ensure `optimum-intel` is upgraded to the latest version.
 
-Install [../../export-requirements.txt](../../export-requirements.txt) to convert a model.
+Install dependencies to convert a model:
 
 ```sh
 pip install --upgrade-strategy eager -r ../../export-requirements.txt
