@@ -1,9 +1,11 @@
 # Copyright (C) 2024-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-from openvino_genai import GenerationConfig, Tokenizer, LLMPipeline, StreamerBase, ChatHistory
+from openvino_genai import GenerationConfig, Tokenizer, LLMPipeline, StreamerBase, ChatHistory, TokenizedInputs
 from pathlib import Path
 
+import openvino as ov
+import numpy as np
 import pytest
 import platform
 import sys
@@ -419,3 +421,19 @@ def test_chat_generation(
         f"NPU chat mode output:\n{answers_chat_mode_static}\n"
         f"NPU chat history output:\n{answers_chat_history_static}"
     )
+
+
+@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
+@pytest.mark.parametrize("npu_config", PIPELINE_CONFIGS, indirect=True)
+def test_readonly_input_tensor(npu_model: LLMPipeline):
+    input_ids = np.array([[1, 4, 42]], dtype=np.int64)
+    input_ids.flags.writeable = False
+
+    attention_mask = np.array([[1, 1, 1]], dtype=np.int64)
+    attention_mask.flags.writeable = False
+
+    inputs_ov = TokenizedInputs(ov.Tensor(input_ids), ov.Tensor(attention_mask))
+    npu_model.generate(inputs_ov, max_new_tokens=5)
+
+    readonly_tensor = ov.Tensor(input_ids)
+    npu_model.generate(readonly_tensor, max_new_tokens=5)
