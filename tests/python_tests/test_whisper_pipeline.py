@@ -17,9 +17,10 @@ import numpy as np
 import pathlib
 import importlib.metadata as metadata
 from packaging.version import parse
-from utils.constants import get_ov_cache_models_dir, extra_generate_kwargs
+from utils.constants import get_ov_cache_converted_models_dir, extra_generate_kwargs
 
 from utils.network import retry_request
+from utils.atomic_download import AtomicDownloadManager
 from typing import Any
 
 @pytest.fixture(scope="class", autouse=True)
@@ -48,7 +49,7 @@ def get_whisper_models_list(tiny_only=False):
             if model_id in pytest.selected_model_ids.split(" ")
         ]
 
-    prefix = get_ov_cache_models_dir()
+    prefix = get_ov_cache_converted_models_dir()
     return [(model_id, prefix / model_id.split("/")[1]) for model_id in model_ids]
 
 
@@ -60,7 +61,8 @@ def read_whisper_model(params, stateful=True):
     if not stateful:
         path = pathlib.Path(f"{path}_with_past")
 
-    if not (path / "openvino_encoder_model.xml").exists():
+    manager = AtomicDownloadManager(path)
+    if not manager.is_complete() and not (path / "openvino_encoder_model.xml").exists():
         save_model(model_id=model_id, tmp_path=path, stateful=stateful)
 
     opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
@@ -94,34 +96,38 @@ def read_whisper_model(params, stateful=True):
 
 
 def save_model(model_id: str, tmp_path: pathlib.Path, stateful=True):
-    tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
-    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
-        tokenizer,
-        with_detokenizer=True,
-        clean_up_tokenization_spaces=False,
-    )
+    manager = AtomicDownloadManager(tmp_path)
 
-    openvino.save_model(ov_tokenizer, tmp_path / "openvino_tokenizer.xml")
-    openvino.save_model(ov_detokenizer, tmp_path / "openvino_detokenizer.xml")
+    def save_to_temp(temp_path: pathlib.Path) -> None:
+        tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
+        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
+            tokenizer,
+            with_detokenizer=True,
+            clean_up_tokenization_spaces=False,
+        )
 
-    # to store tokenizer config jsons with special tokens
-    tokenizer.save_pretrained(tmp_path)
+        openvino.save_model(ov_tokenizer, temp_path / "openvino_tokenizer.xml")
+        openvino.save_model(ov_detokenizer, temp_path / "openvino_detokenizer.xml")
 
-    opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
-        model_id,
-        export=True,
-        trust_remote_code=True,
-        stateful=stateful,
-        compile=False,
-        device="CPU",
-        load_in_8bit=False,
-    ))
-    opt_model.generation_config.save_pretrained(tmp_path)
-    opt_model.config.save_pretrained(tmp_path)
-    opt_model.save_pretrained(tmp_path)
+        tokenizer.save_pretrained(temp_path)
 
-    processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_id, trust_remote_code=True))
-    processor.save_pretrained(tmp_path)
+        opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
+            model_id,
+            export=True,
+            trust_remote_code=True,
+            stateful=stateful,
+            compile=False,
+            device="CPU",
+            load_in_8bit=False,
+        ))
+        opt_model.generation_config.save_pretrained(temp_path)
+        opt_model.config.save_pretrained(temp_path)
+        opt_model.save_pretrained(temp_path)
+
+        processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_id, trust_remote_code=True))
+        processor.save_pretrained(temp_path)
+
+    manager.execute(save_to_temp)
 
 
 def run_huggingface(
@@ -462,7 +468,6 @@ def test_return_timestamps_short_form(model_descr, sample_from_dataset):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 1}], indirect=True)
-@pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_return_timestamps_on_cut_sample(model_descr, sample_from_dataset):
     sample_from_dataset = sample_from_dataset[:30 * 16000]

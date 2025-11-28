@@ -23,5 +23,8 @@ images = read_images("./images")
 pipe = ov_genai.VLMPipeline(model_path, "${props.device || 'CPU'}")
 result = pipe.generate(prompt, images=images, max_new_tokens=100)
 print(result.texts[0])
+
+# To input videos frames, use 'videos=', frames tensor layout = [Frame, H, W, C]
+# result = pipe.generate(prompt, videos=[frames], max_new_tokens=100)
 `}
 </CodeBlock>
