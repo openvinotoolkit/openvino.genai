@@ -1,9 +1,6 @@
+
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
-
-#include <algorithm>
-#include <iostream>
-#include <numeric>
 
 #include "visual_language/qwen2vl/classes.hpp"
 
