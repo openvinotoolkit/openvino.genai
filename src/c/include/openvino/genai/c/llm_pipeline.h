@@ -11,6 +11,7 @@
 #pragma once
 #include "generation_config.h"
 #include "perf_metrics.h"
+#include "chat_history.h"
 
 /**
  * @struct ov_genai_decoded_results
@@ -148,6 +149,24 @@ OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm
                                                                     const ov_genai_generation_config* config,
                                                                     const streamer_callback* streamer,
                                                                     ov_genai_decoded_results** results);
+
+/**
+ * @brief Generate results by ov_genai_llm_pipeline using ChatHistory
+ * @param pipe A pointer to the ov_genai_llm_pipeline instance.
+ * @param history A pointer to the ov_genai_chat_history instance.
+ * @param config A pointer to the ov_genai_generation_config, the pointer can be NULL.
+ * @param streamer A pointer to the stream callback. Set to NULL if no callback is needed. Either this or results must
+ * be non-NULL.
+ * @param results A pointer to the ov_genai_decoded_results, which retrieves the results of the generation. Either this
+ * or streamer must be non-NULL.
+ * @return Status code of the operation: OK(0) for success.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_llm_pipeline_generate_with_history(ov_genai_llm_pipeline* pipe,
+                                                                                  const ov_genai_chat_history* history,
+                                                                                  const ov_genai_generation_config* config,
+                                                                                  const streamer_callback* streamer,
+                                                                                  ov_genai_decoded_results** results);
+
 /**
  * @brief Start chat with keeping history in kv cache.
  * @param pipe A pointer to the ov_genai_llm_pipeline instance.
