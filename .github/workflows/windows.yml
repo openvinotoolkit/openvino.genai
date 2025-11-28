@@ -23,8 +23,8 @@ env:
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: C:/mount/caches/huggingface/win
-  OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/
-  OPENVINO_LOG_LEVEL: 5
+  OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/775cf1/
+  OPENVINO_LOG_LEVEL: 2  # Windows fails with out of memory because of too verbose logging
   ARTIFACTS_SHARE: '/mount/build-artifacts'
   BASE_PRODUCT_TYPE: public_windows_vs2022
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
@@ -40,7 +40,7 @@ jobs:
       skip_workflow: "${{ steps.smart_ci.outputs.skip_workflow }}"
     steps:
       - name: checkout action
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         timeout-minutes: 15
         with:
           sparse-checkout: .github
@@ -89,7 +89,7 @@ jobs:
       with:
         platform: windows
         commit_packages_to_provide: wheels,openvino_node_npm_package.zip
-        revision: latest_available_commit
+        revision: fcf7c2964cf460ecfcb039f748d1f4028626d58c
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
@@ -118,17 +118,11 @@ jobs:
 
     steps:
       - name: Clone genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
 
-      - name: Setup Python 3.9
-        if: ${{ matrix.build-type != 'Debug' }}
-        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
-        with:
-          python-version: '3.9'
-      
       - name: Setup Python 3.10
         if: ${{ matrix.build-type != 'Debug' }}
         uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
@@ -209,7 +203,7 @@ jobs:
         run: |
           ${{ env.OV_INSTALL_DIR }}/setupvars.ps1
           if ( "${{ matrix.build-type }}" -ne "Debug" ) {
-            $pyVersions = '3.9', '3.10', '3.11', '3.12', '3.13'
+            $pyVersions = '3.10', '3.11', '3.12', '3.13'
           } else {
             $pyVersions = '3.11'
           }
@@ -259,7 +253,7 @@ jobs:
 
       - name: Upload cpack package
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: genai_cpack_${{ matrix.build-type }}
           path: ${{ env.BUILD_DIR }}/*.zip
@@ -267,7 +261,7 @@ jobs:
 
       - name: Upload Tools
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: genai_tools_${{ matrix.build-type }}
           path: ${{ env.INSTALL_TOOLS_DIR }}
@@ -275,7 +269,7 @@ jobs:
 
       - name: Upload Tests
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: genai_tests_${{ matrix.build-type }}
           path: ${{ env.INSTALL_TESTS_DIR }}
@@ -283,7 +277,7 @@ jobs:
 
       - name: Upload manifest
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: manifest_${{ matrix.build-type }}
           path: ${{ env.MANIFEST_PATH }}
@@ -308,7 +302,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
@@ -383,12 +377,6 @@ jobs:
         run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
         working-directory: ${{ env.OV_INSTALL_DIR }}
       
-      - name: Setup Python 3.9
-        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
-        with:
-          python-version: '3.9'
-          cache: 'pip'
-      
       - name: Setup Python 3.10
         uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
@@ -409,7 +397,7 @@ jobs:
       
       - name: Build genai wheel
         run: |
-          $pyVersions = '3.9', '3.10', '3.11', '3.12', '3.13'
+          $pyVersions = '3.10', '3.11', '3.12', '3.13'
           foreach ($pyVersion in $pyVersions) {
             $pythonCommand = "py -$pyVersion -c `"import sys; print(f'{sys.executable}')`""
             $pythonExecutablePath = & cmd /c $pythonCommand
@@ -439,7 +427,7 @@ jobs:
 
       - name: Upload wheels
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: genai_wheels
           path: ${{ env.INSTALL_DIR }}
@@ -512,7 +500,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
 
@@ -542,7 +530,7 @@ jobs:
 
       - name: Upload Samples Build Package
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: genai_samples_${{ matrix.build-type }}
           path: ${{ env.INSTALL_DIR }}
@@ -565,7 +553,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
@@ -595,7 +583,7 @@ jobs:
 
       - name: Upload Node.js bindings Build Package
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: genai_nodejs_bindings
           path: ${{ env.INSTALL_DIR }}
@@ -621,7 +609,7 @@ jobs:
           - name: 'Cacheopt E2E (Part 2)'
             cmd: 'python -m pytest -s -v tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_2.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
-            timeout: 240
+            timeout: 360
           - name: 'LLM & VLM'
             cmd: 'python -m pytest -s -v tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py --override-ini cache_dir=/mount/caches/pytest/'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
@@ -645,7 +633,7 @@ jobs:
           - name: 'WWB tests'
             cmd: 'python -m pytest -s -v tools/who_what_benchmark/tests -m "not nanollava"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
-            timeout: 180
+            timeout: 120
           - name: 'WWB tests (nanollava)'
             cmd: |
               python -m pip install transformers==4.48.0
@@ -664,7 +652,7 @@ jobs:
     steps:
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -752,7 +740,7 @@ jobs:
     steps:
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
 
@@ -793,7 +781,7 @@ jobs:
 
       - name: Setup NodeJS
         if: ${{ matrix.test.run_condition }}
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
           node-version: 21
 
@@ -842,7 +830,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
 
@@ -898,7 +886,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -918,7 +906,7 @@ jobs:
           merge-multiple: true
 
       - name: Setup Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -939,7 +927,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_windows
-    needs: [smart_ci, openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_tests_wheel, genai_tools_tests, genai_samples_tests]
+    needs: [smart_ci, openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_tests_wheel, genai_tools_tests, genai_samples_tests, genai_build_nodejs, genai_nodejs_tests]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:

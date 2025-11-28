@@ -8,8 +8,8 @@ include(FetchContent)
 if (NOT TARGET pybind11::pybind11)
     FetchContent_Declare(
         pybind11
-        URL https://github.com/pybind/pybind11/archive/refs/tags/v3.0.0.tar.gz
-        URL_HASH SHA256=453b1a3e2b266c3ae9da872411cadb6d693ac18063bd73226d96cfb7015a200c
+        URL https://github.com/pybind/pybind11/archive/refs/tags/v3.0.1.tar.gz
+        URL_HASH SHA256=741633da746b7c738bb71f1854f957b9da660bcd2dce68d71949037f0969d0ca
     )
     FetchContent_GetProperties(pybind11)
     

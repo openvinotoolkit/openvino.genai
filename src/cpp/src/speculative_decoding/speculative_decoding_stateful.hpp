@@ -90,6 +90,12 @@ public:
         StreamerVariant streamer
     ) override;
 
+    DecodedResults generate(
+        const ChatHistory& history,
+        OptionalGenerationConfig generation_config,
+        StreamerVariant streamer
+    ) override;
+
     EncodedResults generate(
         const EncodedInputs& inputs,
         OptionalGenerationConfig generation_config,
@@ -107,6 +113,8 @@ public:
 
 private:
     void update_candidate_strategy(const std::size_t matches_num);
+
+    GenerationConfig resolve_generation_config(OptionalGenerationConfig generation_config);
 
 private:
     std::unique_ptr<LLMInferWrapper> m_draft_request;

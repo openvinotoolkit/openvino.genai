@@ -135,7 +135,9 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                 py::gil_scoped_acquire acquire;
                 return (*py_decrypt)(py::bytes(in_str)).cast<std::string>();
             };
-            ov::EncryptionCallbacks encryption_callbacks{encrypt_func, decrypt_func};
+            ov::EncryptionCallbacks encryption_callbacks{
+                std::move(encrypt_func), std::move(decrypt_func)
+            };
             return encryption_callbacks;
         } else if (property_name == "structural_tags") {
             // this impl is based on OpenVINO python bindings impl.
@@ -149,6 +151,17 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                 }
             }
             return structural_tags;
+        } else if (property_name == "parsers") {
+            auto property_list = py_obj.cast<py::list>();
+            std::vector<std::shared_ptr<ov::genai::Parser>> parsers;
+            for (const auto& item : property_list) {
+                if (py::isinstance<ov::genai::Parser>(item)) {
+                    parsers.push_back(item.cast<std::shared_ptr<ov::genai::Parser>>());
+                } else {
+                    OPENVINO_THROW("Incorrect value in \"", property_name, "\". Expected Parser.");
+                }
+            }
+            return parsers;
         } else {
             auto _list = py_obj.cast<py::list>();
             enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE, TENSOR, DICT};
@@ -360,7 +373,13 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     } else if (py::isinstance<ov::genai::Generator>(py_obj)) {
         return py::cast<std::shared_ptr<ov::genai::Generator>>(py_obj);
     } else if (py::isinstance<py::function>(py_obj) && property_name == "callback") {
-        return py::cast<std::function<bool(size_t, size_t, ov::Tensor&)>>(py_obj);
+        auto py_callback = py::cast<py::function>(py_obj);
+        return std::function<bool(size_t, size_t, ov::Tensor&)>(
+            [py_callback](size_t step, size_t num_steps, ov::Tensor& latent) -> bool {
+                py::gil_scoped_acquire acquire;
+                return py_callback(step, num_steps, latent).cast<bool>();
+            }
+        );
     } else if ((py::isinstance<py::function>(py_obj) || py::isinstance<ov::genai::StreamerBase>(py_obj) || py::isinstance<std::monostate>(py_obj)) && property_name == "streamer") {
         auto streamer = py::cast<ov::genai::pybind::utils::PyBindStreamerVariant>(py_obj);
         return ov::genai::streamer(pystreamer_to_streamer(streamer)).second;

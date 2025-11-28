@@ -35,7 +35,7 @@ public:
         size_t num_tokens_in_evictable_blocks,
         std::vector<std::size_t>& evicted_block_indices,
         const std::vector<double>& layer_scores);
-    /** @return A binary (feature) vector of size num_tokens_in_evictable_blocks, where each element indicates wheather
+    /** @return A binary (feature) vector of size num_tokens_in_evictable_blocks, where each element indicates whether
      * the corresponding token has a high score */
     std::vector<size_t> create_indicators_kvcrush(size_t num_tokens_in_evictable_blocks,
                                                   std::vector<size_t>& evicted_block_indices,

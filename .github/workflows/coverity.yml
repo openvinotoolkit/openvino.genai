@@ -43,13 +43,13 @@ jobs:
       with:
         platform: ubuntu22
         commit_packages_to_provide: wheels
-        revision: latest_available_commit
+        revision: fcf7c2964cf460ecfcb039f748d1f4028626d58c
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
 
     - name: Clone docker tag from OpenVINO repo
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
       with:
         repository: 'openvinotoolkit/openvino'
         path: 'openvino'
@@ -86,7 +86,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: openvino.genai
 
@@ -128,7 +128,7 @@ jobs:
 
       - name: Build for coverity
         run: |
-          ${{ env.COV_TOOL_DIR }}/bin/cov-build --config ${{ env.COV_TOOL_DIR }}/config/coverity_config.xml --tmpdir cov_temp --dir ${BUILD_DIR}/cov-int --fs-capture-search ./openvino.genai sh build.sh
+          ${{ env.COV_TOOL_DIR }}/bin/cov-build --config ${{ env.COV_TOOL_DIR }}/config/coverity_config.xml --tmpdir cov_temp --dir ${BUILD_DIR}/cov-int sh build.sh
 
       - name: Pack for analysis submission
         run: tar -cvf - cov-int | pigz > openvino-genai.tgz
@@ -171,7 +171,7 @@ jobs:
           path: ${{ env.COV_TOOL_DIR }}
         
       - name: Upload Coverity build log
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: always()
         with:
           name: coverity_logs
@@ -179,7 +179,7 @@ jobs:
           if-no-files-found: 'error'
 
       - name: Upload Coverity build archive
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: always()
         with:
           name: coverity_archive

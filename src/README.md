@@ -252,154 +252,10 @@ int main(int argc, char* argv[]) {
 
 ### Performance Metrics
 
-`openvino_genai.PerfMetrics` (referred as `PerfMetrics` for simplicity) is a structure that holds performance metrics for each generate call. `PerfMetrics` holds fields with mean and standard deviations for the following metrics:
-- Time To the First Token (TTFT), ms
-- Time per Output Token (TPOT), ms/token
-- Generate total duration, ms
-- Tokenization duration, ms
-- Detokenization duration, ms
-- Throughput, tokens/s
-
-and:
-- Load time, ms
-- Number of generated tokens
-- Number of tokens in the input prompt
-
-Performance metrics are stored either in the `DecodedResults` or `EncodedResults` `perf_metric` field. Additionally to the fields mentioned above, `PerfMetrics` has a member `raw_metrics` of type `openvino_genai.RawPerfMetrics` (referred to as `RawPerfMetrics` for simplicity) that contains raw values for the durations of each batch of new token generation, tokenization durations, detokenization durations, and more. These raw metrics are accessible if you wish to calculate your own statistical values such as median or percentiles. However, since mean and standard deviation values are usually sufficient, we will focus on `PerfMetrics`.
-
-```python
-import openvino_genai as ov_genai
-pipe = ov_genai.LLMPipeline(models_path, "CPU")
-result = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
-perf_metrics = result.perf_metrics
-
-print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f}')
-print(f'TTFT: {perf_metrics.get_ttft().mean:.2f} ms')
-print(f'TPOT: {perf_metrics.get_tpot().mean:.2f} ms/token')
-print(f'Throughput: {perf_metrics.get_throughput().mean:.2f} tokens/s')
-```
-
-```cpp
-#include "openvino/genai/llm_pipeline.hpp"
-#include <iostream>
-
-int main(int argc, char* argv[]) {
-    std::string models_path = argv[1];
-    ov::genai::LLMPipeline pipe(models_path, "CPU");
-    auto result = pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(20));
-    auto perf_metrics = result.perf_metrics;
-
-    std::cout << std::fixed << std::setprecision(2);
-    std::cout << "Generate duration: " << perf_metrics.get_generate_duration().mean << " ms" << std::endl;
-    std::cout << "TTFT: " << metrics.get_ttft().mean  << " ms" << std::endl;
-    std::cout << "TPOT: " << metrics.get_tpot().mean  << " ms/token " << std::endl;
-    std::cout << "Throughput: " << metrics.get_throughput().mean  << " tokens/s" << std::endl;
-}
-```
-output:
-```sh
-mean_generate_duration: 76.28
-mean_ttft: 42.58
-mean_tpot 3.80
-```
-
->**Note**: If the input prompt is just a string, the generate function returns only a string without perf_metrics. To obtain perf_metrics, provide the prompt as a list with at least one element or call generate with encoded inputs.
-
-#### Accumulating metrics
-Several `perf_metrics` can be added to each other. In that case `raw_metrics` are concatenated and mean/std values are recalculated. This accumulates statistics from several `generate()` calls
-
-```cpp
-#include "openvino/genai/llm_pipeline.hpp"
-#include <iostream>
-
-int main(int argc, char* argv[]) {
-    std::string models_path = argv[1];
-    ov::genai::LLMPipeline pipe(models_path, "CPU");
-    auto result_1 = pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(20));
-    auto result_2 = pipe.generate("The Sun is yellow because", ov::genai::max_new_tokens(20));
-    auto perf_metrics = result_1.perf_metrics + result_2.perf_metrics
-
-    std::cout << std::fixed << std::setprecision(2);
-    std::cout << "Generate duration: " << perf_metrics.get_generate_duration().mean << " ms" << std::endl;
-    std::cout << "TTFT: " << metrics.get_ttft().mean  << " ms" << std::endl;
-    std::cout << "TPOT: " << metrics.get_tpot().mean  << " ms/token " << std::endl;
-    std::cout << "Throughput: " << metrics.get_throughput().mean  << " tokens/s" << std::endl;
-}
-```
-
-```python
-import openvino_genai as ov_genai
-pipe = ov_genai.LLMPipeline(models_path, "CPU")
-res_1 = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
-res_2 = pipe.generate(["Why Sky is blue because"], max_new_tokens=20)
-perf_metrics = res_1.perf_metrics + res_2.perf_metrics
-
-print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f}')
-print(f'TTFT: {perf_metrics.get_ttft().mean:.2f} ms')
-print(f'TPOT: {perf_metrics.get_tpot().mean:.2f} ms/token')
-print(f'Throughput: {perf_metrics.get_throughput().mean:.2f} tokens/s')
-```
-
-#### Using raw performance metrics
-In addition to mean and standard deviation values, the `perf_metrics` object has a `raw_metrics` field. This field stores raw data, including:
-
-- Timestamps for each batch of generated tokens
-- Batch sizes for each timestamp
-- Tokenization durations
-- Detokenization durations
-- Other relevant metrics
-
-These metrics can be use for more fine grained analysis, such as getting exact calculating median values, percentiles, etc. Below are a few examples of how to use raw metrics.
-
-Getting timestamps for each generated token:
-```python
-import openvino_genai as ov_genai
-pipe = ov_genai.LLMPipeline(models_path, "CPU")
-result = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
-perf_metrics = result.perf_metrics
-raw_metrics = perf_metrics.raw_metrics
-
-print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f}')
-print(f'Throughput: {perf_metrics.get_throughput().mean:.2f} tokens/s')
-print(f'Timestamps: {" ms, ".join(f"{i:.2f}" for i in raw_metrics.m_new_token_times)}')
-```
-
-Getting pure inference time without tokenizatin and detokenization duration:
-```python
-import openvino_genai as ov_genai
-import numpy as np
-pipe = ov_genai.LLMPipeline(models_path, "CPU")
-result = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
-perf_metrics = result.perf_metrics
-print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f} ms')
-
-raw_metrics = perf_metrics.raw_metrics
-generate_duration = np.array(raw_metrics.generate_durations)
-tok_detok_duration = np.array(raw_metrics.tokenization_durations) - np.array(raw_metrics.detokenization_durations)
-pure_inference_duration = np.sum(generate_duration - tok_detok_duration) / 1000 # in milliseconds
-print(f'Pure Inference duration: {pure_inference_duration:.2f} ms')
-```
-
-Example of using raw metrics to calculate median value of generate duration:
-```python
-import openvino_genai as ov_genai
-import numpy as np
-pipe = ov_genai.LLMPipeline(models_path, "CPU")
-result = pipe.generate(["The Sun is yellow because"], max_new_tokens=20)
-perf_metrics = result.perf_metrics
-raw_metrics = perf_metrics.raw_metrics
-
-print(f'Generate duration: {perf_metrics.get_generate_duration().mean:.2f}')
-print(f'Throughput: {perf_metrics.get_throughput().mean:.2f} tokens/s')
-durations = np.array(raw_metrics.m_new_token_times[1:]) - np.array(raw_metrics.m_new_token_times[:-1])
-print(f'Median from token to token duration: {np.median(durations):.2f} ms')
-```
-
-For more examples of how metrics are used, please refer to the Python [benchmark_genai.py](../samples/python/text_generation/README.md) and C++ [benchmark_genai](../samples/cpp/text_generation/README.md) samples.
-
+Refer to the [Performance Metrics](https://openvinotoolkit.github.io/openvino.genai/docs/guides/performance-metrics) page for details and usage examples.
 
 ### Structured Output generation
-OpenVINO™ GenAI supports structured output generation, which allows you to generate outputs in a structured format such as JSON, regex, or accoring to EBNF (Extended Backus–Naur form) grammar.
+OpenVINO™ GenAI supports structured output generation, which allows you to generate outputs in a structured format such as JSON, regex, or according to EBNF (Extended Backus–Naur form) grammar.
 
 Below is a minimal example that demonstrates how to use OpenVINO™ GenAI to generate structured JSON output for a single item type (e.g., `person`). This example uses a Pydantic schema to define the structure and constraints of the generated output.
 
@@ -442,104 +298,11 @@ Structured output enforcement guarantees correct JSON formatting, but does not e
 
 ### Tokenization
 
-OpenVINO™ GenAI provides a way to tokenize and detokenize text using the `ov::genai::Tokenizer` class. The `Tokenizer` is a high level abstraction over the OpenVINO Tokenizers library.
-
-It can be initialized from the path, in-memory IR representation or obtained from the `ov::genai::LLMPipeline` object.
-
-```cpp
-// Initialize from the path
-#include "openvino/genai/llm_pipeline.hpp"
-auto tokenizer = ov::genai::Tokenizer(models_path);
-
-// Get instance of Tokenizer from LLMPipeline.
-auto pipe = ov::genai::LLMPipeline pipe(models_path, "CPU");
-auto tokenzier = pipe.get_tokenizer();
-````
-
-```python
-import openvino_genai as ov_genai
-tokenizer = ov_genai.Tokenizer(models_path)
-
-# Or from LLMPipeline.
-pipe = ov_genai.LLMPipeline(models_path, "CPU")
-tokenizer = pipe.get_tokenizer()
-```
-
-`Tokenizer` has `encode` and `decode` methods which support the following arguments: `add_special_tokens`, `skip_special_tokens`, `pad_to_max_length`, `max_length` arguments.
-
-In order to disable adding special tokens do the followings, in C++:
-```cpp
-auto tokens = tokenizer.encode("The Sun is yellow because", ov::genai::add_special_tokens(false));
-```
-
-In Python:
-```python
-tokens = tokenizer.encode("The Sun is yellow because", add_special_tokens=False)
-```
-The `encode` method returns a `TokenizedInputs` object containing `input_ids` and `attention_mask`, both stored as ov::Tensor. Since ov::Tensor requires fixed-length sequences, padding is applied to match the longest sequence in a batch, ensuring a uniform shape. Also resulting sequence is truncated by `max_length`. If this value is not defined by used, it's is taken from the IR.
-
-Both padding and `max_length` can be controlled by the user. If `pad_to_max_length` is set to true, then instead of padding to the longest sequence it will be padded to the `max_length`.
-
-Below are example how padding can be controlled, in C++:
-```cpp
-#include "openvino/genai/llm_pipeline.hpp"
-auto tokenizer = ov::genai::Tokenizer(models_path);
-std::vector<std::string> prompts = {"The Sun is yellow because", "The"};
-
-// Since prompt is defenitely shorter than maximal length (which is taken from IR) will not affect shape.
-// Resulting shape is defined by length of the longest tokens sequence.
-// Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="longest", truncation=True)
-tokens = tokenizer.encode({"The Sun is yellow because", "The"})
-// or is equivalent to
-tokens = tokenizer.encode({"The Sun is yellow because", "The"}, ov::genai::pad_to_max_length(False))
-// out_shape: [2, 6]
-
-// Resulting tokens tensor will be padded to 1024.
-// Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="max_length", truncation=True, max_length=1024)
-tokens = tokenizer.encode({"The Sun is yellow because", 
-                           "The",
-                           std::string(2000, 'n')}, ov::genai::pad_to_max_length(True), ov::genai::max_length(1024))
-// out_shape: [3, 1024]
-
-// For single string prompts truncation and padding are also applied.
-tokens = tokenizer.encode({"The Sun is yellow because"}, ov::genai::pad_to_max_length(True), ov::genai::max_length(1024))
-// out_shape: [1, 128]
-```
-
-In Python:
-```python
-import openvino_genai as ov_genai
-
-tokenizer = ov_genai.Tokenizer(models_path)
-prompts = ["The Sun is yellow because", "The"]
-
-# Since prompt is defenitely shorter than maximal length (which is taken from IR) will not affect shape.
-# Resulting shape is defined by length of the longest tokens sequence.
-# Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="longest", truncation=True)
-tokens = tokenizer.encode(["The Sun is yellow because", "The"])
-# or is equivalent to
-tokens = tokenizer.encode(["The Sun is yellow because", "The"], pad_to_max_length=False)
-print(tokens.input_ids.shape)
-# out_shape: [2, 6]
-
-# Resulting tokens tensor will be padded to 1024, sequences which exceed this length will be truncated.
-# Equivalent of HuggingFace hf_tokenizer.encode(prompt, padding="max_length", truncation=True, max_length=1024)
-tokens = tokenizer.encode(["The Sun is yellow because", 
-                           "The"
-                           "The longest string ever" * 2000], pad_to_max_length=True, max_length=1024)
-print(tokens.input_ids.shape)
-# out_shape: [3, 1024]
-
-# For single string prompts truncation and padding are also applied.
-tokens = tokenizer.encode("The Sun is yellow because", pad_to_max_length=True, max_length=128)
-print(tokens.input_ids.shape)
-# out_shape: [1, 128]
-
-```
+Refer to the [Tokenization](https://openvinotoolkit.github.io/openvino.genai/docs/guides/tokenization) page for details and usage examples.
 
 ## How It Works
 
-For information on how OpenVINO™ GenAI works, refer to the [How It Works Section](./docs/HOW_IT_WORKS.md).
+For information on how OpenVINO™ GenAI works, refer to the [How It Works](https://openvinotoolkit.github.io/openvino.genai/docs/concepts/how-it-works) page.
 
 ## Supported Models
 
@@ -547,4 +310,4 @@ For a list of supported models, refer to the [Supported Models](https://openvino
 
 ## Debug Log
 
-For using debug log, refer to [DEBUG Log](./doc/DEBUG_LOG.md).
+For using debug log, refer to the [Debug Logging](https://openvinotoolkit.github.io/openvino.genai/docs/guides/debug-logging) page.
