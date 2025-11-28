@@ -21,4 +21,4 @@ scipy
 gguf_parser
 gguf>=0.10
 langchain_community==0.4.1
-langchain-core==1.1.0
+langchain-core==1.0.3
