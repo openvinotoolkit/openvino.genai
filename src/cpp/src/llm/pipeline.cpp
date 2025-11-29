@@ -160,7 +160,7 @@ static std::unique_ptr<LLMPipelineImplBase> create(
     const ov::genai::GenerationConfig& generation_config) {
 
     auto properties_without_draft_model = properties;
-    auto draft_model_descr = ov::genai::utils::extract_draft_model_from_config(properties_without_draft_model);
+    auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
     if (draft_model_descr.model != nullptr) {
         // FIXME: Add support for StatefulSpeculativeLLMPipeline for non-NPU devices for both models.
         OPENVINO_ASSERT(device == "NPU" || draft_model_descr.device == "NPU",

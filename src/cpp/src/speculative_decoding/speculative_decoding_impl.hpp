@@ -9,6 +9,7 @@
 #include "speculative_decoding/speculative_decoding_metrics.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
 #include "utils.hpp"
+#include "model_desc.hpp"
 
 namespace ov::genai {
 struct GenerateStrategy {

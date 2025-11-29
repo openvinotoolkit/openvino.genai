@@ -6,6 +6,7 @@
 #include "llm/pipeline_base.hpp"
 #include "sampling/sampler.hpp"
 #include "utils.hpp"
+#include "model_desc.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
 
