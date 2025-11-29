@@ -145,7 +145,7 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
                                                    const ov::genai::GenerationConfig& generation_config,
                                                    const std::filesystem::path& models_path = {}) {
     auto properties_without_draft_model = properties;
-    auto draft_model_descr = ov::genai::utils::extract_draft_model_from_config(properties_without_draft_model);
+    auto draft_model_descr = ov::genai::extract_draft_model_from_config(properties_without_draft_model);
 
     auto main_model_descr =
         ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, {}, generation_config);
