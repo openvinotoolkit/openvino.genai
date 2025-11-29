@@ -328,7 +328,6 @@ bool ContinuousBatchingPipeline::ContinuousBatchingImpl::has_non_finished_reques
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     static ManualTimer step_timer("step()");
     step_timer.start();
-
     _pull_awaiting_requests();
 
     Scheduler::Output scheduler_output;
@@ -367,6 +366,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         return;
     }
     ov::Tensor logits;
+
+    if (m_model_input_type == ModelInputType::EMBEDDINGS)
+        m_model_runner->append_embeddings(m_requests, scheduler_output);
 
     {
         static ManualTimer timer("forward");
@@ -425,9 +427,20 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         free_fork_timer.end();
     }
     
+    auto append_embedding = [&] () -> bool {
+        if (!m_is_validation_mode_enabled) { // always for draft mode
+            return true;
+        }
+        if ( step_counter == 0 )
+            return true;
+        return false;
+    };
+
     // append embeddings for generated tokens
-    if (m_model_input_type == ModelInputType::EMBEDDINGS)
-        m_model_runner->append_embeddings(m_requests, scheduler_output);
+    if (append_embedding()) {
+        if (m_model_input_type == ModelInputType::EMBEDDINGS)
+            m_model_runner->append_embeddings(m_requests, scheduler_output);
+    }
 
     // notify requests dropped by handle
     {
@@ -445,7 +458,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         _free_non_running_requests();
         clean_up_requests_timer.end();
     }
-
+    step_counter++;
     step_timer.end();
 }
 

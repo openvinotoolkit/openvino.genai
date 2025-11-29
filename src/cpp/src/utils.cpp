@@ -646,7 +646,7 @@ std::pair<ov::AnyMap, SchedulerConfig> extract_scheduler_config(const ov::AnyMap
 SchedulerConfig get_latency_oriented_scheduler_config() {
     SchedulerConfig default_config;
     default_config.max_num_batched_tokens = std::numeric_limits<size_t>::max(); // don't limit total batch size
-    default_config.enable_prefix_caching = true; // for better TTFT in chat scenarios
+    default_config.enable_prefix_caching = false; // for better TTFT in chat scenarios
     return default_config;
 }
 

@@ -37,6 +37,7 @@ public:
     void pull_awaiting_requests(bool is_pause_request = false);
     GeneratedRequests get_generated_requests();
     UpdateRequestResult update_request(uint64_t request_id, const GeneratedSequences& candidates, bool is_update_logit_processor);
+    void update_embeddings(uint64_t seq_id, const UpdateRequestResult& update_result);
     bool is_requests_empty();
 
     size_t get_processed_tokens_per_iteration();

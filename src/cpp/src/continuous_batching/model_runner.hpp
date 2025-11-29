@@ -15,7 +15,7 @@
 #include "continuous_batching/timer.hpp"
 
 #include "continuous_batching/attention_output.hpp"
-
+#include "speculative_decoding/update_request_structs.hpp"
 namespace ov::genai {
 
 inline std::string get_paged_attention_score_output_for_decoder_layer(size_t decoder_layer_id) {
@@ -146,6 +146,10 @@ public:
         m_adjust_factor = adjust_factor;
     }
 
+    size_t get_adjust_factor() {
+        return m_adjust_factor;
+    }
+
     /**
      * @return A map of sequence IDs to vectors of ov::Tensor per-token attention scores. Each vector element is associated with its own
      * decoder layer, in order of their execution in the model. Each ov::Tensor has a shape of {N_k}, where N_k is the length of
@@ -187,6 +191,7 @@ public:
         size_t total_num_tokens = 0, total_num_blocks = 0;
         size_t max_context_len_val = 0;
         size_t hidden_size = 0;
+        size_t hidden_size_eagle3 = 0;
         bool have_token_type_ids = false;
         OPENVINO_ASSERT(sequence_groups.size() > 0);
         auto sequence_group_type = sequence_groups[0]->get_sequence_group_type();
@@ -224,7 +229,7 @@ public:
         ov::Tensor score_aggregation_window = _get_or_resize_tensor(m_cached_score_aggregation_window, "score_aggregation_window",
             {batch_size_in_sequences}, ov::element::i32);
 
-        ov::Tensor hidden_state_input = _prepare_hidden_state_input(total_num_tokens, hidden_size);
+        ov::Tensor hidden_state_input = _prepare_hidden_state_input(total_num_tokens, hidden_size_eagle3);
         float* hidden_state_data = nullptr;
         if (hidden_state_input) {
             hidden_state_data = hidden_state_input.data<float>();
@@ -331,7 +336,7 @@ public:
                                 size_t stored_seq_len = stored_shape[0];
                                 size_t stored_hidden_size = stored_shape[stored_shape.size() - 1];
 
-                                if (stored_hidden_size == hidden_size) {
+                                if (stored_hidden_size == hidden_size_eagle3) {
                                     if (stored_seq_len == total_num_tokens) {
                                         hidden_state_input = stored_hidden_state;  // all tokens from eagle are accepted
                                     } else {
@@ -351,19 +356,19 @@ public:
                     // fill hidden_state_data with m_hidden_states
                     if (hidden_state_data) {
                         OPENVINO_ASSERT(num_scheduled_tokens == 1, "unexpected num_scheduled_tokens in speculative drafting stage in eagle3 mode");
-                        std::memset(hidden_state_data + current_token_idx * hidden_size,
+                        std::memset(hidden_state_data + current_token_idx * hidden_size_eagle3,
                                     0,
-                                    num_scheduled_tokens * hidden_size * sizeof(float));
+                                    num_scheduled_tokens * hidden_size_eagle3 * sizeof(float));
                         auto hidden_state = running_sequences[seq_idx]->get_hidden_state();
                         if (hidden_state.get_size() > 0) {
                             auto shape = hidden_state.get_shape();
-                            if (shape.size() >= 2 && shape[shape.size() - 1] == hidden_size) {
+                            if (shape.size() >= 2 && shape[shape.size() - 1] == hidden_size_eagle3) {
                                 size_t seq_len = shape[0];
                                 size_t copy_length = std::min(seq_len, num_scheduled_tokens);
 
                                 size_t src_start_idx = seq_len >= copy_length ? seq_len - copy_length : 0;
-                                auto target_shape = ov::Shape{num_scheduled_tokens, 1, hidden_size};
-                                ov::Tensor target_base(ov::element::f32, target_shape, hidden_state_data + current_token_idx * hidden_size);
+                                auto target_shape = ov::Shape{num_scheduled_tokens, 1, hidden_size_eagle3};
+                                ov::Tensor target_base(ov::element::f32, target_shape, hidden_state_data + current_token_idx * hidden_size_eagle3);
                                 _copy_roi_between_tensors(hidden_state, src_start_idx, copy_length, target_base, 0);
                             }
                         }

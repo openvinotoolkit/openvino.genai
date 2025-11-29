@@ -307,7 +307,9 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                 }
 
                 result.removed_tokens_cnt = remove_tokens_from_sequence(running_sequence, min_generated_tokens, logit_processor);
-
+                if (!m_is_validation_mode_enabled)
+                    std::cout << "removed " << result.removed_tokens_cnt << " tokens from sequence " << std::endl;
+                running_sequence->truncate_generated_ids_embeds(result.removed_tokens_cnt);
                 auto candidate_sequence = candidates.at(running_sequence->get_grouped_id());
                 std::vector<int64_t> candidate_token_ids = candidate_sequence.token_ids;
                 std::vector<float> candidate_token_log_probs = candidate_sequence.log_probs;
@@ -366,6 +368,24 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         break;
     }
     return result;
+}
+
+void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update_embeddings(uint64_t req_id, const UpdateRequestResult& update_result) {
+    if (m_model_input_type != ModelInputType::EMBEDDINGS) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock{m_embeddings_mutex};
+    for (auto request : m_requests) {
+       if (request->get_request_id() != req_id) {
+            continue;
+        }
+        for (auto& sequence : request->get_running_sequences()) {
+            // prune the embeddings to decrease update_result.removed_tokens_cnt
+            if (update_result.removed_tokens_cnt > 0) {
+                sequence->truncate_generated_ids_embeds(update_result.removed_tokens_cnt);
+            }
+        }
+    }
 }
 
 bool ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::is_requests_empty() {

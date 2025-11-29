@@ -186,6 +186,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
     for (const auto& checked_sequence : main_generated_requests) {
         auto update_result = m_draft_pipeline->update_request(checked_sequence.first, checked_sequence.second, true);
         update_sequence_info[checked_sequence.first].removed_tokens_cnt = update_result.removed_tokens_cnt;
+        m_main_pipeline->update_embeddings(checked_sequence.first, update_result);
     }
 
     // finish draft request if the generation was completed
