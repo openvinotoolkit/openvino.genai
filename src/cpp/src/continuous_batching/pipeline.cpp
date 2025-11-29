@@ -114,7 +114,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     } else if (draft_model_desr.model != nullptr && eagle_rt_info.eagle3_mode) {
         ov::genai::ModelDesc main_model_descr;
         if (embedder) {
-            main_model_descr = ov::genai::ModelDesc(model, embedder, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
+            main_model_descr = ov::genai::ModelDesc(model, tokenizer, embedder, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         }else {
             main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model_without_gguf, scheduler_config, generation_config);
         }
