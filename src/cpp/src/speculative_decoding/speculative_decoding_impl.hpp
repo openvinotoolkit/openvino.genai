@@ -35,7 +35,6 @@ std::vector<EncodedGenerationResult> generate_common(
         std::optional<std::vector<ov::Tensor>> token_type_ids,
         GenerateStrategy& strategy) {
 
-    OPENVINO_ASSERT(!token_type_ids.has_value());
     self->perf_metrics() = ov::genai::SDPerModelsPerfMetrics();
     self->draft_pipeline()->raw_perf_metrics.m_inference_durations = {{ MicroSeconds(0.0f) }};
 
