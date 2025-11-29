@@ -35,12 +35,14 @@ struct ModelDesc {
           generation_config(generation_config) {}
 
     ModelDesc(const std::shared_ptr<ov::Model>& model,
+              const ov::genai::Tokenizer& tokenizer,
               std::shared_ptr<ov::genai::InputsEmbedder> inputs_embedder,
               const std::string& device = {},
               const ov::AnyMap& properties = {},
               const ov::genai::SchedulerConfig& scheduler_config = {},
               const ov::genai::GenerationConfig& generation_config = {})
         : model(model),
+          tokenizer(tokenizer),
           inputs_embedder(inputs_embedder),
           device(device),
           properties(properties),
