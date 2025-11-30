@@ -401,7 +401,7 @@ ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_em
     const float* src_data = original_input_embeddings.data<float>();
     float* dst_data = draft_input_embeddings.data<float>();
 
-    std::copy(src_data + shape[2], src_data + original_length, dst_data);
+    std::copy(src_data + shape[2], src_data + original_length * shape[2], dst_data);
 
     return draft_input_embeddings;
 }
