@@ -307,9 +307,10 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                 }
 
                 result.removed_tokens_cnt = remove_tokens_from_sequence(running_sequence, min_generated_tokens, logit_processor);
-                // if (!m_is_validation_mode_enabled)
-                //     std::cout << "removed " << result.removed_tokens_cnt << " tokens from sequence " << std::endl;
+                //if (!m_is_validation_mode_enabled)
+                    //std::cout << "removed " << result.removed_tokens_cnt << " tokens from sequence " << std::endl;
                 running_sequence->truncate_generated_ids_embeds(result.removed_tokens_cnt);
+                running_sequence->update_position_ids(result.removed_tokens_cnt);
                 auto candidate_sequence = candidates.at(running_sequence->get_grouped_id());
                 std::vector<int64_t> candidate_token_ids = candidate_sequence.token_ids;
                 std::vector<float> candidate_token_log_probs = candidate_sequence.log_probs;
@@ -383,6 +384,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::u
             // prune the embeddings to decrease update_result.removed_tokens_cnt
             if (update_result.removed_tokens_cnt > 0) {
                 sequence->truncate_generated_ids_embeds(update_result.removed_tokens_cnt);
+                sequence->update_position_ids(update_result.removed_tokens_cnt);
             }
         }
     }
