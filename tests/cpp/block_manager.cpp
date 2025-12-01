@@ -15,7 +15,7 @@ TEST(TestBlockManager, general_test) {
     ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(
         0,
         ov::Tensor(ov::element::i64, {
-        prompt_ids.size()}, const_cast<int64_t*>(prompt_ids.data())),
+        prompt_ids.size()}, prompt_ids.data()),
         ov::genai::beam_search(),
         4);
     auto sequence = sequence_group->get_not_finished_sequences()[0];
@@ -48,7 +48,7 @@ TEST(TestBlockManager, required_blocks_count) {
     ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(
         0,
         ov::Tensor(ov::element::i64, {
-        tokens.size()}, const_cast<int64_t*>(tokens.data())),
+        tokens.size()}, tokens.data()),
         ov::genai::beam_search(),
         4);
     sequence_group->schedule_tokens(5);
@@ -98,7 +98,7 @@ TEST(TestBlockManager, CanFreeBlocksFromSequence) {
     ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(
             0,
             ov::Tensor(ov::element::i64, {
-                    tokens.size()}, const_cast<int64_t*>(tokens.data())),
+                    tokens.size()}, tokens.data()),
             ov::genai::beam_search(),
             BLOCK_SIZE);
     sequence_group->schedule_tokens(5);
