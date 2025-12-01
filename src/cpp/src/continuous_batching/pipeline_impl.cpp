@@ -441,8 +441,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         if (!m_is_validation_mode_enabled) { // always for draft mode
             return true;
         }
-        if ( step_counter == 0 )
-            return true;
+        //if ( step_counter == 0 )
+            //return true;
         return false;
     };
 
