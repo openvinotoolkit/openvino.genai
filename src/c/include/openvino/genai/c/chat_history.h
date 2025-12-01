@@ -8,6 +8,9 @@
 #include "visibility.h"
 #include <stddef.h>
 
+// Forward declaration for JsonContainer
+typedef struct ov_genai_json_container_opaque ov_genai_json_container;
+
 /**
  * @struct ov_genai_chat_history
  * @brief Opaque type for ChatHistory
@@ -34,14 +37,15 @@ typedef enum {
 OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_create(ov_genai_chat_history** history);
 
 /**
- * @brief Create a ChatHistory instance from a JSON array string.
- * @param messages_json A JSON string containing an array of message objects.
+ * @brief Create a ChatHistory instance from a JsonContainer (array).
  * @param history A pointer to the newly created ov_genai_chat_history.
+ * @param messages A JsonContainer containing an array of message objects.
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
-OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_create_from_json(
-    const char* messages_json,
-    ov_genai_chat_history** history);
+OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_create_from_json_container(
+    ov_genai_chat_history** history,
+    const ov_genai_json_container* messages
+   );
 
 /**
  * @brief Release the memory allocated by ov_genai_chat_history.
@@ -50,14 +54,14 @@ OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_cr
 OPENVINO_GENAI_C_EXPORTS void ov_genai_chat_history_free(ov_genai_chat_history* history);
 
 /**
- * @brief Add a message to the chat history from a JSON object string.
+ * @brief Add a message to the chat history from a JsonContainer.
  * @param history A pointer to the ov_genai_chat_history instance.
- * @param message_json A JSON string containing a message object (e.g., {"role": "user", "content": "Hello"}).
+ * @param message A JsonContainer containing a message object (e.g., {"role": "user", "content": "Hello"}).
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_push_back(
     ov_genai_chat_history* history,
-    const char* message_json);
+    const ov_genai_json_container* message);
 
 /**
  * @brief Remove the last message from the chat history.
@@ -67,70 +71,46 @@ OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_pu
 OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_pop_back(ov_genai_chat_history* history);
 
 /**
- * @brief Get all messages as a JSON array string.
+ * @brief Get all messages as a JsonContainer (array).
  * @param history A pointer to the ov_genai_chat_history instance.
- * @param output A pointer to the pre-allocated output string buffer. It can be set to NULL, in which case the
- * *output_size will provide the needed buffer size. The user should then allocate the required buffer size and call
- * this function again to obtain the entire output.
- * @param output_size A pointer to the size of the output string, including the null terminator. If output is not NULL,
- * *output_size should be greater than or equal to the result string size; otherwise, the function will return
- * OUT_OF_BOUNDS(-2).
+ * @param messages A pointer to store the returned JsonContainer containing all messages.
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_get_messages(
     const ov_genai_chat_history* history,
-    char* output,
-    size_t* output_size);
+    ov_genai_json_container** messages);
 
 /**
- * @brief Get a message at a specific index as a JSON object string.
+ * @brief Get a message at a specific index as a JsonContainer.
  * @param history A pointer to the ov_genai_chat_history instance.
  * @param index The index of the message to retrieve.
- * @param output A pointer to the pre-allocated output string buffer. It can be set to NULL, in which case the
- * *output_size will provide the needed buffer size. The user should then allocate the required buffer size and call
- * this function again to obtain the entire output.
- * @param output_size A pointer to the size of the output string, including the null terminator. If output is not NULL,
- * *output_size should be greater than or equal to the result string size; otherwise, the function will return
- * OUT_OF_BOUNDS(-2).
+ * @param message A pointer to store the returned JsonContainer containing the message.
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_get_message(
     const ov_genai_chat_history* history,
     size_t index,
-    char* output,
-    size_t* output_size);
+    ov_genai_json_container** message);
 
 /**
- * @brief Get the first message as a JSON object string.
+ * @brief Get the first message as a JsonContainer.
  * @param history A pointer to the ov_genai_chat_history instance.
- * @param output A pointer to the pre-allocated output string buffer. It can be set to NULL, in which case the
- * *output_size will provide the needed buffer size. The user should then allocate the required buffer size and call
- * this function again to obtain the entire output.
- * @param output_size A pointer to the size of the output string, including the null terminator. If output is not NULL,
- * *output_size should be greater than or equal to the result string size; otherwise, the function will return
- * OUT_OF_BOUNDS(-2).
+ * @param message A pointer to store the returned JsonContainer containing the first message.
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_get_first(
     const ov_genai_chat_history* history,
-    char* output,
-    size_t* output_size);
+    ov_genai_json_container** message);
 
 /**
- * @brief Get the last message as a JSON object string.
+ * @brief Get the last message as a JsonContainer.
  * @param history A pointer to the ov_genai_chat_history instance.
- * @param output A pointer to the pre-allocated output string buffer. It can be set to NULL, in which case the
- * *output_size will provide the needed buffer size. The user should then allocate the required buffer size and call
- * this function again to obtain the entire output.
- * @param output_size A pointer to the size of the output string, including the null terminator. If output is not NULL,
- * *output_size should be greater than or equal to the result string size; otherwise, the function will return
- * OUT_OF_BOUNDS(-2).
+ * @param message A pointer to store the returned JsonContainer containing the last message.
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_get_last(
     const ov_genai_chat_history* history,
-    char* output,
-    size_t* output_size);
+    ov_genai_json_container** message);
 
 /**
  * @brief Clear all messages from the chat history.
@@ -160,54 +140,42 @@ OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_em
     int* empty);
 
 /**
- * @brief Set tools definitions (for function calling) as a JSON array string.
+ * @brief Set tools definitions (for function calling) as a JsonContainer (array).
  * @param history A pointer to the ov_genai_chat_history instance.
- * @param tools_json A JSON string containing an array of tool definitions.
+ * @param tools A JsonContainer containing an array of tool definitions.
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_set_tools(
     ov_genai_chat_history* history,
-    const char* tools_json);
+    const ov_genai_json_container* tools);
 
 /**
- * @brief Get tools definitions as a JSON array string.
+ * @brief Get tools definitions as a JsonContainer (array).
  * @param history A pointer to the ov_genai_chat_history instance.
- * @param output A pointer to the pre-allocated output string buffer. It can be set to NULL, in which case the
- * *output_size will provide the needed buffer size. The user should then allocate the required buffer size and call
- * this function again to obtain the entire output.
- * @param output_size A pointer to the size of the output string, including the null terminator. If output is not NULL,
- * *output_size should be greater than or equal to the result string size; otherwise, the function will return
- * OUT_OF_BOUNDS(-2).
+ * @param tools A pointer to store the returned JsonContainer containing tools definitions.
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_get_tools(
     const ov_genai_chat_history* history,
-    char* output,
-    size_t* output_size);
+    ov_genai_json_container** tools);
 
 /**
- * @brief Set extra context (for custom template variables) as a JSON object string.
+ * @brief Set extra context (for custom template variables) as a JsonContainer (object).
  * @param history A pointer to the ov_genai_chat_history instance.
- * @param extra_context_json A JSON string containing an object with extra context.
+ * @param extra_context A JsonContainer containing an object with extra context.
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_set_extra_context(
     ov_genai_chat_history* history,
-    const char* extra_context_json);
+    const ov_genai_json_container* extra_context);
 
 /**
- * @brief Get extra context as a JSON object string.
+ * @brief Get extra context as a JsonContainer (object).
  * @param history A pointer to the ov_genai_chat_history instance.
- * @param output A pointer to the pre-allocated output string buffer. It can be set to NULL, in which case the
- * *output_size will provide the needed buffer size. The user should then allocate the required buffer size and call
- * this function again to obtain the entire output.
- * @param output_size A pointer to the size of the output string, including the null terminator. If output is not NULL,
- * *output_size should be greater than or equal to the result string size; otherwise, the function will return
- * OUT_OF_BOUNDS(-2).
+ * @param extra_context A pointer to store the returned JsonContainer containing extra context.
  * @return ov_genai_chat_history_status_e A status code, return OK(0) if successful.
  */
 OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_get_extra_context(
     const ov_genai_chat_history* history,
-    char* output,
-    size_t* output_size);
+    ov_genai_json_container** extra_context);
 
