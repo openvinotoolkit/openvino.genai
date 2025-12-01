@@ -5,8 +5,6 @@ if (MSVC)
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
-set(BUILD_SHARED_LIBS ON)
-
 find_package(OpenVINOGenAI REQUIRED
     PATHS
         "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
@@ -64,6 +62,8 @@ install(TARGETS benchmark_vlm
 
 
 include(FetchContent)
+set(BUILD_SHARED_LIBS ON)
+set(WITH_FFMPEG ON)
 FetchContent_Declare(
         opencv
         GIT_REPOSITORY https://github.com/opencv/opencv.git
