@@ -124,9 +124,11 @@ def main():
         pipe.generate(prompt, images=images, generation_config=config)
 
     res = pipe.generate(prompt, images=images, generation_config=config)
+    print(res.texts)
     perf_metrics = res.perf_metrics
     for _ in range(num_iter - 1):
         res = pipe.generate(prompt, images=images, generation_config=config)
+        print(res.texts)
         perf_metrics += res.perf_metrics
 
     print(f"Output token size: {res.perf_metrics.get_num_generated_tokens()}")
