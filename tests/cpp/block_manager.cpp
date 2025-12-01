@@ -44,7 +44,7 @@ TEST(TestBlockManager, general_test) {
 TEST(TestBlockManager, required_blocks_count) {
     ov::genai::BlockManager bm = ov::genai::BlockManager(8, false, 4, 3);
 
-    std::vector<uint64_t> tokens = {0,1,2,3,4};
+    std::vector<int64_t> tokens = {0,1,2,3,4};
     ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(
         0,
         ov::Tensor(ov::element::i64, {
@@ -94,7 +94,7 @@ TEST(TestBlockManager, CanFreeBlocksFromSequence) {
     const size_t BLOCK_SIZE = 2;
     ov::genai::BlockManager bm = ov::genai::BlockManager(8, false, BLOCK_SIZE, 3);
 
-    std::vector<uint64_t> tokens = {0,1,2,3,4};
+    std::vector<int64_t> tokens = {0,1,2,3,4};
     ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(
             0,
             ov::Tensor(ov::element::i64, {

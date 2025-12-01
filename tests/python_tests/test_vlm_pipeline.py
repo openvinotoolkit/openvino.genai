@@ -29,6 +29,7 @@ ov_continious_batching_pipe
 
 import collections
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Generator
 import openvino_tokenizers
 import openvino
@@ -57,7 +58,8 @@ from utils.generation_config import (
     get_multinomial_all_parameters,
     get_greedy,
 )
-from utils.constants import get_ov_cache_models_dir
+from utils.constants import get_ov_cache_converted_models_dir
+from utils.atomic_download import AtomicDownloadManager
 
 import logging
 logger = logging.getLogger(__name__)
@@ -182,60 +184,67 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
     if "katuni4ka/tiny-random-phi3-vision" == model_id:
         pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
-    ov_cache_models_dir = get_ov_cache_models_dir()
+    ov_cache_converted_dir = get_ov_cache_converted_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
-    model_dir = ov_cache_models_dir / dir_name
-    if (model_dir / "openvino_language_model.xml").exists():
+    model_dir = ov_cache_converted_dir / dir_name
+    
+    manager = AtomicDownloadManager(model_dir)
+    
+    if manager.is_complete() or (model_dir / "openvino_language_model.xml").exists():
         return model_dir
-    align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
-    processor = retry_request(
-        lambda: transformers.AutoProcessor.from_pretrained(
-            model_id,
-            trust_remote_code=True,
-            **align_with_optimum_cli,
+    
+    def convert_to_temp(temp_dir: Path) -> None:
+        align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
+        processor = retry_request(
+            lambda: transformers.AutoProcessor.from_pretrained(
+                model_id,
+                trust_remote_code=True,
+                **align_with_optimum_cli,
+            )
         )
-    )
-    model = retry_request(
-        lambda: OVModelForVisualCausalLM.from_pretrained(
-            model_id,
-            compile=False,
-            device="CPU",
-            export=True,
-            load_in_8bit=False,
-            trust_remote_code=model_id in {
-                "katuni4ka/tiny-random-minicpmv-2_6",
-                "katuni4ka/tiny-random-internvl2",
-                "katuni4ka/tiny-random-phi3-vision",
-                "katuni4ka/tiny-random-phi-4-multimodal",
-                "qnguyen3/nanoLLaVA",
-            },
+        model = retry_request(
+            lambda: OVModelForVisualCausalLM.from_pretrained(
+                model_id,
+                compile=False,
+                device="CPU",
+                export=True,
+                load_in_8bit=False,
+                trust_remote_code=model_id in {
+                    "katuni4ka/tiny-random-minicpmv-2_6",
+                    "katuni4ka/tiny-random-internvl2",
+                    "katuni4ka/tiny-random-phi3-vision",
+                    "katuni4ka/tiny-random-phi-4-multimodal",
+                    "qnguyen3/nanoLLaVA",
+                },
+            )
         )
-    )
-    if model.config.model_type == "llava-qwen2":
-        tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    # For tiny-random-internvl2 processor is actually tokenizer
-    elif isinstance(processor, transformers.Qwen2TokenizerFast):
-        tokenizer = processor
-        processor = transformers.AutoImageProcessor.from_pretrained(
-            model_id, trust_remote_code=True
+        if model.config.model_type == "llava-qwen2":
+            tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+        # For tiny-random-internvl2 processor is actually tokenizer
+        elif isinstance(processor, transformers.Qwen2TokenizerFast):
+            tokenizer = processor
+            processor = transformers.AutoImageProcessor.from_pretrained(
+                model_id, trust_remote_code=True
+            )
+        else:
+            tokenizer = processor.tokenizer
+            if tokenizer.chat_template is None:
+                tokenizer.chat_template = processor.chat_template
+        tokenizer.save_pretrained(temp_dir)
+        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
+            tokenizer, with_detokenizer=True
         )
-    else:
-        tokenizer = processor.tokenizer
-        if tokenizer.chat_template is None:
-            tokenizer.chat_template = processor.chat_template
-    tokenizer.save_pretrained(model_dir)
-    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
-        tokenizer, with_detokenizer=True
-    )
-    openvino.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
-    openvino.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
+        openvino.save_model(ov_tokenizer, temp_dir / "openvino_tokenizer.xml")
+        openvino.save_model(ov_detokenizer, temp_dir / "openvino_detokenizer.xml")
 
-    if tokenizer.chat_template is not None and model.config.model_type == "phi3_v":
-        # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
-        processor.chat_template = tokenizer.chat_template
-    processor.audio_tokenizer = None
-    processor.save_pretrained(model_dir)
-    model.save_pretrained(model_dir)
+        if tokenizer.chat_template is not None and model.config.model_type == "phi3_v":
+            # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
+            processor.chat_template = tokenizer.chat_template
+        processor.audio_tokenizer = None
+        processor.save_pretrained(temp_dir)
+        model.save_pretrained(temp_dir)
+    
+    manager.execute(convert_to_temp)
     return model_dir
 
 
@@ -304,12 +313,12 @@ parametrize_one_model_backends = pytest.mark.parametrize(
     ids=lambda p: f"{p[0]}/{p[1]}",
     indirect=["ov_pipe_model"],
 )
-    
+
 @pytest.fixture(scope="module")
 def ov_continious_batching_pipe() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[0])
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
-    
+
 @pytest.fixture(scope="module")
 def ov_continious_batching_pipe_gemma() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[8])
@@ -424,7 +433,7 @@ def test_images(request: pytest.FixtureRequest):
 def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Tensor]):
     ov_pipe = ov_pipe_model.pipeline
     result_from_streamer = []
-    
+
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
         result_from_streamer.append(word)

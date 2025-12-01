@@ -154,8 +154,9 @@ Text2SpeechDecodedResults SpeechT5TTSImpl::generate(const std::vector<std::strin
 
         // prepare inputs for decoder
         std::vector<float> zeros(bsz * 1 * m_num_mel_bins, 0.0f);
+        std::vector<float> empty_spectrogram;
         ov::Tensor inputs_embeds(ov::element::f32, ov::Shape{bsz, 1, m_num_mel_bins}, zeros.data());
-        ov::Tensor spectrogram(ov::element::f32, ov::Shape{0, bsz, 2, m_num_mel_bins}, std::vector<float>{}.data());
+        ov::Tensor spectrogram(ov::element::f32, ov::Shape{0, bsz, 2, m_num_mel_bins}, empty_spectrogram.data());
 
         int64_t iter = 0;
         // decoder loop
