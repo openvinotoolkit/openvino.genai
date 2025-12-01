@@ -14,35 +14,39 @@ from conftest import SAMPLES_PY_DIR, convert_model, download_test_content
 convert_draft_model = convert_model
 download_mask_image = download_test_content
 
-image_generation_prompt = "side profile centered painted portrait, Gandhi rolling a blunt, Gloomhaven, matte painting concept art, art nouveau, 8K HD Resolution, beautifully background"
+image_generation_prompt = \
+   "side profile centered painted portrait, Gandhi rolling a blunt, "\
+   "Gloomhaven, matte painting concept art, art nouveau, "\
+   "8K HD Resolution, beautifully background"
 image_generation_json = [
     {"steps": 30, "width": 64, "height": 128, "guidance_scale": 1.0, "prompt": image_generation_prompt},
     {"steps": 4, "width": 64, "height": 32, "guidance_scale": 7.0, "prompt": image_generation_prompt}
 ]
-image_generation_inpainting_json = [
-    {"steps": 30, "width": 64, "height": 128, "guidance_scale": 1.0, "strength": "0.8", "media": "overture-creations.png", "mask_image": "overture-creations-mask.png", "prompt": image_generation_prompt},
-]
-image_generation_i2i_prompt = "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k"
-image_generation_i2i_json = [
-    {"steps": 30, "width": 64, "height": 128, "guidance_scale": 1.0, "strength": "0.8", "media": "cat.png", "prompt": image_generation_i2i_prompt},
-]
+image_generation_inpainting_json = [{
+    "steps": 30, "width": 64, "height": 128, "guidance_scale": 1.0, "strength": "0.8",
+    "media": "overture-creations.png", "prompt": image_generation_prompt,
+    "mask_image": "overture-creations-mask.png"
+}]
+image_generation_i2i_json = [{
+    "steps": 30, "width": 64, "height": 128, "guidance_scale": 1.0, "strength": "0.8", "media": "cat.png",
+    "prompt": "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k"
+}]
+
+
 
 class TestBenchmarkLLM:
+
     @pytest.mark.samples
-    @pytest.mark.parametrize(
-        "download_model, sample_args",
-        [
-            pytest.param("tiny-dummy-qwen2", ["-d", "cpu", "-n", "1", "-f", "pt", "-ic", "20"]),
-        ],
-        indirect=["download_model"],
-    )
+    @pytest.mark.parametrize("download_model, sample_args", [
+        pytest.param("tiny-dummy-qwen2", ["-d", "cpu", "-n", "1", "-f", "pt", "-ic", "20"]),
+    ], indirect=["download_model"])
     def test_python_tool_llm_benchmark_download_model(self, download_model, sample_args):
         # Run Python benchmark
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [sys.executable, benchmark_script, "-m" , download_model] + sample_args
         run_sample(benchmark_py_command)
-        
-        
+
+
     @pytest.mark.samples
     @pytest.mark.parametrize(
         "convert_model, sample_args",
@@ -54,31 +58,28 @@ class TestBenchmarkLLM:
             pytest.param("tiny-random-llava", [ "-ic", "4", "--optimum", "-pf", SAMPLES_PY_DIR / "llm_bench/prompts/llava-1.5-7b.jsonl"]),
             pytest.param("tiny-random-latent-consistency", [ "-d", "cpu", "-n", "1", "--num_steps", "4", "--static_reshape", "-p", "'an astronaut riding a horse on mars'"]),
             pytest.param("tiny-random-latent-consistency", [ "-d", "cpu", "-n", "1", "--num_steps", "4", "--static_reshape", "-p", "'an astronaut riding a horse on mars'", "--optimum"]),
-        ],
-        indirect=["convert_model"],
-    )
+        ], indirect=["convert_model"])
     def test_python_tool_llm_benchmark_convert_model(self, convert_model, sample_args):
         # Run Python benchmark
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [sys.executable, benchmark_script, "-m" , convert_model] + sample_args
-        run_sample(benchmark_py_command)       
-        
-        
+        run_sample(benchmark_py_command)
+
+
     @pytest.mark.samples
     @pytest.mark.parametrize(
         "convert_model, sample_args",
         [
             pytest.param("tiny-random-llava", [ "-ic", "20", "--prompt", "'What is unusual on this image?'"]),
             pytest.param("tiny-random-llava", [ "-ic", "20", "--optimum", "--prompt", "'What is unusual on this image?'"]),
-        ],
-        indirect=["convert_model"],
-    )
+        ], indirect=["convert_model"])
     @pytest.mark.parametrize("download_test_content", ["cat"], indirect=True)
     def test_python_tool_llm_benchmark_convert_model_media(self, convert_model, download_test_content, sample_args):
         # Run Python benchmark
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
-        benchmark_py_command = [sys.executable, benchmark_script, "-m" , convert_model, "--media", download_test_content] + sample_args
-        run_sample(benchmark_py_command)      
+        benchmark_py_command = [sys.executable, benchmark_script, "-m" , convert_model, "--media", download_test_content]
+        benchmark_py_command += sample_args
+        run_sample(benchmark_py_command)
 
 
     @pytest.mark.samples
@@ -102,7 +103,7 @@ class TestBenchmarkLLM:
 
 
     @pytest.mark.samples
-    @pytest.mark.parametrize("sample_args", 
+    @pytest.mark.parametrize("sample_args",
         [
             ["-d", "cpu", "-n", "1", "--num_steps", "4", "--optimum"],
             ["-d", "cpu", "-n", "1", "--num_steps", "4"],
@@ -117,14 +118,14 @@ class TestBenchmarkLLM:
         # Run Python benchmark
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [
-            sys.executable, 
-            benchmark_script, 
-            "-m", convert_model, 
-            "-pf", generate_image_generation_jsonl, 
+            sys.executable,
+            benchmark_script,
+            "-m", convert_model,
+            "-pf", generate_image_generation_jsonl,
         ] + sample_args
         run_sample(benchmark_py_command)
-        
-        
+
+
     @pytest.mark.samples
     @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1", "--num_steps", "4"], ["-d", "cpu", "-n", "1", "--num_steps", "4", "--empty_lora"]])
     @pytest.mark.parametrize("convert_model", ["tiny-random-latent-consistency"], indirect=True)
@@ -132,19 +133,19 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize("generate_image_generation_jsonl", [("image_generation.jsonl", image_generation_json)], indirect=True)
     def test_python_tool_llm_benchmark_jsonl_lora(self, request, convert_model, download_model, generate_image_generation_jsonl, sample_args):
         model_name = request.node.callspec.params['download_model']
-        
+
         # Run Python benchmark
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [
-            sys.executable, 
-            benchmark_script, 
-            "-m", convert_model, 
+            sys.executable,
+            benchmark_script,
+            "-m", convert_model,
             "-pf", generate_image_generation_jsonl,
             "--lora", f'{download_model}/{model_name}.safetensors',
         ] + sample_args
         run_sample(benchmark_py_command)
-        
-        
+
+
     @pytest.mark.samples
     @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1", "--num_steps", "4", "--task", "inpainting"]])
     @pytest.mark.parametrize("convert_model", ["tiny-random-latent-consistency"], indirect=True)
@@ -152,16 +153,16 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize("download_mask_image", ["overture-creations-mask.png"], indirect=True)
     @pytest.mark.parametrize("generate_image_generation_jsonl", [("image_generation_inpainting.jsonl", image_generation_inpainting_json)], indirect=True)
     def test_python_tool_llm_benchmark_inpainting(self, convert_model, download_test_content, download_mask_image, generate_image_generation_jsonl, sample_args):
-        
+
         # to use the relative media and mask_image paths
         os.chdir(os.path.dirname(download_test_content))
 
         # Run Python benchmark
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [
-            sys.executable, 
-            benchmark_script, 
-            "-m", convert_model, 
+            sys.executable,
+            benchmark_script,
+            "-m", convert_model,
             "-pf", generate_image_generation_jsonl,
         ] + sample_args
         run_sample(benchmark_py_command)
@@ -173,31 +174,33 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize("download_test_content", ["cat.png"], indirect=True)
     @pytest.mark.parametrize("generate_image_generation_jsonl", [("image_generation_i2i.jsonl", image_generation_i2i_json)], indirect=True)
     def test_python_tool_llm_benchmark_i2i(self, convert_model, download_test_content, generate_image_generation_jsonl, sample_args):
-        
+
         # to use the relative media and mask_image paths
         os.chdir(os.path.dirname(download_test_content))
 
         # Run Python benchmark
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [
-            sys.executable, 
-            benchmark_script, 
-            "-m", convert_model, 
+            sys.executable,
+            benchmark_script,
+            "-m", convert_model,
             "-pf", generate_image_generation_jsonl,
         ] + sample_args
         run_sample(benchmark_py_command)
 
 
     @pytest.mark.samples
-    @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1", "-p", "'Why is the Sun yellow?'"], ["-d", "cpu", "-n", "1", "-p", "'Why is the Sun yellow?'", "--optimum"]])
+    @pytest.mark.parametrize("sample_args", [
+        ["-d", "cpu", "-n", "1", "-p", "'Why is the Sun yellow?'"],
+        ["-d", "cpu", "-n", "1", "-p", "'Why is the Sun yellow?'", "--optimum"]])
     @pytest.mark.parametrize("convert_model", ["tiny-random-SpeechT5ForTextToSpeech"], indirect=True)
     @pytest.mark.parametrize("download_test_content", ["cmu_us_awb_arctic-wav-arctic_a0001.bin"], indirect=True)
     def test_python_tool_llm_benchmark_tts(self, convert_model, download_test_content, sample_args):
         # Run Python benchmark
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [
-            sys.executable, 
-            benchmark_script, 
+            sys.executable,
+            benchmark_script,
             "-m", convert_model,
             "--speaker_embeddings", download_test_content
         ] + sample_args
@@ -214,9 +217,9 @@ class TestBenchmarkLLM:
         # Run Python benchmark
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [
-            sys.executable, 
-            benchmark_script, 
-            "-m", convert_model, 
+            sys.executable,
+            benchmark_script,
+            "-m", convert_model,
             "--media", media_path,
         ] + sample_args
         run_sample(benchmark_py_command)
@@ -232,9 +235,9 @@ class TestBenchmarkLLM:
     def test_python_tool_llm_benchmark_text_embeddings(self, convert_model, sample_args):
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [
-            sys.executable, 
-            benchmark_script, 
-            "-m", convert_model, 
+            sys.executable,
+            benchmark_script,
+            "-m", convert_model,
         ] + sample_args
         run_sample(benchmark_py_command)
 
@@ -248,8 +251,8 @@ class TestBenchmarkLLM:
     def test_python_tool_llm_benchmark_text_embeddings_qwen3(self, convert_model, sample_args):
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [
-            sys.executable, 
-            benchmark_script, 
+            sys.executable,
+            benchmark_script,
             "-m", convert_model,
         ] + sample_args
         run_sample(benchmark_py_command)
@@ -283,10 +286,9 @@ class TestBenchmarkLLM:
         model_schema = download_and_convert_model(model_id)
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [
-            sys.executable, 
-            benchmark_script, 
-            "-m", 
-            model_schema.models_path,
+            sys.executable,
+            benchmark_script,
+            "-m", model_schema.models_path
         ] + sample_args
         run_sample(benchmark_py_command)
 
@@ -305,4 +307,25 @@ class TestBenchmarkLLM:
             benchmark_script,
             "-m", gguf_full_path,
         ] + sample_args
+        run_sample(benchmark_py_command)
+
+
+
+    @pytest.mark.samples
+    @pytest.mark.parametrize("download_test_content", ["video0.mp4"], indirect=True)
+    @pytest.mark.parametrize("convert_model, sample_args", [
+        pytest.param("tiny-random-llava-next-video", ["-d", "cpu", "-n", "1", "--genai", "-vf", "5"]),
+        pytest.param("tiny-random-llava-next-video", ["-d", "cpu", "-n", "1", "--genai", "-vf", "-3"]),
+        pytest.param("tiny-random-llava-next-video", ["-d", "cpu", "-n", "1", "--optimum", "-vf", "5"]),
+    ], indirect=["convert_model"])
+    def test_python_tool_llm_benchmark_video_prompts(self, download_test_content, convert_model, sample_args):
+        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m", convert_model,
+            "--video", download_test_content,
+            "--prompt", "What_is_presented_in_the_video?"
+        ]
+        benchmark_py_command.extend(sample_args)
         run_sample(benchmark_py_command)
