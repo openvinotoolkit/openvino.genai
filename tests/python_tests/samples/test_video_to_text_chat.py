@@ -15,7 +15,7 @@ class TestVisualLanguageChat:
     @pytest.mark.parametrize(
         "convert_model, download_test_content, questions",
         [
-            pytest.param("tiny-random-llava-next-video", "videos/sample_video.mp4", 'What is unusual on this video?\nGo on.')
+            pytest.param("tiny-random-llava-next-video", "video0.mp4", 'What is unusual on this video?\nGo on.')
         ],
         indirect=["convert_model", "download_test_content"],
     )
