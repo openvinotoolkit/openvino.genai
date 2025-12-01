@@ -63,7 +63,7 @@ install(TARGETS benchmark_vlm
 
 include(FetchContent)
 set(BUILD_SHARED_LIBS ON)
-set(WITH_FFMPEG ON)
+set(WITH_FFMPEG ON CACHE BOOL "" FORCE)
 FetchContent_Declare(
         opencv
         GIT_REPOSITORY https://github.com/opencv/opencv.git
