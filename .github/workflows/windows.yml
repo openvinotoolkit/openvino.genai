@@ -100,7 +100,7 @@ jobs:
       matrix:
         build-type: [Release, Debug]
     needs: [ openvino_download ]
-    timeout-minutes: 45
+    timeout-minutes: 80
     defaults:
       run:
         shell: pwsh
