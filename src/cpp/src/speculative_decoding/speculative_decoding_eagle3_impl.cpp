@@ -74,7 +74,7 @@ void shift_fc_from_draft_to_main(std::shared_ptr<ov::Model>& main_model, std::sh
     };
     auto fc_weights = remove_fc_and_rewire(draft_model);
     if (!fc_weights) {
-        Logger::warn("Error: failed to retrieve and remove FC matmul from draft model.");
+        GENAI_WARN("Error: failed to retrieve and remove FC matmul from draft model.");
         return;
     }
     // now we create the fc into main model
