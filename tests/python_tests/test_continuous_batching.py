@@ -561,7 +561,6 @@ speculative_cases = [
     ]
 )
 @pytest.mark.parametrize("main_model_id,draft_model_id, prompt", speculative_cases)
-@pytest.mark.precommit
 def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType, main_model_id, draft_model_id, prompt):
     def run_extended_perf_metrics_collection(
             model_id: str,
@@ -644,7 +643,6 @@ devices = [
 ]
 @pytest.mark.parametrize("main_model,draft_model,prompt", eagle_models_and_input)
 @pytest.mark.parametrize("main_device,draft_device", devices)
-@pytest.mark.precommit
 def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_device, prompt):
     # Download and convert model:
     main_model_schema = download_and_convert_model(main_model)
