@@ -165,6 +165,13 @@ def get_tokenizer_configs():
             "unk_token": "[UNK]",
             "chat_template": "{% for message in messages %}{% if loop.first and message['role'] != 'system' %}{{ '[|system|][|endofturn|]\n' }}{% endif %}{{ '[|' + message['role'] + '|]' + message['content'] }}{% if message['role'] == 'user' %}{{ '\n' }}{% else %}{{ '[|endofturn|]\n' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ '[|assistant|]' }}{% endif %}"
         },
+        "LGAI-EXAONE/EXAONE-4.0-1.2B": {
+            "bos_token": "[BOS]",
+            "eos_token": "[|endofturn|]",
+            "pad_token": "[PAD]",
+            "unk_token": "[UNK]",
+            "chat_template": "{% for message in messages %}{% if loop.first and message['role'] != 'system' %}{{ '[|system|][|endofturn|]\n' }}{% endif %}{{ '[|' + message['role'] + '|]' + message['content'] }}{% if message['role'] == 'user' %}{{ '\n' }}{% else %}{{ '[|endofturn|]\n' }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ '[|assistant|]' }}{% endif %}"
+        },
         "meta-llama/Llama-2-70b-chat-hf": {
             "bos_token": "<s>",
             "eos_token": "</s>",
