@@ -23,12 +23,12 @@ def save_model_output_to_file(output, text_file_name, args):
     elif isinstance(output, tuple) or isinstance(output, list):
         try:
             output = [np.array(output)]
-        except: pass
-        if len(output) != 1:
+        except (ValueError, TypeError, AttributeError): pass
+        if len(output) == 1:
+            save_model_output_to_file(output[0], text_file_name, args)
+        else:
             for i, v in enumerate(output):
                 save_model_output_to_file(v, f"{text_file_name}_{i}", args)
-        else:
-            save_model_output_to_file(output[0], text_file_name, args)
     else:
         save_path = _get_save_path(text_file_name + '.npy', args)
         input_text_file = open(save_path, 'wb+')
