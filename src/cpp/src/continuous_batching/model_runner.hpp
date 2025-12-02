@@ -73,7 +73,6 @@ class ModelRunner {
     std::map<SequenceKey, HiddenStateRange> m_sequence_hidden_state_mapping;
     // a container which use sequence group id and request id as key to store hidden states
     std::map<size_t, ov::Tensor> m_initial_hidden_states; // shape: [N, seq_len, hidden_size]
-    size_t m_adjust_factor = 1; // to adjust the hidden size of draft model input
 
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
 
@@ -140,10 +139,6 @@ public:
     void set_inputs_embedder(const std::shared_ptr<InputsEmbedder>& inputs_embedder) {
         m_inputs_embedder = inputs_embedder;
         m_embedding = inputs_embedder->get_embedding_model();
-    }
-
-    void set_adjust_factor(size_t adjust_factor) {
-        m_adjust_factor = adjust_factor;
     }
 
     /**
@@ -473,28 +468,10 @@ public:
             }
         }
         if (hidden_state_input && hidden_state_input.get_size() > 0) {
-            if (_is_hs_import()) {
-                try {
-                    m_request.set_tensor("hidden_states", hidden_state_input);
-                    auto shape = hidden_state_input.get_shape();
-                    shape[shape.size() - 1] = shape[shape.size() - 1] / m_adjust_factor;
-                    ov::Tensor fake_tensor = ov::Tensor(hidden_state_input.get_element_type(), shape);
-                    auto fake_data = fake_tensor.data<float>();
-                    std::memset(fake_data, 0, fake_tensor.get_byte_size());
-                    m_request.set_tensor("internal_hidden_states", fake_tensor);
-                } catch (const ov::Exception& e) {
-                }
-            } else {
-                try {
-                    m_request.set_tensor("internal_hidden_states", hidden_state_input);
-                    auto shape = hidden_state_input.get_shape();
-                    shape[shape.size() - 1] = shape[shape.size() - 1] * m_adjust_factor;
-                    ov::Tensor fake_tensor = ov::Tensor(hidden_state_input.get_element_type(), shape);
-                    auto fake_data = fake_tensor.data<float>();
-                    std::memset(fake_data, 0, fake_tensor.get_byte_size());
-                    m_request.set_tensor("hidden_states", fake_tensor);
-                } catch (const ov::Exception& e) {
-                }
+            try {
+                m_request.set_tensor("hidden_states", hidden_state_input);
+            } catch (const ov::Exception& e) {
+                OPENVINO_THROW("Failed to set hidden states tensor: ", e.what());
             }
         }
         if (position_ids.get_shape().size() == 3) {
@@ -689,9 +666,6 @@ private:
                 if (initial_hidden_states && initial_hidden_states.get_shape().size() >= 2) {
                     auto hidden_states_shape = initial_hidden_states.get_shape();
                     hidden_size = hidden_states_shape.back();
-                    if (!(m_hidden_state_flags & HS_IMPORT)) {
-                        hidden_size /= m_adjust_factor;
-                    }
                     break;
                 }
             }
