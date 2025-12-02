@@ -339,7 +339,7 @@ public:
                                 }
                             }
                         } else {
-                            OPENVINO_ASSERT(false, "missing hidden state from target model to eagle draft model");
+                            OPENVINO_ASSERT(false, "Missing hidden state from main model for Eagle3 draft model inference.");
                         }
                     }
                 } else if (_is_hs_internal()) {

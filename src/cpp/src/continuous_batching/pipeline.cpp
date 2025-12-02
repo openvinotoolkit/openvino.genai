@@ -45,7 +45,7 @@ extract_eagle3_mode_from_config(ov::AnyMap& config, const std::filesystem::path&
             // compute the layers from number of hidden layers
             auto config_file_path = models_path / "config.json";
             if (!std::filesystem::exists(config_file_path))
-                OPENVINO_THROW("cannot deduce layers for hidden layer extraction");
+                OPENVINO_THROW("Cannot deduce layers for hidden layer extraction because the file is missing: ", config_file_path);
             std::ifstream file(config_file_path);
 
             nlohmann::json data = nlohmann::json::parse(file);

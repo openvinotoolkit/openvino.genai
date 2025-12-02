@@ -106,7 +106,10 @@ void hidden_state_transform(std::shared_ptr<ov::Model>& model,
     if (hidden_layers_to_abstract.empty()) {
         return;
     }
-    OPENVINO_ASSERT(hidden_layers_to_abstract.size() == 3 || hidden_layers_to_abstract.size() == 1, "invalid hidden layer numbers specified for abstraction.");
+    OPENVINO_ASSERT(
+        hidden_layers_to_abstract.size() == 3 || hidden_layers_to_abstract.size() == 1,
+        "Expected exactly 1 or 3 hidden layers for extraction: 1 for draft model, 3 for main model (early/middle/late stages)."
+    );
 
     std::vector<std::string> patterns;
     if (hidden_layers_to_abstract.size() > 1) {

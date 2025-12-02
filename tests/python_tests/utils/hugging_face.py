@@ -238,7 +238,7 @@ def convert_models(
 
     # to store tokenizer config jsons with special tokens
     if hf_tokenizer:
-        hf_tokenizer.save_pretrained(models_path)
+        hf_tokenizer.save_pretrained(str(models_path))
         # convert tokenizers as well
         convert_and_save_tokenizer(hf_tokenizer, models_path)
 
