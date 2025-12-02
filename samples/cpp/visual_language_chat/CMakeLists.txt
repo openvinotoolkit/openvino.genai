@@ -62,8 +62,9 @@ install(TARGETS benchmark_vlm
 
 
 include(FetchContent)
+
 set(BUILD_SHARED_LIBS ON)
-set(WITH_FFMPEG ON CACHE BOOL "" FORCE)
+set(WITH_FFMPEG ON)
 FetchContent_Declare(
         opencv
         GIT_REPOSITORY https://github.com/opencv/opencv.git
@@ -83,18 +84,10 @@ target_include_directories(video_to_text_chat PRIVATE
 target_link_libraries(video_to_text_chat opencv_core opencv_videoio openvino::genai cxxopts::cxxopts)
 
 set_target_properties(video_to_text_chat PROPERTIES
-    INSTALL_RPATH "\$ORIGIN/lib"
-    BUILD_RPATH "\$ORIGIN/lib"
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
 
 install(TARGETS video_to_text_chat
         RUNTIME DESTINATION samples_bin/
-        COMPONENT samples_bin
-        EXCLUDE_FROM_ALL)
-
-
-install(DIRECTORY ${opencv_BINARY_DIR}/lib/
-        DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)

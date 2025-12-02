@@ -420,8 +420,6 @@ jobs:
       - name: Build Samples (Release)
         if: ${{ 'Release' == matrix.build-type }}
         run: |
-          apt update && apt install sudo
-          sudo apt install -y libgtk2.0-dev pkg-config ffmpeg libavformat-dev libavcodec-dev libswscale-dev libavutil-dev
           chmod +x ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.sh
           ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.sh -i ${{ env.INSTALL_DIR }}
           chmod +x ${{ env.OV_INSTALL_DIR }}/samples/c/build_samples.sh
