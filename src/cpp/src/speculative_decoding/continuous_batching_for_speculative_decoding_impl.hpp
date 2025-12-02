@@ -85,11 +85,5 @@ public:
             m_model_runner->enable_hidden_state_internal(is_needed);
         }
     }
-
-    void set_adjust_factor(size_t adjust_factor) {
-        if (m_model_runner) {
-            m_model_runner->set_adjust_factor(adjust_factor);
-        }
-    }
 };
 }
