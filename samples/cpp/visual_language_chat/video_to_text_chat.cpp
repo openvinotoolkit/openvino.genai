@@ -55,7 +55,7 @@ ov::Tensor load_video(const std::filesystem::path& video_path, size_t num_frames
 
 std::vector<ov::Tensor> load_videos(const std::filesystem::path& input_path) {
     if (input_path.empty() || !fs::exists(input_path)) {
-        throw std::runtime_error{"Path to images is empty or does not exist."};
+        OPENVINO_THROW("Path to images is empty or does not exist.");
     }
     if (fs::is_directory(input_path)) {
         std::set<fs::path> sorted_videos{fs::directory_iterator(input_path), fs::directory_iterator()};
@@ -74,10 +74,8 @@ bool print_subword(std::string&& subword) {
 
 int main(int argc, char* argv[]) try {
     if (argc < 3 || argc > 4) {
-        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <VIDEO_FILE OR DIR_WITH_VIDEOS> <DEVICE>");
+        OPENVINO_THROW(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <VIDEO_FILE OR DIR_WITH_VIDEOS> <DEVICE>");
     }
-    std::cout << cv::getBuildInformation() << std::endl;
-
     std::vector<ov::Tensor> videos = load_videos(argv[2]);
 
     // GPU and NPU can be used as well.
