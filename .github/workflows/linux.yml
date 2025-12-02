@@ -418,7 +418,7 @@ jobs:
       - name: Build Samples (Release)
         if: ${{ 'Release' == matrix.build-type }}
         run: |
-          sudo apt install ffmpeg libavformat-dev libavcodec-dev libswscale-dev
+          sudo apt update && sudo apt install -y ffmpeg libavformat-dev libavcodec-dev libswscale-dev
           chmod +x ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.sh
           ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.sh -i ${{ env.INSTALL_DIR }}
           chmod +x ${{ env.OV_INSTALL_DIR }}/samples/c/build_samples.sh
