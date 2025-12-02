@@ -39,7 +39,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
-    "@huggingface/hub": "^2.7.1",
+    "@huggingface/hub": "^0.21.0",
     "@types/node": "^24.10.1",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
