@@ -76,6 +76,7 @@ int main(int argc, char* argv[]) try {
     if (argc < 3 || argc > 4) {
         throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <VIDEO_FILE OR DIR_WITH_VIDEOS> <DEVICE>");
     }
+    std::cout << cv::getBuildInformation() << std::endl;
 
     std::vector<ov::Tensor> videos = load_videos(argv[2]);
 
