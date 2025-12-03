@@ -210,8 +210,22 @@ public:
                 }
             }
 
-            TorchTensorAllocator(const TorchTensorAllocator&) = default;
-            TorchTensorAllocator& operator=(const TorchTensorAllocator&) = default;
+            TorchTensorAllocator(const TorchTensorAllocator& other)
+                : m_total_size(other.m_total_size), m_mutable_data(other.m_mutable_data) {
+                py::gil_scoped_acquire acquire;
+                m_torch_tensor = other.m_torch_tensor;
+            }
+
+            TorchTensorAllocator& operator=(const TorchTensorAllocator& other) {
+                if (this != &other) {
+                    m_total_size = other.m_total_size;
+                    m_mutable_data = other.m_mutable_data;
+                    py::gil_scoped_acquire acquire;
+                    m_torch_tensor = other.m_torch_tensor;
+                }
+                return *this;
+            }
+
             TorchTensorAllocator(TorchTensorAllocator&&) = default;
             TorchTensorAllocator& operator=(TorchTensorAllocator&&) = default;
 
