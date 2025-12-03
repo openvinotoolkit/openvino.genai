@@ -42,10 +42,6 @@ ov_genai_chat_history_status_e ov_genai_chat_history_create_from_json_container(
         std::unique_ptr<ov_genai_chat_history> _history = std::make_unique<ov_genai_chat_history>();
         _history->object = std::make_shared<ov::genai::ChatHistory>(*(messages->object));
         *history = _history.release();
-    } catch (const ov::Exception& e) {
-        return OV_GENAI_CHAT_HISTORY_INVALID_JSON;
-    } catch (const std::exception& e) {
-        return OV_GENAI_CHAT_HISTORY_ERROR;
     } catch (...) {
         return OV_GENAI_CHAT_HISTORY_ERROR;
     }
