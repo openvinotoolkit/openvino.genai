@@ -249,25 +249,16 @@ export class LLMPipeline {
     if (!callback) {
       options["disableStreamer"] = true;
     }
-    const returnDecoded = generationConfig["return_decoded_results"] || false;
 
     return new Promise((resolve: (value: string | DecodedResults) => void) => {
       const chunkOutput = (isDone: boolean, result: string | any) => {
-        if (isDone && returnDecoded) {
+        if (isDone) {
           const decodedResults = new DecodedResults(
             result.texts,
             result.scores,
             result.perfMetrics,
           );
           resolve(decodedResults);
-        } else if (isDone && !returnDecoded) {
-          console.warn(
-            "DEPRECATION WARNING: Starting in version 2026.0.0,",
-            "LLMPipeline.generate() will return DecodedResults by default.\n",
-            'To use the new behavior now, set "return_decoded_results": true',
-            "in GenerationConfig.",
-          );
-          resolve(result.subword);
         } else if (callback && typeof result === "string") {
           return callback(result);
         }
