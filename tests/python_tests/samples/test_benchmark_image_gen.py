@@ -4,9 +4,10 @@
 import pytest
 import sys
 
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, download_test_content
 from test_utils import run_sample
 
+download_mask_image = download_test_content
 
 class TestBenchmarkImageGen:
     @pytest.mark.samples

@@ -1,19 +1,31 @@
+#!/usr/bin/env python3
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-#
-# This file includes utility functions copied from the MileBench repository:
-# https://github.com/MileBench/MileBench
-#
-# Licensed under the Apache License
 
-import os
+from argparse import ArgumentParser
 import json
+import os
 import re
-import openvino
+import requests
+import shutil
+from logging import getLogger
+from typing import Optional
 
 import numpy as np
 from PIL import Image
 from rouge import Rouge
+from tqdm import tqdm
+
+import openvino
+from openvino_genai import (
+    AggregationMode,
+    CacheEvictionConfig,
+    ContinuousBatchingPipeline,
+    GenerationConfig,
+    SchedulerConfig,
+)
+
+logger = getLogger(__name__)
 
 
 class MileBenchDataset:
@@ -22,13 +34,81 @@ class MileBenchDataset:
         self.subset = subset
         self.subset_size = subset_size
 
-        annotation_path = os.path.join(
-            self.data_dir, self.subset, f"{self.subset}.json"
-        )
-        with open(annotation_path, "r") as f:
+        self._download_data()
+        annotation_path = os.path.join(self.data_dir, self.subset, f"{self.subset}.json")
+        with open(annotation_path) as f:
             self.annotation = json.load(f)
 
         self.image_dir = os.path.join(self.data_dir, self.subset, "images")
+
+    def _download_data(self):
+        LINKS = {
+            "MileBench_part0.tar.gz": "https://huggingface.co/datasets/FreedomIntelligence/MileBench/resolve/main/MileBench_part0.tar.gz",
+            "MileBench_part1.tar.gz": "https://huggingface.co/datasets/FreedomIntelligence/MileBench/resolve/main/MileBench_part1.tar.gz",
+            "MileBench_part2.tar.gz": "https://huggingface.co/datasets/FreedomIntelligence/MileBench/resolve/main/MileBench_part2.tar.gz",
+            "MileBench_part3.tar.gz": "https://huggingface.co/datasets/FreedomIntelligence/MileBench/resolve/main/MileBench_part3.tar.gz",
+            "MileBench_part4.tar.gz": "https://huggingface.co/datasets/FreedomIntelligence/MileBench/resolve/main/MileBench_part4.tar.gz",
+            "MileBench_part5.tar.gz": "https://huggingface.co/datasets/FreedomIntelligence/MileBench/resolve/main/MileBench_part5.tar.gz",
+        }
+
+        SUBSET2ARCHIVE = {
+            # Realistic Temporal
+            "ActionLocalization": "MileBench_part0.tar.gz",
+            "ActionPrediction": "MileBench_part0.tar.gz",
+            "ActionSequence": "MileBench_part0.tar.gz",
+            "CharacterOrder": "MileBench_part0.tar.gz",
+            "CounterfactualInference": "MileBench_part1.tar.gz",
+            "EgocentricNavigation": "MileBench_part1.tar.gz",
+            "MovingAttribute": "MileBench_part2.tar.gz",
+            "MovingDirection": "MileBench_part2.tar.gz",
+            "ObjectExistence": "MileBench_part3.tar.gz",
+            "ObjectInteraction": "MileBench_part3.tar.gz",
+            "ObjectShuffle": "MileBench_part3.tar.gz",
+            "SceneTransition": "MileBench_part3.tar.gz",
+            "StateChange": "MileBench_part3.tar.gz",
+            # Realistic Semantic
+            "ALFRED": "MileBench_part0.tar.gz",
+            "CLEVR-Change": "MileBench_part1.tar.gz",
+            "DocVQA": "MileBench_part1.tar.gz",
+            "IEdit": "MileBench_part2.tar.gz",
+            "MMCoQA": "MileBench_part2.tar.gz",
+            "MultiModalQA": "MileBench_part2.tar.gz",
+            "nuscenes": "MileBench_part3.tar.gz",
+            "OCR-VQA": "MileBench_part4.tar.gz",
+            "SlideVQA": "MileBench_part4.tar.gz",
+            "Spot-the-Diff": "MileBench_part4.tar.gz",
+            "TQA": "MileBench_part5.tar.gz",
+            "WebQA": "MileBench_part5.tar.gz",
+            "WikiVQA": "MileBench_part5.tar.gz",
+            # Diagnostic
+            "TextNeedleInAHaystack": "MileBench_part5.tar.gz",
+            "ImageNeedleInAHaystack": "MileBench_part2.tar.gz",
+            "GPR1200": "MileBench_part1.tar.gz",
+        }
+
+        archive_name = SUBSET2ARCHIVE.get(self.subset)
+        archive_url = LINKS[archive_name]
+        archive_path = os.path.join(self.data_dir, archive_name)
+        dir_name = os.path.join(self.data_dir, self.subset)
+
+        if not os.path.exists(dir_name):
+            if not os.path.exists(archive_path):
+                logger.info(f"Downloading {archive_name} from {archive_url}...")
+                os.makedirs(self.data_dir, exist_ok=True)
+                response = requests.get(archive_url, stream=True)
+                response.raise_for_status()
+                with open(archive_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                logger.info(f"Downloaded archive to {archive_path}")
+            else:
+                logger.info(f"Archive already exists at {archive_path}")
+
+            logger.info(f"Extracting {archive_path}...")
+            shutil.unpack_archive(archive_path, self.data_dir)
+            logger.info(f"Extracted to {self.data_dir}")
+        else:
+            logger.info(f"Already extracted to {self.data_dir}")
 
     def __len__(self):
         return min(self.annotation["meta_data"]["num_sample"], self.subset_size)
@@ -307,3 +387,106 @@ class Eval:
             return self.evaluate_multichoice(predictions)
         else:
             raise ValueError("Dataset not supported")
+
+
+def get_scheduler_config(num_kv_blocks: Optional[int]) -> SchedulerConfig:
+    scheduler_config = SchedulerConfig()
+    if num_kv_blocks is not None:
+        scheduler_config.num_kv_blocks = num_kv_blocks
+        scheduler_config.max_num_batched_tokens = 32 * num_kv_blocks
+    scheduler_config.dynamic_split_fuse = True
+    scheduler_config.max_num_seqs = 256
+    scheduler_config.use_cache_eviction = False
+    return scheduler_config
+
+
+def main():
+    parser = ArgumentParser(description="Help command")
+    parser.add_argument("-m", "--model_dir", type=str, help="Path to the model directory")
+    parser.add_argument("-mt", "--max_new_tokens", type=int, default=512, help="Maximal number of new tokens")
+    parser.add_argument("-d", "--device", type=str, default="CPU", help="Device")
+    parser.add_argument("-s", "--subset", type=str, help="MileBench subset to use")
+    parser.add_argument(
+        "--data_dir",
+        type=str,
+        default=None,
+        help="Path to MileBench data directory. If not provided, data will be downloaded to ./milebench_data"
+    )
+    parser.add_argument("--eviction_on", action='store_true', help="Whether to apply cache eviction")
+    parser.add_argument(
+        "--num_kv_blocks",
+        type=int,
+        default=500,
+        help=(
+            "Number of blocks to statically pre-allocate in the KV cache. "
+            "If unspecified, blocks are allocated dynamically based on generation length."
+        )
+    )
+    parser.add_argument("--seqs_per_request", type=int, default=1, help="Number of sequences per request")
+
+    args = parser.parse_args()
+
+    generation_config = GenerationConfig()
+    generation_config.num_return_sequences = 1
+    generation_config.max_new_tokens = args.max_new_tokens
+    generation_config.do_sample = False
+    generation_config.apply_chat_template = False
+
+    scheduler_config = get_scheduler_config(args.num_kv_blocks)
+    if args.eviction_on:
+        scheduler_config.use_cache_eviction = True
+        eviction_config = CacheEvictionConfig(
+            start_size=32,
+            recent_size=64,
+            max_cache_size=512,
+            aggregation_mode=AggregationMode.SUM,
+            snapkv_window_size=8,
+        )
+        scheduler_config.cache_eviction_config = eviction_config
+        print("Eviction is ON")
+    else:
+        print("Eviction is OFF")
+
+    model_cb = ContinuousBatchingPipeline(args.model_dir, scheduler_config, args.device)
+
+    data = MileBenchDataset(
+        data_dir=args.data_dir if args.data_dir is not None else "milebench_data",
+        subset=args.subset,
+        subset_size=100,
+    )
+
+    with tqdm(total=len(data)) as progress_bar:
+        prompts, images = [], []
+        answers = []
+        ref_answers = []
+        for p_idx, data_sample in enumerate(data):
+            prompt = data_sample["prompt"]
+            image = data_sample["images"]
+
+            progress_bar.update(1)
+            prompts.append(prompt)
+            images.append(image)
+            answers.append({"gt_answer": data_sample["gt_answer"], "choice_list": data_sample["choice_list"]})
+            ref_answers.append({"gt_answer": data_sample["gt_answer"], "choice_list": data_sample["choice_list"]})
+
+            if len(prompts) == args.seqs_per_request or p_idx == len(data) - 1:
+                ans_batch = model_cb.generate(
+                    prompts, images=images, generation_config=[generation_config] * len(prompts)
+                )
+
+                for i, output in enumerate(ans_batch, start=p_idx-len(prompts)+1):
+                    answers[i]["pred"] = output.texts[0]
+                prompts.clear()
+                images.clear()
+
+    question_type = data.annotation['meta_data']['question_type']
+    scorer = Eval()
+    score = scorer.evaluate(answers, args.subset, question_type)
+    print(f"Score: {score}")
+
+    pipeline_metrics = model_cb.get_metrics()
+    print(f"Cache usage: max {pipeline_metrics.max_cache_usage:.3f}, avg {pipeline_metrics.avg_cache_usage:.3f}")
+
+
+if '__main__' == __name__:
+    main()
