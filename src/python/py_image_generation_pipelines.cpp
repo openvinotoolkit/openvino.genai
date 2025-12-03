@@ -197,7 +197,7 @@ public:
         class TorchTensorAllocator {
             size_t m_total_size;
             void * m_mutable_data;
-            py::object m_torch_tensor;
+            py::object m_torch_tensor; // we need to hold torch.Tensor to avoid memory destruction
 
         public:
             TorchTensorAllocator(size_t total_size, void * mutable_data, py::object torch_tensor) :
