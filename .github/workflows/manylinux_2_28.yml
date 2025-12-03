@@ -176,7 +176,7 @@ jobs:
           for py_version in "3.10" "3.11" "3.12" "3.13"
           do
             rm -rf ${{ env.BUILD_DIR }}/CMakeCache.txt
-            
+
             python_exec_path=$(python$py_version -c "import sys; print(sys.executable)")
 
             echo "Configuring cmake for python$py_version"
@@ -187,12 +187,12 @@ jobs:
                   -S ${{ env.SRC_DIR }} \
                   -B ${{ env.BUILD_DIR }}
             echo "Configuring cmake done for python$py_version"
-            
+
             /usr/bin/cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
             /usr/bin/cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
           done
           /usr/bin/cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TOOLS_DIR }} --component tools_bin
-          /usr/bin/cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TESTS_DIR }} --component tests          
+          /usr/bin/cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TESTS_DIR }} --component tests
         env:
           CXXFLAGS: "-Wno-dangling-reference -fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
           CFLAGS: "-Wno-dangling-reference -fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
@@ -209,7 +209,7 @@ jobs:
           name: genai_archive_${{ matrix.build-type }}
           path: ${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_NAME }}
           if-no-files-found: 'error'
-      
+
       - name: Upload Tools
         if: always()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
@@ -360,7 +360,7 @@ jobs:
           CXXFLAGS: "-Wno-dangling-reference -fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
           CFLAGS: "-Wno-dangling-reference -fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
           LDFLAGS: "-fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
-      
+
       - name: Build GenAI Node.js bindings
         run: /usr/bin/cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
 
@@ -440,7 +440,7 @@ jobs:
           storage_dir: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
           storage_root: ${{ env.ARTIFACTS_SHARE }}
           product_name: ${{ github.event.repository.name }}
-  
+
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
     needs: [ smart_ci, openvino_download, genai_build_wheel ]
@@ -495,7 +495,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-8-cores-64gb-st
+    runs-on: aks-linux-8-cores-32gb-st
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
