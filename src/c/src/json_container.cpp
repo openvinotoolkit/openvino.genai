@@ -91,7 +91,7 @@ ov_genai_json_container_status_e ov_genai_json_container_to_json_string(
             if (*output_size < json_str.length() + 1) {
                 return OV_GENAI_JSON_CONTAINER_OUT_OF_BOUNDS;
             }
-            std::strncpy(output, json_str.c_str(), json_str.length() + 1);
+            std::memcpy(output, json_str.c_str(), json_str.length() + 1);
             *output_size = json_str.length() + 1;
         }
     } catch (...) {
