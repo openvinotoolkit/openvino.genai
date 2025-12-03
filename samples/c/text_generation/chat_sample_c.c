@@ -19,15 +19,15 @@
     }
 
 #define CHECK_CHAT_HISTORY_STATUS(return_status)                                                      \
-    if (return_status != OV_GENAI_CHAT_HISTORY_OK) {                                                           \
-        fprintf(stderr, "[ERROR] chat history status %d, line %d\n", return_status, __LINE__); \
-        goto err;                                                                        \
+    if (return_status != OV_GENAI_CHAT_HISTORY_OK) {                                                  \
+        fprintf(stderr, "[ERROR] chat history status %d, line %d\n", return_status, __LINE__);         \
+        goto err;                                                                                      \
     }
 
-#define CHECK_JSON_CONTAINER_STATUS(return_status)                                                      \
-    if (return_status != OV_GENAI_JSON_CONTAINER_OK) {                                                           \
-        fprintf(stderr, "[ERROR] json container status %d, line %d\n", return_status, __LINE__); \
-        goto err;                                                                        \
+#define CHECK_JSON_CONTAINER_STATUS(return_status)                                                     \
+    if (return_status != OV_GENAI_JSON_CONTAINER_OK) {                                                 \
+        fprintf(stderr, "[ERROR] json container status %d, line %d\n", return_status, __LINE__);        \
+        goto err;                                                                                      \
     }
 
 static void json_escape_string(const char* input, char* output, size_t output_size) {
