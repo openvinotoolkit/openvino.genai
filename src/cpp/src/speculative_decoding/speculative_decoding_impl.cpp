@@ -28,8 +28,10 @@ bool are_tokenizers_equal(Tokenizer& lhs, Tokenizer& rhs) {
 
 std::pair<ov::genai::SchedulerConfig, ov::genai::SchedulerConfig>
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::init_speculative_models(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc) {
-    OPENVINO_ASSERT(main_model_desc.model != nullptr, "Main model cannot be null");
-    OPENVINO_ASSERT(draft_model_desc.model != nullptr, "Draft model cannot be null");
+    auto main_model = main_model_desc.model;
+    auto draft_model = draft_model_desc.model;
+    OPENVINO_ASSERT(main_model != nullptr, "Main model cannot be null");
+    OPENVINO_ASSERT(draft_model != nullptr, "Draft model cannot be null");
 
     auto main_scheduler_config = main_model_desc.scheduler_config;
     bool allow_score_aggregation = true;
@@ -38,14 +40,14 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::init_speculative_models(con
     ov::pass::SDPAToPagedAttention(main_model_desc.scheduler_config.use_cache_eviction,
                                    main_model_desc.scheduler_config.use_cache_eviction,
                                    allow_score_aggregation,
-                                   allow_xattention).run_on_model(main_model_desc.model);
+                                   allow_xattention).run_on_model(main_model);
     ov::pass::SDPAToPagedAttention(main_model_desc.scheduler_config.use_cache_eviction,
                                    main_model_desc.scheduler_config.use_cache_eviction,
                                    allow_score_aggregation,
-                                   allow_xattention).run_on_model(draft_model_desc.model);
+                                   allow_xattention).run_on_model(draft_model);
 
-    utils::apply_gather_before_matmul_transformation(main_model_desc.model);
-    utils::apply_gather_before_matmul_transformation(draft_model_desc.model);
+    utils::apply_gather_before_matmul_transformation(main_model);
+    utils::apply_gather_before_matmul_transformation(draft_model);
 
     bool is_draft_scheduler_undefined = draft_model_desc.scheduler_config == SchedulerConfig();
 
@@ -67,8 +69,8 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::init_speculative_models(con
             }
             return total_hidden_size;
         };
-        float main_model_hidden_size = compute_total_hidden_size(main_model_desc.model),
-              draft_model_hidden_size = compute_total_hidden_size(draft_model_desc.model);
+        float main_model_hidden_size = compute_total_hidden_size(main_model),
+              draft_model_hidden_size = compute_total_hidden_size(draft_model);
         auto k = draft_model_hidden_size / (main_model_hidden_size + draft_model_hidden_size);
 
         // TODO: work with KV blocks as it will be more precise instead of GBs
