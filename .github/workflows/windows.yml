@@ -104,7 +104,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-8-cores-16gb-st
+    runs-on: aks-win-8-cores-16gb-build-st
     env:
       CMAKE_GENERATOR: 'Ninja' # Ninja is the only Windows native generator supported by ccache
       OV_INSTALL_DIR: ${{ github.workspace }}\install\ov
@@ -128,18 +128,18 @@ jobs:
         uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: '3.10'
-      
+
       - name: Setup Python 3.11
         uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: '3.11'
-      
+
       - name: Setup Python 3.12
         if: ${{ matrix.build-type != 'Debug' }}
         uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: '3.12'
-      
+
       - name: Setup Python 3.13
         if: ${{ matrix.build-type != 'Debug' }}
         uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
@@ -290,7 +290,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-8-cores-16gb-st
+    runs-on: aks-win-8-cores-16gb-build-st
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}\ov
       SRC_DIR: ${{ github.workspace }}\src
@@ -306,7 +306,7 @@ jobs:
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
-      
+
       - name: Setup Python 3.11
         uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
@@ -376,32 +376,32 @@ jobs:
       - name: Build WWB Wheel
         run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
         working-directory: ${{ env.OV_INSTALL_DIR }}
-      
+
       - name: Setup Python 3.10
         uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: '3.10'
           cache: 'pip'
-      
+
       - name: Setup Python 3.12
         uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: '3.12'
           cache: 'pip'
-      
+
       - name: Setup Python 3.13
         uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: '3.13'
           cache: 'pip'
-      
+
       - name: Build genai wheel
         run: |
           $pyVersions = '3.10', '3.11', '3.12', '3.13'
           foreach ($pyVersion in $pyVersions) {
             $pythonCommand = "py -$pyVersion -c `"import sys; print(f'{sys.executable}')`""
             $pythonExecutablePath = & cmd /c $pythonCommand
-          
+
             & $pythonExecutablePath -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} `
               --config-settings=override=cmake.generator='Ninja' `
               --config-settings=override=cmake.build_path='${{ env.BUILD_DIR }}/genai' `
@@ -491,7 +491,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-4-cores-8gb-st
+    runs-on: aks-win-4-cores-8gb-build-st
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/install/ov
       SRC_DIR: ${{ github.workspace }}/src
@@ -543,7 +543,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-4-cores-8gb-st
+    runs-on: aks-win-4-cores-8gb-build-st
 
     env:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
@@ -643,7 +643,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-16-cores-32gb-st
+    runs-on: aks-win-16-cores-32gb-test-st
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
@@ -696,31 +696,31 @@ jobs:
             marker: 'llm'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).LLM_samples.test }}
-            runner: 'aks-win-16-cores-32gb-st'
+            runner: 'aks-win-16-cores-32gb-test-st'
           - name: 'Whisper'
             marker: 'whisper'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Whisper_samples.test }}
-            runner: 'aks-win-4-cores-8gb-st'
+            runner: 'aks-win-4-cores-8gb-test-st'
           - name: 'dreamlike_anime_1_0'
             marker: 'dreamlike_anime_1_0'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Image_generation_samples.test }}
-            runner: 'aks-win-8-cores-32gb-st'
+            runner: 'aks-win-8-cores-32gb-test-st'
           - name: 'LCM_Dreamshaper_v7_int8_ov'
             marker: 'LCM_Dreamshaper_v7_int8_ov'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Image_generation_samples.test }}
-            runner: 'aks-win-8-cores-16gb-st'
+            runner: 'aks-win-8-cores-16gb-test-st'
           - name: 'Rag'
             marker: 'rag'
             cmd: 'tests/python_tests/samples'
-            runner: 'aks-win-4-cores-8gb-st'
+            runner: 'aks-win-4-cores-8gb-test-st'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG_samples.test }}
           - name: 'Speech generation'
             marker: 'speech_generation'
             cmd: 'tests/python_tests/samples'
-            runner: 'aks-win-4-cores-8gb-st'
+            runner: 'aks-win-4-cores-8gb-test-st'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
 
     needs: [ smart_ci, openvino_download, genai_build_cpack, genai_build_wheel, genai_build_samples, genai_build_nodejs ]
@@ -792,7 +792,7 @@ jobs:
           npm install $(Resolve-Path -Path "${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*") --ignore-scripts
           Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
-      
+
       - name: Install NPM dependencies for samples
         if: ${{ matrix.test.run_condition }}
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
@@ -822,7 +822,7 @@ jobs:
     defaults:
       run:
         shell: pwsh
-    runs-on: aks-win-8-cores-16gb-st
+    runs-on: aks-win-8-cores-16gb-test-st
     env:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
