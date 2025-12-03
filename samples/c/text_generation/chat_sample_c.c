@@ -108,8 +108,8 @@ int main(int argc, char* argv[]) {
     char output_buffer[MAX_JSON_LENGTH];
     size_t output_size = 0;
     char assistant_message_json[MAX_JSON_LENGTH];
-    char escaped_prompt[MAX_PROMPT_LENGTH * 2];
-    char escaped_output[MAX_JSON_LENGTH * 2];
+    char escaped_prompt[(MAX_PROMPT_LENGTH - 1) * 2 + 1];
+    char escaped_output[(MAX_JSON_LENGTH - 1) * 2 + 1];
 
     CHECK_STATUS(ov_genai_llm_pipeline_create(models_path, device, 0, &pipeline));
     CHECK_STATUS(ov_genai_generation_config_create(&config));
