@@ -28,6 +28,8 @@ public:
     Napi::Value get_grammar_compile_time(const Napi::CallbackInfo& info);
 
     Napi::Value get_raw_metrics(const Napi::CallbackInfo& info);
+    Napi::Value add(const Napi::CallbackInfo& info);
+    ov::genai::PerfMetrics& get_value();
 
 private:
     ov::genai::PerfMetrics _metrics;

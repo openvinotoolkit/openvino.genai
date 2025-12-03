@@ -8,6 +8,12 @@ sidebar_position: 2
 ## Overview
 The cache eviction algorithm is designed to manage KV (Key-Value) cache memory for large language models (LLMs) during text generation. It determines which blocks of tokens should be evicted from the KV cache based on importance scores calculated from attention scores across different attention layers.
 
+The cache eviction algorithm allows for average and maximum KV cache consumption savings since it effectively imposes a configurable hard limit on the amount of KV cache blocks that each sequence can occupy.
+A fixed, relatively small value of KV cache block limit means that there is less compute spent on generating next token, when compared to the no-eviction case where the entire KV cache history of the sequence, including prompt tokens, would have to be processed; token latency would also remain stable.
+This effect only comes into play during the generation stage and is most noticeable for longer generation lengths. 
+
+No eviction is done during prefill stage, therefore no speedups would be achieved during the prefill using cache eviction alone and the reduction in maximum KV cache consumption over the entire generation process is limited from below by the amount of KV cache blocks occupied by the full prompt. To achieve prefill stage speedup, the [sparse attention prefill algorithms](./sparse-attention-prefill.md) can be used, either separately or along with cache eviction.
+
 ## Conceptual Model
 The KV cache for each sequence is divided into three logical areas:
 
@@ -37,7 +43,7 @@ After the prefill phase, however, the maximum cache occupancy for each sequence 
 
 ## Sample - impact of cache eviction on possible generation length and prompt throughput
 [limit_checker.py](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/text_generation/limit_checker.py) can be used to visualize the impact of the cache eviction algorithm on the end performance of the generation pipeline.
-The script is paramaterized to allow specifying own model (by its `huggingface_hub` ID) and the base cache size.
+The script is parameterized to allow specifying own model (by its `huggingface_hub` ID) and the base cache size.
 
 With `--mode gen_length`, the script will run the generation pipeline with increasing requested length of generation until it either hits 100% maximum cache usage or times out. 
 With cache eviction disabled, the pipeline will eventually exhaust the cache size, and the generation length will be capped at the output token count determined by the base cache size. 
@@ -95,7 +101,7 @@ CacheEvictionConfig(
 - `ZEROS`: All zeros pattern  
 - `ONES`: All ones pattern
 - `MEAN`: Mean of indicators across blocks
-- `ALTERNATE`: Alternating 0-1 pattern
+- `ALTERNATING`: Alternating 0-1 pattern
 
 ### Performance Comparison on LongBench
 
@@ -109,13 +115,13 @@ Configuration format: SnapKV budget (tokens), KVCrush budget (blocks), Anchor Po
 | Configuration | qasper | samsum | trec |
 |---------------|--------|--------|------|
 | **1024, 0** | 19.77 | 37.72 | 62.50 |
-| 768, 8, ALTERNATE | 18.79 | **`37.78`** | **`62.50`** |
+| 768, 8, ALTERNATING | 18.79 | **`37.78`** | **`62.50`** |
 | 768, 8, MEAN | 19.29 | 37.67 | **`62.50`** |
 | 768, 8, RANDOM | 18.95 | **`37.75`** | **`62.50`** |
-| 960, 2, ALTERNATE | **`19.83`** | **`37.77`** | **`62.50`** |
+| 960, 2, ALTERNATING | **`19.83`** | **`37.77`** | **`62.50`** |
 | 960, 2, MEAN | **`19.82`** | **`37.95`** | **`62.50`** |
 | 960, 2, RANDOM | **`20.56`** | 37.33 | **`62.50`** |
-| 992, 1, ALTERNATE | **`20.05`** | 37.42 | **`62.50`** |
+| 992, 1, ALTERNATING | **`20.05`** | 37.42 | **`62.50`** |
 | 992, 1, MEAN | **`19.83`** | **`37.80`** | **`62.50`** |
 | 992, 1, RANDOM | **`19.92`** | 37.56 | **`62.50`** |
 | **KVCrush - Best** | **`20.56`** | **`37.95`** | **`62.50`** |
@@ -123,13 +129,13 @@ Configuration format: SnapKV budget (tokens), KVCrush budget (blocks), Anchor Po
 | Configuration | qasper | samsum | trec |
 |---------------|--------|--------|------|
 | **512, 0** | 16.97 | 36.60 | 62.50 |
-| 384, 4, ALTERNATE | 16.69 | 36.18 | **`62.50`** |
+| 384, 4, ALTERNATING | 16.69 | 36.18 | **`62.50`** |
 | 384, 4, MEAN | 16.73 | **`36.91`** | **`62.50`** |
 | 384, 4, RANDOM | **`17.34`** | 36.24 | **`62.50`** |
-| 448, 2, ALTERNATE | **`17.14`** | 36.34 | **`62.50`** |
+| 448, 2, ALTERNATING | **`17.14`** | 36.34 | **`62.50`** |
 | 448, 2, MEAN | **`17.09`** | 35.99 | **`62.50`** |
 | 448, 2, RANDOM | 16.94 | 36.26 | **`62.50`** |
-| 480, 1, ALTERNATE | **`17.40`** | **`36.61`** | **`62.50`** |
+| 480, 1, ALTERNATING | **`17.40`** | **`36.61`** | **`62.50`** |
 | 480, 1, MEAN | 16.77 | 36.39 | **`62.50`** |
 | 480, 1, RANDOM | **`17.20`** | 36.54 | **`62.50`** |
 | **KVCrush - Best** | **`17.40`** | **`36.91`** | **`62.50`** |

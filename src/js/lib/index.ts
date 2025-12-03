@@ -28,8 +28,8 @@ class PipelineFactory {
     await pipeline.init();
     return pipeline;
   }
-  static async TextEmbeddingPipeline(modelPath: string, device = "CPU") {
-    const pipeline = new Embedding(modelPath, device);
+  static async TextEmbeddingPipeline(modelPath: string, device = "CPU", config = {}) {
+    const pipeline = new Embedding(modelPath, device, config);
     await pipeline.init();
 
     return pipeline;
@@ -40,3 +40,5 @@ export const { LLMPipeline, TextEmbeddingPipeline } = PipelineFactory;
 export { DecodedResults } from "./pipelines/llmPipeline.js";
 export * from "./utils.js";
 export * from "./addon.js";
+export type { TokenizedInputs, EncodeOptions, DecodeOptions } from "./tokenizer.js";
+export type { ChatMessage, ExtraContext, ToolDefinition } from "./chatHistory.js";

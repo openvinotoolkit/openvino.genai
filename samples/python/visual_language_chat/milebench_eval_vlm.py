@@ -220,7 +220,7 @@ class Eval:
         outText = inText
         for p in self.punct:
             if (p + " " in inText or " " + p in inText) or (
-                re.search(self.commaStrip, inText) != None
+                re.search(self.commaStrip, inText) is not None
             ):
                 outText = outText.replace(p, "")
             else:
@@ -412,7 +412,7 @@ def main():
         default=None,
         help="Path to MileBench data directory. If not provided, data will be downloaded to ./milebench_data"
     )
-    parser.add_argument("--eviction_on", action='store_true', help="Whether to apply cache eviction")
+    parser.add_argument("--enable_cache_eviction", action='store_true', help="Whether to apply cache eviction")
     parser.add_argument(
         "--num_kv_blocks",
         type=int,
@@ -430,10 +430,10 @@ def main():
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = args.max_new_tokens
     generation_config.do_sample = False
-    generation_config.apply_chat_template = False
+    generation_config.apply_chat_template = True
 
     scheduler_config = get_scheduler_config(args.num_kv_blocks)
-    if args.eviction_on:
+    if args.enable_cache_eviction:
         scheduler_config.use_cache_eviction = True
         eviction_config = CacheEvictionConfig(
             start_size=32,
@@ -474,7 +474,8 @@ def main():
                     prompts, images=images, generation_config=[generation_config] * len(prompts)
                 )
 
-                for i, output in enumerate(ans_batch, start=p_idx-len(prompts)+1):
+                batch_start_idx = p_idx - len(prompts) + 1
+                for i, output in enumerate(ans_batch, start=batch_start_idx):
                     answers[i]["pred"] = output.texts[0]
                 prompts.clear()
                 images.clear()
@@ -488,5 +489,5 @@ def main():
     print(f"Cache usage: max {pipeline_metrics.max_cache_usage:.3f}, avg {pipeline_metrics.avg_cache_usage:.3f}")
 
 
-if '__main__' == __name__:
+if __name__ == '__main__':
     main()

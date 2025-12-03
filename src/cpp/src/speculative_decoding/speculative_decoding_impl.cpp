@@ -4,6 +4,7 @@
 #include <thread>
 
 #include "openvino/genai/text_streamer.hpp"
+#include "openvino/pass/sdpa_to_paged_attention.hpp"
 #include "speculative_decoding_impl.hpp"
 #include "continuous_batching/paged_attention_transformations.hpp"
 #include "utils.hpp"
@@ -30,11 +31,22 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
     auto main_model = main_model_desc.model;
     auto draft_model = draft_model_desc.model;
 
+    OPENVINO_ASSERT(main_model != nullptr, "Main model cannot be null");
+    OPENVINO_ASSERT(draft_model != nullptr, "Draft model cannot be null");
+
     auto main_scheduler_config = main_model_desc.scheduler_config;
     auto main_device = main_model_desc.device;
+    bool allow_score_aggregation = true;
+    bool allow_xattention = false;
 
-    utils::apply_paged_attention_transformations(main_model, main_model_desc.scheduler_config.use_cache_eviction);
-    utils::apply_paged_attention_transformations(draft_model, main_model_desc.scheduler_config.use_cache_eviction);
+    ov::pass::SDPAToPagedAttention(main_model_desc.scheduler_config.use_cache_eviction,
+                                   main_model_desc.scheduler_config.use_cache_eviction,
+                                   allow_score_aggregation,
+                                   allow_xattention).run_on_model(main_model);
+    ov::pass::SDPAToPagedAttention(main_model_desc.scheduler_config.use_cache_eviction,
+                                   main_model_desc.scheduler_config.use_cache_eviction,
+                                   allow_score_aggregation,
+                                   allow_xattention).run_on_model(draft_model);
 
     utils::apply_gather_before_matmul_transformation(main_model);
     utils::apply_gather_before_matmul_transformation(draft_model);
@@ -106,7 +118,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::SpeculativeDecodingImpl(con
 GenerationHandle
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t request_id,
                                                                  const ov::Tensor& input_ids,
-                                                                 ov::genai::GenerationConfig sampling_params,
+                                                                 const ov::genai::GenerationConfig& sampling_params,
                                                                  std::optional<ov::Tensor> token_type_ids) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
@@ -119,7 +131,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t reques
 GenerationHandle
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::add_request(uint64_t request_id,
                                                                  const std::string& prompt,
-                                                                 ov::genai::GenerationConfig sampling_params) {
+                                                                 const ov::genai::GenerationConfig& sampling_params) {
     std::lock_guard<std::mutex> lock(m_draft_generations_mutex);
     auto draft_sampling_params = sampling_params;
     draft_sampling_params.ignore_eos = true;
@@ -219,7 +231,7 @@ void ContinuousBatchingPipeline::SpeculativeDecodingImpl::step() {
 
         auto m_main_pipeline_metrics = m_main_pipeline->get_metrics();
         main_raw_perf_counters.m_durations.push_back(MicroSeconds(main_duration));
-        main_raw_perf_counters.m_inference_durations[0] = MicroSeconds(m_main_pipeline_metrics.inference_duration);
+        main_raw_perf_counters.m_inference_durations[0] += MicroSeconds(m_main_pipeline_metrics.inference_duration);
         main_raw_perf_counters.m_batch_sizes.push_back(num_generated_tokens); // or should be processed + generated
         m_sd_metrics.update_generated_len(num_generated_tokens);
     }
@@ -236,7 +248,8 @@ std::vector<EncodedGenerationResult>
 ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<ov::Tensor>& input_ids,
                                                               const std::vector<GenerationConfig>& sampling_params,
                                                               const StreamerVariant& streamer,
-                                                              std::optional<std::vector<ov::Tensor>> token_type_ids) {
+                                                              const std::optional<std::vector<ov::Tensor>>& token_type_ids,
+                                                              const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids) {
     OPENVINO_ASSERT(!token_type_ids.has_value());
     m_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
     m_draft_pipeline->raw_perf_metrics.m_inference_durations =  {{ MicroSeconds(0.0f) }};
@@ -262,9 +275,15 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
     std::vector<GenerationHandle> main_generations;
     for (size_t request_id = 0; request_id < input_ids.size(); ++request_id) {
         OPENVINO_ASSERT(1 == input_ids[request_id].get_shape().at(0), "Use multiple tensors to pass a batch.");
-        main_generations.push_back(m_main_pipeline->add_request(request_id, input_ids[request_id], sampling_params[request_id]));
+        auto main_sampling_params = sampling_params[request_id];
+        if (main_sampling_params.assistant_confidence_threshold == 0.f) {
+            if (main_sampling_params.num_assistant_tokens == 0) {
+                main_sampling_params.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
+            }
+        }
+        main_generations.push_back(m_main_pipeline->add_request(request_id, input_ids[request_id], main_sampling_params));
 
-        auto draft_sampling_params = sampling_params[request_id];
+        auto draft_sampling_params = main_sampling_params;
         // set the parameters do not stop draft generation without stopping of the same request for main pipeline
         draft_sampling_params.ignore_eos = true;
         draft_sampling_params.stop_strings = {};
@@ -288,7 +307,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
         stream_tokens(streamer_ptr, generation);
     }
 
-    // waiting for competion of streaming
+    // waiting for completion of streaming
     streamer_ptr->end();
 
     OPENVINO_ASSERT(is_requests_empty(), "Internal error: current request is supposed to be dropped within step() function as completed");

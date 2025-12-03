@@ -1,6 +1,9 @@
 import { createRequire } from "module";
 import { platform } from "node:os";
 import { join, dirname, resolve } from "node:path";
+import type { ChatHistory as IChatHistory } from "./chatHistory.js";
+import type { Tokenizer as ITokenizer } from "./tokenizer.js";
+import { addon as ovAddon } from "openvino-node";
 
 export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
 export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
@@ -14,16 +17,27 @@ export enum PoolingType {
   MEAN,
 }
 export type TextEmbeddingConfig = {
-  /** Instruction to use for embedding a document */
-  embed_instruction?: string;
   /** Maximum length of tokens passed to the embedding model */
   max_length?: number;
-  /** If 'true', L2 normalization is applied to embeddings */
-  normalize?: boolean;
+  /** If 'true', model input tensors are padded to the maximum length */
+  pad_to_max_length?: boolean;
+  /** Side to use for padding "left" or "right" */
+  padding_side?: "left" | "right";
+  /**
+   * Batch size of embedding model.
+   * Useful for database population. If set, the pipeline will fix model shape for inference optimization.
+   * Number of documents passed to pipeline should be equal to batch_size.
+   * For query embeddings, batch_size should be set to 1 or not set.
+   */
+  batch_size?: number;
   /** Pooling strategy applied to model output tensor */
   pooling_type?: PoolingType;
+  /** If 'true', L2 normalization is applied to embeddings */
+  normalize?: boolean;
   /** Instruction to use for embedding a query */
   query_instruction?: string;
+  /** Instruction to use for embedding a document */
+  embed_instruction?: string;
 };
 
 export interface TextEmbeddingPipelineWrapper {
@@ -47,6 +61,9 @@ export interface TextEmbeddingPipelineWrapper {
 interface OpenVINOGenAIAddon {
   TextEmbeddingPipeline: TextEmbeddingPipelineWrapper;
   LLMPipeline: any;
+  ChatHistory: IChatHistory;
+  Tokenizer: ITokenizer;
+  setOpenvinoAddon: (ovAddon: any) => void;
 }
 
 // We need to use delayed import to get an updated Path if required
@@ -64,4 +81,9 @@ function getGenAIAddon(): OpenVINOGenAIAddon {
   return require("../bin/genai_node_addon.node");
 }
 
-export default getGenAIAddon();
+const addon = getGenAIAddon();
+addon.setOpenvinoAddon(ovAddon);
+
+export const { TextEmbeddingPipeline, LLMPipeline, ChatHistory, Tokenizer } = addon;
+export type ChatHistory = IChatHistory;
+export type Tokenizer = ITokenizer;

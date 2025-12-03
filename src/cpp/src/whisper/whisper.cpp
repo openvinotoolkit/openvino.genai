@@ -77,7 +77,8 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
     ov::Tensor beam_idx = decoder->create_host_tensor(ov::element::i32, {batch_size});
     std::fill_n(beam_idx.data<int32_t>(), batch_size, 0);
 
-    const ov::Tensor input_ids_tensor{ov::element::i64, {1, input_ids.size()}, (void*)input_ids.data()};
+    // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
+    const ov::Tensor input_ids_tensor{ov::element::i64, {1, input_ids.size()}, const_cast<int64_t*>(input_ids.data())};
 
     const auto infer_start = std::chrono::steady_clock::now();
     decoder->start_async(encoder_hidden_state, input_ids_tensor, beam_idx);
@@ -202,7 +203,6 @@ ov::Tensor encode(ov::InferRequest& request,
                     ". Actual size: ",
                     mel_data.size(),
                     ".");
-
     ov::Tensor input_tensor(ov::element::f32, {1, feature_size, nb_max_frames}, mel_data.data());
 
     request.set_tensor("input_features", input_tensor);
@@ -213,7 +213,10 @@ ov::Tensor encode(ov::InferRequest& request,
     raw_metrics.m_inference_durations[0] += MicroSeconds(infer_ms);
 
     // reset input tensor
-    request.set_tensor("input_features", ov::Tensor(ov::element::f32, {0, feature_size, nb_max_frames}));
+    auto devices = request.get_compiled_model().get_property(ov::execution_devices);
+    OPENVINO_ASSERT(devices.size() > 0, "No execution devices found!");
+    size_t batch_size = (devices[0] == "NPU") ? 1 : 0;
+    request.set_tensor("input_features", ov::Tensor(ov::element::f32, {batch_size, feature_size, nb_max_frames}));
 
     return request.get_tensor("last_hidden_state");
 }
@@ -231,7 +234,7 @@ std::vector<int64_t> prepare_init_tokens(ov::Tensor& encoder_hidden_state,
         }
     }
 
-    int64_t language_token_id;
+    int64_t language_token_id = 0;
     if (config.language.has_value()) {
         std::string language = *config.language;
         if (config.lang_to_id.count(language)) {
@@ -360,9 +363,6 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
             segment_offset = extracted_segments.last_offset;
         } else {
             output_tokens.insert(output_tokens.end(), chunk_output_tokens.begin(), chunk_output_tokens.end());
-        }
-
-        if (is_shortform) {
             segment_offset = input_features.n_frames;
         }
 

@@ -180,10 +180,12 @@ public:
     }
 
     float next() override {
+        py::gil_scoped_acquire acquire;
         return m_torch.attr("randn")(1, "generator"_a=m_torch_generator, "dtype"_a=m_float32).attr("item")().cast<float>();
     }
 
     ov::Tensor randn_tensor(const ov::Shape& shape) override {
+        py::gil_scoped_acquire acquire;
         py::object torch_tensor = m_torch.attr("randn")(to_py_list(shape), "generator"_a=m_torch_generator, "dtype"_a=m_float32);
         py::object numpy_tensor = torch_tensor.attr("numpy")();
         py::array numpy_array = py::cast<py::array>(numpy_tensor);
@@ -201,6 +203,32 @@ public:
             TorchTensorAllocator(size_t total_size, void * mutable_data, py::object torch_tensor) :
                 m_total_size(total_size), m_mutable_data(mutable_data), m_torch_tensor(torch_tensor) { }
 
+            ~TorchTensorAllocator() {
+                if (m_torch_tensor && Py_IsInitialized()) {
+                    py::gil_scoped_acquire acquire;
+                    m_torch_tensor = py::object();
+                }
+            }
+
+            TorchTensorAllocator(const TorchTensorAllocator& other)
+                : m_total_size(other.m_total_size), m_mutable_data(other.m_mutable_data) {
+                py::gil_scoped_acquire acquire;
+                m_torch_tensor = other.m_torch_tensor;
+            }
+
+            TorchTensorAllocator& operator=(const TorchTensorAllocator& other) {
+                if (this != &other) {
+                    m_total_size = other.m_total_size;
+                    m_mutable_data = other.m_mutable_data;
+                    py::gil_scoped_acquire acquire;
+                    m_torch_tensor = other.m_torch_tensor;
+                }
+                return *this;
+            }
+
+            TorchTensorAllocator(TorchTensorAllocator&&) = default;
+            TorchTensorAllocator& operator=(TorchTensorAllocator&&) = default;
+
             void* allocate(size_t bytes, size_t) const {
                 if (m_total_size == bytes) {
                     return m_mutable_data;
@@ -208,10 +236,7 @@ public:
                 throw std::runtime_error{"Unexpected number of bytes was requested to allocate."};
             }
 
-            void deallocate(void*, size_t bytes, size_t) {
-                if (m_total_size != bytes) {
-                    throw std::runtime_error{"Unexpected number of bytes was requested to deallocate."};
-                }
+            void deallocate(void*, size_t, size_t) noexcept {
             }
 
             bool is_equal(const TorchTensorAllocator& other) const noexcept {
@@ -224,6 +249,7 @@ public:
     }
 
     void seed(size_t new_seed) override {
+        py::gil_scoped_acquire acquire;
         create_torch_generator(new_seed);
     }
 };
@@ -451,12 +477,7 @@ void init_image_generation_pipelines(py::module_& m) {
             ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
                 ov::Tensor res;
-                if (params_have_torch_generator(params)) {
-                    // TorchGenerator stores python object which causes segfault after gil_scoped_release
-                    // so if it was passed, we don't release GIL
-                    res = pipe.generate(prompt, params);
-                }
-                else {
+                {
                     py::gil_scoped_release rel;
                     res = pipe.generate(prompt, params);
                 }
@@ -465,7 +486,16 @@ void init_image_generation_pipelines(py::module_& m) {
             py::arg("prompt"), "Input string",
             (text2image_generate_docstring + std::string(" \n ")).c_str())
         .def("decode", &ov::genai::Text2ImagePipeline::decode, py::arg("latent"))
-        .def("get_performance_metrics", &ov::genai::Text2ImagePipeline::get_performance_metrics);
+        .def("get_performance_metrics", &ov::genai::Text2ImagePipeline::get_performance_metrics)
+        .def("export_model",
+            &ov::genai::Text2ImagePipeline::export_model,
+            py::arg("export_path"),
+            R"(
+                Exports compiled models to a specified directory. Can significantly reduce model load time, especially for large models.
+                export_path (os.PathLike): A path to a directory to export compiled models to.
+
+                Use `blob_path` property to load previously exported models.
+            )");
 
 
     auto image2image_pipeline = py::class_<ov::genai::Image2ImagePipeline>(m, "Image2ImagePipeline", "This class is used for generation with image-to-image models.")
@@ -559,12 +589,7 @@ void init_image_generation_pipelines(py::module_& m) {
             ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
                 ov::Tensor res;
-                if (params_have_torch_generator(params)) {
-                    // TorchGenerator stores python object which causes segfault after gil_scoped_release
-                    // so if it was passed, we don't release GIL
-                    res = pipe.generate(prompt, image, params);
-                }
-                else {
+                {
                     py::gil_scoped_release rel;
                     res = pipe.generate(prompt, image, params);
                 }
@@ -670,12 +695,7 @@ void init_image_generation_pipelines(py::module_& m) {
             ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
                 ov::Tensor res;
-                if (params_have_torch_generator(params)) {
-                    // TorchGenerator stores python object which causes segfault after gil_scoped_release
-                    // so if it was passed, we don't release GIL
-                    res = pipe.generate(prompt, image, mask_image, params);
-                }
-                else {
+                {
                     py::gil_scoped_release rel;
                     res = pipe.generate(prompt, image, mask_image, params);
                 }

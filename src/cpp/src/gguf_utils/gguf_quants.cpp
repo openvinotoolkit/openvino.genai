@@ -234,7 +234,7 @@ void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
     // For scales and bias
     shape[shape.size() - 1] = shape[shape.size() - 1] / weights_per_block;
 
-    ov::Tensor scales(ov::element::f16, std::move(shape));
+    ov::Tensor scales(ov::element::f16, shape);
     ov::Tensor biases(ov::element::f16, std::move(shape));
     if (tensor.type == GGUF_TYPE_Q4_0) {
         extract_q4_0_data(tensor, weights, scales, biases);
@@ -257,7 +257,7 @@ void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
         OPENVINO_ASSERT(inserted.second,
                         "[load_gguf] Duplicate parameter name ",
                         inserted.first->second.data(),
-                        ". This can happend when loading quantized tensors");
+                        ". This can happen when loading quantized tensors");
     };
 
     constexpr std::string_view weight_suffix = ".weight";
