@@ -6,6 +6,7 @@ repos:
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
+        exclude: '\.py$'
       - id: end-of-file-fixer
       - id: check-merge-conflict
       - id: check-case-conflict
