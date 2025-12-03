@@ -249,7 +249,7 @@ optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vo
 # load speaker embeddings
 wget https://huggingface.co/datasets/Xenova/cmu-arctic-xvectors-extracted/resolve/main/cmu_us_awb_arctic-wav-arctic_a0001.bin
 # run benchmark.py
-python benchmark.py -m models/speecht5_tts/ -p "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speaker_embeddings ./cmu_us_awb_arctic-wav-arctic_a0001.bin
+python benchmark.py -m models/speecht5_tts/ --media "Hello OpenVINO GenAI" -n 2 --task text_to_speech --speaker_embeddings ./cmu_us_awb_arctic-wav-arctic_a0001.bin
 ```
 
 **Some additional parameters:**
