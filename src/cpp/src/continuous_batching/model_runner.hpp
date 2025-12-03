@@ -315,33 +315,19 @@ public:
                 }
                 if (_is_hs_import()) {
                     auto it = m_initial_hidden_states.find(sequence_group->get_request_id());
+                    OPENVINO_ASSERT(it != m_initial_hidden_states.end() && it->second.get_size() > 0,
+                                    "Missing initial hidden state for Eagle3 draft model inference.");
+                    const auto& stored_hidden_state = it->second;
+                    auto stored_shape = stored_hidden_state.get_shape();
+                    OPENVINO_ASSERT(stored_shape.size() > 0, "Unexpected hidden state shape for Eagle3 draft model inference.");
+                    size_t stored_seq_len = stored_shape[0];
+                    size_t stored_hidden_size = stored_shape[stored_shape.size() - 1];
 
-                    if (it != m_initial_hidden_states.end()) {
-                        const auto& stored_hidden_state = it->second;
+                    OPENVINO_ASSERT(stored_hidden_size == hidden_size, "Target state hidden size does not match the expected size for Eagle3 draft model inference.");
+                    OPENVINO_ASSERT(stored_seq_len == total_num_tokens, "Target state hidden size does not match the expected size for Eagle3 draft model inference.");
 
-                        if (stored_hidden_state.get_size() > 0) {
-                            auto stored_shape = stored_hidden_state.get_shape();
-
-                            if (stored_shape.size() >= 2) {
-                                size_t stored_seq_len = stored_shape[0];
-                                size_t stored_hidden_size = stored_shape[stored_shape.size() - 1];
-
-                                if (stored_hidden_size == hidden_size) {
-                                    if (stored_seq_len == total_num_tokens) {
-                                        hidden_state_input = stored_hidden_state;  // all tokens from eagle are accepted
-                                    } else {
-                                        size_t copy_length = std::min(stored_seq_len, num_scheduled_tokens);
-
-                                        size_t source_start_idx =
-                                            stored_seq_len >= copy_length ? stored_seq_len - copy_length : 0;
-                                        _copy_roi_between_tensors(stored_hidden_state, source_start_idx, copy_length, hidden_state_input, current_token_idx);
-                                    }
-                                }
-                            }
-                        } else {
-                            OPENVINO_ASSERT(false, "Missing hidden state from main model for Eagle3 draft model inference.");
-                        }
-                    }
+                    // fill the draft model hidden state input with the target hidden state
+                    hidden_state_input = stored_hidden_state;
                 } else if (_is_hs_internal()) {
                     // fill hidden_state_data with m_hidden_states
                     if (hidden_state_data) {

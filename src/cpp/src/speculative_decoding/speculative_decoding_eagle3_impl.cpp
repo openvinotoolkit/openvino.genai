@@ -166,12 +166,11 @@ void hidden_state_transform(std::shared_ptr<ov::Model>& model,
 
 ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::genai::ModelDesc& main_model_desc,
                                                                  const ov::genai::ModelDesc& draft_model_desc,
-                                                                 const std::vector<int>& hidden_layers)
-                                                                 : m_hidden_layers_to_abstract(hidden_layers) {
+                                                                 const std::vector<int>& hidden_layers) {
     auto scheduler_configs = init_speculative_models(main_model_desc, draft_model_desc);
     // Eagle speculative decoding does not support dynamic_split_fuse mode
     // because it requires hidden state interaction from main model to draft model
-    // to be implemented future
+    // until CVS-177647 is resolved
     if (scheduler_configs.first.dynamic_split_fuse) {
         GENAI_WARN(
             "Note: disable dynamic split fuse for eagle3 speculative decoding"
@@ -188,8 +187,8 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     ov::AnyMap draft_properties =
         draft_model_desc.properties.empty() ? main_model_desc.properties : draft_model_desc.properties;
 
-    // main and draft model can have different tokenizers
-    // to do: support retokenization: 154103
+    // main and draft model use same tokenzier, but could differ in configurations
+    // for example, llama3 draft model has different eos_token_id in config.json
     Tokenizer main_model_tokenizer = main_model_desc.tokenizer;
     Tokenizer draft_model_tokenizer = draft_model_desc.tokenizer;
     m_tokenizer = main_model_tokenizer;
