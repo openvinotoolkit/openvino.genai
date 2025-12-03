@@ -55,7 +55,7 @@ ov::Tensor load_video(const std::filesystem::path& video_path, size_t num_frames
 
 std::vector<ov::Tensor> load_videos(const std::filesystem::path& input_path) {
     if (input_path.empty() || !fs::exists(input_path)) {
-        OPENVINO_THROW("Path to images is empty or does not exist.");
+        OPENVINO_THROW("Path to videos is empty or does not exist.");
     }
     if (fs::is_directory(input_path)) {
         std::set<fs::path> sorted_videos{fs::directory_iterator(input_path), fs::directory_iterator()};
