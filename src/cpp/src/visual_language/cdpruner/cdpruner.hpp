@@ -25,29 +25,6 @@ struct PruningStatistics {
     size_t batch_size = 0;       ///< Batch size processed
 };
 
-/**
- * @brief Main CDPruner class that integrates all components
- *
- * This class provides the complete CDPruner functionality by integrating:
- * - RelevanceCalculator: Computes visual-text relevance scores
- * - ConditionalKernelBuilder: Builds conditional kernel matrices
- * - FastGreedyDPP: Performs diverse token selection
- *
- * The complete pipeline follows these steps:
- * 1. Compute relevance scores between visual and text features
- * 2. Build conditional kernel matrix combining similarity and relevance
- * 3. Use fast greedy DPP to select diverse and relevant tokens
- *
- * Usage example:
- * ```cpp
- * Config config;
- * config.pruning_ratio = 50;  // 50% pruning, set to 0 to disable
- *
- * CDPruner pruner(config);
- * auto selected_tokens = pruner.select_tokens(visual_features, text_features);
- * auto pruned_features = pruner.apply_pruning(visual_features, text_features);
- * ```
- */
 class CDPruner {
 public:
     /**

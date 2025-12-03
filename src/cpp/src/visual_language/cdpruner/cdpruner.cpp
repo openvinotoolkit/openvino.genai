@@ -117,10 +117,9 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
             visual_first_half = ov::Tensor(ov::element::f32,
                                            {batch_size, first_half_size, feature_dim},
                                            const_cast<float*>(visual_data));
-            visual_second_half =
-                ov::Tensor(ov::element::f32,
-                           {batch_size, second_half_size, feature_dim},
-                           const_cast<float*>(visual_data + batch_size * first_half_size * feature_dim));
+            visual_second_half = ov::Tensor(ov::element::f32,
+                                            {batch_size, second_half_size, feature_dim},
+                                            const_cast<float*>(visual_data + batch_size * first_half_size * feature_dim));
         } else {
             visual_first_half = visual_features;
         }

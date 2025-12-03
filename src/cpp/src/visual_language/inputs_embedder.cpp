@@ -324,6 +324,9 @@ InputsEmbedder::IInputsEmbedder::PruningResult InputsEmbedder::IInputsEmbedder::
 
     // Step 2: Convert visual features to CDPruner format
     // May split by frames/chunks for video or multi-image scenarios
+    // If frame chunking is enabled, images must be non-empty. This is checked earlier in is_cdpruner_active().
+    OPENVINO_ASSERT(!current_pruning_config->enable_frame_chunking || !images.empty(),
+                    "images must be non-empty when frame chunking is enabled");
     size_t chunk_count = current_pruning_config->enable_frame_chunking ? images.size() : 1;
     std::vector<ov::Tensor> visual_features =
         convert_visual_features_for_pruning(merged_visual_embeddings, chunk_count);

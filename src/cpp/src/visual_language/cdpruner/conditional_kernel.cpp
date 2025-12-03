@@ -297,11 +297,20 @@ ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_normal(const ov:
     const float* rel_data = relevance_scores.data<const float>();
     float* kernel_data = conditional_kernel.data<float>();
 
-    // Apply relevance weight: kernel[i,j] = (1-w) * similarity[i,j] + w * (r[i] * similarity[i,j] * r[j])
-    // When w=0: pure similarity matrix
-    // When w=1: full conditional weighting
+    // CDPruner's relevance weighting formula:
+    //
+    // 1. Exponential relevance transformation:
+    //    α = θ / (2 × (1 - θ)), where θ is relevance_weight
+    //    weighted_relevance[i] = exp(α × normalized_relevance[i])
+    //
+    // 2. Conditional kernel construction:
+    //    kernel[i,j] = weighted_relevance[i] × similarity[i,j] × weighted_relevance[j]
     const float w = m_config.relevance_weight;
-    const float one_minus_w = 1.0f - w;
+
+    float alpha = 0.0f;
+    if (w < 1.0f && w > 0.0f) {
+        alpha = w / (2.0f * (1.0f - w));
+    }
 
     for (size_t b = 0; b < batch_size; ++b) {
         for (size_t i = 0; i < num_tokens; ++i) {
@@ -310,10 +319,22 @@ ov::Tensor ConditionalKernelBuilder::compute_conditional_kernel_normal(const ov:
                 size_t rel_i_idx = b * num_tokens + i;
                 size_t rel_j_idx = b * num_tokens + j;
 
-                // Blend between pure similarity and conditional weighting
                 float base_similarity = sim_data[sim_idx];
-                float conditional_weight = rel_data[rel_i_idx] * base_similarity * rel_data[rel_j_idx];
-                kernel_data[sim_idx] = one_minus_w * base_similarity + w * conditional_weight;
+
+                if (w == 0.0f) {
+                    // Pure similarity matrix (no relevance weighting)
+                    kernel_data[sim_idx] = base_similarity;
+                } else if (w == 1.0f) {
+                    // Pure CDPruner conditional weighting (no exponential transform)
+                    // Direct multiplication: relevance[i] × similarity[i,j] × relevance[j]
+                    float conditional_weight = rel_data[rel_i_idx] * base_similarity * rel_data[rel_j_idx];
+                    kernel_data[sim_idx] = conditional_weight;
+                } else {
+                    // CDPruner with exponential relevance transformation (0 < w < 1)
+                    float weighted_rel_i = std::exp(alpha * rel_data[rel_i_idx]);
+                    float weighted_rel_j = std::exp(alpha * rel_data[rel_j_idx]);
+                    kernel_data[sim_idx] = weighted_rel_i * base_similarity * weighted_rel_j;
+                }
             }
         }
     }

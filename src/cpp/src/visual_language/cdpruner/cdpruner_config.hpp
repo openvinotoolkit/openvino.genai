@@ -11,7 +11,7 @@ namespace ov::genai::cdpruner {
 
 /// @brief Configuration structure for CDPruner algorithm
 struct Config {
-    /// @brief Percentage of visual tokens to prune (0-100)
+    /// @brief Percentage of visual tokens to prune [0-100)
     size_t pruning_ratio = 0;
 
     /// @brief Weight for balancing relevance vs diversity (0.0 to 1.0)

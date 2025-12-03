@@ -348,13 +348,13 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
         auto selected_tokens = m_opencl_dpp->select(single_batch_kernel, num_tokens_to_keep);
 
         std::vector<size_t> merged_selection;
-
         // convert splited selected_batches to merged_selection
-        for (size_t idx = 0; idx < selected_tokens.size(); ++idx) {
-            if (idx < num_tokens_to_keep / 2) {
-                merged_selection.push_back(selected_tokens[idx]);
+        for (size_t i = 0; i < selected_tokens.size(); ++i) {
+            size_t token_idx = selected_tokens[i];
+            if (i < tokens_first_half) {
+                merged_selection.push_back(token_idx);
             } else {
-                merged_selection.push_back(selected_tokens[idx] + split_point);
+                merged_selection.push_back(token_idx + split_point);
             }
         }
 
@@ -405,11 +405,10 @@ std::vector<size_t> FastGreedyDPP::select_single_batch(const ov::Tensor& kernel,
         // Get batch-specific kernel data pointer and tensor data pointers
         const float* batch_kernel_data = kernel_data + batch_idx * total_tokens * total_tokens;
         float* cis_data = cis.data<float>();
-        const float* di2s_data_const = di2s.data<const float>();
 
         // Compute the new orthogonalized vector e_i
         // eis = (kernel[batch, best_idx] - sum(cis[:t] * cis[:t, best_idx])) / sqrt(di2s[best_idx])
-        update_orthogonal_vector(batch_kernel_data, total_tokens, best_idx, t, cis_data, di2s_data_const);
+        update_orthogonal_vector(batch_kernel_data, total_tokens, best_idx, t, cis_data, di2s_data);
 
         // Update marginal gains by subtracting the squared new orthogonal vector
         // di2s -= square(eis)
@@ -538,7 +537,7 @@ void FastGreedyDPP::update_orthogonal_vector(const float* batch_kernel_data,
         const float* cis_prev_row = cis_data + prev_t * total_tokens;
         float cis_sel = cis_prev_row[selected_idx];
 
-        if (std::abs(cis_sel) < 1e-10f)
+        if (std::abs(cis_sel) < m_config.numerical_threshold)
             continue;
 
         // SIMD optimized vector subtraction: cis_out[j] -= cis_sel * cis_prev_row[j]

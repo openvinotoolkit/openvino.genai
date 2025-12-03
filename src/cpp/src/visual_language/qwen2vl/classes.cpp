@@ -988,7 +988,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
 
 void InputsEmbedderQwen2VL::encode_vision_placeholder_tokens() {
     auto encoded_vision_tokens = m_tokenizer.encode(m_vlm_config.vision_start_token + m_vlm_config.vision_end_token +
-                                                        m_vlm_config.image_pad_token + m_vlm_config.video_pad_token,
+                                                    m_vlm_config.image_pad_token + m_vlm_config.video_pad_token,
                                                     ov::genai::add_special_tokens(false));
     m_vision_token_ids["vision_start"] = encoded_vision_tokens.input_ids.data<int64_t>()[0];
     m_vision_token_ids["vision_end"] = encoded_vision_tokens.input_ids.data<int64_t>()[1];
