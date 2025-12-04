@@ -28,7 +28,6 @@ describe("LLMPipeline.generate() with generation config", () => {
           required: ["name", "age", "city"],
         }),
       },
-      return_decoded_results: true,
     };
     const prompt = `Generate a JSON object with the following properties:
     - name: a random name
@@ -71,7 +70,6 @@ describe("LLMPipeline.generate() with generation config", () => {
           }),
         ),
       },
-      return_decoded_results: true,
     };
     const prompt = `Generate a JSON object with the following properties:
     - name: a random name
@@ -104,7 +102,6 @@ describe("LLMPipeline.generate() with generation config", () => {
       structured_output_config: {
         regex: "yes|no",
       },
-      return_decoded_results: true,
     };
     const prompt = `Answer the question with "yes" or "no": Is the sky blue?`;
     const res = await pipeline.generate(prompt, generationConfig);
@@ -118,7 +115,6 @@ describe("LLMPipeline.generate() with generation config", () => {
       structured_output_config: {
         structural_tags_config: StructuredOutputConfig.Regex("yes|no"),
       },
-      return_decoded_results: true,
     };
     const prompt = `Answer the question with "yes" or "no": Is the sky blue?`;
     const res = await pipeline.generate(prompt, generationConfig);
@@ -135,7 +131,6 @@ describe("LLMPipeline.generate() with generation config", () => {
           StructuredOutputConfig.Regex("no"),
         ),
       },
-      return_decoded_results: true,
     };
     const prompt = `Answer the question with "yes" or "no": Is the sky blue?`;
     const res = await pipeline.generate(prompt, generationConfig);
@@ -151,7 +146,6 @@ describe("LLMPipeline.generate() with generation config", () => {
 column::= "name" | "username" | "email" | "postcode" | "*"
 table::= "users" | "orders" | "products"`,
       },
-      return_decoded_results: true,
     };
     const prompt = `"Respond with a SQL query using the grammar. Generate an SQL query to show the 'username' and 'email' from the 'users' table."`;
     const res = await pipeline.generate(prompt, generationConfig);
@@ -168,7 +162,6 @@ table::= "users" | "orders" | "products"`,
 column::= "name" | "username" | "email" | "postcode" | "*"
 table::= "users" | "orders" | "products"`),
       },
-      return_decoded_results: true,
     };
     const prompt = `"Respond with a SQL query using the grammar. Generate an SQL query to show the 'username' and 'email' from the 'users' table."`;
     const res = await pipeline.generate(prompt, generationConfig);
@@ -198,7 +191,6 @@ table::= "users" | "orders" | "products"`),
           ),
         ),
       },
-      return_decoded_results: true,
     };
     const prompt = `Generate a JSON object with the following properties:
     - name: a random name
@@ -268,7 +260,6 @@ table::= "users" | "orders" | "products"`),
       structured_output_config: {
         structural_tags_config: StructuredOutputConfig.ConstString("constant_string"),
       },
-      return_decoded_results: true,
     };
     const prompt = `Generate a JSON object with the following properties:
     - name: a random name
@@ -292,7 +283,6 @@ table::= "users" | "orders" | "products"`),
       structured_output_config: {
         structural_tags_config: StructuredOutputConfig.AnyText(),
       },
-      return_decoded_results: true,
     };
     const prompt = `Generate a JSON object with the following properties:
     - name: a random name
@@ -320,7 +310,6 @@ table::= "users" | "orders" | "products"`),
           end: "</end>",
         }),
       },
-      return_decoded_results: true,
     };
     const prompt = `Generate a JSON object with the following properties:
     - name: a random name
@@ -366,7 +355,6 @@ table::= "users" | "orders" | "products"`),
           }),
         ),
       },
-      return_decoded_results: true,
     };
     const prompt = "Make a request to a REST API.";
     const res = await pipeline.generate(prompt, generationConfig);
@@ -400,7 +388,6 @@ table::= "users" | "orders" | "products"`),
           stopAfterFirst: false,
         }),
       },
-      return_decoded_results: true,
     };
     const prompt = "";
     const res = await pipeline.generate(prompt, generationConfig);
@@ -422,7 +409,6 @@ table::= "users" | "orders" | "products"`),
           },
         }),
       },
-      return_decoded_results: true,
     };
     const prompt = "";
     const res = await pipeline.generate(prompt, generationConfig);
