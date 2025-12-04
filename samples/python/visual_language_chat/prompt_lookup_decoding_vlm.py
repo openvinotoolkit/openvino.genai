@@ -68,5 +68,5 @@ def main():
     pipe.generate(args.prompt, images=rgbs, generation_config=config, streamer=streamer)
     print()
 
-if '__main__' == __name__:
+if __name__ == '__main__':
     main()
