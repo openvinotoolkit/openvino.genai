@@ -82,8 +82,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
                 OPENVINO_ASSERT(!full_input_ids.empty(), "full_input_ids should not be empty");
                 int token_sz = static_cast<int>(candidates.size());
                 for (int ci = 0; ci < static_cast<int>(sampling_params.num_assistant_tokens) - token_sz; ci++) {
-                    // Padding with last token.
-                    candidates.push_back(full_input_ids.back());
+                    // Padding with -1
+                    candidates.push_back(-1);
                 }
             }
 
