@@ -158,6 +158,7 @@ describe("generation parameters validation", () => {
     };
     const result = await pipeline.generate("continue: 1 2 3", generationConfig);
     assert.strictEqual(result.texts.length, 1);
+    assert.ok(result.texts[0].length > 0);
   });
 });
 

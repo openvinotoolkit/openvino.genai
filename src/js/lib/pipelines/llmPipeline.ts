@@ -250,7 +250,7 @@ export class LLMPipeline {
       options["disableStreamer"] = true;
     }
 
-    return new Promise((resolve: (value: string | DecodedResults) => void) => {
+    return new Promise((resolve: (value: DecodedResults) => void) => {
       const chunkOutput = (isDone: boolean, result: string | any) => {
         if (isDone) {
           const decodedResults = new DecodedResults(
