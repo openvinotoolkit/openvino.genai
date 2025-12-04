@@ -7,6 +7,8 @@
 
 namespace ov::genai {
 
+const int64_t PADDING_TOKEN_ID = -1;
+
 std::map<uint64_t, ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::SequenceLen>
 ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::get_generated_request_len() {
     std::map<uint64_t, ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::SequenceLen> result;
@@ -81,11 +83,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
             // Padding to candidate tokens,
             // Avoid shape checking and increasing the amount of computation when the shape changes.
             if (candidates.size() < sampling_params.num_assistant_tokens) {
-                OPENVINO_ASSERT(!full_input_ids.empty(), "full_input_ids should not be empty");
                 int token_sz = static_cast<int>(candidates.size());
                 for (int ci = 0; ci < static_cast<int>(sampling_params.num_assistant_tokens) - token_sz; ci++) {
-                    // Padding with -1
-                    candidates.push_back(-1);
+                    candidates.push_back(PADDING_TOKEN_ID);
                 }
             }
 
