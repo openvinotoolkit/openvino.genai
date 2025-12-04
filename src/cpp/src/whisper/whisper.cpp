@@ -21,6 +21,7 @@
 #include "whisper/models/decoder.hpp"
 #include "whisper/timestamps.hpp"
 #include "whisper/whisper_utils.hpp"
+#include "whisper/word_level_timestamps.hpp"
 
 using ov::genai::MicroSeconds;
 
@@ -273,7 +274,8 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                        std::shared_ptr<WhisperDecoder> decoder,
                                        WhisperFeatureExtractor& feature_extractor,
                                        const std::shared_ptr<StreamerBase> streamer,
-                                       Sampler& sampler) {
+                                       Sampler& sampler,
+                                       Tokenizer& tokenizer) {
     size_t max_new_tokens = config.get_max_new_tokens();
 
     WhisperGenerateResult result;
@@ -295,6 +297,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
 
     std::vector<int64_t> init_tokens;
     std::vector<int64_t>& output_tokens = result.output_tokens;
+    std::vector<int64_t> output_tokens_with_special;
     std::vector<Segment> segments;
 
     // 0.02 by default
@@ -324,6 +327,10 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
         std::vector<int64_t> chunk_init_tokens = ov::genai::get_prompt_tokens(context_tokens, config, chunk_offset);
         chunk_init_tokens.insert(chunk_init_tokens.end(), init_tokens.begin(), init_tokens.end());
 
+        output_tokens_with_special.insert(output_tokens_with_special.end(),
+                                          chunk_init_tokens.begin(),
+                                          chunk_init_tokens.end());
+
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, chunk_init_tokens, config, 1);
 
         auto [result, cancelled] = decode(decoder,
@@ -337,6 +344,10 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                           raw_metrics);
         decoder->reset_state();
         std::vector<int64_t> chunk_output_tokens = result.tokens[0];
+
+        output_tokens_with_special.insert(output_tokens_with_special.end(),
+                                          chunk_output_tokens.begin(),
+                                          chunk_output_tokens.end() - 1);
 
         if (return_timestamps) {
             auto extracted_segments = ov::genai::extract_segments(chunk_output_tokens,
@@ -372,6 +383,19 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
 
     if (streamer) {
         streamer->end();
+    }
+
+    if (config.word_timestamps) {
+        const auto& accumulated_qks = decoder->get_encoder_qks();
+
+        auto word_timestamps = get_word_level_timestamps(accumulated_qks,
+                                                         model_config,
+                                                         input_features.n_frames,
+                                                         output_tokens_with_special,
+                                                         tokenizer,
+                                                         config);
+
+        result.words = word_timestamps;
     }
 
     // if return_timestamps wasn't enabled by user

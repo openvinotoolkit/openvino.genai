@@ -20,11 +20,14 @@ int main(int argc, char* argv[]) try {
     std::string device = (argc == 4) ? argv[3] : "CPU";  // Default to CPU if no device is provided
 
     ov::AnyMap ov_config;
-    if (device == "NPU" || device.find("GPU") != std::string::npos) {  // need to handle cases like "GPU", "GPU.0" and "GPU.1"
+    if (device == "NPU" ||
+        device.find("GPU") != std::string::npos) {  // need to handle cases like "GPU", "GPU.0" and "GPU.1"
         // Cache compiled models on disk for GPU and NPU to save time on the
         // next run. It's not beneficial for CPU.
         ov_config = get_config_for_cache();
     }
+
+    ov_config.insert({ov::genai::word_timestamps.name(), true});
 
     ov::genai::WhisperPipeline pipeline(models_path, device, ov_config);
 
@@ -32,7 +35,8 @@ int main(int argc, char* argv[]) try {
     // 'task' and 'language' parameters are supported for multilingual models only
     config.language = "<|en|>";  // can switch to <|zh|> for Chinese language
     config.task = "transcribe";
-    config.return_timestamps = true;
+    config.return_timestamps = false;
+    config.word_timestamps = true;
 
     // Pipeline expects normalized audio with Sample Rate of 16kHz
     ov::genai::RawSpeechInput raw_speech = utils::audio::read_wav(wav_file_path);
@@ -41,8 +45,16 @@ int main(int argc, char* argv[]) try {
     std::cout << result << "\n";
 
     std::cout << std::fixed << std::setprecision(2);
-    for (auto& chunk : *result.chunks) {
-        std::cout << "timestamps: [" << chunk.start_ts << ", " << chunk.end_ts << "] text: " << chunk.text << "\n";
+    // for (auto& chunk : *result.chunks) {
+    //     std::cout << "timestamps: [" << chunk.start_ts << ", " << chunk.end_ts << "] text: " << chunk.text << "\n";
+    // }
+
+    if (result.words) {
+        std::cout << "Word-level timestamps:\n";
+        for (const auto& word_info : *result.words) {
+            std::cout << "Word: \"" << word_info.word << "\" Start: " << word_info.start_ts
+                      << " End: " << word_info.end_ts << "\n";
+        }
     }
 
 } catch (const std::exception& error) {

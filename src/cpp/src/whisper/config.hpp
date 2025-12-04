@@ -16,6 +16,7 @@ public:
     explicit WhisperConfig(const std::filesystem::path& json_path);
 
     size_t max_source_positions = 1500;
+    size_t decoder_layers = 4;
 };
 
 }  // namespace genai

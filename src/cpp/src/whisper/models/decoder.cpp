@@ -13,7 +13,9 @@ namespace ov::genai {
 std::shared_ptr<WhisperDecoder> WhisperDecoder::from_path(const std::filesystem::path& models_path,
                                                           const std::string& device,
                                                           const ov::AnyMap& properties,
-                                                          const ov::PartialShape& lhs_shape) {
+                                                          const ov::PartialShape& lhs_shape,
+                                                          const ov::genai::WhisperConfig& model_config,
+                                                          const bool enable_encoder_attention_qk_accumulation) {
     bool has_decoder_with_past = std::filesystem::exists(models_path / "openvino_decoder_with_past_model.xml");
 
     if (has_decoder_with_past) {
@@ -24,7 +26,12 @@ std::shared_ptr<WhisperDecoder> WhisperDecoder::from_path(const std::filesystem:
         return std::make_shared<WhisperWithPastDecoder>(models_path, device, properties);
     }
 
-    return std::make_shared<WhisperStatefullDecoder>(models_path, device, properties, lhs_shape);
+    return std::make_shared<WhisperStatefullDecoder>(models_path,
+                                                     device,
+                                                     properties,
+                                                     lhs_shape,
+                                                     model_config,
+                                                     enable_encoder_attention_qk_accumulation);
 }
 
 std::pair<int64_t, float> WhisperDecoder::detect_language(const ov::Tensor& encoder_hidden_state,
