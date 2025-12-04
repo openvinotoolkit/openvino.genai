@@ -138,8 +138,11 @@ private:
                 output_ids_data[loop_idx] = selected_idx;
             }
             else {
-                di2s_data[j] -= eis_j * eis_j;
-                di2s_data[j] = di2s_data[j] != di2s_data[j] ? -FLT_MAX : di2s_data[j];
+                // Skip update if token was already selected (di2s == -INFINITY)
+                if (di2s_data[j] > -INFINITY) {
+                    float new_di2s = di2s_data[j] - eis_j * eis_j;
+                    di2s_data[j] = (new_di2s != new_di2s) ? -FLT_MAX : new_di2s;
+                }
             }
         }
         )CLC";

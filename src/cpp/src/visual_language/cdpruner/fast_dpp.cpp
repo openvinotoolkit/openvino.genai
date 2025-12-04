@@ -360,7 +360,6 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
 
         // Sort final result to maintain order
         std::sort(merged_selection.begin(), merged_selection.end());
-        merged_selection.erase(std::unique(merged_selection.begin(), merged_selection.end()), merged_selection.end());
         batch_results.push_back(std::move(merged_selection));
     }
 
