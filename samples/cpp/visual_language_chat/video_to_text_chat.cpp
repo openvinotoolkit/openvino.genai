@@ -48,7 +48,7 @@ ov::Tensor load_video(const std::filesystem::path& video_path, size_t num_frames
         }
         frame_idx++;
     }
-    OPENVINO_ASSERT(frame_idx == total_num_frames);
+    OPENVINO_ASSERT(frame_idx == total_num_frames, "Frame count mismatch: expected " + std::to_string(total_num_frames) + ", got " + std::to_string(frame_idx));
     
     return video_tensor;
 }
