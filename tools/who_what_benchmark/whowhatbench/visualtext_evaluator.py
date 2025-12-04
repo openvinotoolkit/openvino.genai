@@ -1,91 +1,16 @@
-from typing import Any, Union
-
 import os
-import random
-import tarfile
-import datasets
 
-import numpy as np
 import pandas as pd
 
 from tqdm import tqdm
-from typing import Literal
 from itertools import zip_longest
-from transformers import set_seed
-from transformers.image_utils import load_image
+from typing import Literal, Any, Union
 
 from .registry import register_evaluator
 from .text_evaluator import TextEvaluator
-from .utils import get_ignore_parameters_flag
+from .utils import get_ignore_parameters_flag, prepare_default_data_image, prepare_default_data_video
 
 DEF_VIDEO_FRAMES_AMOUNT = 10
-
-
-def preprocess_fn(example):
-    return {
-        "prompts": example["instruction"],
-        "images": load_image(example["image_url"]),
-        "videos": None,
-    }
-
-
-def prepare_default_data_image(num_samples=None):
-    DATASET_NAME = "ucla-contextual/contextual_test"
-    NUM_SAMPLES = 24 if num_samples is None else num_samples
-    set_seed(42)
-    default_dataset = datasets.load_dataset(
-        DATASET_NAME, split="test", streaming=True
-    ).shuffle(42).take(NUM_SAMPLES)
-    return default_dataset.map(
-        lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
-    )
-
-
-def prepare_default_data_video(num_samples=None, num_frames=DEF_VIDEO_FRAMES_AMOUNT):
-    from huggingface_hub import hf_hub_download
-    from transformers.video_utils import load_video
-
-    DATASET_NAME = "lmms-lab/LLaVA-Video-178K"
-    SUBSET = "30_60_s_academic_v0_1"
-    NUM_SAMPLES = 24 if num_samples is None else num_samples
-
-    questions_per_video_set = datasets.load_dataset(DATASET_NAME, SUBSET,
-                                                    split="open_ended",
-                                                    data_files={"open_ended": f"{SUBSET}/30_60_s_academic_oe_v0_1_qa_processed.json"})
-    questions_per_video = {val['video']: val for val in questions_per_video_set}
-
-    # 30_60_s_academic_v0_1_videos_10.tar.gz - just the most lightweight chunk among subset
-    # https://huggingface.co/datasets/lmms-lab/LLaVA-Video-178K/tree/main/30_60_s_academic_v0_1
-    # the archive contains 56 videos
-    videos_arc_path = hf_hub_download(repo_id="lmms-lab/LLaVA-Video-178K",
-                                      filename=f"{SUBSET}/{SUBSET}_videos_10.tar.gz",
-                                      repo_type="dataset")
-
-    video_samples = []
-    extract_dir = "./videos"
-    os.makedirs(extract_dir, exist_ok=True)
-    with tarfile.open(videos_arc_path, "r:gz") as tar:
-        all_videos = tar.getnames()
-
-        random.seed(42)  # nosec
-        video_samples = random.sample(all_videos, NUM_SAMPLES)  # nosec
-        for sample in video_samples:
-            tar.extract(sample, path=extract_dir)
-
-    # if num_frames < total_num_frames, sample each total_num_frames/num_frames frames or sample all frames
-    def default_sample_indices_fn(metadata, **kwargs):
-        total_num_frames = metadata.total_num_frames
-        if num_frames < total_num_frames:
-            return np.arange(0, total_num_frames, total_num_frames / num_frames, dtype=int)
-        return np.arange(0, total_num_frames, dtype=int)
-
-    data = []
-    for video_rel_path in video_samples:
-        video_tensor = load_video(os.path.join(extract_dir, video_rel_path), backend="opencv", sample_indices_fn=default_sample_indices_fn)
-        prompt = questions_per_video[video_rel_path]['conversations'][0]['value'].replace("<image>\n", "")
-        data.append({'prompts': prompt, "images": None, 'videos': video_tensor[0]})
-
-    return data
 
 
 def fix_phi3_v_eos_token_id(model_type, tokenizer):
