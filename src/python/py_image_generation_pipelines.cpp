@@ -170,7 +170,6 @@ public:
             if (e.matches(PyExc_ModuleNotFoundError)) {
                 throw std::runtime_error("The 'torch' package is not installed. Please, call 'pip install torch' or use 'rng_seed' parameter.");
             } else {
-                // Re-throw other exceptions
                 throw;
             }
         }
@@ -180,10 +179,12 @@ public:
     }
 
     float next() override {
+        py::gil_scoped_acquire acquire;
         return m_torch.attr("randn")(1, "generator"_a=m_torch_generator, "dtype"_a=m_float32).attr("item")().cast<float>();
     }
 
     ov::Tensor randn_tensor(const ov::Shape& shape) override {
+        py::gil_scoped_acquire acquire;
         py::object torch_tensor = m_torch.attr("randn")(to_py_list(shape), "generator"_a=m_torch_generator, "dtype"_a=m_float32);
         py::object numpy_tensor = torch_tensor.attr("numpy")();
         py::array numpy_array = py::cast<py::array>(numpy_tensor);
@@ -195,11 +196,23 @@ public:
         class TorchTensorAllocator {
             size_t m_total_size;
             void * m_mutable_data;
-            py::object m_torch_tensor; // we need to hold torch.Tensor to avoid memory destruction
+            py::object m_torch_tensor;
 
         public:
             TorchTensorAllocator(size_t total_size, void * mutable_data, py::object torch_tensor) :
                 m_total_size(total_size), m_mutable_data(mutable_data), m_torch_tensor(torch_tensor) { }
+
+            ~TorchTensorAllocator() {
+                if (m_torch_tensor && Py_IsInitialized()) {
+                    py::gil_scoped_acquire acquire;
+                    m_torch_tensor = py::object();
+                }
+            }
+
+            TorchTensorAllocator(const TorchTensorAllocator&) = default;
+            TorchTensorAllocator& operator=(const TorchTensorAllocator&) = default;
+            TorchTensorAllocator(TorchTensorAllocator&&) = default;
+            TorchTensorAllocator& operator=(TorchTensorAllocator&&) = default;
 
             void* allocate(size_t bytes, size_t) const {
                 if (m_total_size == bytes) {
@@ -224,6 +237,7 @@ public:
     }
 
     void seed(size_t new_seed) override {
+        py::gil_scoped_acquire acquire;
         create_torch_generator(new_seed);
     }
 };
@@ -451,12 +465,7 @@ void init_image_generation_pipelines(py::module_& m) {
             ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
                 ov::Tensor res;
-                if (params_have_torch_generator(params)) {
-                    // TorchGenerator stores python object which causes segfault after gil_scoped_release
-                    // so if it was passed, we don't release GIL
-                    res = pipe.generate(prompt, params);
-                }
-                else {
+                {
                     py::gil_scoped_release rel;
                     res = pipe.generate(prompt, params);
                 }
@@ -568,12 +577,7 @@ void init_image_generation_pipelines(py::module_& m) {
             ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
                 ov::Tensor res;
-                if (params_have_torch_generator(params)) {
-                    // TorchGenerator stores python object which causes segfault after gil_scoped_release
-                    // so if it was passed, we don't release GIL
-                    res = pipe.generate(prompt, image, params);
-                }
-                else {
+                {
                     py::gil_scoped_release rel;
                     res = pipe.generate(prompt, image, params);
                 }
@@ -679,12 +683,7 @@ void init_image_generation_pipelines(py::module_& m) {
             ) -> py::typing::Union<ov::Tensor> {
                 ov::AnyMap params = pyutils::kwargs_to_any_map(kwargs);
                 ov::Tensor res;
-                if (params_have_torch_generator(params)) {
-                    // TorchGenerator stores python object which causes segfault after gil_scoped_release
-                    // so if it was passed, we don't release GIL
-                    res = pipe.generate(prompt, image, mask_image, params);
-                }
-                else {
+                {
                     py::gil_scoped_release rel;
                     res = pipe.generate(prompt, image, mask_image, params);
                 }
