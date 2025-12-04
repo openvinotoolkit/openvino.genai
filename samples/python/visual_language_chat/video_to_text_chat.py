@@ -39,16 +39,16 @@ def read_video(path: str, num_frames: int = 8) -> Tensor:
     cap = cv2.VideoCapture(path)
 
     frames = []
+    indices = np.arange(0, len(frames), len(frames) / num_frames).astype(int)
 
+    idx = 0
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
             break
-
-        frames.append(np.array(frame))
-
-    indices = np.arange(0, len(frames), len(frames) / num_frames).astype(int)
-    frames = [frames[i] for i in indices]
+        idx++
+        if idx in indices:
+            frames.append(np.array(frame))
 
     return Tensor(frames)
 
