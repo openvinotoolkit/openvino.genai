@@ -234,7 +234,7 @@ public:
         }
     }
 
-    void append_position_ids(const ov::Tensor& position_ids, size_t position_id_idx = std::numeric_limits<size_t>::max()) {
+    void append_position_ids(const ov::Tensor& position_ids) {
         size_t seq_len_shape_idx = position_ids.get_shape().size() == 3 ? 2 : 1;
         size_t position_ids_len = position_ids.get_shape()[seq_len_shape_idx];
         if (position_ids_len == 1) {

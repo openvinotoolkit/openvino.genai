@@ -463,7 +463,7 @@ public:
 
                     size_t position_id = token_idx + sequence_group->get_prompt_len();
                     auto new_position_ids = m_inputs_embedder->get_generation_phase_position_ids(1, position_id, seq->get_rope_delta()).first;
-                    seq->append_position_ids(new_position_ids, position_id);
+                    seq->append_position_ids(new_position_ids);
                 }
             }
         }

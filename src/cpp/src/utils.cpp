@@ -570,6 +570,19 @@ void print_scheduler_config_info(const SchedulerConfig &scheduler_config) {
     std::cout << scheduler_config.to_string() << std::endl;
 }
 
+std::string print_token_id(const std::vector<int64_t>& print_ids,
+                           const std::string& prefix,
+                           const size_t& last_num,
+                           ov::genai::Tokenizer& tokenizer) {
+    std::stringstream ss;
+    ss << prefix << " = ";
+    size_t start_id = (print_ids.size() > last_num) ? (print_ids.size() - last_num) : 0;
+    for (size_t id = start_id; id < print_ids.size(); id++) {
+        ss << print_ids[id] << "[" << tokenizer.decode(std::vector<int64_t>{print_ids[id]}) << "],";
+    }
+    return ss.str();
+};
+
 std::pair<ov::CompiledModel, KVDesc>
 compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
                         const ov::AnyMap& config,
