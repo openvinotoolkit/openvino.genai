@@ -34,8 +34,8 @@ int main(int argc, char* argv[]) try {
         return ov::genai::StreamingStatus::RUNNING;
     };
 
-    // Since the streamer is set, the results will
-    // be printed each time a new token is generated.
+    // Since the streamer is set, the results are
+    // printed each time a new token is generated.
     pipe.generate(prompt, ov::genai::images(rgbs), ov::genai::generation_config(config), ov::genai::streamer(streamer));
     std::cout << std::endl;
 } catch (const std::exception& error) {
