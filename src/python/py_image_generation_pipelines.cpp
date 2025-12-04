@@ -202,10 +202,13 @@ public:
             TorchTensorAllocator(size_t total_size, void * mutable_data, py::object torch_tensor) :
                 m_total_size(total_size), m_mutable_data(mutable_data), m_torch_tensor(torch_tensor) { }
 
-            ~TorchTensorAllocator() {
-                if (m_torch_tensor && Py_IsInitialized()) {
-                    py::gil_scoped_acquire acquire;
-                    m_torch_tensor = py::object();
+            ~TorchTensorAllocator() noexcept {
+                try {
+                    if (m_torch_tensor && Py_IsInitialized()) {
+                        py::gil_scoped_acquire acquire;
+                        m_torch_tensor = py::object();
+                    }
+                } catch (...) {
                 }
             }
 
