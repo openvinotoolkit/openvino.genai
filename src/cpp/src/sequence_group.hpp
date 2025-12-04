@@ -152,6 +152,7 @@ public:
             m_generated_ids.pop_back();
             if (m_type == SequenceGroupType::EMBEDDINGS) {
                 m_generated_ids_embeds.pop_back();
+                m_position_ids_list.pop_back();
             }
         }
     }
@@ -237,11 +238,6 @@ public:
         size_t seq_len_shape_idx = position_ids.get_shape().size() == 3 ? 2 : 1;
         size_t position_ids_len = position_ids.get_shape()[seq_len_shape_idx];
         if (position_ids_len == 1) {
-            if (m_position_ids_list.size() > position_id_idx) {
-                // specutive and lookup decoding maybe generarte muliptle position id(mulitple canddate tokens) at one
-                // time, if the candidate tokens are not accepted, we don't need to generate new position id in the next.
-                return;
-            }
             m_position_ids_list.push_back(position_ids);
             return;
         }
