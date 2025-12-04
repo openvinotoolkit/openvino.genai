@@ -46,9 +46,9 @@ def read_video(path: str, num_frames: int = 8) -> Tensor:
         ret, frame = cap.read()
         if not ret:
             break
-        idx++
         if idx in indices:
             frames.append(np.array(frame))
+        idx++
 
     return Tensor(frames)
 
