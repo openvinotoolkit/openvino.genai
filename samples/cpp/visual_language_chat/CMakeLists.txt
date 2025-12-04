@@ -63,7 +63,7 @@ install(TARGETS benchmark_vlm
 # create prompt_lookup_decoding_vlm executable
 add_executable(prompt_lookup_decoding_vlm prompt_lookup_decoding_vlm.cpp load_image.cpp ../text_generation/read_prompt_from_file.cpp)
 target_include_directories(prompt_lookup_decoding_vlm PRIVATE "${CMAKE_BINARY_DIR}")
-target_link_libraries(prompt_lookup_decoding_vlm PRIVATE openvino::genai cxxopts::cxxopts)
+target_link_libraries(prompt_lookup_decoding_vlm PRIVATE openvino::genai)
 set_target_properties(prompt_lookup_decoding_vlm PROPERTIES
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)

@@ -80,7 +80,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
             }
             TokenIds candidates = generate_candidates(full_input_ids, min_num_assistant_tokens, sampling_params.max_ngram_size);
 
-            // Padding to candidate tokens,
+            // Padding candidate tokens to maintain consistent shape.
             // Avoid shape checking and increasing the amount of computation when the shape changes.
             if (candidates.size() < sampling_params.num_assistant_tokens) {
                 int token_sz = static_cast<int>(candidates.size());
