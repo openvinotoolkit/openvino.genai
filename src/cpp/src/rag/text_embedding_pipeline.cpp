@@ -169,18 +169,6 @@ std::optional<size_t> read_max_position_embeddings(const std::filesystem::path& 
     return max_position_embeddings;
 }
 
-std::string get_post_type_string(const TextEmbeddingPipeline::Config& config) {
-    std::string post_type;
-    if (config.pooling_type == TextEmbeddingPipeline::PoolingType::CLS) {
-        post_type = "cls";
-    } else if (config.pooling_type == TextEmbeddingPipeline::PoolingType::MEAN) {
-        post_type = "mean";
-    } else {
-        post_type = "last_token";
-    }
-    return post_type;
-}
-
 }  // namespace
 
 namespace ov {
@@ -223,51 +211,43 @@ public:
 
         auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);
 
-        bool is_fixed_size = true;
+        bool is_seq_len_fixed  = true;
         if (m_config.max_length) {
             m_tokenization_params.insert({max_length.name(), *m_config.max_length});
         } else {
-            is_fixed_size = false;
+            is_seq_len_fixed  = false;
         }
 
         if (m_config.pad_to_max_length) {
             m_tokenization_params.insert({pad_to_max_length.name(), *m_config.pad_to_max_length});
-            is_fixed_size &= m_config.pad_to_max_length.value();
+            is_seq_len_fixed  &= m_config.pad_to_max_length.value();
         } else {
-            is_fixed_size = false;
+            is_seq_len_fixed  = false;
         }
 
-        bool is_padding_on_left = false;
         if (m_config.padding_side) {
             m_tokenization_params.insert({padding_side.name(), *m_config.padding_side});
-            if (m_config.padding_side.value() == "left") {
-                is_padding_on_left = true;
-            }
         }
 
         bool should_reshape_non_npu =
             (device != "NPU" && (m_config.batch_size.has_value() || m_config.max_length.has_value()));
-        bool should_reshape_npu = (device == "NPU" && m_config.batch_size.has_value() && is_fixed_size);
+        bool should_reshape_npu = (device == "NPU" && m_config.batch_size.has_value() && is_seq_len_fixed);
         if (should_reshape_non_npu || should_reshape_npu) {
             reshape_model(model);
         }
 
         ov::CompiledModel compiled_model;
         if (device == "NPU" && model->is_dynamic()) {
-            if (is_padding_on_left && is_fixed_size &&
+            bool is_padding_on_left = m_config.padding_side.has_value() && m_config.padding_side.value() == "left";
+            if (is_padding_on_left && is_seq_len_fixed &&
                 config.pooling_type != TextEmbeddingPipeline::PoolingType::MEAN) {
                 OPENVINO_THROW("Padding on left is only supported for the mean post-processing type");
             }
 
             auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
             utils::KVDesc kv_desc;
-            ov::AnyMap local_config;
-            local_config["NPUW_TEXT_EMBED_POST_TYPE"] = get_post_type_string(config);
-            if (m_config.max_length.has_value()) {
-                local_config["MAX_PROMPT_LEN"] = m_config.max_length.value();
-            }
             std::tie(compiled_model, kv_desc) =
-                utils::compile_decoder_for_npu_text_embedding(model, properties, kv_pos, local_config);
+                utils::compile_decoder_for_npu_text_embedding(model, properties, kv_pos, m_config);
         } else {
             model = apply_postprocessing(model, m_config);
             compiled_model = core.compile_model(model, device, properties);
