@@ -356,6 +356,11 @@ def get_argprser():
         "--embedding_normalize", action="store_true", help="Normalize embeddings. Applicable only for text embeddings"
     )
     parser.add_argument(
+        "--embedding_pad_to_max_length",
+        action="store_true",
+        help="Pad embeddings. Applicable only for text embeddings",
+    )
+    parser.add_argument(
         "--embedding_max_length",
         type=int,
         default=None,
