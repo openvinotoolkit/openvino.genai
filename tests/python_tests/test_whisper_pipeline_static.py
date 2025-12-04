@@ -17,7 +17,7 @@ import pathlib
 config = {"NPU_USE_NPUW" : "YES",
           "NPUW_DEVICES" : "CPU",
           "NPUW_ONLINE_PIPELINE" : "NONE",
-          "STATIC_PIPELINE": "YES"}
+          "STATIC_PIPELINE": True}
 
 def load_and_save_whisper_model(params, stateful=False, **tokenizer_kwargs):
     model_id, path = params
