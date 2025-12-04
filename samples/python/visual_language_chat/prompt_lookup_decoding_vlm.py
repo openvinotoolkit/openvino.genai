@@ -63,7 +63,7 @@ def main():
 
     rgbs = read_images(args.image_dir)
 
-    # Since the streamer is set, the results will be printed 
+    # Since the streamer is set, the results are printed 
     # every time a new token is generated and put into the streamer queue.
     pipe.generate(args.prompt, images=rgbs, generation_config=config, streamer=streamer)
     print()
