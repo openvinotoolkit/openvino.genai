@@ -210,6 +210,7 @@ def get_argprser():
                         help="Pooling type CLS or MEAN for encoders, LAST_TOKEN for decoders. "
                              "Different post-processing is applied depending on the padding side. Applicable only for text embeddings")
     parser.add_argument("--embedding_normalize", action="store_true", help="Normalize embeddings. Applicable only for text embeddings")
+    parser.add_argument("--embedding_pad_to_max_length", action="store_true", help="Pad embeddings. Applicable only for text embeddings")
     parser.add_argument("--embedding_max_length", type=int, default=None,
                         help="Max length for text embeddings. Input text will be padded or truncated to specified value")
     parser.add_argument("--embedding_padding_side", choices=["left", "right"], default=None,
