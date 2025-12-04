@@ -53,35 +53,28 @@ private:
 namespace detail {
 
 inline void log_message(ov::log::Level level, const char* file, int line, const std::string& msg) {
-    auto& logger = Logger::get_instance();
-    if (!logger.should_log(level)) {
-        return;
-    }
-    logger.do_log(level, file, line, msg);
+    Logger::get_instance().do_log(level, file, line, msg);
 }
 
 inline void log_message(ov::log::Level level, const char* file, int line, const char* msg) {
-    auto& logger = Logger::get_instance();
-    if (!logger.should_log(level)) {
-        return;
-    }
-    logger.do_log(level, file, line, msg ? std::string(msg) : std::string());
+    Logger::get_instance().do_log(level, file, line, msg ? std::string(msg) : std::string());
 }
 
 template <typename... Args, typename = std::enable_if_t<(sizeof...(Args) > 0)>>
 inline void log_message(ov::log::Level level, const char* file, int line, const char* format, Args&&... args) {
-    auto& logger = Logger::get_instance();
-    if (!logger.should_log(level)) {
-        return;
-    }
-    logger.log_format(level, file, line, format, std::forward<Args>(args)...);
+    Logger::get_instance().log_format(level, file, line, format, std::forward<Args>(args)...);
 }
 
 }  // namespace detail
 
-#define GENAI_DEBUG(...) ::ov::genai::detail::log_message(ov::log::Level::DEBUG, __FILE__, __LINE__, __VA_ARGS__)
-#define GENAI_INFO(...)  ::ov::genai::detail::log_message(ov::log::Level::INFO, __FILE__, __LINE__, __VA_ARGS__)
-#define GENAI_WARN(...)  ::ov::genai::detail::log_message(ov::log::Level::WARNING, __FILE__, __LINE__, __VA_ARGS__)
-#define GENAI_ERR(...)   ::ov::genai::detail::log_message(ov::log::Level::ERR, __FILE__, __LINE__, __VA_ARGS__)
+#define GENAI_CHECK_LOG_LEVEL(LOG_LEVEL, ...)                                         \
+    if (::ov::genai::Logger::get_instance().should_log(LOG_LEVEL)) {                  \
+        ::ov::genai::detail::log_message(LOG_LEVEL, __FILE__, __LINE__, __VA_ARGS__); \
+    }
+
+#define GENAI_DEBUG(...) GENAI_CHECK_LOG_LEVEL(ov::log::Level::DEBUG, __VA_ARGS__)
+#define GENAI_INFO(...)  GENAI_CHECK_LOG_LEVEL(ov::log::Level::INFO, __VA_ARGS__)
+#define GENAI_WARN(...)  GENAI_CHECK_LOG_LEVEL(ov::log::Level::WARNING, __VA_ARGS__)
+#define GENAI_ERR(...)   GENAI_CHECK_LOG_LEVEL(ov::log::Level::ERR, __VA_ARGS__)
 
 }  // namespace ov::genai

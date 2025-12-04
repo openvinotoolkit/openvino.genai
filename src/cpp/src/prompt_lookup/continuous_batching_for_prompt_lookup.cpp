@@ -3,6 +3,8 @@
 
 #include "continuous_batching_for_prompt_lookup.hpp"
 
+#include "logger.hpp"
+
 namespace ov::genai {
 
 std::map<uint64_t, ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::SequenceLen>
@@ -87,6 +89,18 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
                 }
             }
 
+            auto debug_print_token_id = [&](const TokenIds& print_ids, const std::string& prefix, const size_t& last_num) {
+                std::stringstream ss;
+                ss << prefix << " = ";
+                size_t start_id = (print_ids.size() > last_num) ? (print_ids.size() - last_num) : 0;
+                for (size_t id = start_id; id < print_ids.size(); id++) {
+                    ss << print_ids[id] << "[" << m_tokenizer.decode(TokenIds{print_ids[id]}) << "],";
+                }
+                return ss.str();
+            };
+            GENAI_DEBUG(debug_print_token_id(generated_tokens, "generated_tokens", sampling_params.num_assistant_tokens + 1));
+            GENAI_DEBUG(debug_print_token_id(candidates, "candidates", candidates.size()));
+
             if (!candidates.empty()) {
                 for (const auto& candidate : candidates) {
                     running_sequence->append_token(candidate, 0);
@@ -105,4 +119,4 @@ bool ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::is_reque
 size_t ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::get_processed_tokens_per_iteration() {
     return m_batch_size;
 }
-}
+}  // namespace ov::genai
