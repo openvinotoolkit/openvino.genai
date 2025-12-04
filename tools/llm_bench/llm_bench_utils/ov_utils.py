@@ -667,7 +667,7 @@ def create_genai_text_embed_model(model_path, device, memory_data_collector, **k
 
     pooling_type = kwargs.get("emb_pooling_type")
     max_length = kwargs.get("emb_max_length")
-    padding_side = kwargs.get("embedding_padding_side")
+    padding_side = kwargs.get("emb_padding_side")
 
     config = openvino_genai.TextEmbeddingPipeline.Config()
     if pooling_type is not None:
@@ -679,7 +679,8 @@ def create_genai_text_embed_model(model_path, device, memory_data_collector, **k
             config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.CLS
     if max_length is not None:
         config.max_length = max_length
-        config.pad_to_max_length = True
+
+    config.pad_to_max_length = kwargs.get("emb_pad_to_max_length", False)
     config.normalize = kwargs.get("emb_normalize", False)
     if padding_side:
         config.padding_side = padding_side

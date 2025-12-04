@@ -196,6 +196,11 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu(const std::shared_p
                                                              const KVAxesPosition& kv_pos,
                                                              const bool is_whisper = false);
 
+std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(const std::shared_ptr<ov::Model>& model,
+                                                                            const ov::AnyMap& config,
+                                                                            const KVAxesPosition& kv_pos,
+                                                                            const ov::AnyMap& text_embed_config);
+
 /// @brief SharedOptional is a wrapper around a reference to an existing object and an optional shared alternative value.
 /// The difference from std::optional is that the default state is not empty and contains a reference to an existing object outside the class.
 /// Another difference is that the alternative value is shared between all instances of SharedOptional like std::shared_ptr.

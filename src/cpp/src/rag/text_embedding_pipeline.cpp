@@ -169,6 +169,18 @@ std::optional<size_t> read_max_position_embeddings(const std::filesystem::path& 
     return max_position_embeddings;
 }
 
+std::string get_post_type_string(const TextEmbeddingPipeline::Config& config) {
+    std::string post_type;
+    if (config.pooling_type == TextEmbeddingPipeline::PoolingType::CLS) {
+        post_type = "cls";
+    } else if (config.pooling_type == TextEmbeddingPipeline::PoolingType::MEAN) {
+        post_type = "mean";
+    } else {
+        post_type = "last_token";
+    }
+    return post_type;
+}
+
 }  // namespace
 
 namespace ov {
@@ -211,32 +223,55 @@ public:
 
         auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);
 
-        const bool should_reshape = m_config.batch_size.has_value() || m_config.max_length.has_value();
-        if (should_reshape) {
-            reshape_model(model);
-        }
-
-        if (device == "NPU") {
-            OPENVINO_ASSERT(!model->is_dynamic(),
-                            "NPU device does not support dynamic shapes. In order to fix model shape, set batch_size, "
-                            "max_length and pad_to_max_length in the configuration.");
-        }
-
-        model = apply_postprocessing(model, m_config);
-
+        bool is_fixed_size = true;
         if (m_config.max_length) {
             m_tokenization_params.insert({max_length.name(), *m_config.max_length});
+        } else {
+            is_fixed_size = false;
         }
 
         if (m_config.pad_to_max_length) {
             m_tokenization_params.insert({pad_to_max_length.name(), *m_config.pad_to_max_length});
+            is_fixed_size &= m_config.pad_to_max_length.value();
+        } else {
+            is_fixed_size = false;
         }
 
+        bool is_padding_on_left = false;
         if (m_config.padding_side) {
             m_tokenization_params.insert({padding_side.name(), *m_config.padding_side});
+            if (m_config.padding_side.value() == "left") {
+                is_padding_on_left = true;
+            }
         }
 
-        ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
+        bool should_reshape_non_npu =
+            (device != "NPU" && (m_config.batch_size.has_value() || m_config.max_length.has_value()));
+        bool should_reshape_npu = (device == "NPU" && m_config.batch_size.has_value() && is_fixed_size);
+        if (should_reshape_non_npu || should_reshape_npu) {
+            reshape_model(model);
+        }
+
+        ov::CompiledModel compiled_model;
+        if (device == "NPU" && model->is_dynamic()) {
+            if (is_padding_on_left && is_fixed_size &&
+                config.pooling_type != TextEmbeddingPipeline::PoolingType::MEAN) {
+                OPENVINO_THROW("Padding on left is only supported for the mean post-processing type");
+            }
+
+            auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
+            utils::KVDesc kv_desc;
+            ov::AnyMap local_config;
+            local_config["NPUW_TEXT_EMBED_POST_TYPE"] = get_post_type_string(config);
+            if (m_config.max_length.has_value()) {
+                local_config["MAX_PROMPT_LEN"] = m_config.max_length.value();
+            }
+            std::tie(compiled_model, kv_desc) =
+                utils::compile_decoder_for_npu_text_embedding(model, properties, kv_pos, local_config);
+        } else {
+            model = apply_postprocessing(model, m_config);
+            compiled_model = core.compile_model(model, device, properties);
+        }
 
         utils::print_compiled_model_properties(compiled_model, "text embedding model");
         m_request = compiled_model.create_infer_request();
@@ -383,7 +418,6 @@ private:
 
         std::vector<std::vector<float>> result;
         const auto shape = last_hidden_state.get_shape();
-
         const size_t batch_size = shape[0];
         const size_t hidden_size = shape[1];
 
