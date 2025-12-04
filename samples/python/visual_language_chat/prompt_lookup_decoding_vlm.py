@@ -12,7 +12,7 @@ from openvino import Tensor
 
 def streamer(subword):
     print(subword, end='', flush=True)
-    # Return flag corresponds whether generation should be stopped. 
+    # Return flag corresponds whether generation should be stopped.
     return openvino_genai.StreamingStatus.RUNNING
 
 def read_image(path: str) -> Tensor:
