@@ -167,8 +167,7 @@ jobs:
 
       - name: CMake Build
         run: |
-          apt update && apt install sudo
-          sudo apt install -y libgtk2.0-dev pkg-config ffmpeg libavformat-dev libavcodec-dev libswscale-dev libavutil-dev
+          apt install -y libgtk2.0-dev pkg-config ffmpeg libavformat-dev libavcodec-dev libswscale-dev libavutil-dev
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
 
           cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
