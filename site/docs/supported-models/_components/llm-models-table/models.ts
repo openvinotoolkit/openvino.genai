@@ -195,6 +195,7 @@ export const LLM_MODELS: LLMModelType[] = [
       {
         name: 'Exaone',
         links: [
+          'https://huggingface.co/LGAI-EXAONE/EXAONE-4.0-1.2B',
           'https://huggingface.co/LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct',
           'https://huggingface.co/LGAI-EXAONE/EXAONE-3.5-7.8B-Instruct',
           'https://huggingface.co/LGAI-EXAONE/EXAONE-3.5-32B-Instruct',
