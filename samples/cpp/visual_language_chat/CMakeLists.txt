@@ -79,7 +79,7 @@ add_executable(video_to_text_chat video_to_text_chat.cpp)
 target_include_directories(video_to_text_chat PRIVATE
         ${OPENCV_CONFIG_FILE_INCLUDE_DIR}
         ${OPENCV_MODULE_opencv_core_LOCATION}/include
-        ${OPENCV_MODULE_opencv_imgcodecs}/include
+        ${OPENCV_MODULE_opencv_imgcodecs_LOCATION}/include
         ${OPENCV_MODULE_opencv_videoio_LOCATION}/include
         )
 target_link_libraries(video_to_text_chat opencv_core opencv_imgcodecs opencv_videoio openvino::genai cxxopts::cxxopts)
