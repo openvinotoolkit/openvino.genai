@@ -381,12 +381,14 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                     PyGILState_STATE gstate = PyGILState_Ensure();
                     delete f;
                     PyGILState_Release(gstate);
+                } else {
+                    delete f;
                 }
             }
         );
 
         return std::function<bool(size_t, size_t, ov::Tensor&)>(
-            [shared_callback](size_t step, size_t num_steps, ov::Tensor& latent) -> bool {
+            [shared_callback = std::move(shared_callback)](size_t step, size_t num_steps, ov::Tensor& latent) -> bool {
                 py::gil_scoped_acquire acquire;
                 return (*shared_callback)(step, num_steps, latent).cast<bool>();
             }
@@ -461,11 +463,13 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
                         PyGILState_STATE gstate = PyGILState_Ensure();
                         delete f;
                         PyGILState_Release(gstate);
+                    } else {
+                        delete f;
                     }
                 }
             );
 
-            auto callback_wrapped = [shared_callback](std::string subword) -> ov::genai::StreamingStatus {
+            auto callback_wrapped = [shared_callback = std::move(shared_callback)](std::string subword) -> ov::genai::StreamingStatus {
                 py::gil_scoped_acquire acquire;
                 PyObject* py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
                 if (!py_str) {
