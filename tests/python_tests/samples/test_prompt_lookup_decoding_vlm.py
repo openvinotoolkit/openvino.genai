@@ -28,8 +28,7 @@ class TestPromptLookupDecodingVLM:
         py_result = run_sample(py_command, env=env)
 
         # Test Python sample, disable lookup decoding.
-        py_script_ref = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/prompt_lookup_decoding_vlm.py")
-        py_command_ref = [sys.executable, py_script_ref, convert_model, download_test_content, question, "--disable_lookup"]
+        py_command_ref = [sys.executable, py_script, convert_model, download_test_content, question, "--disable_lookup"]
         py_result_ref = run_sample(py_command_ref, env=env)
 
         # Compare results
