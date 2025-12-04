@@ -1,0 +1,85 @@
+repos:
+  - repo: meta
+    hooks:
+      - id: identity
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: ["--markdown-linebreak-ext=md,mdx"]
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-symlinks
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+      - id: check-ast
+      - id: check-builtin-literals
+        args: ["--pytest"]
+      - id: check-json
+      - id: check-yaml
+      - id: check-toml
+      - id: no-commit-to-branch
+        args: ["--branch", "master"]
+      - id: check-added-large-files
+        args: ["--maxkb=1000"]
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: "v0.14.3"
+    hooks:
+      - id: ruff-check
+        args: ["--fix"]
+        types: [python]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: "v21.1.5"
+    hooks:
+      - id: clang-format
+        types_or: [c++, c]
+
+  - repo: https://github.com/pocc/pre-commit-hooks
+    rev: v1.3.5
+    hooks:
+      - id: clang-tidy
+        args: [-p=build, --config-file=.clang-tidy]
+        types_or: [c++, c]
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: "v1.18.2"
+    hooks:
+      - id: mypy
+        args: [--config-file, mypy.ini]
+        types: [python]
+        additional_dependencies: [types-requests]
+
+  - repo: https://github.com/MarcoGorelli/absolufy-imports
+    rev: v0.3.1
+    hooks:
+      - id: absolufy-imports
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: "v4.0.0-alpha.8"
+    hooks:
+      - id: prettier
+        types_or: [json, yaml, markdown, ts, tsx, javascript, jsx]
+        exclude: '^(package-lock\.json|.*\.min\.js)$'
+
+  - repo: https://github.com/cheshirekow/cmake-format-precommit
+    rev: v0.6.13
+    hooks:
+      - id: cmake-format
+        types: [cmake]
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.37.1
+    hooks:
+      - id: yamllint
+        args:
+          [
+            -d,
+            "{extends: default, rules: {line-length: {max: 120}, document-start: disable}}",
+          ]
