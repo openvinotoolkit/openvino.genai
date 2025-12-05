@@ -119,7 +119,8 @@ void update_npu_config_whisper(ov::AnyMap& config,
 void update_npu_config_text_embedding(ov::AnyMap& config,
                                       const ov::genai::utils::KVAxesPosition& kv_pos,
                                       const ov::genai::utils::KVDesc& kv_desc,
-                                      const std::string& post_type) {
+                                      const std::string& post_type,
+                                      const bool is_to_normalize) {
     update_config(config, {"NPU_USE_NPUW", "YES"});
     update_config(config, {"NPUW_LLM", "YES"});
     update_config(config, {"NPUW_LLM_BATCH_DIM", kv_pos.batch});
@@ -131,6 +132,7 @@ void update_npu_config_text_embedding(ov::AnyMap& config,
 
     update_config(config, {"NPUW_TEXT_EMBED", "YES"});
     update_config(config, {"NPUW_TEXT_EMBED_POST_TYPE", post_type});
+    update_config(config, {"NPUW_TEXT_EMBED_NORMALIZE", is_to_normalize});
 }
 
 inline bool is_paged_attention_available() {
@@ -657,7 +659,7 @@ void get_npu_text_embedding_config(ov::AnyMap& properties,
         kv_desc.max_prompt_len = pop_int_and_cast(properties, "MAX_PROMPT_LEN").value_or(1024u);
     }
     kv_desc.min_response_len = kv_desc.max_prompt_len;
-    update_npu_config_text_embedding(properties, kv_pos, kv_desc, get_post_type_string(text_embed_config));
+    update_npu_config_text_embedding(properties, kv_pos, kv_desc, get_post_type_string(text_embed_config), text_embed_config.normalize);
 }
 
 std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_impl(const std::shared_ptr<ov::Model>& model,
