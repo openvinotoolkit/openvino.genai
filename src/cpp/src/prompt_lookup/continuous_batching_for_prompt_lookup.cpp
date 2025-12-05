@@ -92,12 +92,10 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
             GENAI_DEBUG(ov::genai::utils::print_token_id(generated_tokens, "generated_tokens", sampling_params.num_assistant_tokens + 1, m_tokenizer));
             GENAI_DEBUG(ov::genai::utils::print_token_id(candidates, "candidates", candidates.size(), m_tokenizer));
 
-            if (!candidates.empty()) {
-                for (const auto& candidate : candidates) {
-                    running_sequence->append_token(candidate, 0);
-                }
-                max_validation_len = std::max(max_validation_len, candidates.size());
+            for (const auto& candidate : candidates) {
+                running_sequence->append_token(candidate, 0);
             }
+            max_validation_len = std::max(max_validation_len, candidates.size());
         }
         request->set_num_validated_tokens(max_validation_len);
     }
