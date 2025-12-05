@@ -36,7 +36,7 @@ TEST(SamplerValidationMode, gen_phase_to_cut_whole_seq) {
     auto sampling_config = ov::genai::greedy();
     // create sequence group with prompt [0, 1, 2, 3, 4]
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
-    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, const_cast<int64_t*>(input_vector.data()));
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
     std::vector<SequenceGroup::Ptr> sequence_groups{
         SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config, 32)),
     };
@@ -66,7 +66,7 @@ TEST(SamplerValidationMode, gen_phase_to_cut_whole_seq) {
     };
 
     // shape 4 tokens + 1 batch + 5 vocab
-    ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{4, 1, 5}, const_cast<float*>(logits.data()));
+    ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{4, 1, 5}, logits.data());
 
     Sampler sampler;
     sampler.sample(sequence_groups, gen_input_ids, true);
@@ -80,7 +80,7 @@ TEST(SamplerValidationMode, gen_phase_to_cut_part_seq) {
     auto sampling_config = ov::genai::greedy();
     // create sequence group with prompt [0, 1, 2, 3, 4]
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
-    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, const_cast<int64_t*>(input_vector.data()));
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
     std::vector<SequenceGroup::Ptr> sequence_groups{
         SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config, 32)),
     };
@@ -111,7 +111,7 @@ TEST(SamplerValidationMode, gen_phase_to_cut_part_seq) {
     };
 
     // shape 4 tokens + 1 batch + 5 vocab
-    ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{4, 1, 5}, const_cast<float*>(logits.data()));
+    ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{4, 1, 5}, logits.data());
 
     Sampler sampler;
     sampler.sample(sequence_groups, gen_input_ids, true);
@@ -125,7 +125,7 @@ TEST(SamplerValidationMode, gen_phase) {
     auto sampling_config = ov::genai::greedy();
     // create sequence group with prompt [0, 1, 2, 3, 4]
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
-    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, const_cast<int64_t*>(input_vector.data()));
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
     std::vector<SequenceGroup::Ptr> sequence_groups{
         SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config, 32)),
     };
@@ -155,7 +155,7 @@ TEST(SamplerValidationMode, gen_phase) {
     };
 
     // shape 4 tokens + 1 batch + 5 vocab
-    ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{4, 1, 5}, const_cast<float*>(logits.data()));
+    ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{4, 1, 5}, logits.data());
 
     Sampler sampler;
     sampler.sample(sequence_groups, gen_input_ids, true);
@@ -169,7 +169,7 @@ TEST(SamplerValidationMode, prompt_phase_to_cut_part_seq) {
     auto sampling_config = ov::genai::greedy();
     // create sequence group with prompt [0, 1, 2, 3, 4]
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
-    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, const_cast<int64_t*>(input_vector.data()));
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
     std::vector<SequenceGroup::Ptr> sequence_groups{
         SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config, 32)),
     };
@@ -201,7 +201,7 @@ TEST(SamplerValidationMode, prompt_phase_to_cut_part_seq) {
     };
 
     // shape 4 tokens + 1 batch + 5 vocab
-    ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{8, 1, 5}, const_cast<float*>(logits.data()));
+    ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{8, 1, 5}, logits.data());
 
     Sampler sampler;
     sampler.sample(sequence_groups, gen_input_ids, true);
@@ -215,7 +215,7 @@ TEST(SamplerValidationMode, prompt_phase_to_cut_whole_seq) {
     auto sampling_config = ov::genai::greedy();
     // create sequence group with prompt [0, 1, 2, 3, 4]
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
-    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, const_cast<int64_t*>(input_vector.data()));
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
     std::vector<SequenceGroup::Ptr> sequence_groups{
         SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config, 32)),
     };
@@ -246,7 +246,7 @@ TEST(SamplerValidationMode, prompt_phase_to_cut_whole_seq) {
     };
 
     // shape 4 tokens + 1 batch + 5 vocab
-    ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{8, 1, 5}, const_cast<float*>(logits.data()));
+    ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{8, 1, 5}, logits.data());
 
     Sampler sampler;
     sampler.sample(sequence_groups, gen_input_ids, true);
@@ -260,7 +260,7 @@ TEST(SamplerValidationMode, prompt_phase) {
     auto sampling_config = ov::genai::greedy();
     // create sequence group with prompt [0, 1, 2, 3, 4]
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
-    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, const_cast<int64_t*>(input_vector.data()));
+    ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
     std::vector<SequenceGroup::Ptr> sequence_groups{
         SequenceGroup::Ptr(new SequenceGroup(0, input_tensor, sampling_config, 32)),
     };
@@ -291,7 +291,7 @@ TEST(SamplerValidationMode, prompt_phase) {
     };
 
     // shape 4 tokens + 1 batch + 5 vocab
-    ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{8, 1, 5}, const_cast<float*>(logits.data()));
+    ov::Tensor gen_input_ids(ov::element::f32, ov::Shape{8, 1, 5}, logits.data());
 
     Sampler sampler;
     sampler.sample(sequence_groups, gen_input_ids, true);
