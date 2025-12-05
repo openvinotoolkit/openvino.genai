@@ -1,0 +1,239 @@
+// Copyright (C) 2023-2025 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#include "relevance_calculator.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <stdexcept>
+
+#include "openvino/openvino.hpp"
+
+namespace ov::genai::cdpruner {
+
+RelevanceCalculator::RelevanceCalculator(const Config& config) : m_config(config) {
+    // Constructor implementation
+}
+
+ov::Tensor RelevanceCalculator::compute(const ov::Tensor& visual_embeds, const ov::Tensor& text_embeds) {
+    // Input validation
+    OPENVINO_ASSERT(visual_embeds.get_shape().size() == 3, "Visual embeddings must be 3D tensor [B, N, C]");
+    OPENVINO_ASSERT(text_embeds.get_shape().size() == 2, "Text embeddings must be 2D tensor [M, C]");
+
+    auto visual_shape = visual_embeds.get_shape();
+    auto text_shape = text_embeds.get_shape();
+
+    size_t batch_size = visual_shape[0];
+    size_t num_visual_tokens = visual_shape[1];
+    size_t visual_dim = visual_shape[2];
+    size_t num_text_tokens = text_shape[0];
+    size_t text_dim = text_shape[1];
+
+    // For simplicity, we assume visual and text embeddings have the same dimension
+    // In practice, they might need to be projected to the same space
+    OPENVINO_ASSERT(visual_dim == text_dim, "Visual and text embeddings must have the same feature dimension");
+
+    // Step 1: L2 normalize visual embeddings along the last dimension
+    ov::Tensor visual_normalized = l2_normalize(visual_embeds);
+
+    // Step 2: L2 normalize text embeddings along the last dimension
+    ov::Tensor text_normalized = l2_normalize(text_embeds);
+
+    // Step 3: Compute cosine similarity between visual and text embeddings
+    // relevance = visual_embeds @ text_embeds.T  => [B, N, M]
+    ov::Tensor relevance_matrix = matrix_multiply(visual_normalized, text_normalized);
+
+    // Step 4: Take mean across text tokens dimension to get relevance scores
+    // Apply negative or positive mean based on configuration
+    ov::Tensor relevance_scores = compute_mean(relevance_matrix, m_config.use_negative_relevance);
+
+    // Step 5: Min-max normalize the relevance scores
+    ov::Tensor normalized_relevance = min_max_normalize(relevance_scores);
+
+    return normalized_relevance;
+}
+
+ov::Tensor RelevanceCalculator::l2_normalize(const ov::Tensor& input) {
+    auto shape = input.get_shape();
+    ov::Tensor result(input.get_element_type(), shape);
+
+    const float* input_data = input.data<const float>();
+    float* result_data = result.data<float>();
+
+    if (shape.size() == 2u) {
+        // For 2D tensor [M, C], normalize along last dimension
+        size_t num_tokens = shape[0];
+        size_t feature_dim = shape[1];
+
+        for (size_t i = 0; i < num_tokens; ++i) {
+            const float* input_ptr = input_data + i * feature_dim;
+            float* result_ptr = result_data + i * feature_dim;
+
+            // Compute L2 norm for token i
+            float norm = 0.0f;
+            for (size_t j = 0; j < feature_dim; ++j) {
+                norm += input_ptr[j] * input_ptr[j];
+            }
+            norm = std::sqrt(norm + m_config.numerical_threshold);  // Add small epsilon for stability
+
+            // Normalize token i
+            const float inv_norm = 1.0f / norm;
+            for (size_t j = 0; j < feature_dim; ++j) {
+                result_ptr[j] = input_ptr[j] * inv_norm;
+            }
+        }
+    } else if (shape.size() == 3) {
+        // For 3D tensor [B, N, C], normalize along last dimension
+        size_t batch_size = shape[0];
+        size_t num_tokens = shape[1];
+        size_t feature_dim = shape[2];
+
+        for (size_t b = 0; b < batch_size; ++b) {
+            for (size_t i = 0; i < num_tokens; ++i) {
+                const float* input_ptr = input_data + (b * num_tokens + i) * feature_dim;
+                float* result_ptr = result_data + (b * num_tokens + i) * feature_dim;
+
+                // Compute L2 norm for token (b, i)
+                float norm = 0.0f;
+                for (size_t j = 0; j < feature_dim; ++j) {
+                    norm += input_ptr[j] * input_ptr[j];
+                }
+                norm = std::sqrt(norm + m_config.numerical_threshold);
+
+                // Normalize token (b, i)
+                const float inv_norm = 1.0f / norm;
+                for (size_t j = 0; j < feature_dim; ++j) {
+                    result_ptr[j] = input_ptr[j] * inv_norm;
+                }
+            }
+        }
+    } else {
+        OPENVINO_ASSERT(false, "L2 normalization only supports 2D and 3D tensors");
+    }
+
+    return result;
+}
+
+ov::Tensor RelevanceCalculator::min_max_normalize(const ov::Tensor& input) {
+    auto shape = input.get_shape();
+    ov::Tensor result(input.get_element_type(), shape);
+
+    const float* input_data = input.data<const float>();
+    float* result_data = result.data<float>();
+
+    if (shape.size() == 2u) {
+        // For 2D tensor [B, N], normalize each batch independently
+        size_t batch_size = shape[0];
+        size_t num_tokens = shape[1];
+
+        for (size_t b = 0; b < batch_size; ++b) {
+            // Find min and max for batch b
+            float min_val = std::numeric_limits<float>::infinity();
+            float max_val = -std::numeric_limits<float>::infinity();
+
+            for (size_t i = 0; i < num_tokens; ++i) {
+                size_t idx = b * num_tokens + i;
+                min_val = std::min(min_val, input_data[idx]);
+                max_val = std::max(max_val, input_data[idx]);
+            }
+
+            // Avoid division by zero
+            float range = max_val - min_val;
+            if (range < m_config.numerical_threshold) {
+                range = 1.0f;  // If all values are the same, set to 1
+            }
+
+            // Normalize batch b
+            for (size_t i = 0; i < num_tokens; ++i) {
+                size_t idx = b * num_tokens + i;
+                result_data[idx] = (input_data[idx] - min_val) / range;
+            }
+        }
+    } else {
+        OPENVINO_ASSERT(false, "Min-max normalization only supports 2D tensors");
+    }
+
+    return result;
+}
+
+ov::Tensor RelevanceCalculator::matrix_multiply(const ov::Tensor& visual_embeds, const ov::Tensor& text_embeds) {
+    // visual_embeds: [B, N, C]
+    // text_embeds: [M, C]
+    // Result: [B, N, M]
+
+    auto visual_shape = visual_embeds.get_shape();
+    auto text_shape = text_embeds.get_shape();
+
+    size_t batch_size = visual_shape[0];
+    size_t num_visual_tokens = visual_shape[1];
+    size_t feature_dim = visual_shape[2];
+    size_t num_text_tokens = text_shape[0];
+
+    ov::Tensor result(ov::element::f32, {batch_size, num_visual_tokens, num_text_tokens});
+
+    const float* visual_data = visual_embeds.data<const float>();
+    const float* text_data = text_embeds.data<const float>();
+    float* result_data = result.data<float>();
+
+    // Perform batch matrix multiplication: visual @ text.T
+    for (size_t b = 0; b < batch_size; ++b) {
+        for (size_t i = 0; i < num_visual_tokens; ++i) {
+            for (size_t j = 0; j < num_text_tokens; ++j) {
+                float dot_product = 0.0f;
+
+                // Compute dot product between visual token (b,i) and text token j
+                for (size_t k = 0; k < feature_dim; ++k) {
+                    size_t visual_idx = b * num_visual_tokens * feature_dim + i * feature_dim + k;
+                    size_t text_idx = j * feature_dim + k;
+                    dot_product += visual_data[visual_idx] * text_data[text_idx];
+                }
+
+                size_t result_idx = b * num_visual_tokens * num_text_tokens + i * num_text_tokens + j;
+                result_data[result_idx] = dot_product;
+            }
+        }
+    }
+
+    return result;
+}
+
+ov::Tensor RelevanceCalculator::compute_mean(const ov::Tensor& relevance_matrix, bool use_negative) {
+    // relevance_matrix: [B, N, M]
+    // Result: [B, N] - mean across the last dimension with optional negation
+
+    auto shape = relevance_matrix.get_shape();
+    size_t batch_size = shape[0];
+    size_t num_visual_tokens = shape[1];
+    size_t num_text_tokens = shape[2];
+
+    ov::Tensor result(ov::element::f32, {batch_size, num_visual_tokens});
+
+    const float* input_data = relevance_matrix.data<const float>();
+    float* result_data = result.data<float>();
+
+    for (size_t b = 0; b < batch_size; ++b) {
+        for (size_t i = 0; i < num_visual_tokens; ++i) {
+            float sum = 0.0f;
+
+            // Compute mean across text tokens for visual token (b, i)
+            for (size_t j = 0; j < num_text_tokens; ++j) {
+                size_t idx = b * num_visual_tokens * num_text_tokens + i * num_text_tokens + j;
+                sum += input_data[idx];
+            }
+
+            float mean_val = sum / static_cast<float>(num_text_tokens);
+            size_t result_idx = b * num_visual_tokens + i;
+
+            // Apply negation conditionally based on parameter
+            if (use_negative) {
+                result_data[result_idx] = -mean_val;  // For CLIP-based models (LLaVA)
+            } else {
+                result_data[result_idx] = mean_val;  // For non-CLIP models
+            }
+        }
+    }
+
+    return result;
+}
+
+}  // namespace ov::genai::cdpruner

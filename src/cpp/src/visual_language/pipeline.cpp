@@ -216,6 +216,10 @@ public:
             if (m_is_chat_conversation)
                 OPENVINO_ASSERT(videos.empty(), "Chat mode is currently not supported with video input for NPU device!");
         }
+
+        m_inputs_embedder->set_visual_token_pruning_config(generation_config.pruning_ratio,
+                                                           generation_config.relevance_weight);
+
         auto encoded_images = m_inputs_embedder->encode_images(images);
         OPENVINO_ASSERT(images.size() == encoded_images.size(), "Input images size and encoded images size mismatch!");
         const auto encoded_videos = m_inputs_embedder->encode_videos(videos);
