@@ -43,10 +43,6 @@ install(TARGETS encrypted_model_vlm
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
 
-if (NOT CXXOPTS_FOUND)
-    find_package(cxxopts REQUIRED) 
-endif()
-
 # create benchmark executable
 add_executable(benchmark_vlm benchmark_vlm.cpp load_image.cpp ../text_generation/read_prompt_from_file.cpp)
 target_include_directories(benchmark_vlm PRIVATE "${CMAKE_BINARY_DIR}")
