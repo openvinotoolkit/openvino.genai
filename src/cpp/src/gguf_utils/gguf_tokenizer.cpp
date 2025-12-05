@@ -575,7 +575,9 @@ create_tokenizer_from_config(const std::shared_ptr<void>& shared_object_ov_token
     ov::OutputVector inputs_for_fused_ragged(detokenizer_outputs.begin(), detokenizer_outputs.end() - 1);
     auto outputs_fused_ragged = create_func("FuzeRagged", inputs_for_fused_ragged, {});
     outputs_fused_ragged.insert(outputs_fused_ragged.end(), detokenizer_outputs.end() - 1, detokenizer_outputs.end());
-    auto packed_output = create_func("StringTensorPack", outputs_fused_ragged, {});
+    ov::OutputVector inputs_for_utf8_validate(outputs_fused_ragged.begin(), outputs_fused_ragged.end());
+    auto outputs_utf8_validate = create_func("UTF8Validate", inputs_for_utf8_validate, {{"replace_mode", true}});
+    auto packed_output = create_func("StringTensorPack", outputs_utf8_validate, {});
     packed_output[0].get_tensor().add_names({"string_output"});
     auto detokenizer = std::make_shared<Model>(packed_output, ParameterVector{detokenizer_input}, "detokenizer");
 
