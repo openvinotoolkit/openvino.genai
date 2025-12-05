@@ -455,7 +455,12 @@ ResampledImage VisionEncoderMiniCPM::resample_encoded_image(const EncodedImage& 
             for (size_t ja = 0; ja < slices_shape.at(1); ++ja) {
                 size_t d2 = slices_shape.at(2);
                 size_t d3 = slices_shape.at(3);
-                ov::Tensor encoded_view{ov::element::f32, {1, d2, d3}, slices.data<float>() + (i * slices_shape.at(1) + ja) * d2 * d3};
+                // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
+                ov::Tensor encoded_view{
+                    ov::element::f32, 
+                    {1, d2, d3}, 
+                    const_cast<float*>(slices.data<float>()) + (i * slices_shape.at(1) + ja) * d2 * d3
+                };
                 vision_embeds[ja] = resample(encoded_view, target_size, pad_to_max);
             }
             vision_embed_tensors[i] = vision_embeds;
