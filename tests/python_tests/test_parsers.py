@@ -25,7 +25,7 @@ def hf_ov_genai_models(request, tmp_path_factory):
 
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
-    ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
+    ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],  # this tokenizer is used as a stub only
     indirect=True
 )
 @pytest.mark.parametrize("answer", [
@@ -64,7 +64,7 @@ def test_incremental_phi4_reason_parser_1(hf_ov_genai_models, answer):
 
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
-    ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
+    ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],  # this tokenizer is used as a stub only
     indirect=True
 )
 def test_incremental_phi4_reason_integer_token_ids(hf_ov_genai_models):
@@ -92,7 +92,7 @@ def test_incremental_phi4_reason_integer_token_ids(hf_ov_genai_models):
 
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
-    ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
+    ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],  # this tokenizer is used as a stub only
     indirect=True
 )
 def test_incremental_integer_token_ids(hf_ov_genai_models):
@@ -144,7 +144,7 @@ def test_incremental_integer_token_ids(hf_ov_genai_models):
 
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
-    ["katuni4ka/tiny-random-phi3"],
+    ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],
     indirect=True
 )
 @pytest.mark.parametrize("split_answer", [
@@ -202,7 +202,7 @@ def test_incremental_phi4_reason_parser_nostreamer(answer):
 @pytest.mark.parametrize("do_reset", [False])
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
-    ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
+    ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],  # this tokenizer is used as a stub only
     indirect=True
 )
 @pytest.mark.parametrize("answer", [
@@ -266,7 +266,7 @@ def test_incremental_deepseek_parser():
 
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
-    ["katuni4ka/tiny-random-phi3"],
+    ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],
     indirect=True
 )
 def test_custom_incremental_parser(hf_ov_genai_models):
@@ -308,7 +308,7 @@ def test_custom_incremental_parser(hf_ov_genai_models):
 
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
-    ["katuni4ka/tiny-random-phi3"],
+    ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],
     indirect=True
 )
 def test_final_parser_llama_32_json(hf_ov_genai_models):

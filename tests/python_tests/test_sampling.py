@@ -21,8 +21,8 @@ def model_facebook_opt_125m() -> OVConvertedModelSchema:
 
 
 @pytest.fixture(scope="module")
-def model_katuni4ka_tiny_random_phi3() -> OVConvertedModelSchema:
-    model_id : str = "katuni4ka/tiny-random-phi3"
+def model_tiny_random_phi3() -> OVConvertedModelSchema:
+    model_id : str = "optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"
     return download_and_convert_model(model_id)
 
 
@@ -50,11 +50,11 @@ def model_tinyllama_1_1b_chat() -> OVConvertedModelSchema:
     ]
 )
 def test_basic_stop_criteria(
-    model_katuni4ka_tiny_random_phi3: OVConvertedModelSchema,
+    model_tiny_random_phi3: OVConvertedModelSchema,
     generation_config: GenerationConfig,
     prompt
 ):
-    generate_and_compare(model_katuni4ka_tiny_random_phi3, [prompt], generation_config)
+    generate_and_compare(model_tiny_random_phi3, [prompt], generation_config)
 
 
 @pytest.mark.parametrize(
@@ -159,14 +159,14 @@ def test_stop_strings_tinyllama(
     'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
 ])
 def test_greedy(
-    model_katuni4ka_tiny_random_phi3: OVConvertedModelSchema,
+    model_tiny_random_phi3: OVConvertedModelSchema,
     generation_config,
     prompt
 ):
     prompt = prompt.decode('unicode_escape') if isinstance(prompt, bytes) else prompt
 
     generate_and_compare(
-        model_katuni4ka_tiny_random_phi3, 
+        model_tiny_random_phi3, 
         prompt, 
         generation_config
     )
