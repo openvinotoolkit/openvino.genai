@@ -39,7 +39,8 @@ def read_video(path: str, num_frames: int = 8) -> Tensor:
     cap = cv2.VideoCapture(path)
 
     frames = []
-    indices = np.arange(0, len(frames), len(frames) / num_frames).astype(int)
+    total_num_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    indices = np.arange(0, total_num_frames, total_num_frames / num_frames).astype(int)
 
     idx = 0
     while cap.isOpened():
@@ -48,7 +49,8 @@ def read_video(path: str, num_frames: int = 8) -> Tensor:
             break
         if idx in indices:
             frames.append(np.array(frame))
-        idx++
+        idx+=1
+    assert idx == total_num_frames, "Frame count mismatch: expected {}, got {}".format(total_num_frames, idx)
 
     return Tensor(frames)
 
