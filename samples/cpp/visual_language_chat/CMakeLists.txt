@@ -79,15 +79,21 @@ add_executable(video_to_text_chat video_to_text_chat.cpp)
 target_include_directories(video_to_text_chat PRIVATE
         ${OPENCV_CONFIG_FILE_INCLUDE_DIR}
         ${OPENCV_MODULE_opencv_core_LOCATION}/include
-        ${OPENCV_MODULE_opencv_imgcodecs_LOCATION}/include
         ${OPENCV_MODULE_opencv_videoio_LOCATION}/include
         )
-target_link_libraries(video_to_text_chat opencv_core opencv_imgcodecs opencv_videoio openvino::genai cxxopts::cxxopts)
+target_link_libraries(video_to_text_chat opencv_core opencv_imgcodecs opencv_imgproc opencv_videoio openvino::genai cxxopts::cxxopts)
 
-set_target_properties(video_to_text_chat PROPERTIES
-    INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib"
-    # Ensure out of box LC_RPATH on macOS with SIP
-    INSTALL_RPATH_USE_LINK_PATH ON)
+if(LINUX)
+    set_target_properties(video_to_text_chat opencv_core opencv_imgcodecs opencv_imgproc opencv_videoio PROPERTIES
+        INSTALL_RPATH "$ORIGIN/../lib"
+        # Ensure out of box LC_RPATH on macOS with SIP
+        INSTALL_RPATH_USE_LINK_PATH ON)
+elseif(APPLE)
+    set_target_properties(video_to_text_chat opencv_core opencv_imgcodecs opencv_imgproc opencv_videoio PROPERTIES
+        INSTALL_RPATH "@loader_path/../lib"
+        # Ensure out of box LC_RPATH on macOS with SIP
+        INSTALL_RPATH_USE_LINK_PATH ON)
+endif()
 
 install(TARGETS video_to_text_chat
         RUNTIME DESTINATION samples_bin/
