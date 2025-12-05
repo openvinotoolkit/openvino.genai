@@ -211,18 +211,18 @@ public:
 
         auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);
 
-        bool is_seq_len_fixed  = true;
+        bool is_seq_len_fixed = true;
         if (m_config.max_length) {
             m_tokenization_params.insert({max_length.name(), *m_config.max_length});
         } else {
-            is_seq_len_fixed  = false;
+            is_seq_len_fixed = false;
         }
 
         if (m_config.pad_to_max_length) {
             m_tokenization_params.insert({pad_to_max_length.name(), *m_config.pad_to_max_length});
-            is_seq_len_fixed  &= m_config.pad_to_max_length.value();
+            is_seq_len_fixed &= m_config.pad_to_max_length.value();
         } else {
-            is_seq_len_fixed  = false;
+            is_seq_len_fixed = false;
         }
 
         if (m_config.padding_side) {
