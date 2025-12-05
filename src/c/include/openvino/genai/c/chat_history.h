@@ -45,7 +45,7 @@ OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_cr
 OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_create_from_json_container(
     ov_genai_chat_history** history,
     const ov_genai_json_container* messages
-   );
+    );
 
 /**
  * @brief Release the memory allocated by ov_genai_chat_history.
