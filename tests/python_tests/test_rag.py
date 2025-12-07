@@ -106,11 +106,12 @@ def run_text_embedding_genai(
     documents: list[str],
     config: TextEmbeddingPipeline.Config | None = None,
     task: Literal["embed_documents", "embed_query"] = "embed_documents",
+    device: str = "CPU",
 ):
     if not config:
         config = TextEmbeddingPipeline.Config()
 
-    pipeline = TextEmbeddingPipeline(models_path, "CPU", config)
+    pipeline = TextEmbeddingPipeline(models_path, device, config)
 
     if config.batch_size:
         documents = documents[: config.batch_size]
@@ -191,13 +192,13 @@ EmbeddingResult = list[list[float]] | list[list[int]] | list[float] | list[int]
 MAX_EMBEDDING_ERROR = 2e-6 if sys.platform != "darwin" else 0.02  # ARM64 macs have different results
 
 
-def validate_embedding_results(result_1: EmbeddingResult, result_2: EmbeddingResult):
+def validate_embedding_results(result_1: EmbeddingResult, result_2: EmbeddingResult, threshold: float = MAX_EMBEDDING_ERROR):
     __tracebackhide__ = True
     np_result_1 = np.array(result_1)
     np_result_2 = np.array(result_2)
 
     max_error = np.abs(np_result_1 - np_result_2).max()
-    assert max_error < MAX_EMBEDDING_ERROR, f"Max error: {max_error} is greater than allowed {MAX_EMBEDDING_ERROR}"
+    assert max_error < threshold, f"Max error: {max_error} is greater than allowed {threshold}"
 
 
 def run_text_embedding_pipeline_with_ref(
@@ -347,6 +348,113 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
         "embed_documents",
     )
     validate_embedding_results(embeddings_genai, embeddings_opt.tolist())
+
+
+@pytest.mark.parametrize(
+    "emb_model",
+    ["Qwen/Qwen3-Embedding-0.6B"],
+    indirect=True,
+)
+@pytest.mark.parametrize(
+    "config",
+    [
+        TextEmbeddingPipeline.Config(
+            batch_size = 1,
+            max_length = 2048,
+            normalize = False,
+            pad_to_max_length = False,
+            pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
+            padding_side="right"
+        ),
+        TextEmbeddingPipeline.Config(
+            batch_size = 1,
+            max_length = 2048,
+            normalize = False,
+            pad_to_max_length = False,
+            pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
+            padding_side="right"
+        ),
+        TextEmbeddingPipeline.Config(
+            batch_size = 1,
+            max_length=2048,
+            normalize=False,
+            pad_to_max_length = False,
+            pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
+            padding_side="right"
+        ),
+        TextEmbeddingPipeline.Config(
+            batch_size = 1,
+            max_length=2048,
+            normalize=True,
+            pad_to_max_length = False,
+            pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
+            padding_side="right"
+        ),
+        TextEmbeddingPipeline.Config(
+            batch_size = 1,
+            max_length=2048,
+            normalize=True,
+            pad_to_max_length = False,
+            pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
+            padding_side="right"
+        ),
+        TextEmbeddingPipeline.Config(
+            batch_size = 1,
+            max_length=2048,
+            normalize=True,
+            pad_to_max_length = False,
+            pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
+            padding_side="right"
+        ),
+        TextEmbeddingPipeline.Config(
+            max_length = 2048,
+            normalize = False,
+            pad_to_max_length = True,
+            pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
+            padding_side="right"
+        ),
+        TextEmbeddingPipeline.Config(
+            max_length = 2048,
+            normalize = False,
+            pad_to_max_length = True,
+            pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
+            padding_side="right"
+        ),
+        TextEmbeddingPipeline.Config(
+            max_length=2048,
+            normalize=False,
+            pad_to_max_length = True,
+            pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
+            padding_side="right"
+        ),
+        TextEmbeddingPipeline.Config(
+            max_length=2048,
+            normalize=False,
+            pad_to_max_length = True,
+            pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
+            padding_side="left"
+        ),
+    ],
+)
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
+def test_qwen3_embedding_npu(emb_model, config):
+    # Use the entire TEXT_DATASET as a single document instead of chunks
+    flat_documents = [TEXT_DATASET]
+    embeddings_genai_cpu = run_text_embedding_genai(
+        emb_model.models_path,
+        flat_documents,
+        config,
+        "embed_documents",
+        device="CPU"
+    )
+    embeddings_genai_npu = run_text_embedding_genai(
+        emb_model.models_path,
+        flat_documents,
+        config,
+        "embed_documents",
+        device="NPU"
+    )
+    validate_embedding_results(embeddings_genai_npu, embeddings_genai_cpu, 0.25)
 
 
 @pytest.mark.parametrize("emb_model", ["BAAI/bge-small-en-v1.5"], indirect=True)
