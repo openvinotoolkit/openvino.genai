@@ -12,16 +12,170 @@ namespace ov::genai {
 
 namespace {
 
-constexpr size_t INPUT_IMAGE_SIZE = 224;
 const std::regex NATIVE_PATTERN{R"(<\|image_(\d+)\|>)"};
 
 void write_native(std::ostream& os, size_t idx) {
     os << "<|image_" << idx + 1 << "|>\n";
 }
-
 } // namespace
 
 namespace videochat_flash_utils {
+
+std::string normalize_prompt(
+    const std::string& prompt, size_t base_id, size_t n_images, const std::regex& native_pattern, void(*write_native)(std::ostream& os, size_t idx)
+) {
+    std::smatch match;
+    std::regex_search(prompt, match, native_pattern);
+    auto [image_prompt, image_sequence] = universal_to_native(prompt, write_native);
+    if (!image_sequence.empty()) {
+        OPENVINO_ASSERT(match.empty(), "Prompt can contain only one type of image tags.");
+        verify_ids(image_sequence, base_id, n_images);
+        return image_prompt;
+    }
+    // Restore ids from native tags
+    if (!match.empty()) {
+        size_t image_id = std::stoul(match.str(1));
+        OPENVINO_ASSERT(image_id != 0, "Image tags must be greater than 0");
+        image_sequence.push_back(image_id - 1);
+        constexpr int submatch_id_to_return = 1;
+        for (std::sregex_token_iterator iter{
+            match.suffix().first,
+            prompt.end(),
+            native_pattern,
+            submatch_id_to_return
+        }; iter != std::sregex_token_iterator{}; ++iter) {
+            size_t image_id = std::stoul(*iter);
+            OPENVINO_ASSERT(image_id != 0, "Image tags must be greater than 0");
+            image_sequence.push_back(image_id - 1);
+        }
+        if (!image_sequence.empty()) {
+            verify_ids(image_sequence, base_id, n_images);
+            return image_prompt;
+        }
+    }
+    // Prepend native tags
+    std::stringstream stream;
+    for (size_t relative_id = 0; relative_id < n_images; relative_id++) {
+        image_sequence.push_back(base_id + relative_id);
+        write_native(stream, image_sequence.back());
+    }
+    stream << prompt;
+    return stream.str();
+}
+
+/// @brief ov::Tensor is tokenized text, size_t is image tag
+std::vector<std::variant<ov::Tensor, size_t>> split_tokenize(const std::string& text, ov::genai::Tokenizer& tokenizer, const std::regex& native_pattern) {
+    std::vector<std::variant<ov::Tensor, size_t>> tokenized;
+    auto prefix_begin = text.begin();
+    bool is_submatch = false;
+    for (std::sregex_token_iterator iter{
+        prefix_begin,
+        text.end(),
+        native_pattern,
+        {0, 1}  // Every match emits two values: whole match and submatch
+    }; iter != std::sregex_token_iterator{}; ++iter) {
+        if (is_submatch) {
+            size_t idx = std::stoul(iter->str());
+            OPENVINO_ASSERT(idx != 0);
+            tokenized.push_back(idx - 1);
+        } else {
+            std::string regular_text{prefix_begin, iter->first};
+            if (!regular_text.empty()) {
+                tokenized.push_back(tokenizer.encode(regular_text, {ov::genai::add_special_tokens(true)}).input_ids);
+            }
+            prefix_begin = iter->second;
+        }
+        is_submatch = !is_submatch;
+    }
+    std::string regular_text{prefix_begin, text.end()};
+    if (!regular_text.empty()) {
+        tokenized.push_back(tokenizer.encode(regular_text, {ov::genai::add_special_tokens(true)}).input_ids);
+    }
+    return tokenized;
+}
+
+ov::Tensor insert_image_placeholders(
+    const std::vector<std::variant<ov::Tensor, size_t>>& chunks,
+    const std::vector<size_t>& tokens_per_images
+) {
+    size_t merged_length = 0;
+    for (const std::variant<ov::Tensor, size_t>& chunk : chunks) {
+        merged_length += std::visit(utils::overloaded{
+            [](const ov::Tensor& chunk) {
+                return chunk.get_shape().at(1);
+            },
+            [&](size_t image_id) {
+                return tokens_per_images.at(image_id);
+            }
+        }, chunk);
+    }
+    ov::Tensor merged{ov::element::i64, {1, merged_length}};
+    size_t offset = 0;
+    for (const std::variant<ov::Tensor, size_t>& chunk : chunks) {
+        offset += std::visit(utils::overloaded{
+            [&](const ov::Tensor& chunk) {
+                size_t length = chunk.get_shape().at(1);
+                std::copy_n(
+                    chunk.data<int64_t>(),
+                    length,
+                    merged.data<int64_t>() + offset
+                );
+                return length;
+            },
+            [&](size_t image_id) {
+                int64_t fill_value = -(static_cast<int64_t>(image_id)) - 1;
+                std::fill_n(
+                    merged.data<int64_t>() + offset,
+                    tokens_per_images.at(image_id),
+                    fill_value  // -1 to distinguish 0 token and 0 image id.
+                );
+                return tokens_per_images.at(image_id);
+            }
+        }, chunk);
+    }
+    return merged;
+}
+
+std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::Tensor& tokens) {
+    std::vector<std::variant<ov::Tensor, size_t>> chunks;
+    int64_t last_token = tokens.data<int64_t>()[0];
+    size_t text_start = 0;
+    for (size_t offset = 1; offset < tokens.get_shape().at(1); ++offset) {
+        // If last_token and next_token are not negative, it's continuation of the current chunk text - skip
+        // If last_token is negative and next_token is not negative, it's a start of text - save the offset, add image placeholder
+        // If last token is not negative and next_token is negative, it's an end of text - push_back a chunk
+        // If last_token and next_token are negative, it's continuation of an image placeholder - skip
+        // if last_token and next_token are negative but different, it's a start of a new image placeholder - save the previous image placeholder
+        int64_t next_token = tokens.data<int64_t>()[offset];
+        if (last_token < 0 && next_token >= 0) {
+            text_start = offset;
+            chunks.push_back(size_t(-(last_token + 1)));
+        } else if (last_token >= 0 && next_token < 0) {
+            chunks.emplace_back(
+                std::in_place_type<ov::Tensor>,
+                ov::element::i64,
+                ov::Shape{1, offset - text_start},
+                tokens.data<int64_t>() + text_start
+            );
+        } else if (last_token < 0 && next_token < 0 && last_token != next_token) {
+            chunks.push_back(size_t(-(last_token + 1)));
+        }
+        last_token = next_token;
+    }
+    // Add the last chunk
+    size_t full_length = tokens.get_shape().at(1);
+    if (last_token >= 0) {
+        chunks.emplace_back(
+            std::in_place_type<ov::Tensor>,
+            ov::element::i64,
+            ov::Shape{1, full_length - text_start},
+            tokens.data<int64_t>() + text_start
+        );
+    } else {
+        chunks.push_back(size_t(-(last_token + 1)));
+    }
+    return chunks;
+}
 
 ov::Tensor transpose_video_features(const ov::Tensor& src_tensor, const size_t mm_local_num_frames) {
     // Input feature:  [N, C, H, W]
@@ -202,12 +356,13 @@ ov::Tensor merge_tokens(const ov::Tensor& input, ov::InferRequest& merge_embeddi
 }
 
 ov::Tensor efficient_flatten(ov::Tensor& original_tensor) {
-    // flatten 3D tensor [N,C,W] to 2D tensor [N*C, W]
+    // flatten 3D tensor [N,C,W] to 3D tensor [1, N*C, W]
     const ov::Shape& original_shape = original_tensor.get_shape();
     const ov::element::Type& dtype = original_tensor.get_element_type();
 
     // 2. 计算新形状
     ov::Shape new_shape = {
+        1,
         original_shape[0] * original_shape[1], // N*C
         original_shape[2]                      // W
     };
@@ -325,10 +480,6 @@ EncodedImage VisionEncoderVideoChat_Flash::encode(const ov::Tensor& image, const
 
     // transpose video features
     auto transpose_features = videochat_flash_utils::transpose_video_features(image, mm_local_num_frames);
-    std::cout << "[DEBUG] in " << __func__ << " with transpose_features shape " << transpose_features.get_shape() << std::endl;
-
-    videochat_flash_utils::write_ov_tensor_to_bin(transpose_features, "/home/arda/ruonan/profiling_qwen2b_vl_instruction_fork/videochat_genai/ov_vision_output_v0_transposed.bin");
-
     // TODO: split each frame group and use static shape vit for better performance
 
     // TODO: obtain rotary_pos_emb from cpp code
@@ -342,17 +493,13 @@ EncodedImage VisionEncoderVideoChat_Flash::encode(const ov::Tensor& image, const
     vision_embeddings.set_tensor("rotary_pos_emb", rotary_pos_emb);
     vision_embeddings.infer();
     ov::Tensor processed_vision_embeds = vision_embeddings.get_output_tensor();
-    videochat_flash_utils::write_ov_tensor_to_bin(processed_vision_embeds, "/home/arda/ruonan/profiling_qwen2b_vl_instruction_fork/videochat_genai/ov_vision_output_embeddings.bin");
 
-    std::cout << "[DEBUG] in " << __func__ << " with processed_vision_embeds shape " << processed_vision_embeds.get_shape() << std::endl;
     ov::Tensor clipped_vision_embeds = videochat_flash_utils::remove_second_dim_first_element(processed_vision_embeds);
 
     // merge tokens
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard_merge(this->m_ireq_queue_merge_model.get());
     ov::InferRequest& merge_embeddings = infer_request_guard_merge.get();
     ov::Tensor merged_vision_features = videochat_flash_utils::merge_tokens(clipped_vision_embeds, merge_embeddings);
-    std::cout << "[DEBUG] in " << __func__ << " with merged_vision_features shape " << merged_vision_features.get_shape() << std::endl;
-    videochat_flash_utils::write_ov_tensor_to_bin(merged_vision_features, "/home/arda/ruonan/profiling_qwen2b_vl_instruction_fork/videochat_genai/ov_vision_output_merged.bin");
 
     // vision projection
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard_proj(this->m_ireq_queue_vision_projection.get());
@@ -361,28 +508,20 @@ EncodedImage VisionEncoderVideoChat_Flash::encode(const ov::Tensor& image, const
     vision_projection.infer();
     // here proj features shape is [N_frames // 4, 4 * 16, 3584]
     ov::Tensor proj_features = vision_projection.get_output_tensor();
-    std::cout << "[DEBUG] in " << __func__ << " with proj_features shape " << proj_features.get_shape() << std::endl;
 
     // flatten vision features
     auto final_features = videochat_flash_utils::efficient_flatten(proj_features);
-    std::cout << "[DEBUG] in " << __func__ << " with final_features shape " << final_features.get_shape() << std::endl;
-
     encoded_feature.images_features_projection = final_features;
-
-    // for debug
-    videochat_flash_utils::write_ov_tensor_to_bin(final_features, "/home/arda/ruonan/profiling_qwen2b_vl_instruction_fork/videochat_genai/ov_vision_output.bin");
     return encoded_feature;
 }
 
 
 std::vector<ov::genai::EncodedImage> InputsEmbedderVideoChat_Flash::encode_images(const std::vector<ov::Tensor>& images) {
-    std::cout << "[DEBUG] in " << __func__ << " with images 0 size" <<  images[0].get_shape() << std::endl;
     std::vector<EncodedImage> embeds;
     for (const ov::Tensor& single_video : images) {
         auto encoded_video = m_vision_encoder->encode(single_video);
         embeds.emplace_back(encoded_video);
     }
-    std::cout << "[DEBUG] in " << __func__ << "with " << images.size() << "images and " << embeds.size() << " output embeds." << std::endl;
     return embeds;
 }
 
@@ -405,35 +544,78 @@ InputsEmbedderVideoChat_Flash::InputsEmbedderVideoChat_Flash(
 
 
 std::pair<std::string, std::vector<size_t>> InputsEmbedderVideoChat_Flash::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
-    // auto [unified_prompt, images_sequence] = normalize(prompt, NATIVE_TAG, NATIVE_TAG, base_id, images.size());
-    //     std::vector<std::array<size_t, 3>> images_grid_thw;
-    // images_grid_thw.reserve(images.size());
-    
-    // for (const auto& encoded_image : images) {
-    //     size_t grid_t = 1;
-    //     size_t grid_h = encoded_image.resized_source_size.height;
-    //     size_t grid_w = encoded_image.resized_source_size.width;
-    //     images_grid_thw.push_back({grid_t, grid_h, grid_w});
-    // }
-
-    // for (size_t new_image_id : images_sequence) {
-    //     auto [grid_t, grid_h, grid_w] = images_grid_thw.at(new_image_id - base_id);
-    //     size_t merge_length = std::pow(m_vision_encoder->get_processor_config().merge_size, 2);
-    //     size_t num_image_pad_tokens = grid_t * grid_h * grid_w / merge_length;
-
-    //     std::string expanded_tag = m_vlm_config.vision_start_token;
-    //     for (int i = 0; i < num_image_pad_tokens; i++) {
-    //         expanded_tag += m_vlm_config.image_pad_token;
-    //     }
-    //     expanded_tag += m_vlm_config.vision_end_token;
-    //     unified_prompt.replace(unified_prompt.find(NATIVE_TAG), NATIVE_TAG.length(), expanded_tag);
-    // }
-    // return {std::move(unified_prompt), std::move(images_sequence)};
+    return {videochat_flash_utils::normalize_prompt(prompt, base_id, images.size(), NATIVE_PATTERN, write_native), {}};
 }
 
 ov::Tensor InputsEmbedderVideoChat_Flash::get_inputs_embeds(const std::string& image_prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings, const std::vector<size_t>& image_sequence) {
     size_t base_id = m_tokens_per_images.size();
-    ov::Tensor inputs_embeds{ov::element::f32, {1, 1, m_vlm_config.hidden_size}};
+    std::vector<ov::Tensor> images_features_proj;
+    for (const ov::genai::EncodedImage& encoded_image : images) {
+        images_features_proj.push_back(encoded_image.images_features_projection);
+        m_tokens_per_images.push_back(images_features_proj.back().get_shape().at(1));
+    }
+    std::vector<std::variant<ov::Tensor, size_t>> new_chat_tokens;
+    if (m_is_chat_conversation) {
+        auto start_tokenizer_time = std::chrono::steady_clock::now();
+        new_chat_tokens = videochat_flash_utils::split_tokenize(image_prompt, m_tokenizer, NATIVE_PATTERN);
+        auto end_tokenizer_time = std::chrono::steady_clock::now();
+        metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+        std::cout << "[DEBUG] new_chat_tokens size of m_is_chat_conversation is " << new_chat_tokens.size() << std::endl;
+    } else {
+        std::string templated_prompt;
+        if (m_apply_chat_template) {
+            ChatHistory history({{{"role", "user"}, {"content", std::move(image_prompt)}}});
+            constexpr bool add_generation_prompt = true;
+            templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
+        } else {
+            templated_prompt = std::move(image_prompt);
+        }
+        auto start_tokenizer_time = std::chrono::steady_clock::now();
+        new_chat_tokens = videochat_flash_utils::split_tokenize(templated_prompt, m_tokenizer, NATIVE_PATTERN);
+        auto end_tokenizer_time = std::chrono::steady_clock::now();
+        metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
+        std::cout << "[DEBUG] new_chat_tokens size of non m_is_chat_conversation is " << new_chat_tokens.size() << std::endl;
+    }
+    ov::Tensor new_merged_tokens = videochat_flash_utils::insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
+    std::cout << "[DEBUG] new_merged_tokens shape is " << new_merged_tokens.get_shape() << std::endl;
+    ov::Tensor new_tokens = update_history(new_merged_tokens);
+    std::cout << "[DEBUG] new_merged_tokens shape is " << new_tokens.get_shape() << std::endl;
+    m_prev_hist_length = m_kv_cache_state.get_state().size();
+    m_kv_cache_state.add_inputs(new_tokens);
+
+    std::vector<std::variant<ov::Tensor, size_t>> tokens = videochat_flash_utils::drop_image_placeholders(new_tokens);
+    ov::Tensor inputs_embeds{ov::element::f32, {1, new_tokens.get_shape().at(1), m_vlm_config.hidden_size}};
+    size_t offset = 0;
+    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
+    EmbeddingsRequest& req = embeddings_request_guard.get();
+    for (const std::variant<ov::Tensor, size_t>& chunk : tokens) {
+        offset += std::visit(utils::overloaded{
+            [&](const ov::Tensor& chunk) {
+                const ov::Tensor& text_embeds = m_embedding->infer(req, chunk);
+                size_t text_length = text_embeds.get_shape().at(1);
+                std::copy_n(
+                    text_embeds.data<float>(),
+                    text_embeds.get_size(),
+                    inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
+                );
+                return text_length;
+            },
+            [&](size_t image_id) {
+                const ov::Tensor& image_embeds = images_features_proj.at(image_id - base_id);
+                size_t im_length = image_embeds.get_shape().at(1);
+                std::copy_n(
+                    image_embeds.data<float>(),
+                    image_embeds.get_size(),
+                    inputs_embeds.data<float>() + offset * m_vlm_config.hidden_size
+                );
+                return im_length;
+            }
+        }, chunk);
+    }
+
+    if (!m_is_chat_conversation) {
+        m_tokens_per_images.clear();
+    }
     return inputs_embeds;
 }
 

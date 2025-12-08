@@ -187,12 +187,18 @@ public:
         }
 
         const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
+        std::cout << "m_image_id is " << m_image_id << std::endl;
+        std::cout << "prompt is " << prompt << std::endl;
         auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, encoded_images);
-
+        std::cout << "unified_prompt is : " << unified_prompt << std::endl;
+        std::cout << "image_sequence.size()" << image_sequence.size() << std::endl;
+        if (image_sequence.size() > 0) {
+            std::cout << "image_sequence.size()" << image_sequence.size()<< " " << image_sequence[0]  << std::endl;
+        }
         if (m_is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
             unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
-
+            std::cout << "in m_is_chat_conversation, unified_prompt is : " << unified_prompt << std::endl;
             for (size_t idx = 0; idx < image_sequence.size(); idx++) {
                 image_sequence[idx] -= m_image_id;
             }

@@ -29,6 +29,7 @@ void ContinuousBatchingPipeline::IContinuousBatchingPipeline::start_chat(const s
         m_history.push_back({{"role", "system"}, {"content", system_message}});
     }
     m_is_chat_conversation = true;
+    m_inputs_embedder->start_chat(system_message);
 };
 
 void ContinuousBatchingPipeline::IContinuousBatchingPipeline::finish_chat() {
@@ -266,7 +267,16 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
         const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
 
-        const auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);
+        auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);\
+        std::cout << "unified_prompt is : " << unified_prompt << std::endl;
+        if (m_is_chat_conversation) {
+            m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
+            unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
+            std::cout << "in m_is_chat_conversation, unified_prompt is : " << unified_prompt << std::endl;
+            for (size_t idx = 0; idx < image_sequence.size(); idx++) {
+                image_sequence[idx] -= m_image_id;
+            }
+        }
         inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);
     }
     return add_request(request_id, inputs, sampling_params);
