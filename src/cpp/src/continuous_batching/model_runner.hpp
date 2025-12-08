@@ -324,7 +324,7 @@ public:
                     size_t stored_hidden_size = stored_shape[stored_shape.size() - 1];
 
                     OPENVINO_ASSERT(stored_hidden_size == hidden_size, "Target state hidden size does not match the expected size for Eagle3 draft model inference.");
-                    OPENVINO_ASSERT(stored_seq_len == total_num_tokens, "Target state hidden size does not match the expected size for Eagle3 draft model inference.");
+                    OPENVINO_ASSERT(stored_seq_len == total_num_tokens, "Target state sequence length does not match the expected length for Eagle3 draft model inference.");
 
                     // fill the draft model hidden state input with the target hidden state
                     hidden_state_input = stored_hidden_state;

@@ -60,8 +60,7 @@ void shift_fc_from_draft_to_main(std::shared_ptr<ov::Model>& main_model, std::sh
             if (!matmul_node) continue;
             auto input_node = matmul_node->get_input_node_shared_ptr(0);
             auto param_node = ov::as_type_ptr<ov::op::v0::Parameter>(input_node);
-            if (!param_node) continue;
-            if (input_node->get_friendly_name().find("hidden_states") == std::string::npos) continue;
+            if (!param_node || input_node->get_friendly_name().find("hidden_states") == std::string::npos) continue;
             // Rewire all outputs of this MatMul to use the input_node directly
             for (auto& output : matmul_node->outputs()) {
                 for (auto& target : output.get_target_inputs()) {

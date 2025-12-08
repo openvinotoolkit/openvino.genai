@@ -271,9 +271,10 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             min_generated_tokens = result.inserted_tokens_cnt;
             running_sequences = request->get_running_sequences();
             min_candidate_len = result.inserted_tokens_cnt;
-            if (eagle_mode_enabled && !m_is_validation_mode_enabled)
+            if (eagle_mode_enabled && !m_is_validation_mode_enabled) {
                 m_model_runner->set_initial_hidden_state(request_id,
                                                      candidates.begin()->second.hidden_states);
+            }
         } else {
             // update existing sequences by the candidates
             auto& logit_processor = m_sampler->get_logit_processor(request_id);
