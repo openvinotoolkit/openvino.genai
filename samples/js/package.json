@@ -6,7 +6,7 @@
   "devDependencies": {
     "openvino-genai-node": "^2025.4.0",
     "yargs": "^18.0.0",
-    "zod": "^4.1.12"
+    "zod": "^4.1.13"
   },
   "engines": {
     "node": ">=21.0.0"
