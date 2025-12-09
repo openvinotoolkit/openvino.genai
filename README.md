@@ -82,6 +82,7 @@ All scenarios are run on top of OpenVINO Runtime that supports inference on CPU,
 OpenVINO™ GenAI library provides a transparent way to use state-of-the-art generation optimizations:
 - Speculative decoding that employs two models of different sizes and uses the large model to periodically correct the results of the small model. See [here](https://pytorch.org/blog/hitchhikers-guide-speculative-decoding/) for more detailed overview
 - KVCache token eviction algorithm that reduces the size of the KVCache by pruning less impacting tokens.
+- Sparse attention, which accelerates prefill by attending only to the most important regions of the attention matrix. OpenVINO GenAI currently supports two modes: Tri-shape and XAttention. See [here](https://openvinotoolkit.github.io/openvino.genai/docs/concepts/optimization-techniques/sparse-attention-prefill) for more details.
 
 Additionally, OpenVINO™ GenAI library implements a continuous batching approach to use OpenVINO within LLM serving. The continuous batching library could be used in LLM serving frameworks and supports the following features:
 - Prefix caching that caches fragments of previous generation requests and corresponding KVCache entries internally and uses them in case of repeated query.
