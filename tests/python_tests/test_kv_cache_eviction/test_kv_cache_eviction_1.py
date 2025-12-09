@@ -92,6 +92,7 @@ def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply
     if scheduler_config_opt.use_cache_eviction:
         scheduler_config_opt.cache_eviction_config = test_struct.cache_eviction_config
         scheduler_config_opt.cache_eviction_config.apply_rotation = apply_rotation
+        scheduler_config_opt.cache_eviction_config.aggregation_mode = AggregationMode.ADAPTIVE_RKV
     scheduler_config_opt.use_sparse_attention = use_sparse_attention
     if use_sparse_attention:
         scheduler_config_opt.sparse_attention_config.num_last_dense_tokens_in_prefill = 10
