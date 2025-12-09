@@ -267,16 +267,34 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t re
         m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
         const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
 
-        auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);\
+        auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);
         std::cout << "unified_prompt is : " << unified_prompt << std::endl;
-        if (m_is_chat_conversation) {
-            m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
-            unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
-            std::cout << "in m_is_chat_conversation, unified_prompt is : " << unified_prompt << std::endl;
-            for (size_t idx = 0; idx < image_sequence.size(); idx++) {
-                image_sequence[idx] -= m_image_id;
-            }
-        }
+        inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);
+    }
+    return add_request(request_id, inputs, sampling_params);
+}
+
+GenerationHandle 
+ContinuousBatchingPipeline::IContinuousBatchingPipeline::add_request(uint64_t request_id,
+                                        const std::string& prompt,
+                                        const std::vector<ov::Tensor>& rgbs,
+                                        const std::string& system_prompt,
+                                        GenerationConfig sampling_params) {
+    OPENVINO_ASSERT(m_model_input_type == ModelInputType::EMBEDDINGS, "Model doesn't support embeddings.");
+    ov::genai::VLMPerfMetrics metrics;
+    ov::Tensor inputs;
+    {
+        std::lock_guard<std::mutex> lock(m_embeddings_mutex);
+        m_inputs_embedder->set_apply_chat_template_status(sampling_params.apply_chat_template);
+        const auto encoded_images = m_inputs_embedder->encode_images(rgbs);
+
+        auto [unified_prompt, image_sequence] = m_inputs_embedder->normalize_prompt(prompt, 0, encoded_images);
+        std::cout << "unified_prompt 1 is : " << unified_prompt << std::endl;
+        unified_prompt = m_tokenizer.apply_chat_template({{{"role", "system"}, {"content", system_prompt}},
+                                                          {{"role", "user"}, {"content", unified_prompt}}},
+                                                         true);
+        std::cout << "unified_prompt 2 is : " << unified_prompt << std::endl;
+        std::cout << "unified_prompt 2 is : " << unified_prompt.size() << std::endl;
         inputs = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, metrics, true, image_sequence);
     }
     return add_request(request_id, inputs, sampling_params);

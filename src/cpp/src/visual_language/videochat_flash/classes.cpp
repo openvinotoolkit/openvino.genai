@@ -570,6 +570,8 @@ ov::Tensor InputsEmbedderVideoChat_Flash::get_inputs_embeds(const std::string& i
         } else {
             templated_prompt = std::move(image_prompt);
         }
+        std::cout << "m_apply_chat_template is " << m_apply_chat_template << std::endl;
+        std::cout << templated_prompt << std::endl;
         auto start_tokenizer_time = std::chrono::steady_clock::now();
         new_chat_tokens = videochat_flash_utils::split_tokenize(templated_prompt, m_tokenizer, NATIVE_PATTERN);
         auto end_tokenizer_time = std::chrono::steady_clock::now();
@@ -579,7 +581,7 @@ ov::Tensor InputsEmbedderVideoChat_Flash::get_inputs_embeds(const std::string& i
     ov::Tensor new_merged_tokens = videochat_flash_utils::insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
     std::cout << "[DEBUG] new_merged_tokens shape is " << new_merged_tokens.get_shape() << std::endl;
     ov::Tensor new_tokens = update_history(new_merged_tokens);
-    std::cout << "[DEBUG] new_merged_tokens shape is " << new_tokens.get_shape() << std::endl;
+    std::cout << "[DEBUG] new_tokens shape is " << new_tokens.get_shape() << std::endl;
     m_prev_hist_length = m_kv_cache_state.get_state().size();
     m_kv_cache_state.add_inputs(new_tokens);
 

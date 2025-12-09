@@ -199,6 +199,7 @@ public:
             m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
             unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
             std::cout << "in m_is_chat_conversation, unified_prompt is : " << unified_prompt << std::endl;
+            std::cout << "in m_is_chat_conversation, unified_prompt is : " << unified_prompt.size() << std::endl;
             for (size_t idx = 0; idx < image_sequence.size(); idx++) {
                 image_sequence[idx] -= m_image_id;
             }
