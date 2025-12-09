@@ -1056,6 +1056,12 @@ private:
         for (size_t i = 0; i < num_sequence_groups; ++i) {
             size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
             SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+
+            if (!sequence_group->can_generate_tokens()) {
+                // As we only evict during generation phase, so will the similarity calculation will only be
+                // scheduled after prefill is finished
+                continue;
+            }
             std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
 
             for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
@@ -1067,9 +1073,6 @@ private:
                     continue;
                 }
                 size_t num_diversity_values_calculated = it->second * it->second * m_block_size; // [eviction_size / block_size, eviction_size]
-                // As we only evict during generation phase, so will the similarity calculation will only be
-                // scheduled after prefill is finished
-                OPENVINO_ASSERT(sequence_group->can_generate_tokens());
 
                 IndexSpan span = {offset, offset + num_diversity_values_calculated};
                 offset += num_diversity_values_calculated;
@@ -1137,7 +1140,7 @@ private:
         m_request.set_tensor("adaptive_rkv_start_size", adaptive_rkv_start_size);
 
         ov::Tensor adaptive_rkv_evictable_sizes(ov::element::i32, {batch_size_in_sequences});
-        float* adaptive_rkv_evictable_sizes_data = adaptive_rkv_evictable_sizes.data<float>();
+        int32_t* adaptive_rkv_evictable_sizes_data = adaptive_rkv_evictable_sizes.data<int32_t>();
         std::vector<size_t> running_seq_ids;
         for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); i++) {
             size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
@@ -1164,36 +1167,52 @@ private:
         m_request.set_tensor("adaptive_rkv_evictable_sizes", adaptive_rkv_evictable_sizes);
 
         std::vector<size_t> num_diversity_set_blocks_per_layer(m_num_decoder_layers, 0);
-        // Reserved for future use
-        for (size_t i = 0; i < m_num_decoder_layers; i++) {
-            ov::Tensor adaptive_rkv_diversity_block_set_begins(ov::element::i32, {batch_size_in_sequences + 1});
-            OPENVINO_ASSERT(batch_size_in_sequences == running_seq_ids.size());
-            auto begins_data = adaptive_rkv_diversity_block_set_begins.data<int32_t>();
-            begins_data[0] = 0;
-            begins_data += 1;
-
-            auto begins_name = std::string("adaptive_rkv_diversity_block_set_indices_begins.") + std::to_string(i);
-            const auto& adaptive_rkv_diversity_block_map = scheduler_output.m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence[i];
-            for (size_t seq_id : running_seq_ids) {
-                OPENVINO_ASSERT(adaptive_rkv_diversity_block_map.find(seq_id) != adaptive_rkv_diversity_block_map.end());
-                size_t num_blocks = adaptive_rkv_diversity_block_map.at(seq_id).size();
-                num_diversity_set_blocks_per_layer[i] += num_blocks;
-                *begins_data  = num_diversity_set_blocks_per_layer[i];
-                begins_data += 1;
+        if (scheduler_output.m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence.empty()) {
+            // Set the auxiliary tensors to zero-shape if the scheduler did not provide information on which blocks of the
+            // evictable area belong to the diversity subset
+            for (size_t i = 0; i < m_num_decoder_layers; i++) {
+                auto begins_name = std::string("adaptive_rkv_diversity_block_set_indices_begins.") + std::to_string(i);
+                auto indices_name = std::string("adaptive_rkv_diversity_block_set_indices.") + std::to_string(i);
+                ov::Tensor adaptive_rkv_diversity_block_set_begins(ov::element::i32, {0});
+                ov::Tensor adaptive_rkv_diversity_block_set_indices(ov::element::i32, {0});
+                m_request.set_tensor(begins_name, adaptive_rkv_diversity_block_set_begins);
+                m_request.set_tensor(indices_name, adaptive_rkv_diversity_block_set_indices);
             }
-            m_request.set_tensor(begins_name, adaptive_rkv_diversity_block_set_begins);
         }
+        else {
+            // This will provide opportunity for optimization of the in-kernel diversity calculation by only computing the
+            // diversity scores between the actual blocks of the "diversity" set and not among all of the evictable blocks,
+            // which also include the blocks that will be necessarily kept as part of attention mass preservation.
+            for (size_t i = 0; i < m_num_decoder_layers; i++) {
+                ov::Tensor adaptive_rkv_diversity_block_set_begins(ov::element::i32, {batch_size_in_sequences + 1});
+                OPENVINO_ASSERT(batch_size_in_sequences == running_seq_ids.size());
+                auto begins_data = adaptive_rkv_diversity_block_set_begins.data<int32_t>();
+                begins_data[0] = 0;
+                begins_data += 1;
 
-        std::vector<std::string> indices_tensor_names(m_num_decoder_layers);
-        for (size_t i = 0; i < m_num_decoder_layers; i++) {
-            auto indices_name = std::string("adaptive_rkv_diversity_block_set_indices.") + std::to_string(i);
-            indices_tensor_names[i] = indices_name;
-            auto indices_tensor = m_request.get_tensor(indices_name);
-            indices_tensor.set_shape({num_diversity_set_blocks_per_layer[i]});
+                auto begins_name = std::string("adaptive_rkv_diversity_block_set_indices_begins.") + std::to_string(i);
+                const auto& adaptive_rkv_diversity_block_map = scheduler_output.m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence[i];
+                for (size_t seq_id : running_seq_ids) {
+                    OPENVINO_ASSERT(adaptive_rkv_diversity_block_map.find(seq_id) != adaptive_rkv_diversity_block_map.end());
+                    size_t num_blocks = adaptive_rkv_diversity_block_map.at(seq_id).size();
+                    num_diversity_set_blocks_per_layer[i] += num_blocks;
+                    *begins_data  = num_diversity_set_blocks_per_layer[i];
+                    begins_data += 1;
+                }
+                m_request.set_tensor(begins_name, adaptive_rkv_diversity_block_set_begins);
+            }
+
+            std::vector<std::string> indices_tensor_names(m_num_decoder_layers);
+            for (size_t i = 0; i < m_num_decoder_layers; i++) {
+                auto indices_name = std::string("adaptive_rkv_diversity_block_set_indices.") + std::to_string(i);
+                indices_tensor_names[i] = indices_name;
+                auto indices_tensor = m_request.get_tensor(indices_name);
+                indices_tensor.set_shape({num_diversity_set_blocks_per_layer[i]});
+            }
+            _fill_select_indices_from_block_tables(indices_tensor_names,
+                                                   scheduler_output,
+                                                   scheduler_output.m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence);
         }
-        _fill_select_indices_from_block_tables(indices_tensor_names,
-                                               scheduler_output,
-                                               scheduler_output.m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence);
     }
 };
 }

@@ -47,6 +47,7 @@ namespace ov::genai {
 
         m_scores[decoder_layer_idx] = new_scores;
         m_cache_counter[decoder_layer_idx] = new_counter;
+        m_previous_scores_queues[decoder_layer_idx].clear();
     }
 
     template<class T>
@@ -335,20 +336,28 @@ namespace ov::genai {
                 size_t num_expected_diversity_values = num_evictable_blocks * num_evictable_blocks / m_block_size;
                 size_t num_diversity_values_registered = m_last_block_diversity[0].size();
                 OPENVINO_ASSERT(num_diversity_values_registered == num_expected_diversity_values, "Diversity score size mismatch - registered ", num_diversity_values_registered, " diversity scores, but expected ", num_evictable_blocks, "*", num_evictable_blocks, "/", m_block_size, "=", num_expected_diversity_values, " scores");
-                auto diversity_blocks_and_num_blocks_kept = arkv_calc.get_diversity_block_set(num_evictable_blocks, scores_for_all_evictable_blocks);
+                size_t max_num_evictable_blocks_to_keep_after_eviction = m_eviction_config.get_evictable_size() / m_block_size;
+
+                auto diversity_blocks_and_num_blocks_kept = arkv_calc.get_diversity_block_set(max_num_evictable_blocks_to_keep_after_eviction, scores_for_all_evictable_blocks);
 
                 const auto& diversity_blocks = diversity_blocks_and_num_blocks_kept.first;
                 size_t num_blocks_kept = diversity_blocks_and_num_blocks_kept.second;
 
-                size_t num_evictable_blocks_to_keep_after_eviction = m_eviction_config.get_evictable_size() / m_block_size;
-                OPENVINO_ASSERT(num_blocks_kept <= num_evictable_blocks_to_keep_after_eviction);
-                size_t num_blocks_left_to_fill =  num_evictable_blocks_to_keep_after_eviction - num_blocks_kept;
+                OPENVINO_ASSERT(num_blocks_kept <= max_num_evictable_blocks_to_keep_after_eviction);
+                size_t num_blocks_left_to_fill =  max_num_evictable_blocks_to_keep_after_eviction - num_blocks_kept;
 
-                auto filtered_block_diversity = arkv_calc.get_filtered_block_diversity(m_last_block_diversity[decoder_layer_idx], num_evictable_blocks, diversity_blocks);
-                auto most_diverse_set = arkv_calc.get_most_diverse_blocks(num_blocks_left_to_fill, diversity_blocks, filtered_block_diversity);
+                if (num_blocks_left_to_fill != 0) {
+                    auto filtered_block_diversity = arkv_calc.get_filtered_block_diversity(m_last_block_diversity[decoder_layer_idx], num_evictable_blocks * m_block_size, diversity_blocks);
+                    auto most_diverse_set = arkv_calc.get_most_diverse_blocks(num_blocks_left_to_fill, diversity_blocks, filtered_block_diversity);
 
-                for (auto idx : most_diverse_set) {
-                    evicted_block_indices.push_back(idx);
+                    for (size_t potentially_evicted_idx : diversity_blocks) {
+                        // Evict all but most diverse blocks
+                        if (most_diverse_set.find(potentially_evicted_idx) == most_diverse_set.end()) {
+                            evicted_block_indices.push_back(potentially_evicted_idx);
+                        }
+                    }
+                } else {
+                    std::copy(diversity_blocks.begin(), diversity_blocks.end(), std::back_inserter(evicted_block_indices));
                 }
 
             } else {
