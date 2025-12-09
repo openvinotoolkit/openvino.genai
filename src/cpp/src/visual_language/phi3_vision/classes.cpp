@@ -701,10 +701,10 @@ std::shared_ptr<ov::Model> patch_image_preprocess_into_vision_encoder_model(
     auto hd_processed = create_channels_first(hd_normalized);
     auto hd_sliced = create_slice_image(hd_processed);
 
-    // Concatenate global and HD results on GPU
+    // Concatenate global and HD results
     auto concatenated = create_concatenate_batch(global_processed, hd_sliced);
 
-    // Pad to max crops on GPU
+    // Pad to max crops
     auto padded_result = create_pad_to_max_crops(concatenated, max_crops);
 
     auto vision_params = vision_encoder_model->get_parameters();
