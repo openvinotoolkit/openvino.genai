@@ -484,7 +484,7 @@ EncodedImage VisionEncoderVideoChat_Flash::encode(const ov::Tensor& image, const
 
     // TODO: obtain rotary_pos_emb from cpp code
     // now obtain rotary_pos_emd from bin file
-    ov::Tensor rotary_pos_emb = videochat_flash_utils::load_pos_emb_bin_to_ov_tensor(m_pos_emb_path, num_patches, mm_hidden_size);
+    ov::Tensor rotary_pos_emb = videochat_flash_utils::load_pos_emb_bin_to_ov_tensor(m_pos_emb_path.string(), num_patches, mm_hidden_size);
 
     // video embedding
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
