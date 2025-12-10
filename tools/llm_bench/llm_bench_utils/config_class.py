@@ -52,6 +52,13 @@ class UseCaseImageGen(UseCase):
 
 
 @dataclass
+class UseCaseVideoGen(UseCase):
+    task = "video_gen"
+    ov_cls: type | None = OVDiffusionPipeline
+    pt_cls: type | None = DiffusionPipeline
+
+
+@dataclass
 class UseCaseVLM(UseCase):
     task = "visual_text_gen"
     ov_cls: type | None = OVModelForVisualCausalLM
@@ -127,6 +134,7 @@ class UseCaseTextToSpeech(UseCase):
 
 USE_CASES = {
     'image_gen': [UseCaseImageGen(['stable-diffusion-', 'ssd-', 'tiny-sd', 'small-sd', 'lcm-', 'sdxl', 'dreamlike', "flux"])],
+    'video_gen': [UseCaseVideoGen('ltx')],
     "visual_text_gen": [UseCaseVLM(["llava", "llava-next", "qwen2-vl", "llava-qwen2", "internvl-chat", "minicpmv", "phi3-v",
                                     "minicpm-v", "minicpmo", "maira2", "qwen2-5-vl", "smolvlm"])],
     'speech_to_text': [UseCaseSpeech2Text(['whisper'])],
