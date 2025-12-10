@@ -8,7 +8,7 @@ pillow
 torch
 transformers[sentencepiece]>=4.40.0
 diffusers>=0.22.0
-#optimum is in dependency list of optimum-intel 
+#optimum is in dependency list of optimum-intel
 optimum-intel[nncf]>=1.25.0
 packaging
 psutil
@@ -21,3 +21,4 @@ scipy
 gguf_parser
 gguf>=0.10
 num2words
+opencv-python

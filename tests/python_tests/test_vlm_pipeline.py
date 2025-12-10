@@ -29,6 +29,7 @@ ov_continious_batching_pipe
 
 import collections
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Generator
 import openvino_tokenizers
 import openvino
@@ -57,7 +58,8 @@ from utils.generation_config import (
     get_multinomial_all_parameters,
     get_greedy,
 )
-from utils.constants import get_ov_cache_models_dir
+from utils.constants import get_ov_cache_converted_models_dir
+from utils.atomic_download import AtomicDownloadManager
 
 import logging
 logger = logging.getLogger(__name__)
@@ -182,60 +184,67 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
     if "katuni4ka/tiny-random-phi3-vision" == model_id:
         pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
-    ov_cache_models_dir = get_ov_cache_models_dir()
+    ov_cache_converted_dir = get_ov_cache_converted_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
-    model_dir = ov_cache_models_dir / dir_name
-    if (model_dir / "openvino_language_model.xml").exists():
+    model_dir = ov_cache_converted_dir / dir_name
+    
+    manager = AtomicDownloadManager(model_dir)
+    
+    if manager.is_complete() or (model_dir / "openvino_language_model.xml").exists():
         return model_dir
-    align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
-    processor = retry_request(
-        lambda: transformers.AutoProcessor.from_pretrained(
-            model_id,
-            trust_remote_code=True,
-            **align_with_optimum_cli,
+    
+    def convert_to_temp(temp_dir: Path) -> None:
+        align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
+        processor = retry_request(
+            lambda: transformers.AutoProcessor.from_pretrained(
+                model_id,
+                trust_remote_code=True,
+                **align_with_optimum_cli,
+            )
         )
-    )
-    model = retry_request(
-        lambda: OVModelForVisualCausalLM.from_pretrained(
-            model_id,
-            compile=False,
-            device="CPU",
-            export=True,
-            load_in_8bit=False,
-            trust_remote_code=model_id in {
-                "katuni4ka/tiny-random-minicpmv-2_6",
-                "katuni4ka/tiny-random-internvl2",
-                "katuni4ka/tiny-random-phi3-vision",
-                "katuni4ka/tiny-random-phi-4-multimodal",
-                "qnguyen3/nanoLLaVA",
-            },
+        model = retry_request(
+            lambda: OVModelForVisualCausalLM.from_pretrained(
+                model_id,
+                compile=False,
+                device="CPU",
+                export=True,
+                load_in_8bit=False,
+                trust_remote_code=model_id in {
+                    "katuni4ka/tiny-random-minicpmv-2_6",
+                    "katuni4ka/tiny-random-internvl2",
+                    "katuni4ka/tiny-random-phi3-vision",
+                    "katuni4ka/tiny-random-phi-4-multimodal",
+                    "qnguyen3/nanoLLaVA",
+                },
+            )
         )
-    )
-    if model.config.model_type == "llava-qwen2":
-        tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    # For tiny-random-internvl2 processor is actually tokenizer
-    elif isinstance(processor, transformers.Qwen2TokenizerFast):
-        tokenizer = processor
-        processor = transformers.AutoImageProcessor.from_pretrained(
-            model_id, trust_remote_code=True
+        if model.config.model_type == "llava-qwen2":
+            tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+        # For tiny-random-internvl2 processor is actually tokenizer
+        elif isinstance(processor, transformers.Qwen2TokenizerFast):
+            tokenizer = processor
+            processor = transformers.AutoImageProcessor.from_pretrained(
+                model_id, trust_remote_code=True
+            )
+        else:
+            tokenizer = processor.tokenizer
+            if tokenizer.chat_template is None:
+                tokenizer.chat_template = processor.chat_template
+        tokenizer.save_pretrained(temp_dir)
+        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
+            tokenizer, with_detokenizer=True
         )
-    else:
-        tokenizer = processor.tokenizer
-        if tokenizer.chat_template is None:
-            tokenizer.chat_template = processor.chat_template
-    tokenizer.save_pretrained(model_dir)
-    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
-        tokenizer, with_detokenizer=True
-    )
-    openvino.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
-    openvino.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
+        openvino.save_model(ov_tokenizer, temp_dir / "openvino_tokenizer.xml")
+        openvino.save_model(ov_detokenizer, temp_dir / "openvino_detokenizer.xml")
 
-    if tokenizer.chat_template is not None and model.config.model_type == "phi3_v":
-        # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
-        processor.chat_template = tokenizer.chat_template
-    processor.audio_tokenizer = None
-    processor.save_pretrained(model_dir)
-    model.save_pretrained(model_dir)
+        if tokenizer.chat_template is not None and model.config.model_type == "phi3_v":
+            # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
+            processor.chat_template = tokenizer.chat_template
+        processor.audio_tokenizer = None
+        processor.save_pretrained(temp_dir)
+        model.save_pretrained(temp_dir)
+    
+    manager.execute(convert_to_temp)
     return model_dir
 
 
@@ -304,12 +313,12 @@ parametrize_one_model_backends = pytest.mark.parametrize(
     ids=lambda p: f"{p[0]}/{p[1]}",
     indirect=["ov_pipe_model"],
 )
-    
+
 @pytest.fixture(scope="module")
 def ov_continious_batching_pipe() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[0])
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
-    
+
 @pytest.fixture(scope="module")
 def ov_continious_batching_pipe_gemma() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[8])
@@ -420,12 +429,11 @@ def test_images(request: pytest.FixtureRequest):
     return [request.getfixturevalue(image) for image in request.param]
 
 
-@pytest.mark.precommit
 @parametrize_all_models
 def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Tensor]):
     ov_pipe = ov_pipe_model.pipeline
     result_from_streamer = []
-    
+
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
         result_from_streamer.append(word)
@@ -442,7 +450,6 @@ def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Te
     assert res.texts[0] == "".join(result_from_streamer)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "config", 
     [
@@ -506,7 +513,6 @@ def test_vlm_continuous_batching_generate_vs_add_request(
             )
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "config", 
     [
@@ -618,7 +624,6 @@ def iteration_images_and_videos(request):
     return params
 
 
-@pytest.mark.precommit
 @parametrize_all_models
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 def test_vlm_pipeline_chat(
@@ -679,7 +684,6 @@ def iteration_images_npu(request):
     return [[request.getfixturevalue(image) for image in bundle] for bundle in request.param]
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", MODEL_IDS)
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
@@ -721,7 +725,6 @@ def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
     run_chat(npu_pipe, system_message, iteration_images_npu)
 
 
-@pytest.mark.precommit
 @parametrize_all_models_with_video
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 def test_vlm_pipeline_chat_with_video(
@@ -771,7 +774,6 @@ def test_vlm_pipeline_chat_with_video(
     ov_pipe.finish_chat()
 
 
-@pytest.mark.precommit
 @parametrize_one_model_backends
 def test_vlm_get_tokenizer(ov_pipe_model: VlmModelInfo):
     ov_pipe = ov_pipe_model.pipeline
@@ -779,7 +781,6 @@ def test_vlm_get_tokenizer(ov_pipe_model: VlmModelInfo):
     tokenizer.encode("")
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "config",
     [
@@ -797,7 +798,6 @@ def test_sampling(
     ov_pipe.generate(PROMPTS[0], image=cat_tensor, generation_config=config)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("backend", ATTENTION_BACKEND)
 def test_perf_metrics(
     backend: str, 
@@ -865,7 +865,6 @@ def test_perf_metrics(
     assert np.allclose(std_dur, np.std(raw_dur))
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", MODEL_IDS)
 @pytest.mark.parametrize("backend", ATTENTION_BACKEND)
 @pytest.mark.skipif(
@@ -901,7 +900,6 @@ def image_sequence(request):
     return [request.getfixturevalue(image) for image in request.param]
 
 
-@pytest.mark.precommit
 @pytest.mark.skipif(
     sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
     reason="NPU plugin is available only on Linux and Windows x86_64",
@@ -923,7 +921,6 @@ def test_vlm_npu_no_image():
     )
 
 
-@pytest.mark.precommit
 @parametrize_all_models
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     request: pytest.FixtureRequest,
@@ -998,7 +995,6 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     assert results_with_cancel == results
 
 
-@pytest.mark.precommit
 @parametrize_one_model_backends
 def test_start_chat_clears_history(
     ov_pipe_model: VlmModelInfo,
@@ -1025,7 +1021,6 @@ def test_start_chat_clears_history(
     assert results_first_generate == results_second_generate
 
 
-@pytest.mark.precommit
 def test_start_chat_clears_history_cb_api(
     ov_continious_batching_pipe: ContinuousBatchingPipeline, 
     image_sequence: list[openvino.Tensor]
@@ -1051,7 +1046,6 @@ def test_start_chat_clears_history_cb_api(
     assert results_first_generate == results_second_generate
 
 
-@pytest.mark.precommit
 @parametrize_all_models
 def test_vlm_pipeline_chat_streamer_cancel_first_generate(
     request: pytest.FixtureRequest,
@@ -1182,7 +1176,6 @@ def model_and_tag_parametrize(
     )
 
 
-@pytest.mark.precommit
 @model_and_tag_parametrize(TAG_INSERTED_BY_TEMPLATE)
 def test_model_tags_representation(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
     ov_pipe = ov_pipe_model.pipeline
@@ -1235,7 +1228,6 @@ def test_model_tags_representation(ov_pipe_model: VlmModelInfo, cat_tensor: open
     retry(workaround_inconsistent_inference)
 
 
-@pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_prepend_native(
     ov_pipe_model: VlmModelInfo, 
@@ -1264,7 +1256,6 @@ def test_model_tags_prepend_native(
     retry(workaround_inconsistent_inference)
 
 
-@pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_prepend_universal(
     ov_pipe_model: VlmModelInfo, 
@@ -1297,7 +1288,6 @@ def test_model_tags_prepend_universal(
 def cat_image_384x384(cat_image):
     return cat_image.resize((384, 384))
 
-@pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_append(
     ov_pipe_model: VlmModelInfo, 
@@ -1338,7 +1328,6 @@ def test_model_tags_append(
     retry(workaround_inconsistent_inference)
 
 
-@pytest.mark.precommit
 @model_and_tag_parametrize(IMAGE_ID_IGNORANT_MODELS_TO_TAG)
 def test_model_tags_same_reference(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
     ov_pipe = ov_pipe_model.pipeline
@@ -1358,7 +1347,6 @@ def test_model_tags_same_reference(ov_pipe_model: VlmModelInfo, cat_tensor: open
     retry(workaround_inconsistent_inference)
 
 
-@pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_older(ov_pipe_model: VlmModelInfo, car_tensor: openvino.Tensor):
     ov_pipe = ov_pipe_model.pipeline
@@ -1372,7 +1360,6 @@ def test_model_tags_older(ov_pipe_model: VlmModelInfo, car_tensor: openvino.Tens
     ov_pipe.finish_chat()
         
         
-@pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_missing_universal(ov_pipe_model: VlmModelInfo):
     ov_pipe = ov_pipe_model.pipeline
@@ -1381,7 +1368,6 @@ def test_model_tags_missing_universal(ov_pipe_model: VlmModelInfo):
         ov_pipe.generate("<ov_genai_image_0>")
         
         
-@pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
     ov_pipe = ov_pipe_model.pipeline
@@ -1391,7 +1377,6 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
         ov_pipe.generate(image_tag(0))
             
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "ov_pipe_model,has_image,has_video",
     [

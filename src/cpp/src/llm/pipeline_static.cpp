@@ -336,7 +336,7 @@ EncodedResults StatefulLLMPipeline::generate(
         ++position_ids_data;
         // However, attention_mask changes its shape on each iteration, it should be re-set explicitly
         attention_mask_data.push_back(1);
-        m_request.set_tensor("attention_mask", ov::Tensor(ov::element::i64, ov::Shape{1,attention_mask_data.size()}, (void*)&attention_mask_data[0]));
+        m_request.set_tensor("attention_mask", ov::Tensor(ov::element::i64, ov::Shape{1,attention_mask_data.size()}, attention_mask_data.data()));
 
         m_request.infer();
 
