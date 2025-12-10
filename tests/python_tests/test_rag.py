@@ -107,11 +107,15 @@ def run_text_embedding_genai(
     config: TextEmbeddingPipeline.Config | None = None,
     task: Literal["embed_documents", "embed_query"] = "embed_documents",
     device: str = "CPU",
+    properties: dict | None = None,
 ):
     if not config:
         config = TextEmbeddingPipeline.Config()
 
-    pipeline = TextEmbeddingPipeline(models_path, device, config)
+    if properties:
+        pipeline = TextEmbeddingPipeline(models_path, device, config, **properties)
+    else:
+        pipeline = TextEmbeddingPipeline(models_path, device, config)
 
     if config.batch_size:
         documents = documents[: config.batch_size]
@@ -356,105 +360,134 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
     indirect=True,
 )
 @pytest.mark.parametrize(
-    "config",
+    ("config", "chunk_size", "threshold"),
     [
-        TextEmbeddingPipeline.Config(
+        # Chunk disabled
+        (TextEmbeddingPipeline.Config(
             batch_size = 1,
-            max_length = 2048,
-            normalize = False,
-            pad_to_max_length = False,
-            pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
-            padding_side="right"
-        ),
-        TextEmbeddingPipeline.Config(
-            batch_size = 1,
-            max_length = 2048,
+            max_length = 192,
             normalize = False,
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
             padding_side="right"
-        ),
-        TextEmbeddingPipeline.Config(
+        ), 0, 2e-4),
+        (TextEmbeddingPipeline.Config(
             batch_size = 1,
-            max_length=2048,
-            normalize=False,
-            pad_to_max_length = False,
-            pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
-            padding_side="right"
-        ),
-        TextEmbeddingPipeline.Config(
-            batch_size = 1,
-            max_length=2048,
-            normalize=True,
+            max_length = 192,
+            normalize = False,
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
             padding_side="right"
-        ),
-        TextEmbeddingPipeline.Config(
+        ), 0, 2e-4),
+        (TextEmbeddingPipeline.Config(
             batch_size = 1,
-            max_length=2048,
-            normalize=True,
-            pad_to_max_length = False,
-            pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
-            padding_side="right"
-        ),
-        TextEmbeddingPipeline.Config(
-            batch_size = 1,
-            max_length=2048,
-            normalize=True,
+            max_length = 192,
+            normalize = False,
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
             padding_side="right"
-        ),
-        TextEmbeddingPipeline.Config(
-            max_length = 2048,
+        ), 0, 2e-4),
+
+        # Chunk enabled
+        # 33 tokens handled by a chunk of 128
+        (TextEmbeddingPipeline.Config(
+            batch_size = 1,
+            max_length = 256,
             normalize = False,
-            pad_to_max_length = True,
+            pad_to_max_length = False,
+            pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
+            padding_side="right"
+        ), 128, 2e-4),
+        (TextEmbeddingPipeline.Config(
+            batch_size = 1,
+            max_length = 256,
+            normalize = False,
+            pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
             padding_side="right"
-        ),
-        TextEmbeddingPipeline.Config(
-            max_length = 2048,
+        ), 128, 2e-4),
+        (TextEmbeddingPipeline.Config(
+            batch_size = 1,
+            max_length = 256,
             normalize = False,
-            pad_to_max_length = True,
+            pad_to_max_length = False,
+            pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
+            padding_side="right"
+        ), 128, 2e-4),
+
+        # 33 tokens handled by 3 chunks of 16
+        (TextEmbeddingPipeline.Config(
+            batch_size = 1,
+            max_length = 192,
+            normalize = False,
+            pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
             padding_side="right"
-        ),
-        TextEmbeddingPipeline.Config(
-            max_length=2048,
-            normalize=False,
-            pad_to_max_length = True,
+        ), 16, 6e-3),
+        (TextEmbeddingPipeline.Config(
+            batch_size = 1,
+            max_length = 192,
+            normalize = False,
+            pad_to_max_length = False,
+            pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
+            padding_side="right"
+        ), 16, 6e-3),
+        (TextEmbeddingPipeline.Config(
+            batch_size = 1,
+            max_length = 192,
+            normalize = False,
+            pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
             padding_side="right"
-        ),
-        TextEmbeddingPipeline.Config(
-            max_length=2048,
-            normalize=False,
-            pad_to_max_length = True,
+        ), 16, 6e-3),
+
+        # normalize = True, 33 tokens handled by 3 chunks of 16
+        (TextEmbeddingPipeline.Config(
+            batch_size = 1,
+            max_length = 192,
+            normalize = True,
+            pad_to_max_length = False,
+            pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
+            padding_side="right"
+        ), 16, 7e-5),
+        (TextEmbeddingPipeline.Config(
+            batch_size = 1,
+            max_length = 192,
+            normalize = True,
+            pad_to_max_length = False,
+            pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
+            padding_side="right"
+        ), 16, 7e-5),
+        (TextEmbeddingPipeline.Config(
+            batch_size = 1,
+            max_length = 192,
+            normalize = True,
+            pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
-            padding_side="left"
-        ),
+            padding_side="right"
+        ), 16, 7e-5),
     ],
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
-def test_qwen3_embedding_npu(emb_model, config):
-    # Use the entire TEXT_DATASET as a single document instead of chunks
-    flat_documents = [TEXT_DATASET]
+def test_qwen3_embedding_npu(emb_model, dataset_documents, config, chunk_size, threshold):
+    NPU_FALLBACK_PROPERTIES = {"NPUW_DEVICES": "CPU", "NPUW_F16IC": "False", "NPUW_LLM_PREFILL_CHUNK_SIZE" : chunk_size}
+
     embeddings_genai_cpu = run_text_embedding_genai(
         emb_model.models_path,
-        flat_documents,
+        dataset_documents,
         config,
         "embed_documents",
         device="CPU"
     )
     embeddings_genai_npu = run_text_embedding_genai(
         emb_model.models_path,
-        flat_documents,
+        dataset_documents,
         config,
         "embed_documents",
-        device="NPU"
+        device="NPU",
+        properties=NPU_FALLBACK_PROPERTIES
     )
-    validate_embedding_results(embeddings_genai_npu, embeddings_genai_cpu, 0.25)
+    validate_embedding_results(embeddings_genai_npu, embeddings_genai_cpu, threshold)
 
 
 @pytest.mark.parametrize("emb_model", ["BAAI/bge-small-en-v1.5"], indirect=True)
