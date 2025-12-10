@@ -111,11 +111,11 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
         add_encoder_attention_qk_outputs(model);
         add_qk_scaled_scores_outputs(model);
         ov::save_model(model, models_path / "decomposed" / "openvino_decoder_model.xml");
-        std::cout << "[WhisperStatefullDecoder] SDPA decomposition took: "
-                  << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
-                                                                           start_time)
-                         .count()
-                  << " ms" << std::endl;
+        // std::cout << "[WhisperStatefullDecoder] SDPA decomposition took: "
+        //           << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
+        //                                                                    start_time)
+        //                  .count()
+        //           << " ms" << std::endl;
     }
 
     m_has_cache_position = utils::has_input(model, "cache_position");
@@ -211,10 +211,10 @@ std::vector<Tensor> WhisperStatefullDecoder::get_encoder_qks() const {
 void WhisperStatefullDecoder::_accumulate_encoder_qks() {
     const size_t decoder_layers = m_model_config.decoder_layers;
 
-    std::cout << "[WhisperStatefullDecoder] Accumulating encoder QKs for " << decoder_layers << " layers." << std::endl;
-    std::cout << "[WhisperStatefullDecoder] Attention shape: "
-              //   << m_request.get_tensor("encoder_attn_qk_0").get_shape().to_string() << std::endl;
-              << m_request.get_tensor("qk_scaled_scores_0").get_shape().to_string() << std::endl;
+    // std::cout << "[WhisperStatefullDecoder] Accumulating encoder QKs for " << decoder_layers << " layers." <<
+    // std::endl; std::cout << "[WhisperStatefullDecoder] Attention shape: "
+    //   << m_request.get_tensor("encoder_attn_qk_0").get_shape().to_string() << std::endl;
+    //   << m_request.get_tensor("qk_scaled_scores_0").get_shape().to_string() << std::endl;
 
     for (size_t layer = 0; layer < decoder_layers; layer++) {
         // [batch, head_num, seq_len, frame_len]

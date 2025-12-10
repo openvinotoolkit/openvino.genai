@@ -665,11 +665,11 @@ std::vector<std::pair<size_t, size_t>> find_alignment_path(
     //               << std::endl;
     // }
 
-    std::cout << "Raw tokens: ";
-    for (const auto& token : tokens) {
-        std::cout << token << ", ";
-    }
-    std::cout << std::endl;
+    // std::cout << "Raw tokens: ";
+    // for (const auto& token : tokens) {
+    //     std::cout << token << ", ";
+    // }
+    // std::cout << std::endl;
 
     const auto alignment_qks = extract_qks_alignment_heads(encoder_attention_qks, alignment_heads);
 
@@ -682,9 +682,9 @@ std::vector<std::pair<size_t, size_t>> find_alignment_path(
 
     // Extract only up to n_frames to match input feature length
     auto n_frame_alignment_qks = extract_n_frames(alignment_qks, size_t(n_frames / 2));
-    save_vector_of_tensors_as_np(n_frame_alignment_qks,
-                                 "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-                                 "genai_attention_weights.npy");
+    // save_vector_of_tensors_as_np(n_frame_alignment_qks,
+    //                              "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+    //                              "genai_attention_weights.npy");
     // const auto text_token_alignment_qks = extract_text_tokens(n_frame_alignment_qks, tokenizer, tokens);
 
     // for (size_t i = 0; i < text_token_alignment_qks.size(); ++i) {
@@ -694,20 +694,20 @@ std::vector<std::pair<size_t, size_t>> find_alignment_path(
     // }
 
     softmax_frame_axis(n_frame_alignment_qks);
-    save_vector_of_tensors_as_np(n_frame_alignment_qks,
-                                 "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-                                 "genai_attention_weights_softmax.npy");
+    // save_vector_of_tensors_as_np(n_frame_alignment_qks,
+    //                              "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+    //                              "genai_attention_weights_softmax.npy");
 
     // Apply L2 normalization along token axis (matching Python: weights / weights.norm(dim=-2, keepdim=True))
     mean_normalize_token_axis(n_frame_alignment_qks);
-    save_vector_of_tensors_as_np(n_frame_alignment_qks,
-                                 "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-                                 "genai_attention_weights_normalized.npy");
+    // save_vector_of_tensors_as_np(n_frame_alignment_qks,
+    //                              "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+    //                              "genai_attention_weights_normalized.npy");
 
     auto filtered_alignment_qks = median_filter_last_axis(n_frame_alignment_qks, 7);
-    save_vector_of_tensors_as_np(filtered_alignment_qks,
-                                 "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-                                 "genai_attention_weights_median_filter.npy");
+    // save_vector_of_tensors_as_np(filtered_alignment_qks,
+    //                              "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+    //                              "genai_attention_weights_median_filter.npy");
 
     // for (size_t i = 0; i < filtered_alignment_qks.size(); ++i) {
     //     const ov::Tensor& qk_tensor = filtered_alignment_qks.at(i);
@@ -724,9 +724,9 @@ std::vector<std::pair<size_t, size_t>> find_alignment_path(
     // }
     const auto shrunk_tensors = shrink_batch_dim(filtered_alignment_qks);
     const auto matrix = mean_across_heads(shrunk_tensors);
-    save_matrix_as_numpy(matrix,
-                         "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-                         "genai_matrix.npy");
+    // save_matrix_as_numpy(matrix,
+    //                      "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+    //                      "genai_matrix.npy");
 
     // save matrix for debugging as numpy file
     // save_matrix_as_numpy(matrix,
@@ -745,17 +745,17 @@ std::vector<std::pair<size_t, size_t>> find_alignment_path(
         matrix_text_tokens_slice = matrix;
     }
 
-    save_matrix_as_numpy(matrix_text_tokens_slice,
-                         "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-                         "genai_sliced_matrix.npy");
+    // save_matrix_as_numpy(matrix_text_tokens_slice,
+    //                      "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+    //                      "genai_sliced_matrix.npy");
 
     const auto alignment_path = dtw_and_backtrace(matrix_text_tokens_slice);
 
-    std::cout << "Alignment path (" << alignment_path.size() << "): \n[";
-    for (const auto& [token_idx, frame_idx] : alignment_path) {
-        std::cout << "(" << token_idx << ", " << frame_idx << "),\n";
-    }
-    std::cout << "]" << std::endl;
+    // std::cout << "Alignment path (" << alignment_path.size() << "): \n[";
+    // for (const auto& [token_idx, frame_idx] : alignment_path) {
+    //     std::cout << "(" << token_idx << ", " << frame_idx << "),\n";
+    // }
+    // std::cout << "]" << std::endl;
 
     // const auto time_per_frame = 0.02f;  // 20 ms per frame
     // const auto timestamps = to_timestamps(alignment_path, time_per_frame);
@@ -966,28 +966,29 @@ std::vector<WhisperWordTiming> get_word_level_timestamps(const std::vector<Tenso
         }
     }
 
-    std::cout << "text_tokens (" << text_tokens.size() << "):\n[";
-    for (const auto& token : text_tokens) {
-        std::cout << token << ", ";
-    }
-    std::cout << "]" << std::endl;
+    // std::cout << "text_tokens (" << text_tokens.size() << "):\n[";
+    // for (const auto& token : text_tokens) {
+    //     std::cout << token << ", ";
+    // }
+    // std::cout << "]" << std::endl;
 
     const auto [words, word_tokens] = split_tokens_on_spaces(text_tokens, tokenizer);
 
-    for (size_t i = 0; i < words.size(); ++i) {
-        std::cout << "Word " << i << ": \"" << words[i] << "\", Tokens: [";
-        for (const auto& token_id : word_tokens[i]) {
-            std::cout << token_id << ", ";
-        }
-        std::cout << "]" << std::endl;
-    }
+    // for (size_t i = 0; i < words.size(); ++i) {
+    //     std::cout << "Word " << i << ": \"" << words[i] << "\", Tokens: [";
+    //     for (const auto& token_id : word_tokens[i]) {
+    //         std::cout << token_id << ", ";
+    //     }
+    //     std::cout << "]" << std::endl;
+    // }
 
     auto words_timestamps = match_words_to_alignment_path(words, word_tokens, alignment_path);
 
-    for (auto& word_timing : words_timestamps) {
-        std::cout << word_timing.word << " " << word_timing.start_ts << " - " << word_timing.end_ts << "s" << std::endl;
-    }
-    std::cout << std::endl;
+    // for (auto& word_timing : words_timestamps) {
+    //     std::cout << word_timing.word << " " << word_timing.start_ts << " - " << word_timing.end_ts << "s" <<
+    //     std::endl;
+    // }
+    // std::cout << std::endl;
 
     truncate_long_words_at_sentence_boundaries(words_timestamps);
 

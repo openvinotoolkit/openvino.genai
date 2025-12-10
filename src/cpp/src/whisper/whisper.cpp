@@ -290,9 +290,9 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                        Tokenizer& tokenizer) {
     size_t max_new_tokens = config.get_max_new_tokens();
 
-    WhisperGenerateResult result;
-    RawPerfMetrics& raw_metrics = result.perf_metrics.raw_metrics;
-    result.perf_metrics.num_input_tokens = 0;
+    WhisperGenerateResult generate_result;
+    RawPerfMetrics& raw_metrics = generate_result.perf_metrics.raw_metrics;
+    generate_result.perf_metrics.num_input_tokens = 0;
     raw_metrics.m_new_token_times.reserve(max_new_tokens);
     raw_metrics.m_batch_sizes.reserve(max_new_tokens);
     raw_metrics.m_token_infer_durations.reserve(max_new_tokens);
@@ -301,14 +301,14 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
     const auto infer_start = std::chrono::steady_clock::now();
     auto input_features = feature_extractor.extract(raw_speech);
     const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
-    result.perf_metrics.whisper_raw_metrics.features_extraction_durations.emplace_back(infer_ms);
+    generate_result.perf_metrics.whisper_raw_metrics.features_extraction_durations.emplace_back(infer_ms);
 
     const bool is_shortform = input_features.n_frames <= feature_extractor.nb_max_frames;
     // long-form audio processing requires timestamps to be enabled
     const bool return_timestamps = config.return_timestamps || !is_shortform;
 
     std::vector<int64_t> init_tokens;
-    std::vector<int64_t>& output_tokens = result.output_tokens;
+    std::vector<int64_t>& output_tokens = generate_result.output_tokens;
     std::vector<int64_t> output_tokens_with_special;
     std::vector<Segment> segments;
 
@@ -362,18 +362,20 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                           chunk_output_tokens.end());
 
         // infer word-level timestamps
-        const size_t batch_size = 1;
+        if (config.word_timestamps) {
+            const size_t batch_size = 1;
 
-        ov::Tensor beam_idx = decoder->create_host_tensor(ov::element::i32, {batch_size});
-        std::fill_n(beam_idx.data<int32_t>(), batch_size, 0);
+            ov::Tensor beam_idx = decoder->create_host_tensor(ov::element::i32, {batch_size});
+            std::fill_n(beam_idx.data<int32_t>(), batch_size, 0);
 
-        const ov::Tensor input_ids_tensor{ov::element::i64,
-                                          {1, output_tokens_with_special.size()},
-                                          const_cast<int64_t*>(output_tokens_with_special.data())};
+            const ov::Tensor input_ids_tensor{ov::element::i64,
+                                              {1, output_tokens_with_special.size()},
+                                              const_cast<int64_t*>(output_tokens_with_special.data())};
 
-        const auto infer_start = std::chrono::steady_clock::now();
-        decoder->start_async(hidden_state_tensor, input_ids_tensor, beam_idx);
-        decoder->wait();
+            const auto infer_start = std::chrono::steady_clock::now();
+            decoder->start_async(hidden_state_tensor, input_ids_tensor, beam_idx);
+            decoder->wait();
+        }
 
         if (return_timestamps) {
             auto extracted_segments = ov::genai::extract_segments(chunk_output_tokens,
@@ -405,33 +407,33 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
         if (cancelled) {
             break;
         }
+
+        if (config.word_timestamps) {
+            const auto& accumulated_qks = decoder->get_encoder_qks();
+
+            auto word_timestamps = get_word_level_timestamps(accumulated_qks,
+                                                             model_config,
+                                                             input_features.n_frames,
+                                                             output_tokens_with_special,
+                                                             tokenizer,
+                                                             config);
+
+            generate_result.words = word_timestamps;
+        }
     }
 
     if (streamer) {
         streamer->end();
     }
 
-    if (config.word_timestamps) {
-        const auto& accumulated_qks = decoder->get_encoder_qks();
-
-        auto word_timestamps = get_word_level_timestamps(accumulated_qks,
-                                                         model_config,
-                                                         input_features.n_frames,
-                                                         output_tokens_with_special,
-                                                         tokenizer,
-                                                         config);
-
-        result.words = word_timestamps;
-    }
-
     // if return_timestamps wasn't enabled by user
     if (!config.return_timestamps) {
-        return result;
+        return generate_result;
     }
 
-    result.segments = segments;
+    generate_result.segments = segments;
 
-    return result;
+    return generate_result;
 }
 }  // namespace genai
 }  // namespace ov
