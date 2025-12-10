@@ -464,10 +464,18 @@ std::pair<std::vector<ov::Tensor>, size_t> VisionEncoderLLaVANextVideo::preproce
     ProcessorConfig config = get_processor_config();
     size_t num_frames = frames.size();
 
-    CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(m_ireq_queue_preprocess.get());
-    ov::InferRequest& preprocess = infer_request_guard.get();
+    // Pre-allocate output tensors to avoid per-frame copy overhead
+    // Output shape: [1, 3, crop_size_height, crop_size_width] (NCHW format)
+    ov::Shape output_shape{1, 3, static_cast<size_t>(config.crop_size_height), static_cast<size_t>(config.crop_size_width)};
+    res.reserve(num_frames);
+    for (size_t i = 0; i < num_frames; i++) {
+        res.emplace_back(ov::element::f32, output_shape);
+    }
 
     for (size_t i = 0; i < num_frames; i++) {
+        CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(m_ireq_queue_preprocess.get());
+        ov::InferRequest& preprocess = infer_request_guard.get();
+
         // Calculate target size after resize (based on size_shortest_edge)
         auto frame_shape = frames[i].get_shape();
         size_t orig_height = frame_shape[1];
@@ -495,16 +503,11 @@ std::pair<std::vector<ov::Tensor>, size_t> VisionEncoderLLaVANextVideo::preproce
         crop_width.data<int64_t>()[0] = config.crop_size_width;
         preprocess.set_input_tensor(3, crop_width);
 
-        // Run inference to get preprocessed output
+        // Configure InferRequest to write directly to pre-allocated output tensor
+        preprocess.set_output_tensor(res[i]);
+
+        // Run inference - output written directly to res[i], no copy needed
         preprocess.infer();
-
-        // Get output (preprocessed frame in NCHW format)
-        const ov::Tensor& preprocessed_output = preprocess.get_output_tensor();
-
-        // Copy output to ensure it's not overwritten in next iteration
-        ov::Tensor preprocessed_copy(preprocessed_output.get_element_type(), preprocessed_output.get_shape());
-        std::memcpy(preprocessed_copy.data(), preprocessed_output.data(), preprocessed_output.get_byte_size());
-        res.push_back(preprocessed_copy);
     }
 
     // Calculate num_video_tokens
@@ -522,19 +525,19 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderLLaVANextVideo::encode_videos
         auto vision_encoder = std::static_pointer_cast<VisionEncoderLLaVANextVideo>(m_vision_encoder);
 
         // Use OV or CPU preprocessing based on configuration
-        auto [prepprocessed_frames, num_video_tokens] = vision_encoder->get_use_ov_preprocess() 
+        auto [preprocessed_frames, num_video_tokens] = vision_encoder->get_use_ov_preprocess() 
             ? vision_encoder->preprocess_frames_ov(frames)
             : vision_encoder->preprocess_frames_cpp(frames);
 
         // concat preprocessed frames to single tensor
-        ov::Shape concat_shape = prepprocessed_frames[0].get_shape();
-        concat_shape[0] = prepprocessed_frames.size();
-        ov::Tensor concatinated_frames = ov::Tensor(prepprocessed_frames[0].get_element_type(), concat_shape);
+        ov::Shape concat_shape = preprocessed_frames[0].get_shape();
+        concat_shape[0] = preprocessed_frames.size();
+        ov::Tensor concatenated_frames = ov::Tensor(preprocessed_frames[0].get_element_type(), concat_shape);
 
-        float* frames_data = concatinated_frames.data<float>();
-        for (size_t i = 0; i < prepprocessed_frames.size(); i++) {
-            memcpy(frames_data, prepprocessed_frames[i].data(), prepprocessed_frames[i].get_byte_size());
-            frames_data+=ov::shape_size(prepprocessed_frames[i].get_shape());
+        float* frames_data = concatenated_frames.data<float>();
+        for (size_t i = 0; i < preprocessed_frames.size(); i++) {
+            memcpy(frames_data, preprocessed_frames[i].data(), preprocessed_frames[i].get_byte_size());
+            frames_data+=ov::shape_size(preprocessed_frames[i].get_shape());
         }
 
         // infer video feature extraction models
@@ -544,7 +547,7 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderLLaVANextVideo::encode_videos
         ov::InferRequest& mm_projector = infer_request_guard_mm_projector.get();
         CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard_resampler(vision_encoder->get_vision_resampler());
         ov::InferRequest& resampler = infer_request_guard_resampler.get();
-        encoder.set_tensor("pixel_values", concatinated_frames);
+        encoder.set_tensor("pixel_values", concatenated_frames);
         encoder.infer();
         resampler.set_input_tensor(encoder.get_tensor("last_hidden_state"));
         resampler.infer();
