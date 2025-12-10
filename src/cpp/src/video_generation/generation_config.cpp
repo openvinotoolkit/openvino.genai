@@ -16,4 +16,5 @@ void VideoGenerationConfig::update_generation_config(const ov::AnyMap& propertie
     read_anymap_param(properties, "guidance_rescale", guidance_rescale);
     read_anymap_param(properties, "num_frames", num_frames);
     read_anymap_param(properties, "frame_rate", frame_rate);
+    read_anymap_param(properties, "num_videos_per_prompt", num_videos_per_prompt);
 }

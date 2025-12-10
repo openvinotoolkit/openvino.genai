@@ -62,5 +62,5 @@ static constexpr ov::Property<size_t> num_frames{"num_frames"};
 /// Video frame rate.
 static constexpr ov::Property<float> frame_rate{"frame_rate"};
 /// The number of videos to generate.
-static constexpr ov::Property<float> num_videos_per_prompt{"num_videos_per_prompt"};
+static constexpr ov::Property<size_t> num_videos_per_prompt{"num_videos_per_prompt"};
 }  // namespace ov::genai

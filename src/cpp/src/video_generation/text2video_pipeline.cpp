@@ -17,6 +17,7 @@
 #include <nlohmann/json.hpp>
 #include <fstream>
 
+#include "helper.hpp"
 
 using namespace ov::genai;
 
@@ -79,14 +80,13 @@ void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_sca
     OPENVINO_ASSERT(generation_config.height % 32 == 0, "Height have to be divisible by 32 but got ", generation_config.height);
     OPENVINO_ASSERT(generation_config.width > 0, "Width must be positive");
     OPENVINO_ASSERT(generation_config.width % 32 == 0, "Width have to be divisible by 32 but got ", generation_config.width);
-    OPENVINO_ASSERT(1.0f == generation_config.strength, "Strength isn't applicable. Must be set to the default 1.0");
+    OPENVINO_ASSERT(std::fabs(generation_config.strength - 1.0f) < 1e-6, "Strength isn't applicable. Must be set to the default 1.0");
 
     OPENVINO_ASSERT(!generation_config.prompt_2.has_value(), "Prompt 2 is not used by LTXPipeline.");
     OPENVINO_ASSERT(!generation_config.prompt_3.has_value(), "Prompt 3 is not used by LTXPipeline.");
     OPENVINO_ASSERT(!generation_config.negative_prompt_2.has_value(), "Negative prompt 2 is not used by LTXPipeline.");
     OPENVINO_ASSERT(!generation_config.negative_prompt_3.has_value(), "Negative prompt 3 is not used by LTXPipeline.");
     OPENVINO_ASSERT(generation_config.max_sequence_length <= 512, "T5's 'max_sequence_length' must be less or equal to 512");
-    OPENVINO_ASSERT(generation_config.strength == 1.0f, "'Strength' generation parameter must be 1.0f for Text 2 image pipeline");
     OPENVINO_ASSERT(
         (generation_config.height % vae_scale_factor == 0 || generation_config.height < 0)
             && (generation_config.width % vae_scale_factor == 0 || generation_config.width < 0),
@@ -227,7 +227,6 @@ class Text2VideoPipeline::LTXPipeline {
     std::shared_ptr<LTXVideoTransformer3DModel> m_transformer;
     std::shared_ptr<AutoencoderKLLTXVideo> m_vae;
     VideoGenerationPerfMetrics m_perf_metrics;
-    double m_latent_timestep = -1.0;  // TODO: float?
     Ms m_load_time;
 
     size_t m_latent_num_frames = -1;
@@ -248,7 +247,8 @@ class Text2VideoPipeline::LTXPipeline {
                         m_latent_num_frames,
                         m_latent_height,
                         m_latent_width};
-        ov::Tensor latents = generation_config.generator->randn_tensor(shape);
+        // ov::Tensor latents = generation_config.generator->randn_tensor(shape);
+        ov::Tensor latents = loadTensorFromFile("/home/alikh/projects/openvino.genai/samples/python/video_generation/latents_before_pack.txt");
         return pack_latents(latents, transformer_spatial_patch_size, transformer_temporal_patch_size);
     }
 
@@ -257,8 +257,6 @@ class Text2VideoPipeline::LTXPipeline {
                         "Latent sizes must be > 0 (got num_frames=", m_latent_num_frames,
                         ", height=", m_latent_height,
                         ", width=", m_latent_width, ").");
-
-
 
         ov::Tensor decoded = unpack_latents(latent,
                                             m_latent_num_frames,
@@ -503,6 +501,9 @@ public:
             } else {
                 noisy_residual_tensor = noise_pred_tensor;
             }
+
+            // TODO: support guidance_rescale
+            // if (config.guidance_rescale > 0) {...}
 
             auto scheduler_step_result = m_scheduler->step(noisy_residual_tensor, latent, inference_step, merged_generation_config.generator);
             latent = scheduler_step_result["latent"];
