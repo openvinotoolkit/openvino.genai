@@ -7,7 +7,6 @@ type OptimumCLIProps = {
   task?: string;
   trustRemoteCode?: boolean;
   modelKwargs?: Record<string, string>;
-  disableStateful?: boolean;
   quantMode?: 'int8';
   dataset?: string;
   numSamples?: number;
@@ -20,7 +19,6 @@ export default function OptimumCLI({
   task,
   trustRemoteCode,
   modelKwargs,
-  disableStateful,
   quantMode,
   dataset,
   numSamples,
@@ -31,9 +29,6 @@ export default function OptimumCLI({
   }
   if (task) {
     args.push(`--task ${task}`);
-  }
-  if (disableStateful) {
-    args.push('--disable-stateful');
   }
   if (quantMode) {
     args.push(`--quant-mode ${quantMode}`);

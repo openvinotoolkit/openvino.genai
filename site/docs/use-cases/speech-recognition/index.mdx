@@ -16,7 +16,7 @@ import UsageOptionsSection from './_sections/_usage_options/index.mdx';
             <OptimumCLI model='openai/whisper-base' outputDir='whisper_ov' trustRemoteCode />
         </TabItem>
         <TabItem label="INT8 Static Quantization" value="int8_quant">
-            <OptimumCLI model='openai/whisper-base' outputDir='whisper_ov_int8' trustRemoteCode disableStateful quantMode='int8' dataset='librispeech' numSamples={32} />
+            <OptimumCLI model='openai/whisper-base' outputDir='whisper_ov_int8' trustRemoteCode quantMode='int8' dataset='librispeech' numSamples={32} />
         </TabItem>
     </Tabs>
 
