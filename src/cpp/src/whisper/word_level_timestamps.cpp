@@ -122,7 +122,9 @@ void softmax_frame_axis(std::vector<ov::Tensor>& alignment_qks) {
 }
 
 // [head_size] * [batch,seq_len,frame_len]
-// L2 normalize along token axis (seq_len), matching: weights / weights.norm(dim=-2, keepdim=True)
+// Standardize along token axis (seq_len), matching: (weights - mean) / std
+// Python: std, mean = torch.std_mean(weights, dim=-2, keepdim=True, unbiased=False)
+//         weights = (weights - mean) / std
 void mean_normalize_token_axis(std::vector<ov::Tensor>& alignment_qks) {
     for (auto& tensor : alignment_qks) {
         const ov::Shape& shape = tensor.get_shape();
@@ -134,24 +136,32 @@ void mean_normalize_token_axis(std::vector<ov::Tensor>& alignment_qks) {
 
         for (size_t batch = 0; batch < batch_size; ++batch) {
             for (size_t frame = 0; frame < frame_len; ++frame) {
-                // Compute L2 norm along seq_len axis
-                float sum_sq = 0.0f;
+                // Compute mean along seq_len axis
+                float sum = 0.0f;
                 for (size_t seq = 0; seq < seq_len; ++seq) {
                     size_t index = batch * seq_len * frame_len + seq * frame_len + frame;
-                    float val = data[index];
-                    sum_sq += val * val;
+                    sum += data[index];
                 }
-                float norm = std::sqrt(sum_sq);
+                float mean = sum / seq_len;
+
+                // Compute standard deviation along seq_len axis (unbiased=False, so divide by N)
+                float sum_sq_diff = 0.0f;
+                for (size_t seq = 0; seq < seq_len; ++seq) {
+                    size_t index = batch * seq_len * frame_len + seq * frame_len + frame;
+                    float diff = data[index] - mean;
+                    sum_sq_diff += diff * diff;
+                }
+                float std = std::sqrt(sum_sq_diff / seq_len);
 
                 // Avoid division by zero
-                if (norm < 1e-6f) {
-                    norm = 1e-6f;
+                if (std < 1e-6f) {
+                    std = 1e-6f;
                 }
 
-                // Normalize: divide by L2 norm
+                // Standardize: (x - mean) / std
                 for (size_t seq = 0; seq < seq_len; ++seq) {
                     size_t index = batch * seq_len * frame_len + seq * frame_len + frame;
-                    data[index] /= norm;
+                    data[index] = (data[index] - mean) / std;
                 }
             }
         }
@@ -181,6 +191,7 @@ std::vector<ov::Tensor> shrink_batch_dim(const std::vector<ov::Tensor>& alignmen
 
 // [head_size] * [seq_len,frame_len] -> [seq_len,frame_len]
 // Averages across heads and negates for DTW cost minimization
+// weights / weights.norm(dim=-2, keepdim=True)
 std::vector<std::vector<float>> mean_across_heads(const std::vector<ov::Tensor>& alignment_qks) {
     if (alignment_qks.empty()) {
         return {};
@@ -194,7 +205,7 @@ std::vector<std::vector<float>> mean_across_heads(const std::vector<ov::Tensor>&
     std::vector<std::vector<float>> matrix(seq_len, std::vector<float>(frame_len, 0.0f));
 
     for (const auto& tensor : alignment_qks) {
-        auto* data = tensor.data<float>();
+        const auto* data = tensor.data<float>();
         for (size_t seq = 0; seq < seq_len; ++seq) {
             for (size_t frame = 0; frame < frame_len; ++frame) {
                 size_t index = seq * frame_len + frame;
@@ -203,10 +214,10 @@ std::vector<std::vector<float>> mean_across_heads(const std::vector<ov::Tensor>&
         }
     }
 
-    // Divide by head_size to get mean and negate for DTW
+    // Average and negate
     for (size_t seq = 0; seq < seq_len; ++seq) {
         for (size_t frame = 0; frame < frame_len; ++frame) {
-            matrix[seq][frame] = -(matrix[seq][frame] / head_size);
+            matrix[seq][frame] = -matrix[seq][frame] / static_cast<float>(head_size);
         }
     }
 
@@ -230,17 +241,37 @@ std::vector<std::pair<size_t, size_t>> dtw_and_backtrace(const std::vector<std::
 
     cost[0][0] = 0.0f;
 
+    // Set boundary conditions for backtrace (matching Python: trace[0, :] = 2 and trace[:, 0] = 1)
+    for (size_t j = 0; j <= M; ++j) {
+        trace[0][j] = 2;  // Move left along bottom edge
+    }
+    for (size_t i = 0; i <= N; ++i) {
+        trace[i][0] = 1;  // Move up along left edge
+    }
+
     // Forward pass: compute DTW cost
-    for (size_t i = 1; i <= N; ++i) {
-        for (size_t j = 1; j <= M; ++j) {
+    // Python: for j in range(1, M + 1): for i in range(1, N + 1):
+    for (size_t j = 1; j <= M; ++j) {
+        for (size_t i = 1; i <= N; ++i) {
             float c0 = cost[i - 1][j - 1];  // diagonal
             float c1 = cost[i - 1][j];      // from top
             float c2 = cost[i][j - 1];      // from left
 
-            float c = matrix[i - 1][j - 1] + std::min({c0, c1, c2});
-            int t = (c0 <= c1 && c0 <= c2) ? 0 : (c1 <= c2 ? 1 : 2);
+            // Python uses strict inequality: if c0 < c1 and c0 < c2
+            float c;
+            int t;
+            if (c0 < c1 && c0 < c2) {
+                c = c0;
+                t = 0;
+            } else if (c1 < c0 && c1 < c2) {
+                c = c1;
+                t = 1;
+            } else {
+                c = c2;
+                t = 2;
+            }
 
-            cost[i][j] = c;
+            cost[i][j] = matrix[i - 1][j - 1] + c;
             trace[i][j] = t;
         }
     }
@@ -317,6 +348,63 @@ void save_matrix_as_numpy(const std::vector<std::vector<float>>& matrix, const s
 
     file.close();
     std::cout << "Saved matrix [" << rows << ", " << cols << "] to " << filename << std::endl;
+}
+
+void save_vector_of_tensors_as_np(std::vector<ov::Tensor> tensors, const std::string& filename) {
+    std::ofstream file(filename, std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << "Failed to open file: " << filename << std::endl;
+        return;
+    }
+
+    // NumPy header format
+    const uint8_t magic[] = {0x93, 'N', 'U', 'M', 'P', 'Y'};
+    const uint8_t major_version = 1;
+    const uint8_t minor_version = 0;
+
+    file.write(reinterpret_cast<const char*>(magic), sizeof(magic));
+    file.write(reinterpret_cast<const char*>(&major_version), 1);
+    file.write(reinterpret_cast<const char*>(&minor_version), 1);
+
+    // Create header dict string
+    const size_t head_size = tensors.size();
+    std::ostringstream header;
+    header << "{'descr': '<f4', 'fortran_order': False, 'shape': (" << head_size << ", ";
+    const ov::Shape& first_shape = tensors[0].get_shape();
+    for (size_t i = 0; i < first_shape.size(); ++i) {
+        header << first_shape[i];
+        if (i < first_shape.size() - 1) {
+            header << ", ";
+        }
+    }
+    header << "), }";
+    std::string header_str = header.str();
+    // Pad to make total header size (including length field) a multiple of 64 bytes
+    size_t header_len = header_str.size();
+    size_t total_header_size = 10 + 2 + header_len;  // 6 (magic) + 2 (version) + 2 (header_len) + header
+    size_t padding = (64 - (total_header_size % 64)) % 64;
+    header_str.append(padding, ' ');
+    header_str.push_back('\n');
+    header_len = header_str.size();
+
+    // Write header length (little-endian uint16)
+    uint16_t header_len_le = static_cast<uint16_t>(header_len);
+    file.write(reinterpret_cast<const char*>(&header_len_le), 2);
+    // Write header
+    file.write(header_str.c_str(), header_len);
+    // Write data in row-major order (C order)
+    for (const auto& tensor : tensors) {
+        const ov::Shape& shape = tensor.get_shape();
+        size_t total_size = 1;
+        for (const auto& dim : shape) {
+            total_size *= dim;
+        }
+        const float* data = tensor.data<float>();
+        file.write(reinterpret_cast<const char*>(data), total_size * sizeof(float));
+    }
+
+    file.close();
+    std::cout << "Saved vector of tensors to " << filename << std::endl;
 }
 
 std::vector<ov::Tensor> extract_n_frames(const std::vector<ov::Tensor>& alignment_qks, const size_t n_frames) {
@@ -533,7 +621,7 @@ std::vector<ov::Tensor> extract_text_tokens(const std::vector<ov::Tensor>& encod
     const int64_t eot = tokenizer.get_eos_token_id();
 
     for (size_t i = 0; i < tokens.size(); ++i) {
-        if (tokens[i] < eot) {
+        if (tokens[i] <= eot) {
             text_token_indices.push_back(i);
         }
     }
@@ -577,7 +665,15 @@ std::vector<std::pair<size_t, size_t>> find_alignment_path(
     //               << std::endl;
     // }
 
+    std::cout << "Raw tokens: ";
+    for (const auto& token : tokens) {
+        std::cout << token << ", ";
+    }
+    std::cout << std::endl;
+
     const auto alignment_qks = extract_qks_alignment_heads(encoder_attention_qks, alignment_heads);
+
+    const auto shrunk_alignment = shrink_batch_dim(encoder_attention_qks);
 
     // for (size_t i = 0; i < alignment_qks.size(); ++i) {
     //     const ov::Tensor& qk_tensor = alignment_qks.at(i);
@@ -585,9 +681,11 @@ std::vector<std::pair<size_t, size_t>> find_alignment_path(
     // }
 
     // Extract only up to n_frames to match input feature length
-    const auto n_frame_alignment_qks = extract_n_frames(alignment_qks, size_t(n_frames / 2));
-
-    const auto text_token_alignment_qks = extract_text_tokens(n_frame_alignment_qks, tokenizer, tokens);
+    auto n_frame_alignment_qks = extract_n_frames(alignment_qks, size_t(n_frames / 2));
+    save_vector_of_tensors_as_np(n_frame_alignment_qks,
+                                 "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+                                 "genai_attention_weights.npy");
+    // const auto text_token_alignment_qks = extract_text_tokens(n_frame_alignment_qks, tokenizer, tokens);
 
     // for (size_t i = 0; i < text_token_alignment_qks.size(); ++i) {
     //     const ov::Tensor& qk_tensor = text_token_alignment_qks.at(i);
@@ -595,7 +693,21 @@ std::vector<std::pair<size_t, size_t>> find_alignment_path(
     //               << std::endl;
     // }
 
-    auto filtered_alignment_qks = median_filter_last_axis(text_token_alignment_qks, 7);
+    softmax_frame_axis(n_frame_alignment_qks);
+    save_vector_of_tensors_as_np(n_frame_alignment_qks,
+                                 "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+                                 "genai_attention_weights_softmax.npy");
+
+    // Apply L2 normalization along token axis (matching Python: weights / weights.norm(dim=-2, keepdim=True))
+    mean_normalize_token_axis(n_frame_alignment_qks);
+    save_vector_of_tensors_as_np(n_frame_alignment_qks,
+                                 "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+                                 "genai_attention_weights_normalized.npy");
+
+    auto filtered_alignment_qks = median_filter_last_axis(n_frame_alignment_qks, 7);
+    save_vector_of_tensors_as_np(filtered_alignment_qks,
+                                 "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+                                 "genai_attention_weights_median_filter.npy");
 
     // for (size_t i = 0; i < filtered_alignment_qks.size(); ++i) {
     //     const ov::Tensor& qk_tensor = filtered_alignment_qks.at(i);
@@ -604,20 +716,17 @@ std::vector<std::pair<size_t, size_t>> find_alignment_path(
     // }
 
     // Apply softmax along frame axis (matching Python: weights.softmax(dim=-1))
-    // softmax_frame_axis(filtered_alignment_qks);
-
-    // Apply L2 normalization along token axis (matching Python: weights / weights.norm(dim=-2, keepdim=True))
-    mean_normalize_token_axis(filtered_alignment_qks);
-
-    const auto shrunk_tensors = shrink_batch_dim(filtered_alignment_qks);
 
     // for (size_t i = 0; i < shrunk_tensors.size(); ++i) {
     //     const ov::Tensor& qk_tensor = shrunk_tensors.at(i);
     //     std::cout << "Shrunk alignment head " << i << " QK shape: " << qk_tensor.get_shape().to_string() <<
     //     std::endl;
     // }
-
+    const auto shrunk_tensors = shrink_batch_dim(filtered_alignment_qks);
     const auto matrix = mean_across_heads(shrunk_tensors);
+    save_matrix_as_numpy(matrix,
+                         "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+                         "genai_matrix.npy");
 
     // save matrix for debugging as numpy file
     // save_matrix_as_numpy(matrix,
@@ -627,13 +736,26 @@ std::vector<std::pair<size_t, size_t>> find_alignment_path(
     // "]"
     //           << std::endl;
 
-    const auto alignment_path = dtw_and_backtrace(matrix);
+    // matix shape: [text_tokens_seq_len, frame_len]
+    // need to slice text tokens -> [4:-1, :]
+    auto matrix_text_tokens_slice = std::vector<std::vector<float>>{};
+    if (matrix.size() >= 4) {
+        matrix_text_tokens_slice = std::vector<std::vector<float>>(matrix.begin() + 3, matrix.end() - 1);
+    } else {
+        matrix_text_tokens_slice = matrix;
+    }
 
-    // for (size_t i = 0; i < alignment_path.size(); ++i) {
-    //     const auto& [token_idx, frame_idx] = alignment_path[i];
-    //     std::cout << "Alignment path[" << i << "]: token_idx=" << token_idx << ", frame_idx=" << frame_idx <<
-    //     std::endl;
-    // }
+    save_matrix_as_numpy(matrix_text_tokens_slice,
+                         "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+                         "genai_sliced_matrix.npy");
+
+    const auto alignment_path = dtw_and_backtrace(matrix_text_tokens_slice);
+
+    std::cout << "Alignment path (" << alignment_path.size() << "): \n[";
+    for (const auto& [token_idx, frame_idx] : alignment_path) {
+        std::cout << "(" << token_idx << ", " << frame_idx << "),\n";
+    }
+    std::cout << "]" << std::endl;
 
     // const auto time_per_frame = 0.02f;  // 20 ms per frame
     // const auto timestamps = to_timestamps(alignment_path, time_per_frame);
@@ -830,26 +952,42 @@ std::vector<WhisperWordTiming> get_word_level_timestamps(const std::vector<Tenso
                                                          const std::vector<int64_t>& tokens,
                                                          ov::genai::Tokenizer& tokenizer,
                                                          const ov::genai::WhisperGenerationConfig& generation_config) {
+    auto tokens_copy = tokens;  // to avoid modifying input tokens
+    // tokens_copy.push_back(tokenizer.get_eos_token_id());
+
     const auto alignment_path =
-        find_alignment_path(encoder_attention_qks, generation_config.alignment_heads, n_frames, tokens, tokenizer);
+        find_alignment_path(encoder_attention_qks, generation_config.alignment_heads, n_frames, tokens_copy, tokenizer);
 
     std::vector<int64_t> text_tokens;
     const int64_t eot = tokenizer.get_eos_token_id();
-    for (const auto& token : tokens) {
-        if (token < eot) {
+    for (const auto& token : tokens_copy) {
+        if (token <= eot) {
             text_tokens.push_back(token);
         }
     }
 
-    // std::cout << "text_tokens (" << text_tokens.size() << "):\n[";
-    // for (const auto& token : text_tokens) {
-    //     std::cout << token << ", ";
-    // }
-    // std::cout << "]" << std::endl;
+    std::cout << "text_tokens (" << text_tokens.size() << "):\n[";
+    for (const auto& token : text_tokens) {
+        std::cout << token << ", ";
+    }
+    std::cout << "]" << std::endl;
 
     const auto [words, word_tokens] = split_tokens_on_spaces(text_tokens, tokenizer);
 
+    for (size_t i = 0; i < words.size(); ++i) {
+        std::cout << "Word " << i << ": \"" << words[i] << "\", Tokens: [";
+        for (const auto& token_id : word_tokens[i]) {
+            std::cout << token_id << ", ";
+        }
+        std::cout << "]" << std::endl;
+    }
+
     auto words_timestamps = match_words_to_alignment_path(words, word_tokens, alignment_path);
+
+    for (auto& word_timing : words_timestamps) {
+        std::cout << word_timing.word << " " << word_timing.start_ts << " - " << word_timing.end_ts << "s" << std::endl;
+    }
+    std::cout << std::endl;
 
     truncate_long_words_at_sentence_boundaries(words_timestamps);
 

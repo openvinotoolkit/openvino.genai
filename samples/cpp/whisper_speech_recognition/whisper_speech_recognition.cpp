@@ -52,8 +52,7 @@ int main(int argc, char* argv[]) try {
     if (result.words) {
         std::cout << "Word-level timestamps:\n";
         for (const auto& word_info : *result.words) {
-            std::cout << "Word: \"" << word_info.word << "\" Start: " << word_info.start_ts
-                      << " End: " << word_info.end_ts << "\n";
+            std::cout << "  " << word_info.word << "  " << word_info.start_ts << " - " << word_info.end_ts << "\n";
         }
     }
 

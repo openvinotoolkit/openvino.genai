@@ -179,6 +179,18 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
     const auto& sequences = sequence_group->get_finished_sequences();
     const auto& sequence = sequences[0];
 
+    // // infer eot token for word level timestamps
+    // ov::Tensor generated_ids(ov::element::i64, {1, 1});
+    // int64_t* input_ids_data = generated_ids.data<int64_t>();
+    // input_ids_data[0] = 50257;
+
+    // beam_idx.data<int32_t>()[0] = 0;
+
+    // decoder->start_async(encoder_hidden_state, generated_ids, beam_idx);
+    // decoder->wait();
+
+    // stream_generated_tokens();
+
     const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params)
                                                          : sequence->get_cumulative_log_prob();
 
@@ -347,7 +359,21 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
 
         output_tokens_with_special.insert(output_tokens_with_special.end(),
                                           chunk_output_tokens.begin(),
-                                          chunk_output_tokens.end() - 1);
+                                          chunk_output_tokens.end());
+
+        // infer word-level timestamps
+        const size_t batch_size = 1;
+
+        ov::Tensor beam_idx = decoder->create_host_tensor(ov::element::i32, {batch_size});
+        std::fill_n(beam_idx.data<int32_t>(), batch_size, 0);
+
+        const ov::Tensor input_ids_tensor{ov::element::i64,
+                                          {1, output_tokens_with_special.size()},
+                                          const_cast<int64_t*>(output_tokens_with_special.data())};
+
+        const auto infer_start = std::chrono::steady_clock::now();
+        decoder->start_async(hidden_state_tensor, input_ids_tensor, beam_idx);
+        decoder->wait();
 
         if (return_timestamps) {
             auto extracted_segments = ov::genai::extract_segments(chunk_output_tokens,

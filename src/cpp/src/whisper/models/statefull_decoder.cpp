@@ -40,6 +40,55 @@ void add_encoder_attention_qk_outputs(std::shared_ptr<ov::Model> model) {
     }
 }
 
+void add_qk_scaled_scores_outputs(std::shared_ptr<ov::Model> model) {
+    // <layer id="278" name="Add_21002" type="Add" version="opset1">
+    //     <data auto_broadcast="numpy" />
+    //     <input>
+    //         <port id="0" precision="FP32">
+    //             <dim>-1</dim>
+    //             <dim>6</dim>
+    //             <dim>-1</dim>
+    //             <dim>-1</dim>
+    //         </port>
+    //         <port id="1" precision="FP32" />
+    //     </input>
+    //     <output>
+    //         <port id="2" precision="FP32" names="qk_scaled_scores">
+    //             <dim>-1</dim>
+    //             <dim>6</dim>
+    //             <dim>-1</dim>
+    //             <dim>-1</dim>
+    //         </port>
+    //     </output>
+    // </layer>
+    size_t idx = 0;
+    for (auto& op : model->get_ordered_ops()) {
+        if (op->get_type_info().name != std::string("Add")) {
+            continue;
+        }
+        bool should_skip_op = true;
+
+        for (const auto& output : op->outputs()) {
+            for (const auto& name : output.get_names()) {
+                if (name.find("qk_scaled_scores") != std::string::npos) {
+                    should_skip_op = false;
+                    break;
+                }
+            }
+            if (!should_skip_op) {
+                break;
+            }
+        }
+
+        if (should_skip_op) {
+            continue;
+        }
+
+        model->add_output(op->output(0)).add_names({"qk_scaled_scores_" + std::to_string(idx)});
+        idx++;
+    }
+}
+
 }  // namespace
 
 namespace ov::genai {
@@ -58,7 +107,10 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
     if (m_encoder_attention_qk_accumulation_enabled) {
         auto start_time = std::chrono::steady_clock::now();
         decompose_scaled_dot_product_attention(model);
+
         add_encoder_attention_qk_outputs(model);
+        add_qk_scaled_scores_outputs(model);
+        ov::save_model(model, models_path / "decomposed" / "openvino_decoder_model.xml");
         std::cout << "[WhisperStatefullDecoder] SDPA decomposition took: "
                   << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
                                                                            start_time)
@@ -137,6 +189,7 @@ void WhisperStatefullDecoder::reset_state() {
     encoder_hidden_states_shape[0] = 0;
 
     m_request.set_tensor("encoder_hidden_states", create_host_tensor(ov::element::f32, encoder_hidden_states_shape));
+    m_encoder_qks.clear();
 };
 
 ov::Tensor WhisperStatefullDecoder::create_host_tensor(const element::Type element_type, const Shape& shape) {
@@ -157,9 +210,17 @@ std::vector<Tensor> WhisperStatefullDecoder::get_encoder_qks() const {
 // todo: accumulate only alignment heads QKs
 void WhisperStatefullDecoder::_accumulate_encoder_qks() {
     const size_t decoder_layers = m_model_config.decoder_layers;
+
+    std::cout << "[WhisperStatefullDecoder] Accumulating encoder QKs for " << decoder_layers << " layers." << std::endl;
+    std::cout << "[WhisperStatefullDecoder] Attention shape: "
+              //   << m_request.get_tensor("encoder_attn_qk_0").get_shape().to_string() << std::endl;
+              << m_request.get_tensor("qk_scaled_scores_0").get_shape().to_string() << std::endl;
+
     for (size_t layer = 0; layer < decoder_layers; layer++) {
         // [batch, head_num, seq_len, frame_len]
-        const Tensor encoder_qk_tensor = m_request.get_tensor("encoder_attn_qk_" + std::to_string(layer));
+        // todo: check if softmaxed scores can be accumulated
+        // const Tensor encoder_qk_tensor = m_request.get_tensor("encoder_attn_qk_" + std::to_string(layer));
+        const Tensor encoder_qk_tensor = m_request.get_tensor("qk_scaled_scores_" + std::to_string(layer));
 
         if (m_encoder_qks.size() <= layer) {
             Tensor copy{encoder_qk_tensor.get_element_type(), encoder_qk_tensor.get_shape()};
