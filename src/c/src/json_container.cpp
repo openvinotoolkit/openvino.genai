@@ -25,9 +25,9 @@ ov_genai_json_container_status_e ov_genai_json_container_create(ov_genai_json_co
 }
 
 ov_genai_json_container_status_e ov_genai_json_container_create_from_json_string(
-    const char* json_str,
-    ov_genai_json_container** container) {
-    if (!json_str || !container) {
+    ov_genai_json_container** container,
+    const char* json_str) {
+    if (!container || !json_str) {
         return OV_GENAI_JSON_CONTAINER_INVALID_PARAM;
     }
     try {

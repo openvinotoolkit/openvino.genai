@@ -12,6 +12,18 @@
 #define MAX_PROMPT_LENGTH 1024
 #define MAX_JSON_LENGTH 4096
 
+// Worst-case escape: each char → \uXXXX (6 bytes) + null terminator
+#define MAX_ESCAPED_PROMPT_LENGTH (MAX_PROMPT_LENGTH * 6 + 1)
+
+// JSON template: {"role": "user", "content": ""} ≈ 32 bytes
+#define MAX_MESSAGE_JSON_LENGTH (MAX_ESCAPED_PROMPT_LENGTH + 32 + 1)
+
+// Worst-case escaped output: MAX_JSON_LENGTH * 6 + null terminator
+#define MAX_ESCAPED_OUTPUT_LENGTH ((MAX_JSON_LENGTH - 1) * 6 + 1)
+
+// JSON template: {"role": "assistant", "content": ""} ≈ 35 bytes
+#define MAX_ASSISTANT_MESSAGE_JSON_LENGTH (MAX_ESCAPED_OUTPUT_LENGTH + 35 + 1)
+
 #define CHECK_STATUS(return_status)                                                      \
     if (return_status != OK) {                                                           \
         fprintf(stderr, "[ERROR] return status %d, line %d\n", return_status, __LINE__); \
@@ -34,7 +46,8 @@ static void json_escape_string(const char* input, char* output, size_t output_si
     size_t i = 0;
     size_t j = 0;
     while (input[i] != '\0' && j < output_size - 1) {
-        switch (input[i]) {
+        unsigned char c = (unsigned char)input[i];
+        switch (c) {
             case '"':
                 if (j < output_size - 2) {
                     output[j++] = '\\';
@@ -45,6 +58,18 @@ static void json_escape_string(const char* input, char* output, size_t output_si
                 if (j < output_size - 2) {
                     output[j++] = '\\';
                     output[j++] = '\\';
+                }
+                break;
+            case '\b':
+                if (j < output_size - 2) {
+                    output[j++] = '\\';
+                    output[j++] = 'b';
+                }
+                break;
+            case '\f':
+                if (j < output_size - 2) {
+                    output[j++] = '\\';
+                    output[j++] = 'f';
                 }
                 break;
             case '\n':
@@ -66,7 +91,22 @@ static void json_escape_string(const char* input, char* output, size_t output_si
                 }
                 break;
             default:
-                output[j++] = input[i];
+                // Escape control characters (0x00-0x1F) as \uXXXX
+                if (c < 0x20) {
+                    if (j < output_size - 6) {
+                        output[j++] = '\\';
+                        output[j++] = 'u';
+                        output[j++] = '0';
+                        output[j++] = '0';
+                        // Convert to hex (upper case)
+                        char hex1 = (c >> 4) & 0x0F;
+                        char hex2 = c & 0x0F;
+                        output[j++] = (hex1 < 10) ? ('0' + hex1) : ('A' + hex1 - 10);
+                        output[j++] = (hex2 < 10) ? ('0' + hex2) : ('A' + hex2 - 10);
+                    }
+                } else {
+                    output[j++] = input[i];
+                }
                 break;
         }
         i++;
@@ -104,12 +144,12 @@ int main(int argc, char* argv[]) {
     streamer.callback_func = print_callback;
     streamer.args = NULL;
     char prompt[MAX_PROMPT_LENGTH];
-    char message_json[MAX_JSON_LENGTH];
+    char message_json[MAX_MESSAGE_JSON_LENGTH];
     char output_buffer[MAX_JSON_LENGTH];
     size_t output_size = 0;
-    char assistant_message_json[MAX_JSON_LENGTH];
-    char escaped_prompt[(MAX_PROMPT_LENGTH - 1) * 2 + 1];
-    char escaped_output[(MAX_JSON_LENGTH - 1) * 2 + 1];
+    char assistant_message_json[MAX_ASSISTANT_MESSAGE_JSON_LENGTH];
+    char escaped_prompt[MAX_ESCAPED_PROMPT_LENGTH];
+    char escaped_output[MAX_ESCAPED_OUTPUT_LENGTH];
 
     CHECK_STATUS(ov_genai_llm_pipeline_create(models_path, device, 0, &pipeline));
     CHECK_STATUS(ov_genai_generation_config_create(&config));
@@ -124,6 +164,7 @@ int main(int argc, char* argv[]) {
         
         // Skip empty lines
         if (strlen(prompt) == 0) {
+            printf("question:\n");
             continue;
         }
 
@@ -137,7 +178,7 @@ int main(int argc, char* argv[]) {
             message_container = NULL;
         }
         CHECK_JSON_CONTAINER_STATUS(ov_genai_json_container_create_from_json_string(
-            message_json, &message_container));
+            &message_container, message_json));
         
         // Push message using JsonContainer
         CHECK_CHAT_HISTORY_STATUS(ov_genai_chat_history_push_back(chat_history, message_container));
@@ -163,7 +204,7 @@ int main(int argc, char* argv[]) {
                 assistant_message_container = NULL;
             }
             CHECK_JSON_CONTAINER_STATUS(ov_genai_json_container_create_from_json_string(
-                assistant_message_json, &assistant_message_container));
+                &assistant_message_container, assistant_message_json));
             
             // Push message using JsonContainer
             CHECK_CHAT_HISTORY_STATUS(ov_genai_chat_history_push_back(chat_history, assistant_message_container));

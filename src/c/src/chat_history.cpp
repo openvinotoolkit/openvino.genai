@@ -59,6 +59,9 @@ ov_genai_chat_history_status_e ov_genai_chat_history_push_back(
         return OV_GENAI_CHAT_HISTORY_INVALID_PARAM;
     }
     try {
+        if (!message->object->is_object()) {
+            return OV_GENAI_CHAT_HISTORY_INVALID_JSON;
+        }
         history->object->push_back(*(message->object));
     } catch (...) {
         return OV_GENAI_CHAT_HISTORY_ERROR;
@@ -109,9 +112,9 @@ ov_genai_chat_history_status_e ov_genai_chat_history_get_message(
         if (index >= history->object->size()) {
             return OV_GENAI_CHAT_HISTORY_OUT_OF_BOUNDS;
         }
-        ov::genai::JsonContainer message_ref = (*history->object)[index];
+        ov::genai::JsonContainer message_value = (*history->object)[index];
         std::unique_ptr<ov_genai_json_container> _message = std::make_unique<ov_genai_json_container>();
-        _message->object = std::make_shared<ov::genai::JsonContainer>(std::move(message_ref));
+        _message->object = std::make_shared<ov::genai::JsonContainer>(std::move(message_value));
         *message = _message.release();
     } catch (...) {
         return OV_GENAI_CHAT_HISTORY_ERROR;
@@ -129,9 +132,9 @@ ov_genai_chat_history_status_e ov_genai_chat_history_get_first(
         if (history->object->empty()) {
             return OV_GENAI_CHAT_HISTORY_EMPTY;
         }
-        ov::genai::JsonContainer message_ref = history->object->first();
+        ov::genai::JsonContainer message_value = history->object->first();
         std::unique_ptr<ov_genai_json_container> _message = std::make_unique<ov_genai_json_container>();
-        _message->object = std::make_shared<ov::genai::JsonContainer>(std::move(message_ref));
+        _message->object = std::make_shared<ov::genai::JsonContainer>(std::move(message_value));
         *message = _message.release();
     } catch (...) {
         return OV_GENAI_CHAT_HISTORY_ERROR;
@@ -149,9 +152,9 @@ ov_genai_chat_history_status_e ov_genai_chat_history_get_last(
         if (history->object->empty()) {
             return OV_GENAI_CHAT_HISTORY_EMPTY;
         }
-        ov::genai::JsonContainer message_ref = history->object->last();
+        ov::genai::JsonContainer message_value = history->object->last();
         std::unique_ptr<ov_genai_json_container> _message = std::make_unique<ov_genai_json_container>();
-        _message->object = std::make_shared<ov::genai::JsonContainer>(std::move(message_ref));
+        _message->object = std::make_shared<ov::genai::JsonContainer>(std::move(message_value));
         *message = _message.release();
     } catch (...) {
         return OV_GENAI_CHAT_HISTORY_ERROR;
