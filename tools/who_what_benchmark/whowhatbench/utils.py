@@ -3,6 +3,8 @@ from packaging.version import Version
 import torch
 import transformers
 from contextlib import contextmanager
+import json
+from pathlib import Path
 
 
 def new_randn_tensor(
@@ -105,3 +107,22 @@ def get_ignore_parameters_flag():
     if transformers_version >= Version("4.51.0"):
         return {"use_model_defaults": False}
     return {}
+
+
+def get_json_config(config):
+    if config is None or (isinstance(config, str) and config.strip() == ""):
+        raise ValueError("Config must be a non-empty string or path to a JSON file.")
+    json_config = {}
+    if Path(config).is_file():
+        with open(config, 'r') as f:
+            try:
+                json_config = json.load(f)
+            except json.JSONDecodeError:
+                raise RuntimeError(f'Failed to parse JSON from file: {config}')
+    else:
+        try:
+            json_config = json.loads(config)
+        except json.JSONDecodeError:
+            raise RuntimeError(f'Failed to parse JSON config: {config}')
+
+    return json_config
