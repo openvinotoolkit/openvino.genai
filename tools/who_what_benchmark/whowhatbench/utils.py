@@ -216,7 +216,7 @@ def prepare_default_data_video(num_samples=None, num_frames=10):
         data.append({'prompts': prompt, "images": None, 'videos': video_tensor[0]})
 
     return data
- 
+
 
 # for patching function datasets.packaged_modules.parquet.parquet.Parquet._generate_tables
 # according to code: https://github.com/huggingface/datasets/issues/7357#issuecomment-3354047772
