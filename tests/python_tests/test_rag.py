@@ -620,10 +620,14 @@ def test_qwen3_seq_cls_rerank_documents(rerank_model: OVConvertedModelSchema, qu
 @pytest.mark.parametrize(
     "config",
     [
-        TextRerankPipeline.Config(top_n=4),
+        pytest.param(
+            TextRerankPipeline.Config(top_n=4), marks=pytest.mark.skip(reason="Qwen3 Reranker different default tokenizer padding side on Win vs Linux: 177405")
+        ),
+        TextRerankPipeline.Config(top_n=4, padding_side="left"),
     ],
     ids=[
         "top_n=4",
+        "top_n=4, padding_side=left",
     ],
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
