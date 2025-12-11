@@ -1,6 +1,5 @@
 from pathlib import Path
 import logging
-import json
 import torch
 
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq, AutoTokenizer
@@ -10,6 +9,7 @@ from .reranking_evaluator import DEFAULT_MAX_LENGTH as RERANK_DEFAULT_MAX_LENGTH
 from .utils import mock_torch_cuda_is_available, mock_AwqQuantizer_validate_environment
 import os
 
+from whowhatbench.utils import get_json_config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -630,8 +630,8 @@ def load_model(
         return None
 
     if ov_config:
-        with open(ov_config) as f:
-            ov_options = json.load(f)
+        ov_options = get_json_config(ov_config)
+        logger.info(f"OpenVINO Config: {ov_options}")
     else:
         ov_options = {}
 

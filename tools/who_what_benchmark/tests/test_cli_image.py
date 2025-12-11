@@ -19,14 +19,17 @@ OV_IMAGE_MODELS = ["optimum-intel-internal-testing/tiny-random-stable-diffusion-
                    "optimum-intel-internal-testing/tiny-random-flux-fill"]
 
 
-def run_wwb(args):
+def run_wwb(args, env=None):
     command = ["wwb"] + args
+    base_env = {"TRANSFORMERS_VERBOSITY": "debug", "PYTHONIOENCODING": "utf-8", **os.environ}
+    if env:
+        base_env.update(env)
     try:
         return subprocess.check_output(
             command,
             stderr=subprocess.STDOUT,
             encoding="utf-8",
-            env={"TRANSFORMERS_VERBOSITY": "debug", "PYTHONIOENCODING": "utf-8", **os.environ},
+            env=base_env,
         )
     except subprocess.CalledProcessError as error:
         logger.error(
