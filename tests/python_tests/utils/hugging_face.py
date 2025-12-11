@@ -14,7 +14,7 @@ from optimum.intel.openvino.modeling import OVModel
 
 from huggingface_hub import hf_hub_download
 
-from openvino import save_model
+from openvino import save_model, compile_model
 from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
 from openvino_tokenizers import convert_tokenizer
 
@@ -211,6 +211,17 @@ def convert_and_save_tokenizer(
         hf_tokenizer, with_detokenizer=True, **convert_args
     )
 
+    print("Tokenizer converted, mask test:")
+    print(f"convert_args: {convert_args}")
+
+    compiled = compile_model(tokenizer, "CPU")
+
+    texts = ["Hello, world!", "OpenVINO is great for AI inference."]
+    encoded = compiled(texts)
+
+    print("attention_mask:")
+    print(encoded["attention_mask"])
+
     from utils.constants import OV_DETOKENIZER_FILENAME, OV_TOKENIZER_FILENAME
     save_model(tokenizer, models_path / OV_TOKENIZER_FILENAME)
     save_model(detokenizer, models_path / OV_DETOKENIZER_FILENAME)
@@ -254,17 +265,26 @@ def download_and_convert_model_class(
 
     manager = AtomicDownloadManager(models_path)
 
-    if manager.is_complete() or (models_path / OV_MODEL_FILENAME).exists():
-        opt_model, hf_tokenizer = get_huggingface_models(models_path, model_class, local_files_only=True)
-    else:
-        opt_model, hf_tokenizer = get_huggingface_models(model_id, model_class, local_files_only=False)
-        if "padding_side" in tokenizer_kwargs:
-            hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
+    opt_model, hf_tokenizer = get_huggingface_models(model_id, model_class, local_files_only=False)
+    if "padding_side" in tokenizer_kwargs:
+        hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
 
-        def convert_to_temp(temp_path: Path) -> None:
-            convert_models(opt_model, hf_tokenizer, temp_path)
+    def convert_to_temp(temp_path: Path) -> None:
+        convert_models(opt_model, hf_tokenizer, temp_path)
 
-        manager.execute(convert_to_temp)
+    manager.execute(convert_to_temp)
+
+    # if manager.is_complete() or (models_path / OV_MODEL_FILENAME).exists():
+    #     opt_model, hf_tokenizer = get_huggingface_models(models_path, model_class, local_files_only=True)
+    # else:
+    #     opt_model, hf_tokenizer = get_huggingface_models(model_id, model_class, local_files_only=False)
+    #     if "padding_side" in tokenizer_kwargs:
+    #         hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
+
+    #     def convert_to_temp(temp_path: Path) -> None:
+    #         convert_models(opt_model, hf_tokenizer, temp_path)
+
+    #     manager.execute(convert_to_temp)
 
     if "padding_side" in tokenizer_kwargs:
         hf_tokenizer.padding_side = tokenizer_kwargs["padding_side"]
