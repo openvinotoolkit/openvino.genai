@@ -60,7 +60,7 @@ extract_eagle3_mode_from_config(ov::AnyMap& config, const std::filesystem::path&
             // If you wish to use different layers, provide the "hidden_layers_list" parameter in the config.
             eagle_rt_info.hidden_layers_list = { 2, num_decoder_layers / 2, num_decoder_layers - 3 };
         }
-        OPENVINO_ASSERT(eagle_rt_info.hidden_layers_list.size() == 3, "only exactly 3 layer extraction are expected in eagle3");
+        OPENVINO_ASSERT(eagle_rt_info.hidden_layers_list.size() == 3, "Eagle3 is expected to provide exactly three layers for extraction");
     }
     return eagle_rt_info;
 }

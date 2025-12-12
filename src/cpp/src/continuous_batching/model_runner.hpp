@@ -24,12 +24,44 @@ inline std::string get_paged_attention_score_output_for_decoder_layer(size_t dec
     return ss.str();
 }
 
+/**
+ * @brief Bitwise flags for hidden state handling in ModelRunner, used in certain speculative decoding, e.g eagle series.
+ *
+ * The HiddenStateFlags enumeration defines bitwise flags used to control the behavior of hidden state handling in the model runner.
+ * Each flag represents a specific mode or capability related to hidden state export, import, or internal processing.
+ *
+ * Usage:
+ *   - Flags can be combined using bitwise OR to enable multiple behaviors simultaneously.
+ *   - Helper methods (e.g., enable_hidden_state_export) set or clear these flags.
+ *   - Use bitwise AND to check if a flag is enabled.
+ *
+ * Enum values:
+ *   - HS_NONE:    No hidden state operations are enabled (default).
+ *   - HS_EXPORT:  Enables exporting hidden states from the model for draft model useage.
+ *   - HS_IMPORT:  Enables importing hidden states into the model for a valid draft model forward.
+ *   - HS_INTERNAL: Enables internal handling of hidden states for draft model forward.
+ */
+
 enum HiddenStateFlags : uint8_t {
     HS_NONE      = 0,
     HS_EXPORT    = 1 << 0,
     HS_IMPORT    = 1 << 1,
     HS_INTERNAL  = 1 << 2
 };
+
+/**
+ * @brief Uniquely identifies a sequence within a group for hidden state mapping.
+ *
+ * The SequenceKey struct is used as a composite key for mapping hidden state ranges.
+ * It combines a request ID and a grouped sequence ID to uniquely identify a sequence within a batch or group.
+ *
+ * Members:
+ *   - request_id: The unique identifier for the request.
+ *   - grouped_sequence_id: The identifier for the sequence within its group.
+ *
+ * Comparison:
+ *   - operator< is defined to allow use as a key in std::map or std::set.
+ */
 
 struct SequenceKey {
     size_t request_id{};
@@ -39,6 +71,17 @@ struct SequenceKey {
             std::tie(other.request_id, other.grouped_sequence_id);
     }
 };
+
+/**
+ * @brief Represents the range of tokens for which hidden states are stored or processed.
+ *
+ * The HiddenStateRange struct defines a contiguous range of tokens in a sequence,
+ * used to indicate which part of the sequence's hidden states are relevant in a batch processing context.
+ *
+ * Members:
+ *   - start_token_idx: The starting index of the token range.
+ *   - length: The number of tokens in the range.
+ */
 
 struct HiddenStateRange {
     size_t start_token_idx{};
@@ -70,9 +113,9 @@ class ModelRunner {
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
     uint8_t m_hidden_state_flags = HS_NONE;
-    std::map<SequenceKey, HiddenStateRange> m_sequence_hidden_state_mapping;
     // a container which use sequence group id and request id as key to store hidden states
-    std::map<size_t, ov::Tensor> m_initial_hidden_states; // shape: [N, seq_len, hidden_size]
+    std::map<SequenceKey, HiddenStateRange> m_sequence_hidden_state_mapping;
+    std::unordered_map<size_t, ov::Tensor> m_initial_hidden_states; // shape: [N, seq_len, hidden_size]
 
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
 
@@ -454,11 +497,7 @@ public:
             }
         }
         if (hidden_state_input && hidden_state_input.get_size() > 0) {
-            try {
-                m_request.set_tensor("hidden_states", hidden_state_input);
-            } catch (const ov::Exception& e) {
-                OPENVINO_THROW("Failed to set hidden states tensor: ", e.what());
-            }
+            m_request.set_tensor("hidden_states", hidden_state_input);
         }
         if (position_ids.get_shape().size() == 3) {
             // flatten positions ids for 3D position ids case
@@ -518,20 +557,16 @@ public:
         _reset_cache_rotation_coefficients();
 
         if (_is_hs_export()) {
-            try {
-                m_hidden_states = m_request.get_tensor("last_hidden_state");
-                for (size_t i = 0; i < num_sequence_groups; ++i) {
-                    size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
-                    SequenceGroup::Ptr sequence_group = sequence_groups[seq_group_id];
-                    std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
-                    for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
-                        Sequence::Ptr sequence = running_sequences[seq_idx];
-                        sequence->update_hidden_state(
-                            _get_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()));
-                    }
+            m_hidden_states = m_request.get_tensor("last_hidden_state");
+            for (size_t i = 0; i < num_sequence_groups; ++i) {
+                size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+                SequenceGroup::Ptr sequence_group = sequence_groups[seq_group_id];
+                std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
+                for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
+                    Sequence::Ptr sequence = running_sequences[seq_idx];
+                    sequence->update_hidden_state(
+                        _get_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()));
                 }
-            } catch (const ov::Exception&) {
-                m_hidden_states = ov::Tensor();
             }
         }
         // return logits
@@ -607,6 +642,41 @@ private:
     bool _is_hs_import()   const { return m_hidden_state_flags & HS_IMPORT; }
     bool _is_hs_internal() const { return m_hidden_state_flags & HS_INTERNAL; }
 
+    /**
+     * @brief Helper to create ROI coordinates for a tensor.
+     *
+     * Given a tensor shape and a range on the first dimension, returns start and end coordinates
+     * for slicing [first_dim_start, first_dim_end) along the first dimension, and full range for others.
+     *
+     * @param shape The shape of the tensor.
+     * @param first_dim_start The starting index along the first dimension.
+     * @param first_dim_end The ending index (exclusive) along the first dimension.
+     * @return A pair of ov::Coordinate (start, end) for ROI slicing.
+     */
+    static std::pair<ov::Coordinate, ov::Coordinate> make_roi(const std::vector<size_t>& shape, size_t first_dim_start, size_t first_dim_end) {
+        ov::Coordinate start(shape.size(), 0), end(shape.size(), 0);
+        start[0] = first_dim_start;
+        end[0] = first_dim_end;
+        for (size_t d = 1; d < shape.size(); ++d) {
+            start[d] = 0;
+            end[d] = shape[d];
+        }
+        return std::make_pair(start, end);
+    }
+
+    /**
+     * @brief Retrieves a slice of the hidden state tensor corresponding to a specific request and sequence group.
+     *
+     * This method looks up the hidden state mapping for the given request and sequence group IDs.
+     * If the mapping exists and the hidden states tensor is available, it returns a sub-tensor (region of interest)
+     * representing the hidden state for the specified sequence. If the mapping does not exist or the hidden states
+     * tensor is empty, an empty tensor is returned.
+     *
+     * @param request_id        The unique identifier for the request.
+     * @param seq_grouped_id    The identifier for the sequence group within the request.
+     * @return ov::Tensor       The tensor slice representing the hidden state for the specified sequence,
+     *                          or an empty tensor if not found.
+     */
     ov::Tensor _get_hidden_state(uint64_t request_id, uint64_t seq_grouped_id) const {
         if (m_hidden_states.get_size() == 0) {
             return ov::Tensor();
@@ -622,24 +692,24 @@ private:
         size_t length = it->second.length;
 
         auto shape = m_hidden_states.get_shape();
-        if (shape.size() < 2) {
-            return ov::Tensor();
-        }
+        OPENVINO_ASSERT(shape.size() >= 2,
+                        "Hidden states tensor rank is less than 2.");
 
-        ov::Coordinate start_coord(shape.size(), 0);
-        ov::Coordinate end_coord(shape.size(), 0);
-
-        start_coord[0] = start_idx;
-        end_coord[0] = start_idx + length;
-
-        for (size_t i = 1; i < shape.size(); ++i) {
-            start_coord[i] = 0;
-            end_coord[i] = shape[i];
-        }
-
+        auto [start_coord, end_coord] = make_roi(shape, start_idx, start_idx + length);
         return ov::Tensor(m_hidden_states, start_coord, end_coord);
     }
 
+    /**
+     * @brief Prepares and returns a hidden state input tensor for the model.
+     *
+     * This function checks if hidden state input is required based on the internal flags.
+     * If required, it determines the hidden size from the initial hidden states if not already provided.
+     * It then creates and returns a tensor of shape [total_num_tokens, 1, hidden_size] initialized to zeros.
+     *
+     * @param total_num_tokens The total number of tokens for which the hidden state tensor is to be created.
+     * @param hidden_size [in/out] The size of the hidden state. If set to 0, it will be inferred from the initial hidden states.
+     * @return ov::Tensor The prepared hidden state tensor, or an empty tensor if not applicable.
+     */
     ov::Tensor _prepare_hidden_state_input(size_t total_num_tokens,
                                            size_t& hidden_size /*in/out*/) {
         if (!(m_hidden_state_flags & (HS_IMPORT | HS_INTERNAL))) {
@@ -649,11 +719,11 @@ private:
         if (hidden_size == 0) {
             for (const auto& kv : m_initial_hidden_states) {
                 const auto& initial_hidden_states = kv.second;
-                if (initial_hidden_states && initial_hidden_states.get_shape().size() >= 2) {
-                    auto hidden_states_shape = initial_hidden_states.get_shape();
-                    hidden_size = hidden_states_shape.back();
-                    break;
-                }
+                auto hidden_states_shape = initial_hidden_states.get_shape();
+                OPENVINO_ASSERT(initial_hidden_states && hidden_states_shape.size() >= 2,
+                                "Initial hidden states tensor rank is less than 2.");
+                hidden_size = hidden_states_shape.back();
+                break;
             }
         }
         if (hidden_size == 0) {
@@ -678,18 +748,6 @@ private:
         if (copy_length == 0) {
             return;
         }
-
-        // lambda to create ROI coordinates
-        auto make_roi = [](const std::vector<size_t>& shape, size_t first_dim_start, size_t first_dim_end) {
-            ov::Coordinate start(shape.size(), 0), end(shape.size(), 0);
-            start[0] = first_dim_start;
-            end[0] = first_dim_end;
-            for (size_t d = 1; d < shape.size(); ++d) {
-                start[d] = 0;
-                end[d] = shape[d];
-            }
-            return std::make_pair(start, end);
-        };
 
         // prepare source ROI coords
         const auto src_shape = src.get_shape();

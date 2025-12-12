@@ -17,7 +17,7 @@ struct GeneratedSequence {
     ov::Tensor hidden_states;
     GeneratedSequence(const std::vector<int64_t>& generated_token_ids,
                     const std::vector<float>& generated_log_probs,
-                    const ov::Tensor generated_hidden_states = {}) :
+                    const ov::Tensor& generated_hidden_states = {}) :
         token_ids(generated_token_ids),
         log_probs(generated_log_probs),
         hidden_states(generated_hidden_states) {};
