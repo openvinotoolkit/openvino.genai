@@ -11,6 +11,7 @@
 #include "openvino/genai/video_generation/ltx_video_transformer_3d_model.hpp"
 
 namespace ov::genai {
+
 using VideoGenerationPerfMetrics = ImageGenerationPerfMetrics;
 
 struct VideoGenerationResult {
@@ -180,4 +181,5 @@ private:
     class LTXPipeline;
     std::unique_ptr<LTXPipeline> m_impl;
 };
+
 }  // namespace ov::genai

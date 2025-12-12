@@ -15,8 +15,7 @@
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
 
-namespace ov {
-namespace genai {
+namespace ov::genai {
 
 class OPENVINO_GENAI_EXPORTS AutoencoderKLLTXVideo {
 public:
@@ -76,5 +75,4 @@ private:
     int64_t m_patch_size, m_patch_size_t;
 };
 
-} // namespace genai
-} // namespace ov
+} // namespace ov::genai

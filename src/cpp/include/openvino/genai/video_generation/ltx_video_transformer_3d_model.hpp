@@ -13,8 +13,7 @@
 #include "openvino/runtime/tensor.hpp"
 #include "openvino/genai/visibility.hpp"
 
-namespace ov {
-namespace genai {
+namespace ov::genai {
 
 class OPENVINO_GENAI_EXPORTS LTXVideoTransformer3DModel {
 public:
@@ -66,5 +65,4 @@ private:
     class InferenceStaticBS1;
 };
 
-}  // namespace genai
-}  // namespace ov
+}  // namespace ov::genai

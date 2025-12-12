@@ -9,8 +9,7 @@
 #include "utils.hpp"
 #include "lora/helper.hpp"
 
-namespace ov {
-namespace genai {
+using namespace ov::genai;
 
 void get_compression_ratio(const std::filesystem::path& config_path, int64_t& spatial_compression_ratio, int64_t& temporal_compression_ratio);
 
@@ -102,15 +101,11 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_si
     height /=  (m_spatial_compression_ratio * patch_size);
     width /=  (m_spatial_compression_ratio * patch_size);
 
-    std::cout << "m_spatial_compression_ratio " << m_spatial_compression_ratio << std::endl;
-    std::cout << "m_temporal_compression_ratio " << m_temporal_compression_ratio << std::endl;
-
     std::map<std::string, ov::PartialShape> name_to_shape;
 
     for (auto&& input : m_model->inputs()) {
         std::string input_name = input.get_any_name();
         name_to_shape[input_name] = input.get_partial_shape();
-        std::cout << input_name << std::endl;
         if (input_name == "timestep") {
             name_to_shape[input_name][0] = 1;
         } else if (input_name == "encoder_hidden_states") {
@@ -126,6 +121,3 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::reshape(int64_t batch_si
 
     return *this;
 }
-
-}  // namespace genai
-}  // namespace ov

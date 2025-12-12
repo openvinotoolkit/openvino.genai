@@ -15,12 +15,10 @@
 #include "openvino/op/constant.hpp"
 
 #include "utils.hpp"
-
 #include "json_utils.hpp"
 #include "lora/helper.hpp"
 
-namespace ov {
-namespace genai {
+using namespace ov::genai;
 
 namespace {
 
@@ -144,11 +142,7 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
     OPENVINO_ASSERT(width % 32 == 0, "Width have to be divisible by 32 but got ", width);
 
     // TODO: for img2video
-    // if (m_encoder_model) {
-    //     ov::PartialShape input_shape = m_encoder_model->input(0).get_partial_shape();
-    //     std::map<size_t, ov::PartialShape> idx_to_shape{{0, {batch_size, input_shape[1], height, width}}};
-    //     m_encoder_model->reshape(idx_to_shape);
-    // }
+    // if (m_encoder_model) {...}
 
     int64_t spatial_compression_ratio =
         get_config().patch_size *
@@ -191,6 +185,3 @@ size_t AutoencoderKLLTXVideo::get_vae_scale_factor() const {  // TODO: compare w
 void AutoencoderKLLTXVideo::merge_vae_image_post_processing() const {
     // TODO
 }
-
-} // namespace genai
-} // namespace ov
