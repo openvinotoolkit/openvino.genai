@@ -2,6 +2,7 @@
 #include <napi.h>
 
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include "openvino/openvino.hpp"
@@ -64,6 +65,8 @@ template <>
 ov::genai::StructuredOutputConfig::StructuralTag js_to_cpp<ov::genai::StructuredOutputConfig::StructuralTag>(const Napi::Env& env, const Napi::Value& value);
 template <>
 ov::Tensor js_to_cpp<ov::Tensor>(const Napi::Env& env, const Napi::Value& value);
+template <>
+std::vector<ov::Tensor> js_to_cpp<std::vector<ov::Tensor>>(const Napi::Env& env, const Napi::Value& value);
 /**
  * @brief  Unwraps a C++ object from a JavaScript wrapper.
  * @tparam TargetType The C++ class type to extract.
@@ -74,6 +77,9 @@ TargetType& unwrap(const Napi::Env& env, const Napi::Value& value);
 
 template <>
 ov::genai::PerfMetrics& unwrap<ov::genai::PerfMetrics>(const Napi::Env& env, const Napi::Value& value);
+
+template <>
+ov::genai::VLMPerfMetrics& unwrap<ov::genai::VLMPerfMetrics>(const Napi::Env& env, const Napi::Value& value);
 
 /**
  * @brief  Template function to convert C++ data types into Javascript data types
@@ -144,3 +150,7 @@ std::string json_stringify(const Napi::Env& env, const Napi::Value& value);
 Napi::Value json_parse(const Napi::Env& env, const std::string& value);
 
 Napi::Function get_prototype_from_ov_addon(const Napi::Env& env, const std::string& ctor_name);
+
+Napi::Object to_decoded_result(const Napi::Env& env, const ov::genai::DecodedResults results);
+
+Napi::Object to_vlm_decoded_result(const Napi::Env& env, ov::genai::VLMDecodedResults results);
