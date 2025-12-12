@@ -34,15 +34,15 @@ class AdapterConfig:
     class Mode:
         """
         Members:
-        
+
           MODE_AUTO
-        
+
           MODE_DYNAMIC
-        
+
           MODE_STATIC_RANK
-        
+
           MODE_STATIC
-        
+
           MODE_FUSE
         """
         MODE_AUTO: typing.ClassVar[AdapterConfig.Mode]  # value = <Mode.MODE_AUTO: 0>
@@ -117,11 +117,11 @@ class AggregationMode:
     Represents the mode of per-token score aggregation when determining least important tokens for eviction from cache
                                    :param AggregationMode.SUM: In this mode the importance scores of each token will be summed after each step of generation
                                    :param AggregationMode.NORM_SUM: Same as SUM, but the importance scores are additionally divided by the lifetime (in tokens generated) of a given token in cache
-    
+
     Members:
-    
+
       SUM
-    
+
       NORM_SUM
     """
     NORM_SUM: typing.ClassVar[AggregationMode]  # value = <AggregationMode.NORM_SUM: 1>
@@ -245,7 +245,7 @@ class AutoencoderKL:
         """
                         Exports compiled models to a specified directory. Can significantly reduce model load time, especially for large models.
                         export_path (os.PathLike): A path to a directory to export compiled models to.
-        
+
                         Use `blob_path` property to load previously exported models.
         """
     def get_config(self) -> AutoencoderKL.Config:
@@ -307,7 +307,7 @@ class CLIPTextModel:
         """
                         Exports compiled model to a specified directory. Can significantly reduce model load time, especially for large models.
                         export_path (os.PathLike): A path to a directory to export compiled model to.
-        
+
                         Use `blob_path` property to load previously exported models.
         """
     def get_config(self) -> CLIPTextModel.Config:
@@ -347,25 +347,25 @@ class CLIPTextModelWithProjection(CLIPTextModel):
         """
 class CacheEvictionConfig:
     """
-    
+
         Configuration struct for the cache eviction algorithm.
         :param start_size: Number of tokens in the *beginning* of KV cache that should be retained in the KV cache for this sequence during generation. Must be non-zero and a multiple of the KV cache block size for this pipeline.
         :type start_size: int
-    
+
         :param recent_size: Number of tokens in the *end* of KV cache that should be retained in the KV cache for this sequence during generation. Must be non-zero and a multiple of the KV cache block size for this pipeline.
         :type recent_size: int
-    
+
         :param max_cache_size: Maximum number of tokens that should be kept in the KV cache. The evictable block area will be located between the "start" and "recent" blocks and its size will be calculated as (`max_cache_size` - `start_size` - `recent_size`). Must be non-zero, larger than (`start_size` + `recent_size`), and a multiple of the KV cache block size for this pipeline. Note that since only the completely filled blocks are evicted, the actual maximum per-sequence KV cache size in tokens may be up to (`max_cache_size` + `SchedulerConfig.block_size - 1`).
         :type max_cache_size: int
-    
+
         :param aggregation_mode: The mode used to compute the importance of tokens for eviction
         :type aggregation_mode: openvino_genai.AggregationMode
-    
+
         :param apply_rotation: Whether to apply cache rotation (RoPE-based) after each eviction.
           Set this to false if your model has different RoPE scheme from the one used in the
           original llama model and you experience accuracy issues with cache eviction enabled.
         :type apply_rotation: bool
-    
+
         :param snapkv_window_size The size of the importance score aggregation window (in token positions from the end of the prompt) for
           computing initial importance scores at the beginning of the generation phase for purposes of eviction,
           following the SnapKV article approach (https://arxiv.org/abs/2404.14469).
@@ -394,23 +394,23 @@ class CacheEvictionConfig:
         ...
 class ChatHistory:
     """
-    
+
         ChatHistory stores conversation messages and optional metadata for chat templates.
-    
+
         Manages:
         - Message history (array of message objects)
         - Optional tools definitions array (for function calling)
         - Optional extra context object (for custom template variables)
-    
+
         Messages are stored as JSON-like structures but accessed as Python dicts.
         Use get_messages() to retrieve the list of all messages, modify them,
         and set_messages() to update the history.
-    
+
         Example:
             ```python
             history = ChatHistory()
             history.append({"role": "user", "content": "Hello"})
-            
+
             # Modify messages
             messages = history.get_messages()
             messages[0]["content"] = "Updated"
@@ -467,7 +467,7 @@ class ChatHistory:
         """
 class ChunkStreamerBase(StreamerBase):
     """
-    
+
         Base class for chunk streamers. In order to use inherit from from this class.
     """
     def __init__(self) -> None:
@@ -555,11 +555,11 @@ class CppStdGenerator(Generator):
         ...
 class DecodedResults:
     """
-    
+
         Structure to store resulting batched text outputs and scores for each batch.
         The first num_return_sequences elements correspond to the first batch element.
-    
-        Parameters: 
+
+        Parameters:
         texts:      vector of resulting sequences.
         scores:     scores for each sequence.
         metrics:    performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
@@ -593,9 +593,9 @@ class DeepSeekR1ReasoningParser(ReasoningParser):
         ...
 class EncodedGenerationResult:
     """
-    
+
         GenerationResult stores resulting batched tokens and scores.
-    
+
         Parameters:
         request_id:         obsolete when handle API is approved as handle will connect results with prompts.
         generation_ids:     in a generic case we have multiple generation results per initial prompt
@@ -637,14 +637,14 @@ class EncodedGenerationResult:
         ...
 class EncodedResults:
     """
-    
+
         Structure to store resulting batched tokens and scores for each batch sequence.
         The first num_return_sequences elements correspond to the first batch element.
         In the case if results decoded with beam search and random sampling scores contain
         sum of logarithmic probabilities for each token in the sequence. In the case
         of greedy decoding scores are filled with zeros.
-    
-        Parameters: 
+
+        Parameters:
         tokens: sequence of resulting tokens.
         scores: sum of logarithmic probabilities of all tokens in the sequence.
         metrics: performance metrics with tpot, ttft, etc. of type ov::genai::PerfMetrics.
@@ -665,9 +665,9 @@ class EncodedResults:
         ...
 class ExtendedPerfMetrics:
     """
-    
+
         Holds performance metrics for each generate call.
-    
+
         PerfMetrics holds the following metrics with mean and standard deviations:
         - Time To the First Token (TTFT), ms
         - Time per Output Token (TPOT), ms/token
@@ -677,56 +677,56 @@ class ExtendedPerfMetrics:
         - Tokenization duration, ms
         - Detokenization duration, ms
         - Throughput, tokens/s
-    
+
         Additional metrics include:
         - Load time, ms
         - Number of generated tokens
         - Number of tokens in the input prompt
         - Time to initialize grammar compiler for each backend, ms
         - Time to compile grammar, ms
-    
+
         Preferable way to access metrics is via getter methods. Getter methods calculate mean and std values from raw_metrics and return pairs.
         If mean and std were already calculated, getters return cached values.
-    
+
         :param get_load_time: Returns the load time in milliseconds.
         :type get_load_time: float
-    
+
         :param get_num_generated_tokens: Returns the number of generated tokens.
         :type get_num_generated_tokens: int
-    
+
         :param get_num_input_tokens: Returns the number of tokens in the input prompt.
         :type get_num_input_tokens: int
-    
+
         :param get_ttft: Returns the mean and standard deviation of TTFT in milliseconds.
         :type get_ttft: MeanStdPair
-    
+
         :param get_tpot: Returns the mean and standard deviation of TPOT in milliseconds.
         :type get_tpot: MeanStdPair
-    
+
         :param get_ipot: Returns the mean and standard deviation of IPOT in milliseconds.
         :type get_ipot: MeanStdPair
-    
+
         :param get_throughput: Returns the mean and standard deviation of throughput in tokens per second.
         :type get_throughput: MeanStdPair
-    
+
         :param get_inference_duration: Returns the mean and standard deviation of the time spent on model inference during generate call in milliseconds.
         :type get_inference_duration: MeanStdPair
-    
+
         :param get_generate_duration: Returns the mean and standard deviation of generate durations in milliseconds.
         :type get_generate_duration: MeanStdPair
-    
+
         :param get_tokenization_duration: Returns the mean and standard deviation of tokenization durations in milliseconds.
         :type get_tokenization_duration: MeanStdPair
-    
+
         :param get_detokenization_duration: Returns the mean and standard deviation of detokenization durations in milliseconds.
         :type get_detokenization_duration: MeanStdPair
-    
+
         :param get_grammar_compiler_init_times: Returns a map with the time to initialize the grammar compiler for each backend in milliseconds.
         :type get_grammar_compiler_init_times: dict[str, float]
-    
+
         :param get_grammar_compile_time: Returns the mean, standard deviation, min, and max of grammar compile times in milliseconds.
         :type get_grammar_compile_time: SummaryStats
-    
+
         :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
         :type raw_metrics: RawPerfMetrics
     """
@@ -820,11 +820,11 @@ class FluxTransformer2DModel:
         ...
 class GenerationConfig:
     """
-    
+
         Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group
         and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will
         be used while greedy and beam search parameters will not affect decoding at all.
-    
+
         Parameters:
         max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
                        max_new_tokens. Its effect is overridden by `max_new_tokens`, if also set.
@@ -839,11 +839,11 @@ class GenerationConfig:
         logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                         Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
         apply_chat_template: whether to apply chat_template for non-chat scenarios
-    
+
         repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
         presence_penalty: reduces absolute log prob if the token was generated at least once.
         frequency_penalty: reduces absolute log prob as many times as the token was generated.
-    
+
         Beam search specific parameters:
         num_beams:         number of beams for beam search. 1 disables beam search.
         num_beam_groups:   number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
@@ -858,7 +858,7 @@ class GenerationConfig:
             "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates;
             "openvino_genai.StopCriteria.HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
             "openvino_genai.StopCriteria.NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
-    
+
         Random sampling parameters:
         temperature:        the value used to modulate token probabilities for random sampling.
         top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
@@ -1045,11 +1045,11 @@ class GenerationConfig:
 class GenerationFinishReason:
     """
     Members:
-    
+
       NONE
-    
+
       STOP
-    
+
       LENGTH
     """
     LENGTH: typing.ClassVar[GenerationFinishReason]  # value = <GenerationFinishReason.LENGTH: 2>
@@ -1119,9 +1119,9 @@ class GenerationOutput:
         ...
 class GenerationResult:
     """
-    
+
         GenerationResult stores resulting batched tokens and scores.
-    
+
         Parameters:
         request_id:         obsolete when handle API is approved as handle will connect results with prompts.
         generation_ids:     in a generic case we have multiple generation results per initial prompt
@@ -1169,15 +1169,15 @@ class GenerationResult:
 class GenerationStatus:
     """
     Members:
-    
+
       RUNNING
-    
+
       FINISHED
-    
+
       IGNORED
-    
+
       CANCEL
-    
+
       STOP
     """
     CANCEL: typing.ClassVar[GenerationStatus]  # value = <GenerationStatus.CANCEL: 3>
@@ -1280,12 +1280,12 @@ class Image2ImagePipeline:
     def generate(self, prompt: str, image: openvino._pyopenvino.Tensor, **kwargs) -> openvino._pyopenvino.Tensor:
         """
             Generates images for text-to-image models.
-        
+
             :param prompt: input prompt
             :type prompt: str
-        
+
             :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
-        
+
             Expected parameters list:
             prompt_2: str - second prompt,
             prompt_3: str - third prompt,
@@ -1303,7 +1303,7 @@ class Image2ImagePipeline:
             adapters: LoRA adapters,
             strength: strength for image to image generation. 1.0f means initial image is fully noised,
             max_sequence_length: int - length of t5_encoder_model input
-        
+
             :return: ov.Tensor with resulting images
             :rtype: ov.Tensor
         """
@@ -1384,60 +1384,60 @@ class ImageGenerationConfig:
         ...
 class ImageGenerationPerfMetrics:
     """
-    
+
         Holds performance metrics for each generate call.
-    
+
         PerfMetrics holds fields with mean and standard deviations for the following metrics:
         - Generate iteration duration, ms
         - Inference duration for unet model, ms
         - Inference duration for transformer model, ms
-    
+
         Additional fields include:
         - Load time, ms
         - Generate total duration, ms
         - inference durations for each encoder, ms
         - inference duration of vae_encoder model, ms
         - inference duration of vae_decoder model, ms
-    
+
         Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
         If mean and std were already calculated, getters return cached values.
-    
+
         :param get_text_encoder_infer_duration: Returns the inference duration of every text encoder in milliseconds.
         :type get_text_encoder_infer_duration: dict[str, float]
-    
+
         :param get_vae_encoder_infer_duration: Returns the inference duration of vae encoder in milliseconds.
         :type get_vae_encoder_infer_duration: float
-    
+
         :param get_vae_decoder_infer_duration: Returns the inference duration of vae decoder in milliseconds.
         :type get_vae_decoder_infer_duration: float
-    
+
         :param get_load_time: Returns the load time in milliseconds.
         :type get_load_time: float
-    
+
         :param get_generate_duration: Returns the generate duration in milliseconds.
         :type get_generate_duration: float
-    
+
         :param get_inference_duration: Returns the total inference durations (including encoder, unet/transformer and decoder inference) in milliseconds.
         :type get_inference_duration: float
-    
+
         :param get_first_and_other_iter_duration: Returns the first iteration duration and the average duration of other iterations in one generation in milliseconds.
         :type get_first_and_other_iter_duration: tuple
-    
+
         :param get_iteration_duration: Returns the mean and standard deviation of one generation iteration in milliseconds.
         :type get_iteration_duration: MeanStdPair
-    
+
         :param get_first_and_second_unet_infer_duration: Returns the first inference duration and the average duration of other inferences in one generation in milliseconds.
         :type get_first_and_second_unet_infer_duration: tuple
-    
+
         :param get_unet_infer_duration: Returns the mean and standard deviation of one unet inference in milliseconds.
         :type get_unet_infer_duration: MeanStdPair
-    
+
         :param get_first_and_other_trans_infer_duration: Returns the first inference duration and the average duration of other inferences in one generation in milliseconds.
         :type get_first_and_other_trans_infer_duration: tuple
-    
+
         :param get_transformer_infer_duration: Returns the mean and standard deviation of one transformer inference in milliseconds.
         :type get_transformer_infer_duration: MeanStdPair
-    
+
         :param raw_metrics: A structure of RawImageGenerationPerfMetrics type that holds raw metrics.
         :type raw_metrics: RawImageGenerationPerfMetrics
     """
@@ -1546,12 +1546,12 @@ class InpaintingPipeline:
     def generate(self, prompt: str, image: openvino._pyopenvino.Tensor, mask_image: openvino._pyopenvino.Tensor, **kwargs) -> openvino._pyopenvino.Tensor:
         """
             Generates images for text-to-image models.
-        
+
             :param prompt: input prompt
             :type prompt: str
-        
+
             :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
-        
+
             Expected parameters list:
             prompt_2: str - second prompt,
             prompt_3: str - third prompt,
@@ -1569,7 +1569,7 @@ class InpaintingPipeline:
             adapters: LoRA adapters,
             strength: strength for image to image generation. 1.0f means initial image is fully noised,
             max_sequence_length: int - length of t5_encoder_model input
-        
+
             :return: ov.Tensor with resulting images
             :rtype: ov.Tensor
         """
@@ -1591,17 +1591,17 @@ class KVCrushAnchorPointMode:
                       :param KVCrushAnchorPointMode.ONES: Vector of all ones will be used as anchor point
                       :param KVCrushAnchorPointMode.MEAN: Mean of indicator feature vector to be used as anchor point
                       :param KVCrushAnchorPointMode.ALTERNATING: Alternating 0s and 1s will be used as anchor point
-    
+
     Members:
-    
+
       RANDOM
-    
+
       ZEROS
-    
+
       ONES
-    
+
       MEAN
-    
+
       ALTERNATING
     """
     ALTERNATING: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ALTERNATING: 4>
@@ -1672,27 +1672,27 @@ class LLMPipeline:
     def __call__(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str] | openvino_genai.py_openvino_genai.ChatHistory, generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
         """
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
-        
+
             :param inputs: inputs in the form of string, list of strings, chat history or tokenized input_ids
             :type inputs: str, list[str], ov.genai.TokenizedInputs, or ov.Tensor
-        
+
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
-        
+
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
-        
+
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
             :type : dict
-        
+
             :return: return results in encoded, or decoded form depending on inputs type
             :rtype: DecodedResults, EncodedResults, str
-         
-         
+
+
             Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group
             and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will
             be used while greedy and beam search parameters will not affect decoding at all.
-        
+
             Parameters:
             max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
                            max_new_tokens. Its effect is overridden by `max_new_tokens`, if also set.
@@ -1707,11 +1707,11 @@ class LLMPipeline:
             logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                             Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
             apply_chat_template: whether to apply chat_template for non-chat scenarios
-        
+
             repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
             presence_penalty: reduces absolute log prob if the token was generated at least once.
             frequency_penalty: reduces absolute log prob as many times as the token was generated.
-        
+
             Beam search specific parameters:
             num_beams:         number of beams for beam search. 1 disables beam search.
             num_beam_groups:   number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
@@ -1726,7 +1726,7 @@ class LLMPipeline:
                 "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates;
                 "openvino_genai.StopCriteria.HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
                 "openvino_genai.StopCriteria.NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
-        
+
             Random sampling parameters:
             temperature:        the value used to modulate token probabilities for random sampling.
             top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
@@ -1769,27 +1769,27 @@ class LLMPipeline:
     def generate(self, inputs: openvino._pyopenvino.Tensor | openvino_genai.py_openvino_genai.TokenizedInputs | str | collections.abc.Sequence[str] | openvino_genai.py_openvino_genai.ChatHistory, generation_config: openvino_genai.py_openvino_genai.GenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> openvino_genai.py_openvino_genai.EncodedResults | openvino_genai.py_openvino_genai.DecodedResults:
         """
             Generates sequences or tokens for LLMs. If input is a string or list of strings then resulting sequences will be already detokenized.
-        
+
             :param inputs: inputs in the form of string, list of strings, chat history or tokenized input_ids
             :type inputs: str, list[str], ov.genai.TokenizedInputs, or ov.Tensor
-        
+
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
-        
+
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
-        
+
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
             :type : dict
-        
+
             :return: return results in encoded, or decoded form depending on inputs type
             :rtype: DecodedResults, EncodedResults, str
-         
-         
+
+
             Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group
             and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will
             be used while greedy and beam search parameters will not affect decoding at all.
-        
+
             Parameters:
             max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
                            max_new_tokens. Its effect is overridden by `max_new_tokens`, if also set.
@@ -1804,11 +1804,11 @@ class LLMPipeline:
             logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                             Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
             apply_chat_template: whether to apply chat_template for non-chat scenarios
-        
+
             repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
             presence_penalty: reduces absolute log prob if the token was generated at least once.
             frequency_penalty: reduces absolute log prob as many times as the token was generated.
-        
+
             Beam search specific parameters:
             num_beams:         number of beams for beam search. 1 disables beam search.
             num_beam_groups:   number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
@@ -1823,7 +1823,7 @@ class LLMPipeline:
                 "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates;
                 "openvino_genai.StopCriteria.HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
                 "openvino_genai.StopCriteria.NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
-        
+
             Random sampling parameters:
             temperature:        the value used to modulate token probabilities for random sampling.
             top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
@@ -1865,9 +1865,9 @@ class Parser:
         """
 class PerfMetrics:
     """
-    
+
         Holds performance metrics for each generate call.
-    
+
         PerfMetrics holds the following metrics with mean and standard deviations:
         - Time To the First Token (TTFT), ms
         - Time per Output Token (TPOT), ms/token
@@ -1877,56 +1877,56 @@ class PerfMetrics:
         - Tokenization duration, ms
         - Detokenization duration, ms
         - Throughput, tokens/s
-    
+
         Additional metrics include:
         - Load time, ms
         - Number of generated tokens
         - Number of tokens in the input prompt
         - Time to initialize grammar compiler for each backend, ms
         - Time to compile grammar, ms
-    
+
         Preferable way to access metrics is via getter methods. Getter methods calculate mean and std values from raw_metrics and return pairs.
         If mean and std were already calculated, getters return cached values.
-    
+
         :param get_load_time: Returns the load time in milliseconds.
         :type get_load_time: float
-    
+
         :param get_num_generated_tokens: Returns the number of generated tokens.
         :type get_num_generated_tokens: int
-    
+
         :param get_num_input_tokens: Returns the number of tokens in the input prompt.
         :type get_num_input_tokens: int
-    
+
         :param get_ttft: Returns the mean and standard deviation of TTFT in milliseconds.
         :type get_ttft: MeanStdPair
-    
+
         :param get_tpot: Returns the mean and standard deviation of TPOT in milliseconds.
         :type get_tpot: MeanStdPair
-    
+
         :param get_ipot: Returns the mean and standard deviation of IPOT in milliseconds.
         :type get_ipot: MeanStdPair
-    
+
         :param get_throughput: Returns the mean and standard deviation of throughput in tokens per second.
         :type get_throughput: MeanStdPair
-    
+
         :param get_inference_duration: Returns the mean and standard deviation of the time spent on model inference during generate call in milliseconds.
         :type get_inference_duration: MeanStdPair
-    
+
         :param get_generate_duration: Returns the mean and standard deviation of generate durations in milliseconds.
         :type get_generate_duration: MeanStdPair
-    
+
         :param get_tokenization_duration: Returns the mean and standard deviation of tokenization durations in milliseconds.
         :type get_tokenization_duration: MeanStdPair
-    
+
         :param get_detokenization_duration: Returns the mean and standard deviation of detokenization durations in milliseconds.
         :type get_detokenization_duration: MeanStdPair
-    
+
         :param get_grammar_compiler_init_times: Returns a map with the time to initialize the grammar compiler for each backend in milliseconds.
         :type get_grammar_compiler_init_times: dict[str, float]
-    
+
         :param get_grammar_compile_time: Returns the mean, standard deviation, min, and max of grammar compile times in milliseconds.
         :type get_grammar_compile_time: SummaryStats
-    
+
         :param raw_metrics: A structure of RawPerfMetrics type that holds raw metrics.
         :type raw_metrics: RawPerfMetrics
     """
@@ -1973,23 +1973,23 @@ class Phi4ReasoningParser(ReasoningParser):
         ...
 class PipelineMetrics:
     """
-    
+
         Contains general pipeline metrics, either aggregated throughout the lifetime of the generation pipeline
         or measured at the previous generation step.
-    
+
         :param requests: Number of requests to be processed by the pipeline.
         :type requests: int
-    
+
         :param scheduled_requests:  Number of requests that were scheduled for processing at the previous step of the pipeline.
         :type scheduled_requests: int
-    
+
         :param cache_usage: Percentage of KV cache usage in the last generation step.
         :type cache_usage: float
-    
+
         :param max_cache_usage: Max KV cache usage during the lifetime of the pipeline in %
         :type max_cache_usage: float
-    
-    
+
+
         :param avg_cache_usage: Running average of the KV cache usage (in %) during the lifetime of the pipeline, with max window size of 1000 steps
         :type avg_cache_usage: float
     """
@@ -2012,15 +2012,15 @@ class PipelineMetrics:
         ...
 class RawImageGenerationPerfMetrics:
     """
-    
+
         Structure with raw performance metrics for each generation before any statistics are calculated.
-    
+
         :param unet_inference_durations: Durations for each unet inference in microseconds.
         :type unet_inference_durations: list[float]
-    
+
         :param transformer_inference_durations: Durations for each transformer inference in microseconds.
         :type transformer_inference_durations: list[float]
-    
+
         :param iteration_durations: Durations for each step iteration in microseconds.
         :type iteration_durations: list[float]
     """
@@ -2037,36 +2037,36 @@ class RawImageGenerationPerfMetrics:
         ...
 class RawPerfMetrics:
     """
-    
+
         Structure with raw performance metrics for each generation before any statistics are calculated.
-    
+
         :param generate_durations: Durations for each generate call in milliseconds.
         :type generate_durations: list[float]
-    
+
         :param tokenization_durations: Durations for the tokenization process in milliseconds.
         :type tokenization_durations: list[float]
-    
+
         :param detokenization_durations: Durations for the detokenization process in milliseconds.
         :type detokenization_durations: list[float]
-    
+
         :param m_times_to_first_token: Times to the first token for each call in milliseconds.
         :type m_times_to_first_token: list[float]
-    
+
         :param m_new_token_times: Timestamps of generation every token or batch of tokens in milliseconds.
         :type m_new_token_times: list[double]
-    
+
         :param token_infer_durations : Inference time for each token in milliseconds.
         :type batch_sizes: list[float]
-    
+
         :param m_batch_sizes: Batch sizes for each generate call.
         :type m_batch_sizes: list[int]
-    
+
         :param m_durations: Total durations for each generate call in milliseconds.
         :type m_durations: list[float]
-    
+
         :param inference_durations : Total inference duration for each generate call in milliseconds.
         :type batch_sizes: list[float]
-    
+
         :param grammar_compile_times: Time to compile the grammar in milliseconds.
         :type grammar_compile_times: list[float]
     """
@@ -2179,15 +2179,15 @@ class SD3Transformer2DModel:
         ...
 class SDPerModelsPerfMetrics(SDPerfMetrics):
     """
-    
+
         Holds performance metrics for each generate call.
-    
+
         :param main_model_metrics: performance metrics for main model
         :type main_model_metrics: SDPerfMetrics
-    
+
         :param draft_model_metrics: performance metrics for draft model
         :type draft_model_metrics: SDPerfMetrics
-    
+
         :param get_num_accepted_tokens: total number of tokens, which was generated by draft model and accepted by main model
         :type get_num_accepted_tokens: int
     """
@@ -2201,26 +2201,26 @@ class SDPerModelsPerfMetrics(SDPerfMetrics):
         ...
 class SDPerfMetrics(ExtendedPerfMetrics):
     """
-    
+
         Holds performance metrics for draft and main models of SpeculativeDecoding Pipeline.
-    
+
         SDPerfMetrics holds fields with mean and standard deviations for the all PerfMetrics fields and following metrics:
         - Time to the Second Token (TTFT), ms
         - avg_latency, ms/inference
-    
+
         Preferable way to access values is via get functions. Getters calculate mean and std values from raw_metrics and return pairs.
         If mean and std were already calculated, getters return cached values.
-    
+
         :param get_ttst: Returns the mean and standard deviation of TTST in milliseconds.
                          The second token is presented separately as for some plugins this can be expected to take longer than next tokens.
                          In case of GPU plugin: Async compilation of some opt kernels can be completed after second token.
                          Also, additional memory manipulation can happen at second token time.
         :type get_ttst: MeanStdPair
-    
+
         :param get_latency: Returns the mean and standard deviation of the latency from the third token in milliseconds per inference,
                             which includes also prev and post processing. First and second token time is presented separately as ttft and ttst.
         :type get_latency: MeanStdPair
-    
+
         Additional points:
           - TPOT is calculated from the third token. The reasons for this, please, see in the description for avg_latency.
           - `total number of iterations` of the model can be taken from raw performance metrics raw_metrics.m_durations.size().
@@ -2236,21 +2236,21 @@ class Scheduler:
     class Type:
         """
         Members:
-        
+
           AUTO
-        
+
           LCM
-        
+
           DDIM
-        
+
           EULER_DISCRETE
-        
+
           FLOW_MATCH_EULER_DISCRETE
-        
+
           PNDM
-        
+
           EULER_ANCESTRAL_DISCRETE
-        
+
           LMS_DISCRETE
         """
         AUTO: typing.ClassVar[Scheduler.Type]  # value = <Type.AUTO: 0>
@@ -2293,9 +2293,9 @@ class Scheduler:
         ...
 class SchedulerConfig:
     """
-    
+
         SchedulerConfig to construct ContinuousBatchingPipeline
-    
+
         Parameters:
         max_num_batched_tokens:     a maximum number of tokens to batch (in contrast to max_batch_size which combines
             independent sequences, we consider total amount of tokens in a batch).
@@ -2303,7 +2303,7 @@ class SchedulerConfig:
         cache_size:                 total size of KV cache in GB.
         block_size:                 block size for KV cache.
         dynamic_split_fuse:         whether to split prompt / generate to different scheduling phases.
-    
+
         vLLM-like settings:
         max_num_seqs:               max number of scheduled sequences (you can think of it as "max batch size").
         enable_prefix_caching:      Enable caching of KV-blocks.
@@ -2353,11 +2353,11 @@ class SchedulerConfig:
         ...
 class SparseAttentionConfig:
     """
-    
+
         Configuration struct for the sparse attention functionality.
         :param mode: Sparse attention mode to be applied.
         :type mode: openvino_genai.SparseAttentionMode
-    
+
         :param num_last_dense_tokens_in_prefill: TRISHAPE and XATTENTION modes - Number of tokens from the end of the prompt
            for which full attention across previous KV cache contents will be computed. In contrast, for the rest of the tokens
            in the prompt only the sparse attention will be computed according to the selected algorithm.
@@ -2367,26 +2367,26 @@ class SparseAttentionConfig:
            XATTENTION: Same as above applies, but the dense attention may overspill up to a subsequence chunk (i.e. multiple
            blocks)
         :type num_last_dense_tokens_in_prefill: int
-    
+
         :param num_retained_start_tokens_in_cache: TRISHAPE mode only - The number of tokens in the beginning of the cache
          (least recent) to be retained when applying sparse attention. Must be a multiple of block size.
         :type num_retained_start_tokens_in_cache: int
-    
+
         :param num_retained_recent_tokens_in_cache: TRISHAPE mode only - The number of most recent tokens in cache to be retained when
           applying sparse attention. Must be a multiple of block size.
         :param num_retained_recent_tokens_in_cache: int
-    
+
         :param xattention_threshold: XATTENTION mode only - Cumulative importance score threshold to be compared against when
           determining blocks to exclude from the attention calculations in the block-sparse approach. Only the attention matrix
           blocks with highest importance score sum not exceeding this threshold will be taking part in the computations. The lower
           the threshold, the less computation will the main attention operation will take, and vice versa, with the corresponding
           potential impact on generation accuracy.
         :type xattention_threshold: float
-    
+
         :param xattention_block_size: XATTENTION mode only - Block granularity, in tokens, with which the block-sparse attention
           calculation will be applied.
         :type xattention_block_size: int
-    
+
         :param xattention_stride: XATTENTION mode only - The stride of antidiagonal sampling employed to calculate the importance
          scores of each `xattention_block_size`-sized block of the attention matrix before the actual attention calculation takes
          place.  Directly influences the overhead portion of the importance score computations - if full (dense) attention takes
@@ -2439,12 +2439,12 @@ class SparseAttentionMode:
     Represents the mode of sparse attention applied during generation.
                                    :param SparseAttentionMode.TRISHAPE: Sparse attention will be applied to prefill stage only, with a configurable number of start and recent cache tokens to be retained. A number of prefill tokens in the end of the prompt can be configured to have dense attention applied to them instead, to retain generation accuracy.
                                    :param SparseAttentionMode.XATTENTION: Following https://arxiv.org/pdf/2503.16428, introduces importance score threshold-based block sparsity into the prefill stage.  Computing importance scores introduces an overhead, but the total inference time is expected to be reduced even more.
-    
-    
+
+
     Members:
-    
+
       TRISHAPE
-    
+
       XATTENTION
     """
     TRISHAPE: typing.ClassVar[SparseAttentionMode]  # value = <SparseAttentionMode.TRISHAPE: 0>
@@ -2478,16 +2478,16 @@ class SparseAttentionMode:
         ...
 class SpeechGenerationConfig(GenerationConfig):
     """
-    
+
         SpeechGenerationConfig
-        
+
         Speech-generation specific parameters:
         :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
         :type minlenratio: float
-    
+
         :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
         :type minlenratio: float
-    
+
         :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
         :type threshold: float
     """
@@ -2521,9 +2521,9 @@ class SpeechGenerationConfig(GenerationConfig):
         ...
 class SpeechGenerationPerfMetrics(PerfMetrics):
     """
-    
+
         Structure with raw performance metrics for each generation before any statistics are calculated.
-    
+
         :param num_generated_samples: Returns a number of generated samples in output
         :type num_generated_samples: int
     """
@@ -2543,21 +2543,21 @@ class SpeechGenerationPerfMetrics(PerfMetrics):
         ...
 class StopCriteria:
     """
-    
+
         StopCriteria controls the stopping condition for grouped beam search.
-    
+
         The following values are possible:
             "openvino_genai.StopCriteria.EARLY" stops as soon as there are `num_beams` complete candidates.
             "openvino_genai.StopCriteria.HEURISTIC" stops when is it unlikely to find better candidates.
             "openvino_genai.StopCriteria.NEVER" stops when there cannot be better candidates.
-    
-    
+
+
     Members:
-    
+
       EARLY
-    
+
       HEURISTIC
-    
+
       NEVER
     """
     EARLY: typing.ClassVar[StopCriteria]  # value = <StopCriteria.EARLY: 0>
@@ -2592,7 +2592,7 @@ class StopCriteria:
         ...
 class StreamerBase:
     """
-    
+
         Base class for streamers. In order to use inherit from from this class and implement write and end methods.
     """
     def __init__(self) -> None:
@@ -2612,11 +2612,11 @@ class StreamerBase:
 class StreamingStatus:
     """
     Members:
-    
+
       RUNNING
-    
+
       CANCEL
-    
+
       STOP
     """
     CANCEL: typing.ClassVar[StreamingStatus]  # value = <StreamingStatus.CANCEL: 2>
@@ -2651,11 +2651,11 @@ class StreamingStatus:
         ...
 class StructuralTagItem:
     """
-    
+
         Structure to keep generation config parameters for structural tags in structured output generation.
         It is used to store the configuration for a single structural tag item, which includes the begin string,
         schema, and end string.
-    
+
         Parameters:
         begin:  the string that marks the beginning of the structural tag.
         schema: the JSON schema that defines the structure of the tag.
@@ -2695,20 +2695,20 @@ class StructuralTagItem:
         ...
 class StructuralTagsConfig:
     """
-    
+
         Configures structured output generation by combining regular sampling with structural tags.
-    
+
         When the model generates a trigger string, it switches to structured output mode and produces output
         based on the defined structural tags. Afterward, regular sampling resumes.
-    
+
         Example:
           - Trigger "<func=" activates tags with begin "<func=sum>" or "<func=multiply>".
-    
+
         Note:
           - Simple triggers like "<" may activate structured output unexpectedly if present in regular text.
           - Very specific or long triggers may be difficult for the model to generate,
           so structured output may not be triggered.
-    
+
         Parameters:
         structural_tags: List of StructuralTagItem objects defining structural tags.
         triggers:        List of strings that trigger structured output generation.
@@ -2740,11 +2740,11 @@ class StructuralTagsConfig:
         ...
 class StructuredOutputConfig:
     """
-    
+
         Structure to keep generation config parameters for structured output generation.
         It is used to store the configuration for structured generation, which includes
         the JSON schema and other related parameters.
-    
+
         Structured output parameters:
         json_schema:           if set, the output will be a JSON string constraint by the specified json-schema.
         regex:          if set, the output will be constraint by specified regex.
@@ -2758,7 +2758,7 @@ class StructuredOutputConfig:
     """
     class AnyText:
         """
-        
+
             AnyText structural tag allows any text for the portion of output
             covered by this tag.
         """
@@ -2772,10 +2772,10 @@ class StructuredOutputConfig:
             ...
     class Concat:
         """
-        
+
             Concat composes multiple structural tags in sequence. Each element
             must be produced in the given order. Can be used indirectly with + operator.
-        
+
             Example: Concat(ConstString("a"), ConstString("b")) produces "ab".
             ConstString("a") + ConstString("b") is equivalent.
         """
@@ -2799,7 +2799,7 @@ class StructuredOutputConfig:
             ...
     class ConstString:
         """
-        
+
             ConstString structural tag forces the generator to produce exactly
             the provided constant string value.
         """
@@ -2814,7 +2814,7 @@ class StructuredOutputConfig:
             ...
     class EBNF:
         """
-        
+
             EBNF structural tag constrains output using an EBNF grammar.
         """
         value: str
@@ -2828,7 +2828,7 @@ class StructuredOutputConfig:
             ...
     class JSONSchema:
         """
-        
+
             JSONSchema structural tag constrains output to a JSON document that
             must conform to the provided JSON Schema string.
         """
@@ -2843,7 +2843,7 @@ class StructuredOutputConfig:
             ...
     class QwenXMLParametersFormat:
         """
-        
+
             QwenXMLParametersFormat instructs the generator to output an XML
             parameters block derived from the provided JSON schema. This is a
             specialized helper for Qwen-style XML parameter formatting.
@@ -2859,7 +2859,7 @@ class StructuredOutputConfig:
             ...
     class Regex:
         """
-        
+
             Regex structural tag constrains output using a regular expression.
         """
         value: str
@@ -2873,12 +2873,12 @@ class StructuredOutputConfig:
             ...
     class Tag:
         """
-        
+
             Tag defines a begin/end wrapper with constrained inner content.
-        
+
             The generator will output `begin`, then the `content` (a StructuralTag),
             and finally `end`.
-        
+
             Example: Tag("<think>", AnyText(), "</think>") represents thinking portion of the model output.
         """
         begin: str
@@ -2894,10 +2894,10 @@ class StructuredOutputConfig:
             ...
     class TagsWithSeparator:
         """
-        
+
             TagsWithSeparator configures generation of a sequence of tags
             separated by a fixed separator string.
-        
+
             Can be used to produce repeated tagged elements like "<f>A</f>;<f>B</f>"
             where `separator`=";".
         """
@@ -2920,9 +2920,9 @@ class StructuredOutputConfig:
             ...
     class TriggeredTags:
         """
-        
+
             TriggeredTags associates a set of `triggers` with multiple `tags`.
-        
+
             When the model generates any of the trigger strings the structured
             generation activates to produce configured tags. Flags allow requiring
             at least one tag and stopping structured generation after the first tag.
@@ -2951,7 +2951,7 @@ class StructuredOutputConfig:
             ...
     class Union:
         """
-        
+
             Union composes multiple structural tags as alternatives. The
             model may produce any one of the provided elements. Can be used indirectly
             with | operator.
@@ -3142,18 +3142,18 @@ class Text2ImagePipeline:
         """
                         Exports compiled models to a specified directory. Can significantly reduce model load time, especially for large models.
                         export_path (os.PathLike): A path to a directory to export compiled models to.
-        
+
                         Use `blob_path` property to load previously exported models.
         """
     def generate(self, prompt: str, **kwargs) -> openvino._pyopenvino.Tensor:
         """
             Generates images for text-to-image models.
-        
+
             :param prompt: input prompt
             :type prompt: str
-        
+
             :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
-        
+
             Expected parameters list:
             prompt_2: str - second prompt,
             prompt_3: str - third prompt,
@@ -3171,7 +3171,7 @@ class Text2ImagePipeline:
             adapters: LoRA adapters,
             strength: strength for image to image generation. 1.0f means initial image is fully noised,
             max_sequence_length: int - length of t5_encoder_model input
-        
+
             :return: ov.Tensor with resulting images
             :rtype: ov.Tensor
         """
@@ -3187,13 +3187,13 @@ class Text2ImagePipeline:
         ...
 class Text2SpeechDecodedResults:
     """
-    
+
         Structure that stores the result from the generate method, including a list of waveform tensors
         sampled at 16 kHz, along with performance metrics
-    
+
         :param speeches: a list of waveform tensors sampled at 16 kHz
         :type speeches: list
-    
+
         :param perf_metrics: performance metrics
         :type perf_metrics: SpeechGenerationPerfMetrics
     """
@@ -3219,31 +3219,31 @@ class Text2SpeechPipeline:
     def generate(self, text: str, speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
         """
             Generates speeches based on input texts
-        
+
             :param text(s): input text(s) for which to generate speech
             :type text(s): str or list[str]
-        
+
             :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
                                      voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
                                      `Matthijs/cmu-arctic-xvectors` dataset is used by default.
             :type speaker_embedding: openvino.Tensor or None
-        
+
             :param properties: speech generation parameters specified as properties
             :type properties: dict
-        
+
             :returns: raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
             :rtype: Text2SpeechDecodedResults
-         
-         
+
+
             SpeechGenerationConfig
-            
+
             Speech-generation specific parameters:
             :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
             :type minlenratio: float
-        
+
             :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
             :type minlenratio: float
-        
+
             :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
             :type threshold: float
         """
@@ -3251,31 +3251,31 @@ class Text2SpeechPipeline:
     def generate(self, texts: collections.abc.Sequence[str], speaker_embedding: typing.Any = None, **kwargs) -> Text2SpeechDecodedResults:
         """
             Generates speeches based on input texts
-        
+
             :param text(s): input text(s) for which to generate speech
             :type text(s): str or list[str]
-        
+
             :param speaker_embedding optional speaker embedding tensor representing the unique characteristics of a speaker's
                                      voice. If not provided for SpeechT5 TSS model, the 7306-th vector from the validation set of the
                                      `Matthijs/cmu-arctic-xvectors` dataset is used by default.
             :type speaker_embedding: openvino.Tensor or None
-        
+
             :param properties: speech generation parameters specified as properties
             :type properties: dict
-        
+
             :returns: raw audios of the input texts spoken in the specified speaker's voice, with a sample rate of 16 kHz
             :rtype: Text2SpeechDecodedResults
-         
-         
+
+
             SpeechGenerationConfig
-            
+
             Speech-generation specific parameters:
             :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
             :type minlenratio: float
-        
+
             :param maxlenratio: maximum ratio of output length to input text length; prevents excessively long outputs.
             :type minlenratio: float
-        
+
             :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
             :type threshold: float
         """
@@ -3289,9 +3289,9 @@ class TextEmbeddingPipeline:
     """
     class Config:
         """
-        
+
         Structure to keep TextEmbeddingPipeline configuration parameters.
-        
+
         Attributes:
             max_length (int, optional):
                 Maximum length of tokens passed to the embedding model.
@@ -3344,11 +3344,11 @@ class TextEmbeddingPipeline:
     class PoolingType:
         """
         Members:
-        
+
           CLS : First token embeddings
-        
+
           MEAN : The average of all token embeddings
-        
+
           LAST_TOKEN : Last token embeddings
         """
         CLS: typing.ClassVar[TextEmbeddingPipeline.PoolingType]  # value = <PoolingType.CLS: 0>
@@ -3415,9 +3415,9 @@ class TextEmbeddingPipeline:
         """
 class TextParserStreamer(TextStreamer):
     """
-    
+
     Base class for text streamers which works with parsed messages. In order to use inherit from this class and implement write method which takes a dict as input parameter.
-    
+
     tokenizer: Tokenizer object to decode tokens into text.
     parsers: vector of IncrementalParser to process the text stream incrementally.
     """
@@ -3441,7 +3441,7 @@ class TextRerankPipeline:
     """
     class Config:
         """
-        
+
         Structure to keep TextRerankPipeline configuration parameters.
         Attributes:
             top_n (int, optional):
@@ -3489,9 +3489,9 @@ class TextRerankPipeline:
         """
 class TextStreamer(StreamerBase):
     """
-    
+
     TextStreamer is used to decode tokens into text and call a user-defined callback function.
-    
+
     tokenizer: Tokenizer object to decode tokens into text.
     callback: User-defined callback function to process the decoded text, callback should return either boolean flag or StreamingStatus.
     detokenization_params: AnyMap with detokenization parameters, e.g. ov::genai::skip_special_tokens(...)
@@ -3509,9 +3509,9 @@ class TokenizedInputs:
         ...
 class Tokenizer:
     """
-    
+
         The class is used to encode prompts and decode resulting tokens
-    
+
         Chat template is initialized from sources in the following order
         overriding the previous value:
         1. chat_template entry from tokenizer_config.json
@@ -3617,7 +3617,7 @@ class Tokenizer:
         ...
     def get_vocab(self) -> dict:
         """
-        Returns the vocabulary as a Python dictionary with bytes keys and integer values. 
+        Returns the vocabulary as a Python dictionary with bytes keys and integer values.
                      Bytes are used for keys because not all vocabulary entries might be valid UTF-8 strings.
         """
     def get_vocab_vector(self) -> list[str]:
@@ -3705,7 +3705,7 @@ class UNet2DConditionModel:
         """
                         Exports compiled model to a specified directory. Can significantly reduce model load time, especially for large models.
                         export_path (os.PathLike): A path to a directory to export compiled model to.
-        
+
                         Use `blob_path` property to load previously exported models.
         """
     def get_config(self) -> UNet2DConditionModel.Config:
@@ -3720,10 +3720,10 @@ class UNet2DConditionModel:
         ...
 class VLMDecodedResults(DecodedResults):
     """
-    
+
         Structure to store resulting batched text outputs and scores for each batch.
         The first num_return_sequences elements correspond to the first batch element.
-    
+
         Parameters:
         texts:      vector of resulting sequences.
         scores:     scores for each sequence.
@@ -3744,12 +3744,12 @@ class VLMDecodedResults(DecodedResults):
         ...
 class VLMPerfMetrics(PerfMetrics):
     """
-    
+
         Structure with raw performance metrics for each generation before any statistics are calculated.
-    
+
         :param get_prepare_embeddings_duration: Returns mean and standard deviation of embeddings preparation duration in milliseconds
         :type get_prepare_embeddings_duration: MeanStdPair
-    
+
         :param vlm_raw_metrics: VLM specific raw metrics
         :type VLMRawPerfMetrics:
     """
@@ -3789,7 +3789,7 @@ class VLMPipeline:
     def generate(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
-        
+
             :param prompt: input prompt
             :type prompt: str
             The prompt can contain <ov_genai_image_i> with i replaced with
@@ -3814,22 +3814,22 @@ class VLMPipeline:
             LLaVa-NeXT-Video: <video>
             If the prompt doesn't contain image or video tags, but images or videos are
             provided, the tags are prepended to the prompt.
-        
+
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
-        
+
             :param videos: list of frames
             :type videos: list[ov.Tensor]
-        
+
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
-        
+
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
-        
+
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
             :type : dict
-        
+
             :return: return results in decoded form
             :rtype: VLMDecodedResults
         """
@@ -3837,7 +3837,7 @@ class VLMPipeline:
     def generate(self, prompt: str, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
-        
+
             :param prompt: input prompt
             :type prompt: str
             The prompt can contain <ov_genai_image_i> with i replaced with
@@ -3862,22 +3862,22 @@ class VLMPipeline:
             LLaVa-NeXT-Video: <video>
             If the prompt doesn't contain image or video tags, but images or videos are
             provided, the tags are prepended to the prompt.
-        
+
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
-        
+
             :param videos: list of frames
             :type videos: list[ov.Tensor]
-        
+
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
-        
+
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
-        
+
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
             :type : dict
-        
+
             :return: return results in decoded form
             :rtype: VLMDecodedResults
         """
@@ -3885,7 +3885,7 @@ class VLMPipeline:
     def generate(self, prompt: str, videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
-        
+
             :param prompt: input prompt
             :type prompt: str
             The prompt can contain <ov_genai_image_i> with i replaced with
@@ -3910,22 +3910,22 @@ class VLMPipeline:
             LLaVa-NeXT-Video: <video>
             If the prompt doesn't contain image or video tags, but images or videos are
             provided, the tags are prepended to the prompt.
-        
+
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
-        
+
             :param videos: list of frames
             :type videos: list[ov.Tensor]
-        
+
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
-        
+
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
-        
+
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
             :type : dict
-        
+
             :return: return results in decoded form
             :rtype: VLMDecodedResults
         """
@@ -3933,7 +3933,7 @@ class VLMPipeline:
     def generate(self, prompt: str, images: openvino._pyopenvino.Tensor, generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
-        
+
             :param prompt: input prompt
             :type prompt: str
             The prompt can contain <ov_genai_image_i> with i replaced with
@@ -3958,22 +3958,22 @@ class VLMPipeline:
             LLaVa-NeXT-Video: <video>
             If the prompt doesn't contain image or video tags, but images or videos are
             provided, the tags are prepended to the prompt.
-        
+
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
-        
+
             :param videos: list of frames
             :type videos: list[ov.Tensor]
-        
+
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
-        
+
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
             :type : Callable[[str], bool], ov.genai.StreamerBase
-        
+
             :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
             :type : dict
-        
+
             :return: return results in decoded form
             :rtype: VLMDecodedResults
         """
@@ -3981,7 +3981,7 @@ class VLMPipeline:
     def generate(self, prompt: str, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
-        
+
             :param prompt: input prompt
             The prompt can contain <ov_genai_image_i> with i replaced with
             an actual zero based index to refer to an image. Reference to
@@ -4005,17 +4005,17 @@ class VLMPipeline:
             LLaVa-NeXT-Video: <video>
             If the prompt doesn't contain image or video tags, but images or videos are
             provided, the tags are prepended to the prompt.
-        
+
             :type prompt: str
-        
+
             :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
-        
+
             Expected parameters list:
             image: ov.Tensor - input image,
             images: list[ov.Tensor] - input images,
             generation_config: GenerationConfig,
             streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped
-        
+
             :return: return results in decoded form
             :rtype: VLMDecodedResults
         """
@@ -4031,9 +4031,9 @@ class VLMPipeline:
         ...
 class VLMRawPerfMetrics:
     """
-    
+
         Structure with VLM specific raw performance metrics for each generation before any statistics are calculated.
-    
+
         :param prepare_embeddings_durations: Durations of embeddings preparation.
         :type prepare_embeddings_durations: list[MicroSeconds]
     """
@@ -4044,9 +4044,9 @@ class VLMRawPerfMetrics:
         ...
 class WhisperDecodedResultChunk:
     """
-    
+
         Structure to store decoded text with corresponding timestamps
-    
+
         :param start_ts chunk start time in seconds
         :param end_ts   chunk end time in seconds
         :param text     chunk text
@@ -4064,9 +4064,9 @@ class WhisperDecodedResultChunk:
         ...
 class WhisperDecodedResults:
     """
-    
+
         Structure to store resulting text outputs and scores.
-    
+
         Parameters:
         texts:      vector of resulting sequences.
         scores:     scores for each sequence.
@@ -4089,47 +4089,47 @@ class WhisperDecodedResults:
         ...
 class WhisperGenerationConfig(GenerationConfig):
     """
-    
+
         WhisperGenerationConfig
-        
+
         Whisper specific parameters:
         :param decoder_start_token_id: Corresponds to the ”<|startoftranscript|>” token.
         :type decoder_start_token_id: int
-    
+
         :param pad_token_id: Padding token id.
         :type pad_token_id: int
-    
+
         :param translate_token_id: Translate token id.
         :type translate_token_id: int
-    
+
         :param transcribe_token_id: Transcribe token id.
         :type transcribe_token_id: int
-    
+
         :param no_timestamps_token_id: No timestamps token id.
         :type no_timestamps_token_id: int
-    
+
         :param prev_sot_token_id: Corresponds to the ”<|startofprev|>” token.
         :type prev_sot_token_id: int
-    
+
         :param is_multilingual:
         :type is_multilingual: bool
-    
+
         :param begin_suppress_tokens: A list containing tokens that will be suppressed at the beginning of the sampling process.
         :type begin_suppress_tokens: list[int]
-    
+
         :param suppress_tokens: A list containing the non-speech tokens that will be suppressed during generation.
         :type suppress_tokens: list[int]
-    
+
         :param language: Language token to use for generation in the form of <|en|>.
                          You can find all the possible language tokens in the generation_config.json lang_to_id dictionary.
         :type language: Optional[str]
-    
+
         :param lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
         :type lang_to_id: dict[str, int]
-    
+
         :param task: Task to use for generation, either “translate” or “transcribe”
         :type task: int
-    
+
         :param return_timestamps: If `true` the pipeline will return timestamps along the text for *segments* of words in the text.
                            For instance, if you get
                            WhisperDecodedResultChunk
@@ -4139,29 +4139,29 @@ class WhisperGenerationConfig(GenerationConfig):
                            then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
                            Note that a segment of text refers to a sequence of one or more words, rather than individual words.
         :type return_timestamps: bool
-    
+
         :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
         window. Can be used to steer the model to use particular spellings or styles.
-    
+
         Example:
           auto result = pipeline.generate(raw_speech);
           //  He has gone and gone for good answered Paul Icrom who...
-    
+
           auto result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
           //  He has gone and gone for good answered Polychrome who...
         :type initial_prompt: Optional[str]
-    
+
         :param hotwords:  Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows.
         Can be used to steer the model to use particular spellings or styles.
-    
+
         Example:
           auto result = pipeline.generate(raw_speech);
           //  He has gone and gone for good answered Paul Icrom who...
-    
+
           auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
           //  He has gone and gone for good answered Polychrome who...
         :type hotwords: Optional[str]
-    
+
         Generic parameters:
         max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
                        max_new_tokens. Its effect is overridden by `max_new_tokens`, if also set.
@@ -4175,11 +4175,11 @@ class WhisperGenerationConfig(GenerationConfig):
         echo:           if set to true, the model will echo the prompt in the output.
         logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                         Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
-    
+
         repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
         presence_penalty: reduces absolute log prob if the token was generated at least once.
         frequency_penalty: reduces absolute log prob as many times as the token was generated.
-    
+
         Beam search specific parameters:
         num_beams:         number of beams for beam search. 1 disables beam search.
         num_beam_groups:   number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
@@ -4194,7 +4194,7 @@ class WhisperGenerationConfig(GenerationConfig):
             "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates;
             "openvino_genai.StopCriteria.HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
             "openvino_genai.StopCriteria.NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
-    
+
         Random sampling parameters:
         temperature:        the value used to modulate token probabilities for random sampling.
         top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
@@ -4280,12 +4280,12 @@ class WhisperGenerationConfig(GenerationConfig):
         ...
 class WhisperPerfMetrics(PerfMetrics):
     """
-    
+
         Structure with raw performance metrics for each generation before any statistics are calculated.
-    
+
         :param get_features_extraction_duration: Returns mean and standard deviation of features extraction duration in milliseconds
         :type get_features_extraction_duration: MeanStdPair
-    
+
         :param whisper_raw_metrics: Whisper specific raw metrics
         :type WhisperRawPerfMetrics:
     """
@@ -4309,64 +4309,64 @@ class WhisperPipeline:
     def generate(self, raw_speech_input: collections.abc.Sequence[typing.SupportsFloat], generation_config: openvino_genai.py_openvino_genai.WhisperGenerationConfig | None = None, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> WhisperDecodedResults:
         """
             High level generate that receives raw speech as a vector of floats and returns decoded output.
-        
+
             :param raw_speech_input: inputs in the form of list of floats. Required to be normalized to near [-1, 1] range and have 16k Hz sampling rate.
             :type raw_speech_input: list[float]
-        
+
             :param generation_config: generation_config
             :type generation_config: WhisperGenerationConfig or a dict
-        
+
             :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped.
                              Streamer supported for short-form audio (< 30 seconds) with `return_timestamps=False` only
             :type : Callable[[str], bool], ov.genai.StreamerBase
-        
+
             :param kwargs: arbitrary keyword arguments with keys corresponding to WhisperGenerationConfig fields.
             :type : dict
-        
+
             :return: return results in decoded form
             :rtype: WhisperDecodedResults
-         
-         
+
+
             WhisperGenerationConfig
-            
+
             Whisper specific parameters:
             :param decoder_start_token_id: Corresponds to the ”<|startoftranscript|>” token.
             :type decoder_start_token_id: int
-        
+
             :param pad_token_id: Padding token id.
             :type pad_token_id: int
-        
+
             :param translate_token_id: Translate token id.
             :type translate_token_id: int
-        
+
             :param transcribe_token_id: Transcribe token id.
             :type transcribe_token_id: int
-        
+
             :param no_timestamps_token_id: No timestamps token id.
             :type no_timestamps_token_id: int
-        
+
             :param prev_sot_token_id: Corresponds to the ”<|startofprev|>” token.
             :type prev_sot_token_id: int
-        
+
             :param is_multilingual:
             :type is_multilingual: bool
-        
+
             :param begin_suppress_tokens: A list containing tokens that will be suppressed at the beginning of the sampling process.
             :type begin_suppress_tokens: list[int]
-        
+
             :param suppress_tokens: A list containing the non-speech tokens that will be suppressed during generation.
             :type suppress_tokens: list[int]
-        
+
             :param language: Language token to use for generation in the form of <|en|>.
                              You can find all the possible language tokens in the generation_config.json lang_to_id dictionary.
             :type language: Optional[str]
-        
+
             :param lang_to_id: Language token to token_id map. Initialized from the generation_config.json lang_to_id dictionary.
             :type lang_to_id: dict[str, int]
-        
+
             :param task: Task to use for generation, either “translate” or “transcribe”
             :type task: int
-        
+
             :param return_timestamps: If `true` the pipeline will return timestamps along the text for *segments* of words in the text.
                                For instance, if you get
                                WhisperDecodedResultChunk
@@ -4376,29 +4376,29 @@ class WhisperPipeline:
                                then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
                                Note that a segment of text refers to a sequence of one or more words, rather than individual words.
             :type return_timestamps: bool
-        
+
             :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
             window. Can be used to steer the model to use particular spellings or styles.
-        
+
             Example:
               auto result = pipeline.generate(raw_speech);
               //  He has gone and gone for good answered Paul Icrom who...
-        
+
               auto result = pipeline.generate(raw_speech, ov::genai::initial_prompt("Polychrome"));
               //  He has gone and gone for good answered Polychrome who...
             :type initial_prompt: Optional[str]
-        
+
             :param hotwords:  Hotwords tokens passed as a previous transcription (after `<|startofprev|>` token) to the all processing windows.
             Can be used to steer the model to use particular spellings or styles.
-        
+
             Example:
               auto result = pipeline.generate(raw_speech);
               //  He has gone and gone for good answered Paul Icrom who...
-        
+
               auto result = pipeline.generate(raw_speech, ov::genai::hotwords("Polychrome"));
               //  He has gone and gone for good answered Polychrome who...
             :type hotwords: Optional[str]
-        
+
             Generic parameters:
             max_length:    the maximum length the generated tokens can have. Corresponds to the length of the input prompt +
                            max_new_tokens. Its effect is overridden by `max_new_tokens`, if also set.
@@ -4412,11 +4412,11 @@ class WhisperPipeline:
             echo:           if set to true, the model will echo the prompt in the output.
             logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                             Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
-        
+
             repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
             presence_penalty: reduces absolute log prob if the token was generated at least once.
             frequency_penalty: reduces absolute log prob as many times as the token was generated.
-        
+
             Beam search specific parameters:
             num_beams:         number of beams for beam search. 1 disables beam search.
             num_beam_groups:   number of groups to divide `num_beams` into in order to ensure diversity among different groups of beams.
@@ -4431,7 +4431,7 @@ class WhisperPipeline:
                 "openvino_genai.StopCriteria.EARLY", where the generation stops as soon as there are `num_beams` complete candidates;
                 "openvino_genai.StopCriteria.HEURISTIC" is applied and the generation stops when is it very unlikely to find better candidates;
                 "openvino_genai.StopCriteria.NEVER", where the beam search procedure only stops when there cannot be better candidates (canonical beam search algorithm).
-        
+
             Random sampling parameters:
             temperature:        the value used to modulate token probabilities for random sampling.
             top_p:              if set to float < 1, only the smallest set of most probable tokens with probabilities that add up to top_p or higher are kept for generation.
@@ -4447,9 +4447,9 @@ class WhisperPipeline:
         ...
 class WhisperRawPerfMetrics:
     """
-    
+
         Structure with whisper specific raw performance metrics for each generation before any statistics are calculated.
-    
+
         :param features_extraction_durations: Duration for each features extraction call.
         :type features_extraction_durations: list[MicroSeconds]
     """

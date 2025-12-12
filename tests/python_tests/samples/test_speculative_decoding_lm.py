@@ -44,4 +44,3 @@ class TestSpeculativeDecodingLM:
         # Compare results
         assert cpp_result_ref.stdout.strip() in py_result.stdout.strip(), "Python and CPP results should match"
         assert cpp_result_ref.stdout.strip() in cpp_result.stdout.strip(), "Greedy and speculative decoding results should match"
-

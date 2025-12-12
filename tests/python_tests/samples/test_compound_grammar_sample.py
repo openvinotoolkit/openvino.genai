@@ -26,4 +26,3 @@ def test_structured_output_sample(convert_model):
 
     # Compare results
     assert py_predictions == js_predictions, "Python and JS results should match"
-

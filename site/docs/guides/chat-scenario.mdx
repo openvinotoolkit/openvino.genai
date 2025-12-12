@@ -82,16 +82,16 @@ A simple chat example (with grouped beam search decoding):
 
         const pipe = await LLMPipeline(model_path, 'CPU');
 
-        const config = { 
-            max_new_tokens: 100, 
-            num_beam_groups: 3, 
-            num_beams: 15, 
-            diversity_penalty: 1.5 
+        const config = {
+            max_new_tokens: 100,
+            num_beam_groups: 3,
+            num_beams: 15,
+            diversity_penalty: 1.5
         };
 
         // highlight-next-line
         await pipe.startChat();
-        
+
         const rl = readline.createInterface({
             input: process.stdin,
             output: process.stdout,

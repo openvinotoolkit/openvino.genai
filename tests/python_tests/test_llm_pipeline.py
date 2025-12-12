@@ -878,4 +878,3 @@ def test_pipelines_generate_with_streaming(
         mock_streamer.assert_not_called()
     else:
         mock_streamer.assert_called()
-
