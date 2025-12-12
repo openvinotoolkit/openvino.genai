@@ -46,9 +46,9 @@ void share_embedding_weights(std::shared_ptr<ov::Model>& main_model, std::shared
     try {
         draft_weight_node->output(0).replace(main_weight_node->output(0));
     } catch (const std::exception& e) {
-        GENAI_WARN(std::string("Error: failed to import embedding weights from main model to draft model. Exception: ") + e.what());
+        OPENVINO_THROW(std::string("Error: failed to import embedding weights from main model to draft model. Exception: ") + e.what());
     } catch (...) {
-        GENAI_WARN("Error: failed to import embedding weights from main model to draft model due to unknown exception.");
+        OPENVINO_THROW("Error: failed to import embedding weights from main model to draft model due to unknown exception.");
     }
 }
 
@@ -72,10 +72,8 @@ void shift_fc_from_draft_to_main(std::shared_ptr<ov::Model>& main_model, std::sh
         return nullptr;
     };
     auto fc_weights = remove_fc_and_rewire(draft_model);
-    if (!fc_weights) {
-        GENAI_WARN("Error: failed to retrieve and remove FC matmul from draft model.");
-        return;
-    }
+    if (!fc_weights)
+        OPENVINO_THROW("Failed to locate FC weights in eagle3 draft model for shifting to main model.");
     // now we create the fc into main model
     for (const auto& result : main_model->get_results()) {
         auto input_node = result->input_value(0).get_node_shared_ptr();
