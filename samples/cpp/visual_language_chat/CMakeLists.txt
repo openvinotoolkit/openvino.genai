@@ -82,7 +82,7 @@ if(NOT OpenCV_FOUND)
             ${OPENCV_MODULE_opencv_core_LOCATION}/include
             ${OPENCV_MODULE_opencv_videoio_LOCATION}/include
             )
-    
+
 
     target_link_libraries(video_to_text_chat opencv_core opencv_imgcodecs opencv_imgproc opencv_videoio openvino::genai cxxopts::cxxopts)
 

@@ -12,22 +12,22 @@ from pathlib import Path
 
 
 def streamer(subword: str) -> bool:
-    '''
+    """
 
     Args:
         subword: sub-word of the generated text.
 
     Returns: Return flag corresponds whether generation should be stopped.
 
-    '''
-    print(subword, end='', flush=True)
+    """
+    print(subword, end="", flush=True)
 
     # No value is returned as in this example we don't want to stop the generation in this method.
     # "return None" will be treated the same as "return openvino_genai.StreamingStatus.RUNNING".
 
 
 def read_video(path: str, num_frames: int = 8) -> Tensor:
-    '''
+    """
 
     Args:
         path: The path to the video.
@@ -35,7 +35,7 @@ def read_video(path: str, num_frames: int = 8) -> Tensor:
 
     Returns: the ov.Tensor containing the video.
 
-    '''
+    """
     cap = cv2.VideoCapture(path)
 
     frames = []
@@ -49,7 +49,7 @@ def read_video(path: str, num_frames: int = 8) -> Tensor:
             break
         if idx in indices:
             frames.append(np.array(frame))
-        idx+=1
+        idx += 1
     assert idx == total_num_frames, "Frame count mismatch: expected {}, got {}".format(total_num_frames, idx)
 
     return Tensor(frames)
@@ -64,9 +64,9 @@ def read_videos(path: str) -> list[Tensor]:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('model_dir', help="Path to the model directory")
-    parser.add_argument('video_dir', help="Path to a video file.")
-    parser.add_argument('device', nargs='?', default='CPU', help="Device to run the model on (default: CPU)")
+    parser.add_argument("model_dir", help="Path to the model directory")
+    parser.add_argument("video_dir", help="Path to a video file.")
+    parser.add_argument("device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
     args = parser.parse_args()
 
     videos = read_videos(args.video_dir)
@@ -85,18 +85,17 @@ def main():
     config.max_new_tokens = 100
 
     pipe.start_chat()
-    prompt = input('question:\n')
+    prompt = input("question:\n")
     pipe.generate(prompt, videos=videos, generation_config=config, streamer=streamer)
 
     while True:
         try:
-            prompt = input("\n----------\n"
-                "question:\n")
+            prompt = input("\n----------\nquestion:\n")
         except EOFError:
             break
         pipe.generate(prompt, generation_config=config, streamer=streamer)
     pipe.finish_chat()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
