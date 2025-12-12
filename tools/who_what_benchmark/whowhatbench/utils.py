@@ -1,8 +1,20 @@
 from typing import Union, Optional
 from packaging.version import Version
+import json
 import torch
+import logging
+import itertools
 import transformers
+
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+from pathlib import Path
 from contextlib import contextmanager
+from datasets.utils.file_utils import xopen
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def new_randn_tensor(
@@ -105,3 +117,58 @@ def get_ignore_parameters_flag():
     if transformers_version >= Version("4.51.0"):
         return {"use_model_defaults": False}
     return {}
+
+
+def get_json_config(config):
+    if config is None or (isinstance(config, str) and config.strip() == ""):
+        raise ValueError("Config must be a non-empty string or path to a JSON file.")
+    json_config = {}
+    if Path(config).is_file():
+        with open(config, 'r') as f:
+            try:
+                json_config = json.load(f)
+            except json.JSONDecodeError:
+                raise RuntimeError(f'Failed to parse JSON from file: {config}')
+    else:
+        try:
+            json_config = json.loads(config)
+        except json.JSONDecodeError:
+            raise RuntimeError(f'Failed to parse JSON config: {config}')
+
+    return json_config
+
+
+# for patching function datasets.packaged_modules.parquet.parquet.Parquet._generate_tables
+# according to code: https://github.com/huggingface/datasets/issues/7357#issuecomment-3354047772
+def parquet_generate_tables(self, files, *args, **kwargs):
+    if self.config.features is not None and self.config.columns is not None:
+        if sorted(field.name for field in self.info.features.arrow_schema) != sorted(self.config.columns):
+            raise ValueError(
+                f"Tried to load parquet data with columns '{self.config.columns}' with mismatching features '{self.info.features}'"
+            )
+    for file_idx, file in enumerate(itertools.chain.from_iterable(files)):
+        try:
+            with xopen(file, "rb") as f:
+                parquet_file = pq.ParquetFile(f)
+                if parquet_file.metadata.num_row_groups > 0:
+                    batch_size = self.config.batch_size or parquet_file.metadata.row_group(0).num_rows
+                try:
+                    for batch_idx, record_batch in enumerate(
+                        parquet_file.iter_batches(batch_size=batch_size, columns=self.config.columns)
+                    ):
+                        pa_table = pa.Table.from_batches([record_batch])
+                        # Uncomment for debugging (will print the Arrow table size and elements)
+                        # logger.warning(f"pa_table: {pa_table} num rows: {pa_table.num_rows}")
+                        # logger.warning('\n'.join(str(pa_table.slice(i, 1).to_pydict()) for i in range(pa_table.num_rows)))
+                        yield f"{file_idx}_{batch_idx}", self._cast_table(pa_table)
+                except ValueError as e:
+                    logger.error(f"Failed to read file '{file}' with error {type(e)}: {e}")
+                    raise
+        except (pa.ArrowInvalid, ValueError) as e:
+            if self.config.on_bad_files == "error":
+                logger.warning(f"Failed to read file '{file}' with error {type(e).__name__}: {e}")
+                raise
+            elif self.config.on_bad_files == "warn":
+                logger.warning(f"Skipping bad file '{file}'. {type(e).__name__}: {e}`")
+            else:
+                logger.warning(f"Skipping bad file '{file}'. {type(e).__name__}: {e}`")
