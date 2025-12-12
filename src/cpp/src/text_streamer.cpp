@@ -191,7 +191,7 @@ CallbackTypeVariant TextParserStreamer::write(std::string delta_text) {
     }
     delta_message["content"] = delta_text;
     
-    JsonContainer::concatenate(m_pimpl->m_parsed_message, delta_message);
+    m_pimpl->m_parsed_message.concatenate(delta_message);
     return write(delta_message);
 }
 

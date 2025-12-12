@@ -96,7 +96,7 @@ TEST_F(DeepSeekR1ReasoningParserTest, ReasoningContentAccumulatesAcrossCalls) {
     for (int i = 1; i < input_stream.size(); i++) {
         std::string delta_text = input_stream[i];
         delta_text = parser.parse(msg, delta_text);
-        JsonContainer::concatenate(accumulated_msg, msg);
+        accumulated_msg.concatenate(msg);
     }
     ASSERT_EQ(accumulated_msg["reasoning_content"], ref_res);
 }

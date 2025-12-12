@@ -409,29 +409,43 @@ void* JsonContainer::_get_json_value_ptr() const {
     return m_impl->get_json_value_ptr(m_path, AccessMode::Read);
 }
 
-void JsonContainer::concatenate(JsonContainer& dst, const JsonContainer& src) {
-    auto dst_ = static_cast<nlohmann::ordered_json*>(dst._get_json_value_ptr());
-    auto src_ = static_cast<const nlohmann::ordered_json*>(src._get_json_value_ptr());
 
-    for (auto it = src_->begin(); it != src_->end(); ++it) {
-        const auto& src_val = it.value();
-        // Check if both values are of string type only if need to concatenate them. 
-        // Otherwise just write the source value to destination. Extra check is not needed.
+void JsonContainer::concatenate(JsonContainer& other) {
+    auto dst_ = static_cast<nlohmann::ordered_json*>(this->_get_json_value_ptr());
+    auto src_ = static_cast<const nlohmann::ordered_json*>(other._get_json_value_ptr());
 
-        if (!dst_->contains(it.key())) {
-            (*dst_)[it.key()] = src_val;
-            continue;
+    std::function<void(nlohmann::ordered_json&, const nlohmann::ordered_json&)> recursive_concat;
+    recursive_concat = [&recursive_concat](nlohmann::ordered_json& lvalue, const nlohmann::ordered_json& rvalue) {
+        for (auto it = rvalue.begin(); it != rvalue.end(); ++it) {
+            const auto& src_val = it.value();
+            
+            if (!lvalue.contains(it.key())) {
+                lvalue[it.key()] = src_val;
+                continue;
+            }
+            
+            auto& dst_val = lvalue[it.key()];
+            
+            // If both are objects, recursively concatenate
+            if (src_val.is_object() && dst_val.is_object()) {
+                recursive_concat(dst_val, src_val);
+            }
+            // If both are strings, concatenate them
+            else if (src_val.is_string() && dst_val.is_string()) {
+                dst_val = dst_val.get<std::string>() + src_val.get<std::string>();
+            }
+            // Otherwise, type mismatch error
+            else {
+                OPENVINO_THROW(
+                    "JsonContainer concatenate type mismatch for key '", it.key(), 
+                    "'. Source type: '", src_val.type_name(), 
+                    "', destination type: '", dst_val.type_name(), "'."
+                );
+            }
         }
-        
-        auto& dst_val = (*dst_)[it.key()];
-        OPENVINO_ASSERT(
-            src_val.is_string() && dst_val.is_string(),
-            "JsonContainer concatenate supports only string concatenation for object values. "
-            "Key: '", it.key(), "', src_val type: '", src_val.type_name(), "', dst_val type: '", dst_val.type_name(), "'."
-        );
-        dst_val = dst_val.get<std::string>() + src_val.get<std::string>();
-    }
+    };
+    
+    recursive_concat(*dst_, *src_);
 }
-
 } // namespace genai
 } // namespace ov
