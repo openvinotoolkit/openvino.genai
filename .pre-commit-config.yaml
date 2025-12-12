@@ -27,4 +27,4 @@ repos:
         args: ["--formatter=ruff"]
         additional_dependencies:
           - ruff==0.14.4
-          - tomli
+          - tomli==2.3.0
