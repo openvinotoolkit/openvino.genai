@@ -1,10 +1,10 @@
 #pragma once
 #include <napi.h>
 
-#include "openvino/genai/llm_pipeline.hpp"
-#include "openvino/genai/visual_language/pipeline.hpp"
-#include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/core/type/element_type.hpp"
+#include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/rag/text_embedding_pipeline.hpp"
+#include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/openvino.hpp"
 
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};

@@ -128,7 +128,7 @@ describe("VLMPipeline", () => {
 
     assert.ok(result, "Should return result");
     assert.ok(result.perfMetrics, "Should have perfMetrics");
-    // Property frome base PerformanceMetrics
+    // Property from base PerformanceMetrics
     const numTokens = result.perfMetrics.getNumGeneratedTokens();
     assert.ok(typeof numTokens === "number", "getNumGeneratedTokens should return number");
     assert.ok(numTokens > 0, "Should generate at least one token");

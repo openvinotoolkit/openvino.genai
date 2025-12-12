@@ -5,10 +5,9 @@
 
 #include <napi.h>
 
-#include "openvino/genai/perf_metrics.hpp"
-
 #include "bindings_utils.hpp"
 #include "include/helper.hpp"
+#include "openvino/genai/perf_metrics.hpp"
 
 using ov::genai::common_bindings::utils::get_ms;
 using ov::genai::common_bindings::utils::timestamp_to_ms;
@@ -75,10 +74,10 @@ public:
 
     /**
      * @brief Base implementation of get_raw_metrics.
-     * 
+     *
      * Derived classes MUST override this method to use it with InstanceAccessor.
      * Example:
-     * 
+     *
      * Napi::Value get_raw_metrics(const Napi::CallbackInfo& info) {
      *     return BasePerfMetricsWrapper<DerivedClass, MetricsType>::get_raw_metrics(info);
      * }

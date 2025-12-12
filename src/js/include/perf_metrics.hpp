@@ -5,9 +5,8 @@
 
 #include <napi.h>
 
-#include "openvino/genai/perf_metrics.hpp"
-
 #include "include/base/perf_metrics.hpp"
+#include "openvino/genai/perf_metrics.hpp"
 
 class PerfMetricsWrapper : public BasePerfMetricsWrapper<PerfMetricsWrapper> {
 public:

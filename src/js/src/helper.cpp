@@ -340,12 +340,10 @@ ov::Tensor js_to_cpp<ov::Tensor>(const Napi::Env& env, const Napi::Value& value)
 
 template <>
 std::vector<ov::Tensor> js_to_cpp<std::vector<ov::Tensor>>(const Napi::Env& env, const Napi::Value& value) {
-    
     std::vector<ov::Tensor> tensors;
     if (value.IsUndefined() || value.IsNull()) {
         return tensors;
     }
-    
     if (value.IsArray()) {
         auto array = value.As<Napi::Array>();
         size_t length = array.Length();
@@ -359,7 +357,6 @@ std::vector<ov::Tensor> js_to_cpp<std::vector<ov::Tensor>>(const Napi::Env& env,
     } else {
         OPENVINO_THROW("Passed argument must be an array of Tensors or a single Tensor.");
     }
-    
     return tensors;
 }
 
@@ -380,11 +377,9 @@ template <>
 ov::genai::VLMPerfMetrics& unwrap<ov::genai::VLMPerfMetrics>(const Napi::Env& env, const Napi::Value& value) {
     const auto obj = value.As<Napi::Object>();
     const auto& prototype = env.GetInstanceData<AddonData>()->vlm_perf_metrics;
-
     OPENVINO_ASSERT(prototype, "Invalid pointer to prototype.");
-        OPENVINO_ASSERT(obj.InstanceOf(prototype.Value().As<Napi::Function>()),
-                        "Passed argument is not of type VLMPerfMetrics");
-
+    OPENVINO_ASSERT(obj.InstanceOf(prototype.Value().As<Napi::Function>()),
+                    "Passed argument is not of type VLMPerfMetrics");
     const auto js_metrics = Napi::ObjectWrap<VLMPerfMetricsWrapper>::Unwrap(obj);
     return js_metrics->get_value();
 }

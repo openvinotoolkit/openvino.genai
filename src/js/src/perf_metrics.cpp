@@ -25,4 +25,3 @@ Napi::Object PerfMetricsWrapper::wrap(Napi::Env env, const ov::genai::PerfMetric
 Napi::Value PerfMetricsWrapper::get_raw_metrics(const Napi::CallbackInfo& info) {
     return BasePerfMetricsWrapper<PerfMetricsWrapper>::get_raw_metrics(info);
 }
-
