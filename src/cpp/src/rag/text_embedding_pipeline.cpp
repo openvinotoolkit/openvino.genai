@@ -45,6 +45,11 @@ bool has_token_type_ids_input(const T& inputs) {
     return false;
 }
 
+void set_node_name(std::shared_ptr<ov::Node> node, const std::string& name) {
+    node->set_friendly_name(name);
+    node->get_output_tensor(0).set_names({name});
+}
+
 /**
  * CLS pooling slices first element from seq_length dimension
  * [batch_size, seq_length, hidden_size] -> [batch_size, seq_length[0], hidden_size]
@@ -62,11 +67,9 @@ std::shared_ptr<op::Op> get_cls_pooling_op(const ov::Output<ov::Node>& last_hidd
     return std::make_shared<op::v15::Squeeze>(slice, squeeze_axis);
 }
 
-std::shared_ptr<op::Op> get_mean_pooling_op(std::shared_ptr<Model> model,
-                                            const ov::Output<ov::Node>& last_hidden_state_node) {
+std::shared_ptr<op::Op> get_mean_pooling_op(const ov::Output<ov::Node>& last_hidden_state_node,
+                                            const ov::Output<ov::Node>& attention_mask) {
     auto shape_of = std::make_shared<op::v3::ShapeOf>(last_hidden_state_node);
-
-    auto attention_mask = model->input("attention_mask").get_node()->outputs()[0];
 
     auto unsqueze_axis = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
 
@@ -95,8 +98,8 @@ std::shared_ptr<op::Op> get_mean_pooling_op(std::shared_ptr<Model> model,
     return std::make_shared<op::v1::Divide>(sum_hidden_state, max_expanded_mask);
 }
 
-std::shared_ptr<op::Op> get_last_token_pooling_op(std::shared_ptr<Model> model,
-                                                  const ov::Output<ov::Node>& last_hidden_state_node,
+std::shared_ptr<op::Op> get_last_token_pooling_op(const ov::Output<ov::Node>& last_hidden_state_node,
+                                                  const ov::Output<ov::Node>& attention_mask,
                                                   const TextEmbeddingPipeline::Config& config) {
     const auto left_padding = config.padding_side.has_value() && config.padding_side.value() == "left";
 
@@ -115,8 +118,6 @@ std::shared_ptr<op::Op> get_last_token_pooling_op(std::shared_ptr<Model> model,
         return std::make_shared<op::v15::Squeeze>(slice, squeeze_axis);
     }
 
-    auto attention_mask = model->input("attention_mask").get_node()->outputs()[0];
-
     auto axis_1 = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
     auto reduce_sum = std::make_shared<op::v1::ReduceSum>(attention_mask, axis_1);
     auto subtract_1 = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
@@ -125,29 +126,69 @@ std::shared_ptr<op::Op> get_last_token_pooling_op(std::shared_ptr<Model> model,
     return std::make_shared<op::v8::Gather>(last_hidden_state_node, subtract, axis_1, 1);
 }
 
+std::shared_ptr<op::Op> create_post_ops(const ov::Output<ov::Node>& input,
+                                        const ov::Output<ov::Node>& attention_mask,
+                                        const TextEmbeddingPipeline::Config& config) {
+    if (config.pooling_type == TextEmbeddingPipeline::PoolingType::CLS) {
+        return get_cls_pooling_op(input);
+    } else if (config.pooling_type == TextEmbeddingPipeline::PoolingType::MEAN) {
+        return get_mean_pooling_op(input, attention_mask);
+    } else if (config.pooling_type == TextEmbeddingPipeline::PoolingType::LAST_TOKEN) {
+        return get_last_token_pooling_op(input, attention_mask, config);
+    }
+
+    OPENVINO_THROW("Pooling type is not supported");
+}
+
+std::shared_ptr<op::Op> create_normalize_ops(const ov::Output<ov::Node>& input,
+                                            const TextEmbeddingPipeline::Config& config) {
+    if (config.normalize) {
+        auto axis_const = std::make_shared<op::v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector{1});
+        return std::make_shared<op::v0::NormalizeL2>(input, axis_const, 1e-12, op::EpsMode::MAX);
+    }
+    return std::dynamic_pointer_cast<op::Op>(input.get_node_shared_ptr());
+}
+
 std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model, const TextEmbeddingPipeline::Config& config) {
     ov::preprocess::PrePostProcessor processor(model);
 
     processor.output().postprocess().custom([model, &config](const ov::Output<ov::Node>& node) {
-        if (config.pooling_type == TextEmbeddingPipeline::PoolingType::CLS) {
-            return get_cls_pooling_op(node);
-        } else if (config.pooling_type == TextEmbeddingPipeline::PoolingType::MEAN) {
-            return get_mean_pooling_op(model, node);
-        } else if (config.pooling_type == TextEmbeddingPipeline::PoolingType::LAST_TOKEN) {
-            return get_last_token_pooling_op(model, node, config);
-        }
-
-        OPENVINO_THROW("Pooling type is not supported");
+        auto attention_mask = model->input("attention_mask").get_node()->outputs()[0];
+        return create_post_ops(node, attention_mask, config);
     });
 
     if (config.normalize) {
-        processor.output().postprocess().custom([](const ov::Output<ov::Node>& node) {
-            auto axis_const = std::make_shared<op::v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector{1});
-            return std::make_shared<op::v0::NormalizeL2>(node, axis_const, 1e-12, op::EpsMode::MAX);
+        processor.output().postprocess().custom([&config](const ov::Output<ov::Node>& node) {
+            return create_normalize_ops(node, config);
         });
     }
 
     return processor.build();
+}
+
+std::shared_ptr<ov::Model> create_post_model(std::shared_ptr<ov::Model> model,
+                                            const TextEmbeddingPipeline::Config& config,
+                                            ov::Dimension::value_type max_prompt_size) {
+    auto output_node = model->outputs()[0];
+    auto output_shape = output_node.get_partial_shape();
+    auto input_param =
+        std::make_shared<ov::op::v0::Parameter>(output_node.get_element_type(), ov::PartialShape{1, max_prompt_size, output_shape[2]});
+    set_node_name(input_param, "input_ids");
+
+    auto attention_mask = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{1, max_prompt_size});
+    set_node_name(attention_mask, "attention_mask");
+
+    auto post_output = create_post_ops(input_param, attention_mask, config);
+    auto post_normalize_output = create_normalize_ops(post_output, config);
+    OPENVINO_ASSERT(post_normalize_output != nullptr);
+
+    auto result_node = std::make_shared<ov::op::v0::Result>(post_normalize_output);
+    set_node_name(result_node, "last_hidden_state");
+    auto post_model =
+        std::make_shared<ov::Model>(ov::OutputVector{result_node}, ov::ParameterVector{input_param, attention_mask});
+    post_model->set_friendly_name(model->get_friendly_name() + "_post_process");
+    post_model->validate_nodes_and_infer_types();
+    return post_model;
 }
 
 std::optional<size_t> read_max_position_embeddings(const std::filesystem::path& models_path) {
@@ -238,16 +279,22 @@ public:
 
         ov::CompiledModel compiled_model;
         if (device == "NPU" && model->is_dynamic()) {
+            OPENVINO_ASSERT(m_config.max_length.has_value(), "The parameter max_length is not set");
+
             bool is_padding_on_left = m_config.padding_side.has_value() && m_config.padding_side.value() == "left";
             if (is_padding_on_left && is_seq_len_fixed &&
                 config.pooling_type != TextEmbeddingPipeline::PoolingType::MEAN) {
-                OPENVINO_THROW("Padding on left is only supported for the mean post-processing type");
+                OPENVINO_THROW("Padding on left is only supported for the MEAN pooling type");
             }
 
             auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
             utils::KVDesc kv_desc;
             std::tie(compiled_model, kv_desc) =
                 utils::compile_decoder_for_npu_text_embedding(model, properties, kv_pos, m_config);
+
+            auto post_model = create_post_model(model, m_config, m_config.max_length.value());
+            auto post_compiled_model = core.compile_model(post_model, "CPU");
+            m_post_request = post_compiled_model.create_infer_request();
         } else {
             model = apply_postprocessing(model, m_config);
             compiled_model = core.compile_model(model, device, properties);
@@ -296,9 +343,11 @@ public:
 private:
     Tokenizer m_tokenizer;
     InferRequest m_request;
+    InferRequest m_post_request;
     Config m_config;
     AnyMap m_tokenization_params;
     std::optional<size_t> m_max_position_embeddings;
+    ov::Tensor m_attention_mask;
 
     void reshape_model(std::shared_ptr<Model>& model) {
         ov::PartialShape target_shape{ov::Dimension::dynamic(), ov::Dimension::dynamic()};
@@ -336,6 +385,28 @@ private:
         model->reshape(input_name_to_shape);
     }
 
+    ov::Tensor post_model_infer(ov::Tensor input) {
+        if (m_post_request) {
+            m_post_request.set_tensor("input_ids", input);
+
+            auto attention_mask_tensor = m_post_request.get_tensor("attention_mask");
+
+            std::copy_n(m_attention_mask.data<int64_t>(),
+                    m_attention_mask.get_size(),
+                    attention_mask_tensor.data<int64_t>());
+            if (m_attention_mask.get_size() < attention_mask_tensor.get_size()) {
+                std::fill_n(attention_mask_tensor.data<int64_t>() + m_attention_mask.get_size(),
+                            attention_mask_tensor.get_size() - m_attention_mask.get_size(),
+                            0);
+            }
+
+            m_post_request.infer();
+            return m_post_request.get_tensor("last_hidden_state");
+        }
+
+        return input;
+    }
+
     void start_embed_async(std::vector<std::string>& texts) {
         if (m_config.batch_size.has_value()) {
             // if batch_size is set, model shape is fixed
@@ -347,9 +418,10 @@ private:
         }
 
         const auto encoded = m_tokenizer.encode(texts, m_tokenization_params);
-
         m_request.set_tensor("input_ids", encoded.input_ids);
         m_request.set_tensor("attention_mask", encoded.attention_mask);
+
+        m_attention_mask = encoded.attention_mask;
 
         // fill token_type_ids
         // todo: pass token_type_ids from tokenizer
@@ -366,9 +438,8 @@ private:
         m_request.wait();
 
         // [batch_size, hidden_size]
-        const Tensor last_hidden_state = m_request.get_tensor("last_hidden_state");
-
-        return to_embedding_result(last_hidden_state);
+        const auto last_hidden_state = m_request.get_tensor("last_hidden_state");
+        return to_embedding_result(post_model_infer(last_hidden_state));
     };
 
     std::vector<std::string> format_texts(const std::vector<std::string>& texts) {
@@ -398,6 +469,7 @@ private:
 
         std::vector<std::vector<float>> result;
         const auto shape = last_hidden_state.get_shape();
+
         const size_t batch_size = shape[0];
         const size_t hidden_size = shape[1];
 
