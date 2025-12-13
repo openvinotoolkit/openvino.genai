@@ -90,18 +90,7 @@ ov::Tensor truncate_hidden_state_from_end(const ov::Tensor& hidden_state, size_t
 
     size_t new_seq_len = current_seq_len - tokens_to_remove;
 
-    ov::Coordinate start_coord(shape.size(), 0);
-    ov::Coordinate end_coord(shape.size(), 0);
-
-    for (size_t i = 0; i < shape.size(); ++i) {
-        start_coord[i] = 0;
-        if (i == seq_len_dim) {
-            end_coord[i] = new_seq_len;
-        } else {
-            end_coord[i] = shape[i];
-        }
-    }
-
+    auto [start_coord, end_coord] = ov::genai::utils::make_roi(shape, seq_len_dim, 0, new_seq_len);
     return ov::Tensor(hidden_state, start_coord, end_coord);
 }
 
@@ -299,7 +288,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                     auto& hidden_state = candidate_sequence.hidden_states;
                     ov::Tensor pruned_hidden_state = truncate_hidden_state_from_end(hidden_state, result.removed_tokens_cnt);
                     const auto& shape = pruned_hidden_state.get_shape();
-                    OPENVINO_ASSERT(shape[0] >= 1, "Unexpected hidden state shape from main model hidden state after verification.");
+                    OPENVINO_ASSERT(shape[0] >= 1, "Unexpected hidden state shape from the main model.");
                     m_model_runner->set_initial_hidden_state(request_id,
                                                             pruned_hidden_state);
                     // to calculate the number of tokens that needs to do kv cache re-generate in draft model

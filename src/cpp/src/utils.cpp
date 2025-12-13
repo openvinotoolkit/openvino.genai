@@ -848,6 +848,19 @@ bool has_input(const std::shared_ptr<ov::Model>& model, const std::string& name)
     return it != inputs.end();
 }
 
+std::pair<ov::Coordinate, ov::Coordinate> make_roi(const std::vector<size_t>& shape, const size_t dim, const size_t range_start, const size_t range_end) {
+    ov::Coordinate start(shape.size(), 0), end(shape.size(), 0);
+    for (size_t d = 0; d < shape.size(); ++d) {
+        if (d == dim) {
+            start[d] = range_start;
+            end[d] = range_end;
+        } else {
+            start[d] = 0;
+            end[d] = shape[d];
+        }
+    }
+    return std::make_pair(start, end);
+}
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

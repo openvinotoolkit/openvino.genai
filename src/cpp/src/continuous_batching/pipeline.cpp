@@ -23,7 +23,7 @@ using namespace ov::genai;
 namespace {
 struct Eagle3RTInfo {
     bool eagle3_mode = false;
-    std::vector<int> hidden_layers_list;
+    std::vector<int32_t> hidden_layers_list;
     std::filesystem::path dt_mapping_table;
 };
 
@@ -36,7 +36,7 @@ extract_eagle3_mode_from_config(ov::AnyMap& config, const std::filesystem::path&
         auto it = config.find("hidden_layers_list");
         if (it != config.end()) {
             try {
-                eagle_rt_info.hidden_layers_list = it->second.as<std::vector<int>>();
+                eagle_rt_info.hidden_layers_list = it->second.as<std::vector<int32_t>>();
                 config.erase("hidden_layers_list");
             } catch (const std::exception&) {
                 OPENVINO_THROW("please check the hidden layers input");

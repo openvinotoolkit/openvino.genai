@@ -643,28 +643,6 @@ private:
     bool _is_hs_internal() const { return m_hidden_state_flags & HS_INTERNAL; }
 
     /**
-     * @brief Helper to create ROI coordinates for a tensor.
-     *
-     * Given a tensor shape and a range on the first dimension, returns start and end coordinates
-     * for slicing [first_dim_start, first_dim_end) along the first dimension, and full range for others.
-     *
-     * @param shape The shape of the tensor.
-     * @param first_dim_start The starting index along the first dimension.
-     * @param first_dim_end The ending index (exclusive) along the first dimension.
-     * @return A pair of ov::Coordinate (start, end) for ROI slicing.
-     */
-    static std::pair<ov::Coordinate, ov::Coordinate> make_roi(const std::vector<size_t>& shape, size_t first_dim_start, size_t first_dim_end) {
-        ov::Coordinate start(shape.size(), 0), end(shape.size(), 0);
-        start[0] = first_dim_start;
-        end[0] = first_dim_end;
-        for (size_t d = 1; d < shape.size(); ++d) {
-            start[d] = 0;
-            end[d] = shape[d];
-        }
-        return std::make_pair(start, end);
-    }
-
-    /**
      * @brief Retrieves a slice of the hidden state tensor corresponding to a specific request and sequence group.
      *
      * This method looks up the hidden state mapping for the given request and sequence group IDs.
@@ -695,7 +673,7 @@ private:
         OPENVINO_ASSERT(shape.size() >= 2,
                         "Hidden states tensor rank is less than 2.");
 
-        auto [start_coord, end_coord] = make_roi(shape, start_idx, start_idx + length);
+        auto [start_coord, end_coord] = ov::genai::utils::make_roi(shape, 0, start_idx, start_idx + length);
         return ov::Tensor(m_hidden_states, start_coord, end_coord);
     }
 
@@ -752,13 +730,13 @@ private:
         // prepare source ROI coords
         const auto src_shape = src.get_shape();
         OPENVINO_ASSERT(!src_shape.empty(), "source tensor rank is zero");
-        auto [src_start, src_end] = make_roi(src_shape, src_start_idx, src_start_idx + copy_length);
+        auto [src_start, src_end] = ov::genai::utils::make_roi(src_shape, 0, src_start_idx, src_start_idx + copy_length);
         ov::Tensor src_roi(src, src_start, src_end);
 
         // prepare destination ROI coords
         const auto dst_shape = dst_base.get_shape();
         OPENVINO_ASSERT(!dst_shape.empty(), "destination tensor rank is zero");
-        auto [tgt_start, tgt_end] = make_roi(dst_shape, dst_first_dim_start, dst_first_dim_start + copy_length);
+        auto [tgt_start, tgt_end] = ov::genai::utils::make_roi(dst_shape, 0, dst_first_dim_start, dst_first_dim_start + copy_length);
         ov::Tensor tgt_roi(dst_base, tgt_start, tgt_end);
 
         // bulk copy

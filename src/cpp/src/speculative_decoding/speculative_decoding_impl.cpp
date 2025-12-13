@@ -279,7 +279,7 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::generate(const std::vector<
                         "Streaming only supports batch size=1 with greedy/multinomial");
     };
     strategy.start_timer = [](){ return std::chrono::steady_clock::now(); };
-    strategy.stop_timer  = [](TimePoint start){
+    strategy.stop_timer  = [](const TimePoint& start){
         return PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start);
     };
 

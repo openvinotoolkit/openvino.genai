@@ -4,7 +4,7 @@
 #include "logger.hpp"
 
 namespace ov::genai {
-void share_embedding_weights(std::shared_ptr<ov::Model>& main_model, std::shared_ptr<ov::Model>& draft_model) {
+void share_embedding_weights(const std::shared_ptr<ov::Model>& main_model, const std::shared_ptr<ov::Model>& draft_model) {
     // extract embedding weight from main model
     auto find_embedding_gather = [](const std::shared_ptr<ov::Model>& model)
         -> std::shared_ptr<ov::Node> {
@@ -43,13 +43,8 @@ void share_embedding_weights(std::shared_ptr<ov::Model>& main_model, std::shared
         return;
     }
 
-    try {
-        draft_weight_node->output(0).replace(main_weight_node->output(0));
-    } catch (const std::exception& e) {
-        OPENVINO_THROW(std::string("Error: failed to import embedding weights from main model to draft model. Exception: ") + e.what());
-    } catch (...) {
-        OPENVINO_THROW("Error: failed to import embedding weights from main model to draft model due to unknown exception.");
-    }
+    GENAI_INFO("Sharing embedding weights between main and draft models for eagle3 speculative decoding.");
+    draft_weight_node->output(0).replace(main_weight_node->output(0));
 }
 
 void shift_fc_from_draft_to_main(std::shared_ptr<ov::Model>& main_model, std::shared_ptr<ov::Model>& draft_model) {
@@ -86,20 +81,29 @@ void shift_fc_from_draft_to_main(std::shared_ptr<ov::Model>& main_model, std::sh
     }
 }
 
-std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(std::shared_ptr<ov::Model>& model) {
+std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(const std::shared_ptr<ov::Model>& model) {
     // extract result nodes from model
     for (const auto& result : model->get_results()) {
         auto input_node = result->input_value(0).get_node_shared_ptr();
         auto constant = ov::as_type_ptr<ov::op::v0::Constant>(input_node);
         if (constant && constant->get_friendly_name().find("d2t") != std::string::npos) {
+            model->remove_result(result);
+            model->validate_nodes_and_infer_types();
             return constant;
         }
     }
     return nullptr;
 }
 
+/* Transforms the given OpenVINO model to extract hidden states from specified layers.
+ *
+ * This function modifies the provided model by identifying and extracting the outputs of residual Add nodes
+ * corresponding to the specified hidden layers. The extracted hidden states are then added as new result nodes
+ * to the model, either concatenated (if multiple layers are specified) or as a single output.
+ *
+ */
 void hidden_state_transform(std::shared_ptr<ov::Model>& model,
-                                  const std::vector<int>& hidden_layers_to_abstract) {
+                                  const std::vector<int32_t>& hidden_layers_to_abstract) {
     if (hidden_layers_to_abstract.empty()) {
         return;
     }
@@ -120,7 +124,7 @@ void hidden_state_transform(std::shared_ptr<ov::Model>& model,
 
     // Helper: check if node is a residual Add node with expected structure
     auto is_residual_node = [](const std::shared_ptr<ov::Node>& node) -> bool {
-        if (auto add = ov::as_type_ptr<ov::op::v1::Add>(node)) {
+        if (const auto& add = ov::as_type_ptr<ov::op::v1::Add>(node)) {
             auto input1 = add->get_input_node_shared_ptr(1);
             auto matmul = ov::as_type_ptr<ov::op::v0::MatMul>(input1);
             if (!matmul) return false;
@@ -163,7 +167,7 @@ void hidden_state_transform(std::shared_ptr<ov::Model>& model,
 
 ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::genai::ModelDesc& main_model_desc,
                                                                  const ov::genai::ModelDesc& draft_model_desc,
-                                                                 const std::vector<int>& hidden_layers) {
+                                                                 const std::vector<int32_t>& hidden_layers) {
     auto scheduler_configs = init_speculative_models(main_model_desc, draft_model_desc);
     // Eagle speculative decoding does not support dynamic_split_fuse mode
     // because it requires hidden state interaction from main model to draft model
@@ -186,8 +190,8 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
 
     // main and draft model use same tokenzier, but could differ in configurations
     // for example, llama3 draft model has different eos_token_id in config.json
-    Tokenizer main_model_tokenizer = main_model_desc.tokenizer;
-    Tokenizer draft_model_tokenizer = draft_model_desc.tokenizer;
+    const Tokenizer& main_model_tokenizer = main_model_desc.tokenizer;
+    const Tokenizer& draft_model_tokenizer = draft_model_desc.tokenizer;
     m_tokenizer = main_model_tokenizer;
     // for eagle model, we need to obtain hidden layer state as extra output
     // apply transformations needed to run eagle model
@@ -224,15 +228,14 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
 
 ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_ids(const ov::Tensor& original_input_ids) {
     auto shape = original_input_ids.get_shape();
-    if (shape.size() == 0u || shape.back() <= 1u) {
-        return ov::Tensor(original_input_ids);
-    }
+    OPENVINO_ASSERT(shape.size() != 0u && shape.back() > 1u, "input_ids shape is invalid for creating eagle3 draft input_ids");
 
     size_t original_length = shape.back();
     size_t new_length = original_length - 1;
 
     ov::Tensor draft_input_ids(ov::element::i64, {1, new_length});
-
+    // Shift the input ids by one token.
+    // E.g., [a1, b1, b2, c1, c2, c3] -> [b1, b2, c1, c2, c3]
     const int64_t* src_data = original_input_ids.data<int64_t>();
     int64_t* dst_data = draft_input_ids.data<int64_t>();
 
@@ -241,7 +244,7 @@ ov::Tensor ContinuousBatchingPipeline::Eagle3DecodingImpl::create_draft_input_id
     return draft_input_ids;
 }
 
-void ContinuousBatchingPipeline::Eagle3DecodingImpl::update_eagle_pipeline_params(std::shared_ptr<ov::op::v0::Constant>& d2t_tensor) {
+void ContinuousBatchingPipeline::Eagle3DecodingImpl::update_eagle_pipeline_params(const std::shared_ptr<ov::op::v0::Constant>& d2t_tensor) {
     auto m_main_eagle_pipeline  = std::dynamic_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_main_pipeline);
     auto m_draft_eagle_pipeline = std::dynamic_pointer_cast<ContinuousBatchingForEagle3DecodingImpl>(m_draft_pipeline);
     m_main_eagle_pipeline->set_hidden_state_export_needed(true);
@@ -318,7 +321,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
     strategy.start_timer = [](){
         return std::chrono::steady_clock::now();
     };
-    strategy.stop_timer = [](TimePoint start){
+    strategy.stop_timer = [](const TimePoint& start){
         return PerfMetrics::get_microsec(std::chrono::steady_clock::now() - start);
     };
 
