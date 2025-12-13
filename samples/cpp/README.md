@@ -17,5 +17,4 @@ rem Example for copying TBB and OpenVINO libraries
 copy <path_to_venv>\Lib\site-packages\openvino\libs\*.dll <path_to_build>\Release\
 copy <path_to_venv>\Lib\site-packages\openvino\libs\tbb\*.dll <path_to_build>\Release\
 
-copy <path\_to\_venv>\\Lib\\site-packages\\openvino\\libs\\tbb\\\*.dll <path\_to\_build>\\Release\\
 
