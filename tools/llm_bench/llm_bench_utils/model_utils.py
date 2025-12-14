@@ -43,6 +43,7 @@ def get_param_from_file(args, input_key):
 
             elif args[input_key] is not None and args['prompt_file'] is not None:
                 raise RuntimeError(f'== {input_key} and prompt file should not exist together ==')
+
             else:
                 if args[input_key] is not None:
                     if args[input_key] != '':
@@ -56,11 +57,15 @@ def get_param_from_file(args, input_key):
             if "media" in input_key:
                 if args["media"] is None and args["images"] is None:
                     if args["use_case"].task == "visual_text_gen":
-                        log.warn("Input image is not provided. Only text generation part will be evaluated")
+                        if args["video"] is None:
+                            log.warn("Input image/video is not provided. Only text generation part will be evaluated")
                     elif args["use_case"].task != "image_gen":
                         raise RuntimeError("No input image. ImageToImage/Inpainting Models cannot start generation without one. Please, provide an image.")
                 else:
                     data_dict["media"] = args["media"] if args["media"] is not None else args["images"]
+            if "video" in input_key and args["video"] is not None:
+                data_dict["video"] = args["video"]
+
             if args["prompt"] is None:
                 if args["use_case"].task == "visual_text_gen":
                     data_dict["prompt"] = "What is OpenVINO?" if data_dict.get("media") is None else "Describe image"
@@ -112,6 +117,7 @@ def analyze_args(args):
     model_args["height"] = args.height
     model_args["width"] = args.width
     model_args['images'] = args.images
+    model_args['video'] = args.video
     model_args['seed'] = args.seed
     model_args['mem_consumption'] = args.memory_consumption
     model_args['batch_size'] = args.batch_size
@@ -135,7 +141,7 @@ def analyze_args(args):
     model_args["rerank_texts"] = args.texts
     model_args["rerank_texts_file"] = args.texts_file
     model_args["apply_chat_template"] = args.apply_chat_template
-
+    model_args["video_frames"] = args.video_frames
     optimum = args.optimum
 
     if optimum and args.genai:
