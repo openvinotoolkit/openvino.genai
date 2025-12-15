@@ -16,8 +16,6 @@
 namespace ov {
 namespace genai {
 
-enum class LogCategory;
-
 /// @brief Eagle3 model inference output
 struct InferenceOutput {
     ov::Tensor logits;           ///< Output logits [batch, seq_len, vocab_size]
@@ -157,14 +155,6 @@ protected:
     uint64_t execute_inference();
     void update_performance_metrics(uint64_t inference_time_us, size_t tokens_count);
 
-    void log_debug(LogCategory category, const std::string& message) const;
-    void log_tensor_info(const std::string& name, const ov::Tensor& tensor) const;
-    void log_tensor_content(const std::string& name, const ov::Tensor& tensor, size_t max_elements = 10) const;
-    void log_model_inputs(const ov::Tensor& input_ids,
-                          const ov::Tensor& attention_mask,
-                          const ov::Tensor& position_ids) const;
-    void log_model_outputs(const ov::Tensor& logits, const ov::Tensor& hidden_features) const;
-
     std::string m_device;
     ov::AnyMap m_properties;
     ov::genai::Tokenizer m_tokenizer;
@@ -249,7 +239,6 @@ public:
     void start_chat(const std::string& system_message) override;
     void finish_chat() override;
 
-    void set_verbose(bool verbose);
     bool is_verbose() const {
         return m_target ? m_target->is_verbose() : false;
     }
@@ -266,11 +255,6 @@ private:
     };
 
     SpeculativeResult run_speculative_iteration(size_t token_count, int64_t eos_token_id);
-
-    void log_info(const std::string& message) const;
-    void log_debug(const std::string& message) const;
-    void log_generation_step(const std::string& step_name, size_t step_number) const;
-    void log_sequence_state(const std::string& context) const;
 
     std::unique_ptr<Eagle3DraftWrapper> m_draft;
     std::unique_ptr<Eagle3TargetWrapper> m_target;
