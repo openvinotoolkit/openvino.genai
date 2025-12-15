@@ -305,6 +305,23 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     return m_impl->generate(prompts, images, videos, sampling_params, streamer);
 }
 
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
+             std::vector<ChatHistory>& histories,
+             const std::vector<std::vector<ov::Tensor>>& images,
+             const std::vector<GenerationConfig>& sampling_params,
+             const StreamerVariant& streamer) {
+    return m_impl->generate(histories, images, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
+    std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images,
+    const std::vector<std::vector<ov::Tensor>>& videos,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer) {
+    return m_impl->generate(histories, images, videos, sampling_params, streamer);
+}
+
 void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {
     m_impl->finish_chat();
     m_impl->start_chat(system_message);
