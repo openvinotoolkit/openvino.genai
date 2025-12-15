@@ -1,5 +1,7 @@
 'category: GHA':
 - '.github/**/*'
+- '.pre-commit-config.yaml'
+- 'pyproject.toml'
 
 'category: tests dependencies':
 - 'tests/python_tests/requirements.txt'

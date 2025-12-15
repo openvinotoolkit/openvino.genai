@@ -13,3 +13,4 @@ autoawq<0.2.8; sys_platform == "linux"
 sentencepiece
 jinja2>=3.1.0
 scipy
+opencv-python
