@@ -26,25 +26,18 @@ using namespace ov::genai;
 namespace {
 
 VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
-    ImageGenerationConfig{
-        std::nullopt,  // prompt_2
-        std::nullopt,  // prompt_3
-        std::nullopt,  // negative_prompt
-        std::nullopt,  // negative_prompt_2
-        std::nullopt,  // negative_prompt_3
-        1,             // num_videos_per_prompt
-        nullptr,       // generator
-        42,            // rng_seed
-        7.5f,          // guidance_scale
-        512,           // height
-        704,           // width
-        50,            // num_inference_steps
-        128,           // max_sequence_length
-        1.0f,          // strength
-    },
-    0.0,   // guidance_rescale
-    161,   // num_frames
-    25.0f  // frame_rate
+    std::nullopt,  // negative_prompt
+    1,             // num_videos_per_prompt
+    nullptr,       // generator
+    42,            // rng_seed
+    7.5f,          // guidance_scale
+    512,           // height
+    704,           // width
+    50,            // num_inference_steps
+    128,           // max_sequence_length
+    0.0,           // guidance_rescale
+    161,           // num_frames
+    25.0f          // frame_rate
 };
 
 // Some defaults aren't special values so it's not possible to distinguish
@@ -86,13 +79,7 @@ void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_sca
     OPENVINO_ASSERT(generation_config.width % 32 == 0,
                     "Width have to be divisible by 32 but got ",
                     generation_config.width);
-    OPENVINO_ASSERT(std::fabs(generation_config.strength - 1.0f) < 1e-6,
-                    "Strength isn't applicable. Must be set to the default 1.0");
 
-    OPENVINO_ASSERT(!generation_config.prompt_2.has_value(), "Prompt 2 is not used by LTXPipeline.");
-    OPENVINO_ASSERT(!generation_config.prompt_3.has_value(), "Prompt 3 is not used by LTXPipeline.");
-    OPENVINO_ASSERT(!generation_config.negative_prompt_2.has_value(), "Negative prompt 2 is not used by LTXPipeline.");
-    OPENVINO_ASSERT(!generation_config.negative_prompt_3.has_value(), "Negative prompt 3 is not used by LTXPipeline.");
     OPENVINO_ASSERT(generation_config.max_sequence_length <= 512,
                     "T5's 'max_sequence_length' must be less or equal to 512");
     OPENVINO_ASSERT((generation_config.height % vae_scale_factor == 0 || generation_config.height < 0) &&
@@ -525,7 +512,7 @@ public:
         size_t video_sequence_length = m_latent_num_frames * m_latent_height * m_latent_width;
         m_scheduler->set_timesteps(video_sequence_length,
                                    merged_generation_config.num_inference_steps,
-                                   merged_generation_config.strength);
+                                   1.0f);
         std::vector<float> timesteps = m_scheduler->get_float_timesteps();
 
         // Prepare micro-conditions
