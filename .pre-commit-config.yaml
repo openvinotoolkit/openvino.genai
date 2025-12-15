@@ -1,3 +1,8 @@
+exclude: |
+  (?x)(
+    \.pyi$|
+    ^tools/llm_bench/prompts/
+  )
 repos:
   - repo: meta
     hooks:
@@ -26,4 +31,4 @@ repos:
         args: ["--formatter=ruff"]
         additional_dependencies:
           - ruff==0.14.4
-exclude: '^tools/llm_bench/prompts/'
+          - tomli==2.3.0

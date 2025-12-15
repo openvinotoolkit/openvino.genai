@@ -24,7 +24,7 @@ class GenAIModelWrapper:
         self.model = model
         self.model_type = model_type
 
-        if model_type in ["text", "visual-text", "text-embedding", "text-reranking"]:
+        if model_type in ["text", "visual-text", "visual-video-text", "text-embedding", "text-reranking"]:
             try:
                 self.config = AutoConfig.from_pretrained(model_dir)
             except Exception:
@@ -318,11 +318,7 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
         logger.info("Using OpenVINO GenAI VLMPipeline API")
         pipeline = openvino_genai.VLMPipeline(model_dir, device=device, **ov_config)
 
-    return GenAIModelWrapper(
-        pipeline,
-        model_dir,
-        "visual-text"
-    )
+    return GenAIModelWrapper(pipeline, model_dir, kwargs.get("model_type", "visual-text"))
 
 
 def load_visual_text_model(
@@ -641,7 +637,8 @@ def load_model(
         return load_text2image_model(
             model_id, device, ov_options, use_hf, use_genai, **kwargs
         )
-    elif model_type == "visual-text":
+    elif model_type == "visual-text" or model_type == "visual-video-text":
+        kwargs["model_type"] = model_type
         return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     elif model_type == "image-to-image":
         return load_imagetext2image_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
