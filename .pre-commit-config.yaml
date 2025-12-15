@@ -2,6 +2,7 @@ exclude: |
   (?x)(
     \.pyi$|
     ^tools/llm_bench/prompts/
+    ^tools/who_what_benchmark/prompts/
   )
 repos:
   - repo: meta
