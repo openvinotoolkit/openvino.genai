@@ -112,21 +112,44 @@ class AdapterConfig:
         ...
     def set_alpha(self, adapter: Adapter, alpha: typing.SupportsFloat) -> AdapterConfig:
         ...
+class AdaptiveRKVConfig:
+    """
+    Configuration struct for the Adaptive R-KV cache eviction algorithm
+    """
+    def __init__(self, attention_mass: typing.SupportsFloat = 0.9, window_size: typing.SupportsInt = 8) -> None:
+        ...
+    @property
+    def attention_mass(self) -> float:
+        ...
+    @attention_mass.setter
+    def attention_mass(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def window_size(self) -> int:
+        ...
+    @window_size.setter
+    def window_size(self, arg0: typing.SupportsInt) -> None:
+        ...
 class AggregationMode:
     """
     Represents the mode of per-token score aggregation when determining least important tokens for eviction from cache
                                    :param AggregationMode.SUM: In this mode the importance scores of each token will be summed after each step of generation
                                    :param AggregationMode.NORM_SUM: Same as SUM, but the importance scores are additionally divided by the lifetime (in tokens generated) of a given token in cache
+                                   :param AggregationMode.ADAPTIVE_RKV Switches the cache eviction algorithm to use Adaptive R-KV algorithm. The scores are aggregated within a configurable window 
+                                    size of the latest generated tokens. May not be used together with the KVCrush algorithm (which is disabled automatically in this mode).
     
     Members:
     
       SUM
     
       NORM_SUM
+    
+      ADAPTIVE_RKV
     """
+    ADAPTIVE_RKV: typing.ClassVar[AggregationMode]  # value = <AggregationMode.ADAPTIVE_RKV: 2>
     NORM_SUM: typing.ClassVar[AggregationMode]  # value = <AggregationMode.NORM_SUM: 1>
     SUM: typing.ClassVar[AggregationMode]  # value = <AggregationMode.SUM: 0>
-    __members__: typing.ClassVar[dict[str, AggregationMode]]  # value = {'SUM': <AggregationMode.SUM: 0>, 'NORM_SUM': <AggregationMode.NORM_SUM: 1>}
+    __members__: typing.ClassVar[dict[str, AggregationMode]]  # value = {'SUM': <AggregationMode.SUM: 0>, 'NORM_SUM': <AggregationMode.NORM_SUM: 1>, 'ADAPTIVE_RKV': <AggregationMode.ADAPTIVE_RKV: 2>}
     def __eq__(self, other: typing.Any) -> bool:
         ...
     def __getstate__(self) -> int:
@@ -456,6 +479,7 @@ class CacheEvictionConfig:
           following the SnapKV article approach (https://arxiv.org/abs/2404.14469).
         :type snapkv_window_size int
     """
+    adaptive_rkv_config: AdaptiveRKVConfig
     aggregation_mode: AggregationMode
     apply_rotation: bool
     kvcrush_config: KVCrushConfig
