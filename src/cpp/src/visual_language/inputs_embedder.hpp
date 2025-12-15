@@ -89,6 +89,8 @@ public:
     // get reflection of tokens contained in the kv cache
     utils::KVCacheState& get_kv_cache_state();
 
+    std::string get_last_user_message_text(const ChatHistory& history);
+
     // starts chat and adds optional system_message to chat history
     void start_chat(const std::string& system_message);
 
@@ -209,6 +211,8 @@ private:
             m_add_special_tokens = value;
             m_add_special_tokens_is_set = true;
         }
+
+        virtual std::string get_last_user_message_text(const ChatHistory& history);
 
         virtual void start_chat(const std::string& system_message);
 
