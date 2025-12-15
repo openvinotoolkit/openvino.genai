@@ -721,7 +721,11 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
 void add_extensions_to_core(ov::AnyMap& properties) {
     auto it = properties.find(EXTENSIONS_ARG_NAME);
     if (it != properties.end()) {
+#ifdef _WIN32
+        auto extensions = it->second.as<std::vector<std::wstring>>();
+#else
         auto extensions = it->second.as<std::vector<std::string>>();
+#endif
         for (const auto& extension : extensions) {
             singleton_core().add_extension(extension);
         }
