@@ -149,7 +149,6 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     std::fill_n(beam_idx.data<int32_t>(), batch_size, 0);
     m_llm.set_tensor("beam_idx", beam_idx);
 
-    printf("======== Call get_lm_encoded_results. \n");
 
     // "Prompt" phase
 

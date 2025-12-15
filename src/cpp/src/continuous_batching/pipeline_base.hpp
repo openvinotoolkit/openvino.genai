@@ -94,16 +94,6 @@ public:
                                  const std::string& prompt,
                                  const std::vector<ov::Tensor>& rgbs,
                                  GenerationConfig sampling_params);
-    
-    /**
-     * Adds request to running queue based on string input and vector of images and a system prompt
-     * This step also performs tokenization's encode
-     */
-    GenerationHandle add_request(uint64_t request_id,
-                                 const std::string& prompt,
-                                 const std::vector<ov::Tensor>& rgbs,
-                                 const std::string& system_prompt,
-                                 GenerationConfig sampling_params);
 
     /**
      * Checks whether server (pipeline) has non-finished requests and step() should be called within a loop

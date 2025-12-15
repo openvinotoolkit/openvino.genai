@@ -50,9 +50,9 @@ struct EncodedImage {
     /// @brief Original size of the image
     ImageSize original_image_size;
 
-    /// @brief Images features projection, used only by Phi3 and phi4mm.
+    /// @brief Images features projection, used only by Phi3, phi4mm and videochat-flash.
     ov::Tensor images_features_projection;
-  
+
     /// @brief Resampled image, used only by MiniCPM.
     ResampledImage resampled_image;
 };
