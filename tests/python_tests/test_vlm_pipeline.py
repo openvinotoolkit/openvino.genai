@@ -1509,7 +1509,6 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
 
     assert optimum_text == genai_text
 
-@pytest.mark.precommit
 def test_vlm_pipeline_add_extension():
     model_id = VIDEO_MODEL_IDS[1]
     models_path = _get_ov_model(model_id)
