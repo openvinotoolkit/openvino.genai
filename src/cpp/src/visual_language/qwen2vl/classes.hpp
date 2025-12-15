@@ -140,8 +140,10 @@ protected:
                                                  int64_t vision_end_token_id) const override;
 
     // [CDPruner] Override: Convert visual features to CDPruner format
-    std::vector<ov::Tensor> convert_visual_features_for_pruning(const ov::Tensor& merged_image_embeddings,
-                                                                size_t chunk_count) const override;
+    std::vector<ov::Tensor> convert_visual_features_for_pruning(
+        const ov::Tensor& merged_image_embeddings,
+        size_t chunk_count,
+        const std::vector<std::array<size_t, 3>>& images_grid_thw = {}) const override;
 
     // [CDPruner] Override: Position encoding adjustment function for pruning
     // Modifies position_ids_inout in-place

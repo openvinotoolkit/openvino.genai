@@ -268,10 +268,13 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
     std::vector<std::vector<size_t>> aggregated_selected;
 
     size_t global_offset = 0;
+    GENAI_DEBUG("[CDPruner] Multi-frame pruning: %zu frames", visual_features_list.size());
 
     for (size_t frame_idx = 0; frame_idx < visual_features_list.size(); ++frame_idx) {
         const auto& visual_feature = visual_features_list[frame_idx];
+        size_t frame_tokens = visual_feature.get_shape()[1];
         ov::Tensor pruned_feature = apply_pruning(visual_feature, text_features, true);
+        size_t pruned_tokens = pruned_feature.get_shape()[1];
         const auto& frame_selected = m_last_selected_tokens;
         if (aggregated_selected.empty()) {
             aggregated_selected.resize(frame_selected.size());
@@ -289,23 +292,33 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
     }
 
     m_last_selected_tokens = aggregated_selected;
-
+    // Calculate actual total tokens by summing each frame's pruned tokens
+    // (frames may have different sizes after pruning)
     const auto& first_pruned_feature = pruned_features_list[0];
     const size_t actual_batch_size = first_pruned_feature.get_shape()[0];
-    const size_t actual_tokens_per_frame = first_pruned_feature.get_shape()[1];
     const size_t actual_hidden_dim = first_pruned_feature.get_shape()[2];
-    const size_t actual_total_tokens = actual_tokens_per_frame * visual_features_list.size();
+
+    size_t actual_total_tokens = 0;
+    for (const auto& feature : pruned_features_list) {
+        actual_total_tokens += feature.get_shape()[1];
+    }
+
+    GENAI_DEBUG("[CDPruner] Concatenating %zu frames with total %zu tokens",
+                pruned_features_list.size(),
+                actual_total_tokens);
 
     ov::Tensor concatenated_features(first_pruned_feature.get_element_type(),
                                      {actual_batch_size, actual_total_tokens, actual_hidden_dim});
     float* concat_data = concatenated_features.data<float>();
 
-    const size_t feature_size_bytes = actual_tokens_per_frame * actual_hidden_dim * sizeof(float);
     size_t offset_elements = 0;
 
     for (const auto& feature : pruned_features_list) {
-        std::memcpy(concat_data + offset_elements, feature.data(), feature_size_bytes);
-        offset_elements += actual_tokens_per_frame * actual_hidden_dim;
+        size_t frame_tokens = feature.get_shape()[1];
+        size_t frame_size_bytes = frame_tokens * actual_hidden_dim * sizeof(float);
+
+        std::memcpy(concat_data + offset_elements, feature.data(), frame_size_bytes);
+        offset_elements += frame_tokens * actual_hidden_dim;
     }
 
     m_last_statistics.total_tokens = total_input_tokens;

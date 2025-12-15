@@ -250,7 +250,8 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::extract_text_features_for_pruning(co
 
 std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::convert_visual_features_for_pruning(
     const ov::Tensor& vision_embeds,
-    size_t chunk_count) const {
+    size_t chunk_count,
+    const std::vector<std::array<size_t, 3>>& images_grid_thw) const {
     // Default implementation only supports single chunk (chunk_count = 1)
     OPENVINO_ASSERT(
         chunk_count == 1,
@@ -329,7 +330,7 @@ InputsEmbedder::IInputsEmbedder::PruningResult InputsEmbedder::IInputsEmbedder::
                     "images must be non-empty when frame chunking is enabled");
     size_t chunk_count = current_pruning_config->enable_frame_chunking ? images.size() : 1;
     std::vector<ov::Tensor> visual_features =
-        convert_visual_features_for_pruning(merged_visual_embeddings, chunk_count);
+        convert_visual_features_for_pruning(merged_visual_embeddings, chunk_count, images_grid_thw);
 
     // Step 3: Apply CDPruner algorithm
     // Computes text-image relevance and prunes low-relevance visual tokens
@@ -369,15 +370,21 @@ InputsEmbedder::IInputsEmbedder::PruningResult InputsEmbedder::IInputsEmbedder::
 
     size_t total_original_tokens = 0;
     size_t total_pruned_tokens = 0;
-    for (const auto& mask : result.keep_flags_per_region) {
-        total_original_tokens += mask.size();
-        total_pruned_tokens += static_cast<size_t>(std::count(mask.begin(), mask.end(), true));
+    for (size_t i = 0; i < result.keep_flags_per_region.size(); ++i) {
+        const auto& mask = result.keep_flags_per_region[i];
+        size_t region_original = mask.size();
+        size_t region_kept = static_cast<size_t>(std::count(mask.begin(), mask.end(), true));
+        total_original_tokens += region_original;
+        total_pruned_tokens += region_kept;
     }
 
     OPENVINO_ASSERT(total_original_tokens == result.original_visual_tokens,
-                    "Original visual token metadata mismatch after pruning");
+                    "Original visual token metadata mismatch after pruning. Expected: " +
+                        std::to_string(result.original_visual_tokens) +
+                        ", Got: " + std::to_string(total_original_tokens));
     OPENVINO_ASSERT(total_pruned_tokens == result.pruned_visual_tokens,
-                    "Pruned visual token metadata mismatch after pruning");
+                    "Pruned visual token metadata mismatch after pruning. Expected: " +
+                        std::to_string(result.pruned_visual_tokens) + ", Got: " + std::to_string(total_pruned_tokens));
     OPENVINO_ASSERT(result.keep_flags_per_region.size() == images_sequence.size(),
                     "Kept visual token mask count mismatch with vision regions");
 

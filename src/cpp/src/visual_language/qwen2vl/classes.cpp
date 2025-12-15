@@ -1679,7 +1679,8 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(
     regions.reserve(region_count);
     size_t cumulative_offset = 0;
 
-    for (const auto& [grid_t, grid_h, grid_w] : reordered_images_grid_thw) {
+    for (size_t idx = 0; idx < reordered_images_grid_thw.size(); ++idx) {
+        const auto& [grid_t, grid_h, grid_w] = reordered_images_grid_thw[idx];
         OPENVINO_ASSERT(grid_h % spatial_merge_size == 0 && grid_w % spatial_merge_size == 0,
                         "Grid dimensions must be divisible by spatial merge size");
 
@@ -1690,6 +1691,7 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(
 
         size_t t = std::max<size_t>(1, grid_t);
         size_t total_tokens = spatial_area * t;
+        
         regions.push_back({total_tokens, std::max<size_t>(1, llm_grid_w), spatial_area, cumulative_offset});
         cumulative_offset += total_tokens;
     }
@@ -1699,20 +1701,26 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(
         if (kept_indices_per_image.empty())
             return std::vector<std::vector<size_t>>(region_count);
 
-        if (kept_indices_per_image.size() == region_count)
+        if (kept_indices_per_image.size() == region_count) {
             return kept_indices_per_image;
+        }
 
         // Handle single aggregated vector case
         OPENVINO_ASSERT(kept_indices_per_image.size() == 1 && region_count > 1,
-                        "Kept token indices layout does not match vision regions");
+                        "Kept token indices layout does not match vision regions. Got " +
+                            std::to_string(kept_indices_per_image.size()) + " vectors, expected 1 or " +
+                            std::to_string(region_count));
 
         std::vector<std::vector<size_t>> normalized(region_count);
         for (size_t kept_idx : kept_indices_per_image[0]) {
-            OPENVINO_ASSERT(kept_idx < cumulative_offset, "Aggregated kept index out of range");
+            OPENVINO_ASSERT(kept_idx < cumulative_offset,
+                            "Aggregated kept index " + std::to_string(kept_idx) + " out of range [0, " +
+                                std::to_string(cumulative_offset) + ")");
             for (size_t img_idx = 0; img_idx < region_count; ++img_idx) {
                 if (kept_idx >= regions[img_idx].offset &&
                     kept_idx < regions[img_idx].offset + regions[img_idx].tokens) {
-                    normalized[img_idx].push_back(kept_idx - regions[img_idx].offset);
+                    size_t local_idx = kept_idx - regions[img_idx].offset;
+                    normalized[img_idx].push_back(local_idx);
                     break;
                 }
             }
@@ -1827,24 +1835,67 @@ ov::Tensor InputsEmbedderQwen2VL::update_position_ids(
 // [CDPruner] Override: Convert visual features to CDPruner format
 std::vector<ov::Tensor> InputsEmbedderQwen2VL::convert_visual_features_for_pruning(
     const ov::Tensor& merged_image_embeddings,
-    size_t chunk_count) const {
+    size_t chunk_count,
+    const std::vector<std::array<size_t, 3>>& images_grid_thw) const {
     // Convert from [num_patches, embedding_dim] to chunk_count * [1, num_patches, embedding_dim]
     ov::Shape original_shape = merged_image_embeddings.get_shape();
-    size_t num_patches = original_shape[0];
+    size_t total_patches = original_shape[0];
     size_t embedding_dim = original_shape[1];
-    size_t new_patches = num_patches / chunk_count;
-    OPENVINO_ASSERT(original_shape[0] == new_patches * chunk_count, "Inconsistent number of patches per image");
+    const float* src_data = merged_image_embeddings.data<const float>();
 
     std::vector<ov::Tensor> visual_features;
-    const float* src_data = merged_image_embeddings.data<const float>();
-    size_t total_elements = new_patches * embedding_dim;
-    for (size_t i = 0; i < chunk_count; i++) {
-        ov::Shape new_shape = {1, new_patches, embedding_dim};
-        ov::Tensor features(merged_image_embeddings.get_element_type(), new_shape);
+
+    // When chunk_count = 1 (frame chunking disabled), treat all patches as a single batch
+    if (chunk_count == 1) {
+        ov::Shape batch_shape = {1, total_patches, embedding_dim};
+        ov::Tensor features(merged_image_embeddings.get_element_type(), batch_shape);
         float* dst_data = features.data<float>();
-        std::memcpy(dst_data, src_data + total_elements * i, total_elements * sizeof(float));
+        std::memcpy(dst_data, src_data, total_patches * embedding_dim * sizeof(float));
         visual_features.push_back(features);
+        return visual_features;
     }
+
+    // Frame chunking enabled: split by individual images
+    OPENVINO_ASSERT(images_grid_thw.size() >= chunk_count,
+                    "Insufficient grid_thw information for chunk_count. Got " + std::to_string(images_grid_thw.size()) +
+                        " grids, need " + std::to_string(chunk_count));
+
+    size_t current_offset = 0;
+
+    for (size_t i = 0; i < chunk_count; i++) {
+        // Calculate actual patches count for this image AFTER merging
+        // Original patches: grid_t × grid_h × grid_w
+        // After merger: (grid_t × grid_h × grid_w) / m_merge_length
+        size_t grid_t = images_grid_thw[i][0];
+        size_t grid_h = images_grid_thw[i][1];
+        size_t grid_w = images_grid_thw[i][2];
+        size_t image_patches = calc_tokens_num(grid_t, grid_h, grid_w);  // This divides by m_merge_length
+
+        // Boundary check
+        OPENVINO_ASSERT(current_offset + image_patches <= total_patches,
+                        "Image boundary exceeds merged embeddings size. Image " + std::to_string(i) + ": offset=" +
+                            std::to_string(current_offset) + ", patches=" + std::to_string(image_patches) +
+                            ", total=" + std::to_string(total_patches) + ", grid_thw=[" + std::to_string(grid_t) + "," +
+                            std::to_string(grid_h) + "," + std::to_string(grid_w) + "]");
+
+        // Create tensor for current image [1, patches_i, D]
+        ov::Shape image_shape = {1, image_patches, embedding_dim};
+        ov::Tensor features(merged_image_embeddings.get_element_type(), image_shape);
+        float* dst_data = features.data<float>();
+
+        // Copy data
+        size_t elements_to_copy = image_patches * embedding_dim;
+        std::memcpy(dst_data, src_data + current_offset * embedding_dim, elements_to_copy * sizeof(float));
+
+        visual_features.push_back(features);
+        current_offset += image_patches;
+    }
+
+    // Verify all patches processed
+    OPENVINO_ASSERT(current_offset == total_patches,
+                    "Not all patches were processed. Expected: " + std::to_string(total_patches) +
+                        ", processed: " + std::to_string(current_offset));
+
     return visual_features;
 }
 

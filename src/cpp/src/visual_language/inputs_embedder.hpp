@@ -305,10 +305,13 @@ private:
          * Default implementation returns single tensor in vector. Models supporting CDPruner should override.
          * @param vision_embeds The visual embeddings to convert
          * @param chunk_count Number of chunks for processing (for frame-based chunking)
+         * @param images_grid_thw Grid information [T, H, W] for each image (empty for default behavior)
          * @return Vector of visual feature tensors
          */
-        virtual std::vector<ov::Tensor> convert_visual_features_for_pruning(const ov::Tensor& vision_embeds,
-                                                                            size_t chunk_count) const;
+        virtual std::vector<ov::Tensor> convert_visual_features_for_pruning(
+            const ov::Tensor& vision_embeds,
+            size_t chunk_count,
+            const std::vector<std::array<size_t, 3>>& images_grid_thw = {}) const;
 
         /**
          * @brief Adjust position IDs after visual token pruning.

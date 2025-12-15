@@ -557,18 +557,16 @@ void FastGreedyDPP::update_marginal_gains(size_t iteration,
     // Update marginal gains for all tokens
     for (size_t j = 0; j < total_tokens; ++j) {
         // Skip updating if this token is already selected (marked as negative infinity)
-        if (di2s_data[j] == -std::numeric_limits<float>::infinity()) {
+        if (di2s_data[j] <= -std::numeric_limits<float>::infinity()) {
             continue;
         }
 
         size_t cis_idx = iteration * total_tokens + j;
         float eis_j = cis_data[cis_idx];
-        // Subtract the squared orthogonal component
-        if (std::isnan(eis_j)) {
-            di2s_data[j] = -std::numeric_limits<float>::max();
-            continue;
-        }
-        di2s_data[j] -= eis_j * eis_j;
+
+        // Compute new marginal gain and handle NaN
+        float new_di2s = di2s_data[j] - eis_j * eis_j;
+        di2s_data[j] = std::isnan(new_di2s) ? -std::numeric_limits<float>::max() : new_di2s;
     }
 }
 
