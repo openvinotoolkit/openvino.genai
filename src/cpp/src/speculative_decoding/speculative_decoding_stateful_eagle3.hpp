@@ -28,8 +28,8 @@ struct InferenceOutput {
 struct InferContext {
     size_t input_token_count = 0;             ///< Number of input tokens for this inference
     size_t sample_count = 1;                  ///< Number of positions to sample from
-    bool use_target_hidden = false;           ///< Whether to use hidden states from source_sequence
-    Sequence::Ptr source_sequence = nullptr;  ///< Source sequence for hidden states
+    bool use_target_hidden = false;           ///< Whether to use hidden states from target_sequence
+    Sequence::Ptr target_sequence = nullptr;  ///< Source sequence for hidden states
     size_t num_tokens_to_validate = 0;        ///< Number of draft tokens to validate
 };
 
@@ -131,12 +131,10 @@ public:
     ov::Tensor get_logits() const;
     ov::Tensor get_hidden_features() const;
 
-    void build_model_inputs(size_t token_count,
+    void build_model_inputs(const size_t token_count,
                             ov::Tensor& input_ids,
                             ov::Tensor& attention_mask,
                             ov::Tensor& position_ids);
-
-    ov::Tensor create_hidden_state_placeholder(const ov::Shape& shape) const;
 
     /// @brief Samples tokens from logits
     /// @param num_tokens_to_validate Draft tokens to validate (0 for standard sampling)
@@ -185,15 +183,13 @@ protected:
  *
  * Validates draft predictions and generates final output
  */
-class Eagle3TargetModelWrapper : public Eagle3InferWrapperBase {
+class Eagle3TargetWrapper : public Eagle3InferWrapperBase {
 public:
-    explicit Eagle3TargetModelWrapper(const ov::genai::ModelDesc& model_desc);
-    ~Eagle3TargetModelWrapper() = default;
+    explicit Eagle3TargetWrapper(const ov::genai::ModelDesc& model_desc);
+    ~Eagle3TargetWrapper() = default;
 
     /// @brief Initializes sequence with prompt tokens
-    void initialize_sequence(const ov::Tensor& input_ids,
-                             const ov::Tensor& position_ids,
-                             const ov::genai::GenerationConfig& config);
+    void initialize_sequence(const ov::Tensor& input_ids, const ov::genai::GenerationConfig& config);
 
     InferenceOutput infer(const ov::Tensor& input_ids,
                           const ov::Tensor& attention_mask,
@@ -208,15 +204,13 @@ public:
  * Generates candidate tokens using target or internal hidden states
  * Uses tokens[1:] per Eagle3 specification
  */
-class Eagle3DraftModelWrapper : public Eagle3InferWrapperBase {
+class Eagle3DraftWrapper : public Eagle3InferWrapperBase {
 public:
-    explicit Eagle3DraftModelWrapper(const ov::genai::ModelDesc& model_desc);
-    ~Eagle3DraftModelWrapper() = default;
+    explicit Eagle3DraftWrapper(const ov::genai::ModelDesc& model_desc);
+    ~Eagle3DraftWrapper() = default;
 
     /// @brief Initializes sequence using tokens[1:] per Eagle3 spec
-    void initialize_sequence(const ov::Tensor& input_ids,
-                             const ov::Tensor& position_ids,
-                             const ov::genai::GenerationConfig& config);
+    void initialize_sequence(const ov::Tensor& input_ids, const ov::genai::GenerationConfig& config);
 
     /// @brief Runs inference with hidden states (from target or internal source)
     InferenceOutput infer(const ov::Tensor& input_ids,
@@ -231,11 +225,11 @@ public:
  * @brief Stateful Eagle3 speculative decoding pipeline
  *
  * Implements Eagle3 algorithm: draft model generates candidates,
- * main model validates them in parallel, accepts valid tokens and samples new ones
+ * target model validates them in parallel, accepts valid tokens and samples new ones
  */
 class StatefulEagle3LLMPipeline : public ov::genai::LLMPipelineImplBase {
 public:
-    StatefulEagle3LLMPipeline(const ov::genai::ModelDesc& main_model_desc,
+    StatefulEagle3LLMPipeline(const ov::genai::ModelDesc& target_model_desc,
                               const ov::genai::ModelDesc& draft_model_desc,
                               const std::vector<int>& hidden_layers_to_abstract = {});
     ~StatefulEagle3LLMPipeline();
@@ -257,7 +251,7 @@ public:
 
     void set_verbose(bool verbose);
     bool is_verbose() const {
-        return m_main_model ? m_main_model->is_verbose() : false;
+        return m_target ? m_target->is_verbose() : false;
     }
 
     GenerationConfig resolve_generation_config(OptionalGenerationConfig generation_config);
@@ -278,8 +272,8 @@ private:
     void log_generation_step(const std::string& step_name, size_t step_number) const;
     void log_sequence_state(const std::string& context) const;
 
-    std::unique_ptr<Eagle3DraftModelWrapper> m_draft_model;
-    std::unique_ptr<Eagle3TargetModelWrapper> m_main_model;
+    std::unique_ptr<Eagle3DraftWrapper> m_draft;
+    std::unique_ptr<Eagle3TargetWrapper> m_target;
 
     size_t m_draft_iterations = 5;
     std::vector<int> m_hidden_layers_to_abstract;
