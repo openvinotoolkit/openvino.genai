@@ -430,11 +430,11 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_cpu_internal(const ov::Te
         static bool simd_logged = false;
         if (!simd_logged) {
 #ifdef __AVX__
-            GENAI_WARN("[CDPruner] Using AVX SIMD instructions for vector operations (8 floats/operation)");
+            GENAI_INFO("[CDPruner] Using AVX SIMD instructions for vector operations (8 floats/operation)");
 #elif defined(__SSE2__)
-            GENAI_WARN("[CDPruner] Using SSE2 SIMD instructions for vector operations (4 floats/operation)");
+            GENAI_INFO("[CDPruner] Using SSE2 SIMD instructions for vector operations (4 floats/operation)");
 #else
-            GENAI_WARN("[CDPruner] Using scalar operations (no SIMD acceleration)");
+            GENAI_INFO("[CDPruner] Using scalar operations (no SIMD acceleration)");
 #endif
             simd_logged = true;
         }
