@@ -11,7 +11,8 @@ import { createTestImageTensor, createTestVideoTensor } from "./utils.js";
 
 const MODEL_PATH = process.env.VLM_MODEL_PATH || `./tests/models/${models.VLLM.split("/")[1]}`;
 
-describe("VLMPipeline", () => {
+// Skip tests on macOS due to insufficient memory
+describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
   let pipeline = null;
 
   before(async () => {
