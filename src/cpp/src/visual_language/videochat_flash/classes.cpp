@@ -233,47 +233,6 @@ ov::Tensor transpose_video_features(const ov::Tensor& src_tensor, const size_t m
     return dst_tensor;
 }
 
-// TODO: temporary function and will need to be updated later.
-ov::Tensor load_pos_emb_bin_to_ov_tensor(const std::string& bin_file_path, size_t num_patches, size_t emb_dim) {
-    // Load internvideo_pos_embed.bin to ov Tensor
-    const ov::Shape EXPECTED_SHAPE = {1, num_patches+1, emb_dim};
-    const ov::element::Type EXPECTED_TYPE = ov::element::f32;
-
-    size_t total_elements = std::accumulate(
-        EXPECTED_SHAPE.begin(), 
-        EXPECTED_SHAPE.end(), 
-        (size_t)1, 
-        std::multiplies<size_t>()
-    );
-    size_t element_size = EXPECTED_TYPE.size(); // f32 占用 4 字节
-    size_t total_bytes = total_elements * element_size;
-
-    std::ifstream file(bin_file_path, std::ios::binary | std::ios::ate);
-    if (!file.is_open()) {
-        OPENVINO_THROW("Error opening file: ", bin_file_path);
-    }
-
-    size_t file_size = file.tellg();
-    if (file_size != total_bytes) {
-        OPENVINO_THROW("File size mismatch. Expected ", total_bytes, " bytes, but found ", file_size, " bytes.");
-    }
-
-    file.seekg(0, std::ios::beg);
-
-    ov::Tensor pos_emd_tensor(EXPECTED_TYPE, EXPECTED_SHAPE);
-
-    void* tensor_data_ptr = pos_emd_tensor.data(); 
-
-    file.read(static_cast<char*>(tensor_data_ptr), total_bytes);
-
-    if (file.fail()) {
-        OPENVINO_THROW("Error reading data from file: ", bin_file_path);
-    }
-
-    std::cout << "[DEBUG] Successfully loaded " << total_bytes << " bytes into ov::Tensor." << std::endl;
-    return pos_emd_tensor;
-}
-
 ov::Tensor remove_second_dim_first_element(const ov::Tensor& input) {
     const ov::Shape& input_shape = input.get_shape();
     if (input_shape.size() < 2) {
@@ -288,7 +247,6 @@ ov::Tensor remove_second_dim_first_element(const ov::Tensor& input) {
     output_shape[1] -= 1;
     const size_t seq_len = output_shape[1];
     const size_t head_elements = input_shape[2];
-    std::cout << "DEBUG with input shape" << input_shape << " output shape " << output_shape << std::endl;
     ov::Tensor output(input.get_element_type(), output_shape);
     auto output_data = output.data<float>();
 
@@ -387,39 +345,44 @@ ov::Tensor efficient_flatten(ov::Tensor& original_tensor) {
     return new_tensor;
 }
 
-// Temp for debug
-void write_ov_tensor_to_bin(const ov::Tensor& tensor, const std::string& bin_file_path) {
-    if (!tensor) {
-        throw std::runtime_error("Input tensor is invalid or empty.");
-    }
-    
-    // 1. 计算总字节大小
-    size_t total_bytes = tensor.get_byte_size();
 
-    // 2. 打开文件流，使用二进制模式和截断模式（如果文件存在则清空）
-    std::ofstream file(bin_file_path, std::ios::out | std::ios::binary | std::ios::trunc);
-    
+// TODO: temporary function and will need to be updated later.
+ov::Tensor load_pos_emb_bin_to_ov_tensor(const std::string& bin_file_path, size_t num_patches, size_t emb_dim) {
+    // Load internvideo_pos_embed.bin to ov Tensor
+    const ov::Shape EXPECTED_SHAPE = {1, num_patches+1, emb_dim};
+    const ov::element::Type EXPECTED_TYPE = ov::element::f32;
+
+    size_t total_elements = std::accumulate(
+        EXPECTED_SHAPE.begin(), 
+        EXPECTED_SHAPE.end(), 
+        (size_t)1, 
+        std::multiplies<size_t>()
+    );
+    size_t element_size = EXPECTED_TYPE.size(); // f32 占用 4 字节
+    size_t total_bytes = total_elements * element_size;
+
+    std::ifstream file(bin_file_path, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
-        throw std::runtime_error("Error opening file for writing: " + bin_file_path);
+        OPENVINO_THROW("Error opening file: ", bin_file_path);
     }
-    
-    // 3. 获取 Tensor 数据的原始指针
-    // Tensor::data() 返回 void* 指针，需要将其转换为 char* 才能用于文件写入。
-    const char* tensor_data_ptr = static_cast<const char*>(tensor.data());
 
-    // 4. 将整个数据缓冲区写入文件
-    file.write(tensor_data_ptr, total_bytes);
+    size_t file_size = file.tellg();
+    if (file_size != total_bytes) {
+        OPENVINO_THROW("File size mismatch. Expected ", total_bytes, " bytes, but found ", file_size, " bytes.");
+    }
+
+    file.seekg(0, std::ios::beg);
+
+    ov::Tensor pos_emd_tensor(EXPECTED_TYPE, EXPECTED_SHAPE);
+
+    void* tensor_data_ptr = pos_emd_tensor.data(); 
+
+    file.read(static_cast<char*>(tensor_data_ptr), total_bytes);
 
     if (file.fail()) {
-        throw std::runtime_error("Error writing data to file: " + bin_file_path);
+        OPENVINO_THROW("Error reading data from file: ", bin_file_path);
     }
-    
-    // 5. 关闭文件
-    file.close();
-    
-    std::cout << "✅ Successfully wrote " << total_bytes << " bytes to " << bin_file_path << std::endl;
-    std::cout << "   Shape: " << tensor.get_shape() << std::endl;
-    std::cout << "   Type: " << tensor.get_element_type().get_type_name() << std::endl;
+    return pos_emd_tensor;
 }
 
 }  // namespace videochat_flash_utils
@@ -560,7 +523,6 @@ ov::Tensor InputsEmbedderVideoChat_Flash::get_inputs_embeds(const std::string& i
         new_chat_tokens = videochat_flash_utils::split_tokenize(image_prompt, m_tokenizer, NATIVE_PATTERN);
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
-        std::cout << "[DEBUG] new_chat_tokens size of m_is_chat_conversation is " << new_chat_tokens.size() << std::endl;
     } else {
         std::string templated_prompt;
         if (m_apply_chat_template) {
@@ -570,18 +532,13 @@ ov::Tensor InputsEmbedderVideoChat_Flash::get_inputs_embeds(const std::string& i
         } else {
             templated_prompt = std::move(image_prompt);
         }
-        std::cout << "m_apply_chat_template is " << m_apply_chat_template << std::endl;
-        std::cout << templated_prompt << std::endl;
         auto start_tokenizer_time = std::chrono::steady_clock::now();
         new_chat_tokens = videochat_flash_utils::split_tokenize(templated_prompt, m_tokenizer, NATIVE_PATTERN);
         auto end_tokenizer_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.tokenization_durations.emplace_back(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
-        std::cout << "[DEBUG] new_chat_tokens size of non m_is_chat_conversation is " << new_chat_tokens.size() << std::endl;
     }
     ov::Tensor new_merged_tokens = videochat_flash_utils::insert_image_placeholders(new_chat_tokens, m_tokens_per_images);
-    std::cout << "[DEBUG] new_merged_tokens shape is " << new_merged_tokens.get_shape() << std::endl;
     ov::Tensor new_tokens = update_history(new_merged_tokens);
-    std::cout << "[DEBUG] new_tokens shape is " << new_tokens.get_shape() << std::endl;
     m_prev_hist_length = m_kv_cache_state.get_state().size();
     m_kv_cache_state.add_inputs(new_tokens);
 
