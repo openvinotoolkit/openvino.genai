@@ -159,12 +159,12 @@ std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::to_single_image_tensors
             default: OPENVINO_THROW("Input image must have [NHWC] or [HWC] layout, given image shape is ", image_shape);
         }
         ov::Shape reshaped_image_shape = reshaped_image.get_shape();
-        size_t element_byte_size = reshaped_image.get_element_type().size();
-        size_t single_image_byte_size = reshaped_image_shape.at(1) * reshaped_image_shape.at(2) * reshaped_image_shape.at(3) * element_byte_size;
         for (size_t batch_idx = 0; batch_idx < reshaped_image_shape.at(0); ++batch_idx) {
-            ov::Shape single_shape = {1, reshaped_image_shape.at(1), reshaped_image_shape.at(2), reshaped_image_shape.at(3)};
-            ov::Tensor single_image{reshaped_image.get_element_type(), single_shape};
-            std::memcpy(single_image.data(), static_cast<const uint8_t*>(reshaped_image.data()) + batch_idx * single_image_byte_size, single_image_byte_size);
+            ov::Tensor single_image{
+                reshaped_image.get_element_type(),
+                {1, reshaped_image_shape.at(1), reshaped_image_shape.at(2), reshaped_image_shape.at(3)},
+                reshaped_image.data<uint8_t>() + batch_idx * reshaped_image_shape.at(1) * reshaped_image_shape.at(2) * reshaped_image_shape.at(3)
+            };
             single_image_tensors.push_back(std::move(single_image));
         }
     }

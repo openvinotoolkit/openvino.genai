@@ -130,10 +130,7 @@ ov::Tensor ImageResizer::execute(ov::Tensor image, int64_t dst_height, int64_t d
     target_spatial_tensor.data<int64_t>()[0] = dst_height;
     target_spatial_tensor.data<int64_t>()[1] = dst_width;
 
-    ov::Tensor image_copy(image.get_element_type(), image.get_shape());
-    image.copy_to(image_copy);
-
-    m_request.set_tensor("image", image_copy);
+    m_request.set_tensor("image", image);
     m_request.set_tensor("target_spatial_shape", target_spatial_tensor);
     m_request.infer();
 

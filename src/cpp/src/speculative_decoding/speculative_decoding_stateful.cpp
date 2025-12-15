@@ -554,14 +554,11 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
     ov::Tensor attention_mask;
 
     if (auto data = std::get_if<ov::Tensor>(&inputs)) {
-        input_ids = ov::Tensor(data->get_element_type(), data->get_shape());
-        data->copy_to(input_ids);
+        input_ids = *data;
         attention_mask = ov::genai::utils::init_attention_mask(input_ids);
     } else if (auto data = std::get_if<TokenizedInputs>(&inputs)) {
-        input_ids = ov::Tensor(data->input_ids.get_element_type(), data->input_ids.get_shape());
-        data->input_ids.copy_to(input_ids);
-        attention_mask = ov::Tensor(data->attention_mask.get_element_type(), data->attention_mask.get_shape());
-        data->attention_mask.copy_to(attention_mask);
+        input_ids = data->input_ids;
+        attention_mask = data->attention_mask;
     }
 
     ov::Shape prompt_shape = input_ids.get_shape();

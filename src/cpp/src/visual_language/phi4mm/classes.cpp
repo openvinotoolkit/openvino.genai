@@ -670,14 +670,11 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
     ov::Tensor input_image_embeds{ov::element::f32, {}}, image_attention_mask{ov::element::f32, {}};
     int32_t image_height = 0, image_width = 0, num_img_tokens = 0;
 
-    ov::Tensor image_copy(image.get_element_type(), image.get_shape());
-    image.copy_to(image_copy);
-
-    auto target_sizes = get_target_sizes(image_copy);
+    auto target_sizes = get_target_sizes(image);
     {
         CircularBufferQueueElementGuard<ov::InferRequest> lock{m_image_preprocessors.get()};
         ov::InferRequest& image_preprocessor = lock.get();
-        image_preprocessor.set_tensor("image", image_copy);
+        image_preprocessor.set_tensor("image", image);
 
         ov::Tensor new_size_tensor{ov::element::i64, {2}};
         new_size_tensor.data<int64_t>()[0] = target_sizes.width;
