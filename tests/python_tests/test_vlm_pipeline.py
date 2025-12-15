@@ -30,7 +30,7 @@ ov_continious_batching_pipe
 import collections
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Generator
+from typing import Callable, Generator, Sequence
 import openvino_tokenizers
 import openvino
 import PIL
@@ -158,6 +158,14 @@ NPU_UNSUPPORTED_MODELS = {
     "katuni4ka/tiny-random-gemma3",
 }
 
+DEFAULT_NPUW_PROPERTIES = {
+    "DEVICE_PROPERTIES": {
+        "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 4096}
+    }
+}
+
+NPU_SUPPORTED_MODELS = [id for id in MODEL_IDS if id not in NPU_UNSUPPORTED_MODELS and id not in VIDEO_MODEL_IDS]
+
 
 def _setup_generation_config(
     pipeline: VLMPipeline,
@@ -254,7 +262,7 @@ GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transforme
 
 @pytest.fixture(scope="module")
 def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
-    ov_model, ov_backend = request.param
+    ov_model, ov_backend, device, config, _ = request.param
 
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
@@ -263,7 +271,8 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
     pipeline = VLMPipeline(
         models_path,
-        "CPU",
+        device,
+        config=config,
         ATTENTION_BACKEND=ov_backend
     )
     return VlmModelInfo(
@@ -275,44 +284,38 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     )
 
 
-parametrize_all_models = pytest.mark.parametrize(
-    "ov_pipe_model",
-    [(m, b) for m in MODEL_IDS for b in ATTENTION_BACKEND],
-    ids=lambda p: f"{p[0]}/{p[1]}",
-    indirect=["ov_pipe_model"],
-)
+def _parametrize_models(
+    models: str | Sequence[str],
+    backends: str | Sequence[str],
+    device: str = "CPU",
+    config: dict | None = None,
+    config_name: str | None = None
+):
+    if isinstance(models, str):
+        models = [models]
 
+    if isinstance(backends, str):
+        backends = [backends]
 
-parametrize_all_models_with_video = pytest.mark.parametrize(
-    "ov_pipe_model",
-    [(m, b) for m in VIDEO_MODEL_IDS for b in ATTENTION_BACKEND],
-    ids=lambda p: f"{p[0]}/{p[1]}",
-    indirect=["ov_pipe_model"],
-)
+    assert (config is None and config_name is None) or (config is not None and config_name is not None)
+    if config is None:
+        config = dict()
 
+    return pytest.mark.parametrize(
+        "ov_pipe_model",
+        [(m, b, device, config, config_name) for m in models for b in backends],
+        ids=lambda p: f"{p[0]}/{p[1]}/{p[2]}/{config_name}",
+        indirect=["ov_pipe_model"],
+    )
 
-parametrize_one_model_sdpa = pytest.mark.parametrize(
-    "ov_pipe_model",
-    [(MODEL_IDS[0], "SDPA")],
-    ids=lambda p: f"{p[0]}/{p[1]}",
-    indirect=["ov_pipe_model"],
-)
+parametrize_all_models = _parametrize_models(MODEL_IDS, ATTENTION_BACKEND)
+parametrize_all_models_with_video = _parametrize_models(VIDEO_MODEL_IDS, ATTENTION_BACKEND)
+parametrize_one_model_sdpa = _parametrize_models(MODEL_IDS[0], "SDPA")
+parametrize_one_model_pa = _parametrize_models(MODEL_IDS[0], "PA")
+parametrize_one_model_backends = _parametrize_models(MODEL_IDS[0], ATTENTION_BACKEND)
 
-
-parametrize_one_model_pa = pytest.mark.parametrize(
-    "ov_pipe_model",
-    [(MODEL_IDS[0], "PA")],
-    ids=lambda p: f"{p[0]}/{p[1]}",
-    indirect=["ov_pipe_model"],
-)
-
-
-parametrize_one_model_backends = pytest.mark.parametrize(
-    "ov_pipe_model",
-    [(MODEL_IDS[0], b) for b in ATTENTION_BACKEND],
-    ids=lambda p: f"{p[0]}/{p[1]}",
-    indirect=["ov_pipe_model"],
-)
+parametrize_all_models_npu = _parametrize_models(NPU_SUPPORTED_MODELS, "SDPA", "NPU", DEFAULT_NPUW_PROPERTIES, "DEFAULT_NPUW_PROPERTIES")
+parametrize_one_model_npu = _parametrize_models(NPU_SUPPORTED_MODELS[0], "SDPA", "NPU", DEFAULT_NPUW_PROPERTIES, "DEFAULT_NPUW_PROPERTIES")
 
 @pytest.fixture(scope="module")
 def ov_continious_batching_pipe() -> ContinuousBatchingPipeline:
@@ -684,16 +687,13 @@ def iteration_images_npu(request):
     return [[request.getfixturevalue(image) for image in bundle] for bundle in request.param]
 
 
-@pytest.mark.parametrize("model_id", MODEL_IDS)
+@parametrize_all_models_npu
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 @pytest.mark.skipif(
     sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
-def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
-    if model_id in NPU_UNSUPPORTED_MODELS or model_id in VIDEO_MODEL_IDS:
-        pytest.skip(f"{model_id} is not supported")
-
+def test_vlm_pipeline_chat_npu(ov_pipe_model: VlmModelInfo, system_message, iteration_images_npu):
     def run_chat(ov_pipe, system_message, iteration_images):
         result_from_streamer = []
         def streamer(word: str) -> bool:
@@ -718,13 +718,7 @@ def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
 
         ov_pipe.finish_chat()
 
-    models_path = _get_ov_model(model_id)
-    properties = {
-        "DEVICE_PROPERTIES": {
-            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 4096}
-        }
-    }
-    npu_pipe = VLMPipeline(models_path, "NPU", config=properties)
+    npu_pipe = ov_pipe_model.pipeline
 
     run_chat(npu_pipe, system_message, iteration_images_npu)
 
@@ -869,24 +863,13 @@ def test_perf_metrics(
     assert np.allclose(std_dur, np.std(raw_dur))
 
 
-@pytest.mark.parametrize("model_id", MODEL_IDS)
-@pytest.mark.parametrize("backend", ATTENTION_BACKEND)
+@parametrize_all_models_npu
 @pytest.mark.skipif(
     sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
-def test_vlm_npu_no_exception(model_id, backend, cat_tensor):
-    if model_id in NPU_UNSUPPORTED_MODELS:
-        pytest.skip(f"{model_id} is not supported")
-
-    models_path = _get_ov_model(model_id)
-    properties = {
-        "DEVICE_PROPERTIES": {
-            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048}
-        }
-    }
-
-    ov_pipe = VLMPipeline(models_path, "NPU", ATTENTION_BACKEND=backend, config=properties)
+def test_vlm_npu_no_exception(ov_pipe_model: VlmModelInfo, cat_tensor):
+    ov_pipe = ov_pipe_model.pipeline
 
     generation_config = _setup_generation_config(ov_pipe)
 
@@ -903,19 +886,13 @@ def image_sequence(request):
     return [request.getfixturevalue(image) for image in request.param]
 
 
+@parametrize_one_model_npu
 @pytest.mark.skipif(
     sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
-def test_vlm_npu_no_image():
-    models_path = _get_ov_model(MODEL_IDS[0])
-    properties = {
-        "DEVICE_PROPERTIES": {
-            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048}
-        }
-    }
-
-    ov_pipe = VLMPipeline(models_path, "NPU", config=properties)
+def test_vlm_npu_no_image(ov_pipe_model: VlmModelInfo):
+    ov_pipe = ov_pipe_model.pipeline
 
     generation_config = _setup_generation_config(ov_pipe)
 
@@ -924,19 +901,13 @@ def test_vlm_npu_no_image():
     )
 
 
+@parametrize_one_model_npu
 @pytest.mark.skipif(
     sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
-def test_vlm_npu_multiple_images(cat_tensor: openvino.Tensor, handwritten_tensor: openvino.Tensor):
-    models_path = _get_ov_model(MODEL_IDS[0])
-    properties = {
-        "DEVICE_PROPERTIES": {
-            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048}
-        }
-    }
-
-    ov_pipe = VLMPipeline(models_path, "NPU", config=properties)
+def test_vlm_npu_multiple_images(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, handwritten_tensor: openvino.Tensor):
+    ov_pipe = ov_pipe_model.pipeline
 
     generation_config = _setup_generation_config(ov_pipe)
 
