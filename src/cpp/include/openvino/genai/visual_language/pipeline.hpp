@@ -251,6 +251,44 @@ public:
         );
     }
 
+    // TODO Add docstring after API finalization
+    VLMDecodedResults generate(
+        ChatHistory& history,
+        const std::vector<ov::Tensor>& images,
+        const GenerationConfig& generation_config,
+        const StreamerVariant& streamer
+    );
+
+    VLMDecodedResults generate(
+        ChatHistory& history,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        const GenerationConfig& generation_config,
+        const StreamerVariant& streamer
+    );
+
+    VLMDecodedResults generate(
+        ChatHistory& history,
+        const ov::Tensor& image,
+        const GenerationConfig& generation_config,
+        const StreamerVariant& streamer
+    );
+
+    VLMDecodedResults generate(
+        ChatHistory& history,
+        const ov::AnyMap& config_map
+    );
+
+    template <typename... Properties>
+    util::EnableIfAllStringAny<VLMDecodedResults, Properties...> generate(
+        ChatHistory& history,
+        Properties&&... properties
+    ) {
+        return generate(
+            history, AnyMap{std::forward<Properties>(properties)...}
+        );
+    }
+
     /// @brief Activate chat mode. Chat preserves previous history.
     /// Calling start_chat() again or finish_chat() drops the memorized history.
     /// @param system_message Some chat_templates contain system role
