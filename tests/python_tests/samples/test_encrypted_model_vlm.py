@@ -19,17 +19,17 @@ class TestEncryptedVLM:
         env = os.environ.copy()
         env["OPENVINO_LOG_LEVEL"] = "0"
         # Test CPP sample
-        cpp_sample = os.path.join(SAMPLES_CPP_DIR, 'encrypted_model_vlm')
+        cpp_sample = SAMPLES_CPP_DIR / 'encrypted_model_vlm'
         cpp_command =[cpp_sample, convert_model, os.path.dirname(generate_test_content), sample_args]
         cpp_result = run_sample(cpp_command, env=env)
 
         # Test Python sample
-        py_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/encrypted_model_vlm.py")
+        py_script = SAMPLES_PY_DIR / "visual_language_chat/encrypted_model_vlm.py"
         py_command = [sys.executable, py_script, convert_model, os.path.dirname(generate_test_content), sample_args]
         py_result = run_sample(py_command, env=env)
 
         # Test common sample
-        py_common_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/visual_language_chat.py")
+        py_common_script = SAMPLES_PY_DIR / "visual_language_chat/visual_language_chat.py"
         py_common_command = [sys.executable, py_common_script, convert_model, os.path.dirname(generate_test_content)]
         py_common_result = run_sample(py_common_command, sample_args, env)
 

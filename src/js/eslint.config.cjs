@@ -23,7 +23,6 @@ module.exports = defineConfig([
       parser: tseslint.parser,
       parserOptions: {
         projectService: true,
-        project: "./tsconfig.json",
         tsconfigRootDir: path.resolve(),
       },
     },
@@ -42,7 +41,6 @@ module.exports = defineConfig([
         {
           allow: [
             "max_new_tokens",
-            "return_decoded_results",
             "stop_strings",
             "include_stop_str_in_output",
             "max_num_batched_tokens",
@@ -53,6 +51,13 @@ module.exports = defineConfig([
             "json_schema",
             "structured_output_config",
             "structural_tags_config",
+            "skip_special_tokens",
+            "add_special_tokens",
+            "pad_to_max_length",
+            "max_length",
+            "padding_side",
+            "add_second_input",
+            "number_of_inputs",
           ],
         },
       ],

@@ -1,29 +1,13 @@
 import util from "node:util";
-import addon, { ChatHistory } from "../addon.js";
+import { ChatHistory, LLMPipeline as LLMPipelineWrap } from "../addon.js";
 import { GenerationConfig, StreamingStatus, LLMPipelineProperties } from "../utils.js";
+import { Tokenizer } from "../tokenizer.js";
 
 export type ResolveFunction = (arg: { value: string; done: boolean }) => void;
 export type Options = {
   disableStreamer?: boolean;
   max_new_tokens?: number;
 };
-
-interface Tokenizer {
-  /** Applies a chat template to format chat history into a prompt string. */
-  applyChatTemplate(
-    chatHistory: Record<string, any>[] | ChatHistory,
-    addGenerationPrompt: boolean,
-    chatTemplate?: string,
-    tools?: Record<string, any>[],
-    extraContext?: Record<string, any>,
-  ): string;
-  getBosToken(): string;
-  getBosTokenId(): number;
-  getEosToken(): string;
-  getEosTokenId(): number;
-  getPadToken(): string;
-  getPadTokenId(): number;
-}
 
 /** Structure with raw performance metrics for each generation before any statistics are calculated. */
 export type RawMetrics = {
@@ -167,7 +151,7 @@ export class LLMPipeline {
   async init() {
     if (this.isInitialized) throw new Error("LLMPipeline is already initialized");
 
-    this.pipeline = new addon.LLMPipeline();
+    this.pipeline = new LLMPipelineWrap();
 
     const initPromise = util.promisify(this.pipeline.init.bind(this.pipeline));
     const result = await initPromise(this.modelPath, this.device, this.properties);
@@ -265,25 +249,16 @@ export class LLMPipeline {
     if (!callback) {
       options["disableStreamer"] = true;
     }
-    const returnDecoded = generationConfig["return_decoded_results"] || false;
 
-    return new Promise((resolve: (value: string | DecodedResults) => void) => {
+    return new Promise((resolve: (value: DecodedResults) => void) => {
       const chunkOutput = (isDone: boolean, result: string | any) => {
-        if (isDone && returnDecoded) {
+        if (isDone) {
           const decodedResults = new DecodedResults(
             result.texts,
             result.scores,
             result.perfMetrics,
           );
           resolve(decodedResults);
-        } else if (isDone && !returnDecoded) {
-          console.warn(
-            "DEPRECATION WARNING: Starting in version 2026.0.0,",
-            "LLMPipeline.generate() will return DecodedResults by default.\n",
-            'To use the new behavior now, set "return_decoded_results": true',
-            "in GenerationConfig.",
-          );
-          resolve(result.subword);
         } else if (callback && typeof result === "string") {
           return callback(result);
         }
