@@ -1085,7 +1085,11 @@ private:
             size_t global_sequence_id = seq_id_and_score_span.first;
             IndexSpan span = seq_id_and_score_span.second;
             for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; decoder_layer_id++) {
-                auto diversities_in_this_layer = m_request.get_tensor(get_adaptive_rkv_diversity_score_output_for_decoder_layer(decoder_layer_id));
+                auto output_tensor_name = get_adaptive_rkv_diversity_score_output_for_decoder_layer(decoder_layer_id);
+                auto diversities_in_this_layer = m_request.get_tensor(output_tensor_name);
+                OPENVINO_ASSERT(diversities_in_this_layer.get_size() != 0, "Size of the output ", output_tensor_name, " may not be zero");
+                OPENVINO_ASSERT(diversities_in_this_layer.get_size() >= span.second, "Size of the output ", output_tensor_name, " must be at least ", span.second);
+
                 auto diversities_of_current_sequence_group = ov::Tensor(diversities_in_this_layer, ov::Coordinate{span.first}, ov::Coordinate{span.second});
                 auto copied_tensor = ov::Tensor(diversities_of_current_sequence_group.get_element_type(), ov::Shape{span.second - span.first});
                 diversities_of_current_sequence_group.copy_to(copied_tensor);
