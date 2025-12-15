@@ -574,7 +574,7 @@ Napi::Function get_prototype_from_ov_addon(const Napi::Env& env, const std::stri
     return ctor_val.As<Napi::Function>();
 }
 
-Napi::Object to_decoded_result(const Napi::Env& env, const ov::genai::DecodedResults results) {
+Napi::Object to_decoded_result(const Napi::Env& env, const ov::genai::DecodedResults& results) {
     Napi::Object obj = Napi::Object::New(env);
     obj.Set("texts", cpp_to_js<std::vector<std::string>, Napi::Value>(env, results.texts));
     obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, results.scores));
@@ -583,7 +583,7 @@ Napi::Object to_decoded_result(const Napi::Env& env, const ov::genai::DecodedRes
     return obj;
 }
 
-Napi::Object to_vlm_decoded_result(const Napi::Env& env, const ov::genai::VLMDecodedResults results) {
+Napi::Object to_vlm_decoded_result(const Napi::Env& env, const ov::genai::VLMDecodedResults& results) {
     Napi::Object obj = Napi::Object::New(env);
     obj.Set("texts", cpp_to_js<std::vector<std::string>, Napi::Value>(env, results.texts));
     obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, results.scores));

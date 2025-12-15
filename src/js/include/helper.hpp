@@ -151,6 +151,6 @@ Napi::Value json_parse(const Napi::Env& env, const std::string& value);
 
 Napi::Function get_prototype_from_ov_addon(const Napi::Env& env, const std::string& ctor_name);
 
-Napi::Object to_decoded_result(const Napi::Env& env, const ov::genai::DecodedResults results);
+Napi::Object to_decoded_result(const Napi::Env& env, const ov::genai::DecodedResults& results);
 
-Napi::Object to_vlm_decoded_result(const Napi::Env& env, ov::genai::VLMDecodedResults results);
+Napi::Object to_vlm_decoded_result(const Napi::Env& env, const ov::genai::VLMDecodedResults& results);
