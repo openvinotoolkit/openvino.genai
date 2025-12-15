@@ -224,6 +224,15 @@ def test_text_genai_cb_model(tmp_path):
             }
         }
         json.dump(config, f)
+
+    ov_config_path = tmp_path / "ov_config.json"
+    with open(ov_config_path, "w") as f:
+        config = {
+            "KV_CACHE_PRECISION": "f16",
+            "ATTENTION_BACKEND": "PA"
+        }
+        json.dump(config, f)
+
     output = run_wwb([
         "--base-model",
         base_model_path,
@@ -235,7 +244,38 @@ def test_text_genai_cb_model(tmp_path):
         "CPU",
         "--genai",
         "--cb-config",
-        config_path
+        config_path,
+        "--ov-config",
+        ov_config_path
     ])
     assert "Metrics for model" in output
     assert "## Reference text" not in output
+    assert "INFO:whowhatbench.model_loaders:OpenVINO Config: {'KV_CACHE_PRECISION': 'f16', 'ATTENTION_BACKEND': 'PA'}" in output
+
+
+def test_text_genai_json_string_config():
+    if sys.platform == 'darwin':
+        pytest.xfail("Ticket 173169")
+
+    cb_json_string = "{\"max_num_batched_tokens\": 4096}"
+    ov_json_string = "{\"KV_CACHE_PRECISION\":\"f16\", \"ATTENTION_BACKEND\": \"PA\"}"
+
+    output = run_wwb([
+        "--base-model",
+        base_model_path,
+        "--target-model",
+        target_model_path,
+        "--num-samples",
+        "2",
+        "--device",
+        "CPU",
+        "--genai",
+        "--cb-config",
+        cb_json_string,
+        "--ov-config",
+        ov_json_string
+    ])
+
+    # Test with WWB log info to make sure the configurations are passed from strings to the GenAI APIs
+    assert "INFO:whowhatbench.wwb:cb_config: {'max_num_batched_tokens': 4096}" in output
+    assert "INFO:whowhatbench.model_loaders:OpenVINO Config: {'KV_CACHE_PRECISION': 'f16', 'ATTENTION_BACKEND': 'PA'}" in output
