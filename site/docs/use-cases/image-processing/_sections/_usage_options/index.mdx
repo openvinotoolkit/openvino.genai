@@ -6,7 +6,7 @@ import Streaming from '@site/docs/use-cases/_shared/_streaming.mdx';
 ## Additional Usage Options
 
 :::tip
-Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/visual_language_chat) and [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/visual_language_chat) visual language chat samples.
+Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/visual_language_chat), [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/visual_language_chat) and [JavaScript](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/js/visual_language_chat) visual language chat samples.
 :::
 
 ### Use Image or Video Tags in Prompt
@@ -81,6 +81,28 @@ Similar to [text generation](/docs/use-cases/text-generation/#use-different-gene
           }
           ```
       </TabItemCpp>
+      <TabItemJS>
+          ```javascript
+          import { VLMPipeline }  from 'openvino-genai-node';
+
+          const pipe = await VLMPipeline(modelPath, "CPU", {});
+
+          // Create custom generation configuration
+          const config = {
+              max_new_tokens: 100,
+              temperature: 0.7,
+              top_k: 50,
+              top_p: 0.9,
+              repetition_penalty: 1.2
+          };
+
+          // Generate text with custom configuration
+          const output = await pipe.generate(prompt, {
+              images: images,
+              generationConfig: config
+          });
+          ```
+      </TabItemJS>
   </LanguageTabs>
 </BasicGenerationConfiguration>
 
