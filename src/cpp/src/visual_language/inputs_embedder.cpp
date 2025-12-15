@@ -423,7 +423,9 @@ InputsEmbedder::IInputsEmbedder::PruningResult InputsEmbedder::IInputsEmbedder::
     GENAI_INFO("\t  Use CL Kernel: %s", current_pruning_config->use_cl_kernel ? "true" : "false");
     GENAI_INFO("\t  Enable Frame Chunking: %s", current_pruning_config->enable_frame_chunking ? "true" : "false");
     GENAI_INFO("\t  Use Negative Relevance: %s", current_pruning_config->use_negative_relevance ? "true" : "false");
-    GENAI_INFO("\t  Split Threshold: %d", current_pruning_config->split_threshold);
+    bool exceeds_split_threshold = (current_pruning_config->split_threshold > 0) &&
+                                   (result.original_visual_tokens > current_pruning_config->split_threshold);
+    GENAI_INFO("\t  Exceeds Split Threshold: %s", exceeds_split_threshold ? "true" : "false");
     GENAI_INFO("\tResults:");
     GENAI_INFO("\t  Original Visual Tokens: %zu", result.original_visual_tokens);
     GENAI_INFO("\t  Removed Visual Tokens: %zu", result.original_visual_tokens - result.pruned_visual_tokens);

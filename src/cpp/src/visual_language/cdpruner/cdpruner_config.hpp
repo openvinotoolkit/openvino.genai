@@ -45,15 +45,16 @@ struct Config {
     bool use_cl_kernel = true;
 
     /// @brief Threshold for splitting large kernel matrices (internal use only)
-    /// When visual tokens exceed this threshold, the kernel matrix will be split
-    /// for parallel processing. This parameter is not exposed in public API.
-    size_t split_threshold = 0;
+    /// If the number of visual tokens exceeds this value, the kernel matrix will be split
+    /// and processed in parallel to improve efficiency. This parameter is for internal optimization
+    /// and is not exposed in the public API.
+    size_t split_threshold = 1;
 
-    /// @brief Whether to enable frame-level chunking for multi-frame video processing
-    /// When true, each frame in multi-frame input will be processed separately for DPP pruning
-    /// When false, all frames will be concatenated and processed together
-    /// Default is false to maintain existing behavior
-    bool enable_frame_chunking = false;
+    /// @brief Enable frame-level chunking for multi-frame video input
+    /// If true, each frame in a multi-frame input is processed independently for DPP pruning.
+    /// If false, all frames are concatenated and processed as a single batch.
+    /// Default: true
+    bool enable_frame_chunking = true;
 
     /// @brief Compare two Config structures for equality
     /// @param other The other Config to compare with
