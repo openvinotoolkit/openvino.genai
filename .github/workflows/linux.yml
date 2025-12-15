@@ -645,6 +645,11 @@ jobs:
             cmd: 'tests/python_tests/samples'
             runner: 'aks-linux-4-cores-16gb'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Speech_generation_samples.test }}
+          - name: 'Eagle3 decoding'
+            marker: 'eagle3_decoding'
+            cmd: 'tests/python_tests/samples'
+            runner: 'aks-linux-4-cores-16gb'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speculative_decoding.test }}
 
     timeout-minutes: 120
     defaults:
@@ -724,6 +729,11 @@ jobs:
         run: |
           npm install ${{ env.SRC_DIR }}/src/js
           npm install --verbose
+
+      - name : Install specific optimum-intel for eagle3 samples
+        if: ${{ matrix.test.marker == 'eagle3_decoding' && matrix.test.run_condition }}
+        run: |
+          python -m pip install git+https://github.com/xufang-lisa/optimum-intel.git@ea9607daf32919024cdd4390deec9693a7b64d23
 
       - name: Test Samples (Python and C++)
         if: ${{ matrix.test.run_condition }}

@@ -55,16 +55,15 @@ def add(a, b):
 Question: Can you please add 2 and 3
 A:"""
 class TestEagle3SpeculativeDecodingLM:
-    @pytest.mark.llm
-    @pytest.mark.samples
+    @pytest.mark.eagle3_decoding
     @pytest.mark.parametrize(
         "convert_model, convert_draft_model, sample_args",
         [
-            pytest.param("Qwen3-1.7B", "qwen3_1.7b_eagle3", test_prompt, marks=pytest.mark.skip(reason='CVS-171947, CVS-171943, CVS-174959')),
+            pytest.param("Qwen3-1.7B", "qwen3_1.7b_eagle3", test_prompt),
         ],
         indirect=["convert_model", "convert_draft_model"],
     )
-    def test_sample_speculative_decoding_lm(self, convert_model, convert_draft_model, sample_args):
+    def test_eagle3_speculative_decoding_lm(self, convert_model, convert_draft_model, sample_args):
         if sys.platform == 'darwin':
             pytest.xfail("Ticket 173586")  # Update mac.yml to run the test separately similar to linux.yml after resolution 
         env = os.environ.copy()
