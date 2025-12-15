@@ -1,4 +1,4 @@
-import addon from "../dist/addon.js";
+import { LLMPipeline } from "../dist/addon.js";
 
 import assert from "node:assert";
 import { describe, it, before, after } from "node:test";
@@ -10,7 +10,7 @@ describe("bindings", () => {
   let pipeline = null;
 
   before((_, done) => {
-    pipeline = new addon.LLMPipeline();
+    pipeline = new LLMPipeline();
 
     pipeline.init(MODEL_PATH, "CPU", {}, (err) => {
       if (err) {

@@ -1,17 +1,32 @@
 import os
 from typing import Any, Union
 
+import torch
 import datasets
 import pandas as pd
-from tqdm import tqdm
-from transformers import set_seed
-import torch
 import openvino_genai
 
+from tqdm import tqdm
+from transformers import set_seed
+from contextlib import contextmanager
+from datasets.packaged_modules.parquet.parquet import Parquet
+
+from .utils import parquet_generate_tables
 from .registry import register_evaluator
 from .text2image_evaluator import Text2ImageEvaluator
 
 from .whowhat_metrics import ImageSimilarity
+
+
+# monkey patch of Parquet._generate_tables to avoid issue https://github.com/huggingface/datasets/issues/7357
+@contextmanager
+def patched_parquet(_custom_generate_tables):
+    orig = Parquet._generate_tables
+    Parquet._generate_tables = _custom_generate_tables
+    try:
+        yield
+    finally:
+        Parquet._generate_tables = orig
 
 
 def preprocess_fn(example):
@@ -27,7 +42,7 @@ def prepare_default_data(num_samples=None):
     NUM_SAMPLES = 10 if num_samples is None else num_samples
     set_seed(42)
     default_dataset = datasets.load_dataset(
-        DATASET_NAME, split="test", streaming=True
+        DATASET_NAME, split="test", streaming=True,
     ).filter(lambda example: example["inpaint_caption"] != "").take(NUM_SAMPLES)
     return default_dataset.map(
         lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
@@ -53,7 +68,6 @@ class InpaintingEvaluator(Text2ImageEvaluator):
         assert (
             base_model is not None or gt_data is not None
         ), "Text generation pipeline for evaluation or ground trush data must be defined"
-
         self.test_data = test_data
         self.metrics = metrics
         self.crop_prompt = crop_prompts
@@ -101,7 +115,8 @@ class InpaintingEvaluator(Text2ImageEvaluator):
                     data = dict(self.test_data)
                 data = pd.DataFrame.from_dict(data)
         else:
-            data = pd.DataFrame.from_dict(prepare_default_data(self.num_samples))
+            with patched_parquet(parquet_generate_tables):
+                data = pd.DataFrame.from_dict(prepare_default_data(self.num_samples))
 
         prompts = data["prompts"]
         images = data["images"]

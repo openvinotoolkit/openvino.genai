@@ -198,7 +198,7 @@ ov::genai::WhisperPipeline::WhisperPipeline(const std::filesystem::path& models_
     auto start_time = std::chrono::steady_clock::now();
     if (device == "NPU") {
         auto properties_copy = properties;
-        const bool use_static_pipeline = utils::pop_or_default(properties_copy, "STATIC_PIPELINE", true);
+        const bool use_static_pipeline = utils::pop_or_default(properties_copy, "STATIC_PIPELINE", false);
         if (!use_static_pipeline) {
             m_impl = std::make_unique<WhisperPipelineStatefulImpl>(models_path, device, properties_copy);
         } else {

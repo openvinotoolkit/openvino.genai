@@ -1,6 +1,5 @@
 from pathlib import Path
 import logging
-import json
 import torch
 
 from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq, AutoTokenizer
@@ -10,6 +9,7 @@ from .reranking_evaluator import DEFAULT_MAX_LENGTH as RERANK_DEFAULT_MAX_LENGTH
 from .utils import mock_torch_cuda_is_available, mock_AwqQuantizer_validate_environment
 import os
 
+from whowhatbench.utils import get_json_config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ class GenAIModelWrapper:
         self.model = model
         self.model_type = model_type
 
-        if model_type in ["text", "visual-text", "text-embedding", "text-reranking"]:
+        if model_type in ["text", "visual-text", "visual-video-text", "text-embedding", "text-reranking"]:
             try:
                 self.config = AutoConfig.from_pretrained(model_dir)
             except Exception:
@@ -321,7 +321,7 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
     return GenAIModelWrapper(
         pipeline,
         model_dir,
-        "visual-text"
+        kwargs.get("model_type", "visual-text")
     )
 
 
@@ -630,8 +630,8 @@ def load_model(
         return None
 
     if ov_config:
-        with open(ov_config) as f:
-            ov_options = json.load(f)
+        ov_options = get_json_config(ov_config)
+        logger.info(f"OpenVINO Config: {ov_options}")
     else:
         ov_options = {}
 
@@ -641,7 +641,8 @@ def load_model(
         return load_text2image_model(
             model_id, device, ov_options, use_hf, use_genai, **kwargs
         )
-    elif model_type == "visual-text":
+    elif model_type == "visual-text" or model_type == "visual-video-text":
+        kwargs["model_type"] = model_type
         return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     elif model_type == "image-to-image":
         return load_imagetext2image_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
