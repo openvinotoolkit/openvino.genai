@@ -9,6 +9,8 @@
 namespace ov {
 namespace genai {
 
+struct ChatHistoryInternalState;
+
 /**
  * @brief ChatHistory stores conversation messages and optional metadata for chat templates.
  *
@@ -64,10 +66,14 @@ public:
     ChatHistory& set_extra_context(const JsonContainer& extra_context);
     const JsonContainer& get_extra_context() const;
 
+    std::shared_ptr<ChatHistoryInternalState> get_internal_state() const;
+    void set_internal_state(std::shared_ptr<ChatHistoryInternalState> state);
+
 private:
     JsonContainer m_messages = JsonContainer::array();
     JsonContainer m_tools = JsonContainer::array();
     JsonContainer m_extra_context = JsonContainer::object();
+    std::shared_ptr<ChatHistoryInternalState> m_internal_state;
 };
 
 } // namespace genai
