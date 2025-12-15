@@ -71,7 +71,6 @@ def rerank_model(request) -> OVConvertedModelSchema:
     return download_and_convert_model_class(model_id, OVModelForSequenceClassification)
 
 
-
 @pytest.fixture(scope="module")
 def emb_model(request) -> OVConvertedModelSchema:
     model_id = request.param
@@ -199,7 +198,6 @@ def validate_embedding_results(result_1: EmbeddingResult, result_2: EmbeddingRes
 
     max_error = np.abs(np_result_1 - np_result_2).max()
     assert max_error < MAX_EMBEDDING_ERROR, f"Max error: {max_error} is greater than allowed {MAX_EMBEDDING_ERROR}"
-    
 
 
 def run_text_embedding_pipeline_with_ref(
@@ -621,7 +619,10 @@ def test_qwen3_seq_cls_rerank_documents(rerank_model: OVConvertedModelSchema, qu
     "config",
     [
         pytest.param(
-            TextRerankPipeline.Config(top_n=4), marks=pytest.mark.skip(reason="Qwen3 Reranker different default tokenizer padding side on Win vs Linux: 177405")
+            TextRerankPipeline.Config(top_n=4),
+            marks=pytest.mark.skip(
+                reason="Qwen3 Reranker different default tokenizer padding side on Win vs Linux: 177405"
+            ),
         ),
         TextRerankPipeline.Config(top_n=4, padding_side="left"),
     ],
