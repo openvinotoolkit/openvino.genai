@@ -4,6 +4,9 @@
 #include "logger.hpp"
 
 namespace ov::genai {
+// sharing embedding weights between main and draft models
+// for current supported models, e.g, llama3 and qwen3 EAGLE3 models are found have no embedding weights in the torch weight, and use the same one as in the target model.
+// for future model support with its own embedding layer, e.g. gpt-oss, will need to use its own embedding weights.
 void share_embedding_weights(const std::shared_ptr<ov::Model>& main_model, const std::shared_ptr<ov::Model>& draft_model) {
     // extract embedding weight from main model
     auto find_embedding_gather = [](const std::shared_ptr<ov::Model>& model)
@@ -115,7 +118,7 @@ void hidden_state_transform(std::shared_ptr<ov::Model>& model,
     std::vector<std::string> patterns;
     if (hidden_layers_to_abstract.size() > 1) {
         patterns.reserve(hidden_layers_to_abstract.size());
-        for (int idx : hidden_layers_to_abstract) {
+        for (int32_t idx : hidden_layers_to_abstract) {
             patterns.emplace_back("layers." + std::to_string(idx) + "/"); // main description
         }
     } else {
