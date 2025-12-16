@@ -27,31 +27,26 @@ TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::gene
     }
 
     const size_t input_length = input_ids.size();
-    const int32_t adjusted_ngram_size = static_cast<int32_t>(std::min(max_ngram_size, input_length));
+    int32_t adjusted_ngram_size = max_ngram_size;
+    if (max_ngram_size >= input_length) {
+        // Comparing them is not very meaningful until the ngram length reaches half the length of `input_ids`, because
+        // the ngrams will overlap with `input_ids`.
+        adjusted_ngram_size = max_ngram_size / 2;
+    }
     for (int32_t ngram_size = adjusted_ngram_size; ngram_size > 0; ngram_size--) {
         // extract last ngram_size tokens as search ngram
         std::vector<int64_t> ngram = std::vector<int64_t>{input_ids.cend() - ngram_size, input_ids.cend()};
 
-        // find ngram match in input_ids
-        size_t ngram_i = 0;
         for (int32_t input_i = 0; input_i < static_cast<int32_t>(input_length) - ngram_size; input_i++) {
-            if (!std::equal(ngram.begin() + ngram_i, ngram.end(), input_ids.begin() + input_i)) {
-                ngram_i = 0;
+            if (!std::equal(ngram.begin(), ngram.end(), input_ids.begin() + input_i)) {
                 continue;
             }
-
-            ngram_i++;
-
-            if (ngram_i < ngram_size) {
-                continue;
-            }
-
+            auto start_candidate_idx = input_i + ngram.size();
             // match found with the end at input_i
-            size_t avaliable_num_pred = std::min(input_length - (input_i + 1), num_pred_tokens);
-
+            size_t avaliable_num_pred = std::min(input_length - start_candidate_idx, num_pred_tokens);
             // return candidates with length of avaliable_num_pred
-            return std::vector<int64_t>{input_ids.cbegin() + input_i + 1,
-                                        input_ids.cbegin() + input_i + 1 + avaliable_num_pred};
+            return std::vector<int64_t>{input_ids.cbegin() + start_candidate_idx,
+                                        input_ids.cbegin() + start_candidate_idx + avaliable_num_pred};
         }
     }
 
