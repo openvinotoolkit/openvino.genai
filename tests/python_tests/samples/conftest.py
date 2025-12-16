@@ -155,11 +155,11 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "Qwen3-1.7B": {
         "name": "Qwen/Qwen3-1.7B",
-        "convert_args": ["--task", "text-generation-with-past", '--trust-remote-code']
+        "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code"],
     },
     "qwen3_1.7b_eagle3": {
         "name": "AngelSlim/Qwen3-1.7B_eagle3",
-        "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code", "--eagle3"]
+        "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code", "--eagle3"],
     },
     "tiny-random-llava-next-video": {
         "name": "katuni4ka/tiny-random-llava-next-video",

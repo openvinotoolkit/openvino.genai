@@ -5,7 +5,7 @@
 
 namespace ov::genai {
 // sharing embedding weights between main and draft models
-// for current supported models, e.g, llama3 and qwen3 EAGLE3 models are found have no embedding weights in the torch weight, and use the same one as in the target model.
+// for current supported models, e.g, llama3 and qwen3 EAGLE3 models are found to have no embedding weights in the torch weights, and use the same one as in the target model.
 // for future model support with its own embedding layer, e.g. gpt-oss, will need to use its own embedding weights.
 void share_embedding_weights(const std::shared_ptr<ov::Model>& main_model, const std::shared_ptr<ov::Model>& draft_model) {
     // extract embedding weight from main model
@@ -191,7 +191,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     ov::AnyMap draft_properties =
         draft_model_desc.properties.empty() ? main_model_desc.properties : draft_model_desc.properties;
 
-    // main and draft model use same tokenzier, but could differ in configurations
+    // main and draft model use same tokenizer, but could differ in configurations
     // for example, llama3 draft model has different eos_token_id in config.json
     const Tokenizer& main_model_tokenizer = main_model_desc.tokenizer;
     const Tokenizer& draft_model_tokenizer = draft_model_desc.tokenizer;

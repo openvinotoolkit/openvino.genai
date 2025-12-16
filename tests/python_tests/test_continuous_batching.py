@@ -17,7 +17,16 @@ from utils.generation_config import get_greedy, get_beam_search, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
 from utils.hugging_face import OVConvertedModelSchema, download_and_convert_model, run_hugging_face
-from utils.ov_genai_pipelines import create_ov_pipeline, create_ov_cb_pipeline, PipelineType, dict_to_scheduler_config, generate_and_compare, prepare_generation_config_by_pipe_type, convert_decoded_results_to_generation_result, GenerationChatInputsType
+from utils.ov_genai_pipelines import (
+    create_ov_pipeline,
+    create_ov_cb_pipeline,
+    PipelineType,
+    dict_to_scheduler_config,
+    generate_and_compare,
+    prepare_generation_config_by_pipe_type,
+    convert_decoded_results_to_generation_result,
+    GenerationChatInputsType,
+)
 from utils.comparation import compare_generation_results
 from data.models import CHAT_MODELS_LIST
 from data.test_dataset import get_test_dataset
@@ -540,13 +549,19 @@ def test_dynamic_split_fuse_doesnt_affect_generated_text():
     generated = cb_pipe_target.generate(question, generation_config=generation_config)
     assert generated == reference
 
+
 eagle_models_and_input = [
-    ("Qwen/Qwen3-1.7B", "AngelSlim/Qwen3-1.7B_eagle3", """Code:
+    (
+        "Qwen/Qwen3-1.7B",
+        "AngelSlim/Qwen3-1.7B_eagle3",
+        """Code:
 def add(a, b):
     return a + b
 
 Question: Can you please add 2 and 3
-A:""")]
+A:""",
+    )
+]
 
 speculative_cases = [
     ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", None, "Why is the Sun yellow?"),
@@ -563,17 +578,17 @@ speculative_cases = [
 @pytest.mark.parametrize("main_model_id,draft_model_id, prompt", speculative_cases)
 def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType, main_model_id, draft_model_id, prompt):
     def run_extended_perf_metrics_collection(
-            model_id: str,
-            generation_config: GenerationConfig,
-            prompt: str,
-            pipeline_type: PipelineType,
-            draft_model_id: str
+        model_id: str,
+        generation_config: GenerationConfig,
+        prompt: str,
+        pipeline_type: PipelineType,
+        draft_model_id: str,
     ):
         model_path = download_and_convert_model(model_id).models_path
         draft_model_path = None
         if draft_model_id is not None:
             draft_model_path = download_and_convert_model(draft_model_id).models_path
-        ov_pipe = create_ov_pipeline(model_path, pipeline_type=pipeline_type, draft_model_path = draft_model_path)
+        ov_pipe = create_ov_pipeline(model_path, pipeline_type=pipeline_type, draft_model_path=draft_model_path)
         return ov_pipe.generate([prompt], generation_config).extended_perf_metrics
 
     import time
@@ -592,12 +607,16 @@ def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType,
         total_time = (time.perf_counter() - start_time) * 1000
 
     else:
-        if (pipeline_type == PipelineType.SPECULATIVE_DECODING):
-            generation_config = GenerationConfig(do_sample=False, max_new_tokens=20, ignore_eos=True, num_assistant_tokens=5)
-            extended_perf_metrics = run_extended_perf_metrics_collection(main_model_id, generation_config, prompt, pipeline_type, draft_model_id)
+        if pipeline_type == PipelineType.SPECULATIVE_DECODING:
+            generation_config = GenerationConfig(
+                do_sample=False, max_new_tokens=20, ignore_eos=True, num_assistant_tokens=5
+            )
+            extended_perf_metrics = run_extended_perf_metrics_collection(
+                main_model_id, generation_config, prompt, pipeline_type, draft_model_id
+            )
             total_time = (time.perf_counter() - start_time) * 1000
-        
-    if (pipeline_type == PipelineType.SPECULATIVE_DECODING):
+
+    if pipeline_type == PipelineType.SPECULATIVE_DECODING:
         assert not extended_perf_metrics is None
         assert not extended_perf_metrics.main_model_metrics is None
         assert not extended_perf_metrics.draft_model_metrics is None
@@ -638,9 +657,10 @@ def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType,
     else:
         assert extended_perf_metrics is None
 
-devices = [
-    ('CPU', 'CPU')
-]
+
+devices = [("CPU", "CPU")]
+
+
 @pytest.mark.parametrize("main_model,draft_model,prompt", eagle_models_and_input)
 @pytest.mark.parametrize("main_device,draft_device", devices)
 def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_device, prompt):
@@ -654,11 +674,13 @@ def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_dev
 
     # Create OpenVINO GenAI pipeline:
 
-    ov_pipe = create_ov_pipeline(main_model_path, pipeline_type = PipelineType.SPECULATIVE_DECODING, draft_model_path = draft_model_path)
+    ov_pipe = create_ov_pipeline(
+        main_model_path, pipeline_type=PipelineType.SPECULATIVE_DECODING, draft_model_path=draft_model_path
+    )
 
     # Run reference HF model:
     ov_generation_config = GenerationConfig(max_new_tokens=20)
-    ref_gen_results = run_hugging_face(main_opt_model, main_hf_tokenizer, [prompt], ov_generation_config)  
+    ref_gen_results = run_hugging_face(main_opt_model, main_hf_tokenizer, [prompt], ov_generation_config)
 
     # Run OpenVINO GenAI pipeline:
     ov_decoded_results = ov_pipe.generate([prompt], ov_generation_config)

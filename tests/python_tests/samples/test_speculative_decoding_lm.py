@@ -10,25 +10,29 @@ from test_utils import run_sample
 
 convert_draft_model = convert_model
 
+
 def _run_spec_case(convert_model, convert_draft_model, sample_args, env):
     # Test CPP sample
-    cpp_sample = SAMPLES_CPP_DIR / 'speculative_decoding_lm'
-    cpp_command =[cpp_sample, convert_model, convert_draft_model, sample_args]
+    cpp_sample = SAMPLES_CPP_DIR / "speculative_decoding_lm"
+    cpp_command = [cpp_sample, convert_model, convert_draft_model, sample_args]
     cpp_result = run_sample(cpp_command, env=env)
 
     # Test Python sample
     py_script = SAMPLES_PY_DIR / "text_generation/speculative_decoding_lm.py"
     py_command = [sys.executable, py_script, convert_model, convert_draft_model, sample_args]
     py_result = run_sample(py_command, env=env)
-    
+
     # Greedy decoding
-    cpp_sample_ref = SAMPLES_CPP_DIR / 'greedy_causal_lm'
+    cpp_sample_ref = SAMPLES_CPP_DIR / "greedy_causal_lm"
     cpp_command_ref = [cpp_sample_ref, convert_model, sample_args]
     cpp_result_ref = run_sample(cpp_command_ref, env=env)
 
     # Compare results
     assert cpp_result_ref.stdout.strip() in py_result.stdout.strip(), "Python and CPP results should match"
-    assert cpp_result_ref.stdout.strip() in cpp_result.stdout.strip(), "Greedy and speculative decoding results should match"
+    assert cpp_result_ref.stdout.strip() in cpp_result.stdout.strip(), (
+        "Greedy and speculative decoding results should match"
+    )
+
 
 class TestSpeculativeDecodingLM:
     @pytest.mark.llm
@@ -54,6 +58,8 @@ def add(a, b):
 
 Question: Can you please add 2 and 3
 A:"""
+
+
 class TestEagle3SpeculativeDecodingLM:
     @pytest.mark.eagle3_decoding
     @pytest.mark.parametrize(
@@ -64,8 +70,10 @@ class TestEagle3SpeculativeDecodingLM:
         indirect=["convert_model", "convert_draft_model"],
     )
     def test_eagle3_speculative_decoding_lm(self, convert_model, convert_draft_model, sample_args):
-        if sys.platform == 'darwin':
-            pytest.xfail("Ticket 173586")  # Update mac.yml to run the test separately similar to linux.yml after resolution
+        if sys.platform == "darwin":
+            pytest.xfail(
+                "Ticket 173586"
+            )  # Update mac.yml to run the test separately similar to linux.yml after resolution
         env = os.environ.copy()
         env["OPENVINO_LOG_LEVEL"] = "0"
         _run_spec_case(convert_model, convert_draft_model, sample_args, env)
