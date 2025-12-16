@@ -855,7 +855,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                 if (!is_validation_mode_enabled && m_d2t_mapping) { // compute token offset for draft model in speculative sampling
                     ov::Tensor d2t_tensor = m_d2t_mapping->get_tensor_view();
                     auto d2t = d2t_tensor.data<int64_t>();
-                    sampled_token.m_index = sampled_token.m_index + (d2t? d2t[sampled_token.m_index] : 0);
+                    sampled_token.m_index = sampled_token.m_index + (d2t ? d2t[sampled_token.m_index] : 0);
                 }
                 // flag to add sampled token to generated sequence or extend logit processors only
                 bool is_extend_sequence = logit_token_offset == 0 || is_generate_n_tokens || !is_validation_passed;
