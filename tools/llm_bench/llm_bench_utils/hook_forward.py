@@ -52,7 +52,7 @@ class StableDiffusionHook:
 
     def get_vae_decoder_infer_duration(self):
         return (self.vae_decoder_time / self.vae_decoder_step_count) * 1000 if self.vae_decoder_step_count > 0 else 0
-    
+
     def get_vae_encoder_infer_duration(self):
         return (self.vae_encoder_time / self.vae_encoder_step_count) * 1000 if self.vae_encoder_step_count > 0 else 0
 

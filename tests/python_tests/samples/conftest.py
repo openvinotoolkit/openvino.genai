@@ -156,7 +156,11 @@ MODELS: Dict[str, Dict[str, Any]] = {
     "tiny-random-llava-next-video": {
         "name": "katuni4ka/tiny-random-llava-next-video",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
-    }
+    },
+    "tiny-random-ltx-video": {
+        "name": "optimum-intel-internal-testing/tiny-random-ltx-video",
+        "convert_args": ["--trust-remote-code"]
+    },
 }
 
 TEST_FILES = {
@@ -421,7 +425,7 @@ def generate_test_content(request):
             os.remove(file_path)
 
 @pytest.fixture(scope="session")
-def generate_image_generation_jsonl(request):
+def generate_llm_bench_input_generation_jsonl(request):
     """Generate a JSONL file for image generation prompts."""
 
     test_data = request.config.cache.get("TEST_DATA", None)

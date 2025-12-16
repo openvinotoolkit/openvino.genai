@@ -51,9 +51,6 @@ def save_video_file(frames, video_save_name, args):
         frame_np = np.array(frame)
         frame_bgr = cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR)
         out.write(frame_bgr)
-    
-    # from diffusers.utils import export_to_video
-    # export_to_video(res, "output.mp4", fps=24)
 
     out.release()
 
@@ -70,6 +67,7 @@ def get_file_name(batch_size, model_name, model_precision, prompt_idx, iteration
     file_save_name += '_pid' + str(proc_id) + suffix
     return file_save_name
 
+
 def output_input_text(input_text, args, model_precision, prompt_idx, batchsize_idx, proc_id):
     text_file_name = get_file_name(args['batch_size'], args['model_name'], model_precision, prompt_idx,
                                    iteration=None, batchsize_idx=batchsize_idx, proc_id=proc_id, suffix='_input.txt')
@@ -78,7 +76,7 @@ def output_input_text(input_text, args, model_precision, prompt_idx, batchsize_i
 
 def output_image_input_text(input_text, args, prompt_idx, batchsize_idx, proc_id):
     text_file_name = get_file_name(args['batch_size'], args['model_name'], model_precision=None, prompt_idx=prompt_idx,
-                                    iteration=None, batchsize_idx=batchsize_idx, proc_id=proc_id, suffix='_input.txt')
+                                   iteration=None, batchsize_idx=batchsize_idx, proc_id=proc_id, suffix='_input.txt')
     save_text_to_file(input_text, text_file_name, args)
 
 

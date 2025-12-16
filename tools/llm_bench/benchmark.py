@@ -197,13 +197,15 @@ def get_argprser():
         "--static_reshape",
         action="store_true",
         help="Reshape image generation pipeline to specific width & height at pipeline creation time. Applicable for Image Generation.")
-    parser.add_argument("--guidance_scale", type=float, required=False, help="Generated guidance scale. Applicable only for Image/Video Generation.")
+    parser.add_argument("--frame_rate", type=float, required=False, help="Frame rate for video generation and saving. Applicable only for Video Generation.")
     parser.add_argument("--num_frames", type=int, required=False, help="Generated guidance scale. Applicable only for Video Generation.")
+    parser.add_argument("--negative_prompt", type=int, required=False, help="Negative prompts for Video Generation.")
     parser.add_argument('-mi', '--mask_image', default=None,
                         help='Mask image for Inpainting pipelines. Can be directory or path to single image. Applicable for Image Generation.')
     parser.add_argument('-t', '--task', default=None,
                         choices=['text_gen', 'image_gen', "visual_text_gen", 'speech_to_text', 'image_cls', 'code_gen',
-                                 'ldm_super_resolution', 'text_embed', 'text_rerank', 'text_to_speech', "text-to-image", "image-to-image", "inpainting"],
+                                 'ldm_super_resolution', 'text_embed', 'text_rerank', 'text_to_speech', "text-to-image", "image-to-image",
+                                 "text-to-video", "inpainting"],
                         help='The task to setup the pipeline type')
     parser.add_argument(
         '--strength', type=float, default=None,

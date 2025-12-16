@@ -313,6 +313,23 @@ python benchmark.py -m models/codegen-350M-multi -p "def hello_world():" -n 2 --
 
 > **Supported Code Generation model types:**: codegen, codegen2, stable-code, replit, codet5
 
+### Video Generation Models
+```sh
+python benchmark.py -m models/LTX-Video/FP16 -p "A cat plays with ball on the christmas tree." --negative_prompt "worst quality, inconsistent motion, blurry, jittery, distorted" --num_frames 5 -n 2 --num_steps 25 --task text-to-video
+```
+
+**Some additional parameters:**
+- `--height`: Generated video height.
+- `--width`: Generated video width.
+- `--num_steps`: Number of inference steps for video generation.
+- `--num_frames`: Number of frames in generated video.
+- `--frame_rate`: Frame rate for video generation and saving.
+- `--static_reshape`: Reshape video generation pipeline to specific width & height at pipline creation time.
+- `--guidance_scale`: guidance scale parameter for pipeline, supported via json JSON input only.
+- `--guidance_rescale`: guidance rescale parameter for pipeline, supported via json JSON input only.
+
+> **Supported Image Generation model types:** Lightricks/LTX-Video
+
 ## 8. Memory consumption mode
 Enables memory usage information collection mode. This mode affects execution time, so it is not recommended to run memory consumption and performance benchmarking at the same time. Effect on performance can be reduced by specifying a longer --memory_consumption_delay, but the impact is still expected.
 
