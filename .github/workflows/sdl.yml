@@ -1,7 +1,6 @@
 name: SDL tests
 on:
   workflow_dispatch:
-  pull_request:
   push:
     branches:
       - master
@@ -43,13 +42,13 @@ jobs:
       - name: Install Python tests dependencies
         run: |
           python3 -m pip install flake8 pytest black bandit
-          
+
       - name: Lint with flake8 (WWB)
         run: |
           # stop the build if there are Python syntax errors or undefined names
           python -m flake8 . --config=./setup.cfg
         working-directory: ${{ github.workspace }}/tools/who_what_benchmark
-          
+
       - name: Lint with flake8 (LLM)
         run: |
           # stop the build if there are Python syntax errors or undefined names
