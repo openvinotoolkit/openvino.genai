@@ -14,6 +14,7 @@ from PIL import Image
 from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.visualtext_evaluator import fix_phi3_v_eos_token_id
+from whowhatbench.utils import get_json_config
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -62,10 +63,11 @@ def parse_args():
     parser.add_argument(
         "--model-type",
         type=str,
-        choices=["text", "text-to-image", "visual-text", "image-to-image", "image-inpainting", "text-embedding", "text-reranking"],
+        choices=["text", "text-to-image", "visual-text", "visual-video-text", "image-to-image", "image-inpainting", "text-embedding", "text-reranking"],
         default="text",
         help="Indicated the model type: 'text' - for causal text generation, 'text-to-image' - for image generation, "
-        "visual-text - for Visual Language Models, image-to-image - for image generation based on image and prompt "
+        "visual-text - for Visual Language Models with image inputs, visual-video-text - for Visual Language Models with video inputs, "
+        "image-to-image - for image generation based on image and prompt "
         "image-inpainting - for image generation based on image, mask and prompt, text-reranking - for reranking a list of texts based on relevance to query",
     )
     parser.add_argument(
@@ -126,7 +128,7 @@ def parse_args():
         "--ov-config",
         type=str,
         default=None,
-        help="Path to the JSON file that contains OpenVINO Runtime configuration.",
+        help="Path to the JSON file that contains OpenVINO Runtime configuration. Or a JSON string of the configuration.",
     )
     parser.add_argument(
         "--language",
@@ -150,7 +152,7 @@ def parse_args():
         type=str,
         default=None,
         help="Path to the JSON file that contains SchedulerConfig for Continuous Batching Pipeline"
-        "of OpenVINO GenAI API.",
+        "of OpenVINO GenAI API. Or a JSON string of SchedulerConfig.",
     )
     parser.add_argument(
         "--llamacpp",
@@ -266,6 +268,14 @@ def parse_args():
         default=None,
         help="Config option assistant_confidence_threshold for Speculative decoding.",
     )
+    parser.add_argument(
+        "--video-frames-num",
+        type=int,
+        default=None,
+        help="The number of frames that will be taken from video for input, the frames will be taken evenly across the entire length, "
+             "applicable for Visual Language Models with video inputs",
+    )
+
     return parser.parse_args()
 
 
@@ -507,15 +517,22 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
     return image
 
 
-def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question):
-    image_data = ov.Tensor(np.array(image)[None])
+def genai_gen_visual_text(model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question):
+    kwargs = {
+        "do_sample": False,
+        "max_new_tokens": max_new_tokens
+    }
+    if image is not None:
+        kwargs['image'] = ov.Tensor(np.array(image)[None])
+    if video is not None:
+        kwargs['videos'] = [ov.Tensor(np.array(video))]
+
     out = model.generate(
         prompt,
         **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
-        image=image_data,
-        do_sample=False,
-        max_new_tokens=max_new_tokens
+        **kwargs
     )
+
     return out.texts[0]
 
 
@@ -588,7 +605,7 @@ def create_evaluator(base_model, args):
                 is_genai=args.genai,
                 seed=args.seed,
             )
-        elif task == "visual-text":
+        elif task == "visual-text" or task == "visual-video-text":
             processor, config = load_processor(args)
             tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
             if config and is_model_with_automatic_crop(config) and args.hf:
@@ -605,6 +622,8 @@ def create_evaluator(base_model, args):
                 gen_answer_fn=genai_gen_visual_text if args.genai else None,
                 processor=processor,
                 crop_question=crop_question,
+                task_type=task,
+                frames_num=args.video_frames_num
             )
         elif task == "image-to-image":
             return EvaluatorCLS(
@@ -713,21 +732,6 @@ def print_embeds_results(evaluator):
         logger.info("## Similarity:\n%s\n", e["similarity"])
 
 
-def read_cb_config(path):
-    import json
-
-    try:
-        with open(path, 'r') as f:
-            config = json.load(f)
-        return config
-    except FileNotFoundError:
-        logger.error(f"Configuration file not found at: {path}")
-        return {}
-    except json.JSONDecodeError:
-        logger.error(f"Invalid JSON format in configuration file: {path}")
-        return {}
-
-
 def print_rag_results(evaluator):
     metric_of_interest = "similarity"
     worst_examples = evaluator.worst_examples(
@@ -760,7 +764,8 @@ def main():
 
     kwargs = {}
     if args.cb_config:
-        kwargs["cb_config"] = read_cb_config(args.cb_config)
+        kwargs["cb_config"] = get_json_config(args.cb_config)
+        logger.info(f"cb_config: {kwargs['cb_config']}")
     if args.from_onnx:
         kwargs["from_onnx"] = args.from_onnx
     if args.gguf_file:
@@ -783,7 +788,8 @@ def main():
         kwargs["draft_device"] = args.draft_device
         draft_cb_config = None
         if args.draft_cb_config is not None:
-            draft_cb_config = read_cb_config(args.draft_cb_config)
+            draft_cb_config = get_json_config(args.draft_cb_config)
+            logger.info(f"draft_cb_config: {draft_cb_config}")
         kwargs["draft_cb_config"] = draft_cb_config
 
     if args.gt_data and os.path.exists(args.gt_data):
@@ -840,7 +846,7 @@ def main():
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
 
     if args.verbose and (args.target_model or args.target_data):
-        if args.model_type == "text" or args.model_type == "visual-text":
+        if args.model_type in ["text", "visual-text", "visual-video-text"]:
             print_text_results(evaluator)
         elif "text-to-image" in args.model_type or "image-to-image" in args.model_type:
             print_image_results(evaluator)
