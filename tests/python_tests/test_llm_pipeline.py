@@ -731,6 +731,7 @@ def test_unicode_pybind_decoding_one_string_streamer(
 # Perf metrics
 #
 
+
 @pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-gemma2"], indirect=True)
 @pytest.mark.parametrize("generation_config,prompt", PERF_METRICS_TEST_CASES)
 @pytest.mark.parametrize("pipeline_type", [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION])
