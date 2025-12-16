@@ -84,7 +84,7 @@ PROMPTS: list[str] = [
 VIDEO_MODEL_IDS = [
     "optimum-intel-internal-testing/tiny-random-llava-next-video",
     "optimum-intel-internal-testing/tiny-random-qwen2vl",
-    "optimum-intel-internal-testing/tiny-random-qwen2.5-vl"
+    "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
 ]
 
 
@@ -1380,32 +1380,111 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
 @pytest.mark.parametrize(
     "ov_pipe_model,has_image,has_video",
     [
-        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl","SDPA"), True, False, id="qwen2vl/SDPA/image"),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), True, False, id="qwen2vl/PA/image"),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl","SDPA"), False, True, id="qwen2vl/SDPA/video"),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), False, True, id="qwen2vl/PA/video"),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), True, True, id="qwen2vl/PA/image+video"),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), True, True, id="qwen2vl/PA/image+video"),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"), True, False, id="qwen2.5-vl/SDPA/image"),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"), True, False, id="qwen2.5-vl/PA/image", marks=pytest.mark.xfail(reason="CVS-167316")),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"), False, True, id="qwen2.5-vl/SDPA/video"),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"), False, True, id="qwen2.5-vl/PA/video", marks=pytest.mark.xfail(reason="CVS-167316")),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"), True, True, id="qwen2.5-vl/SDPA/image+video"),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"), True, True, id="qwen2.5-vl/PA/image+video", marks=pytest.mark.xfail(reason="CVS-167316")),
-        (
-            pytest.param(("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"), True, False, id="gemma3/SDPA/image", marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) 
-            if sys.platform == "darwin" 
-            else pytest.param(("optimum-intel-internal-testing/tiny-random-gemma3",  "SDPA"), True, False, id="gemma3/SDPA/image")
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), True, False, id="qwen2vl/SDPA/image"
         ),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-gemma3", "PA"), True, False, id="gemma3/PA/image", marks=pytest.mark.xfail(reason="CVS-171180")),
+        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), True, False, id="qwen2vl/PA/image"),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), False, True, id="qwen2vl/SDPA/video"
+        ),
+        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), False, True, id="qwen2vl/PA/video"),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), True, True, id="qwen2vl/PA/image+video"
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), True, True, id="qwen2vl/PA/image+video"
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"), True, False, id="qwen2.5-vl/SDPA/image"
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+            True,
+            False,
+            id="qwen2.5-vl/PA/image",
+            marks=pytest.mark.xfail(reason="CVS-167316"),
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"), False, True, id="qwen2.5-vl/SDPA/video"
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+            False,
+            True,
+            id="qwen2.5-vl/PA/video",
+            marks=pytest.mark.xfail(reason="CVS-167316"),
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"),
+            True,
+            True,
+            id="qwen2.5-vl/SDPA/image+video",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+            True,
+            True,
+            id="qwen2.5-vl/PA/image+video",
+            marks=pytest.mark.xfail(reason="CVS-167316"),
+        ),
+        (
+            pytest.param(
+                ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
+                True,
+                False,
+                id="gemma3/SDPA/image",
+                marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON),
+            )
+            if sys.platform == "darwin"
+            else pytest.param(
+                ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"), True, False, id="gemma3/SDPA/image"
+            )
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-gemma3", "PA"),
+            True,
+            False,
+            id="gemma3/PA/image",
+            marks=pytest.mark.xfail(reason="CVS-171180"),
+        ),
         pytest.param(("qnguyen3/nanoLLaVA", "SDPA"), True, False, id="nanoLLaVA/SDPA/image"),
         pytest.param(("qnguyen3/nanoLLaVA", "PA"), True, False, id="nanoLLaVA/PA/image"),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"), True, False, id="llava-next-video/SDPA/image"),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"), True, False, id="llava-next-video/PA/image"),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"), False, True, id="llava-next-video/SDPA/video"),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"), False, True, id="llava-next-video/PA/video"),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"), True, True, id="llava-next-video/SDPA/image+video"),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"), True, True, id="llava-next-video/PA/image+video"),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"),
+            True,
+            False,
+            id="llava-next-video/SDPA/image",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
+            True,
+            False,
+            id="llava-next-video/PA/image",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"),
+            False,
+            True,
+            id="llava-next-video/SDPA/video",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
+            False,
+            True,
+            id="llava-next-video/PA/video",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"),
+            True,
+            True,
+            id="llava-next-video/SDPA/image+video",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
+            True,
+            True,
+            id="llava-next-video/PA/image+video",
+        ),
     ],
     indirect=["ov_pipe_model"],
 )
@@ -1456,10 +1535,15 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
     # For QWen-VL series models, in GenAI VLM implementation, video is placed before image in chat template, 
     # but in Optimum, this order depends only on the image and video order in the "conversation".
     # So just reverse here in order to keep align.
-    if has_image and has_video and model_id in [
-        "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
-        "optimum-intel-internal-testing/tiny-random-qwen2vl"
-    ]:
+    if (
+        has_image
+        and has_video
+        and model_id
+        in [
+            "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
+            "optimum-intel-internal-testing/tiny-random-qwen2vl",
+        ]
+    ):
         media_content.reverse()
     conversation[0]["content"] = media_content + conversation[0]["content"]
     

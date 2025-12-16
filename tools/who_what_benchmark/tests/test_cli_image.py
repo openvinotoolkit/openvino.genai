@@ -13,10 +13,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 MODEL_CACHE = tempfile.mkdtemp()
-OV_IMAGE_MODELS = ["optimum-intel-internal-testing/tiny-random-stable-diffusion-xl",
-                   "optimum-intel-internal-testing/stable-diffusion-3-tiny-random",
-                   "optimum-intel-internal-testing/tiny-random-flux",
-                   "optimum-intel-internal-testing/tiny-random-flux-fill"]
+OV_IMAGE_MODELS = [
+    "optimum-intel-internal-testing/tiny-random-stable-diffusion-xl",
+    "optimum-intel-internal-testing/stable-diffusion-3-tiny-random",
+    "optimum-intel-internal-testing/tiny-random-flux",
+    "optimum-intel-internal-testing/tiny-random-flux-fill",
+]
 
 
 def run_wwb(args, env=None):

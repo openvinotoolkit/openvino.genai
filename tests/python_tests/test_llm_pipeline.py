@@ -717,10 +717,15 @@ def test_unicode_pybind_decoding_batched(ov_pipe: ov_genai.LLMPipeline, prompt: 
 
 
 @pytest.mark.parametrize("llm_model,prompt,max_new_tokens", UNICODE_PYBIND_DECODING_TEST_CASES, indirect=["llm_model"])
-def test_unicode_pybind_decoding_one_string_streamer(ov_pipe: ov_genai.LLMPipeline, prompt: str, max_new_tokens: int) -> None:
+def test_unicode_pybind_decoding_one_string_streamer(
+    ov_pipe: ov_genai.LLMPipeline, prompt: str, max_new_tokens: int
+) -> None:
     res_str = []
-    ov_pipe.generate(prompt, max_new_tokens=max_new_tokens, apply_chat_template=False, streamer=lambda x: res_str.append(x))
-    assert '�' == ''.join(res_str)[-1]
+    ov_pipe.generate(
+        prompt, max_new_tokens=max_new_tokens, apply_chat_template=False, streamer=lambda x: res_str.append(x)
+    )
+    assert "�" == "".join(res_str)[-1]
+
 
 #
 # Perf metrics
@@ -884,4 +889,3 @@ def test_pipelines_generate_with_streaming(
         mock_streamer.assert_not_called()
     else:
         mock_streamer.assert_called()
-
