@@ -50,6 +50,7 @@ from openvino_genai import (
     GenerationStatus,
     StreamingStatus,
     GenerationFinishReason,
+    ChatHistory,
 )
 
 from utils.network import retry_request
@@ -663,6 +664,52 @@ def test_vlm_pipeline_chat(
         assert res.texts[0] == "".join(result_from_streamer)
 
     ov_pipe.finish_chat()
+
+
+@parametrize_one_model_backends
+def test_vlm_pipeline_start_chat_vs_chat_history(
+    ov_pipe_model: VlmModelInfo,
+    iteration_images: list[list[PIL.Image]],
+):
+    ov_pipe = ov_pipe_model.pipeline
+
+    generation_config = _setup_generation_config(ov_pipe, do_sample=False)
+
+    prompts_with_images = [
+        (PROMPTS[0], iteration_images[0]),
+        *[(PROMPTS[1], image_set) for image_set in iteration_images[1:]],
+    ]
+
+    # Collect start_chat results
+    answers_start_chat = []
+    ov_pipe.start_chat()
+    for prompt, images in prompts_with_images:
+        res = ov_pipe.generate(
+            prompt,
+            images=images,
+            generation_config=generation_config,
+        )
+        answers_start_chat.append(res.texts[0])
+    ov_pipe.finish_chat()
+
+    # Collect chat_history results
+    answers_chat_history = []
+    history = ChatHistory()
+    for prompt, images in prompts_with_images:
+        history.append({"role": "user", "content": prompt})
+        res = ov_pipe.generate(
+            history,
+            images=images,
+            generation_config=generation_config,
+        )
+        answer = res.texts[0]
+        history.append({"role": "assistant", "content": answer})
+        answers_chat_history.append(answer)
+
+    for i, (answer_start_chat, answer_chat_history) in enumerate(zip(answers_start_chat, answers_chat_history)):
+        assert answer_start_chat == answer_chat_history, (
+            f"Answer {i} do not match!\n answer_start_chat: {answer_start_chat}\n answer_chat_history: {answer_chat_history}"
+        )
 
 
 @pytest.fixture(scope="module", params=[
