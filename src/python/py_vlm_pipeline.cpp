@@ -362,6 +362,40 @@ void init_vlm_pipeline(py::module_& m) {
         .def(
             "generate",
             [](ov::genai::VLMPipeline& pipe,
+                ov::genai::ChatHistory& history,
+                const std::vector<ov::Tensor>& images,
+                const ov::genai::GenerationConfig& generation_config,
+                const pyutils::PyBindStreamerVariant& streamer,
+                const py::kwargs& kwargs
+            ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
+                return call_vlm_generate_with_chat_history(pipe, history, images, {}, generation_config, streamer, kwargs);
+            },
+            py::arg("history"), "Chat history",
+            py::arg("images"), "Input images",
+            py::arg("generation_config"), "generation_config",
+            py::arg("streamer") = std::monostate(), "streamer",
+            (vlm_generate_docstring + std::string(" \n ")).c_str()
+        )
+        .def(
+            "generate",
+            [](ov::genai::VLMPipeline& pipe,
+                ov::genai::ChatHistory& history,
+                const std::vector<ov::Tensor>& videos,
+                const ov::genai::GenerationConfig& generation_config,
+                const pyutils::PyBindStreamerVariant& streamer,
+                const py::kwargs& kwargs
+            ) -> py::typing::Union<ov::genai::VLMDecodedResults> {
+                return call_vlm_generate_with_chat_history(pipe, history, {}, videos, generation_config, streamer, kwargs);
+            },
+            py::arg("history"), "Chat history",
+            py::arg("videos"), "Input videos",
+            py::arg("generation_config"), "generation_config",
+            py::arg("streamer") = std::monostate(), "streamer",
+            (vlm_generate_docstring + std::string(" \n ")).c_str()
+        )
+        .def(
+            "generate",
+            [](ov::genai::VLMPipeline& pipe,
                ov::genai::ChatHistory& history,
                const py::kwargs& kwargs
             )  -> py::typing::Union<ov::genai::VLMDecodedResults> {
