@@ -740,4 +740,3 @@ std::set<size_t> AdaptiveRKVBlockCalculator::get_most_diverse_blocks(size_t num_
 }
 
 }
-
