@@ -52,7 +52,7 @@ wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text --genai
 
 > **NOTE**: use --verbose option for debug to see the outputs with the largest difference.
 
-### Compare Visual Language Models (VLMs)
+### Compare Visual Language Models with image inputs (VLMs)
 ```sh
 # Export FP16 model to OpenVINO
 optimum-cli export openvino -m llava-hf/llava-v1.6-mistral-7b-hf  --weight-format int8 llava-int8
@@ -62,6 +62,18 @@ wwb --base-model llava-hf/llava-v1.6-mistral-7b-hf --gt-data llava_test/gt.csv -
 # Compute the metric
 # Target images will be stored in the "target" subfolder under the same path with .csv.
 wwb --target-model llava-int8 --gt-data llava_test/gt.csv --model-type visual-text --genai
+```
+
+### Compare Visual Language Models with video inputs (VLMs)
+```sh
+# Export FP16 model to OpenVINO
+optimum-cli export openvino -m Qwen/Qwen2-VL-7B-Instruct  --weight-format int8 qwen2-vl-7b-Instruct
+# Collect the references and save the mapping in the .csv file. 
+# Reference images will be stored in the "reference" subfolder under the same path with .csv.
+wwb --base-model Qwen/Qwen2-VL-7B-Instruct --gt-data qwen_video_test/gt.csv --model-type visual-video-text --hf
+# Compute the metric
+# Target images will be stored in the "target" subfolder under the same path with .csv.
+wwb --target-model qwen2-vl-7b-Instruct --gt-data qwen_video_test/gt.csv --model-type visual-video-text --genai
 ```
 
 ### Compare Text-to-image models
