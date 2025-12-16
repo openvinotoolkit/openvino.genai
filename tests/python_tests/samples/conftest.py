@@ -130,7 +130,7 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
     },
     "tiny-random-qwen2vl": {
-        "name": "katuni4ka/tiny-random-qwen2vl",
+        "name": "optimum-intel-internal-testing/tiny-random-qwen2vl",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
     },
     "bge-small-en-v1.5": {
@@ -154,7 +154,7 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "convert_args": ["--model-kwargs",  json.dumps({"vocoder": "fxmarty/speecht5-hifigan-tiny"})]
     },
     "tiny-random-llava-next-video": {
-        "name": "katuni4ka/tiny-random-llava-next-video",
+        "name": "optimum-intel-internal-testing/tiny-random-llava-next-video",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
     }
 }
