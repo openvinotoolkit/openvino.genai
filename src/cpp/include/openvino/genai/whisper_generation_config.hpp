@@ -69,7 +69,7 @@ public:
     bool word_timestamps = false;
 
     /**
-     * @brief Alignment heads for whisper models that support it.
+     * @brief Number of attention heads used to predict timestamps.
      * Each pair represents (layer_index, head_index).
      */
     std::vector<std::pair<size_t, size_t>> alignment_heads;
@@ -135,10 +135,10 @@ static constexpr ov::Property<std::string> language{"language"};
 static constexpr ov::Property<std::string> task{"task"};
 static constexpr ov::Property<bool> return_timestamps{"return_timestamps"};
 static constexpr ov::Property<bool> word_timestamps{"word_timestamps"};
+static constexpr ov::Property<std::vector<std::pair<size_t, size_t>>> alignment_heads{"alignment_heads"};
 static constexpr ov::Property<std::string> initial_prompt{"initial_prompt"};
 static constexpr ov::Property<std::string> hotwords{"hotwords"};
 static constexpr ov::Property<std::map<std::string, int64_t>> lang_to_id{"lang_to_id"};
-static constexpr ov::Property<std::vector<std::pair<size_t, size_t>>> alignment_heads{"alignment_heads"};
 
 }  // namespace genai
 }  // namespace ov
