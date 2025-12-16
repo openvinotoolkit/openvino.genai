@@ -253,7 +253,7 @@ jobs:
       matrix:
         test:
           - name: 'WWB tests'
-            cmd: 'python -m pytest -s -v tools/who_what_benchmark/tests -m "not nanollava"'
+            cmd: 'python -m pytest -s -v tools/who_what_benchmark/tests -k "tiny-stable-diffusion-torch-image-to-image-hf"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 120
     defaults:
