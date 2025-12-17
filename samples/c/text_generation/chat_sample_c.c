@@ -42,68 +42,80 @@
         goto err;                                                                                      \
     }
 
-static void json_escape_string(const char* input, char* output, size_t output_size) {
+// Returns 0 on success, -1 if buffer is too small
+static int json_escape_string(const char* input, char* output, size_t output_size) {
+    if (!input || !output || output_size == 0) {
+        return -1;
+    }
     size_t i = 0;
     size_t j = 0;
     while (input[i] != '\0' && j < output_size - 1) {
         unsigned char c = (unsigned char)input[i];
         switch (c) {
             case '"':
-                if (j < output_size - 2) {
-                    output[j++] = '\\';
-                    output[j++] = '"';
+                if (j >= output_size - 2) {
+                    return -1;  // Buffer too small
                 }
+                output[j++] = '\\';
+                output[j++] = '"';
                 break;
             case '\\':
-                if (j < output_size - 2) {
-                    output[j++] = '\\';
-                    output[j++] = '\\';
+                if (j >= output_size - 2) {
+                    return -1;  // Buffer too small
                 }
+                output[j++] = '\\';
+                output[j++] = '\\';
                 break;
             case '\b':
-                if (j < output_size - 2) {
-                    output[j++] = '\\';
-                    output[j++] = 'b';
+                if (j >= output_size - 2) {
+                    return -1;  // Buffer too small
                 }
+                output[j++] = '\\';
+                output[j++] = 'b';
                 break;
             case '\f':
-                if (j < output_size - 2) {
-                    output[j++] = '\\';
-                    output[j++] = 'f';
+                if (j >= output_size - 2) {
+                    return -1;  // Buffer too small
                 }
+                output[j++] = '\\';
+                output[j++] = 'f';
                 break;
             case '\n':
-                if (j < output_size - 2) {
-                    output[j++] = '\\';
-                    output[j++] = 'n';
+                if (j >= output_size - 2) {
+                    return -1;  // Buffer too small
                 }
+                output[j++] = '\\';
+                output[j++] = 'n';
                 break;
             case '\r':
-                if (j < output_size - 2) {
-                    output[j++] = '\\';
-                    output[j++] = 'r';
+                if (j >= output_size - 2) {
+                    return -1;  // Buffer too small
                 }
+                output[j++] = '\\';
+                output[j++] = 'r';
                 break;
             case '\t':
-                if (j < output_size - 2) {
-                    output[j++] = '\\';
-                    output[j++] = 't';
+                if (j >= output_size - 2) {
+                    return -1;  // Buffer too small
                 }
+                output[j++] = '\\';
+                output[j++] = 't';
                 break;
             default:
                 // Escape control characters (0x00-0x1F) as \uXXXX
                 if (c < 0x20) {
-                    if (j < output_size - 6) {
-                        output[j++] = '\\';
-                        output[j++] = 'u';
-                        output[j++] = '0';
-                        output[j++] = '0';
-                        // Convert to hex (upper case)
-                        char hex1 = (c >> 4) & 0x0F;
-                        char hex2 = c & 0x0F;
-                        output[j++] = (hex1 < 10) ? ('0' + hex1) : ('A' + hex1 - 10);
-                        output[j++] = (hex2 < 10) ? ('0' + hex2) : ('A' + hex2 - 10);
+                    if (j >= output_size - 6) {
+                        return -1;  // Buffer too small
                     }
+                    output[j++] = '\\';
+                    output[j++] = 'u';
+                    output[j++] = '0';
+                    output[j++] = '0';
+                    // Convert to hex (upper case)
+                    char hex1 = (c >> 4) & 0x0F;
+                    char hex2 = c & 0x0F;
+                    output[j++] = (hex1 < 10) ? ('0' + hex1) : ('A' + hex1 - 10);
+                    output[j++] = (hex2 < 10) ? ('0' + hex2) : ('A' + hex2 - 10);
                 } else {
                     output[j++] = input[i];
                 }
@@ -112,6 +124,7 @@ static void json_escape_string(const char* input, char* output, size_t output_si
         i++;
     }
     output[j] = '\0';
+    return 0;
 }
 
 ov_genai_streaming_status_e print_callback(const char* str, void* args) {
@@ -168,7 +181,10 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
-        json_escape_string(prompt, escaped_prompt, sizeof(escaped_prompt));
+        if (json_escape_string(prompt, escaped_prompt, sizeof(escaped_prompt)) != 0) {
+            fprintf(stderr, "[ERROR] Failed to escape prompt: buffer too small\n");
+            continue;
+        }
         
         snprintf(message_json, sizeof(message_json), 
                  "{\"role\": \"user\", \"content\": \"%s\"}", escaped_prompt);
@@ -194,7 +210,10 @@ int main(int argc, char* argv[]) {
             output_size = sizeof(output_buffer);
             CHECK_STATUS(ov_genai_decoded_results_get_string(results, output_buffer, &output_size));
             
-            json_escape_string(output_buffer, escaped_output, sizeof(escaped_output));
+            if (json_escape_string(output_buffer, escaped_output, sizeof(escaped_output)) != 0) {
+                fprintf(stderr, "[ERROR] Failed to escape output: buffer too small\n");
+                continue;
+            }
             
             snprintf(assistant_message_json, sizeof(assistant_message_json),
                      "{\"role\": \"assistant\", \"content\": \"%s\"}", escaped_output);

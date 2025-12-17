@@ -101,15 +101,15 @@ ov_genai_json_container_status_e ov_genai_json_container_to_json_string(
 }
 
 ov_genai_json_container_status_e ov_genai_json_container_copy(
-    const ov_genai_json_container* container,
-    ov_genai_json_container** copy_container) {
-    if (!container || !(container->object) || !copy_container) {
+    const ov_genai_json_container* source,
+    ov_genai_json_container** target) {
+    if (!source || !(source->object) || !target) {
         return OV_GENAI_JSON_CONTAINER_INVALID_PARAM;
     }
     try {
         std::unique_ptr<ov_genai_json_container> _copy = std::make_unique<ov_genai_json_container>();
-        _copy->object = std::make_shared<ov::genai::JsonContainer>(container->object->copy());
-        *copy_container = _copy.release();
+        _copy->object = std::make_shared<ov::genai::JsonContainer>(source->object->copy());
+        *target = _copy.release();
     } catch (...) {
         return OV_GENAI_JSON_CONTAINER_ERROR;
     }
