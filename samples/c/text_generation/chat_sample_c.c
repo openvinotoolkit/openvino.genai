@@ -54,49 +54,49 @@ static int json_escape_string(const char* input, char* output, size_t output_siz
         switch (c) {
             case '"':
                 if (j >= output_size - 2) {
-                    return -1;  // Buffer too small
+                    return -1;  
                 }
                 output[j++] = '\\';
                 output[j++] = '"';
                 break;
             case '\\':
                 if (j >= output_size - 2) {
-                    return -1;  // Buffer too small
+                    return -1;  
                 }
                 output[j++] = '\\';
                 output[j++] = '\\';
                 break;
             case '\b':
                 if (j >= output_size - 2) {
-                    return -1;  // Buffer too small
+                    return -1; 
                 }
                 output[j++] = '\\';
                 output[j++] = 'b';
                 break;
             case '\f':
                 if (j >= output_size - 2) {
-                    return -1;  // Buffer too small
+                    return -1;  
                 }
                 output[j++] = '\\';
                 output[j++] = 'f';
                 break;
             case '\n':
                 if (j >= output_size - 2) {
-                    return -1;  // Buffer too small
+                    return -1; 
                 }
                 output[j++] = '\\';
                 output[j++] = 'n';
                 break;
             case '\r':
                 if (j >= output_size - 2) {
-                    return -1;  // Buffer too small
+                    return -1; 
                 }
                 output[j++] = '\\';
                 output[j++] = 'r';
                 break;
             case '\t':
                 if (j >= output_size - 2) {
-                    return -1;  // Buffer too small
+                    return -1; 
                 }
                 output[j++] = '\\';
                 output[j++] = 't';
@@ -105,7 +105,7 @@ static int json_escape_string(const char* input, char* output, size_t output_siz
                 // Escape control characters (0x00-0x1F) as \uXXXX
                 if (c < 0x20) {
                     if (j >= output_size - 6) {
-                        return -1;  // Buffer too small
+                        return -1; 
                     }
                     output[j++] = '\\';
                     output[j++] = 'u';
@@ -117,7 +117,40 @@ static int json_escape_string(const char* input, char* output, size_t output_siz
                     output[j++] = (hex1 < 10) ? ('0' + hex1) : ('A' + hex1 - 10);
                     output[j++] = (hex2 < 10) ? ('0' + hex2) : ('A' + hex2 - 10);
                 } else {
-                    output[j++] = input[i];
+                    // Handle UTF-8 multi-byte characters
+                    int utf8_len = 1;
+                    if ((c & 0xE0) == 0xC0) {
+                        utf8_len = 2;  // 2-byte UTF-8
+                    } else if ((c & 0xF0) == 0xE0) {
+                        utf8_len = 3;  // 3-byte UTF-8
+                    } else if ((c & 0xF8) == 0xF0) {
+                        utf8_len = 4;  // 4-byte UTF-8
+                    }
+                    
+                    // Copy UTF-8 sequence if valid, otherwise copy single byte
+                    if (utf8_len > 1) {
+                        // Check if we have enough bytes and they are valid continuation bytes
+                        int valid = 1;
+                        for (int k = 1; k < utf8_len; k++) {
+                            if (input[i + k] == '\0' || (input[i + k] & 0xC0) != 0x80) {
+                                valid = 0;
+                                break;
+                            }
+                        }
+                        if (valid && j + utf8_len < output_size) {
+                            // Copy entire UTF-8 sequence
+                            for (int k = 0; k < utf8_len; k++) {
+                                output[j++] = input[i + k];
+                            }
+                            i += utf8_len - 1;  // -1 because i++ at end of loop
+                        } else {
+                            // Invalid UTF-8 or buffer too small, copy single byte
+                            output[j++] = input[i];
+                        }
+                    } else {
+                        // Single byte character (ASCII or invalid)
+                        output[j++] = input[i];
+                    }
                 }
                 break;
         }
