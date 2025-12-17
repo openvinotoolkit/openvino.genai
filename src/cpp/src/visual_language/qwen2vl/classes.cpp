@@ -163,7 +163,7 @@ std::pair<std::shared_ptr<ov::Model>, std::shared_ptr<ov::op::v0::Result>> patch
 std::shared_ptr<ov::Model> patch_preprocess_into_model(const std::shared_ptr<ov::Model>& model_org,
                                                        const ov::op::v0::Constant& image_mean_tensor,
                                                        const ov::op::v0::Constant& image_scale_tensor) {
-    auto cond_img_vid = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{1});
+    auto cond_img_vid = std::make_shared<ov::op::v0::Parameter>(ov::element::boolean, ov::Shape{1});
     auto raw_images_1 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
     auto raw_images_2 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
 
@@ -205,7 +205,7 @@ std::shared_ptr<ov::Model> patch_preprocess_into_model(const std::shared_ptr<ov:
                                                     image_scale,
                                                     then_tile_shape);
 
-    auto else_video = std::make_shared<ov::op::v0::Parameter>(ov::element::f32, ov::Shape{1});
+    auto else_video = std::make_shared<ov::op::v0::Parameter>(ov::element::boolean, ov::Shape{1});
     auto else_raw_frame_1 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
     auto else_raw_frame_2 = std::make_shared<ov::op::v0::Parameter>(ov::element::u8, ov::PartialShape{-1, -1, -1, -1});
     auto else_resize_target_shape = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{2});
@@ -804,10 +804,10 @@ void VisionEncoderQwen2VL::encode_with_imagepreprocess_ov(const std::vector<ov::
     // If cond_img_vid = 1: means image branch, just duplicating input_image_1 as input_image_2
     // If cond_img_vid = 0: means video branch, processing adjacent frames.
     OPENVINO_ASSERT(config.temporal_patch_size == 2u, "temporal_patch_size != 2.");
-    const float VIDEO_BRANCH_CONDITION = 0.f;
-    const float IMAGE_BRANCH_CONDITION = 1.f;
-    std::vector<float> cond_img_vid_data{images.size() == 2u ? VIDEO_BRANCH_CONDITION : IMAGE_BRANCH_CONDITION};
-    ov::Tensor cond_img_vid(ov::element::f32, ov::Shape{1}, cond_img_vid_data.data());
+    const bool VIDEO_BRANCH_CONDITION = false;
+    const bool IMAGE_BRANCH_CONDITION = true;
+    std::vector<uint8_t> cond_img_vid_data{images.size() == 2u ? VIDEO_BRANCH_CONDITION : IMAGE_BRANCH_CONDITION};
+    ov::Tensor cond_img_vid(ov::element::Type_t::boolean, ov::Shape{1}, cond_img_vid_data.data());
     // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
     ov::Tensor input_image_1(
         ov::element::u8, 
@@ -1326,7 +1326,8 @@ ov::Tensor InputsEmbedderQwen2VL::get_rotary_pos_emb(const std::vector<std::arra
     // Calculate rotary embeddings for max_grid_size
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_embeddings_merger.get());
     ov::InferRequest& vision_embeddings_merger = infer_request_guard.get();
-    const size_t dim = vision_embeddings_merger.get_tensor("rotary_pos_emb").get_shape().at(1);
+    const size_t dim =
+        vision_embeddings_merger.get_compiled_model().input("rotary_pos_emb").get_partial_shape()[1].get_length();
     const float theta = 10000.0f;
     
     std::vector<float> inv_freq(dim / 2);
