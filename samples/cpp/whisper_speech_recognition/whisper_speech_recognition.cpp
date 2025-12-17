@@ -35,8 +35,8 @@ int main(int argc, char* argv[]) try {
     // 'task' and 'language' parameters are supported for multilingual models only
     config.language = "<|en|>";  // can switch to <|zh|> for Chinese language
     config.task = "transcribe";
-    config.return_timestamps = false;
-    config.word_timestamps = true;
+    config.return_timestamps = true;
+    config.word_timestamps = false;
 
     // Pipeline expects normalized audio with Sample Rate of 16kHz
     ov::genai::RawSpeechInput raw_speech = utils::audio::read_wav(wav_file_path);
