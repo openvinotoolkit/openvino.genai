@@ -351,11 +351,8 @@ std::vector<ov::Tensor> js_to_cpp<std::vector<ov::Tensor>>(const Napi::Env& env,
         for (uint32_t i = 0; i < length; ++i) {
             tensors.push_back(js_to_cpp<ov::Tensor>(env, array[i]));
         }
-    } else if (value.IsObject()) {
-        // Single tensor
-        tensors.push_back(js_to_cpp<ov::Tensor>(env, value));
     } else {
-        OPENVINO_THROW("Passed argument must be an array of Tensors or a single Tensor.");
+        OPENVINO_THROW("Passed argument must be an array of Tensors.");
     }
     return tensors;
 }

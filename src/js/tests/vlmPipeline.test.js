@@ -5,26 +5,26 @@ import { Tokenizer, VLMPipeline, DecodedResults, VLMDecodedResults } from "../di
 
 import assert from "node:assert";
 import { describe, it, before } from "node:test";
-import { promises as fs } from "node:fs";
 import { models } from "./models.js";
 import { createTestImageTensor, createTestVideoTensor } from "./utils.js";
 
-const MODEL_PATH = process.env.VLM_MODEL_PATH || `./tests/models/${models.VLLM.split("/")[1]}`;
+const MODEL_PATH = process.env.VLM_MODEL_PATH || `./tests/models/${models.VLM.split("/")[1]}`;
 
 // Skip tests on macOS due to insufficient memory
 describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
-  let pipeline = null;
+  let pipeline,
+    testImage1,
+    testImage2,
+    testVideo1,
+    testVideo2 = null;
 
   before(async () => {
-    try {
-      await fs.access(MODEL_PATH);
-    } catch {
-      console.log(`Model not found at ${MODEL_PATH}, skipping VLM tests`);
-      return;
-    }
-
     pipeline = await VLMPipeline(MODEL_PATH, "CPU");
     pipeline.setGenerationConfig({ max_new_tokens: 10 });
+    testImage1 = createTestImageTensor();
+    testImage2 = createTestImageTensor(50, 50);
+    testVideo1 = createTestVideoTensor();
+    testVideo2 = createTestVideoTensor(6, 64, 64);
   });
 
   it("should generate text without images", async () => {
@@ -39,8 +39,6 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
   });
 
   it("should generate text with images", async () => {
-    const testImage1 = createTestImageTensor();
-    const testImage2 = createTestImageTensor();
     const result = await pipeline.generate("Compare these two images.", {
       images: [testImage1, testImage2],
     });
@@ -49,11 +47,8 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
   });
 
   it("should generate text with video input", async () => {
-    const testVideo = createTestVideoTensor();
-
     const result = await pipeline.generate("Describe what happens in this video.", {
-      images: [],
-      videos: [testVideo],
+      videos: [testVideo1],
       generationConfig: {
         max_new_tokens: 20,
         temperature: 0,
@@ -64,12 +59,9 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
   });
 
   it("should generate with both image and video", async () => {
-    const testImage = createTestImageTensor();
-    const testVideo = createTestVideoTensor();
-
     const result = await pipeline.generate("Compare the image and video.", {
-      images: [testImage],
-      videos: [testVideo],
+      images: [testImage1],
+      videos: [testVideo2],
       generationConfig: { max_new_tokens: 20, temperature: 0 },
     });
 
@@ -97,11 +89,10 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
   });
 
   it("should support streaming generation", async () => {
-    const testImage = createTestImageTensor();
     const chunks = [];
 
     const stream = pipeline.stream("What do you see?", {
-      images: [testImage],
+      images: [testImage1],
       generationConfig: {
         max_new_tokens: 15,
         temperature: 0,
@@ -118,9 +109,8 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
   });
 
   it("should return VLMDecodedResults with perfMetrics", async () => {
-    const testImage = createTestImageTensor();
     const result = await pipeline.generate("Describe the image.", {
-      images: [testImage],
+      images: [testImage2],
       generationConfig: {
         max_new_tokens: 10,
         temperature: 0,
@@ -132,7 +122,7 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
     // Property from base PerformanceMetrics
     const numTokens = result.perfMetrics.getNumGeneratedTokens();
     assert.ok(typeof numTokens === "number", "getNumGeneratedTokens should return number");
-    assert.ok(numTokens > 0, "Should generate at least one token");
+    assert.ok(0 < numTokens <= 10, "Number of tokens should be between 0 and max_new_tokens");
     // VLM-specific properties
     const prepareEmbeddings = result.perfMetrics.getPrepareEmbeddingsDuration();
     assert.ok(

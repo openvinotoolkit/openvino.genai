@@ -29,7 +29,7 @@ export class DecodedResults {
       return this.texts[0];
     }
     const lines = this.scores.map((score, i) => `${score.toFixed(6)}: ${this.texts[i]}`);
-    return lines.join('\n');
+    return lines.join("\n");
   }
   texts: string[];
   scores: number[];

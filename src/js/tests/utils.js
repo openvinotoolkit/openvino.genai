@@ -47,11 +47,17 @@ async function saveFile(file, response) {
   await fs.writeFile(file, Buffer.from(arrayBuffer));
 }
 
-// Helper function to create a simple test image tensor
-// Creates a small RGB image (32x32) with test pattern
-export function createTestImageTensor() {
-  const height = 32;
-  const width = 32;
+/**
+ * Creates a synthetic test image tensor with a gradient pattern.
+ *
+ * Generates a small RGB image filled with a gradient pattern for testing VLM pipelines.
+ * The red channel varies by height, green by width, and blue is constant.
+ *
+ * @param height - Height of the image in pixels. (default: 32)
+ * @param width - Width of the image in pixels. (default: 32)
+ * @returns An OpenVINO Tensor with shape [height, width, channels] and uint8 data type.
+ */
+export function createTestImageTensor(height = 32, width = 32) {
   const channels = 3;
   const data = new Uint8Array(height * width * channels);
 
@@ -68,11 +74,19 @@ export function createTestImageTensor() {
   return new ov.Tensor("u8", [height, width, channels], data);
 }
 
-// Helper function to create a synthetic video tensor (4 frames, 32x32x3)
-export function createTestVideoTensor() {
-  const frames = 4;
-  const height = 32;
-  const width = 32;
+/**
+ * Creates a synthetic test video tensor with multiple frames.
+ *
+ * Generates a video tensor with a synthetic pattern that varies across frames.
+ * Each frame has a slightly different color pattern to simulate temporal variation.
+ * Useful for testing VLM pipelines with video inputs.
+ *
+ * @param frames - Number of video frames to generate. (default: 4)
+ * @param height - Height of each frame in pixels. (default: 32)
+ * @param width - Width of each frame in pixels. (default: 32)
+ * @returns An OpenVINO Tensor with shape [frames, height, width, channels] and uint8 data type.
+ */
+export function createTestVideoTensor(frames = 4, height = 32, width = 32) {
   const channels = 3;
   const data = new Uint8Array(frames * height * width * channels);
 

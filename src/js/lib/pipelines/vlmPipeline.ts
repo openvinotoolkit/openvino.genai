@@ -10,6 +10,18 @@ import type { Tensor } from "openvino-node";
 import { VLMPerfMetrics } from "../perfMetrics.js";
 
 /**
+ * Options for VLM generation methods.
+ */
+export type VLMGenerateOptions = {
+  /** Array of image tensors to include in the prompt. */
+  images?: Tensor[];
+  /** Array of video frame tensors to include in the prompt. */
+  videos?: Tensor[];
+  /** Generation configuration parameters such as max_length, temperature, etc. */
+  generationConfig?: GenerationConfig;
+};
+
+/**
  * This class is used for generation with Visual Language Models (VLMs)
  */
 export class VLMPipeline {
@@ -19,9 +31,9 @@ export class VLMPipeline {
   protected readonly properties: VLMPipelineProperties;
 
   /**
-   * VLMPipeline class constructor.
-   * @param modelPath - Path to the folder with exported model files or model identifier.
-   * @param device - Device to run the model on (e.g., 'CPU', 'GPU').
+   * Construct a VLM pipeline from a folder containing tokenizer and model IRs.
+   * @param modelPath - A folder to read tokenizer and model IRs.
+   * @param device - Inference device. A tokenizer is always compiled for CPU.
    * @param properties - Device and pipeline properties.
    */
   constructor(modelPath: string, device: string, properties: VLMPipelineProperties) {
@@ -77,14 +89,7 @@ export class VLMPipeline {
    * @param options.generationConfig - Generation parameters.
    * @returns Async iterator producing subword chunks.
    */
-  stream(
-    prompt: string,
-    options: {
-      images?: Tensor[];
-      videos?: Tensor[];
-      generationConfig?: GenerationConfig;
-    } = {},
-  ): AsyncIterableIterator<string> {
+  stream(prompt: string, options: VLMGenerateOptions = {}): AsyncIterableIterator<string> {
     if (!this.pipeline) throw new Error("Pipeline is not initialized");
     const { images, videos, generationConfig } = options;
 
@@ -181,12 +186,7 @@ export class VLMPipeline {
    */
   async generate(
     prompt: string,
-    options: {
-      images?: Tensor[];
-      videos?: Tensor[];
-      generationConfig?: GenerationConfig;
-      streamer?: (chunk: string) => StreamingStatus;
-    } = {},
+    options: VLMGenerateOptions & { streamer?: (chunk: string) => StreamingStatus } = {},
   ): Promise<VLMDecodedResults> {
     const { images, videos, generationConfig, streamer } = options;
     if (!this.pipeline) throw new Error("Pipeline is not initialized");

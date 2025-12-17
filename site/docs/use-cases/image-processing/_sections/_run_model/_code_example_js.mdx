@@ -3,7 +3,7 @@ import CodeBlock from '@theme/CodeBlock';
 <CodeBlock language="javascript" showLineNumbers>
 {`import { addon as ov } from "openvino-node";
 import { VLMPipeline } from "openvino-genai-node";
-import { statSync, readdirSync } from "node:fs";
+import { stat, readdir } from "node:fs/promises";
 import sharp from "sharp";
 import path from "node:path";
 
@@ -17,10 +17,10 @@ async function readImage(imagePath) {
 }
 
 async function readImages(imagePath) {
-    const stats = statSync(imagePath);
+    const stats = await stat(imagePath);
     if (stats.isDirectory()) {
-        const files = readdirSync(imagePath).sort();
-        return Promise.all(files.map((file) => readImage(path.join(imagePath, file))));
+        const files = await readdir(imagePath);
+        return Promise.all(files.sort().map((file) => readImage(path.join(imagePath, file))));
     }
     return [await readImage(imagePath)];
 }
