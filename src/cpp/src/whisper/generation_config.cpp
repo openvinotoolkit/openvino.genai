@@ -97,7 +97,7 @@ void WhisperGenerationConfig::validate() const {
 
     OPENVINO_ASSERT(!is_assisting_generation(), "Assisted generation is not supported.");
 
-    OPENVINO_ASSERT(word_timestamps && !alignment_heads.empty(),
+    OPENVINO_ASSERT(!word_timestamps || !alignment_heads.empty(),
                     "'word_timestamps' can be true only when 'alignment_heads' is set and not empty.");
 }
 }  // namespace genai

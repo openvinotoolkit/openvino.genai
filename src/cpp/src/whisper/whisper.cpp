@@ -373,7 +373,6 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                               {1, output_tokens_with_special.size()},
                                               const_cast<int64_t*>(output_tokens_with_special.data())};
 
-            const auto infer_start = std::chrono::steady_clock::now();
             decoder->start_async(hidden_state_tensor, input_ids_tensor, beam_idx);
             decoder->wait();
         }
@@ -411,6 +410,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
 
         if (config.word_timestamps) {
             const auto& accumulated_qks = decoder->get_encoder_qks();
+            decoder->reset_state();
 
             auto word_timestamps = get_word_level_timestamps(accumulated_qks,
                                                              model_config,
