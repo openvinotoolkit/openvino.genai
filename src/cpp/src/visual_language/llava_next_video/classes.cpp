@@ -24,7 +24,7 @@ std::shared_ptr<ov::Node> create_bicubic_resize(std::shared_ptr<ov::Node> input,
     attrs.mode = v11::Interpolate::InterpolateMode::CUBIC;
     attrs.shape_calculation_mode = v11::Interpolate::ShapeCalcMode::SIZES;
     attrs.coordinate_transformation_mode = v11::Interpolate::CoordinateTransformMode::ASYMMETRIC;
-    attrs.cube_coeff = -0.5f;  // Standard coefficient for bicubic interpolation (Catmull-Rom)
+    attrs.cube_coeff = -0.5f;  // Catmull-Rom bicubic coefficient (a = -0.5), chosen to match CPU preprocessing
     attrs.nearest_mode = v11::Interpolate::NearestMode::FLOOR;
     attrs.pads_begin = {0, 0};
     attrs.pads_end = {0, 0};
@@ -45,8 +45,9 @@ std::shared_ptr<ov::Node> create_mean_scale(std::shared_ptr<ov::Node> input_u8_o
         input_f32 = input_u8_or_f32;
     }
 
-    // Follow the original mean_scale() function logic exactly:
-    // (float(uint8_data[idx]) / 255.0f - config.image_mean[c]) / config.image_std[c]
+    // Follow the original mean_scale() function logic exactly, in tensor form:
+    // Per-element, per-channel normalization:
+    // (float(x) / 255.0f - config.image_mean[c]) / config.image_std[c], implemented via OV ops with broadcasting.
     // Step 1: x / 255.0
     auto scale_255 = v0::Constant::create(ov::element::f32, ov::Shape{}, std::vector<float>{255.0f});
     auto divided_by_255 = std::make_shared<v1::Divide>(input_f32, scale_255);
@@ -296,8 +297,8 @@ VisionEncoderLLaVANextVideo::VisionEncoderLLaVANextVideo(
     if (use_ov_preprocess) {
         // Create integrated preprocessing + vision encoder model for video processing
         const auto& [vision_encoder_model, vision_encoder_weights] = utils::get_model_weights_pair(models_map, "vision_embeddings");
-        auto model_org = utils::singleton_core().read_model(vision_encoder_model, vision_encoder_weights);
-        auto model = patch_video_preprocess_into_vision_encoder_model(model_org, m_processor_config);
+        auto vision_encoder_model_original = utils::singleton_core().read_model(vision_encoder_model, vision_encoder_weights);
+        auto model = patch_video_preprocess_into_vision_encoder_model(vision_encoder_model_original, m_processor_config);
         auto compiled_model = utils::singleton_core().compile_model(model, device, device_config);
         // Overwrite vision encoder queue with integrated model
         m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
