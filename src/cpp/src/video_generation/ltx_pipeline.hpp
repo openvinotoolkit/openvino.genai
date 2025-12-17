@@ -17,6 +17,7 @@
 
 #include "image_generation/numpy_utils.hpp"
 #include "image_generation/schedulers/ischeduler.hpp"
+#include "image_generation/threaded_callback.hpp"
 #include "openvino/genai/video_generation/ltx_video_transformer_3d_model.hpp"
 
 #include "utils.hpp"
@@ -474,11 +475,12 @@ public:
 
         check_inputs(merged_generation_config, vae_scale_factor);
 
-        // Use callback if defined
-        std::function<bool(size_t, size_t, ov::Tensor&)> callback;
+        // use callback if defined
+        std::shared_ptr<ThreadedCallbackWrapper> callback_ptr = nullptr;
         auto callback_iter = properties.find(ov::genai::callback.name());
         if (callback_iter != properties.end()) {
-            callback = callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>();
+            callback_ptr = std::make_shared<ThreadedCallbackWrapper>(callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>());
+            callback_ptr->start();
         }
 
         size_t num_channels_latents = transformer_config.in_channels;
@@ -583,8 +585,24 @@ public:
                 m_scheduler->step(noisy_residual_tensor, latent, inference_step, merged_generation_config.generator);
             latent = scheduler_step_result["latent"];
 
+            if (callback_ptr && callback_ptr->has_callback() && callback_ptr->write(inference_step, timesteps.size(), latent) == CallbackStatus::STOP) {
+                callback_ptr->end();
+                auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
+                m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
+
+                auto video = ov::Tensor(ov::element::u8, {});
+                m_perf_metrics.generate_duration =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start)
+                        .count();
+                return {video, m_perf_metrics};
+            }
+
             auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
             m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
+        }
+
+        if (callback_ptr != nullptr) {
+            callback_ptr->end();
         }
 
         latent = postprocess_latents(latent);
