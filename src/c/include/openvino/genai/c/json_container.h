@@ -87,4 +87,3 @@ OPENVINO_GENAI_C_EXPORTS ov_genai_json_container_status_e ov_genai_json_containe
 OPENVINO_GENAI_C_EXPORTS ov_genai_json_container_status_e ov_genai_json_container_copy(
     const ov_genai_json_container* source,
     ov_genai_json_container** target);
-

@@ -269,4 +269,3 @@ ov_genai_chat_history_status_e ov_genai_chat_history_get_extra_context(
     }
     return OV_GENAI_CHAT_HISTORY_OK;
 }
-

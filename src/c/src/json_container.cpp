@@ -115,4 +115,3 @@ ov_genai_json_container_status_e ov_genai_json_container_copy(
     }
     return OV_GENAI_JSON_CONTAINER_OK;
 }
-
