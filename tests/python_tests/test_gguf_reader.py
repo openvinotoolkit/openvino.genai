@@ -57,7 +57,7 @@ def model_gguf(request: pytest.FixtureRequest) -> ModelInfo:
 
 @pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
 @pytest.mark.parametrize("model_gguf", GGUF_MODEL_LIST, indirect=True)
-@pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
+@pytest.mark.xfail(condition=(sys.platform == "win32"), reason="CVS-174065")
 def test_pipelines_with_gguf_generate(
     model_gguf: ModelInfo, 
     pipeline_type: PipelineType,
@@ -128,7 +128,7 @@ def test_pipelines_with_gguf_generate(
     ],
 )
 @pytest.mark.parametrize("model_gguf", GGUF_MODEL_LIST, indirect=True)
-@pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
+@pytest.mark.xfail(condition=(sys.platform == "win32"), reason="CVS-174065")
 def test_full_gguf_pipeline(
     model_gguf: ModelInfo, 
     pipeline_type: PipelineType, 
@@ -203,7 +203,7 @@ def test_full_gguf_pipeline(
     ]
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 172335")
-@pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
+@pytest.mark.xfail(condition=(sys.platform == "win32"), reason="CVS-174065")
 def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     # Temporal testing solution until transformers starts to support qwen3 in GGUF format
     # Please refer details in issue: https://github.com/huggingface/transformers/issues/38063
