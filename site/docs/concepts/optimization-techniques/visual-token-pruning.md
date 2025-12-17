@@ -24,6 +24,10 @@ High-level flow:
 3. Relevance and similarity are combined into a conditional kernel. A greedy DPP-based MAP algorithm identifies the least important tokens to discard according to `pruning_ratio`, adjusting scores using `relevance_weight` to control the trade-off between diversity and relevance.
 4. Build reduced token set; subsequent generation attends only to retained tokens.
 
+**Implementation Enhancement:** In step 3, when applying the DPP-based token selection algorithm, this implementation provides a splitting strategy option in addition to the original CDPruner approach. While the original approach processes the entire kernel matrix at once, the splitting strategy divides the kernel matrix into two separate blocks for parallel processing when the visual token count exceeds a threshold (default is 1, can be set via environment variable `CDPRUNER_SPLIT_THRESHOLD`). 
+
+**Important Note:** The split variant is not semantically equivalent to running DPP on the full kernel. In the split approach, an equal number of tokens are selected from each half and then merged, whereas a single full-kernel DPP call may select all the top-K tokens from one half if those tokens are most diverse/relevant. This constraint in the split variant can change the token selection set and may affect accuracy differently depending on the model and input. In practice, this splitting strategy has shown: (a) improved accuracy when evaluated on Qwen2.5-VL models, and (b) significantly faster GPU execution with OpenCL kernels due to better parallelization (2-3x speedup with large token counts). By default, the splitting strategy is enabled. Advanced users can disable it by setting the environment variable CDPRUNER_SPLIT_THRESHOLD=0 to use the original approach.
+
 Effect: Pruning less important visual tokens reduces memory usage and can speed up generation; extremely high pruning may degrade answer quality for complex visual queries.
 
 ## Configuration Interface
