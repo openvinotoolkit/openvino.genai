@@ -267,7 +267,7 @@ endif()
 
 target_compile_features(${TARGET_NAME} INTERFACE cxx_std_17)
 
-# Add /bigobj flag for MSVC to handle large object files  
+# Add /bigobj flag for MSVC to handle large object files
 if(MSVC)
     target_compile_options(${TARGET_NAME} PRIVATE "/bigobj")
 endif()

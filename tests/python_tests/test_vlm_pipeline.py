@@ -319,6 +319,7 @@ def ov_continious_batching_pipe() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[0])
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
 
+
 @pytest.fixture(scope="module")
 def ov_continious_batching_pipe_gemma() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[8])
@@ -1518,6 +1519,7 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
 
     assert optimum_text == genai_text
 
+
 # CDPruner Tests
 
 CDPRUNER_SUPPORTED_MODELS = [
@@ -1533,45 +1535,30 @@ parametrize_cdpruner_models = pytest.mark.parametrize(
 
 
 @parametrize_cdpruner_models
-def test_cdpruner_basic_functionality(
-    ov_pipe_model: VlmModelInfo, 
-    cat_tensor: openvino.Tensor
-):
+def test_cdpruner_basic_functionality(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
     """Test basic CDPruner functionality with different pruning ratios."""
     ov_pipe = ov_pipe_model.pipeline
-    
+
     # Test without pruning (baseline)
     config_no_pruning = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
     config_no_pruning.pruning_ratio = 0
-    result_no_pruning = ov_pipe.generate(
-        PROMPTS[0], 
-        images=[cat_tensor], 
-        generation_config=config_no_pruning
-    )
-    
+    result_no_pruning = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=config_no_pruning)
+
     # Test with 10% pruning
     config_10 = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
     config_10.pruning_ratio = 10
-    result_pruning_10 = ov_pipe.generate(
-        PROMPTS[0], 
-        images=[cat_tensor], 
-        generation_config=config_10
-    )
-    
+    result_pruning_10 = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=config_10)
+
     # Test with 50% pruning
     config_50 = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
     config_50.pruning_ratio = 50
-    result_pruning_50 = ov_pipe.generate(
-        PROMPTS[0], 
-        images=[cat_tensor], 
-        generation_config=config_50
-    )
-    
+    result_pruning_50 = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=config_50)
+
     # Verify all results are non-empty
     assert result_no_pruning.texts[0].strip() != "", "No pruning result should not be empty"
     assert result_pruning_10.texts[0].strip() != "", "10% pruning result should not be empty"
     assert result_pruning_50.texts[0].strip() != "", "50% pruning result should not be empty"
-    
+
     # Verify perf metrics are available
     assert result_no_pruning.perf_metrics is not None
     assert result_pruning_10.perf_metrics is not None
@@ -1583,158 +1570,105 @@ def test_cdpruner_with_multiple_images(
     ov_pipe_model: VlmModelInfo,
     cat_tensor: openvino.Tensor,
     car_tensor: openvino.Tensor,
-    handwritten_tensor: openvino.Tensor
+    handwritten_tensor: openvino.Tensor,
 ):
     """Test CDPruner with multiple images."""
     ov_pipe = ov_pipe_model.pipeline
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=25, do_sample=False)
-    
+
     images = [cat_tensor, car_tensor, handwritten_tensor]
-    
+
     # Test with 30% pruning
     generation_config.pruning_ratio = 30
-    result = ov_pipe.generate(
-        "Describe these images.", 
-        images=images, 
-        generation_config=generation_config
-    )
-    
+    result = ov_pipe.generate("Describe these images.", images=images, generation_config=generation_config)
+
     assert result.texts[0].strip() != "", "Result with multiple images should not be empty"
     assert result.perf_metrics is not None
 
 
 @parametrize_cdpruner_models
-def test_cdpruner_chat_mode(
-    ov_pipe_model: VlmModelInfo,
-    cat_tensor: openvino.Tensor,
-    car_tensor: openvino.Tensor
-):
+def test_cdpruner_chat_mode(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, car_tensor: openvino.Tensor):
     """Test CDPruner in chat mode."""
     ov_pipe = ov_pipe_model.pipeline
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
-    
+
     # Enable pruning
     generation_config.pruning_ratio = 25
-    
+
     # Start chat
     ov_pipe.start_chat("You are a helpful assistant.")
-    
+
     # First turn with image
-    result1 = ov_pipe.generate(
-        "What is in this image?",
-        images=[cat_tensor],
-        generation_config=generation_config
-    )
+    result1 = ov_pipe.generate("What is in this image?", images=[cat_tensor], generation_config=generation_config)
     assert result1.texts[0].strip() != "", "First turn result should not be empty"
-    
+
     # Second turn with different image
-    result2 = ov_pipe.generate(
-        "Now describe this one.",
-        images=[car_tensor],
-        generation_config=generation_config
-    )
+    result2 = ov_pipe.generate("Now describe this one.", images=[car_tensor], generation_config=generation_config)
     assert result2.texts[0].strip() != "", "Second turn result should not be empty"
-    
+
     # Third turn without image
-    result3 = ov_pipe.generate(
-        "What did you see in total?",
-        generation_config=generation_config
-    )
+    result3 = ov_pipe.generate("What did you see in total?", generation_config=generation_config)
     assert result3.texts[0].strip() != "", "Third turn result should not be empty"
-    
+
     ov_pipe.finish_chat()
 
 
 @parametrize_cdpruner_models
 @pytest.mark.parametrize("pruning_ratio", [0, 5, 20, 50, 80])
-def test_cdpruner_various_ratios(
-    ov_pipe_model: VlmModelInfo,
-    cat_tensor: openvino.Tensor,
-    pruning_ratio: int
-):
+def test_cdpruner_various_ratios(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, pruning_ratio: int):
     """Test CDPruner with various pruning ratios."""
     ov_pipe = ov_pipe_model.pipeline
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=15, do_sample=False)
-    
+
     generation_config.pruning_ratio = pruning_ratio
-    result = ov_pipe.generate(
-        PROMPTS[0],
-        images=[cat_tensor],
-        generation_config=generation_config
-    )
-    
+    result = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+
     assert result.texts[0].strip() != "", f"Result with {pruning_ratio}% pruning should not be empty"
 
 
 @parametrize_cdpruner_models
-def test_cdpruner_with_relevance_weight(
-    ov_pipe_model: VlmModelInfo,
-    cat_tensor: openvino.Tensor
-):
+def test_cdpruner_with_relevance_weight(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
     """Test CDPruner with different relevance weights."""
     ov_pipe = ov_pipe_model.pipeline
-    
+
     # Test with default relevance weight
     config_default = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
     config_default.pruning_ratio = 30
     config_default.relevance_weight = 1.0
-    result_default = ov_pipe.generate(
-        PROMPTS[0],
-        images=[cat_tensor],
-        generation_config=config_default
-    )
-    
+    result_default = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=config_default)
+
     # Test with higher relevance weight
     config_high = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
     config_high.pruning_ratio = 30
     config_high.relevance_weight = 0.8
-    result_high_weight = ov_pipe.generate(
-        PROMPTS[0],
-        images=[cat_tensor],
-        generation_config=config_high
-    )
-    
+    result_high_weight = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=config_high)
+
     # Test with lower relevance weight
     config_low = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
     config_low.pruning_ratio = 30
     config_low.relevance_weight = 0.2
-    result_low_weight = ov_pipe.generate(
-        PROMPTS[0],
-        images=[cat_tensor],
-        generation_config=config_low
-    )
-    
+    result_low_weight = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=config_low)
+
     assert result_default.texts[0].strip() != "", "Result with default weight should not be empty"
     assert result_high_weight.texts[0].strip() != "", "Result with high weight should not be empty"
     assert result_low_weight.texts[0].strip() != "", "Result with low weight should not be empty"
 
 
 @parametrize_cdpruner_models
-def test_cdpruner_disable_after_enable(
-    ov_pipe_model: VlmModelInfo,
-    cat_tensor: openvino.Tensor
-):
+def test_cdpruner_disable_after_enable(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
     """Test disabling CDPruner after enabling it."""
     ov_pipe = ov_pipe_model.pipeline
-    
+
     # Enable pruning
     config_with_pruning = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
     config_with_pruning.pruning_ratio = 40
-    result_with_pruning = ov_pipe.generate(
-        PROMPTS[0],
-        images=[cat_tensor],
-        generation_config=config_with_pruning
-    )
-    
+    result_with_pruning = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=config_with_pruning)
+
     # Disable pruning
     config_no_pruning = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
     config_no_pruning.pruning_ratio = 0
-    result_without_pruning = ov_pipe.generate(
-        PROMPTS[0],
-        images=[cat_tensor],
-        generation_config=config_no_pruning
-    )
-    
+    result_without_pruning = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=config_no_pruning)
+
     assert result_with_pruning.texts[0].strip() != "", "Result with pruning should not be empty"
     assert result_without_pruning.texts[0].strip() != "", "Result without pruning should not be empty"
 
@@ -1746,29 +1680,19 @@ def test_cdpruner_disable_after_enable(
     indirect=["ov_pipe_model"],
 )
 def test_cdpruner_continuous_batching(
-    ov_pipe_model: VlmModelInfo,
-    cat_tensor: openvino.Tensor,
-    car_tensor: openvino.Tensor
+    ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, car_tensor: openvino.Tensor
 ):
     """Test CDPruner with continuous batching pipeline."""
     model_path = _get_ov_model(ov_pipe_model.model_id)
-    cb_pipe = ContinuousBatchingPipeline(
-        model_path,
-        SchedulerConfig(),
-        "CPU"
-    )
-    
+    cb_pipe = ContinuousBatchingPipeline(model_path, SchedulerConfig(), "CPU")
+
     # Enable pruning via GenerationConfig
     generation_config = GenerationConfig()
     generation_config.max_new_tokens = 20
     generation_config.do_sample = False
     generation_config.pruning_ratio = 25
-    
+
     # Test batch with different images
-    results = cb_pipe.generate(
-        [PROMPTS[0]],
-        images=[[car_tensor]],
-        generation_config=[generation_config]
-    )
-    
+    results = cb_pipe.generate([PROMPTS[0]], images=[[car_tensor]], generation_config=[generation_config])
+
     assert results[0].texts[0].strip() != "", "Result should not be empty"
