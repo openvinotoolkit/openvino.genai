@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 from test_cli_image import get_similarity
 from conftest import convert_model, run_wwb
+from profile_utils import _log, _stage
 
 
 def remove_artifacts(artifacts_path: Path):
@@ -23,12 +24,16 @@ def remove_artifacts(artifacts_path: Path):
 )
 @pytest.mark.xfail(sys.platform == "win32", reason="Ticket 178790", run=False)
 def test_embeddings_basic(model_id, model_type, tmp_path):
+    _log(f"test_embeddings_basic: model_id={model_id} model_type={model_type}")
     GT_FILE = tmp_path / "gt.csv"
-    MODEL_PATH = convert_model(model_id)
+    with _stage("convert_model"):
+        MODEL_PATH = convert_model(model_id)
+    _log(f"Model converted to: {MODEL_PATH}")
     SIMILARITY_THRESHOLD = 0.99
 
     # Collect reference with HF model
-    run_wwb(
+    with _stage("run_wwb_hf_reference"):
+        run_wwb(
         [
             "--base-model",
             model_id,
@@ -46,7 +51,8 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
 
     outputs_path = tmp_path / "optimum"
     # test Optimum
-    outputs = run_wwb(
+    with _stage("run_wwb_optimum"):
+        outputs = run_wwb(
         [
             "--target-model",
             MODEL_PATH,
@@ -76,7 +82,8 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
 
     outputs_path = tmp_path / "genai"
     # test GenAI
-    outputs = run_wwb(
+    with _stage("run_wwb_genai"):
+        outputs = run_wwb(
         [
             "--target-model",
             MODEL_PATH,
@@ -104,7 +111,8 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
     assert similarity >= SIMILARITY_THRESHOLD
 
     # test w/o models
-    run_wwb(
+    with _stage("run_wwb_metrics_without_models"):
+        run_wwb(
         [
             "--target-data",
             outputs_path / "target.csv",
@@ -132,12 +140,16 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
 )
 @pytest.mark.xfail(sys.platform == "win32", reason="Ticket 178790", run=False)
 def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
+    _log(f"test_embeddings_with_batch: model_id={model_id} model_type={model_type} batch_size={batch_size}")
     GT_FILE = tmp_path / f"gt_batch_{batch_size}.csv"
-    MODEL_PATH = convert_model(model_id)
+    with _stage("convert_model"):
+        MODEL_PATH = convert_model(model_id)
+    _log(f"Model converted to: {MODEL_PATH}")
     SIMILARITY_THRESHOLD = 0.99
 
     # Collect reference with HF model
-    run_wwb(
+    with _stage("run_wwb_hf_reference"):
+        run_wwb(
         [
             "--base-model",
             model_id,
@@ -157,7 +169,8 @@ def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
 
     # test Optimum
     outputs_path = tmp_path / "optimum"
-    outputs = run_wwb(
+    with _stage("run_wwb_optimum"):
+        outputs = run_wwb(
         [
             "--target-model",
             MODEL_PATH,
@@ -188,7 +201,8 @@ def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
 
     # test GenAI
     outputs_path = tmp_path / "genai"
-    outputs = run_wwb(
+    with _stage("run_wwb_genai"):
+        outputs = run_wwb(
         [
             "--target-model",
             MODEL_PATH,
@@ -218,7 +232,8 @@ def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
     assert similarity >= SIMILARITY_THRESHOLD
 
     # test w/o models
-    run_wwb(
+    with _stage("run_wwb_metrics_without_models"):
+        run_wwb(
         [
             "--target-data",
             outputs_path / "target.csv",

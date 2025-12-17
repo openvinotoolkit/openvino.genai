@@ -7,6 +7,7 @@ import tempfile
 import re
 
 from conftest import convert_model, run_wwb
+from profile_utils import _log, _stage
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -46,6 +47,8 @@ def test_image_model_types(model_id, model_type, backend, tmp_path):
     if (model_type == "image-to-image" or model_type == "image-inpainting") and sys.platform == "win32":
         pytest.xfail("Ticket 178790")
 
+    _log(f"test_image_model_types: model_id={model_id} model_type={model_type} backend={backend}")
+
     wwb_args = [
         "--base-model",
         model_id,
@@ -67,7 +70,8 @@ def test_image_model_types(model_id, model_type, backend, tmp_path):
     elif backend == "genai":
         wwb_args.append("--genai")
 
-    output = run_wwb(wwb_args)
+    with _stage(f"run_wwb_image_{backend}"):
+        output = run_wwb(wwb_args)
 
     assert "Metrics for model" in output
     similarity = get_similarity(output)
@@ -98,27 +102,32 @@ def test_image_model_genai(model_id, model_type, tmp_path):
     if mac_arm64_skip and sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
 
+    _log(f"test_image_model_genai: model_id={model_id} model_type={model_type}")
     GT_FILE = tmp_path / "gt.csv"
-    MODEL_PATH = convert_model(model_id)
+    with _stage("convert_model"):
+        MODEL_PATH = convert_model(model_id)
+    _log(f"Model converted to: {MODEL_PATH}")
 
-    run_wwb([
-        "--base-model",
-        model_id,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        model_type,
-        "--num-inference-steps",
-        "2",
-    ])
+    with _stage("run_wwb_gt_data_gen"):
+        run_wwb([
+            "--base-model",
+            model_id,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--num-inference-steps",
+            "2",
+        ])
     assert GT_FILE.exists()
     assert (tmp_path / "reference").exists()
 
-    output = run_wwb([
+    with _stage("run_wwb_genai_target"):
+        output = run_wwb([
         "--target-model",
         MODEL_PATH,
         "--num-samples",
@@ -132,14 +141,15 @@ def test_image_model_genai(model_id, model_type, tmp_path):
         "--genai",
         "--num-inference-steps",
         "2",
-    ])
+        ])
 
     assert "Metrics for model" in output
     similarity = get_similarity(output)
     assert similarity >= 0.97751  # Ticket 166496
     assert (tmp_path / "target").exists()
 
-    run_wwb([
+    with _stage("run_wwb_metrics_only"):
+        run_wwb([
         "--target-model",
         MODEL_PATH,
         "--num-samples",
@@ -160,20 +170,21 @@ def test_image_model_genai(model_id, model_type, tmp_path):
     assert (tmp_path / "target.csv").exists()
 
     # test w/o models
-    run_wwb([
-        "--target-data",
-        tmp_path / "target.csv",
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        model_type,
-        "--num-inference-steps",
-        "2",
-    ])
+    with _stage("run_wwb_metrics_without_models"):
+        run_wwb([
+            "--target-data",
+            tmp_path / "target.csv",
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--num-inference-steps",
+            "2",
+        ])
 
 
 @pytest.mark.parametrize(
@@ -186,6 +197,7 @@ def test_image_custom_dataset(model_id, model_type, backend, tmp_path):
     if sys.platform == "win32":
         pytest.xfail("Ticket 178790")
 
+    _log(f"test_image_custom_dataset: model_id={model_id} model_type={model_type} backend={backend}")
     GT_FILE = tmp_path / "test_sd.csv"
     wwb_args = [
         "--base-model",
@@ -210,6 +222,7 @@ def test_image_custom_dataset(model_id, model_type, backend, tmp_path):
     elif backend == "genai":
         wwb_args.append("--genai")
 
-    run_wwb(wwb_args)
+    with _stage(f"run_wwb_custom_dataset_{backend}"):
+        run_wwb(wwb_args)
 
     assert os.path.exists(GT_FILE)

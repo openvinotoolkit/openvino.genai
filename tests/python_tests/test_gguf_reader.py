@@ -6,6 +6,10 @@ import pytest
 import torch
 import gc
 import sys
+import os
+import time
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Any
@@ -27,6 +31,25 @@ from utils.ov_genai_pipelines import (
 from data.models import GGUF_MODEL_LIST
 
 
+def _ts() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
+def _log(message: str) -> None:
+    print(f"[{_ts()}] [gguf-reader] {message}", flush=True)
+
+
+@contextmanager
+def _stage(name: str):
+    _log(f"START {name}")
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        dt = time.perf_counter() - start
+        _log(f"END   {name} dt={dt:.3f}s")
+
+
 @dataclass(frozen=True)
 class ModelInfo:
     gguf_model_id: str
@@ -42,9 +65,14 @@ def model_gguf(request: pytest.FixtureRequest) -> ModelInfo:
     meta_info = request.param
     gguf_model_id = meta_info["gguf_model_id"]
     gguf_filename = meta_info["gguf_filename"]
-    opt_model = load_hf_model_from_gguf(gguf_model_id, gguf_filename)
-    hf_tokenizer = load_hf_tokenizer_from_gguf(gguf_model_id, gguf_filename)
-    gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
+    _log(f"Loading GGUF model: {gguf_model_id}/{gguf_filename}")
+    with _stage("load_hf_model_from_gguf"):
+        opt_model = load_hf_model_from_gguf(gguf_model_id, gguf_filename)
+    with _stage("load_hf_tokenizer_from_gguf"):
+        hf_tokenizer = load_hf_tokenizer_from_gguf(gguf_model_id, gguf_filename)
+    with _stage("download_gguf_model"):
+        gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
+    _log(f"GGUF model path: {gguf_full_path}")
     return ModelInfo(
         gguf_model_id=gguf_model_id,
         gguf_filename=gguf_filename,
@@ -64,12 +92,15 @@ def test_pipelines_with_gguf_generate(
 ):
     if sys.platform == 'darwin':
         pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
+    if os.environ.get("HF_HUB_OFFLINE") == "1":
+        pytest.skip("HF_HUB_OFFLINE=1; cannot download/convert Hugging Face model")
 
     opt_model = model_gguf.opt_model
     hf_tokenizer = model_gguf.hf_tokenizer
     gguf_full_path = model_gguf.gguf_full_path
     dynamic_quantization_group_size = model_gguf.dynamic_quantization_group_size
 
+    _log(f"test_pipelines_with_gguf_generate: pipeline_type={pipeline_type} model={model_gguf.gguf_model_id}")
     prompt = 'Why is the Sun yellow?'
 
     ov_generation_config = ov_genai.GenerationConfig()
@@ -81,13 +112,14 @@ def test_pipelines_with_gguf_generate(
     input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
     generate_outputs = None
-    with torch.no_grad():
-        generate_outputs = opt_model.generate(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            generation_config=hf_generation_config,
-            tokenizer=hf_tokenizer,
-        )
+    with _stage("hf_generate"):
+        with torch.no_grad():
+            generate_outputs = opt_model.generate(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                generation_config=hf_generation_config,
+                tokenizer=hf_tokenizer,
+            )
 
     prompt_len = 0 if ov_generation_config.echo else input_ids.numel()
     all_text_batch = hf_tokenizer.batch_decode(
@@ -95,12 +127,14 @@ def test_pipelines_with_gguf_generate(
     )
     res_string_input_1 = all_text_batch[0]
 
-    ov_pipe_gguf = create_ov_pipeline(
-        gguf_full_path,
-        pipeline_type=pipeline_type,
-        dynamic_quantization_group_size=dynamic_quantization_group_size,
-    )
-    encoded_result  = ov_pipe_gguf.generate(ov.Tensor(input_ids.numpy()), generation_config=ov_generation_config)
+    with _stage("create_ov_pipeline"):
+        ov_pipe_gguf = create_ov_pipeline(
+            gguf_full_path,
+            pipeline_type=pipeline_type,
+            dynamic_quantization_group_size=dynamic_quantization_group_size,
+        )
+    with _stage("ov_generate"):
+        encoded_result  = ov_pipe_gguf.generate(ov.Tensor(input_ids.numpy()), generation_config=ov_generation_config)
     del ov_pipe_gguf
     gc.collect()
     res_string_input_2 = hf_tokenizer.batch_decode([encoded_result.tokens[0]], skip_special_tokens=True)[0]
@@ -132,12 +166,15 @@ def test_full_gguf_pipeline(
 ):
     if sys.platform == 'darwin':
         pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
+    if os.environ.get("HF_HUB_OFFLINE") == "1":
+        pytest.skip("HF_HUB_OFFLINE=1; cannot download/convert Hugging Face model")
     gguf_model_id = model_gguf.gguf_model_id
     gguf_full_path = model_gguf.gguf_full_path
     opt_model = model_gguf.opt_model
     hf_tokenizer = model_gguf.hf_tokenizer
     dynamic_quantization_group_size = model_gguf.dynamic_quantization_group_size
 
+    _log(f"test_full_gguf_pipeline: pipeline_type={pipeline_type} enable_save_ov_model={enable_save_ov_model} prompt_len={len(prompt)} model={gguf_model_id}")
     if gguf_model_id == "sammysun0711/tiny-random-deepseek-distill-qwen-gguf" and "<|endoftext|>" in prompt:
         pytest.skip(reason="Prompts to test special tokens for this model fail on HF side")
 
@@ -153,21 +190,24 @@ def test_full_gguf_pipeline(
     input_ids, attention_mask = inputs['input_ids'], inputs['attention_mask']
     hf_generation_config = generation_config_to_hf(opt_model.generation_config, ov_generation_config)
     generate_outputs = None
-    with torch.no_grad():
-        generate_outputs = opt_model.generate(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            generation_config=hf_generation_config,
-            tokenizer=hf_tokenizer,
-        )
+    with _stage("hf_generate"):
+        with torch.no_grad():
+            generate_outputs = opt_model.generate(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                generation_config=hf_generation_config,
+                tokenizer=hf_tokenizer,
+            )
 
     gc.collect()
     prompt_len = 0 if ov_generation_config.echo else input_ids.numel()
     all_text_batch = hf_tokenizer.batch_decode([generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True)
     res_string_input_1 = all_text_batch[0]
 
-    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model, dynamic_quantization_group_size=dynamic_quantization_group_size)
-    res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
+    with _stage("create_ov_pipeline"):
+        ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model, dynamic_quantization_group_size=dynamic_quantization_group_size)
+    with _stage("ov_generate"):
+        res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 
     # Check that eos_token, bos_token string representations are loaded correctly from gguf file
     assert ov_pipe_gguf.get_tokenizer().get_eos_token() == hf_tokenizer.decode([ov_pipe_gguf.get_tokenizer().get_eos_token_id()])
@@ -178,8 +218,10 @@ def test_full_gguf_pipeline(
 
     if enable_save_ov_model:
         gguf_full_path = Path(gguf_full_path)
-        ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type, dynamic_quantization_group_size=dynamic_quantization_group_size)
-        res_string_input_3  = ov_pipe_native.generate(prompt, generation_config=ov_generation_config)
+        with _stage("create_ov_pipeline_native"):
+            ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type, dynamic_quantization_group_size=dynamic_quantization_group_size)
+        with _stage("ov_generate_native"):
+            res_string_input_3  = ov_pipe_native.generate(prompt, generation_config=ov_generation_config)
         del ov_pipe_native
         gc.collect()
         assert res_string_input_2 == res_string_input_3
@@ -202,8 +244,11 @@ def test_full_gguf_pipeline(
 def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     # Temporal testing solution until transformers starts to support qwen3 in GGUF format
     # Please refer details in issue: https://github.com/huggingface/transformers/issues/38063
+    if os.environ.get("HF_HUB_OFFLINE") == "1":
+        pytest.skip("HF_HUB_OFFLINE=1; cannot download/convert Hugging Face model")
     gguf_model_id = model_ids["gguf_model_id"]
     gguf_filename = model_ids["gguf_filename"]
+    _log(f"test_full_gguf_qwen3_pipeline: pipeline_type={pipeline_type} model={gguf_model_id}")
     prompt = 'Why is the Sun yellow?'
 
     ov_generation_config = ov_genai.GenerationConfig()
@@ -217,8 +262,12 @@ def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     # TODO: Investigate output difference for GGUF models. Ticket: TBD
     res_string_input_1 = "\nOkay, the user is asking why the Sun is yellow. Let me start by recalling what I know about the Sun's color. I remember"
 
-    gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
-    ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type)
-    res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
+    with _stage("download_gguf_model"):
+        gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
+    _log(f"GGUF model path: {gguf_full_path}")
+    with _stage("create_ov_pipeline"):
+        ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type)
+    with _stage("ov_generate"):
+        res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 
     assert res_string_input_1 == res_string_input_2

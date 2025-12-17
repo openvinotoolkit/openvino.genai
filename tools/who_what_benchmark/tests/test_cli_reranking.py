@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from test_cli_image import get_similarity
 from conftest import convert_model, run_wwb
+from profile_utils import _log, _stage
 
 
 logging.basicConfig(level=logging.INFO)
@@ -31,7 +32,8 @@ def test_reranking_optimum(model_id, threshold, tmp_path):
     MODEL_PATH = convert_model(model_id)
 
     # Collect reference with HF model
-    run_wwb(
+    with _stage("run_wwb_hf_reference"):
+        run_wwb(
         [
             "--base-model",
             model_id,
@@ -52,7 +54,8 @@ def test_reranking_optimum(model_id, threshold, tmp_path):
 
     outputs_path = tmp_path / "optimum"
     # test Optimum
-    outputs_optimum = run_wwb(
+    with _stage("run_wwb_optimum"):
+        outputs_optimum = run_wwb(
         [
             "--target-model",
             MODEL_PATH,
@@ -82,7 +85,8 @@ def test_reranking_optimum(model_id, threshold, tmp_path):
 
     outputs_path = tmp_path / "genai"
     # test GenAI
-    outputs_genai = run_wwb(
+    with _stage("run_wwb_genai"):
+        outputs_genai = run_wwb(
         [
             "--target-model",
             MODEL_PATH,
@@ -109,7 +113,8 @@ def test_reranking_optimum(model_id, threshold, tmp_path):
     assert similarity >= threshold
 
     # test w/o models
-    run_wwb(
+    with _stage("run_wwb_metrics_without_models"):
+        run_wwb(
         [
             "--target-data",
             outputs_path / "target.csv",
