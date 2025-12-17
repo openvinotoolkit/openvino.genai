@@ -16,6 +16,7 @@ def streamer(subword):
     # Return flag corresponds whether generation should be stopped.
     return openvino_genai.StreamingStatus.RUNNING
 
+
 def read_image(path: str) -> Tensor:
     """
 
