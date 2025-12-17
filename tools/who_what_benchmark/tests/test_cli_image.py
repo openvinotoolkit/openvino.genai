@@ -7,6 +7,9 @@ import pytest
 import logging
 import tempfile
 import re
+import time
+from contextlib import contextmanager
+from datetime import datetime, timezone
 
 
 logging.basicConfig(level=logging.INFO)
@@ -21,18 +24,53 @@ OV_IMAGE_MODELS = [
 ]
 
 
+def _ts() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
+def _log(message: str) -> None:
+    print(f"[{_ts()}] [wwb] {message}", flush=True)
+
+
+@contextmanager
+def _stage(name: str):
+    _log(f"START {name}")
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        dt = time.perf_counter() - start
+        _log(f"END   {name} dt={dt:.3f}s")
+
+
+def _require_executable(exe: str, *, context: str) -> None:
+    path = shutil.which(exe)
+    if path is None:
+        pytest.skip(f"Missing required executable '{exe}' for {context}. Ensure it is on PATH.")
+    _log(f"Using {exe} at: {path}")
+
+
+def _truncate(s: str, limit: int = 4000) -> str:
+    if s is None:
+        return ""
+    return s if len(s) <= limit else (s[:limit] + "...<truncated>")
+
+
 def run_wwb(args, env=None):
+    _require_executable("wwb", context="WWB CLI tests")
     command = ["wwb"] + args
     base_env = {"TRANSFORMERS_VERBOSITY": "debug", "PYTHONIOENCODING": "utf-8", **os.environ}
     if env:
         base_env.update(env)
+    _log("Command: " + " ".join(map(str, command)))
     try:
-        return subprocess.check_output(
-            command,
-            stderr=subprocess.STDOUT,
-            encoding="utf-8",
-            env=base_env,
-        )
+        with _stage("wwb_run"):
+            return subprocess.check_output(
+                command,
+                stderr=subprocess.STDOUT,
+                encoding="utf-8",
+                env=base_env,
+            )
     except subprocess.CalledProcessError as error:
         logger.error(
             f"'{' '.join(map(str, command))}' returned {error.returncode}. Output:\n"
@@ -42,9 +80,22 @@ def run_wwb(args, env=None):
 
 
 def setup_module():
+    _require_executable("optimum-cli", context="OpenVINO model export in WWB CLI tests")
+    _log(f"MODEL_CACHE={MODEL_CACHE}")
     for model_id in OV_IMAGE_MODELS:
         MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "_"))
-        subprocess.run(["optimum-cli", "export", "openvino", "--model", model_id, MODEL_PATH], capture_output=True, text=True)
+        _log(f"Export OpenVINO model: model_id={model_id} -> {MODEL_PATH}")
+        with _stage("optimum_cli_export"):
+            result = subprocess.run(
+                ["optimum-cli", "export", "openvino", "--model", model_id, MODEL_PATH],
+                capture_output=True,
+                text=True,
+            )
+        assert result.returncode == 0, (
+            f"optimum-cli export failed for model_id={model_id} rc={result.returncode}\n"
+            f"stdout:\n{_truncate(result.stdout)}\n"
+            f"stderr:\n{_truncate(result.stderr)}"
+        )
 
 
 def teardown_module():

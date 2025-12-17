@@ -6,6 +6,8 @@ import pytest
 import logging
 import json
 import sys
+import time
+from datetime import datetime, timezone
 
 from transformers import AutoTokenizer
 from optimum.intel.openvino import OVModelForCausalLM, OVWeightQuantizationConfig
@@ -15,6 +17,14 @@ from test_cli_image import run_wwb
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _ts() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
+def _log(message: str) -> None:
+    print(f"[{_ts()}] [wwb-text] {message}", flush=True)
 
 
 model_id = "facebook/opt-125m"
@@ -29,19 +39,35 @@ awq_model_id = "TitanML/tiny-mixtral-AWQ-4bit"
 def setup_module():
     from optimum.exporters.openvino.convert import export_tokenizer
 
-    logger.info("Create models")
+    _log(f"Create models in tmp_dir={tmp_dir}")
+    _log(f"base_model_path={base_model_path}")
+    _log(f"target_model_path={target_model_path}")
+
+    start = time.perf_counter()
     tokenizer = AutoTokenizer.from_pretrained(model_id)
+    _log(f"Downloaded tokenizer dt={time.perf_counter() - start:.3f}s")
+
+    start = time.perf_counter()
     base_model = OVModelForCausalLM.from_pretrained(model_id)
+    _log(f"Loaded base OV model dt={time.perf_counter() - start:.3f}s")
+
+    start = time.perf_counter()
     base_model.save_pretrained(base_model_path)
     tokenizer.save_pretrained(base_model_path)
     export_tokenizer(tokenizer, base_model_path)
+    _log(f"Saved base model+tokenizer dt={time.perf_counter() - start:.3f}s")
 
+    start = time.perf_counter()
     target_model = OVModelForCausalLM.from_pretrained(
         model_id, quantization_config=OVWeightQuantizationConfig(bits=8)
     )
+    _log(f"Loaded int8 OV model dt={time.perf_counter() - start:.3f}s")
+
+    start = time.perf_counter()
     target_model.save_pretrained(target_model_path)
     tokenizer.save_pretrained(target_model_path)
     export_tokenizer(tokenizer, target_model_path)
+    _log(f"Saved int8 model+tokenizer dt={time.perf_counter() - start:.3f}s")
 
 
 def teardown_module():
@@ -51,6 +77,7 @@ def teardown_module():
 
 @pytest.mark.skipif((sys.platform == "darwin"), reason='173169')
 def test_text_target_model():
+    _log("test_text_target_model")
     run_wwb([
         "--base-model",
         base_model_path,
@@ -91,6 +118,7 @@ def test_text_gt_data(tmp_path):
 def test_text_output_directory(tmp_path):
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
+    _log(f"test_text_output_directory tmp_path={tmp_path}")
     temp_file_name = tmp_path / "gt.csv"
     output = run_wwb([
         "--base-model",
@@ -127,6 +155,7 @@ def test_text_output_directory(tmp_path):
 def test_text_verbose():
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
+    _log("test_text_verbose")
     output = run_wwb([
         "--base-model",
         base_model_path,
@@ -142,6 +171,7 @@ def test_text_verbose():
 
 
 def test_text_language(tmp_path):
+    _log(f"test_text_language tmp_path={tmp_path}")
     temp_file_name = tmp_path / "gt.csv"
     run_wwb([
         "--base-model",
@@ -175,6 +205,7 @@ if sys.platform != 'darwin' and sys.platform != 'win32':
     hf_model_scope,
 )
 def test_text_hf_model(model_id, tmp_path):
+    _log(f"test_text_hf_model model_id={model_id} tmp_path={tmp_path}")
     temp_file_name = tmp_path / "gt.csv"
     run_wwb([
         "--base-model",
@@ -194,6 +225,7 @@ def test_text_hf_model(model_id, tmp_path):
 def test_text_genai_model():
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
+    _log("test_text_genai_model")
     output = run_wwb([
         "--base-model",
         base_model_path,
@@ -212,6 +244,7 @@ def test_text_genai_model():
 def test_text_genai_cb_model(tmp_path):
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
+    _log(f"test_text_genai_cb_model tmp_path={tmp_path}")
     config_path = tmp_path / "config.json"
     with open(config_path, "w") as f:
         config = {
@@ -257,6 +290,8 @@ def test_text_genai_cb_model(tmp_path):
 def test_text_genai_json_string_config():
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
+
+    _log("test_text_genai_json_string_config")
 
     cb_json_string = "{\"max_num_batched_tokens\": 4096}"
     ov_json_string = "{\"KV_CACHE_PRECISION\":\"f16\", \"ATTENTION_BACKEND\": \"PA\"}"
