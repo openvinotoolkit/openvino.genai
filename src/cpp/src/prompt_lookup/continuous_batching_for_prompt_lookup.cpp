@@ -43,10 +43,10 @@ TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::gene
             }
             auto start_candidate_idx = input_i + ngram.size();
             // match found with the end at input_i
-            size_t avaliable_num_pred = std::min(input_length - start_candidate_idx, num_pred_tokens);
-            // return candidates with length of avaliable_num_pred
+            size_t available_num_pred = std::min(input_length - start_candidate_idx, num_pred_tokens);
+            // return candidates with length of available_num_pred
             return std::vector<int64_t>{input_ids.cbegin() + start_candidate_idx,
-                                        input_ids.cbegin() + start_candidate_idx + avaliable_num_pred};
+                                        input_ids.cbegin() + start_candidate_idx + available_num_pred};
         }
     }
 
