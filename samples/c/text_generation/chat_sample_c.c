@@ -186,8 +186,12 @@ int main(int argc, char* argv[]) {
             continue;
         }
         
-        snprintf(message_json, sizeof(message_json), 
+        int message_json_len = snprintf(message_json, sizeof(message_json), 
                  "{\"role\": \"user\", \"content\": \"%s\"}", escaped_prompt);
+        if (message_json_len < 0 || (size_t)message_json_len >= sizeof(message_json)) {
+            fprintf(stderr, "[ERROR] Message JSON truncated: buffer too small (needed %d bytes)\n", message_json_len);
+            continue;
+        }
         
         if (message_container) {
             ov_genai_json_container_free(message_container);
@@ -215,8 +219,12 @@ int main(int argc, char* argv[]) {
                 continue;
             }
             
-            snprintf(assistant_message_json, sizeof(assistant_message_json),
+            int assistant_message_json_len = snprintf(assistant_message_json, sizeof(assistant_message_json),
                      "{\"role\": \"assistant\", \"content\": \"%s\"}", escaped_output);
+            if (assistant_message_json_len < 0 || (size_t)assistant_message_json_len >= sizeof(assistant_message_json)) {
+                fprintf(stderr, "[ERROR] Assistant message JSON truncated: buffer too small (needed %d bytes)\n", assistant_message_json_len);
+                continue;
+            }
             
             if (assistant_message_container) {
                 ov_genai_json_container_free(assistant_message_container);
