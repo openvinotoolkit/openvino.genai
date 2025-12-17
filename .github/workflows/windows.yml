@@ -252,7 +252,15 @@ jobs:
       fail-fast: false
       matrix:
         test:
-          - name: 'WWB tests'
+          - name: 'WWB tests 1'
+            cmd: 'python -m pytest -s -v tools/who_what_benchmark/tests -k "tiny-stable-diffusion-torch-image-to-image-hf"'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+            timeout: 120
+          - name: 'WWB tests 2'
+            cmd: 'python -m pytest -s -v tools/who_what_benchmark/tests -k "tiny-stable-diffusion-torch-image-to-image-hf"'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+            timeout: 120
+          - name: 'WWB tests 3'
             cmd: 'python -m pytest -s -v tools/who_what_benchmark/tests -k "tiny-stable-diffusion-torch-image-to-image-hf"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 120
@@ -295,6 +303,10 @@ jobs:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai;whowhatbench"
           requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
+
+      - name: Run Reproducer
+        run: |
+          python ${{ env.SRC_DIR }}/reproducer.py
 
       - name: Tests
         if: ${{ matrix.test.run_condition }}
