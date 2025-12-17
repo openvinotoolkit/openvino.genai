@@ -15,6 +15,7 @@ from .utils import parquet_generate_tables
 from .registry import register_evaluator
 from .text2image_evaluator import Text2ImageEvaluator
 
+from .utils import load_dataset_with_retry
 from .whowhat_metrics import ImageSimilarity
 
 
@@ -37,6 +38,7 @@ def preprocess_fn(example):
     }
 
 
+@load_dataset_with_retry(retries=3, delay=5)
 def prepare_default_data(num_samples=None):
     DATASET_NAME = "phiyodr/InpaintCOCO"
     NUM_SAMPLES = 10 if num_samples is None else num_samples

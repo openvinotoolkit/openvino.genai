@@ -10,7 +10,7 @@ import sys
 from transformers import AutoTokenizer
 from optimum.intel.openvino import OVModelForCausalLM, OVWeightQuantizationConfig
 
-from test_cli_image import run_wwb
+from conftest import run_wwb
 
 
 logging.basicConfig(level=logging.INFO)

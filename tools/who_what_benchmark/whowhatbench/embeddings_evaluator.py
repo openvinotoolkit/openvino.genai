@@ -11,13 +11,15 @@ from tqdm import tqdm
 from torch import Tensor
 from transformers import set_seed
 
-from .registry import register_evaluator, BaseEvaluator
+from .utils import load_dataset_with_retry
 from .whowhat_metrics import EmbedsSimilarity
+from .registry import register_evaluator, BaseEvaluator
 
 
 DEFAULT_MAX_LENGTH = 200
 
 
+@load_dataset_with_retry(retries=3, delay=5)
 def prepare_default_data(num_samples=None):
     DATASET_NAME = "microsoft/ms_marco"
     NUM_SAMPLES = num_samples if num_samples else 24

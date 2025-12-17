@@ -3,6 +3,7 @@ from packaging.version import Version
 
 import os
 import json
+import time
 import torch
 import random
 import logging
@@ -146,6 +147,23 @@ def get_json_config(config):
     return json_config
 
 
+def load_dataset_with_retry(retries=3, delay=5):
+    def inner(func):
+        def wrapper(*args, **kwargs):
+            for i in range(retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if i == (retries - 1):
+                        raise e
+                    print(f"[Retry {i + 1}/{retries}] Exception: {e}, retrying in {delay:.1f}s...")
+                    time.sleep(delay)
+
+        return wrapper
+
+    return inner
+
+
 # preapre default dataset for visualtext(VLM) evalutor
 def preprocess_fn(example):
     return {
@@ -155,6 +173,7 @@ def preprocess_fn(example):
     }
 
 
+@load_dataset_with_retry(retries=3, delay=5)
 def prepare_default_data_image(num_samples=None):
     DATASET_NAME = "ucla-contextual/contextual_test"
     NUM_SAMPLES = 24 if num_samples is None else num_samples

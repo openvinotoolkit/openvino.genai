@@ -9,9 +9,9 @@ import torch
 import openvino_genai
 
 from .registry import register_evaluator
-from .text2image_evaluator import Text2ImageEvaluator
-
+from .utils import load_dataset_with_retry
 from .whowhat_metrics import ImageSimilarity
+from .text2image_evaluator import Text2ImageEvaluator
 
 
 def preprocess_fn(example):
@@ -21,6 +21,7 @@ def preprocess_fn(example):
     }
 
 
+@load_dataset_with_retry(retries=3, delay=5)
 def prepare_default_data(num_samples=None):
     DATASET_NAME = "paint-by-inpaint/PIPE"
     NUM_SAMPLES = 10 if num_samples is None else num_samples

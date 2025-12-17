@@ -10,6 +10,7 @@ from .whowhat_metrics import RerankingSimilarity
 from transformers import set_seed
 import datasets
 import numpy as np
+from .utils import load_dataset_with_retry
 
 
 # we would like to evalute score for all documents
@@ -35,6 +36,7 @@ def preprocess_fn(example):
     }
 
 
+@load_dataset_with_retry(retries=3, delay=5)
 def prepare_default_data(num_samples=None):
     DATASET_NAME = "microsoft/ms_marco"
     NUM_SAMPLES = num_samples if num_samples else 24
