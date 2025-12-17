@@ -28,15 +28,8 @@ export class DecodedResults {
     if (this.texts.length === 1) {
       return this.texts[0];
     }
-    let result = "";
-    for (let i = 0; i < this.texts.length - 1; ++i) {
-      result += `${this.scores[i].toFixed(6)}: ${this.texts[i]}\n`;
-    }
-    result += `${this.scores[this.scores.length - 1].toFixed(
-      6,
-    )}: ${this.texts[this.texts.length - 1]}`;
-
-    return result;
+    const lines = this.scores.map((score, i) => `${score.toFixed(6)}: ${this.texts[i]}`);
+    return lines.join('\n');
   }
   texts: string[];
   scores: number[];

@@ -30,7 +30,7 @@ const images = await readImages("./images");
 const pipe = await VLMPipeline(modelPath, "${props.device || 'CPU'}");
 
 const result = await pipe.generate(prompt, {
-    images: images,
+    images,
     generationConfig: { max_new_tokens: 100 },
 });
 console.log(result.texts[0]);

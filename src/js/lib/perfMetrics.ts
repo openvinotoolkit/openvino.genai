@@ -8,9 +8,7 @@ export type MeanStdPair = {
 };
 
 /** Structure holding summary of statistical values */
-export type SummaryStats = {
-  mean: number;
-  std: number;
+export type SummaryStats = MeanStdPair & {
   min: number;
   max: number;
 };

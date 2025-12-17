@@ -150,10 +150,8 @@ export class VLMPipeline {
         // Otherwise, return a promise that will resolve when data is available
         const data = queue.shift();
 
-        if (data !== undefined) {
-          const { done, subword } = data;
-
-          return { value: subword, done: done };
+        if (data) {
+          return { value: data.subword, done: data.done };
         }
 
         return new Promise((resolve: ResolveFunction, reject: (reason?: unknown) => void) => {
