@@ -177,5 +177,4 @@ OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_se
  */
 OPENVINO_GENAI_C_EXPORTS ov_genai_chat_history_status_e ov_genai_chat_history_get_extra_context(
     const ov_genai_chat_history* history,
-    ov_genai_json_container** extra_context);
-
+    ov_genai_json_container** extra_context);    
