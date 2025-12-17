@@ -2,7 +2,14 @@ from pathlib import Path
 import logging
 import torch
 
-from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq, AutoTokenizer, AutoModelForImageTextToText
+from transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+    AutoModel,
+    AutoModelForVision2Seq,
+    AutoTokenizer,
+    AutoModelForImageTextToText,
+)
 
 from .embeddings_evaluator import DEFAULT_MAX_LENGTH as EMBED_DEFAULT_MAX_LENGTH
 from .reranking_evaluator import DEFAULT_MAX_LENGTH as RERANK_DEFAULT_MAX_LENGTH, DEFAULT_TOP_K as RERANK_DEFAULT_TOP_K, is_qwen3_causallm
