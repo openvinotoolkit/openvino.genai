@@ -581,7 +581,7 @@ std::string print_token_id(const std::vector<int64_t>& print_ids,
         ss << print_ids[id] << "[" << tokenizer.decode(std::vector<int64_t>{print_ids[id]}) << "],";
     }
     return ss.str();
-};
+}
 
 std::pair<ov::CompiledModel, KVDesc>
 compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
