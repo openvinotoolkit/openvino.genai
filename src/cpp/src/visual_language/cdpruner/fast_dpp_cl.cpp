@@ -56,7 +56,8 @@ std::vector<size_t> OpenCLDPP::select(const ov::Tensor& kernel, size_t num_token
     OPENVINO_ASSERT(shape.size() == 3, "Kernel must be 3D tensor [B, N, N]");
 
     size_t batch_size = shape[0];
-    OPENVINO_ASSERT(batch_size <= 2, "Batch size must be 1 for single batch or 2 for split matrix");
+    OPENVINO_ASSERT(batch_size == 1 || batch_size == 2,
+                    "Batch size must be 1 for single batch or 2 for split matrix");
     size_t total_tokens = shape[1];
 
     OPENVINO_ASSERT(shape[1] == shape[2], "Kernel matrix must be square [B, N, N]");
