@@ -4,10 +4,27 @@ import sys
 
 from conftest import convert_model, run_wwb
 from test_cli_image import get_similarity
+import shutil
+import time
+from datetime import datetime, timezone
+from test_cli_image import run_wwb, get_similarity
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _ts() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
+def _log(message: str) -> None:
+    print(f"[{_ts()}] [wwb-vlm] {message}", flush=True)
+
+
+def _require_optimum_cli() -> None:
+    if shutil.which("optimum-cli") is None:
+        pytest.skip("Missing required executable 'optimum-cli' for VLM export.")
 
 
 def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path):
@@ -16,10 +33,16 @@ def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
     if sys.platform == "win32":
         pytest.xfail("Ticket 178790")
 
+    _require_optimum_cli()
+    _log(
+        "Test params: "
+        f"model_id={model_id} model_type={model_type} optimum_threshold={optimum_threshold} genai_threshold={genai_threshold} tmp_path={tmp_path}"
+    )
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = convert_model(model_id)
 
     # Collect reference with HF model
+    _log("Collecting reference (HF) via wwb")
     run_wwb([
         "--base-model",
         model_id,
@@ -35,6 +58,7 @@ def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
     ])
 
     # test Optimum
+    _log("Testing Optimum-exported OpenVINO model via wwb")
     output = run_wwb([
         "--target-model",
         MODEL_PATH,
@@ -52,6 +76,7 @@ def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
         assert similarity >= optimum_threshold
 
     # test GenAI
+    _log("Testing GenAI backend via wwb")
     output = run_wwb([
         "--target-model",
         MODEL_PATH,
@@ -72,6 +97,7 @@ def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
         assert similarity >= genai_threshold
 
     # test w/o models
+    _log("Testing wwb without models (target-data only)")
     run_wwb([
         "--target-data",
         tmp_path / "target.csv",

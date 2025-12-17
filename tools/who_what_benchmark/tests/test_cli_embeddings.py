@@ -1,7 +1,25 @@
 import sys
 import pytest
+import logging
+import shutil
+import time
+from datetime import datetime, timezone
+from test_cli_image import run_wwb
 
 from conftest import convert_model, run_wwb
+
+
+def _ts() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
+def _log(message: str) -> None:
+    print(f"[{_ts()}] [wwb-embeddings] {message}", flush=True)
+
+
+def _require_optimum_cli() -> None:
+    if shutil.which("optimum-cli") is None:
+        pytest.skip("Missing required executable 'optimum-cli' for embeddings export.")
 
 
 @pytest.mark.parametrize(
@@ -19,6 +37,8 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
     if sys.platform == "win32":
         pytest.xfail("Ticket 178790")
 
+    _require_optimum_cli()
+    _log(f"Test params: model_id={model_id} model_type={model_type} tmp_path={tmp_path}")
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = convert_model(model_id)
 
