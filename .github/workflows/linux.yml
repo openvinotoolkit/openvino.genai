@@ -166,6 +166,8 @@ jobs:
 
       - name: CMake Build
         run: |
+          apt update
+          apt install -y libgtk2.0-dev pkg-config ffmpeg libavformat-dev libavcodec-dev libswscale-dev libavutil-dev
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
 
           cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
@@ -378,7 +380,7 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ openvino_download, genai_build_cmake ]
-    timeout-minutes: 10
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash
