@@ -69,13 +69,16 @@ if(NOT OpenCV_FOUND)
 
     set(BUILD_SHARED_LIBS ON)
     set(WITH_FFMPEG ON)
+    set(BUILD_PROTOBUF OFF CACHE BOOL "" FORCE)
+    set(PROTOBUF_UPDATE_FILES OFF CACHE BOOL "" FORCE)
+    set(WITH_PROTOBUF OFF CACHE BOOL "" FORCE)
     FetchContent_Declare(
             opencv
             GIT_REPOSITORY https://github.com/opencv/opencv.git
             GIT_TAG 4.11.0
             GIT_SHALLOW TRUE
     )
-    FetchContent_MakeAvailable(opencv)
+    FetchContent_MakeAvailable(opencv) 
 
     target_include_directories(video_to_text_chat PRIVATE
             ${OPENCV_CONFIG_FILE_INCLUDE_DIR}
