@@ -104,7 +104,7 @@ if(NOT OpenCV_FOUND)
             GIT_TAG 4.11.0
             GIT_SHALLOW TRUE
     )
-    FetchContent_MakeAvailable(opencv) 
+    FetchContent_MakeAvailable(opencv)
 
     target_include_directories(video_to_text_chat PRIVATE
             ${OPENCV_CONFIG_FILE_INCLUDE_DIR}
