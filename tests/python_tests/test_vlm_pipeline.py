@@ -64,13 +64,6 @@ from utils.atomic_download import AtomicDownloadManager
 import logging
 logger = logging.getLogger(__name__)
 
-# Disable OV preprocessing for video in tests to avoid input parameter conflicts
-# The integrated preprocessing model changes the vision encoder inputs from a single
-# 'pixel_values' parameter to multiple parameters (video_frames, resize_target_size,
-# crop_height, crop_width), which conflicts with image encoding that still expects
-# the original 'pixel_values' input
-os.environ["VIDEO_PREPROCESS"] = "CPP"
-
 
 @dataclass(frozen=True)
 class VlmModelInfo:
