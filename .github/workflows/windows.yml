@@ -307,6 +307,11 @@ jobs:
       - name: Run Reproducer
         run: |
           nslookup huggingface.co
+          nslookup cdn-lfs.huggingface.co
+          nslookup hf.co
+          nslookup datasets-server.huggingface.co
+          nslookup ocsp.r2m02.amazontrust.com
+          nslookup crl.r2m02.amazontrust.com
           python ${{ env.SRC_DIR }}/reproducer.py
 
       - name: Tests
