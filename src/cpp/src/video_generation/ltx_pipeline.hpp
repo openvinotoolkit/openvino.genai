@@ -26,11 +26,10 @@ using namespace ov::genai;
 
 namespace {
 
-VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
+const VideoGenerationConfig LTX_VIDEO_DEFAULT_CONFIG = VideoGenerationConfig{
     std::nullopt,  // negative_prompt
     1,             // num_videos_per_prompt
     nullptr,       // generator
-    42,            // rng_seed
     7.5f,          // guidance_scale
     512,           // height
     704,           // width
@@ -53,13 +52,13 @@ void replace_defaults(VideoGenerationConfig& config) {
     if (-1 == config.max_sequence_length) {
         config.max_sequence_length = LTX_VIDEO_DEFAULT_CONFIG.max_sequence_length;
     }
-    if (std::isnan(config.guidance_rescale)) {
+    if (!config.guidance_rescale.has_value()) {
         config.guidance_rescale = LTX_VIDEO_DEFAULT_CONFIG.guidance_rescale;
     }
     if (0 == config.num_frames) {
         config.num_frames = LTX_VIDEO_DEFAULT_CONFIG.num_frames;
     }
-    if (std::isnan(config.frame_rate)) {
+    if (!config.frame_rate.has_value()) {
         config.frame_rate = LTX_VIDEO_DEFAULT_CONFIG.frame_rate;
     }
 }
@@ -521,7 +520,7 @@ public:
         // TODO: move to compute_hidden_states
         ov::Tensor rope_interpolation_scale(ov::element::f32, {3});
         rope_interpolation_scale.data<float>()[0] =
-            static_cast<float>(temporal_compression_ratio) / merged_generation_config.frame_rate;
+            static_cast<float>(temporal_compression_ratio) / *merged_generation_config.frame_rate;
         rope_interpolation_scale.data<float>()[1] = spatial_compression_ratio;
         rope_interpolation_scale.data<float>()[2] = spatial_compression_ratio;
         m_transformer->set_hidden_states("rope_interpolation_scale", rope_interpolation_scale);

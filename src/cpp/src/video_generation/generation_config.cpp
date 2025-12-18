@@ -4,10 +4,17 @@
 #include "openvino/genai/video_generation/generation_config.hpp"
 #include "utils.hpp"
 
-using namespace ov::genai;
+
+namespace ov::genai {
+
+static constexpr char VIDEO_GENERATION_CONFIG[] = "VIDEO_GENERATION_CONFIG";
 
 void VideoGenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     using ov::genai::utils::read_anymap_param;
+
+    // override whole generation config first
+    read_anymap_param(properties, VIDEO_GENERATION_CONFIG, *this);
+
     read_anymap_param(properties, "guidance_rescale", guidance_rescale);
     read_anymap_param(properties, "num_frames", num_frames);
     read_anymap_param(properties, "frame_rate", frame_rate);
@@ -25,17 +32,9 @@ void VideoGenerationConfig::update_generation_config(const ov::AnyMap& propertie
     if (have_generator_param) {
         read_anymap_param(properties, "generator", generator);
     } else {
-        read_anymap_param(properties, "rng_seed", rng_seed);
-
-        // initialize random generator with a given seed value
+        // initialize random generator with a default seed value
         if (!generator) {
-            generator = std::make_shared<CppStdGenerator>(rng_seed);
-        }
-
-        const bool have_rng_seed = properties.find(ov::genai::rng_seed.name()) != properties.end();
-        if (have_rng_seed) {
-            // we need to change seed as an user have specified it manually
-            generator->seed(rng_seed);
+            generator = std::make_shared<CppStdGenerator>(42);
         }
     }
 
@@ -44,4 +43,10 @@ void VideoGenerationConfig::update_generation_config(const ov::AnyMap& propertie
 
 void VideoGenerationConfig::validate() const {
     OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt == std::nullopt, "Guidance scale <= 1.0 ignores negative prompt");
+}
+
+std::pair<std::string, ov::Any> generation_config(VideoGenerationConfig& generation_config) {
+    return {VIDEO_GENERATION_CONFIG, ov::Any::make<VideoGenerationConfig>(generation_config)};
+}
+
 }

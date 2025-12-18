@@ -32,16 +32,10 @@ struct VideoGenerationConfig {
      */
     std::shared_ptr<Generator> generator = nullptr;
 
-    /**
-     * Seed for random generator
-     * @note If `generator` is specified, it has higher priority than `rng_seed` parameter.
-     */
-    size_t rng_seed = 42;
-
     float guidance_scale = 7.5f;
     int64_t height = -1;
     int64_t width = -1;
-    size_t num_inference_steps = 50;
+    int64_t num_inference_steps = -1;
 
     /**
      * Max sequence length for T5 encoder / tokenizer used in SD3 / FLUX models
@@ -55,12 +49,12 @@ struct VideoGenerationConfig {
     /// Guidance rescale factor should fix overexposure when using zero terminal SNR.
     /// Mixes with the original results from guidance by factor guidance_rescale to avoid "plain looking" images.
     /// negative or 0.0 disables rescaling. NaN corresponds to model default which is 0.0 for LTX-Video thus disabled.
-    double guidance_rescale = std::numeric_limits<double>::quiet_NaN();
+    std::optional<float> guidance_rescale = std::nullopt;
     /// The number of video frames to generate. 0 corresponds to model default which is 161 for LTX-Video.
     size_t num_frames = 0;
     /// Video frame rate. Affects rope_interpolation_scale. Any value can be used although positive
     /// non-infinity makes the most sense. NaN corresponds to model default which is 25.0f for LTX-Video.
-    float frame_rate = std::numeric_limits<float>::quiet_NaN();
+    std::optional<float> frame_rate = std::nullopt;
 
     /**
      * Checks whether video generation config is valid, otherwise throws an exception.
@@ -112,6 +106,6 @@ static constexpr ov::Property<float> frame_rate{"frame_rate"};
  * @param generation_config An video generation config to convert to property-like format
  */
 OPENVINO_GENAI_EXPORTS
-std::pair<std::string, ov::Any> generation_config(const VideoGenerationConfig& generation_config);
+std::pair<std::string, ov::Any> generation_config(VideoGenerationConfig& generation_config);
 
 }  // namespace ov::genai
