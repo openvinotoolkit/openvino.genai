@@ -12,11 +12,7 @@ const MODEL_PATH = process.env.VLM_MODEL_PATH || `./tests/models/${models.VLM.sp
 
 // Skip tests on macOS due to insufficient memory
 describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
-  let pipeline,
-    testImage1,
-    testImage2,
-    testVideo1,
-    testVideo2 = null;
+  let pipeline, testImage1, testImage2, testVideo1, testVideo2;
 
   before(async () => {
     pipeline = await VLMPipeline(MODEL_PATH, "CPU");
@@ -122,7 +118,10 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
     // Property from base PerformanceMetrics
     const numTokens = result.perfMetrics.getNumGeneratedTokens();
     assert.ok(typeof numTokens === "number", "getNumGeneratedTokens should return number");
-    assert.ok(0 < numTokens <= 10, "Number of tokens should be between 0 and max_new_tokens");
+    assert.ok(
+      0 < numTokens && numTokens <= 10,
+      "Number of tokens should be between 0 and max_new_tokens",
+    );
     // VLM-specific properties
     const prepareEmbeddings = result.perfMetrics.getPrepareEmbeddingsDuration();
     assert.ok(
