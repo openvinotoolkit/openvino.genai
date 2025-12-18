@@ -163,9 +163,18 @@ std::vector<std::vector<size_t>> VisionEncoder::get_last_selected_token_indices(
 }
 
 std::optional<cdpruner::Config> VisionEncoder::set_pruning_config(const cdpruner::Config& config) {
-    if (!m_cdpruner || m_cdpruner->get_config() != config)
-        m_cdpruner = std::make_unique<cdpruner::CDPruner>(config);
     try {
+        if (!m_cdpruner) {
+            // Create CDPruner if it doesn't exist
+            m_cdpruner = std::make_unique<cdpruner::CDPruner>(config);
+        } else {
+            // Use update_config to efficiently update configuration
+            // Only reinitializes modules affected by config changes
+            if (!m_cdpruner->update_config(config)) {
+                // If update fails, recreate the pruner
+                m_cdpruner = std::make_unique<cdpruner::CDPruner>(config);
+            }
+        }
         return std::optional<cdpruner::Config>(m_cdpruner->get_config());
     } catch (const std::exception& e) {
         std::cerr << "Failed to set CDPruner config: " << e.what() << std::endl;
