@@ -12,7 +12,6 @@ async function readImage(imagePath) {
     const metadata = await img.metadata();
     const { width, height, channels } = metadata;
     const imageBuffer = await img.raw().toBuffer();
-    console.log("Read image: ", width, height, channels);
     return new ov.Tensor(ov.element.u8, [height, width, channels], imageBuffer);
 }
 
