@@ -66,7 +66,10 @@ add_executable(video_to_text_chat video_to_text_chat.cpp)
 
 if(NOT OpenCV_FOUND)
     include(FetchContent)
-
+    if(TARGET protobuf::libprotobuf) 
+        # OpenVINO uses protobuf, and they can conflict.
+        set(BUILD_PROTOBUF OFF)
+    endif()
     set(BUILD_SHARED_LIBS ON)
     set(WITH_FFMPEG ON)
     FetchContent_Declare(
