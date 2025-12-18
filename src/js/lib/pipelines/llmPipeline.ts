@@ -104,10 +104,11 @@ export interface PerfMetrics {
 }
 
 export class DecodedResults {
-  constructor(texts: string[], scores: number[], perfMetrics: PerfMetrics) {
+  constructor(texts: string[], scores: number[], perfMetrics: PerfMetrics, parsed?: object) {
     this.texts = texts;
     this.scores = scores;
     this.perfMetrics = perfMetrics;
+    this.parsed = parsed;
   }
   toString() {
     if (this.scores.length !== this.texts.length) {
@@ -132,6 +133,7 @@ export class DecodedResults {
   texts: string[];
   scores: number[];
   perfMetrics: PerfMetrics;
+  parsed?: object;
 }
 
 export class LLMPipeline {
@@ -257,6 +259,7 @@ export class LLMPipeline {
             result.texts,
             result.scores,
             result.perfMetrics,
+            result.parsed,
           );
           resolve(decodedResults);
         } else if (callback && typeof result === "string") {

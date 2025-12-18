@@ -3,12 +3,14 @@
 #include "include/addon.hpp"
 #include "include/chat_history.hpp"
 #include "include/perf_metrics.hpp"
+#include "include/parser.hpp"
 
 namespace {
 constexpr const char* JS_SCHEDULER_CONFIG_KEY = "schedulerConfig";
 constexpr const char* CPP_SCHEDULER_CONFIG_KEY = "scheduler_config";
 constexpr const char* POOLING_TYPE_KEY = "pooling_type";
 constexpr const char* STRUCTURED_OUTPUT_CONFIG_KEY = "structured_output_config";
+constexpr const char* PARSERS_KEY = "parsers";
 
 }  // namespace
 
@@ -88,6 +90,8 @@ ov::AnyMap js_to_cpp<ov::AnyMap>(const Napi::Env& env, const Napi::Value& value)
                 ov::genai::TextEmbeddingPipeline::PoolingType(value_by_key.ToNumber().Int32Value());
         } else if (key_name == STRUCTURED_OUTPUT_CONFIG_KEY) {
             result_map[key_name] = js_to_cpp<ov::genai::StructuredOutputConfig>(env, value_by_key);
+        } else if (key_name == PARSERS_KEY) {
+            result_map[key_name] = js_to_cpp<std::vector<std::shared_ptr<ov::genai::Parser>>>(env, value_by_key);
         } else {
             result_map[key_name] = js_to_cpp<ov::Any>(env, value_by_key);
         }
@@ -338,6 +342,32 @@ ov::Tensor js_to_cpp<ov::Tensor>(const Napi::Env& env, const Napi::Value& value)
 }
 
 template <>
+std::shared_ptr<ov::genai::Parser> js_to_cpp<std::shared_ptr<ov::genai::Parser>>(const Napi::Env& env,
+                                                                                 const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsObject(), "Parser must be a JS object with a 'parse' method");
+    Napi::Object obj = value.As<Napi::Object>();
+    OPENVINO_ASSERT(obj.Has("parse"), "Parser object must have a 'parse' method");
+    Napi::Value parse_method = obj.Get("parse");
+    OPENVINO_ASSERT(parse_method.IsFunction(), "'parse' property of Parser object must be a function");
+    return std::make_shared<JSParser>(env, obj);
+}
+
+template <>
+std::vector<std::shared_ptr<ov::genai::Parser>> js_to_cpp<std::vector<std::shared_ptr<ov::genai::Parser>>>(
+    const Napi::Env& env,
+    const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsArray(), "Passed argument must be of type Array.");
+    Napi::Array arr = value.As<Napi::Array>();
+    std::vector<std::shared_ptr<ov::genai::Parser>> parsers;
+    parsers.reserve(arr.Length());
+    for (uint32_t i = 0; i < arr.Length(); ++i) {
+        Napi::Value element = arr[i];
+        parsers.push_back(js_to_cpp<std::shared_ptr<ov::genai::Parser>>(env, element));
+    }
+    return parsers;
+}
+
+template <>
 ov::genai::PerfMetrics& unwrap<ov::genai::PerfMetrics>(const Napi::Env& env, const Napi::Value& value) {
     const auto obj = value.As<Napi::Object>();
     const auto& prototype = env.GetInstanceData<AddonData>()->perf_metrics;
@@ -460,6 +490,17 @@ Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env, co
 template <>
 Napi::Value cpp_to_js<ov::genai::JsonContainer, Napi::Value>(const Napi::Env& env, const ov::genai::JsonContainer& json_container) {
     return json_parse(env, json_container.to_json_string());
+}
+
+template <>
+Napi::Value cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(
+    const Napi::Env& env,
+    const std::vector<ov::genai::JsonContainer>& value) {
+    auto js_array = Napi::Array::New(env, value.size());
+    for (auto i = 0; i < value.size(); i++) {
+        js_array[i] = json_parse(env, value[i].to_json_string());
+    }
+    return js_array;
 }
 
 template <>

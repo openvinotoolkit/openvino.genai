@@ -28,6 +28,7 @@ Napi::Object create_decoded_results_object(Napi::Env env, const ov::genai::Decod
     obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, result.scores));
     obj.Set("perfMetrics", PerfMetricsWrapper::wrap(env, result.perf_metrics));
     obj.Set("subword", Napi::String::New(env, result));
+    obj.Set("parsed", cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(env, result.parsed));
     return obj;
 }
 
