@@ -165,10 +165,7 @@ namespace ov::genai {
                 m_previous_scores_queues[decoder_layer_idx].pop_front();
             }
             m_previous_scores_queues[decoder_layer_idx].emplace_back(max_pooled_hh_scores, skipped_logical_block_ids);
-        }
 
-        if (m_aggregation_mode == AggregationMode::ADAPTIVE_RKV) {
-            OPENVINO_ASSERT(!m_previous_scores_queues[decoder_layer_idx].empty());
             auto start_it = m_previous_scores_queues[decoder_layer_idx].begin();
             auto& dst = m_scores[decoder_layer_idx];
             _initialize_score_with_skips(dst, start_it->score, start_it->skips);
@@ -333,9 +330,9 @@ namespace ov::genai {
                 auto arkv_calc = AdaptiveRKVBlockCalculator(m_eviction_config.adaptive_rkv_config.attention_mass, m_block_size);
                 OPENVINO_ASSERT(!m_last_block_diversity.empty(), "Token diversity must be registered before each eviction in the Adaptive R-KV scenario");
                 size_t num_evictable_blocks = get_num_evictable_blocks(decoder_layer_idx);
-                size_t num_expected_diversity_values = num_evictable_blocks * num_evictable_blocks / m_block_size;
+                size_t num_expected_diversity_values = num_evictable_blocks * num_evictable_blocks * m_block_size;
                 size_t num_diversity_values_registered = m_last_block_diversity[0].size();
-                OPENVINO_ASSERT(num_diversity_values_registered == num_expected_diversity_values, "Diversity score size mismatch - registered ", num_diversity_values_registered, " diversity scores, but expected ", num_evictable_blocks, "*", num_evictable_blocks, "/", m_block_size, "=", num_expected_diversity_values, " scores");
+                OPENVINO_ASSERT(num_diversity_values_registered == num_expected_diversity_values, "Diversity score size mismatch - registered ", num_diversity_values_registered, " diversity scores, but expected ", num_evictable_blocks, "*", num_evictable_blocks, "*", m_block_size, "=", num_expected_diversity_values, " scores");
                 size_t max_num_evictable_blocks_to_keep_after_eviction = m_eviction_config.get_evictable_size() / m_block_size;
 
                 auto diversity_blocks_and_num_blocks_kept = arkv_calc.get_diversity_block_set(max_num_evictable_blocks_to_keep_after_eviction, scores_for_all_evictable_blocks);

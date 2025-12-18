@@ -978,6 +978,21 @@ INSTANTIATE_TEST_SUITE_P(VariousSetsOfLowScoreBlocks, CacheEvictionLowScoreBlock
                              return info.param.test_id;
                          });
 
+std::vector<float> block_diversity_to_unfiltered_token_diversity(const std::vector<float>& block_diversity, size_t block_size) {
+    std::vector<float> retval(block_diversity.size() * block_diversity.size() * block_size);
+    auto it_b = retval.begin();
+    size_t row_len = block_diversity.size();
+    size_t col_len = block_diversity.size() * block_size;
+    for (size_t row_idx = 0; row_idx < row_len; row_idx++) {
+        for (size_t col_idx = 0; col_idx < col_len; col_idx += block_size) {
+            std::fill(it_b + col_idx, it_b + col_idx + block_size, block_diversity[row_idx]);
+        }
+        it_b += col_len;
+    }
+
+    return retval;
+}
+
 struct CacheEvictionAdaptiveRKVLowScoreAndSimilarityTestStruct {
     std::string test_id;
     size_t tokens_over_max_cache_size;
@@ -998,16 +1013,16 @@ const std::vector<CacheEvictionAdaptiveRKVLowScoreAndSimilarityTestStruct> ADAPT
                 2 * 2 + 1,  // 2 blocks worth of overflow + 1 tokens, amounting to 3 blocks to be evicted
                 ov::genai::AdaptiveRKVConfig(0.9, 1),
                 {999.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
-                {10.0, 11.0, 0.5, 0.1, 18.0, 19.0, 0.2, 0.4, 23.1, 24.2, 19.8, 18.7},
-                {3, 5, 6}
+                {10.5, 0.3, 18.5, 0.3, 23.65, 19.25},
+                {2, 3, 4}
         },
         {
                 "two_blocks_overflow_two_hiscore_one_diverse_to_keep",
                 2 * 2,  // 2 blocks worth of overflow
                 ov::genai::AdaptiveRKVConfig(0.9, 1),
                 {0.1, 0.2, 0.3, 0.4, 0.1, 8.3, 11.0, 0.0, 0.0, 0.0},
-                {2.1, 2.2, -3.5, 8.1, -19.0, -21.4, 8.2, 0.4, 1.2, 1.1},
-                {1, 2}
+                {2.15, 2.3, -20.2, 4.3, 1.15},
+                {1, 5}
         }
 };
 // clang-format on
@@ -1026,7 +1041,9 @@ TEST_P(CacheEvictionAdaptiveRKVLowScoreAndSimilarityParameterizedTest, EvictsLow
         }
     }
     algo.register_new_token_scores(scores);
-    auto diversity = std::vector<std::vector<float>>(DEFAULT_NUM_DECODER_LAYERS, test_struct.evictable_area_block_diversity);
+    auto block_diversity = block_diversity_to_unfiltered_token_diversity(test_struct.evictable_area_block_diversity, /* block_size = */ 2);
+
+    auto diversity = std::vector<std::vector<float>>(DEFAULT_NUM_DECODER_LAYERS, block_diversity);
     algo.register_block_diversity(get_layer_scores_from_2d_vector(diversity));
 
     auto test_evicted_blocks = algo.evict_logical_blocks();
@@ -1239,7 +1256,7 @@ INSTANTIATE_TEST_SUITE_P(VariousInvalidInitParams, CacheEvictionAlgoInitializati
 TEST(CacheEvictionAlgoAdaptiveRKVTest, ThrowsIfEvictingWithoutSimilarityData) {
     auto algo = ov::genai::CacheEvictionAlgorithm(ov::genai::CacheEvictionConfig(4, 4, 12, ov::genai::AggregationMode::ADAPTIVE_RKV, /* apply_rotation = */ false, /* snapkv_window_size = */ 0), DEFAULT_BLOCK_SIZE, DEFAULT_NUM_DECODER_LAYERS, DEFAULT_MAX_POOL_WINDOW_SIZE);
     std::vector<std::vector<float>> mock_scores(2, std::vector<float>(16, 0.0));
-    std::vector<std::vector<float>> mock_diversity(2, std::vector<float>(8, 0.0));
+    std::vector<std::vector<float>> mock_diversity(2, std::vector<float>(16, 0.0));
     algo.register_new_token_scores(get_layer_scores_from_2d_vector(mock_scores));
     EXPECT_THROW(algo.evict_logical_blocks(), ov::Exception);
     algo.register_block_diversity(get_layer_scores_from_2d_vector(mock_diversity));

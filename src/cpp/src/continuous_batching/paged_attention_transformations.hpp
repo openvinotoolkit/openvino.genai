@@ -23,6 +23,8 @@ namespace utils {
  * blocks (in a RoPE fashion) before the inference step.
  * @param allow_xattention If true, then the transformations will enable additional per-layer inputs to control the XAttention block-sparse
  * attention optimization.
+ * @param allow_adaptive_rkv If true, then the transformations will enable additional per-layer inputs and diversity score outputs to control
+ * the Adaptive R-KV mode of cache eviction.
  */
 void apply_paged_attention_transformations(std::shared_ptr<ov::Model> model, bool per_layer_cache_control = false, bool allow_cache_rotation = false, bool allow_xattention = false, bool allow_adaptive_rkv = false);
 
