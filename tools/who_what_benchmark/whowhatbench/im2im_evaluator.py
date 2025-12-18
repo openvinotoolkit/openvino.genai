@@ -7,6 +7,7 @@ from tqdm import tqdm
 from transformers import set_seed
 import torch
 import openvino_genai
+import logging
 
 from .registry import register_evaluator
 from .text2image_evaluator import Text2ImageEvaluator
@@ -22,6 +23,7 @@ def preprocess_fn(example):
 
 
 def prepare_default_data(num_samples=None):
+    logging.getLogger("urllib3").setLevel(logging.DEBUG)
     DATASET_NAME = "paint-by-inpaint/PIPE"
     NUM_SAMPLES = 10 if num_samples is None else num_samples
     set_seed(42)

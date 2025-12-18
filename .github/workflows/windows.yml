@@ -270,6 +270,8 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
+      LOG_LEVEL: DEBUG
+      LOGLEVEL: DEBUG
 
     steps:
       - name: Clone openvino.genai
@@ -304,6 +306,7 @@ jobs:
 
       - name: Run Reproducer
         run: |
+          nslookup huggingface.co
           python ${{ env.SRC_DIR }}/reproducer.py
 
       - name: Tests
