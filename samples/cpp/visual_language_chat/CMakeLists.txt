@@ -69,8 +69,6 @@ if(NOT OpenCV_FOUND)
 
     set(BUILD_SHARED_LIBS ON)
     set(WITH_FFMPEG ON)
-    set(BUILD_PROTOBUF OFF CACHE BOOL "" FORCE)
-    set(PROTOBUF_UPDATE_FILES OFF CACHE BOOL "" FORCE)
     set(WITH_PROTOBUF OFF CACHE BOOL "" FORCE)
     FetchContent_Declare(
             opencv
