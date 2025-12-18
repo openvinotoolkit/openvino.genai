@@ -10,6 +10,7 @@ logging.basicConfig(level=logging.DEBUG)
 context = ssl.create_default_context()
 
 def get_host_cert_info(fqdn):
+    logging.debug(f"Getting certificate info for {fqdn}")
     conn = context.wrap_socket(socket.socket(socket.AF_INET),
                             server_hostname=fqdn)
     conn.connect((fqdn, 443))
@@ -18,7 +19,9 @@ def get_host_cert_info(fqdn):
 
 # Get more information about certs various Hugging Face endpoints use
 get_host_cert_info("huggingface.co")
-get_host_cert_info("cdn-lfs.huggingface.co")
+get_host_cert_info("cdn-lfs.hf.co")
+get_host_cert_info("hf.co")
+get_host_cert_info("cas-bridge.xethub.hf.co")
 get_host_cert_info("datasets-server.huggingface.co")
 
 # Code from the original test

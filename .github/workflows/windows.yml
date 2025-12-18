@@ -304,14 +304,18 @@ jobs:
           requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
-      - name: Run Reproducer
+      - name: DNS lookup
         run: |
           nslookup huggingface.co
-          nslookup cdn-lfs.huggingface.co
+          nslookup cdn-lfs.hf.co
           nslookup hf.co
+          nslookup cas-bridge.xethub.hf.co
           nslookup datasets-server.huggingface.co
           nslookup ocsp.r2m02.amazontrust.com
           nslookup crl.r2m02.amazontrust.com
+
+      - name: Run Reproducer
+        run: |
           python ${{ env.SRC_DIR }}/reproducer.py
 
       - name: Tests
