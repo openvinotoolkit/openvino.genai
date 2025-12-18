@@ -106,6 +106,6 @@ static constexpr ov::Property<float> frame_rate{"frame_rate"};
  * @param generation_config An video generation config to convert to property-like format
  */
 OPENVINO_GENAI_EXPORTS
-std::pair<std::string, ov::Any> generation_config(VideoGenerationConfig& generation_config);
+std::pair<std::string, ov::Any> generation_config(const VideoGenerationConfig& generation_config);
 
 }  // namespace ov::genai

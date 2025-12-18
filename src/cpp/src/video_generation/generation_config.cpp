@@ -45,7 +45,7 @@ void VideoGenerationConfig::validate() const {
     OPENVINO_ASSERT(guidance_scale > 1.0f || negative_prompt == std::nullopt, "Guidance scale <= 1.0 ignores negative prompt");
 }
 
-std::pair<std::string, ov::Any> generation_config(VideoGenerationConfig& generation_config) {
+std::pair<std::string, ov::Any> generation_config(const VideoGenerationConfig& generation_config) {
     return {VIDEO_GENERATION_CONFIG, ov::Any::make<VideoGenerationConfig>(generation_config)};
 }
 
