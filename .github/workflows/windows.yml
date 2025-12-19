@@ -272,6 +272,7 @@ jobs:
       BUILD_DIR: ${{ github.workspace }}/build
       LOG_LEVEL: DEBUG
       LOGLEVEL: DEBUG
+      HF_HUB_DOWNLOAD_TIMEOUT: 60
 
     steps:
       - name: Clone openvino.genai
