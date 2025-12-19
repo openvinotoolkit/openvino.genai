@@ -4,21 +4,35 @@ import json
 from utils.hugging_face import convert_and_save_tokenizer, download_and_convert_model
 from utils.ov_genai_pipelines import create_ov_pipeline
 import pytest
-from openvino_genai import Tokenizer, IncrementalParser, Parser, TextParserStreamer, StreamingStatus, Llama3JsonToolParser, Phi4ReasoningParser, Phi4ReasoningIncrementalParser, DeepSeekR1ReasoningIncrementalParser, GenerationConfig, ReasoningIncrementalParser
+from openvino_genai import (
+    Tokenizer,
+    IncrementalParser,
+    Parser,
+    TextParserStreamer,
+    StreamingStatus,
+    Llama3JsonToolParser,
+    Phi4ReasoningParser,
+    Phi4ReasoningIncrementalParser,
+    DeepSeekR1ReasoningIncrementalParser,
+    GenerationConfig,
+    ReasoningIncrementalParser,
+)
 from transformers import AutoTokenizer
 import re
 from io import StringIO
+
 
 def concatenate_dicts(dst_dict, src_dict):
     # keys that exist in both dictionaries
     keys = set(dst_dict.keys()).intersection(set(src_dict.keys()))
     for key in keys:
         dst_dict[key] += src_dict[key]
-    
+
     # keys that exist in src_dict but missing in dst_dict
     missing_keys = set(src_dict.keys()) - set(dst_dict.keys())
     for key in missing_keys:
         dst_dict[key] = src_dict[key]
+
 
 @pytest.fixture(scope="module")
 def hf_ov_genai_models(request, tmp_path_factory):
@@ -35,59 +49,55 @@ def hf_ov_genai_models(request, tmp_path_factory):
 
 
 @pytest.mark.parametrize(
-    "hf_ov_genai_models", 
+    "hf_ov_genai_models",
     ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
-    indirect=True
+    indirect=True,
 )
 def test_several_incremental_parsers(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
-    
+
     class CustomReasonParser(IncrementalParser):
         thinking_started: bool = False
         deactivated: bool = False
 
-        def parse(self, message: dict, delta_text: str, delta_tokens = None) -> dict:
-            
+        def parse(self, message: dict, delta_text: str, delta_tokens=None) -> dict:
             if self.deactivated:
                 return delta_text
-            
-            if not self.thinking_started and delta_text == '<start>':
+
+            if not self.thinking_started and delta_text == "<start>":
                 self.thinking_started = True
-            elif self.thinking_started and delta_text != '</stop>':
+            elif self.thinking_started and delta_text != "</stop>":
                 message["reasoning_content"] = delta_text
-            elif self.thinking_started and delta_text == '</stop>':
+            elif self.thinking_started and delta_text == "</stop>":
                 self.deactivated = True
 
             return delta_text
-
 
     class IncrementalToolParser(IncrementalParser):
         started_took_call: bool = False
         accumulated_tool_call: StringIO = StringIO()
         deactivated: bool = False
 
-        def parse(self, delta_msg: dict, delta_text: str, delta_tokens = None) -> str:
+        def parse(self, delta_msg: dict, delta_text: str, delta_tokens=None) -> str:
             if self.deactivated:
                 return delta_text
-            
-            if delta_text == '{' and not self.started_took_call:
+
+            if delta_text == "{" and not self.started_took_call:
                 self.started_took_call = True
                 self.accumulated_tool_call.write(delta_text)
-                
+
                 # If not keep took call in resulting string
                 # delta_text = ''
-            elif self.started_took_call and delta_text == '}':
+            elif self.started_took_call and delta_text == "}":
                 self.started_took_call = False
                 self.accumulated_tool_call.write(delta_text)
                 self.deactivated = True
                 delta_msg["tool_calls"] = [json.loads(self.accumulated_tool_call.getvalue())]
                 # If not keep took call in resulting string
-                # delta_text = ''   
+                # delta_text = ''
             elif self.started_took_call:
                 self.accumulated_tool_call.write(delta_text)
-            
             return delta_text
-
 
     class CustomStreamer(TextParserStreamer):
         def write(self, message):
@@ -96,15 +106,26 @@ def test_several_incremental_parsers(hf_ov_genai_models):
 
     streamer = CustomStreamer(genai_tokenizer, parsers=[IncrementalToolParser(), CustomReasonParser()])
 
-    stream_string = ["Hello", "<start>", " ", "world", " ", "</stop>", "!", "{", '"func_name": ', '"weather", ' '"location": "New York"', "}"]
+    stream_string = [
+        "Hello",
+        "<start>",
+        " ",
+        "world",
+        " ",
+        "</stop>",
+        "!",
+        "{",
+        '"func_name": ',
+        '"weather", "location": "New York"',
+        "}",
+    ]
     think_content = " world "
-    # content = ''.join(stream_string).replace("<start>", "").replace("</stop>", "")
-    content = ''.join(stream_string)
+    content = "".join(stream_string)
     tool_call = {"func_name": "weather", "location": "New York"}
 
     for subword in stream_string:
         streamer._write(subword)
-    
+
     final_msg = streamer.get_parsed_message()
     assert final_msg["reasoning_content"] == think_content
     assert final_msg["content"] == content
@@ -112,27 +133,29 @@ def test_several_incremental_parsers(hf_ov_genai_models):
 
 
 @pytest.mark.parametrize(
-    "hf_ov_genai_models", 
+    "hf_ov_genai_models",
     ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
-    indirect=True
+    indirect=True,
 )
-@pytest.mark.parametrize("answer", [
-    "<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \boxed{3}.",
-
-    (
-        "<think>\nOkay, the user is asking for the answer to 2 + 1. Let me make sure I understand "
-        "the question correctly. They want a short answer, so I shouldn't overcomplicate things. "
-        "Basic addition here. Two plus one equals three. Yeah, that's straightforward. I need to "
-        "respond with the answer inside a box using the specified format. Let me double-check the "
-        "arithmetic to avoid any mistakes. Yep, 2 + 1 is definitely 3. Alright, time to put it in "
-        "the box.\n</think>\n\nThe answer to 2 + 1 is \boxed{3}."
-    ),
-])
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \boxed{3}.",
+        (
+            "<think>\nOkay, the user is asking for the answer to 2 + 1. Let me make sure I understand "
+            "the question correctly. They want a short answer, so I shouldn't overcomplicate things. "
+            "Basic addition here. Two plus one equals three. Yeah, that's straightforward. I need to "
+            "respond with the answer inside a box using the specified format. Let me double-check the "
+            "arithmetic to avoid any mistakes. Yep, 2 + 1 is definitely 3. Alright, time to put it in "
+            "the box.\n</think>\n\nThe answer to 2 + 1 is \boxed{3}."
+        ),
+    ],
+)
 def test_incremental_phi4_reason_parser_1(hf_ov_genai_models, answer):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
-    
+
     stream_string = re.split(r"(\s+)", answer)
-    
+
     # manually accumulate content from streamer
     content = StringIO()
 
@@ -141,13 +164,14 @@ def test_incremental_phi4_reason_parser_1(hf_ov_genai_models, answer):
             nonlocal content
             content.write(message["content"])
             return StreamingStatus.RUNNING
+
     streamer = CustomStreamer(genai_tokenizer, parsers=[Phi4ReasoningIncrementalParser()])
-    
+
     for subword in stream_string:
         streamer._write(subword)
 
     think_content = answer.split("</think>")[0].replace("<think>", "")
-    
+
     msg = streamer.get_parsed_message()
     assert msg["reasoning_content"] == think_content
     assert msg["content"] == answer
@@ -155,20 +179,22 @@ def test_incremental_phi4_reason_parser_1(hf_ov_genai_models, answer):
 
 
 @pytest.mark.parametrize(
-    "hf_ov_genai_models", 
+    "hf_ov_genai_models",
     ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
-    indirect=True
+    indirect=True,
 )
 def test_incremental_phi4_reason_integer_token_ids(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
-    
+
     accumulated_message = {}
+
     class CustomStreamer(TextParserStreamer):
         def write(self, delta_message):
             concatenate_dicts(accumulated_message, delta_message)
             return StreamingStatus.RUNNING
+
     streamer = CustomStreamer(genai_tokenizer, parsers=[Phi4ReasoningIncrementalParser()])
-    
+
     answer = "<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \boxed{3}."
     encoded_tokens = genai_tokenizer.encode(answer).input_ids.data.tolist()[0]
     for token in encoded_tokens:
@@ -176,7 +202,7 @@ def test_incremental_phi4_reason_integer_token_ids(hf_ov_genai_models):
     streamer.end()
 
     think_content = answer.split("</think>")[0].replace("<think>", "")
-    
+
     msg = streamer.get_parsed_message()
     assert msg["reasoning_content"] == think_content
     assert msg["content"] == answer
@@ -185,52 +211,55 @@ def test_incremental_phi4_reason_integer_token_ids(hf_ov_genai_models):
 
 
 @pytest.mark.parametrize(
-    "hf_ov_genai_models", 
+    "hf_ov_genai_models",
     ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
-    indirect=True
+    indirect=True,
 )
 def test_incremental_integer_token_ids(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
-    
+
     class CustomIncrementalParser(IncrementalParser):
         started_reasoning: bool = False
 
-        def parse(self, delta_message: dict, delta_text: str, delta_tokens = None) -> str:
+        def parse(self, delta_message: dict, delta_text: str, delta_tokens=None) -> str:
             if 1 in delta_tokens and not self.started_reasoning:
                 self.started_reasoning = True
                 delta_message["reasoning_content"] = delta_text
-                delta_text = ''
+                delta_text = ""
             elif 1 in delta_tokens and self.started_reasoning:
                 self.started_reasoning = False
-                delta_text = ''
+                delta_text = ""
             elif self.started_reasoning:
                 delta_message["reasoning_content"] = delta_text
-                delta_text = ''
-            
-            # # Here we are only collecting ordinary text, therefore leave delta_text unchanged.
-            delta_message["content"] = delta_text # will happen under the hood
+                delta_text = ""
+
+            # Here we are only collecting ordinary text, therefore leave delta_text unchanged.
+            delta_message["content"] = delta_text  # will happen under the hood
             return delta_text
-    
+
     accumulated_message = {}
+
     class CustomStreamer(TextParserStreamer):
         def write(self, delta_message):
             concatenate_dicts(accumulated_message, delta_message)
             return StreamingStatus.RUNNING
+
     streamer = CustomStreamer(genai_tokenizer, parsers=[CustomIncrementalParser()])
 
-    # All closing tags </s>, <|/inst|>, <|endoftext|>, etc. in tiny-random-phi3 add strange \x0c\x0c characters 
-    # so we avoid them in this test. 
+    # All closing tags </s>, <|/inst|>, <|endoftext|>, etc. in tiny-random-phi3 add strange \x0c\x0c characters
+    # so we avoid them in this test.
     answer = "<s>\nOkay, the user is asking for the answer to 2 + 1.<s>The answer to 2 + 1 is 3."
     encoded_tokens = genai_tokenizer.encode(answer, add_special_tokens=False).input_ids.data.tolist()[0]
 
     for token in encoded_tokens:
         streamer._write([token])
     streamer.end()
-    
+
     assert accumulated_message["reasoning_content"] == "\nOkay, the user is asking for the answer to 2 + 1"
     assert accumulated_message["content"] == " The answer to 2 + 1 is 3."
 
 
+@pytest.mark.parametrize("hf_ov_genai_models", ["katuni4ka/tiny-random-phi3"], indirect=True)
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
     ["katuni4ka/tiny-random-phi3"],
@@ -247,20 +276,22 @@ def test_incremental_integer_token_ids(hf_ov_genai_models):
 def test_incremental_phi4_reason_parser_2(hf_ov_genai_models, split_answer):
     # check that if thinking opening and closing tags are in the middle of the subword, it is still parsed correctly
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
-    
+
     msg_manual = {}
+
     class CustomStreamer(TextParserStreamer):
         def write(self, message):
             # will be accumulated automatically inside streamer
             concatenate_dicts(msg_manual, message)
             return StreamingStatus.RUNNING
+
     streamer = CustomStreamer(genai_tokenizer, parsers=[Phi4ReasoningIncrementalParser()])
-    
+
     for subword in split_answer:
         streamer._write(subword)
 
-    think_content = (''.join(split_answer)).split("</think>")[0].replace("<think>", "")
-    content = ''.join(split_answer)
+    think_content = ("".join(split_answer)).split("</think>")[0].replace("<think>", "")
+    content = "".join(split_answer)
 
     msg = streamer.get_parsed_message()
     assert msg["reasoning_content"] == think_content
@@ -269,16 +300,18 @@ def test_incremental_phi4_reason_parser_2(hf_ov_genai_models, split_answer):
     assert msg_manual["content"] == content
 
 
-
-@pytest.mark.parametrize("answer", [
-    "<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \boxed{3}.",
-])
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \boxed{3}.",
+    ],
+)
 def test_incremental_phi4_reason_parser_nostreamer(answer):
     # In this test we are calling parser directly without streamer
     parser = Phi4ReasoningIncrementalParser()
-    
+
     stream_string = re.split(r"(\s+)", answer)
-    
+
     accumulated_message = {}
     for subword in stream_string:
         delta_message = {}  # msg when the first parser is called should be empty
@@ -293,35 +326,43 @@ def test_incremental_phi4_reason_parser_nostreamer(answer):
 @pytest.mark.parametrize("keep_original_content", [True, False])
 @pytest.mark.parametrize("do_reset", [False])
 @pytest.mark.parametrize(
-    "hf_ov_genai_models", 
+    "hf_ov_genai_models",
     ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
-    indirect=True
+    indirect=True,
 )
-@pytest.mark.parametrize("answer", [
-    "<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \boxed{3}.",
-])
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \boxed{3}.",
+    ],
+)
 def test_reasoning_parser_cut_content(hf_ov_genai_models, answer, keep_original_content, do_reset):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
-    
+
     stream_string = re.split(r"(\s+)", answer)
-    
+
     msg = {}
+
     class CustomStreamer(TextParserStreamer):
         def write(self, message):
             concatenate_dicts(msg, message)
             return StreamingStatus.RUNNING
-    streamer = CustomStreamer(genai_tokenizer, parsers=[ReasoningIncrementalParser(expect_open_tag=True, keep_original_content=keep_original_content)])
-    
+
+    streamer = CustomStreamer(
+        genai_tokenizer,
+        parsers=[ReasoningIncrementalParser(expect_open_tag=True, keep_original_content=keep_original_content)],
+    )
+
     num_runs = 2
     for i in range(num_runs):
         if do_reset:
             streamer.reset()
-        
+
         for subword in stream_string:
             streamer._write(subword)
 
         think_content = answer.split("</think>")[0].replace("<think>", "")
-    
+
     if do_reset:
         # If has been reset, check that content is parsed correctly
         assert msg["reasoning_content"] == think_content
@@ -343,7 +384,7 @@ def test_incremental_deepseek_parser():
         " it", ".", "**\n", "   \n", "  ", " \\", "[\n", "  "
     ]
 
-    full_str = ''.join(stream_string)
+    full_str = "".join(stream_string)
     think_content = full_str.split("</think>")[0]
 
     delta_message = {}
@@ -352,25 +393,21 @@ def test_incremental_deepseek_parser():
     for subword in stream_string:
         parser.parse(delta_message, subword)
         concatenate_dicts(accumulated_message, delta_message)
-    
+
     assert accumulated_message["reasoning_content"] == think_content
 
 
-@pytest.mark.parametrize(
-    "hf_ov_genai_models", 
-    ["katuni4ka/tiny-random-phi3"],
-    indirect=True
-)
+@pytest.mark.parametrize("hf_ov_genai_models", ["katuni4ka/tiny-random-phi3"], indirect=True)
 def test_custom_incremental_parser(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
 
     class CustomParser(IncrementalParser):
         main_part_started: bool = False
 
-        def parse(self, delta_message: dict, delta_text: str, delta_tokens = None) -> str:
-            if not self.main_part_started and delta_text == '<start>':
+        def parse(self, delta_message: dict, delta_text: str, delta_tokens=None) -> str:
+            if not self.main_part_started and delta_text == "<start>":
                 self.main_part_started = True
-            elif self.main_part_started and delta_text == '</stop>':
+            elif self.main_part_started and delta_text == "</stop>":
                 self.main_part_started = False
             else:
                 if self.main_part_started:
@@ -379,10 +416,12 @@ def test_custom_incremental_parser(hf_ov_genai_models):
             return delta_text
 
     accumulated_message = {}
+
     class CustomStreamer(TextParserStreamer):
         def write(self, delta_message):
             concatenate_dicts(accumulated_message, delta_message)
             return StreamingStatus.RUNNING
+
     streamer = CustomStreamer(genai_tokenizer, parsers=[CustomParser()])
 
     stream_string = ["Hello", "<start>", " ", "world", " ", "</stop>", "!"]
@@ -392,18 +431,12 @@ def test_custom_incremental_parser(hf_ov_genai_models):
     assert accumulated_message["main_text"] == " world "
 
 
-@pytest.mark.parametrize(
-    "hf_ov_genai_models", 
-    ["katuni4ka/tiny-random-phi3"],
-    indirect=True
-)
+@pytest.mark.parametrize("hf_ov_genai_models", ["katuni4ka/tiny-random-phi3"], indirect=True)
 def test_final_parser_llama_32_json(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
 
     json_str = '{"type": "function", "function": {"name": "get_weather", "parameters": {"location": "New York, NY", "unit": "celsius"}}}'
-    content_json = {
-        "content": f"Calling weather API: {json_str}"
-    }
+    content_json = {"content": f"Calling weather API: {json_str}"}
 
     parser = Llama3JsonToolParser()
     parser.parse(content_json)
@@ -415,11 +448,11 @@ def test_final_parser_llama_32_json(hf_ov_genai_models):
 def test_custom_parser(tmp_path, model_id):
     models_path = download_and_convert_model(model_id, padding_side="left").models_path
     pipe = create_ov_pipeline(models_path)
-    
+
     class CustomParser(Parser):
         def parse(self, msg: dict):
             content = None
-            if 'content' in msg:
+            if "content" in msg:
                 content = msg["content"]
             if not content:
                 return
@@ -428,24 +461,24 @@ def test_custom_parser(tmp_path, model_id):
             think_start = content.find("<think>")
             think_end = content.find("</think>")
             if think_start != -1 and think_end != -1 and think_end > think_start:
-                think_text = content[think_start + len("<think>"):think_end].strip()
+                think_text = content[think_start + len("<think>") : think_end].strip()
                 msg["reasoning_content"] = think_text
-        
+
     parser = CustomParser()
     config = GenerationConfig()
     config.max_new_tokens = 600
     config.parsers = [parser]
 
-    res = pipe.generate(["Please say \"hello\""], generation_config=config)
-    
+    res = pipe.generate(['Please say "hello"'], generation_config=config)
+
     # extract manually reasoning content from the parsed result
     content = res.texts[0]
     think_start = content.find("<think>")
     think_end = content.find("</think>")
     if think_start != -1 and think_end != -1 and think_end > think_start:
-        think_text = content[think_start + len("<think>"):think_end].strip()
-    
-    assert 'reasoning_content' in res.parsed[0]
+        think_text = content[think_start + len("<think>") : think_end].strip()
+
+    assert "reasoning_content" in res.parsed[0]
     assert res.parsed[0]["reasoning_content"] != ""
     assert res.parsed[0]["reasoning_content"] == think_text
 
@@ -456,30 +489,31 @@ def test_reset_incremental_parser(tmp_path, model_id):
     models_path = download_and_convert_model(model_id, padding_side="left").models_path
     pipe = create_ov_pipeline(models_path)
     tok = pipe.get_tokenizer()
-    
+
     class CustomStreamer(TextParserStreamer):
         def write(self, message):
             return StreamingStatus.RUNNING
+
     streamer = CustomStreamer(tok, parsers=[Phi4ReasoningIncrementalParser()])
 
-    prompt = "Please say \"hello\""
+    prompt = 'Please say "hello"'
     res = pipe.generate([prompt], max_new_tokens=600, parsers=[Phi4ReasoningParser()])
-    
+
     # extract manually reasoning content from the parsed result
     content = res.texts[0]
     think_start = content.find("<think>")
     think_end = content.find("</think>")
     if think_start != -1 and think_end != -1 and think_end > think_start:
-        think_text = content[think_start + len("<think>"):think_end]
-    
-    assert 'reasoning_content' in res.parsed[0]
+        think_text = content[think_start + len("<think>") : think_end]
+
+    assert "reasoning_content" in res.parsed[0]
     assert res.parsed[0]["reasoning_content"] != ""
     assert res.parsed[0]["reasoning_content"] == think_text
-    
+
     res_streamer_1 = pipe.generate([prompt], max_new_tokens=600, streamer=streamer)
     res_streamer_2 = pipe.generate([prompt], max_new_tokens=600, streamer=streamer)
     # Check that results from streamer generation are the same as from non-streamer generation.
     assert res_streamer_1.parsed == res.parsed
-    
+
     # Also asserts that resetting streamer between generations works correctly.
     assert res_streamer_2.parsed == res.parsed

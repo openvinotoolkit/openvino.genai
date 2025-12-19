@@ -83,7 +83,7 @@ public:
     /**
      * @brief Concatenates JsonContainers.
      * 
-     * Concatenates text fiels from src into this JsonContainer. If field is not textual then it throws exception.
+     * Concatenates text fields from src into this JsonContainer. If field is not textual then it throws exception.
      * @param other Destination JsonContainer to append to
      * @throw ov::Exception if keys in both containers are not strings.
      */
