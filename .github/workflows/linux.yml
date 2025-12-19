@@ -351,7 +351,7 @@ jobs:
           target_arch: 'x86_64'
           build_type: Release
           save_to: ${{ github.workspace }}
-      
+
       - name: Clean sccache stats
         run: ${SCCACHE_PATH} --zero-stats
 
@@ -364,7 +364,7 @@ jobs:
               ${{ needs.openvino_download.outputs.ov_wheel_source }} \
               ${{ env.SRC_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
-      
+
       - name: Show sccache stats
         run: ${SCCACHE_PATH} --show-stats
 
