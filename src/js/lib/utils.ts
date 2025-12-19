@@ -344,3 +344,7 @@ export type SchedulerConfig = {
 export type LLMPipelineProperties = {
   schedulerConfig?: SchedulerConfig;
 };
+
+export type VLMPipelineProperties = {
+  schedulerConfig?: SchedulerConfig;
+} & Record<string, unknown>;

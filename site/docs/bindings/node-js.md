@@ -9,7 +9,7 @@ description: Node.js bindings provide JavaScript/TypeScript API.
 OpenVINO GenAI provides Node.js bindings that enable you to use generative AI pipelines in JavaScript and TypeScript applications.
 
 :::warning API Coverage
-Node.js bindings currently provide a subset of the full OpenVINO GenAI API available in C++ and Python. The focus is on core text generation (`LLMPipeline`) and text embedding (`TextEmbeddingPipeline`) functionality.
+Node.js bindings currently provide a subset of the full OpenVINO GenAI API available in C++ and Python. The focus is on core text generation (`LLMPipeline`), vision language models (`VLMPipeline`), and text embedding (`TextEmbeddingPipeline`) functionality.
 :::
 
 ## Supported Pipelines and Features
@@ -23,6 +23,10 @@ Node.js bindings currently support:
   - Multiple sampling strategies (greedy, beam search)
   - Structured output
   - ReAct agent support
+- `VLMPipeline`: Vision Language Model inference for multimodal tasks
+  - Process images and videos with text prompts
+  - Chat mode with conversation history
+  - Streaming support
 - `TextEmbeddingPipeline`: Generate text embeddings for semantic search and RAG applications
 - `Tokenizer`: Fast tokenization / detokenization and chat prompt formatting
   - Encode strings into token id and attention mask tensors
