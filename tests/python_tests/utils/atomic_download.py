@@ -17,9 +17,9 @@ class AtomicDownloadManager:
         return self.final_path.exists()
 
     def execute(self, download_fn: Callable[[Path], None]) -> None:
-        if self.is_complete():
-            logger.info(f"Already downloaded: {self.final_path}")
-            return
+        # if self.is_complete():
+        #     logger.info(f"Already downloaded: {self.final_path}")
+        #     return
 
         self.final_path.parent.mkdir(parents=True, exist_ok=True)
         self.temp_path.mkdir(parents=True, exist_ok=True)
