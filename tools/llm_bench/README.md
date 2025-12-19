@@ -264,7 +264,7 @@ optimum-cli export openvino --model openai/whisper-base models/whisper-base
 # load audio
 wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
 # run benchmark.py
-python benchmark.py -m models/whisper-base/ -p ./how_are_you_doing_today.wav -n 2 --task speech_to_text
+python benchmark.py -m models/whisper-base/ --media ./how_are_you_doing_today.wav -n 2 --task speech_to_text
 ```
 
 > **Supported Text to Speech model types:** whisper

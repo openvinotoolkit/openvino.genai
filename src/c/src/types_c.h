@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
+#include "openvino/genai/chat_history.hpp"
 #include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/json_container.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
-#include "openvino/genai/whisper_pipeline.hpp"
-#include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/visibility.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
+#include "openvino/genai/whisper_generation_config.hpp"
+#include "openvino/genai/whisper_pipeline.hpp"
 
 #define GET_PROPERTY_FROM_ARGS_LIST                                                                            \
     std::string property_key = va_arg(args_ptr, char*);                                                        \
@@ -127,4 +129,20 @@ struct ov_genai_vlm_decoded_results_opaque {
  */
 struct ov_genai_vlm_pipeline_opaque {
     std::shared_ptr<ov::genai::VLMPipeline> object;
+};
+
+/**
+ * @struct ov_genai_chat_history_opaque
+ * @brief This is an interface of ov::genai::ChatHistory
+ */
+struct ov_genai_chat_history_opaque {
+    std::shared_ptr<ov::genai::ChatHistory> object;
+};
+
+/**
+ * @struct ov_genai_json_container_opaque
+ * @brief This is an interface of ov::genai::JsonContainer
+ */
+struct ov_genai_json_container_opaque {
+    std::shared_ptr<ov::genai::JsonContainer> object;
 };
