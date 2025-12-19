@@ -12,6 +12,7 @@ import datasets
 import itertools
 import transformers
 
+from filelock import FileLock
 import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -175,12 +176,16 @@ def preprocess_fn(example):
 
 @load_dataset_with_retry(retries=3, delay=5)
 def prepare_default_data_image(num_samples=None):
+    lock_path = os.environ.get("HF_DATASETS_CACHE", '.')
+    lock_file_name = "vlm_dataset.lock"
     DATASET_NAME = "ucla-contextual/contextual_test"
     NUM_SAMPLES = 24 if num_samples is None else num_samples
     set_seed(42)
-    default_dataset = datasets.load_dataset(
-        DATASET_NAME, split="test", streaming=True
-    ).shuffle(42).take(NUM_SAMPLES)
+    lock = FileLock(os.path.join(lock_path, lock_file_name))
+    with lock.acquire(timeout=300):
+        default_dataset = datasets.load_dataset(
+            DATASET_NAME, split="test", streaming=True
+        ).shuffle(42).take(NUM_SAMPLES)
     return default_dataset.map(
         lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
     )

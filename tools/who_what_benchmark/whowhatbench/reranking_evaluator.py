@@ -5,6 +5,7 @@ import scipy
 import torch
 import pandas as pd
 from tqdm import tqdm
+from filelock import FileLock
 from .registry import register_evaluator, BaseEvaluator
 from .whowhat_metrics import RerankingSimilarity
 from transformers import set_seed
@@ -19,6 +20,8 @@ from .utils import load_dataset_with_retry
 DEFAULT_TOP_K = 100
 DEFAULT_MAX_LENGTH = 200
 DEFAULT_MAX_LENGTH_QWEN = 8192
+lock_path = os.environ.get("HF_DATASETS_CACHE", '.')
+lock_file_name = "reranker_dataset.lock"
 
 
 def is_qwen3(config):
@@ -41,9 +44,11 @@ def prepare_default_data(num_samples=None):
     DATASET_NAME = "microsoft/ms_marco"
     NUM_SAMPLES = num_samples if num_samples else 24
     set_seed(42)
-    default_dataset = datasets.load_dataset(
-        DATASET_NAME, 'v2.1', split="test", streaming=True
-    ).shuffle(42).take(NUM_SAMPLES)
+    lock = FileLock(os.path.join(lock_path, lock_file_name))
+    with lock.acquire(timeout=300):
+        default_dataset = datasets.load_dataset(
+            DATASET_NAME, 'v2.1', split="test", streaming=True
+        ).shuffle(42).take(NUM_SAMPLES)
     return default_dataset.map(
         lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
     )

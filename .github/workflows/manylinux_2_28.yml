@@ -33,6 +33,8 @@ env:
   BASE_PRODUCT_TYPE: public_manylinux_2_28_x86_64
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
   GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_archive'
+  HF_DATASETS_CACHE: /mount/caches/pytest/datasets
+  HF_HUB_DOWNLOAD_TIMEOUT: 60
 
 jobs:
   smart_ci:
@@ -527,16 +529,10 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
             timeout: 30
           - name: 'WWB tests'
-            env:
-              HF_DATASETS_CACHE: /mount/caches/pytest/datasets
-              HF_HUB_DOWNLOAD_TIMEOUT: 60
             cmd: 'python -m pytest -v ./tools/who_what_benchmark/tests -m "not nanollava"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 120
           - name: 'WWB tests (nanollava)'
-            env:
-              HF_DATASETS_CACHE: /mount/caches/pytest/datasets
-              HF_HUB_DOWNLOAD_TIMEOUT: 60
             cmd: |
               python -m pip install transformers==4.48.0
               python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
