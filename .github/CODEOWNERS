@@ -1,0 +1,41 @@
+# This file defines code owners for the OpenVINO GenAI repository
+
+# Default owners
+* @Wovchena @as-suvorov
+
+# CI
+/.github/ @akashchi
+
+# JavaScript
+/src/js/ @Retribution98 @yatarkan
+/samples/js/ @Retribution98 @yatarkan
+
+# Documentation
+/site/ @yatarkan
+
+# C++
+/src/cpp/include/openvino/genai/image_generation/ @likholat
+/src/cpp/include/openvino/genai/rag/ @as-suvorov
+/src/cpp/include/openvino/genai/speculative_decoding/ @sbalandi
+/src/cpp/include/openvino/genai/speech_generation/ @rkazants @as-suvorov
+/src/cpp/include/openvino/genai/visual_language/ @yatarkan
+
+/src/cpp/src/continuous_batching/ @popovaan
+/src/cpp/src/gguf_utils/ @TianmengChen
+/src/cpp/src/image_generation/ @likholat
+/src/cpp/src/llm/ @pavel-esir
+/src/cpp/src/lora/ @likholat
+/src/cpp/src/prompt_lookup/ @sgonorov
+/src/cpp/src/rag/ @as-suvorov
+/src/cpp/src/sampling/ @apaniukov @pavel-esir
+/src/cpp/src/speculative_decoding/ @sbalandi
+/src/cpp/src/speech_generation/ @rkazants @as-suvorov
+/src/cpp/src/tokenizer/ @apaniukov @pavel-esir
+/src/cpp/src/visual_language/ @yatarkan
+/src/cpp/src/whisper/ @as-suvorov
+
+# Tests
+/tests/ @sgonorov
+
+# GenAI Tools
+/tools/ @sbalandi
