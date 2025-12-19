@@ -222,7 +222,7 @@ def _get_ov_model(model_id: str) -> str:
                     "katuni4ka/tiny-random-phi3-vision",
                     "katuni4ka/tiny-random-phi-4-multimodal",
                     "qnguyen3/nanoLLaVA",
-                    "rkazants/tiny-random-MiniCPM-o-2_6"
+                    "rkazants/tiny-random-MiniCPM-o-2_6",
                 },
             )
         )
