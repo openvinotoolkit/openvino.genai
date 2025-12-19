@@ -123,10 +123,7 @@ def run_wwb(args, env=None):
         base_env.update(env)
     try:
         return subprocess.check_output(
-            command,
-            stderr=subprocess.STDOUT,
-            encoding="utf-8",
-            env=base_env,
+            command, stderr=subprocess.STDOUT, encoding="utf-8", env=base_env, errors="replace"
         )
     except subprocess.CalledProcessError as error:
         logger.error(f"'{' '.join(map(str, command))}' returned {error.returncode}. Output:\n{error.output}")

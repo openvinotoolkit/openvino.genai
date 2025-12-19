@@ -11,7 +11,7 @@ from .whowhat_metrics import RerankingSimilarity
 from transformers import set_seed
 import datasets
 import numpy as np
-from .utils import load_dataset_with_retry
+from .utils import load_dataset_with_retry, LOCK_PATH, LOCK_MAX_TIMEOUT
 
 
 # we would like to evalute score for all documents
@@ -20,8 +20,6 @@ from .utils import load_dataset_with_retry
 DEFAULT_TOP_K = 100
 DEFAULT_MAX_LENGTH = 200
 DEFAULT_MAX_LENGTH_QWEN = 8192
-lock_path = os.environ.get("HF_DATASETS_CACHE", '.')
-lock_file_name = "reranker_dataset.lock"
 
 
 def is_qwen3(config):
@@ -44,8 +42,8 @@ def prepare_default_data(num_samples=None):
     DATASET_NAME = "microsoft/ms_marco"
     NUM_SAMPLES = num_samples if num_samples else 24
     set_seed(42)
-    lock = FileLock(os.path.join(lock_path, lock_file_name))
-    with lock.acquire(timeout=300):
+    lock = FileLock(os.path.join(LOCK_PATH, "reranker_dataset_load.lock"))
+    with lock.acquire(timeout=LOCK_MAX_TIMEOUT):
         default_dataset = datasets.load_dataset(
             DATASET_NAME, 'v2.1', split="test", streaming=True
         ).shuffle(42).take(NUM_SAMPLES)

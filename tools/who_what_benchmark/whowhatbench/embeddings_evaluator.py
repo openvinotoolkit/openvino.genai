@@ -12,13 +12,10 @@ from torch import Tensor
 from transformers import set_seed
 
 from filelock import FileLock
-from .utils import load_dataset_with_retry
+from .utils import load_dataset_with_retry, LOCK_PATH, LOCK_MAX_TIMEOUT
 from .whowhat_metrics import EmbedsSimilarity
 from .registry import register_evaluator, BaseEvaluator
 
-
-lock_path = os.environ.get("HF_DATASETS_CACHE", '.')
-lock_file_name = "emb_dataset.lock"
 DEFAULT_MAX_LENGTH = 200
 
 
@@ -27,8 +24,8 @@ def prepare_default_data(num_samples=None):
     DATASET_NAME = "microsoft/ms_marco"
     NUM_SAMPLES = num_samples if num_samples else 24
     set_seed(42)
-    lock = FileLock(os.path.join(lock_path, lock_file_name))
-    with lock.acquire(timeout=300):
+    lock = FileLock(os.path.join(LOCK_PATH, "emb_dataset_load.lock"))
+    with lock.acquire(timeout=LOCK_MAX_TIMEOUT):
         default_dataset = datasets.load_dataset(
             DATASET_NAME, 'v2.1', split="test", streaming=True
         ).shuffle(42).take(NUM_SAMPLES)

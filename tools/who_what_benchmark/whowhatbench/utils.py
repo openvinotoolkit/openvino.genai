@@ -26,6 +26,10 @@ from transformers.image_utils import load_image
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# for dataset download regulation mechanism
+LOCK_PATH = os.environ.get("HF_DATASETS_CACHE", ".")
+LOCK_MAX_TIMEOUT = 300
+
 
 def new_randn_tensor(
     shape: Union[tuple, list],
@@ -176,13 +180,11 @@ def preprocess_fn(example):
 
 @load_dataset_with_retry(retries=3, delay=5)
 def prepare_default_data_image(num_samples=None):
-    lock_path = os.environ.get("HF_DATASETS_CACHE", '.')
-    lock_file_name = "vlm_dataset.lock"
     DATASET_NAME = "ucla-contextual/contextual_test"
     NUM_SAMPLES = 24 if num_samples is None else num_samples
     set_seed(42)
-    lock = FileLock(os.path.join(lock_path, lock_file_name))
-    with lock.acquire(timeout=300):
+    lock = FileLock(os.path.join(LOCK_PATH, "vlm_dataset_load.lock"))
+    with lock.acquire(timeout=LOCK_MAX_TIMEOUT):
         default_dataset = datasets.load_dataset(
             DATASET_NAME, split="test", streaming=True
         ).shuffle(42).take(NUM_SAMPLES)
