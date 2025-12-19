@@ -55,27 +55,30 @@ struct VideoGenerationConfig {
     /// Video frame rate. Affects rope_interpolation_scale. Any value can be used although positive
     /// non-infinity makes the most sense. NaN corresponds to model default which is 25.0f for LTX-Video.
     std::optional<float> frame_rate = std::nullopt;
-
-    /**
-     * Checks whether video generation config is valid, otherwise throws an exception.
-     */
-    void validate() const;
-
-    /**
-     * Updates generation config from a map of properties.
-     * @param properties A map of properties
-     */
-    void update_generation_config(const ov::AnyMap& properties);
-
-    /**
-     * Updates generation config from properties. Calls AnyMap version of update_generation_config().
-     * @param properties
-     */
-    template <typename... Properties>
-    ov::util::EnableIfAllStringAny<void, Properties...> update_generation_config(Properties&&... properties) {
-        return update_generation_config(ov::AnyMap{std::forward<Properties>(properties)...});
-    }
 };
+
+/**
+ * Updates generation config from a map of properties.
+ * @param config Generation config to update
+ * @param properties A map of properties
+ */
+void update_generation_config(VideoGenerationConfig& config, const ov::AnyMap& properties);
+
+/**
+ * Updates generation config from properties. Calls AnyMap version of update_generation_config().
+ * @param config Generation config to update
+ * @param properties A map of properties
+ */
+template <typename... Properties>
+ov::util::EnableIfAllStringAny<void, Properties...> update_generation_config(VideoGenerationConfig& config, Properties&&... properties) {
+    return update_generation_config(config, ov::AnyMap{std::forward<Properties>(properties)...});
+}
+
+/**
+ * Checks whether video generation config is valid, otherwise throws an exception.
+ * @param config Generation config to validate
+ */
+void validate_generation_config(const VideoGenerationConfig& config);
 
 /**
  * A number of videos to generate per generate() call. If you want to generate multiple images
