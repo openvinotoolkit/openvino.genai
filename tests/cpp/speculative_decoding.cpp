@@ -425,4 +425,3 @@ TEST_F(CBForSDTest, add_tokens__two_sequence) {
     ASSERT_EQ(after.at(0).at(1).token_ids, tokens);
     ASSERT_EQ(after.at(0).at(1).log_probs, log_probs);
 }
-

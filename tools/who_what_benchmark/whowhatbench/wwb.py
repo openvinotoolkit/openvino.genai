@@ -63,7 +63,16 @@ def parse_args():
     parser.add_argument(
         "--model-type",
         type=str,
-        choices=["text", "text-to-image", "visual-text", "visual-video-text", "image-to-image", "image-inpainting", "text-embedding", "text-reranking"],
+        choices=[
+            "text",
+            "text-to-image",
+            "visual-text",
+            "visual-video-text",
+            "image-to-image",
+            "image-inpainting",
+            "text-embedding",
+            "text-reranking",
+        ],
         default="text",
         help="Indicated the model type: 'text' - for causal text generation, 'text-to-image' - for image generation, "
         "visual-text - for Visual Language Models with image inputs, visual-video-text - for Visual Language Models with video inputs, "
@@ -273,7 +282,7 @@ def parse_args():
         type=int,
         default=None,
         help="The number of frames that will be taken from video for input, the frames will be taken evenly across the entire length, "
-             "applicable for Visual Language Models with video inputs",
+        "applicable for Visual Language Models with video inputs",
     )
 
     return parser.parse_args()
@@ -518,20 +527,13 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
 
 
 def genai_gen_visual_text(model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question):
-    kwargs = {
-        "do_sample": False,
-        "max_new_tokens": max_new_tokens
-    }
+    kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
     if image is not None:
-        kwargs['image'] = ov.Tensor(np.array(image)[None])
+        kwargs["image"] = ov.Tensor(np.array(image)[None])
     if video is not None:
-        kwargs['videos'] = [ov.Tensor(np.array(video))]
+        kwargs["videos"] = [ov.Tensor(np.array(video))]
 
-    out = model.generate(
-        prompt,
-        **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
-        **kwargs
-    )
+    out = model.generate(prompt, **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer), **kwargs)
 
     return out.texts[0]
 
@@ -623,7 +625,7 @@ def create_evaluator(base_model, args):
                 processor=processor,
                 crop_question=crop_question,
                 task_type=task,
-                frames_num=args.video_frames_num
+                frames_num=args.video_frames_num,
             )
         elif task == "image-to-image":
             return EvaluatorCLS(

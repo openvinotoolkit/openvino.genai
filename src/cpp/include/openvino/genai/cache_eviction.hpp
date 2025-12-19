@@ -212,4 +212,3 @@ private:
 };
 
 } // namespace ov::genai
-

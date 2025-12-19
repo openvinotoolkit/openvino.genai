@@ -318,11 +318,7 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
         logger.info("Using OpenVINO GenAI VLMPipeline API")
         pipeline = openvino_genai.VLMPipeline(model_dir, device=device, **ov_config)
 
-    return GenAIModelWrapper(
-        pipeline,
-        model_dir,
-        kwargs.get("model_type", "visual-text")
-    )
+    return GenAIModelWrapper(pipeline, model_dir, kwargs.get("model_type", "visual-text"))
 
 
 def load_visual_text_model(

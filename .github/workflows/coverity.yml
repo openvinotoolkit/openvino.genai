@@ -96,7 +96,7 @@ jobs:
           name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
           path: ${{ env.OV_INSTALL_DIR }}
           merge-multiple: true
-          
+
       - name: Restore Coverity Tool
         if: github.event_name == 'pull_request'
         id: cache-coverity
@@ -112,7 +112,7 @@ jobs:
           wget -q https://scan.coverity.com/download/linux64 --post-data "token=${{ secrets.COVERITY_SECRET_TOKEN }}&project=openvino.genai" -O coverity_tool.tgz
           mkdir -p ${{ env.COV_TOOL_DIR }}
           pigz -dc coverity_tool.tgz | tar --strip-components=1 -xf - -C ${{ env.COV_TOOL_DIR }}
-          
+
       - name: Create config file for coverity build
         run: |
           ${{ env.COV_TOOL_DIR }}/bin/cov-configure --delete-compiler-config template-python-config-0
@@ -169,7 +169,7 @@ jobs:
         with:
           key: coverity-${{ runner.os }}-${{ github.sha }}
           path: ${{ env.COV_TOOL_DIR }}
-        
+
       - name: Upload Coverity build log
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         if: always()

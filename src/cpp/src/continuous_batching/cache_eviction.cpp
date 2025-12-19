@@ -541,4 +541,3 @@ size_t SnapKVScoreAggregationCalculator::get_num_token_scores_to_aggregate(size_
 }
 
 }
-

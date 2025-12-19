@@ -42,11 +42,11 @@ class VisualTextEvaluator(TextEvaluator):
         gen_answer_fn=None,
         generation_config=None,
         seqs_per_request=None,
-        task_type: Literal['visual-text', 'visual-video-text'] = "visual-text",
+        task_type: Literal["visual-text", "visual-video-text"] = "visual-text",
         frames_num: int | None = None,
     ) -> None:
         self.processor = processor
-        self.is_image_input = (task_type == "visual-text")
+        self.is_image_input = task_type == "visual-text"
         self.frames_num = frames_num or DEF_VIDEO_FRAMES_AMOUNT
         super().__init__(
             base_model=base_model,
@@ -109,15 +109,10 @@ class VisualTextEvaluator(TextEvaluator):
         return res
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
-        def default_gen_answer(
-            model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question
-        ):
+        def default_gen_answer(model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question):
+            from optimum.intel.openvino.modeling_visual_language import MODEL_TYPE_TO_CLS_MAPPING
 
-            from optimum.intel.openvino.modeling_visual_language import \
-                MODEL_TYPE_TO_CLS_MAPPING
-            preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[
-                model.config.model_type
-            ].preprocess_inputs
+            preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type].preprocess_inputs
             inputs = preprocess_inputs(prompt, image, processor, tokenizer, config=model.config, video=video)
             tokens = model.generate(
                 **inputs,
@@ -150,7 +145,11 @@ class VisualTextEvaluator(TextEvaluator):
                     data = dict(self.test_data)
                 data = pd.DataFrame.from_dict(data)
         else:
-            input_data = prepare_default_data_image(self.num_samples) if self.is_image_input else prepare_default_data_video(self.num_samples, self.frames_num)
+            input_data = (
+                prepare_default_data_image(self.num_samples)
+                if self.is_image_input
+                else prepare_default_data_video(self.num_samples, self.frames_num)
+            )
             data = pd.DataFrame.from_dict(input_data)
 
         prompt_data = data["prompts"]

@@ -159,12 +159,8 @@ def prepare_default_data_image(num_samples=None):
     DATASET_NAME = "ucla-contextual/contextual_test"
     NUM_SAMPLES = 24 if num_samples is None else num_samples
     set_seed(42)
-    default_dataset = datasets.load_dataset(
-        DATASET_NAME, split="test", streaming=True
-    ).shuffle(42).take(NUM_SAMPLES)
-    return default_dataset.map(
-        lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
-    )
+    default_dataset = datasets.load_dataset(DATASET_NAME, split="test", streaming=True).shuffle(42).take(NUM_SAMPLES)
+    return default_dataset.map(lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names)
 
 
 def prepare_default_data_video(num_samples=None, num_frames=10):
@@ -175,17 +171,20 @@ def prepare_default_data_video(num_samples=None, num_frames=10):
     SUBSET = "30_60_s_academic_v0_1"
     NUM_SAMPLES = 24 if num_samples is None else num_samples
 
-    questions_per_video_set = datasets.load_dataset(DATASET_NAME, SUBSET,
-                                                    split="open_ended",
-                                                    data_files={"open_ended": f"{SUBSET}/30_60_s_academic_oe_v0_1_qa_processed.json"})
-    questions_per_video = {val['video']: val for val in questions_per_video_set}
+    questions_per_video_set = datasets.load_dataset(
+        DATASET_NAME,
+        SUBSET,
+        split="open_ended",
+        data_files={"open_ended": f"{SUBSET}/30_60_s_academic_oe_v0_1_qa_processed.json"},
+    )
+    questions_per_video = {val["video"]: val for val in questions_per_video_set}
 
     # 30_60_s_academic_v0_1_videos_10.tar.gz - just the most lightweight chunk among subset
     # https://huggingface.co/datasets/lmms-lab/LLaVA-Video-178K/tree/main/30_60_s_academic_v0_1
     # the archive contains 56 videos
-    videos_arc_path = hf_hub_download(repo_id="lmms-lab/LLaVA-Video-178K",
-                                      filename=f"{SUBSET}/{SUBSET}_videos_10.tar.gz",
-                                      repo_type="dataset")
+    videos_arc_path = hf_hub_download(
+        repo_id="lmms-lab/LLaVA-Video-178K", filename=f"{SUBSET}/{SUBSET}_videos_10.tar.gz", repo_type="dataset"
+    )
 
     video_samples = []
     extract_dir = "./videos"
@@ -194,8 +193,10 @@ def prepare_default_data_video(num_samples=None, num_frames=10):
         all_videos = tar.getnames()
 
         if len(all_videos) < NUM_SAMPLES:
-            logger.warning(f"The required number of samples {NUM_SAMPLES} exceeds the available amount of data {len(all_videos)}."
-                           f"num-samples will be updated to max available: {len(all_videos)}.")
+            logger.warning(
+                f"The required number of samples {NUM_SAMPLES} exceeds the available amount of data {len(all_videos)}."
+                f"num-samples will be updated to max available: {len(all_videos)}."
+            )
             NUM_SAMPLES = len(all_videos)
 
         video_samples = random.Random(42).sample(all_videos, NUM_SAMPLES)  # nosec
@@ -211,9 +212,11 @@ def prepare_default_data_video(num_samples=None, num_frames=10):
 
     data = []
     for video_rel_path in video_samples:
-        video_tensor = load_video(os.path.join(extract_dir, video_rel_path), backend="opencv", sample_indices_fn=default_sample_indices_fn)
-        prompt = questions_per_video[video_rel_path]['conversations'][0]['value'].replace("<image>\n", "")
-        data.append({'prompts': prompt, "images": None, 'videos': video_tensor[0]})
+        video_tensor = load_video(
+            os.path.join(extract_dir, video_rel_path), backend="opencv", sample_indices_fn=default_sample_indices_fn
+        )
+        prompt = questions_per_video[video_rel_path]["conversations"][0]["value"].replace("<image>\n", "")
+        data.append({"prompts": prompt, "images": None, "videos": video_tensor[0]})
 
     return data
 

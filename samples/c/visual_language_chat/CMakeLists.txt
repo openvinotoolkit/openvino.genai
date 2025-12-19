@@ -25,7 +25,7 @@ add_executable(vlm_pipeline_c vlm_pipeline.c load_image.c)
 # Specifies that the source file should be compiled as a C source file
 set_source_files_properties(vlm_pipeline.c load_image.c PROPERTIES LANGUAGE C)
 
-target_include_directories(vlm_pipeline_c PRIVATE 
+target_include_directories(vlm_pipeline_c PRIVATE
     ${CMAKE_SOURCE_DIR}/src/c/include
     ${stb_SOURCE_DIR}
 )
@@ -44,4 +44,3 @@ install(TARGETS vlm_pipeline_c
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
-

@@ -262,4 +262,3 @@ void init_perf_metrics(py::module_& m) {
         .def_readonly("main_model_metrics", &SDPerModelsPerfMetrics::main_model_metrics)
         .def_readonly("draft_model_metrics", &SDPerModelsPerfMetrics::draft_model_metrics);
 }
-
