@@ -20,3 +20,17 @@ private:
     Napi::ThreadSafeFunction parser_tsfn;
     Napi::ObjectReference js_parser_ref;
 };
+
+class ReasoningParserWrapper : public Napi::ObjectWrap<ReasoningParserWrapper> {
+public:
+    ReasoningParserWrapper(const Napi::CallbackInfo& info);
+
+    static Napi::Function get_class(Napi::Env env);
+
+    void parse(const Napi::CallbackInfo& info);
+
+    std::shared_ptr<ov::genai::ReasoningParser> get_parser();
+
+private:
+    std::shared_ptr<ov::genai::ReasoningParser> _parser;
+};

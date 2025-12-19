@@ -8,6 +8,7 @@
 #include "include/text_embedding_pipeline/pipeline_wrapper.hpp"
 #include "include/tokenizer.hpp"
 #include "include/chat_history.hpp"
+#include "include/parser.hpp"
 
 void init_class(Napi::Env env,
                 Napi::Object exports,
@@ -51,6 +52,7 @@ Napi::Object init_module(Napi::Env env, Napi::Object exports) {
     init_class(env, exports, "Tokenizer", &TokenizerWrapper::get_class, addon_data->tokenizer);
     init_class(env, exports, "PerfMetrics", &PerfMetricsWrapper::get_class, addon_data->perf_metrics);
     init_class(env, exports, "ChatHistory", &ChatHistoryWrap::get_class, addon_data->chat_history);
+    init_class(env, exports, "ReasoningParser", &ReasoningParserWrapper::get_class, addon_data->reasoning_parser);
 
     // Expose a helper to set the openvino-node addon from JS (useful for ESM)
     exports.Set("setOpenvinoAddon", Napi::Function::New(env, set_ov_addon));

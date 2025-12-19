@@ -152,6 +152,8 @@ bool is_napi_value_int(const Napi::Env& env, const Napi::Value& num);
 
 bool is_chat_history(const Napi::Env& env, const Napi::Value& value);
 
+std::shared_ptr<ov::genai::Parser> get_native_parser(const Napi::Env& env, const Napi::Object& object);
+
 std::string json_stringify(const Napi::Env& env, const Napi::Value& value);
 
 Napi::Value json_parse(const Napi::Env& env, const std::string& value);

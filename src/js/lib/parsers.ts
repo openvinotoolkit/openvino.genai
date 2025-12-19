@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-misused-new */
 // Copyright (C) 2018-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
@@ -13,5 +14,16 @@ export type Parser = {
    *
    * @param message Message containing the text to parse and to store results
    */
-  parse: (message: { [key: string]: unknown }) => void;
+  parse: (message: Record<string, unknown>) => void;
 };
+
+export interface ReasoningParserOptions {
+  expectOpenTag?: boolean;
+  keepOriginalContent?: boolean;
+  openTag?: string;
+  closeTag?: string;
+}
+
+export interface IReasoningParser extends Parser {
+  new (options?: ReasoningParserOptions): IReasoningParser;
+}

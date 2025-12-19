@@ -12,6 +12,7 @@ struct AddonData {
     Napi::FunctionReference tokenizer;
     Napi::FunctionReference perf_metrics;
     Napi::FunctionReference chat_history;
+    Napi::FunctionReference reasoning_parser;
     Napi::ObjectReference openvino_addon;
 };
 

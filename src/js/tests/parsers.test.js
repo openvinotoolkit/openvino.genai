@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
-import { LLMPipeline } from "../dist/index.js";
+import { LLMPipeline, ReasoningParser } from "../dist/index.js";
 import { models } from "./models.js";
 
 const MODEL_PATH = process.env.MODEL_PATH || `./tests/models/${models.LLM.split("/")[1]}`;
@@ -15,6 +15,14 @@ class PostfixParser {
 
   parse(message) {
     message.content += this.postfix;
+  }
+}
+
+class CustomReasoningParser extends ReasoningParser {
+  parse(message) {
+    super.parse(message);
+    // Append custom text to reasoning content
+    message.reasoning_content += "[custom processed]";
   }
 }
 
@@ -31,6 +39,58 @@ describe("Use parsers from js", () => {
       "Original content" + postfix,
       "Postfix should be appended to message content",
     );
+  });
+
+  describe("ReasoningParser", () => {
+    it("should parse message and extract reasoning content", () => {
+      const parser = new ReasoningParser();
+      const message = {
+        content: "Before <think>reasoning content</think> After",
+      };
+
+      parser.parse(message);
+
+      assert.strictEqual(message.reasoning_content, "reasoning content");
+    });
+
+    it("should keep original content when keepOriginalContent is true", () => {
+      const parser = new ReasoningParser({
+        keepOriginalContent: false,
+      });
+      const message = {
+        content: "Before <think>reasoning content</think> After",
+      };
+
+      parser.parse(message);
+
+      assert.strictEqual(message.reasoning_content, "reasoning content");
+      assert.strictEqual(message.content, "Before  After");
+    });
+
+    it("should work with custom tags", () => {
+      const parser = new ReasoningParser({
+        openTag: "<custom>",
+        closeTag: "</custom>",
+      });
+      const message = {
+        content: "Text <custom>custom reasoning</custom> more text",
+      };
+
+      parser.parse(message);
+
+      assert.strictEqual(message.reasoning_content, "custom reasoning");
+    });
+
+    it("subclass should extend functionality", () => {
+      const parser = new CustomReasoningParser();
+      const message = {
+        content: "Info <think>some reasoning</think> end",
+      };
+
+      parser.parse(message);
+
+      assert.strictEqual(message.reasoning_content, "some reasoning[custom processed]");
+    });
   });
 });
 
@@ -132,6 +192,64 @@ describe("LLMPipeline with Parser in GenerationConfig", () => {
     await assert.rejects(
       async () => await pipeline.generate("Hello", config),
       /'parse' property of Parser object must be a function/,
+    );
+  });
+});
+
+describe("LLMPipeline with ReasoningParser", () => {
+  let pipeline, postfixParser;
+
+  before(async () => {
+    pipeline = await LLMPipeline(MODEL_PATH, "CPU");
+    postfixParser = new PostfixParser("<think>reasoning</think>");
+  });
+
+  it("should accept ReasoningParser in parsers array", async () => {
+    const parser = new ReasoningParser({
+      openTag: "```python\n",
+      closeTag: "```\n",
+    });
+    const config = {
+      max_new_tokens: 100,
+      parsers: [parser],
+    };
+
+    const result = await pipeline.generate("Create python code to print 'Hello, World'", config);
+    assert.ok(
+      result.parsed[0].reasoning_content?.length > 0,
+      "Reasoning content should be extracted",
+    );
+  });
+
+  it("should work with multiple parsers including ReasoningParser", async () => {
+    const reasoningParser = new ReasoningParser();
+    const postfixParser = new PostfixParser("<think>reasoning</think>");
+
+    const config = {
+      max_new_tokens: 10,
+      parsers: [postfixParser, reasoningParser],
+    };
+
+    const result = await pipeline.generate("Create python code to print 'Hello, World'", config);
+    assert.strictEqual(
+      result.parsed[0].reasoning_content,
+      "reasoning",
+      "Reasoning content should be extracted after postfix parser",
+    );
+  });
+
+  it("should accept subclass of ReasoningParser", async () => {
+    const parser = new CustomReasoningParser();
+    const config = {
+      max_new_tokens: 100,
+      parsers: [postfixParser, parser],
+    };
+
+    const result = await pipeline.generate("Explain the theory of relativity", config);
+    assert.strictEqual(
+      result.parsed[0].reasoning_content,
+      "reasoning[custom processed]",
+      "Custom processing should be applied to reasoning content",
     );
   });
 });

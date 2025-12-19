@@ -2,8 +2,8 @@
 
 #include "include/addon.hpp"
 #include "include/chat_history.hpp"
-#include "include/perf_metrics.hpp"
 #include "include/parser.hpp"
+#include "include/perf_metrics.hpp"
 
 namespace {
 constexpr const char* JS_SCHEDULER_CONFIG_KEY = "schedulerConfig";
@@ -346,6 +346,14 @@ std::shared_ptr<ov::genai::Parser> js_to_cpp<std::shared_ptr<ov::genai::Parser>>
                                                                                  const Napi::Value& value) {
     OPENVINO_ASSERT(value.IsObject(), "Parser must be a JS object with a 'parse' method");
     Napi::Object obj = value.As<Napi::Object>();
+    
+    // Check if it's a native parser instance (ReasoningParser or DeepSeekR1ReasoningParser)
+    auto native_parser = get_native_parser(env, obj);
+    if (native_parser) {
+        return native_parser;
+    }
+
+    // Treat as custom JS parser (including JS subclasses)
     OPENVINO_ASSERT(obj.Has("parse"), "Parser object must have a 'parse' method");
     Napi::Value parse_method = obj.Get("parse");
     OPENVINO_ASSERT(parse_method.IsFunction(), "'parse' property of Parser object must be a function");
@@ -546,6 +554,21 @@ bool is_chat_history(const Napi::Env& env, const Napi::Value& value) {
     OPENVINO_ASSERT(prototype, "Invalid pointer to ChatHistory prototype.");
 
     return obj.InstanceOf(prototype.Value().As<Napi::Function>());
+}
+
+// Get native parser or return nullptr
+std::shared_ptr<ov::genai::Parser> get_native_parser(const Napi::Env& env, const Napi::Object& object) {
+    const auto addon_data = env.GetInstanceData<AddonData>();
+    
+    // Check ReasoningParser
+    const auto& reasoning_parser_prototype = addon_data->reasoning_parser;
+    OPENVINO_ASSERT(reasoning_parser_prototype, "Invalid pointer to ReasoningParser prototype.");
+    if (object.Get("constructor").StrictEquals(reasoning_parser_prototype.Value())) {
+        auto parser_wrapper = Napi::ObjectWrap<ReasoningParserWrapper>::Unwrap(object);
+        return parser_wrapper->get_parser();
+    }
+    
+    return nullptr;
 }
 
 std::string json_stringify(const Napi::Env& env, const Napi::Value& value) {
