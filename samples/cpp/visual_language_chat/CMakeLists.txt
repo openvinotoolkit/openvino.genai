@@ -1,6 +1,10 @@
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+if (MSVC)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 find_package(OpenVINOGenAI REQUIRED
     PATHS
         "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
@@ -52,6 +56,84 @@ set_target_properties(benchmark_vlm PROPERTIES
     INSTALL_RPATH_USE_LINK_PATH ON)
 
 install(TARGETS benchmark_vlm
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
+find_package(OpenCV QUIET)
+
+add_executable(video_to_text_chat video_to_text_chat.cpp)
+
+if(NOT OpenCV_FOUND)
+    include(FetchContent)
+
+    set(BUILD_SHARED_LIBS ON)
+    set(WITH_FFMPEG ON)
+    set(WITH_PROTOBUF OFF CACHE BOOL "" FORCE)
+    set(WITH_GSTREAMER OFF CACHE BOOL "" FORCE)
+    set(WITH_OPENCLAMDBLAS OFF CACHE BOOL "" FORCE)
+    set(WITH_OPENCLAMDFFT OFF CACHE BOOL "" FORCE)
+    set(WITH_MATLAB OFF CACHE BOOL "" FORCE)
+    set(HIGHGUI_ENABLE_PLUGINS OFF CACHE BOOL "" FORCE)
+    set(BUILD_JAVA OFF CACHE BOOL "" FORCE)
+    set(OPENCV_GAPI_GSTREAMER OFF CACHE BOOL "" FORCE)
+    set(INSTALL_TESTS OFF CACHE BOOL "" FORCE)
+    set(INSTALL_C_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(INSTALL_PYTHON_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(BUILD_PERF_TESTS OFF CACHE BOOL "" FORCE)
+    set(BUILD_opencv_java_bindings_generator OFF CACHE BOOL "" FORCE)
+    set(BUILD_opencv_apps OFF CACHE BOOL "" FORCE)
+    set(BUILD_opencv_calib3d OFF CACHE BOOL "" FORCE)
+    set(BUILD_opencv_dnn OFF CACHE BOOL "" FORCE)
+    set(BUILD_opencv_features2d OFF CACHE BOOL "" FORCE)
+    set(BUILD_opencv_flann OFF CACHE BOOL "" FORCE)
+    set(BUILD_opencv_gapi OFF CACHE BOOL "" FORCE)
+    set(BUILD_opencv_highgui OFF CACHE BOOL "" FORCE)
+    set(BUILD_opencv_ml OFF CACHE BOOL "" FORCE)
+    set(BUILD_opencv_objdetect OFF CACHE BOOL "" FORCE)
+    set(BUILD_opencv_photo OFF CACHE BOOL "" FORCE)
+    set(BUILD_opencv_python_tests OFF CACHE BOOL "" FORCE)
+    set(BUILD_opencv_stitching OFF CACHE BOOL "" FORCE)
+    set(BUILD_opencv_ts OFF CACHE BOOL "" FORCE)
+
+
+    FetchContent_Declare(
+            opencv
+            GIT_REPOSITORY https://github.com/opencv/opencv.git
+            GIT_TAG 4.11.0
+            GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(opencv)
+
+    target_include_directories(video_to_text_chat PRIVATE
+            ${OPENCV_CONFIG_FILE_INCLUDE_DIR}
+            ${OPENCV_MODULE_opencv_core_LOCATION}/include
+            ${OPENCV_MODULE_opencv_videoio_LOCATION}/include
+            )
+
+
+    target_link_libraries(video_to_text_chat opencv_core opencv_imgcodecs opencv_imgproc opencv_videoio openvino::genai cxxopts::cxxopts)
+
+    if(LINUX)
+        set_target_properties(video_to_text_chat opencv_core opencv_imgcodecs opencv_imgproc opencv_videoio PROPERTIES
+            INSTALL_RPATH "$ORIGIN/../lib"
+            # Ensure out of box LC_RPATH on macOS with SIP
+            INSTALL_RPATH_USE_LINK_PATH ON)
+    elseif(APPLE)
+        set_target_properties(video_to_text_chat opencv_core opencv_imgcodecs opencv_imgproc opencv_videoio PROPERTIES
+            INSTALL_RPATH "@loader_path/../lib"
+            # Ensure out of box LC_RPATH on macOS with SIP
+            INSTALL_RPATH_USE_LINK_PATH ON)
+    endif()
+else()
+    set(OPENCV_LIBS ${OpenCV_LIBS})
+
+    target_include_directories(video_to_text_chat PRIVATE ${OpenCV_INCLUDE_DIRS} "${CMAKE_BINARY_DIR}")
+    target_link_libraries(video_to_text_chat PRIVATE ${OpenCV_LIBS} openvino::genai cxxopts::cxxopts)
+endif()
+
+install(TARGETS video_to_text_chat
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
