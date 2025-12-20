@@ -252,27 +252,27 @@ jobs:
         test:
           - name: 'WWB tests 1'
             cmd: 'python -m pytest -o log_cli=true --log-cli-level=DEBUG -s -v tools/who_what_benchmark/tests -k "tiny-stable-diffusion-torch-image-to-image-hf"'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+            run_condition: true
             timeout: 120
           - name: 'WWB tests 2'
             cmd: 'python -m pytest -o log_cli=true --log-cli-level=DEBUG -s -v tools/who_what_benchmark/tests -k "tiny-stable-diffusion-torch-image-to-image-hf"'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+            run_condition: true
             timeout: 120
           - name: 'WWB tests 3'
             cmd: 'python -m pytest -o log_cli=true --log-cli-level=DEBUG -s -v tools/who_what_benchmark/tests -k "tiny-stable-diffusion-torch-image-to-image-hf"'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+            run_condition: true
             timeout: 120
           - name: 'WWB tests 4'
             cmd: 'python -m pytest -o log_cli=true --log-cli-level=DEBUG -s -v tools/who_what_benchmark/tests -k "tiny-stable-diffusion-torch-image-to-image-hf"'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+            run_condition: true
             timeout: 120
           - name: 'WWB tests 5'
             cmd: 'python -m pytest -o log_cli=true --log-cli-level=DEBUG -s -v tools/who_what_benchmark/tests -k "tiny-stable-diffusion-torch-image-to-image-hf"'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+            run_condition: true
             timeout: 120
           - name: 'WWB tests 6'
             cmd: 'python -m pytest -o log_cli=true --log-cli-level=DEBUG -s -v tools/who_what_benchmark/tests -k "tiny-stable-diffusion-torch-image-to-image-hf"'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+            run_condition: true
             timeout: 120
     defaults:
       run:
