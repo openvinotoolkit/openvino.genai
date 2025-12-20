@@ -81,6 +81,28 @@ Similar to [text generation](/docs/use-cases/text-generation/#use-different-gene
           }
           ```
       </TabItemCpp>
+      <TabItemJS>
+          ```javascript
+          import { VLMPipeline }  from 'openvino-genai-node';
+
+          const pipe = await VLMPipeline(modelPath, "CPU", {});
+
+          // Create custom generation configuration
+          const config = {
+              max_new_tokens: 100,
+              temperature: 0.7,
+              top_k: 50,
+              top_p: 0.9,
+              repetition_penalty: 1.2
+          };
+
+          // Generate text with custom configuration
+          const output = await pipe.generate(prompt, {
+              images: images,
+              generationConfig: config
+          });
+          ```
+      </TabItemJS>
   </LanguageTabs>
 </BasicGenerationConfiguration>
 
