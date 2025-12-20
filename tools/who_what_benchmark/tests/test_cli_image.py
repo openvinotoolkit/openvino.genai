@@ -9,7 +9,7 @@ import tempfile
 import re
 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 MODEL_CACHE = tempfile.mkdtemp()
@@ -25,12 +25,14 @@ def run_wwb(args, env=None):
     if env:
         base_env.update(env)
     try:
-        return subprocess.check_output(
+        process_output = subprocess.check_output(
             command,
             stderr=subprocess.STDOUT,
             encoding="utf-8",
             env=base_env,
         )
+        logger.debug(f"'{' '.join(map(str, command))}' full output:\n{process_output}")
+        return process_output
     except subprocess.CalledProcessError as error:
         logger.error(
             f"'{' '.join(map(str, command))}' returned {error.returncode}. Output:\n"
