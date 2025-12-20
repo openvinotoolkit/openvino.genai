@@ -304,8 +304,10 @@ jobs:
 
       - name: Copy and extract build artifacts
         run: |
+          New-Item -ItemType Directory -Path "${{ env.INSTALL_DIR }}"
           Copy-Item -Path "C:\mount\caches\pip\ababushk\windows.zip" -Destination "${{ env.INSTALL_DIR }}\" -Force
           Copy-Item -Path "C:\mount\caches\pip\ababushk\genai_wheels.zip" -Destination "${{ env.INSTALL_DIR }}\" -Force
+
           Expand-Archive -Path "${{ env.INSTALL_DIR }}\windows.zip" -DestinationPath "${{ env.INSTALL_DIR }}\" -Force
           Expand-Archive -Path "${{ env.INSTALL_DIR }}\genai_wheels.zip" -DestinationPath "${{ env.INSTALL_DIR }}\" -Force
 
@@ -342,6 +344,3 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         run: ${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
-
-      - name: Fail on purpose to avoid restarting the build only to reproduce test failures
-        run: exit 1
