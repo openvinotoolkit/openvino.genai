@@ -335,3 +335,6 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         run: ${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
+
+      - name: Fail on purpose to avoid restarting the build only to reproduce test failures
+        run: exit 1
