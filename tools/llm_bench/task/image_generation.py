@@ -235,7 +235,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
 
     if framework == "ov" and not use_genai:
         stable_diffusion_hook.new_text_encoder(pipe)
-        stable_diffusion_hook.new_unet(pipe)
+        stable_diffusion_hook.new_main_model(pipe)
         stable_diffusion_hook.new_vae_decoder(pipe)
 
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(image_list)}, prompt idx: {prompt_idx_list}')

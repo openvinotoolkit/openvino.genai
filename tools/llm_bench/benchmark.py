@@ -199,7 +199,7 @@ def get_argprser():
         help="Reshape image generation pipeline to specific width & height at pipeline creation time. Applicable for Image Generation.")
     parser.add_argument("--frame_rate", type=float, required=False, help="Frame rate for video generation and saving. Applicable only for Video Generation.")
     parser.add_argument("--num_frames", type=int, required=False, help="Generated guidance scale. Applicable only for Video Generation.")
-    parser.add_argument("--negative_prompt", type=int, required=False, help="Negative prompts for Video Generation.")
+    parser.add_argument("--negative_prompt", type=str, required=False, help="Negative prompts for Video Generation.")
     parser.add_argument('-mi', '--mask_image', default=None,
                         help='Mask image for Inpainting pipelines. Can be directory or path to single image. Applicable for Image Generation.')
     parser.add_argument('-t', '--task', default=None,

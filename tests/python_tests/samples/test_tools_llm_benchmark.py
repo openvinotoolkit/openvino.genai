@@ -337,7 +337,9 @@ class TestBenchmarkLLM:
     @pytest.mark.samples
     @pytest.mark.parametrize("convert_model, sample_args", [
         pytest.param("tiny-random-ltx-video",
-                     ["-d", "cpu", "-n", "1", "--optimum", "--num_steps", "5", "--num_frames", "9", "--frame_rate", 23, "width", 256, "height", 256]),
+                     ["-d", "cpu", "-n", "1", "--optimum", "--num_steps", "5", "--num_frames", "9", "--frame_rate", "23", "width", "256", "height", "256"]),
+        # pytest.param("tiny-random-ltx-video", 
+        #              [ "-d", "cpu", "-n", "1", "--num_steps", "4", "--static_reshape", "width", "256", "height", "256", "--optimum"]),
         # pytest.param("tiny-random-ltx-video",
         #              ["-d", "cpu", "-n", "1", "--genai", "--num_steps", "5", "--num_frames", "9", "width", 256, "height", 256]),
     ], indirect=["convert_model"])
@@ -359,10 +361,7 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1", "--num_steps", "4", "--task", "text-to-video", "--optimum"]])
     @pytest.mark.parametrize("convert_model", ["tiny-random-ltx-video"], indirect=True)
     @pytest.mark.parametrize("generate_llm_bench_input_generation_jsonl", [("video_generation.jsonl", video_generation_json)], indirect=True)
-    def test_python_tool_llm_benchmark_video_gen_json(self, convert_model, download_test_content, generate_llm_bench_input_generation_jsonl, sample_args):
-        # to use the relative media and mask_image paths
-        os.chdir(os.path.dirname(download_test_content))
-
+    def test_python_tool_llm_benchmark_video_gen_json(self, convert_model, generate_llm_bench_input_generation_jsonl, sample_args):
         # Run Python benchmark
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [

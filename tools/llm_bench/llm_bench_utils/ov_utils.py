@@ -1271,11 +1271,11 @@ def create_video_gen_model(model_path, device, memory_data_collector, **kwargs):
         start = time.perf_counter()
         if kwargs.get("static_reshape", False):
             ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config, compile=False)
-            num_images_per_prompt = kwargs.get("batch_size", 1)
             height = kwargs.get("height", 512)
             width = kwargs.get("width", 512)
-            log.info(f"Video Pipeline reshape(batch_size=1, height={height}, width={width}, num_images_per_prompt={num_images_per_prompt})")
-            ov_model.reshape(batch_size=1, height=height, width=width, num_images_per_prompt=num_images_per_prompt)
+            num_frames = kwargs.get("num_frames", 25)
+            log.info(f"Video Pipeline reshape(batch_size=1, height={height}, width={width}, num_frames={num_frames})")
+            ov_model.reshape(batch_size=1, height=height, width=width, num_frames=num_frames, num_images_per_prompt=1)
             ov_model.compile()
         else:
             ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config)
