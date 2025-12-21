@@ -44,11 +44,11 @@ def prepare_default_data(num_samples=None):
     DATASET_NAME = "phiyodr/InpaintCOCO"
     NUM_SAMPLES = 10 if num_samples is None else num_samples
     set_seed(42)
-    lock = FileLock(os.path.join(LOCK_PATH, "inpainting_dataset_load.lock"))
-    with lock.acquire(timeout=LOCK_MAX_TIMEOUT):
-        default_dataset = datasets.load_dataset(
-            DATASET_NAME, split="test", streaming=True,
-        ).filter(lambda example: example["inpaint_caption"] != "").take(NUM_SAMPLES)
+    # lock = FileLock(os.path.join(LOCK_PATH, "inpainting_dataset_load.lock"))
+    # with lock.acquire(timeout=LOCK_MAX_TIMEOUT):
+    default_dataset = datasets.load_dataset(
+        DATASET_NAME, split="test", streaming=True,
+    ).filter(lambda example: example["inpaint_caption"] != "").take(NUM_SAMPLES)
     return default_dataset.map(
         lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
     )

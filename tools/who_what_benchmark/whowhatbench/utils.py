@@ -183,11 +183,11 @@ def prepare_default_data_image(num_samples=None):
     DATASET_NAME = "ucla-contextual/contextual_test"
     NUM_SAMPLES = 24 if num_samples is None else num_samples
     set_seed(42)
-    lock = FileLock(os.path.join(LOCK_PATH, "vlm_dataset_load.lock"))
-    with lock.acquire(timeout=LOCK_MAX_TIMEOUT):
-        default_dataset = datasets.load_dataset(
-            DATASET_NAME, split="test", streaming=True
-        ).shuffle(42).take(NUM_SAMPLES)
+    # lock = FileLock(os.path.join(LOCK_PATH, "vlm_dataset_load.lock"))
+    # with lock.acquire(timeout=LOCK_MAX_TIMEOUT):
+    default_dataset = datasets.load_dataset(
+        DATASET_NAME, split="test", streaming=True
+    ).shuffle(42).take(NUM_SAMPLES)
     return default_dataset.map(
         lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
     )

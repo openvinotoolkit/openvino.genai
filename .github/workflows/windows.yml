@@ -29,6 +29,8 @@ env:
   BASE_PRODUCT_TYPE: public_windows_vs2022
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
   GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_cpack'
+  HF_DATASETS_CACHE: C:/mount/caches/datasets
+  HF_HUB_DOWNLOAD_TIMEOUT: 60
 
 jobs:
   smart_ci:
@@ -756,8 +758,9 @@ jobs:
         run: |
           if ("${{ matrix.test.env_hf_cache }}" -ne "") {
             $env:HF_DATASETS_CACHE = "${{ matrix.test.env_hf_cache }}"
-            $env:HF_HUB_DOWNLOAD_TIMEOUT = 60
+            $env:HF_HUB_DOWNLOAD_TIMEOUT = 61
           }
+          echo $env:HF_HUB_DOWNLOAD_TIMEOUT
           ${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
 
