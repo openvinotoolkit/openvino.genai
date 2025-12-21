@@ -173,7 +173,7 @@ std::shared_ptr<ov::Model> create_post_model(std::shared_ptr<ov::Model> model,
     auto output_shape = output_node.get_partial_shape();
     auto input_param =
         std::make_shared<ov::op::v0::Parameter>(output_node.get_element_type(), ov::PartialShape{1, max_prompt_size, output_shape[2]});
-    set_node_name(input_param, "input_ids");
+    set_node_name(input_param, "embedding_hidden_state");
 
     auto attention_mask = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{1, max_prompt_size});
     set_node_name(attention_mask, "attention_mask");
@@ -387,13 +387,13 @@ private:
 
     ov::Tensor post_model_infer(ov::Tensor input) {
         if (m_post_request) {
-            m_post_request.set_tensor("input_ids", input);
+            m_post_request.set_tensor("embedding_hidden_state", input);
 
             auto attention_mask_tensor = m_post_request.get_tensor("attention_mask");
-
             std::copy_n(m_attention_mask.data<int64_t>(),
                     m_attention_mask.get_size(),
                     attention_mask_tensor.data<int64_t>());
+
             if (m_attention_mask.get_size() < attention_mask_tensor.get_size()) {
                 std::fill_n(attention_mask_tensor.data<int64_t>() + m_attention_mask.get_size(),
                             attention_mask_tensor.get_size() - m_attention_mask.get_size(),
