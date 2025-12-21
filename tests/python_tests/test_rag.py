@@ -360,7 +360,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
     indirect=True,
 )
 @pytest.mark.parametrize(
-    ("config", "chunk_size", "threshold"),
+    ("config", "chunk_size", "threshold", "task"),
     [
         # Chunk disabled
         (TextEmbeddingPipeline.Config(
@@ -370,7 +370,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
             padding_side="right"
-        ), 0, 2e-4),
+        ), 0, 2e-4, "embed_documents"),
         (TextEmbeddingPipeline.Config(
             batch_size = 1,
             max_length = 192,
@@ -378,7 +378,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
             padding_side="right"
-        ), 0, 2e-4),
+        ), 0, 2e-4, "embed_documents"),
         (TextEmbeddingPipeline.Config(
             batch_size = 1,
             max_length = 192,
@@ -386,7 +386,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
             padding_side="right"
-        ), 0, 2e-4),
+        ), 0, 2e-4, "embed_documents"),
 
         # Chunk enabled
         # 33 tokens handled by a chunk of 128
@@ -397,7 +397,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
             padding_side="right"
-        ), 128, 2e-4),
+        ), 128, 2e-4, "embed_documents"),
         (TextEmbeddingPipeline.Config(
             batch_size = 1,
             max_length = 256,
@@ -405,7 +405,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
             padding_side="right"
-        ), 128, 2e-4),
+        ), 128, 2e-4, "embed_documents"),
         (TextEmbeddingPipeline.Config(
             batch_size = 1,
             max_length = 256,
@@ -413,7 +413,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
             padding_side="right"
-        ), 128, 2e-4),
+        ), 128, 2e-4, "embed_documents"),
 
         # 33 tokens handled by 3 chunks of 16
         (TextEmbeddingPipeline.Config(
@@ -423,7 +423,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
             padding_side="right"
-        ), 16, 6e-3),
+        ), 16, 6e-3, "embed_documents"),
         (TextEmbeddingPipeline.Config(
             batch_size = 1,
             max_length = 192,
@@ -431,7 +431,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
             padding_side="right"
-        ), 16, 6e-3),
+        ), 16, 6e-3, "embed_documents"),
         (TextEmbeddingPipeline.Config(
             batch_size = 1,
             max_length = 192,
@@ -439,7 +439,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
             padding_side="right"
-        ), 16, 6e-3),
+        ), 16, 6e-3, "embed_documents"),
 
         # normalize = True, 33 tokens handled by 3 chunks of 16
         (TextEmbeddingPipeline.Config(
@@ -449,7 +449,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
             padding_side="right"
-        ), 16, 7e-5),
+        ), 16, 7e-5, "embed_documents"),
         (TextEmbeddingPipeline.Config(
             batch_size = 1,
             max_length = 192,
@@ -457,7 +457,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
             padding_side="right"
-        ), 16, 7e-5),
+        ), 16, 7e-5, "embed_documents"),
         (TextEmbeddingPipeline.Config(
             batch_size = 1,
             max_length = 192,
@@ -465,25 +465,51 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
             padding_side="right"
-        ), 16, 7e-5),
+        ), 16, 7e-5, "embed_documents"),
+
+        # embed_query
+        (TextEmbeddingPipeline.Config(
+            batch_size = 1,
+            max_length = 192,
+            normalize = False,
+            pad_to_max_length = False,
+            pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
+            padding_side="right"
+        ), 16, 6e-3, "embed_query"),
+        (TextEmbeddingPipeline.Config(
+            batch_size = 1,
+            max_length = 192,
+            normalize = False,
+            pad_to_max_length = False,
+            pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
+            padding_side="right"
+        ), 16, 6e-3, "embed_query"),
+        (TextEmbeddingPipeline.Config(
+            batch_size = 1,
+            max_length = 192,
+            normalize = False,
+            pad_to_max_length = False,
+            pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
+            padding_side="right"
+        ), 16, 6e-3, "embed_query"),
     ],
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 174635")
-def test_qwen3_embedding_npu(emb_model, dataset_documents, config, chunk_size, threshold):
+def test_qwen3_embedding_npu(emb_model, dataset_documents, config, chunk_size, threshold, task):
     NPU_FALLBACK_PROPERTIES = {"NPUW_DEVICES": "CPU", "NPUW_F16IC": "False", "NPUW_LLM_PREFILL_CHUNK_SIZE" : chunk_size}
 
     embeddings_genai_cpu = run_text_embedding_genai(
         emb_model.models_path,
         dataset_documents,
         config,
-        "embed_documents",
+        task,
         device="CPU"
     )
     embeddings_genai_npu = run_text_embedding_genai(
         emb_model.models_path,
         dataset_documents,
         config,
-        "embed_documents",
+        task,
         device="NPU",
         properties=NPU_FALLBACK_PROPERTIES
     )
