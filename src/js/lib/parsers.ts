@@ -27,3 +27,7 @@ export interface ReasoningParserOptions {
 export interface IReasoningParser extends Parser {
   new (options?: ReasoningParserOptions): IReasoningParser;
 }
+
+export interface IDeepSeekR1ReasoningParser extends IReasoningParser {
+  new (): IDeepSeekR1ReasoningParser;
+}

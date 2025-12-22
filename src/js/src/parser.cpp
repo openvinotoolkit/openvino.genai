@@ -32,7 +32,7 @@ void JSParser::parse(ov::genai::JsonContainer& message) {
 
 void parse_with_parser(const Napi::CallbackInfo& info, std::shared_ptr<ov::genai::Parser> parser) {
     Napi::Env env = info.Env();
-    
+
     try {
         OPENVINO_ASSERT(info.Length() >= 1 && info[0].IsObject(), "Expected an object as the first argument");
         auto js_obj = info[0].As<Napi::Object>();
@@ -101,5 +101,28 @@ void ReasoningParserWrapper::parse(const Napi::CallbackInfo& info) {
 }
 
 std::shared_ptr<ov::genai::ReasoningParser> ReasoningParserWrapper::get_parser() {
+    return _parser;
+}
+
+DeepSeekR1ReasoningParserWrapper::DeepSeekR1ReasoningParserWrapper(const Napi::CallbackInfo& info)
+    : Napi::ObjectWrap<DeepSeekR1ReasoningParserWrapper>(info) {
+    try {
+        _parser = std::make_shared<ov::genai::DeepSeekR1ReasoningParser>();
+    } catch (const std::exception& e) {
+        Napi::Error::New(info.Env(), e.what()).ThrowAsJavaScriptException();
+    }
+}
+
+Napi::Function DeepSeekR1ReasoningParserWrapper::get_class(Napi::Env env) {
+    return DefineClass(env,
+                       "DeepSeekR1ReasoningParser",
+                       {InstanceMethod("parse", &DeepSeekR1ReasoningParserWrapper::parse)});
+}
+
+void DeepSeekR1ReasoningParserWrapper::parse(const Napi::CallbackInfo& info) {
+    parse_with_parser(info, _parser);
+}
+
+std::shared_ptr<ov::genai::DeepSeekR1ReasoningParser> DeepSeekR1ReasoningParserWrapper::get_parser() {
     return _parser;
 }

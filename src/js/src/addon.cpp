@@ -53,6 +53,11 @@ Napi::Object init_module(Napi::Env env, Napi::Object exports) {
     init_class(env, exports, "PerfMetrics", &PerfMetricsWrapper::get_class, addon_data->perf_metrics);
     init_class(env, exports, "ChatHistory", &ChatHistoryWrap::get_class, addon_data->chat_history);
     init_class(env, exports, "ReasoningParser", &ReasoningParserWrapper::get_class, addon_data->reasoning_parser);
+    init_class(env,
+               exports,
+               "DeepSeekR1ReasoningParser",
+               &DeepSeekR1ReasoningParserWrapper::get_class,
+               addon_data->deepseek_r1_reasoning_parser);
 
     // Expose a helper to set the openvino-node addon from JS (useful for ESM)
     exports.Set("setOpenvinoAddon", Napi::Function::New(env, set_ov_addon));

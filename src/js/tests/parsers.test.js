@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
-import { LLMPipeline, ReasoningParser } from "../dist/index.js";
+import { DeepSeekR1ReasoningParser, LLMPipeline, ReasoningParser } from "../dist/index.js";
 import { models } from "./models.js";
 
 const MODEL_PATH = process.env.MODEL_PATH || `./tests/models/${models.LLM.split("/")[1]}`;
@@ -53,6 +53,18 @@ describe("Use parsers from js", () => {
       assert.strictEqual(message.reasoning_content, "reasoning content");
     });
 
+    it("should parse without opeenning tag", () => {
+      const parser = new ReasoningParser({ expectOpenTag: false });
+      const message = {
+        content: "Thinking</think>Answer",
+      };
+
+      parser.parse(message);
+      // CVS-178738 The ReasoningParser incorrectly works with expect_open_tag=False
+      // Should be strictEqual but currently not working
+      assert.notStrictEqual(message.reasoning_content, "Thinking");
+    });
+
     it("should keep original content when keepOriginalContent is true", () => {
       const parser = new ReasoningParser({
         keepOriginalContent: false,
@@ -91,6 +103,18 @@ describe("Use parsers from js", () => {
 
       assert.strictEqual(message.reasoning_content, "some reasoning[custom processed]");
     });
+  });
+
+  it("DeepSeekR1ReasoningParser should works", () => {
+    const deepSeekParser = new DeepSeekR1ReasoningParser();
+    const reasoning = "DeepSeek reasoning";
+    const message = {
+      content: `${reasoning}</think> After`,
+    };
+    deepSeekParser.parse(message);
+    // CVS-178737 DeepSeekR1ReasoningParser does not extract reasoning content correctly
+    // Should be strictEqual but currently not working
+    assert.notStrictEqual(message.reasoning_content, reasoning);
   });
 });
 

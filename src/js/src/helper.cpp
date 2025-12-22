@@ -559,7 +559,7 @@ bool is_chat_history(const Napi::Env& env, const Napi::Value& value) {
 // Get native parser or return nullptr
 std::shared_ptr<ov::genai::Parser> get_native_parser(const Napi::Env& env, const Napi::Object& object) {
     const auto addon_data = env.GetInstanceData<AddonData>();
-    
+
     // Check ReasoningParser
     const auto& reasoning_parser_prototype = addon_data->reasoning_parser;
     OPENVINO_ASSERT(reasoning_parser_prototype, "Invalid pointer to ReasoningParser prototype.");
@@ -567,7 +567,15 @@ std::shared_ptr<ov::genai::Parser> get_native_parser(const Napi::Env& env, const
         auto parser_wrapper = Napi::ObjectWrap<ReasoningParserWrapper>::Unwrap(object);
         return parser_wrapper->get_parser();
     }
-    
+
+    // Check DeepSeekR1ReasoningParser
+    const auto& deepseek_parser_prototype = addon_data->deepseek_r1_reasoning_parser;
+    OPENVINO_ASSERT(deepseek_parser_prototype, "Invalid pointer to DeepSeekR1ReasoningParser prototype.");
+    if (object.Get("constructor").StrictEquals(deepseek_parser_prototype.Value())) {
+        auto parser_wrapper = Napi::ObjectWrap<DeepSeekR1ReasoningParserWrapper>::Unwrap(object);
+        return parser_wrapper->get_parser();
+    }
+
     return nullptr;
 }
 

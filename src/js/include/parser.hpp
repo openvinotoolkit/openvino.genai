@@ -34,3 +34,17 @@ public:
 private:
     std::shared_ptr<ov::genai::ReasoningParser> _parser;
 };
+
+class DeepSeekR1ReasoningParserWrapper : public Napi::ObjectWrap<DeepSeekR1ReasoningParserWrapper> {
+public:
+    DeepSeekR1ReasoningParserWrapper(const Napi::CallbackInfo& info);
+
+    static Napi::Function get_class(Napi::Env env);
+
+    void parse(const Napi::CallbackInfo& info);
+
+    std::shared_ptr<ov::genai::DeepSeekR1ReasoningParser> get_parser();
+
+private:
+    std::shared_ptr<ov::genai::DeepSeekR1ReasoningParser> _parser;
+};
