@@ -169,7 +169,7 @@ py::object call_vlm_generate_with_chat_history(
     ov::genai::VLMDecodedResults res;
     {
         py::gil_scoped_release rel;
-        res= pipe.generate(history, images, videos, updated_config, streamer);
+        res = pipe.generate(history, images, videos, updated_config, streamer);
     }
     return py::cast(res);
 }
