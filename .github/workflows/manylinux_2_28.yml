@@ -589,7 +589,6 @@ jobs:
         run: |
           if [ -n "${{ matrix.test.env_hf_cache }}" ]; then
             export HF_DATASETS_CACHE="${{ matrix.test.env_hf_cache }}"
-            export HF_HUB_DOWNLOAD_TIMEOUT=60
           fi
           ${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}

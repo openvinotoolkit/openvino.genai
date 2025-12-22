@@ -755,10 +755,8 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         run: |
           if ("${{ matrix.test.env_hf_cache }}" -ne "") {
-            $env:HF_HUB_DOWNLOAD_TIMEOUT = 61
-            $env:HF_HUB_ETAG_TIMEOUT = 500
+            $env:HF_DATASETS_CACHE="${{ matrix.test.env_hf_cache }}"
           }
-          echo $env:HF_HUB_DOWNLOAD_TIMEOUT
           ${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
 

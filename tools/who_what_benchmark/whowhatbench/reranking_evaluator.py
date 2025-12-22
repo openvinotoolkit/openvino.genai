@@ -5,13 +5,11 @@ import scipy
 import torch
 import pandas as pd
 from tqdm import tqdm
-from filelock import FileLock
 from .registry import register_evaluator, BaseEvaluator
 from .whowhat_metrics import RerankingSimilarity
 from transformers import set_seed
 import datasets
 import numpy as np
-from .utils import load_dataset_with_retry, LOCK_PATH, LOCK_MAX_TIMEOUT
 
 
 # we would like to evalute score for all documents
@@ -37,16 +35,13 @@ def preprocess_fn(example):
     }
 
 
-@load_dataset_with_retry(retries=3, delay=5)
 def prepare_default_data(num_samples=None):
     DATASET_NAME = "microsoft/ms_marco"
     NUM_SAMPLES = num_samples if num_samples else 24
     set_seed(42)
-    lock = FileLock(os.path.join(LOCK_PATH, "reranker_dataset_load.lock"))
-    with lock.acquire(timeout=LOCK_MAX_TIMEOUT):
-        default_dataset = datasets.load_dataset(
-            DATASET_NAME, 'v2.1', split="test", streaming=True
-        ).shuffle(42).take(NUM_SAMPLES)
+    default_dataset = datasets.load_dataset(
+        DATASET_NAME, 'v2.1', split="test", streaming=True
+    ).shuffle(42).take(NUM_SAMPLES)
     return default_dataset.map(
         lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
     )

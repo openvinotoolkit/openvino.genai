@@ -8,9 +8,7 @@ from transformers import set_seed
 import torch
 import openvino_genai
 
-from filelock import FileLock
 from .registry import register_evaluator
-from .utils import load_dataset_with_retry, LOCK_PATH, LOCK_MAX_TIMEOUT
 from .whowhat_metrics import ImageSimilarity
 from .text2image_evaluator import Text2ImageEvaluator
 
@@ -22,16 +20,13 @@ def preprocess_fn(example):
     }
 
 
-@load_dataset_with_retry(retries=3, delay=5)
 def prepare_default_data(num_samples=None):
     DATASET_NAME = "paint-by-inpaint/PIPE"
     NUM_SAMPLES = 10 if num_samples is None else num_samples
     set_seed(42)
-    lock = FileLock(os.path.join(LOCK_PATH, "im2im_dataset.lock"))
-    with lock.acquire(timeout=LOCK_MAX_TIMEOUT):
-        default_dataset = datasets.load_dataset(
-            DATASET_NAME, split="test", streaming=True
-        ).filter(lambda example: example["Instruction_VLM-LLM"] != "").take(NUM_SAMPLES)
+    default_dataset = datasets.load_dataset(
+        DATASET_NAME, split="test", streaming=True
+    ).filter(lambda example: example["Instruction_VLM-LLM"] != "").take(NUM_SAMPLES)
     return default_dataset.map(
         lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
     )

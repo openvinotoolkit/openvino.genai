@@ -3,7 +3,6 @@ from packaging.version import Version
 
 import os
 import json
-import time
 import torch
 import random
 import logging
@@ -12,7 +11,6 @@ import datasets
 import itertools
 import transformers
 
-from filelock import FileLock
 import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -25,10 +23,6 @@ from transformers.image_utils import load_image
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# for dataset download regulation mechanism
-LOCK_PATH = os.environ.get("HF_DATASETS_CACHE", ".")
-LOCK_MAX_TIMEOUT = 300
 
 
 def new_randn_tensor(
@@ -152,23 +146,6 @@ def get_json_config(config):
     return json_config
 
 
-def load_dataset_with_retry(retries=3, delay=5):
-    def inner(func):
-        def wrapper(*args, **kwargs):
-            for i in range(retries):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    if i == (retries - 1):
-                        raise e
-                    print(f"[Retry {i + 1}/{retries}] Exception: {e}, retrying in {delay:.1f}s...")
-                    time.sleep(delay)
-
-        return wrapper
-
-    return inner
-
-
 # preapre default dataset for visualtext(VLM) evalutor
 def preprocess_fn(example):
     return {
@@ -178,16 +155,13 @@ def preprocess_fn(example):
     }
 
 
-@load_dataset_with_retry(retries=3, delay=5)
 def prepare_default_data_image(num_samples=None):
     DATASET_NAME = "ucla-contextual/contextual_test"
     NUM_SAMPLES = 24 if num_samples is None else num_samples
     set_seed(42)
-    lock = FileLock(os.path.join(LOCK_PATH, "vlm_dataset_load.lock"))
-    with lock.acquire(timeout=LOCK_MAX_TIMEOUT):
-        default_dataset = datasets.load_dataset(
-            DATASET_NAME, split="test", streaming=True
-        ).shuffle(42).take(NUM_SAMPLES)
+    default_dataset = datasets.load_dataset(
+        DATASET_NAME, split="test", streaming=True
+    ).shuffle(42).take(NUM_SAMPLES)
     return default_dataset.map(
         lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
     )

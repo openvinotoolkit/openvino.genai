@@ -7,17 +7,14 @@ import pandas as pd
 import openvino_genai
 
 from tqdm import tqdm
-from filelock import FileLock
 from transformers import set_seed
 from contextlib import contextmanager
 from datasets.packaged_modules.parquet.parquet import Parquet
 
 from .utils import parquet_generate_tables
 from .registry import register_evaluator
-from .text2image_evaluator import Text2ImageEvaluator
-
-from .utils import load_dataset_with_retry, LOCK_PATH, LOCK_MAX_TIMEOUT
 from .whowhat_metrics import ImageSimilarity
+from .text2image_evaluator import Text2ImageEvaluator
 
 
 # monkey patch of Parquet._generate_tables to avoid issue https://github.com/huggingface/datasets/issues/7357
@@ -39,16 +36,13 @@ def preprocess_fn(example):
     }
 
 
-@load_dataset_with_retry(retries=3, delay=5)
 def prepare_default_data(num_samples=None):
     DATASET_NAME = "phiyodr/InpaintCOCO"
     NUM_SAMPLES = 10 if num_samples is None else num_samples
     set_seed(42)
-    lock = FileLock(os.path.join(LOCK_PATH, "inpainting_dataset_load.lock"))
-    with lock.acquire(timeout=LOCK_MAX_TIMEOUT):
-        default_dataset = datasets.load_dataset(
-            DATASET_NAME, split="test", streaming=True,
-        ).filter(lambda example: example["inpaint_caption"] != "").take(NUM_SAMPLES)
+    default_dataset = datasets.load_dataset(
+        DATASET_NAME, split="test", streaming=True,
+    ).filter(lambda example: example["inpaint_caption"] != "").take(NUM_SAMPLES)
     return default_dataset.map(
         lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
     )
