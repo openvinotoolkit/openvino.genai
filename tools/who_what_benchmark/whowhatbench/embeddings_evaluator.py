@@ -24,11 +24,11 @@ def prepare_default_data(num_samples=None):
     DATASET_NAME = "microsoft/ms_marco"
     NUM_SAMPLES = num_samples if num_samples else 24
     set_seed(42)
-    # lock = FileLock(os.path.join(LOCK_PATH, "emb_dataset_load.lock"))
-    # with lock.acquire(timeout=LOCK_MAX_TIMEOUT):
-    default_dataset = datasets.load_dataset(
-        DATASET_NAME, 'v2.1', split="test", streaming=True
-    ).shuffle(42).take(NUM_SAMPLES)
+    lock = FileLock(os.path.join(LOCK_PATH, "emb_dataset_load.lock"))
+    with lock.acquire(timeout=LOCK_MAX_TIMEOUT):
+        default_dataset = datasets.load_dataset(
+            DATASET_NAME, 'v2.1', split="test", streaming=True
+        ).shuffle(42).take(NUM_SAMPLES)
     return default_dataset.map(
         lambda x: {'passages': x['passages']['passage_text']}, remove_columns=default_dataset.column_names
     )
