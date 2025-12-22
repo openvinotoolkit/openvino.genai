@@ -8,6 +8,7 @@ import subprocess  # nosec B404
 
 from pathlib import Path
 from typing import Any, Dict
+from filelock import FileLock
 
 sys.path.insert(0, f"{os.path.dirname(__file__)}/../../../tests/")
 from python_tests.utils.atomic_download import AtomicDownloadManager  # noqa
@@ -115,8 +116,11 @@ def convert_model(model_name):
 
 @pytest.fixture(scope="session", autouse=True)
 def module_teardown():
-    for name, info in DATASETS.items():
-        datasets.load_dataset(name, **info["kwargs"], streaming=True)
+    lock_file_path = os.path.join(os.environ.get("HF_DATASETS_CACHE", "."), "hf_download.lock")
+    lock = FileLock(lock_file_path)
+    with lock:
+        for name, info in DATASETS.items():
+            datasets.load_dataset(name, **info["kwargs"])
 
     ov_cache_dir = get_ov_cache_dir()
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
