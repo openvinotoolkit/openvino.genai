@@ -33,8 +33,8 @@ struct InferContext {
 
 /// @brief Result from a forward pass
 struct InferResult {
-    InferenceOutput output;                                      ///< Raw model outputs
-    std::variant<int64_t, std::vector<int64_t>> sampled_tokens;  ///< Sampled token(s)
+    InferenceOutput output;               ///< Raw model outputs
+    std::vector<int64_t> sampled_tokens;  ///< Sampled token(s)
 };
 
 /**
@@ -136,11 +136,11 @@ public:
 
     /// @brief Samples tokens from logits
     /// @param num_tokens_to_validate Draft tokens to validate (0 for standard sampling)
-    /// @return Single token or vector of validated tokens
-    std::variant<int64_t, std::vector<int64_t>> sample_tokens(const ov::Tensor& logits,
-                                                              size_t input_token_count,
-                                                              size_t sample_count,
-                                                              size_t num_tokens_to_validate = 0);
+    /// @return Vector of sampled token(s) - size 1 for standard sampling, size N for validation mode
+    std::vector<int64_t> sample_tokens(const ov::Tensor& logits,
+                                       size_t input_token_count,
+                                       size_t sample_count,
+                                       size_t num_tokens_to_validate = 0);
 
     /// @brief Executes forward pass: prepare inputs, infer, and sample
     virtual InferResult forward(const InferContext& ctx) = 0;
@@ -220,8 +220,7 @@ public:
 class StatefulEagle3LLMPipeline : public ov::genai::LLMPipelineImplBase {
 public:
     StatefulEagle3LLMPipeline(const ov::genai::ModelDesc& target_model_desc,
-                              const ov::genai::ModelDesc& draft_model_desc,
-                              const std::vector<int>& hidden_layers_to_abstract = {});
+                              const ov::genai::ModelDesc& draft_model_desc);
     ~StatefulEagle3LLMPipeline();
 
     DecodedResults generate(StringInputs inputs,
@@ -260,7 +259,7 @@ private:
     std::unique_ptr<Eagle3TargetWrapper> m_target;
 
     size_t m_draft_iterations = 5;
-    std::vector<int> m_hidden_layers_to_abstract;
+    std::vector<int32_t> m_hidden_layers_to_abstract;
     size_t m_prompt_length = 0;
 
     ov::genai::SpeculativeDecodingMetrics m_sd_metrics;
