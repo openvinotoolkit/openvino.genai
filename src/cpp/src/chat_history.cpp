@@ -127,7 +127,7 @@ std::shared_ptr<ChatHistoryInternalState> ChatHistory::get_internal_state() cons
     return m_internal_state;
 }
 
-void ChatHistory::set_internal_state(std::shared_ptr<ChatHistoryInternalState> state) {
+void ChatHistory::set_internal_state(const std::shared_ptr<ChatHistoryInternalState>& state) {
     m_internal_state = state;
 }
 
