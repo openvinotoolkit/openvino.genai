@@ -239,6 +239,13 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
                                                                        size_t tokens_first_half,
                                                                        size_t tokens_second_half,
                                                                        size_t split_point) {
+    // OpenCL requires even total token count due to internal batch splitting
+    // Recalculate to ensure even distribution
+    size_t num_tokens_to_keep = tokens_first_half + tokens_second_half;
+    num_tokens_to_keep = (num_tokens_to_keep % 2 == 0) ? num_tokens_to_keep : num_tokens_to_keep + 1;
+    tokens_first_half = num_tokens_to_keep / 2;
+    tokens_second_half = num_tokens_to_keep / 2;
+
     // Initialize OpenCL DPP if not already done
     if (!m_opencl_dpp) {
         m_opencl_dpp = std::make_unique<OpenCLDPP>(m_config);
@@ -267,7 +274,6 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
     size_t original_batch_size = first_shape[0];
     size_t first_tokens = first_shape[1];
     size_t second_tokens = second_shape[1];
-    size_t num_tokens_to_keep = tokens_first_half + tokens_second_half;
     ov::Tensor merged_kernel;
 
     // Check if both matrices have the same token size
