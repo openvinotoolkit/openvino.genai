@@ -32,20 +32,6 @@ ov::genai::StreamingStatus stream_generated_tokens(std::shared_ptr<ov::genai::St
     return ov::genai::StreamingStatus{};
 }
 
-ov::Tensor slice_hidden_state_for_last_token(const ov::Tensor& hidden_features) {
-    OPENVINO_ASSERT(hidden_features.get_size() > 0, "Hidden features tensor is empty");
-
-    const auto shape = hidden_features.get_shape();
-    OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && shape[1] > 0,
-                    "Expected shape [1, seq_len, hidden_size], got ",
-                    ov::genai::eagle3::format_shape(shape));
-
-    const size_t seq_len = shape[1];
-    const size_t hidden_size = shape[2];
-
-    return ov::Tensor(hidden_features, {0, seq_len - 1, 0}, {1, seq_len, hidden_size});
-}
-
 }  // anonymous namespace
 
 namespace ov::genai {
@@ -221,10 +207,10 @@ void Eagle3InferWrapperBase::build_model_inputs(const size_t input_token_count,
                       m_verbose);
 }
 
-std::variant<int64_t, std::vector<int64_t>> Eagle3InferWrapperBase::sample_tokens(const ov::Tensor& logits,
-                                                                                  size_t input_token_count,
-                                                                                  size_t sample_count,
-                                                                                  size_t num_tokens_to_validate) {
+std::vector<int64_t> Eagle3InferWrapperBase::sample_tokens(const ov::Tensor& logits,
+                                                           size_t input_token_count,
+                                                           size_t sample_count,
+                                                           size_t num_tokens_to_validate) {
     const ov::Shape shape = logits.get_shape();
     OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1, "Invalid logits shape: ", eagle3::format_shape(shape));
     OPENVINO_ASSERT(sample_count > 0 && sample_count <= shape[1],
@@ -261,7 +247,9 @@ std::variant<int64_t, std::vector<int64_t>> Eagle3InferWrapperBase::sample_token
     // Slice logits to last 'sample_count' positions if needed
     ov::Tensor sliced_logits = logits;
     if (sample_count < logits_seq_len) {
-        sliced_logits = ov::Tensor(logits, {0, logits_seq_len - sample_count, 0}, {1, logits_seq_len, vocab_size});
+        auto [start_coord, end_coord] =
+            ov::genai::utils::make_roi(shape, 1, logits_seq_len - sample_count, logits_seq_len);
+        sliced_logits = ov::Tensor(logits, start_coord, end_coord);
     }
 
     // Configure sequence group for sampling
@@ -292,7 +280,7 @@ std::variant<int64_t, std::vector<int64_t>> Eagle3InferWrapperBase::sample_token
             "Sampled " + std::to_string(sample_count) + " token(s): " + eagle3::format_tokens(result_tokens),
             m_verbose);
 
-        return (sample_count == 1) ? std::variant<int64_t, std::vector<int64_t>>(result_tokens[0]) : result_tokens;
+        return result_tokens;
     } else {
         // Validation mode: Sampler validates draft tokens and removes rejected ones
         // Calculate result_count to extract the final validated sequence:
@@ -335,7 +323,9 @@ ov::Tensor Eagle3InferWrapperBase::get_hidden_features() const {
                     actual_seq_len,
                     ", output=",
                     output_seq_len);
-    return ov::Tensor(hidden_state, {0, output_seq_len - actual_seq_len, 0}, {1, output_seq_len, hidden_size});
+    auto [start_coord, end_coord] =
+        ov::genai::utils::make_roi(shape, 1, output_seq_len - actual_seq_len, output_seq_len);
+    return ov::Tensor(hidden_state, start_coord, end_coord);
 }
 
 uint64_t Eagle3InferWrapperBase::execute_inference() {
@@ -540,23 +530,30 @@ InferResult Eagle3DraftWrapper::forward(const InferContext& ctx) {
     auto sampled = sample_tokens(output.logits, ctx.input_token_count, 1);
 
     // 5. Store internal hidden state (last position) for next iteration
-    auto next_hidden = slice_hidden_state_for_last_token(output.hidden_features);
+    auto next_hidden = eagle3::slice_hidden_state_for_last_token(output.hidden_features);
     get_current_sequence()->update_hidden_state(next_hidden);
 
     return InferResult{std::move(output), std::move(sampled)};
 }
 
 StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc& target_model_desc,
-                                                     const ov::genai::ModelDesc& draft_model_desc,
-                                                     const std::vector<int>& hidden_layers_to_abstract)
-    : LLMPipelineImplBase(target_model_desc.tokenizer, target_model_desc.generation_config),
-      m_hidden_layers_to_abstract(hidden_layers_to_abstract) {
+                                                     const ov::genai::ModelDesc& draft_model_desc)
+    : LLMPipelineImplBase(target_model_desc.tokenizer, target_model_desc.generation_config) {
     // Initialize draft iterations from generation config
     ov::genai::eagle3::ensure_num_assistant_tokens_is_set(m_generation_config);
     m_draft_iterations = m_generation_config.num_assistant_tokens;
     m_tokenizer = target_model_desc.tokenizer;
 
-    OPENVINO_ASSERT(!m_hidden_layers_to_abstract.empty(), "Eagle3 requires hidden_layers_list configuration");
+    // Extract hidden_layers_list from draft model properties
+    // This information is training-specific and should be provided via draft model configuration
+    auto eagle_rt_info = eagle3::extract_eagle3_info_from_config(draft_model_desc.properties);
+    m_hidden_layers_to_abstract = eagle_rt_info.hidden_layers_list;
+
+    OPENVINO_ASSERT(
+        m_hidden_layers_to_abstract.size() == 3,
+        "Eagle3 requires exactly three layers for feature extraction, got: " +
+            std::to_string(m_hidden_layers_to_abstract.size()) +
+            ". Please ensure 'hidden_layers_list' is properly configured in draft model properties or rt_info.");
 
     auto target_model = target_model_desc.model;
     auto draft_model = draft_model_desc.model;
@@ -580,7 +577,6 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
         draft_desc.properties["NPUW_EAGLE"] = "TRUE";
         draft_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = validation_window;
         draft_desc.properties["NPUW_ONLINE_PIPELINE"] = "NONE";
-        // draft_desc.properties["NPUW_DEVICES"] = "CPU";
     }
     m_draft = std::make_unique<Eagle3DraftWrapper>(draft_desc);
 
@@ -591,8 +587,9 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
     if (target_desc.device == "NPU") {
         target_desc.properties["NPUW_EAGLE"] = "TRUE";
         target_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = validation_window;
+        // TODO: last_hidden_states output will be sliced by NPUW
+        // Need to find a better way to manage slice-out logic in NPUW
         target_desc.properties["NPUW_SLICE_OUT"] = "NO";
-        // target_desc.properties["NPUW_DEVICES"] = "CPU";
     }
     m_target = std::make_unique<Eagle3TargetWrapper>(target_desc);
 
@@ -809,7 +806,8 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
 
     // Prefill: process all prompt tokens from sequence
     auto prefill_result = m_target->forward({.input_token_count = m_prompt_length});
-    auto initial_token = std::get<int64_t>(prefill_result.sampled_tokens);
+    OPENVINO_ASSERT(prefill_result.sampled_tokens.size() == 1, "Expected single token from prefill");
+    auto initial_token = prefill_result.sampled_tokens[0];
 
     // Append initial token to draft model
     m_draft->append_tokens({initial_token});
@@ -928,7 +926,8 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
                                           .use_target_hidden = true,
                                           .target_sequence = m_target->get_current_sequence()});
 
-    int64_t first_draft_token = std::get<int64_t>(first_result.sampled_tokens);
+    OPENVINO_ASSERT(first_result.sampled_tokens.size() == 1, "Expected single token from first draft");
+    int64_t first_draft_token = first_result.sampled_tokens[0];
     eagle3::log_debug("First draft token: " + std::to_string(first_draft_token), is_verbose());
 
     // Collect draft candidates
@@ -943,7 +942,8 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     for (size_t i = 1; i < m_draft_iterations; ++i) {
         auto more_result = m_draft->forward({.input_token_count = 1, .use_target_hidden = false});
 
-        int64_t draft_token = std::get<int64_t>(more_result.sampled_tokens);
+        OPENVINO_ASSERT(more_result.sampled_tokens.size() == 1, "Expected single token from draft iteration");
+        int64_t draft_token = more_result.sampled_tokens[0];
         draft_candidates.push_back(draft_token);
 
         // Append draft token to target sequence for validation phase
@@ -965,7 +965,7 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
                                          .num_tokens_to_validate = m_draft_iterations});
 
     // Sampler validates draft tokens and returns accepted + new sampled token
-    auto validated_tokens = std::get<std::vector<int64_t>>(val_result.sampled_tokens);
+    auto validated_tokens = val_result.sampled_tokens;
 
     // Result: [accepted_draft_tokens..., new_sampled_token]
     const size_t accepted_count = validated_tokens.size() - 1;
@@ -1006,7 +1006,8 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
                     total_accepted_tokens);
 
     // Store sliced hidden states (only accepted tokens) for next iteration
-    auto next_hidden = ov::Tensor(current_hidden, {0, 0, 0}, {1, total_accepted_tokens, h_shape[2]});
+    auto [start_coord, end_coord] = ov::genai::utils::make_roi(h_shape, 1, 0, total_accepted_tokens);
+    auto next_hidden = ov::Tensor(current_hidden, start_coord, end_coord);
     m_target->get_current_sequence()->update_hidden_state(next_hidden);
 
     result.accepted_tokens_count = accepted_count;
