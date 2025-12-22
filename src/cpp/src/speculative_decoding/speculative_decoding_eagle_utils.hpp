@@ -50,6 +50,15 @@ struct Eagle3RTInfo {
 Eagle3RTInfo extract_eagle3_info_from_config(const ov::AnyMap& config, const std::filesystem::path& models_path = {});
 
 /**
+ * @brief Applies EAGLE3 runtime info from model to properties map.
+ * @param model Model containing rt_info with eagle3_mode and possibly hidden_layers_list.
+ * @param properties Properties map to update with eagle3 configuration.
+ * @note If model has eagle3_mode=true in rt_info, sets properties["eagle3_mode"]=true.
+ *       If model has hidden_layers_list in rt_info, copies it to properties.
+ */
+void apply_eagle3_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& properties);
+
+/**
  * @brief Shares embedding weights between main and draft models.
  * @param main_model Main (target) model.
  * @param draft_model Draft model for speculative decoding.
@@ -94,7 +103,20 @@ void remove_d2t_result_node(std::shared_ptr<ov::Model>& model);
  * @param hidden_layers_to_abstract Layer indices to extract (1 for draft, 3 for main model).
  * @throws Exception if the number of layers is not 1 or 3, or if extraction fails.
  */
-void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector<int>& hidden_layers_to_abstract);
+void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector<int32_t>& hidden_layers_to_abstract);
+
+/**
+ * @brief Slices hidden state tensor to extract only the last token's features.
+ *
+ * This function creates a view of the hidden state tensor containing only the features
+ * corresponding to the last token position. Used in draft model forward pass to store
+ * compact hidden state for next iteration.
+ *
+ * @param hidden_features Hidden state tensor with shape [1, seq_len, hidden_size].
+ * @return Tensor view containing only the last token: [1, 1, hidden_size].
+ * @throws Exception if tensor is empty or shape is invalid.
+ */
+ov::Tensor slice_hidden_state_for_last_token(const ov::Tensor& hidden_features);
 
 }  // namespace eagle3
 }  // namespace genai

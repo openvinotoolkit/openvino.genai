@@ -88,20 +88,6 @@ std::pair<std::string, Any> generation_config(const GenerationConfig& config) {
     return {utils::CONFIG_ARG_NAME, Any::make<GenerationConfig>(config)};
 }
 
-inline void apply_eagle_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& properties, const std::filesystem::path& mapping_path) {
-    if (model->has_rt_info("eagle3_mode") && model->get_rt_info<bool>("eagle3_mode")) {
-        properties["eagle3_mode"] = true;
-        if (model->has_rt_info("hidden_layers_list"))
-            properties["hidden_layers_list"] = model->get_rt_info<std::vector<int>>("hidden_layers_list");
-    }
-}
-
-inline void apply_eagle_rt_info(std::shared_ptr<ov::Model>& model,
-                                ov::AnyMap& properties,
-                                const std::string& mapping_path) {
-    apply_eagle_rt_info(model, properties, std::filesystem::path(mapping_path));
-}
-
 std::pair<std::string, Any> draft_model(
     const std::filesystem::path& models_path,
     const std::string& device,
@@ -110,7 +96,7 @@ std::pair<std::string, Any> draft_model(
 
     std::filesystem::path openvino_model_name = "openvino_model.xml";
     auto model = utils::singleton_core().read_model(models_path / openvino_model_name, {}, plugin_config);
-    apply_eagle_rt_info(model, plugin_config, models_path);
+    eagle3::apply_eagle3_rt_info(model, plugin_config);
     auto generation_config = utils::from_config_json_if_exists(models_path);
     auto tokenizer = ov::genai::Tokenizer(models_path);
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
@@ -126,7 +112,7 @@ std::pair<std::string, Any> draft_model(
     auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
 
     auto model = utils::singleton_core().read_model(model_str, weights_tensor);
-    apply_eagle_rt_info(model, plugin_config, model_str);
+    eagle3::apply_eagle3_rt_info(model, plugin_config);
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
 }
 
@@ -137,13 +123,12 @@ static std::unique_ptr<LLMPipelineImplBase> create(
     const ov::genai::Tokenizer& tokenizer,
     const std::string& device,
     const ov::AnyMap& properties) {
-    return create(
-        ov::genai::utils::read_model(models_path, properties),
-        tokenizer,
-        device,
-        properties,
-        utils::from_config_json_if_exists(models_path),
-        models_path);
+    return create(ov::genai::utils::read_model(models_path, properties),
+                  tokenizer,
+                  device,
+                  properties,
+                  utils::from_config_json_if_exists(models_path),
+                  models_path);
 }
 
 static std::unique_ptr<LLMPipelineImplBase> create(
@@ -153,52 +138,46 @@ static std::unique_ptr<LLMPipelineImplBase> create(
     return create(models_path, Tokenizer(models_path, plugin_config), device, plugin_config);
 }
 
-static std::unique_ptr<LLMPipelineImplBase> create(
-    const std::shared_ptr<ov::Model>& model,
-    const ov::genai::Tokenizer& tokenizer,
-    const std::string& device,
-    const ov::AnyMap& properties,
-    const ov::genai::GenerationConfig& generation_config,
-    const std::filesystem::path& models_path = {}) {
-
+static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Model>& model,
+                                                   const ov::genai::Tokenizer& tokenizer,
+                                                   const std::string& device,
+                                                   const ov::AnyMap& properties,
+                                                   const ov::genai::GenerationConfig& generation_config,
+                                                   const std::filesystem::path& models_path = {}) {
     auto properties_without_draft_model = properties;
     auto draft_model_descr = ov::genai::utils::extract_draft_model_from_config(properties_without_draft_model);
-    
+
+    auto main_model_descr =
+        ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, {}, generation_config);
+
     if (draft_model_descr.model != nullptr) {
-        // Extract Eagle3 configuration from draft model properties
-        // Pass models_path for auto-deducing hidden_layers_list from config.json
-        auto eagle_rt_info = ov::genai::eagle3::extract_eagle3_info_from_config(
-            draft_model_descr.properties, 
-            models_path
-        );
-        
-        if (eagle_rt_info.eagle3_mode) {
+        OPENVINO_ASSERT(device == "NPU" || draft_model_descr.device == "NPU",
+                        "Stateful Speculative Decoding and Stateful Eagle3 Speculative Decoding are expected to be "
+                        "launched when NPU is requested as "
+                        "execution device for one or both models.");
+
+        // Check if Eagle3 mode is enabled in draft model properties
+        bool is_eagle3_mode = draft_model_descr.properties.find("eagle3_mode") != draft_model_descr.properties.end() &&
+                              draft_model_descr.properties.at("eagle3_mode").as<bool>();
+
+        if (is_eagle3_mode) {
             // Eagle3 Speculative Decoding mode
-            OPENVINO_ASSERT(device == "NPU" || draft_model_descr.device == "NPU",
-                "Stateful Eagle3 Speculative Decoding is expected to be launched when NPU is requested as "
-                "execution device for one or both models.");
-            
-            auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, 
-                                                        properties_without_draft_model, {}, generation_config);
-            return std::make_unique<StatefulEagle3LLMPipeline>(
-                main_model_descr, 
-                draft_model_descr, 
-                eagle_rt_info.hidden_layers_list
-            );
+            auto eagle_rt_info = eagle3::extract_eagle3_info_from_config(draft_model_descr.properties, models_path);
+            if (!eagle_rt_info.hidden_layers_list.empty()) {
+                draft_model_descr.properties["hidden_layers_list"] = eagle_rt_info.hidden_layers_list;
+            }
+            return std::make_unique<StatefulEagle3LLMPipeline>(main_model_descr, draft_model_descr);
         } else {
             // Standard Speculative Decoding mode
-            OPENVINO_ASSERT(device == "NPU" || draft_model_descr.device == "NPU",
-                "Stateful Speculative Decoding is expected to be launched when NPU is requested as "
-                "execution device for one or both models.");
-            
-            auto main_model_descr = ov::genai::ModelDesc(model, tokenizer, device, 
-                                                        properties_without_draft_model, {}, generation_config);
             return std::make_unique<StatefulSpeculativeLLMPipeline>(main_model_descr, draft_model_descr);
         }
     }
 
-    return std::make_unique<StatefulLLMPipeline>(model, tokenizer, device,
-        properties_without_draft_model, generation_config);
+    return std::make_unique<StatefulLLMPipeline>(main_model_descr.model,
+                                                 main_model_descr.tokenizer,
+                                                 main_model_descr.device,
+                                                 main_model_descr.properties,
+                                                 main_model_descr.generation_config);
 }
 };
 

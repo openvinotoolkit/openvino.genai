@@ -8,23 +8,24 @@
 
 #include "json_utils.hpp"
 #include "logger.hpp"
-
 #include "openvino/op/add.hpp"
-#include "openvino/op/result.hpp"
-#include "openvino/op/multiply.hpp"
+#include "openvino/op/concat.hpp"
 #include "openvino/op/gather.hpp"
 #include "openvino/op/matmul.hpp"
-#include "openvino/op/concat.hpp"
+#include "openvino/op/multiply.hpp"
+#include "openvino/op/result.hpp"
+#include "utils.hpp"
 
 namespace ov {
 namespace genai {
 namespace eagle3 {
 
 void ensure_num_assistant_tokens_is_set(ov::genai::GenerationConfig& config) {
-    // Only num_assistant_tokens is supported, not assistant_confidence_threshold
     OPENVINO_ASSERT(
         config.assistant_confidence_threshold == 0.f,
-        "Speculative Decoding only supports num_assistant_tokens, not assistant_confidence_threshold. Set it to 0.f.");
+        "Stateful (non Continuous Batching) Eagle-3 Speculative Decoding pipeline only supports num_assistant_tokens, "
+        "not assistant_confidence_threshold. Set assistant_confidence_threshold to 0.f.");
+
     if (config.num_assistant_tokens == 0) {
         config.num_assistant_tokens = DEFAULT_NUM_ASSISTANT_TOKENS;
     }
@@ -51,17 +52,36 @@ Eagle3RTInfo extract_eagle3_info_from_config(const ov::AnyMap& config, const std
             using ov::genai::utils::read_json_param;
             int num_decoder_layers = 0;
             read_json_param(data, "num_hidden_layers", num_decoder_layers);
-            OPENVINO_ASSERT(num_decoder_layers > 3, "num_decoder_layers is too small to deduce hidden layers for extraction");
+
+            // Ensure sufficient layers for meaningful feature extraction
+            // Minimum of 10 layers is based on practical LLM architectures (e.g., small GPT-2 has 12 layers)
+            OPENVINO_ASSERT(
+                num_decoder_layers >= 10,
+                "num_decoder_layers must be at least 10 for automatic hidden layer selection, got: ",
+                num_decoder_layers,
+                ". For models with fewer layers, please explicitly specify 'hidden_layers_list' in the configuration.");
+
             // The following default hidden layer selection corresponds to the EAGLE reference implementation:
             // https://github.com/SafeAILab/EAGLE/blob/0ea94696/eagle/model/modeling_llama_kv.py#L1138
             // These layers (2, num_decoder_layers / 2, num_decoder_layers - 3) are chosen to capture features from
             // early, middle, and late stages of the decoder, as recommended by the EAGLE authors.
+            // Note: Integer division (num_decoder_layers / 2) is intentional and produces the desired behavior
+            // for typical LLM layer counts (e.g., 12→6, 24→12, 32→16).
             // If you wish to use different layers, provide the "hidden_layers_list" parameter in the config.
             eagle_rt_info.hidden_layers_list = { 2, num_decoder_layers / 2, num_decoder_layers - 3 };
         }
         OPENVINO_ASSERT(eagle_rt_info.hidden_layers_list.size() == 3, "Eagle3 is expected to provide exactly three layers for extraction");
     }
     return eagle_rt_info;
+}
+
+void apply_eagle3_rt_info(std::shared_ptr<ov::Model>& model, ov::AnyMap& properties) {
+    if (model->has_rt_info("eagle3_mode") && model->get_rt_info<bool>("eagle3_mode")) {
+        properties["eagle3_mode"] = true;
+        if (model->has_rt_info("hidden_layers_list")) {
+            properties["hidden_layers_list"] = model->get_rt_info<std::vector<int>>("hidden_layers_list");
+        }
+    }
 }
 
 void share_vocabulary(const std::shared_ptr<ov::Model>& main_model, const std::shared_ptr<ov::Model>& draft_model) {
@@ -141,35 +161,35 @@ void move_fc_from_draft_to_main(std::shared_ptr<ov::Model>& draft_model, std::sh
     }
 }
 
-std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(const std::shared_ptr<ov::Model>& model) {
-    // extract result nodes from model
+// Helper function to find d2t result node in the model
+static std::shared_ptr<ov::op::v0::Result> find_d2t_result_node(const std::shared_ptr<ov::Model>& model) {
     for (const auto& result : model->get_results()) {
         auto input_node = result->input_value(0).get_node_shared_ptr();
         auto constant = ov::as_type_ptr<ov::op::v0::Constant>(input_node);
         if (constant && constant->get_friendly_name().find("d2t") != std::string::npos) {
-            model->remove_result(result);
-            model->validate_nodes_and_infer_types();
-            return constant;
+            return result;
         }
+    }
+    return nullptr;
+}
+
+std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(const std::shared_ptr<ov::Model>& model) {
+    // extract result nodes from model
+    auto d2t_result = find_d2t_result_node(model);
+    if (d2t_result) {
+        auto constant = ov::as_type_ptr<ov::op::v0::Constant>(d2t_result->input_value(0).get_node_shared_ptr());
+        model->remove_result(d2t_result);
+        model->validate_nodes_and_infer_types();
+        return constant;
     }
     return nullptr;
 }
 
 void remove_d2t_result_node(std::shared_ptr<ov::Model>& model) {
     // Find and remove the d2t Result node
-    std::shared_ptr<ov::op::v0::Result> d2t_result_to_remove = nullptr;
-
-    for (const auto& result : model->get_results()) {
-        auto input_node = result->input_value(0).get_node_shared_ptr();
-        auto constant = ov::as_type_ptr<ov::op::v0::Constant>(input_node);
-        if (constant && constant->get_friendly_name().find("d2t") != std::string::npos) {
-            d2t_result_to_remove = result;
-            break;
-        }
-    }
-
-    if (d2t_result_to_remove) {
-        model->remove_result(d2t_result_to_remove);
+    auto d2t_result = find_d2t_result_node(model);
+    if (d2t_result) {
+        model->remove_result(d2t_result);
         model->validate_nodes_and_infer_types();
     }
 }
@@ -236,6 +256,18 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
         result->get_rt_info()["manually_added_output"] = true;
         model->add_results({result});
     }
+}
+
+ov::Tensor slice_hidden_state_for_last_token(const ov::Tensor& hidden_features) {
+    OPENVINO_ASSERT(hidden_features.get_size() > 0, "Hidden features tensor is empty");
+
+    const auto shape = hidden_features.get_shape();
+    OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && shape[1] > 0, "Expected shape [1, seq_len, hidden_size]");
+
+    const size_t seq_len = shape[1];
+
+    auto [start_coord, end_coord] = ov::genai::utils::make_roi(shape, 1, seq_len - 1, seq_len);
+    return ov::Tensor(hidden_features, start_coord, end_coord);
 }
 
 }  // namespace eagle3
