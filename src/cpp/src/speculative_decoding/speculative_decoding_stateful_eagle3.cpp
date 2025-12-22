@@ -38,7 +38,7 @@ ov::Tensor slice_hidden_state_for_last_token(const ov::Tensor& hidden_features) 
     const auto shape = hidden_features.get_shape();
     OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && shape[1] > 0,
                     "Expected shape [1, seq_len, hidden_size], got ",
-                    eagle3::format_shape(shape));
+                    ov::genai::eagle3::format_shape(shape));
 
     const size_t seq_len = shape[1];
     const size_t hidden_size = shape[2];
@@ -552,7 +552,7 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
     : LLMPipelineImplBase(target_model_desc.tokenizer, target_model_desc.generation_config),
       m_hidden_layers_to_abstract(hidden_layers_to_abstract) {
     // Initialize draft iterations from generation config
-    ov::genai::speculative_decoding::ensure_num_assistant_tokens_is_set(m_generation_config);
+    ov::genai::eagle3::ensure_num_assistant_tokens_is_set(m_generation_config);
     m_draft_iterations = m_generation_config.num_assistant_tokens;
     m_tokenizer = target_model_desc.tokenizer;
 
@@ -562,15 +562,15 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
     auto draft_model = draft_model_desc.model;
 
     // Model preparation
-    speculative_decoding::share_embedding_weights(target_model, draft_model);
+    eagle3::share_vocabulary(target_model, draft_model);
 
-    auto d2t_mapping = speculative_decoding::extract_d2t_mapping_table(draft_model);
+    auto d2t_mapping = eagle3::extract_d2t_mapping_table(draft_model);
     OPENVINO_ASSERT(d2t_mapping && d2t_mapping->get_element_type() == ov::element::i64, "Invalid d2t mapping tensor");
-    speculative_decoding::remove_d2t_result_node(draft_model);
+    eagle3::remove_d2t_result_node(draft_model);
 
-    speculative_decoding::hidden_state_transform(target_model, m_hidden_layers_to_abstract);
-    speculative_decoding::shift_fc_from_draft_to_main(target_model, draft_model);
-    speculative_decoding::hidden_state_transform(draft_model, {-1});
+    eagle3::transform_hidden_state(target_model, m_hidden_layers_to_abstract);
+    eagle3::move_fc_from_draft_to_main(draft_model, target_model);
+    eagle3::transform_hidden_state(draft_model, {-1});
 
     const size_t validation_window = m_draft_iterations + 1;
 
@@ -613,7 +613,7 @@ GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGe
     GenerationConfig config = generation_config.value_or(m_generation_config);
 
     const size_t prev_draft_iterations = m_draft_iterations;
-    ov::genai::speculative_decoding::ensure_num_assistant_tokens_is_set(config);
+    ov::genai::eagle3::ensure_num_assistant_tokens_is_set(config);
     m_draft_iterations = config.num_assistant_tokens;
 
     // Log configuration changes
