@@ -480,46 +480,45 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
     std::vector<VLMDecodedResults> results;
     std::vector<EncodedGenerationResult> encoded_results = generate(input_embeds_list, sampling_params, streamer, token_type_ids_list, position_ids_list);
-    for (size_t i = 0; i < histories.size(); i++) {
-        auto result = encoded_results[i];
-        VLMDecodedResults gen_result;
-        gen_result.perf_metrics = result.perf_metrics;
+    
+    auto result = encoded_results.at(0);
+    VLMDecodedResults gen_result;
+    gen_result.perf_metrics = result.perf_metrics;
 
-        gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[i].vlm_raw_metrics;
-        gen_result.perf_metrics.raw_metrics.tokenization_durations = vlm_perf_metrics[i].raw_metrics.tokenization_durations;
-        gen_result.perf_metrics.raw_metrics.detokenization_durations = vlm_perf_metrics[i].raw_metrics.detokenization_durations;
-        
-        auto decode_start_time = std::chrono::steady_clock::now();
-        for (size_t idx = 0; idx < result.m_generation_ids.size(); ++idx) {
-            gen_result.texts.push_back(m_tokenizer.decode(result.m_generation_ids.at(idx)));
-            gen_result.scores.push_back(result.m_scores.at(idx));
-        }
-        auto decode_end_time = std::chrono::steady_clock::now();
-        gen_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
-        
-        gen_result.perf_metrics.m_evaluated = false;
-        gen_result.perf_metrics.evaluate_statistics(generate_start_time);
+    gen_result.perf_metrics.vlm_raw_metrics = vlm_perf_metrics[0].vlm_raw_metrics;
+    gen_result.perf_metrics.raw_metrics.tokenization_durations = vlm_perf_metrics[0].raw_metrics.tokenization_durations;
+    gen_result.perf_metrics.raw_metrics.detokenization_durations = vlm_perf_metrics[0].raw_metrics.detokenization_durations;
+    
+    auto decode_start_time = std::chrono::steady_clock::now();
+    for (size_t idx = 0; idx < result.m_generation_ids.size(); ++idx) {
+        gen_result.texts.push_back(m_tokenizer.decode(result.m_generation_ids.at(idx)));
+        gen_result.scores.push_back(result.m_scores.at(idx));
+    }
+    auto decode_end_time = std::chrono::steady_clock::now();
+    gen_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
+    
+    gen_result.perf_metrics.m_evaluated = false;
+    gen_result.perf_metrics.evaluate_statistics(generate_start_time);
 
-        results.emplace_back(gen_result);
-    }
-    if (m_is_chat_conversation) {
-        m_inputs_embedder->update_chat_history(results[0].texts[0], encoded_results[0].m_status);
-        if (encoded_results[0].m_status != ov::genai::GenerationStatus::CANCEL) {
-            chat_history_state->image_id += encoded_images.size();
-            chat_history_state->video_id += encoded_videos.size();
-            chat_history_state->processed_history_size = history.size();
-        } else {
-            for (size_t idx = 0; idx < encoded_images.size(); idx++) {
-                chat_history_state->image_sequence.pop_back();
-                chat_history_state->encoded_images.pop_back();
-            }
-            for (size_t idx = 0; idx < encoded_videos.size(); idx++) {
-                chat_history_state->video_sequence.pop_back();
-                chat_history_state->encoded_videos.pop_back();
-            }
-            chat_history_state->vision_count.pop_back();
+    results.emplace_back(gen_result);
+    
+    m_inputs_embedder->update_chat_history(results[0].texts[0], encoded_results[0].m_status);
+    if (encoded_results[0].m_status != ov::genai::GenerationStatus::CANCEL) {
+        chat_history_state->image_id += encoded_images.size();
+        chat_history_state->video_id += encoded_videos.size();
+        chat_history_state->processed_history_size = history.size();
+    } else {
+        for (size_t idx = 0; idx < encoded_images.size(); idx++) {
+            chat_history_state->image_sequence.pop_back();
+            chat_history_state->encoded_images.pop_back();
         }
+        for (size_t idx = 0; idx < encoded_videos.size(); idx++) {
+            chat_history_state->video_sequence.pop_back();
+            chat_history_state->encoded_videos.pop_back();
+        }
+        chat_history_state->vision_count.pop_back();
     }
+    
     return results;
 }
 
