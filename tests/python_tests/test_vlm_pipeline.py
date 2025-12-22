@@ -98,7 +98,7 @@ MODEL_IDS: list[str] = [
     "katuni4ka/tiny-random-internvl2",
     "katuni4ka/tiny-random-gemma3",
     "qnguyen3/nanoLLaVA",
-    "rkazants/tiny-random-MiniCPM-o-2_6",
+    "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
     *VIDEO_MODEL_IDS,
 ]
 
