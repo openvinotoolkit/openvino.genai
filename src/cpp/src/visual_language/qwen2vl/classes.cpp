@@ -1629,7 +1629,7 @@ void InputsEmbedderQwen2VL::adjust_position_ids_after_pruning(
     const std::vector<std::array<size_t, 3>>& images_grid_thw,
     const std::vector<size_t>& images_sequence,
     std::vector<std::vector<bool>>& keep_flags_per_region_out) const {
-    auto kept_indices_per_image = m_vision_encoder->get_last_selected_token_indices();
+    auto kept_indices_per_image = m_token_processor->get_last_selected_tokens();
     OPENVINO_ASSERT(!images_sequence.empty(), "Image sequence must not be empty when pruning visual tokens");
     OPENVINO_ASSERT(!kept_indices_per_image.empty(), "Kept token indices are missing after pruning");
 

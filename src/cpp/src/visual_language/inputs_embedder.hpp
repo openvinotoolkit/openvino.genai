@@ -17,7 +17,7 @@
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/vision_encoder.hpp"
-#include "visual_language/cdpruner/cdpruner_config.hpp"
+#include "visual_language/vision_token_processor.hpp"
 
 namespace ov::genai {
 struct VLMPerfMetrics;
@@ -131,6 +131,8 @@ private:
         EmbeddingsModel::Ptr m_embedding;
         // A tokenizer encoding a prompt.
         Tokenizer m_tokenizer;
+        // Vision token processor for post-processing visual features (pruning, etc.)
+        std::shared_ptr<VisionTokenProcessor> m_token_processor;
         // True if chat mode is activated to save conversation
         // history between generate() calls.
         bool m_is_chat_conversation = false;
@@ -202,12 +204,12 @@ private:
         }
 
         virtual void set_visual_token_pruning_config(size_t pruning_ratio, float relevance_weight) {
-            if (!m_vision_encoder)
+            if (!m_token_processor)
                 return;
-            auto pruner_config = m_vision_encoder->get_pruning_config();
-            pruner_config->pruning_ratio = pruning_ratio;
-            pruner_config->relevance_weight = relevance_weight;
-            m_vision_encoder->set_pruning_config(pruner_config.value());
+            auto config = m_token_processor->get_config();
+            config.pruning_ratio = pruning_ratio;
+            config.relevance_weight = relevance_weight;
+            m_token_processor->set_config(config);
         }
 
         utils::KVCacheState& get_kv_cache_state() {

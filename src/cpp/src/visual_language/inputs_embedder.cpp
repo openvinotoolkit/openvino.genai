@@ -72,7 +72,8 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
     m_vlm_config{vlm_config},
     m_vision_encoder(VisionEncoder::create(model_dir, m_vlm_config.model_type, device, device_config)),
     m_embedding(EmbeddingsModel::create(model_dir, m_vlm_config.scale_emb, device, device_config)),
-    m_tokenizer{model_dir, device_config} { }
+    m_tokenizer{model_dir, device_config},
+    m_token_processor(std::make_shared<VisionTokenProcessor>(device)) { }
 
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const VLMConfig& vlm_config,
@@ -96,7 +97,8 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         device,
         device_config
     )),
-    m_tokenizer(tokenizer) { }
+    m_tokenizer(tokenizer),
+    m_token_processor(std::make_shared<VisionTokenProcessor>(device)) { }
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
     bool add_special_tokens = m_add_special_tokens_is_set ? m_add_special_tokens : !(m_is_chat_conversation || m_apply_chat_template);
@@ -289,13 +291,13 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::generate_pruned_input_ids(
 }
 
 bool InputsEmbedder::IInputsEmbedder::is_cdpruner_active(const std::vector<ov::genai::EncodedImage>& images) const {
-    if (!m_vision_encoder || images.empty()) {
+    if (!m_token_processor || images.empty()) {
         return false;
     }
 
-    auto current_pruning_config = m_vision_encoder->get_pruning_config();
-    bool pruner_enabled = current_pruning_config.has_value() && current_pruning_config->pruning_ratio > 0;
-    return m_vision_encoder->is_pruning_available() && pruner_enabled;
+    auto current_pruning_config = m_token_processor->get_config();
+    bool pruner_enabled = current_pruning_config.pruning_ratio > 0;
+    return m_token_processor->is_available() && pruner_enabled;
 }
 
 InputsEmbedder::IInputsEmbedder::PruningResult InputsEmbedder::IInputsEmbedder::execute_cdpruner_pipeline(
@@ -315,9 +317,8 @@ InputsEmbedder::IInputsEmbedder::PruningResult InputsEmbedder::IInputsEmbedder::
     result.original_visual_tokens = merged_visual_embeddings.get_shape()[0];
 
     // Retrieve current pruning configuration
-    auto current_pruning_config = m_vision_encoder->get_pruning_config();
-    OPENVINO_ASSERT(current_pruning_config.has_value(),
-                    "execute_cdpruner_pipeline should only be called when pruning config is available");
+    auto current_pruning_config = m_token_processor->get_config();
+    
     // Step 1: Extract text features for relevance calculation
     // Virtual function allows model-specific text feature extraction
     ov::Tensor text_features =
@@ -326,15 +327,15 @@ InputsEmbedder::IInputsEmbedder::PruningResult InputsEmbedder::IInputsEmbedder::
     // Step 2: Convert visual features to CDPruner format
     // May split by frames/chunks for video or multi-image scenarios
     // If frame chunking is enabled, images must be non-empty. This is checked earlier in is_cdpruner_active().
-    OPENVINO_ASSERT(!current_pruning_config->enable_frame_chunking || !images.empty(),
+    OPENVINO_ASSERT(!current_pruning_config.enable_frame_chunking || !images.empty(),
                     "images must be non-empty when frame chunking is enabled");
-    size_t chunk_count = current_pruning_config->enable_frame_chunking ? images.size() : 1;
+    size_t chunk_count = current_pruning_config.enable_frame_chunking ? images.size() : 1;
     std::vector<ov::Tensor> visual_features =
         convert_visual_features_for_pruning(merged_visual_embeddings, chunk_count, images_grid_thw);
 
-    // Step 3: Apply CDPruner algorithm
+    // Step 3: Apply vision token processing (pruning)
     // Computes text-image relevance and prunes low-relevance visual tokens
-    ov::Tensor pruned_visual_features = m_vision_encoder->apply_pruning(visual_features, text_features);
+    ov::Tensor pruned_visual_features = m_token_processor->process(visual_features, text_features);
 
     // Step 4: Reshape from 3D [1, num_tokens, hidden_size] to 2D [num_tokens, hidden_size]
     ov::Shape pruned_shape = pruned_visual_features.get_shape();
@@ -418,13 +419,13 @@ InputsEmbedder::IInputsEmbedder::PruningResult InputsEmbedder::IInputsEmbedder::
     // CDPruner Summary
     GENAI_INFO("CDPruner Summary:");
     GENAI_INFO("\tConfiguration:");
-    GENAI_INFO("\t  Pruning Ratio: %d%%", current_pruning_config->pruning_ratio);
-    GENAI_INFO("\t  Relevance Weight: %.1f", current_pruning_config->relevance_weight);
-    GENAI_INFO("\t  Use CL Kernel: %s", current_pruning_config->use_cl_kernel ? "true" : "false");
-    GENAI_INFO("\t  Enable Frame Chunking: %s", current_pruning_config->enable_frame_chunking ? "true" : "false");
-    GENAI_INFO("\t  Use Negative Relevance: %s", current_pruning_config->use_negative_relevance ? "true" : "false");
-    bool exceeds_split_threshold = (current_pruning_config->split_threshold > 0) &&
-                                   (result.original_visual_tokens > current_pruning_config->split_threshold);
+    GENAI_INFO("\t  Pruning Ratio: %d%%", current_pruning_config.pruning_ratio);
+    GENAI_INFO("\t  Relevance Weight: %.1f", current_pruning_config.relevance_weight);
+    GENAI_INFO("\t  Use CL Kernel: %s", current_pruning_config.use_cl_kernel ? "true" : "false");
+    GENAI_INFO("\t  Enable Frame Chunking: %s", current_pruning_config.enable_frame_chunking ? "true" : "false");
+    GENAI_INFO("\t  Use Negative Relevance: %s", current_pruning_config.use_negative_relevance ? "true" : "false");
+    bool exceeds_split_threshold = (current_pruning_config.split_threshold > 0) &&
+                                   (result.original_visual_tokens > current_pruning_config.split_threshold);
     GENAI_INFO("\t  Exceeds Split Threshold: %s", exceeds_split_threshold ? "true" : "false");
     GENAI_INFO("\tResults:");
     GENAI_INFO("\t  Original Visual Tokens: %zu", result.original_visual_tokens);

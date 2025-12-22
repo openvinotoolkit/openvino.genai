@@ -1599,11 +1599,11 @@ def test_cdpruner_chat_mode(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Te
     ov_pipe.finish_chat()
 
 
-
-
 @parametrize_cdpruner_models
 @pytest.mark.parametrize("relevance_weight", [0.0, 0.2, 0.8, 1.0])
-def test_cdpruner_with_relevance_weight(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, relevance_weight: float):
+def test_cdpruner_with_relevance_weight(
+    ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, relevance_weight: float
+):
     """Test CDPruner with different relevance weights."""
     ov_pipe = ov_pipe_model.pipeline
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
@@ -1643,7 +1643,7 @@ def ov_continious_batching_pipe_qwen2vl() -> ContinuousBatchingPipeline:
 def test_cdpruner_continuous_batching(
     ov_continious_batching_pipe_qwen2vl: ContinuousBatchingPipeline,
     cat_tensor: openvino.Tensor,
-    car_tensor: openvino.Tensor
+    car_tensor: openvino.Tensor,
 ):
     """Test CDPruner with continuous batching pipeline."""
     # Enable pruning via GenerationConfig
