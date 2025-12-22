@@ -15,9 +15,7 @@ public:
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
 
-    std::pair<ov::Tensor, size_t> preprocess_frames_cpp(const std::vector<ov::Tensor>& frames);
-
-    std::pair<ov::Tensor, size_t> preprocess_frames_ov(const std::vector<ov::Tensor>& frames);
+    ov::Tensor preprocess_frames_cpp(const std::vector<ov::Tensor>& frames);
 
     VisionEncoderLLaVANextVideo(const std::filesystem::path& model_dir, const std::string& device, const ov::AnyMap properties);
 
@@ -38,15 +36,19 @@ public:
         return m_ireq_queue_vision_resampler.get();
     }
 
-    bool get_use_ov_preprocess() const {
-        return use_ov_preprocess;
+    bool get_use_ov_vision_preprocess() const {
+        return use_ov_vision_preprocess;
+    }
+
+    size_t get_patch_size() const {
+        return m_patch_size;
     }
 
 private:
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_multi_modal_projector;
     std::unique_ptr<CircularBufferQueue<ov::InferRequest>> m_ireq_queue_vision_resampler;
     size_t m_patch_size;
-    bool use_ov_preprocess = true;
+    bool use_ov_vision_preprocess = true; // default use ov vision preprocessing, control by env VISION_PREPROCESS=CPP to use CPU vision preprocessing
 };
 
 class InputsEmbedderLLaVANextVideo : public InputsEmbedderLLaVANext {

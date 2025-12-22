@@ -119,13 +119,12 @@ std::shared_ptr<ov::Node> create_center_crop(std::shared_ptr<ov::Node> input, st
 }
 
 // Helper function to calculate resize dimensions based on shortest edge
-std::pair<int64_t, int64_t> calculate_resize_dimensions(
-    size_t orig_height,
-    size_t orig_width,
-    int target_shortest_edge) {
-    float scale = static_cast<float>(target_shortest_edge) / std::min(orig_height, orig_width);
-    int64_t new_height = static_cast<int64_t>(orig_height * scale);
-    int64_t new_width = static_cast<int64_t>(orig_width * scale);
+ImageSize calculate_resize_dimensions(
+    const ImageSize& original_size,
+    size_t target_shortest_edge) {
+    float scale = static_cast<float>(target_shortest_edge) / std::min(original_size.height, original_size.width);
+    size_t new_height = static_cast<size_t>(original_size.height * scale);
+    size_t new_width = static_cast<size_t>(original_size.width * scale);
     return {new_height, new_width};
 }
 
@@ -133,17 +132,16 @@ std::pair<int64_t, int64_t> calculate_resize_dimensions(
 void set_preprocess_parameters(
     ov::InferRequest& encoder,
     const ov::Tensor& input_frames,
-    size_t orig_height,
-    size_t orig_width,
+    const ImageSize& original_size,
     const ProcessorConfig& config) {
 
     // Calculate resize target size
-    auto [new_height, new_width] = calculate_resize_dimensions(orig_height, orig_width, config.size_shortest_edge);
+    auto resized_size = calculate_resize_dimensions(original_size, config.size_shortest_edge);
 
     // Set resize target size
     ov::Tensor target_size_tensor(ov::element::i64, {2});
-    target_size_tensor.data<int64_t>()[0] = new_height;
-    target_size_tensor.data<int64_t>()[1] = new_width;
+    target_size_tensor.data<int64_t>()[0] = resized_size.height;
+    target_size_tensor.data<int64_t>()[1] = resized_size.width;
 
     // Set crop size
     ov::Tensor crop_size_tensor(ov::element::i64, {2});
@@ -155,7 +153,7 @@ void set_preprocess_parameters(
     encoder.set_input_tensor(2, crop_size_tensor);
 }
 
-bool can_use_ov_preprocess() {
+bool can_use_ov_vision_preprocess() {
     const char* env = std::getenv("VISION_PREPROCESS");
     return !(env && std::string(env) == "CPP");
 }
@@ -225,8 +223,8 @@ std::pair<size_t, size_t> get_unpadded_features(size_t height, size_t width, siz
 clip_image_f32 preprocess_clip_image_llava_next_video(const clip_image_u8& image, ProcessorConfig& config) {
     // Resize
     clip_image_u8 resized_image;
-    auto [new_height, new_width] = calculate_resize_dimensions(image.ny, image.nx, config.size_shortest_edge);
-    bicubic_resize(image, resized_image, static_cast<int>(new_width), static_cast<int>(new_height));
+    auto resized_size = calculate_resize_dimensions({static_cast<size_t>(image.ny), static_cast<size_t>(image.nx)}, config.size_shortest_edge);
+    bicubic_resize(image, resized_image, static_cast<int>(resized_size.width), static_cast<int>(resized_size.height));
 
     // Center crop
     clip_image_u8 cropped_image = center_crop(resized_image, config.crop_size_height, config.crop_size_width);
@@ -248,8 +246,8 @@ VisionEncoderLLaVANextVideo::VisionEncoderLLaVANextVideo(
     const std::filesystem::path& model_dir,
     const std::string& device,
     const ov::AnyMap properties) : VisionEncoderLLaVANext(model_dir, device, properties),
-        use_ov_preprocess(can_use_ov_preprocess()) {
-    if (use_ov_preprocess) {
+        use_ov_vision_preprocess(can_use_ov_vision_preprocess()) {
+    if (use_ov_vision_preprocess) {
         // Create integrated preprocessing + vision encoder model for image/video processing
         auto vision_encoder_model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
         auto model = patch_preprocess_into_vision_encoder_model(vision_encoder_model, m_processor_config);
@@ -283,8 +281,8 @@ VisionEncoderLLaVANextVideo::VisionEncoderLLaVANextVideo(
     const std::filesystem::path& config_dir_path,
     const std::string& device,
     const ov::AnyMap device_config) : VisionEncoderLLaVANext{models_map, config_dir_path, device, device_config},
-        use_ov_preprocess(can_use_ov_preprocess()) {
-    if (use_ov_preprocess) {
+        use_ov_vision_preprocess(can_use_ov_vision_preprocess()) {
+    if (use_ov_vision_preprocess) {
         // Create integrated preprocessing + vision encoder model for image/video processing
         const auto& [vision_encoder_model, vision_encoder_weights] = utils::get_model_weights_pair(models_map, "vision_embeddings");
         auto vision_encoder_model_original = utils::singleton_core().read_model(vision_encoder_model, vision_encoder_weights);
@@ -330,7 +328,7 @@ EncodedImage VisionEncoderLLaVANextVideo::encode(const ov::Tensor& image, const 
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     ov::Shape pixel_values_shape;
-    if (use_ov_preprocess) {
+    if (use_ov_vision_preprocess) {
         // Use integrated OV preprocessing model with batch processing similar to get_pixel_values_llava_next
         clip_image_u8 input_image = tensor_to_clip_image_u8(image);
 
@@ -356,7 +354,7 @@ EncodedImage VisionEncoderLLaVANextVideo::encode(const ov::Tensor& image, const 
         }
 
         // Set inputs for integrated preprocessing model
-        set_preprocess_parameters(encoder, concatenated_patches, patch_height, patch_width, config);
+        set_preprocess_parameters(encoder, concatenated_patches, {patch_height, patch_width}, config);
 
         // Set pixel_values_shape for later use
         pixel_values_shape = {num_patches, 3, static_cast<size_t>(config.crop_size_height), static_cast<size_t>(config.crop_size_width)};
@@ -505,7 +503,7 @@ ov::Tensor InputsEmbedderLLaVANextVideo::get_inputs_embeds(
     return text_embeds;
 }
 
-std::pair<ov::Tensor, size_t> VisionEncoderLLaVANextVideo::preprocess_frames_cpp(const std::vector<ov::Tensor>& frames) {
+ov::Tensor VisionEncoderLLaVANextVideo::preprocess_frames_cpp(const std::vector<ov::Tensor>& frames) {
     ProcessorConfig config = get_processor_config();
     size_t num_frames = frames.size();
     std::vector<ov::Tensor> preprocessed_frames;
@@ -518,13 +516,8 @@ std::pair<ov::Tensor, size_t> VisionEncoderLLaVANextVideo::preprocess_frames_cpp
         preprocessed_frames.push_back(clip_image_f32_to_tensor(preprocessed));
     }
 
-    // Calculate number of video tokens
-    const ov::Shape& first_shape = preprocessed_frames[0].get_shape();
-    size_t height = first_shape[2];
-    size_t width = first_shape[3];
-    size_t num_video_tokens = ((height / m_patch_size) * (width / m_patch_size) / 4) * num_frames;
-
     // Concatenate preprocessed frames to single tensor
+    const ov::Shape& first_shape = preprocessed_frames[0].get_shape();
     ov::Shape concat_shape = first_shape;
     concat_shape[0] = num_frames;
     ov::Tensor concatenated_frames(preprocessed_frames[0].get_element_type(), concat_shape);
@@ -536,32 +529,7 @@ std::pair<ov::Tensor, size_t> VisionEncoderLLaVANextVideo::preprocess_frames_cpp
         frames_data += ov::shape_size(first_shape);
     }
 
-    return {concatenated_frames, num_video_tokens};
-}
-
-std::pair<ov::Tensor, size_t> VisionEncoderLLaVANextVideo::preprocess_frames_ov(const std::vector<ov::Tensor>& frames) {
-    // Preprocessing is integrated into the encoder model
-    // Just concatenate input frames (NHWC uint8 format)
-    ProcessorConfig config = get_processor_config();
-    size_t num_frames = frames.size();
-
-    const ov::Shape& first_shape = frames[0].get_shape();
-    ov::Shape concat_shape = first_shape;
-    concat_shape[0] = num_frames;
-    ov::Tensor concatenated_frames(frames[0].get_element_type(), concat_shape);
-
-    size_t frame_byte_size = frames[0].get_byte_size();
-    uint8_t* frames_data = concatenated_frames.data<uint8_t>();
-    for (size_t i = 0; i < num_frames; i++) {
-        std::memcpy(frames_data, frames[i].data(), frame_byte_size);
-        frames_data += ov::shape_size(first_shape);
-    }
-
-    // Calculate num_video_tokens
-    size_t num_video_tokens = ((config.crop_size_height / m_patch_size) * 
-                               (config.crop_size_width / m_patch_size) / 4) * num_frames;
-
-    return {concatenated_frames, num_video_tokens};
+    return concatenated_frames;
 }
 
 std::vector<ov::genai::EncodedVideo> InputsEmbedderLLaVANextVideo::encode_videos(const std::vector<ov::Tensor>& videos) {
@@ -571,26 +539,27 @@ std::vector<ov::genai::EncodedVideo> InputsEmbedderLLaVANextVideo::encode_videos
     std::vector<ov::genai::EncodedVideo> encoded_videos;
     for (const auto video: videos) {
         std::vector<ov::Tensor> frames = to_single_image_tensors({video});
+        size_t num_frames = frames.size();
 
-        // Use OV or CPU preprocessing based on configuration
-        auto [concatenated_frames, num_video_tokens] = vision_encoder->get_use_ov_preprocess() 
-            ? vision_encoder->preprocess_frames_ov(frames)
-            : vision_encoder->preprocess_frames_cpp(frames);
+        // Calculate num_video_tokens (same for both OV and CPU preprocessing)
+        size_t num_video_tokens = ((config.crop_size_height / vision_encoder->get_patch_size()) * 
+                                   (config.crop_size_width / vision_encoder->get_patch_size()) / 4) * num_frames;
 
         // infer video feature extraction models
         CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(vision_encoder->get_vision_encoder());
         ov::InferRequest& encoder = infer_request_guard.get();
 
-        if (vision_encoder->get_use_ov_preprocess()) {
-            // Use integrated OV preprocessing model
+        if (vision_encoder->get_use_ov_vision_preprocess()) {
+            // Use integrated OV preprocessing model - pass video tensor directly
             auto frame_shape = frames[0].get_shape();
             size_t orig_height = frame_shape[1];
             size_t orig_width = frame_shape[2];
 
             // Set inputs for integrated model
-            set_preprocess_parameters(encoder, concatenated_frames, orig_height, orig_width, config);
+            set_preprocess_parameters(encoder, video, {orig_height, orig_width}, config);
         } else {
-            // Use normal encoder (preprocessing already done in preprocess_frames_cpp)
+            // Use CPU preprocessing - preprocess and concatenate frames
+            ov::Tensor concatenated_frames = vision_encoder->preprocess_frames_cpp(frames);
             encoder.set_tensor("pixel_values", concatenated_frames);
         }
 
