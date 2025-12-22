@@ -425,7 +425,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     const bool is_chat_continuation = chat_history_state->is_continuation(history.size());
 
     if (!is_chat_continuation) {
-        chat_history_state->reset();
+        history.set_internal_state(nullptr);
+        chat_history_state = ChatHistoryInternalState::get_or_create(history);
     }
 
     auto start_get_inputs_embeds = std::chrono::steady_clock::now();

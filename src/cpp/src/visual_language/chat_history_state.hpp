@@ -21,17 +21,6 @@ struct ChatHistoryInternalState {
 
     std::vector<std::pair<std::size_t, std::size_t>> vision_count;  // pair<video count, image count>
     
-    void reset() {
-        processed_history_size = 0;
-        encoded_images.clear();
-        encoded_videos.clear();
-        image_id = 0;
-        video_id = 0;
-        image_sequence.clear();
-        video_sequence.clear();
-        vision_count.clear();
-    }
-    
     // TODO Detect new chat and calculate messages diff e.g. via hash
     bool is_continuation(size_t history_size) const {
         if (processed_history_size == 0) {

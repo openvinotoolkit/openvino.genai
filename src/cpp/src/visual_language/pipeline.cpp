@@ -339,7 +339,8 @@ public:
         const bool is_chat_continuation = chat_history_state->is_continuation(history.size());
 
         if (!is_chat_continuation) {
-            chat_history_state->reset();
+            history.set_internal_state(nullptr);
+            chat_history_state = ChatHistoryInternalState::get_or_create(history);
         }
 
         if (!is_chat_continuation || m_use_full_chat_history) {
