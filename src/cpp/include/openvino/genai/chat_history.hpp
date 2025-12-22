@@ -67,7 +67,7 @@ public:
     const JsonContainer& get_extra_context() const;
 
     std::shared_ptr<ChatHistoryInternalState> get_internal_state() const;
-    void set_internal_state(std::shared_ptr<ChatHistoryInternalState> state);
+    void set_internal_state(const std::shared_ptr<ChatHistoryInternalState>& state);
 
 private:
     JsonContainer m_messages = JsonContainer::array();
