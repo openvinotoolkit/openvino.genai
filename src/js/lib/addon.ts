@@ -4,7 +4,7 @@ import { join, dirname, resolve } from "node:path";
 import type { ChatHistory as IChatHistory } from "./chatHistory.js";
 import type { Tokenizer as ITokenizer } from "./tokenizer.js";
 import { addon as ovAddon } from "openvino-node";
-import { IReasoningParser, IDeepSeekR1ReasoningParser } from "./parsers.js";
+import { IReasoningParser, IDeepSeekR1ReasoningParser, IPhi4ReasoningParser } from "./parsers.js";
 
 export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
 export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
@@ -66,6 +66,7 @@ interface OpenVINOGenAIAddon {
   Tokenizer: ITokenizer;
   ReasoningParser: IReasoningParser;
   DeepSeekR1ReasoningParser: IDeepSeekR1ReasoningParser;
+  Phi4ReasoningParser: IPhi4ReasoningParser;
   setOpenvinoAddon: (ovAddon: any) => void;
 }
 
@@ -94,8 +95,10 @@ export const {
   Tokenizer,
   ReasoningParser,
   DeepSeekR1ReasoningParser,
+  Phi4ReasoningParser,
 } = addon;
 export type ChatHistory = IChatHistory;
 export type Tokenizer = ITokenizer;
 export type ReasoningParser = IReasoningParser;
 export type DeepSeekR1ReasoningParser = IDeepSeekR1ReasoningParser;
+export type Phi4ReasoningParser = IPhi4ReasoningParser;

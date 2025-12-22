@@ -3,7 +3,12 @@
 
 import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
-import { DeepSeekR1ReasoningParser, LLMPipeline, ReasoningParser } from "../dist/index.js";
+import {
+  DeepSeekR1ReasoningParser,
+  LLMPipeline,
+  Phi4ReasoningParser,
+  ReasoningParser,
+} from "../dist/index.js";
 import { models } from "./models.js";
 
 const MODEL_PATH = process.env.MODEL_PATH || `./tests/models/${models.LLM.split("/")[1]}`;
@@ -115,6 +120,16 @@ describe("Use parsers from js", () => {
     // CVS-178737 DeepSeekR1ReasoningParser does not extract reasoning content correctly
     // Should be strictEqual but currently not working
     assert.notStrictEqual(message.reasoning_content, reasoning);
+  });
+
+  it("Phi4ReasoningParser should works", () => {
+    const phi4Parser = new Phi4ReasoningParser();
+    const reasoning = "Phi4 reasoning";
+    const message = {
+      content: `Before <think>${reasoning}</think> After`,
+    };
+    phi4Parser.parse(message);
+    assert.strictEqual(message.reasoning_content, reasoning);
   });
 });
 

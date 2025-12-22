@@ -48,3 +48,17 @@ public:
 private:
     std::shared_ptr<ov::genai::DeepSeekR1ReasoningParser> _parser;
 };
+
+class Phi4ReasoningParserWrapper : public Napi::ObjectWrap<Phi4ReasoningParserWrapper> {
+public:
+    Phi4ReasoningParserWrapper(const Napi::CallbackInfo& info);
+
+    static Napi::Function get_class(Napi::Env env);
+
+    void parse(const Napi::CallbackInfo& info);
+
+    std::shared_ptr<ov::genai::Phi4ReasoningParser> get_parser();
+
+private:
+    std::shared_ptr<ov::genai::Phi4ReasoningParser> _parser;
+};

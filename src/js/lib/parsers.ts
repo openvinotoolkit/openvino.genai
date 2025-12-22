@@ -31,3 +31,7 @@ export interface IReasoningParser extends Parser {
 export interface IDeepSeekR1ReasoningParser extends IReasoningParser {
   new (): IDeepSeekR1ReasoningParser;
 }
+
+export interface IPhi4ReasoningParser extends Parser {
+  new (): IPhi4ReasoningParser;
+}

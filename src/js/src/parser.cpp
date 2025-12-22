@@ -126,3 +126,26 @@ void DeepSeekR1ReasoningParserWrapper::parse(const Napi::CallbackInfo& info) {
 std::shared_ptr<ov::genai::DeepSeekR1ReasoningParser> DeepSeekR1ReasoningParserWrapper::get_parser() {
     return _parser;
 }
+
+Phi4ReasoningParserWrapper::Phi4ReasoningParserWrapper(const Napi::CallbackInfo& info)
+    : Napi::ObjectWrap<Phi4ReasoningParserWrapper>(info) {
+    Napi::Env env = info.Env();
+
+    try {
+        _parser = std::make_shared<ov::genai::Phi4ReasoningParser>();
+    } catch (const std::exception& e) {
+        Napi::Error::New(env, e.what()).ThrowAsJavaScriptException();
+    }
+}
+
+Napi::Function Phi4ReasoningParserWrapper::get_class(Napi::Env env) {
+    return DefineClass(env, "Phi4ReasoningParser", {InstanceMethod("parse", &Phi4ReasoningParserWrapper::parse)});
+}
+
+void Phi4ReasoningParserWrapper::parse(const Napi::CallbackInfo& info) {
+    parse_with_parser(info, _parser);
+}
+
+std::shared_ptr<ov::genai::Phi4ReasoningParser> Phi4ReasoningParserWrapper::get_parser() {
+    return _parser;
+}

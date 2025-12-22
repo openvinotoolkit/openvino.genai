@@ -58,6 +58,11 @@ Napi::Object init_module(Napi::Env env, Napi::Object exports) {
                "DeepSeekR1ReasoningParser",
                &DeepSeekR1ReasoningParserWrapper::get_class,
                addon_data->deepseek_r1_reasoning_parser);
+    init_class(env,
+               exports,
+               "Phi4ReasoningParser",
+               &Phi4ReasoningParserWrapper::get_class,
+               addon_data->phi4_reasoning_parser);
 
     // Expose a helper to set the openvino-node addon from JS (useful for ESM)
     exports.Set("setOpenvinoAddon", Napi::Function::New(env, set_ov_addon));

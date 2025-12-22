@@ -576,6 +576,14 @@ std::shared_ptr<ov::genai::Parser> get_native_parser(const Napi::Env& env, const
         return parser_wrapper->get_parser();
     }
 
+    // Check Phi4ReasoningParser
+    const auto& phi4_parser_prototype = addon_data->phi4_reasoning_parser;
+    OPENVINO_ASSERT(phi4_parser_prototype, "Invalid pointer to Phi4ReasoningParser prototype.");
+    if (object.Get("constructor").StrictEquals(phi4_parser_prototype.Value())) {
+        auto parser_wrapper = Napi::ObjectWrap<Phi4ReasoningParserWrapper>::Unwrap(object);
+        return parser_wrapper->get_parser();
+    }
+
     return nullptr;
 }
 
