@@ -708,7 +708,7 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
 
     for i, (answer_start_chat, answer_chat_history) in enumerate(zip(answers_start_chat, answers_chat_history)):
         assert answer_start_chat == answer_chat_history, (
-            f"Answer {i} do not match!\n answer_start_chat: {answer_start_chat}\n answer_chat_history: {answer_chat_history}"
+            f"Answer {i} does not match!\n answer_start_chat: {answer_start_chat}\n answer_chat_history: {answer_chat_history}"
         )
 
 
