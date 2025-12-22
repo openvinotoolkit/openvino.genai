@@ -117,7 +117,7 @@ TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "katuni4ka/tiny-random-gemma3": lambda idx: "<start_of_image>",
     "katuni4ka/tiny-random-internvl2": lambda idx: "<image>\n",
     "katuni4ka/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
-    "rkazants/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
+    "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
     "katuni4ka/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
     "katuni4ka/tiny-random-llava-next-video": lambda idx: "<image>\n",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
@@ -128,7 +128,7 @@ RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "katuni4ka/tiny-random-gemma3": 32,
     "qnguyen3/nanoLLaVA": 384,
     "katuni4ka/tiny-random-llava-next-video": 336,
-    "rkazants/tiny-random-MiniCPM-o-2_6": 448,
+    "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": 448,
 }
 
 
@@ -188,7 +188,7 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
     if "katuni4ka/tiny-random-phi3-vision" == model_id:
         pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
-    if "rkazants/tiny-random-MiniCPM-o-2_6" == model_id and is_transformers_version(">", "4.51.3"):
+    if "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6" == model_id and is_transformers_version(">", "4.51.3"):
         pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3")
 
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
@@ -222,7 +222,7 @@ def _get_ov_model(model_id: str) -> str:
                     "katuni4ka/tiny-random-phi3-vision",
                     "katuni4ka/tiny-random-phi-4-multimodal",
                     "qnguyen3/nanoLLaVA",
-                    "rkazants/tiny-random-MiniCPM-o-2_6",
+                    "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
                 },
             )
         )
@@ -1433,8 +1433,8 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
         pytest.param(("katuni4ka/tiny-random-llava-next-video", "PA"), False, True, id="llava-next-video/PA/video"),
         pytest.param(("katuni4ka/tiny-random-llava-next-video", "SDPA"), True, True, id="llava-next-video/SDPA/image+video"),
         pytest.param(("katuni4ka/tiny-random-llava-next-video", "PA"), True, True, id="llava-next-video/PA/image+video"),
-        pytest.param(("rkazants/tiny-random-MiniCPM-o-2_6", "SDPA"), True, False, id="MiniCPM-o-2_6/SDPA/image"),
-        pytest.param(("rkazants/tiny-random-MiniCPM-o-2_6", "PA"), True, False, id="MiniCPM-o-2_6/PA/image")
+        pytest.param(("optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6", "SDPA"), True, False, id="MiniCPM-o-2_6/SDPA/image"),
+        pytest.param(("optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6", "PA"), True, False, id="MiniCPM-o-2_6/PA/image")
     ],
     indirect=["ov_pipe_model"],
 )
