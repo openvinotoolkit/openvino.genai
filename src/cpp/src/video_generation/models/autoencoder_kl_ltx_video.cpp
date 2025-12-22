@@ -41,25 +41,19 @@ ov::AnyMap handle_scale_factor(std::shared_ptr<ov::Model> model, const std::stri
     return properties;
 }
 
-} // namespace
-
-void get_patch_size(const std::filesystem::path& config_path, int64_t& patch_size, int64_t& patch_size_t);
-
-void get_compression_ratio(const std::filesystem::path& config_path, int64_t& spatial_compression_ratio, int64_t& temporal_compression_ratio) {
+std::pair<int64_t, int64_t> get_patch_size(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
     nlohmann::json data = nlohmann::json::parse(file);
 
-    std::vector<bool> spatio_temporal_scaling;
     int64_t patch_size, patch_size_t;
-
-    utils::read_json_param(data, "spatio_temporal_scaling", spatio_temporal_scaling);
     utils::read_json_param(data, "patch_size", patch_size);
     utils::read_json_param(data, "patch_size_t", patch_size_t);
 
-    spatial_compression_ratio = patch_size * std::pow(2, std::reduce(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
-    temporal_compression_ratio = patch_size_t * std::pow(2, std::reduce(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
+    return {patch_size, patch_size_t};
 }
+
+} // namespace
 
 AutoencoderKLLTXVideo::Config::Config(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
@@ -67,7 +61,6 @@ AutoencoderKLLTXVideo::Config::Config(const std::filesystem::path& config_path) 
 
     nlohmann::json data = nlohmann::json::parse(file);
     using utils::read_json_param;
-
 
     read_json_param(data, "in_channels", in_channels);
     read_json_param(data, "latent_channels", latent_channels);
@@ -86,7 +79,7 @@ AutoencoderKLLTXVideo::Config::Config(const std::filesystem::path& config_path) 
 AutoencoderKLLTXVideo::AutoencoderKLLTXVideo(const std::filesystem::path& vae_decoder_path)
     : m_config(vae_decoder_path / "config.json") {
     m_decoder_model = utils::singleton_core().read_model(vae_decoder_path / "openvino_model.xml");
-    get_patch_size(vae_decoder_path.parent_path() / "transformer" / "config.json", m_patch_size, m_patch_size_t);
+    std::tie(m_patch_size, m_patch_size_t) = get_patch_size(vae_decoder_path.parent_path() / "transformer" / "config.json");
     // apply VaeImageProcessor postprocessing steps by merging them into the VAE decoder model
     // merge_vae_image_post_processing(); // TODO: check if it's the same - not the same, fix!!!
 }
@@ -166,7 +159,7 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
     return *this;
 }
 
-ov::Tensor AutoencoderKLLTXVideo::decode(ov::Tensor latent) {
+ov::Tensor AutoencoderKLLTXVideo::decode(const ov::Tensor& latent) {
     OPENVINO_ASSERT(m_decoder_request, "VAE decoder model must be compiled first. Cannot infer non-compiled model");
 
     m_decoder_request.set_input_tensor(latent);

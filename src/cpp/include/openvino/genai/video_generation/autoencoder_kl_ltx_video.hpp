@@ -31,10 +31,8 @@ public:
         std::vector<bool> spatio_temporal_scaling{true, true, true, false};  // TODO: read from vae_decoder/config.json. I use it only to compute sum over it so far, so it may be removed
         size_t patch_size_t = 1;  // TODO: read from vae_decoder/config.json
 
-        // latents_mean = torch.zeros((latent_channels,), requires_grad=False)
-        // latents_std = torch.ones((latent_channels,), requires_grad=False)
-        std::vector<float> latents_mean_data; // TODO: set default value
-        std::vector<float> latents_std_data;  // TODO: set default value
+        std::vector<float> latents_mean_data; // TODO: set default value (latents_mean = torch.zeros((latent_channels,), requires_grad=False)
+        std::vector<float> latents_std_data;  // TODO: set default value (latents_std = torch.ones((latent_channels,), requires_grad=False)))
 
         explicit Config(const std::filesystem::path& config_path);
     };
@@ -55,13 +53,11 @@ public:
 
     AutoencoderKLLTXVideo& compile(const std::string& device, const ov::AnyMap& properties = {});
 
-    ov::Tensor decode(ov::Tensor latent);
+    ov::Tensor decode(const ov::Tensor& latent);
 
     const Config& get_config() const;
 
     size_t get_vae_scale_factor() const;
-
-    void get_compression_ratio(const std::filesystem::path& config_path, int64_t& spatial_compression_ratio, int64_t& temporal_compression_ratio);
 
     AutoencoderKLLTXVideo& reshape(int64_t batch_size, int64_t num_frames, int64_t height, int64_t width);
 

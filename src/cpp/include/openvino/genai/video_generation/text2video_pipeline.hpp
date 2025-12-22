@@ -29,7 +29,7 @@ public:
      * with 'reshape()' method and then perform compilation using 'compile()' method.
      * @param models_path A models path to read models and config files from
      */
-    Text2VideoPipeline(const std::filesystem::path& models_path);
+    explicit Text2VideoPipeline(const std::filesystem::path& models_path);
 
     /**
      * Initializes text to video pipelines from a folder with models and performs compilation after it

@@ -50,8 +50,6 @@ public:
 
     LTXVideoTransformer3DModel& reshape(int64_t batch_size, int64_t num_frames, int64_t height, int64_t width, int64_t tokenizer_model_max_length);
 
-    void get_patch_size(const std::filesystem::path& config_path, int64_t& patch_size, int64_t& patch_size_t);
-
 private:
     class Inference;
     std::shared_ptr<Inference> m_impl;

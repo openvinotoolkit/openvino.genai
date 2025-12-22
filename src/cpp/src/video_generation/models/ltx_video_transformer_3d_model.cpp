@@ -11,16 +11,27 @@
 
 using namespace ov::genai;
 
-void get_compression_ratio(const std::filesystem::path& config_path, int64_t& spatial_compression_ratio, int64_t& temporal_compression_ratio);
+namespace {
 
-void get_patch_size(const std::filesystem::path& config_path, int64_t& patch_size, int64_t& patch_size_t) {
+std::pair<int64_t, int64_t> get_compression_ratio(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
     nlohmann::json data = nlohmann::json::parse(file);
 
+    std::vector<bool> spatio_temporal_scaling;
+    int64_t patch_size, patch_size_t;
+
+    utils::read_json_param(data, "spatio_temporal_scaling", spatio_temporal_scaling);
     utils::read_json_param(data, "patch_size", patch_size);
     utils::read_json_param(data, "patch_size_t", patch_size_t);
+
+    const int64_t spatial_compression_ratio = patch_size * std::pow(2, std::reduce(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
+    const int64_t temporal_compression_ratio = patch_size_t * std::pow(2, std::reduce(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
+
+    return {spatial_compression_ratio, temporal_compression_ratio};
 }
+
+} // namespace
 
 LTXVideoTransformer3DModel::Config::Config(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
@@ -37,7 +48,7 @@ LTXVideoTransformer3DModel::Config::Config(const std::filesystem::path& config_p
 LTXVideoTransformer3DModel::LTXVideoTransformer3DModel(const std::filesystem::path& root_dir)
     : m_config(root_dir / "config.json") {
     m_model = utils::singleton_core().read_model(root_dir / "openvino_model.xml");
-    get_compression_ratio(root_dir.parent_path() / "vae_decoder" / "config.json", m_spatial_compression_ratio, m_temporal_compression_ratio);
+    std::tie(m_spatial_compression_ratio, m_temporal_compression_ratio) = get_compression_ratio(root_dir.parent_path() / "vae_decoder" / "config.json");
 }
 
 LTXVideoTransformer3DModel::LTXVideoTransformer3DModel(const std::filesystem::path& root_dir,

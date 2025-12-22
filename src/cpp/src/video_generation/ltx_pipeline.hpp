@@ -19,6 +19,7 @@
 #include "image_generation/schedulers/ischeduler.hpp"
 #include "image_generation/threaded_callback.hpp"
 #include "openvino/genai/video_generation/ltx_video_transformer_3d_model.hpp"
+#include "openvino/genai/video_generation/generation_config.hpp"
 
 #include "utils.hpp"
 
