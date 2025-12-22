@@ -18,7 +18,7 @@
 
 namespace ov {
 namespace genai {
-namespace speculative_decoding {
+namespace eagle3 {
 
 void ensure_num_assistant_tokens_is_set(ov::genai::GenerationConfig& config) {
     // Only num_assistant_tokens is supported, not assistant_confidence_threshold
@@ -30,20 +30,21 @@ void ensure_num_assistant_tokens_is_set(ov::genai::GenerationConfig& config) {
     }
 }
 
-Eagle3RTInfo
-extract_eagle_mode_from_config(ov::AnyMap& config, const std::filesystem::path& models_path) {
+Eagle3RTInfo extract_eagle3_info_from_config(const ov::AnyMap& config, const std::filesystem::path& models_path) {
     Eagle3RTInfo eagle_rt_info;
     if (config.find("eagle3_mode") != config.end()) {
         eagle_rt_info.eagle3_mode = config.at("eagle3_mode").as<bool>();
-        config.erase("eagle3_mode");
-        if (config.find("hidden_layers_list") != config.end()) {
-            eagle_rt_info.hidden_layers_list = config.at("hidden_layers_list").as<std::vector<int>>();
-            config.erase("hidden_layers_list");
+        auto it = config.find("hidden_layers_list");
+        if (it != config.end()) {
+            try {
+                eagle_rt_info.hidden_layers_list = it->second.as<std::vector<int32_t>>();
+            } catch (const std::exception&) {
+                OPENVINO_THROW("please check the hidden layers input");
+            }
         } else {
             // compute the layers from number of hidden layers
             auto config_file_path = models_path / "config.json";
-            if (!std::filesystem::exists(config_file_path))
-                OPENVINO_THROW("cannot deduce layers for hidden layer extraction");
+            OPENVINO_ASSERT(std::filesystem::exists(config_file_path), "Cannot deduce layers for hidden layer extraction because the file is missing: ", config_file_path);
             std::ifstream file(config_file_path);
 
             nlohmann::json data = nlohmann::json::parse(file);
@@ -58,11 +59,12 @@ extract_eagle_mode_from_config(ov::AnyMap& config, const std::filesystem::path& 
             // If you wish to use different layers, provide the "hidden_layers_list" parameter in the config.
             eagle_rt_info.hidden_layers_list = { 2, num_decoder_layers / 2, num_decoder_layers - 3 };
         }
+        OPENVINO_ASSERT(eagle_rt_info.hidden_layers_list.size() == 3, "Eagle3 is expected to provide exactly three layers for extraction");
     }
     return eagle_rt_info;
 }
 
-void share_embedding_weights(std::shared_ptr<ov::Model>& main_model, std::shared_ptr<ov::Model>& draft_model) {
+void share_vocabulary(const std::shared_ptr<ov::Model>& main_model, const std::shared_ptr<ov::Model>& draft_model) {
     // extract embedding weight from main model
     auto find_embedding_gather = [](const std::shared_ptr<ov::Model>& model)
         -> std::shared_ptr<ov::Node> {
@@ -101,16 +103,11 @@ void share_embedding_weights(std::shared_ptr<ov::Model>& main_model, std::shared
         return;
     }
 
-    try {
-        draft_weight_node->output(0).replace(main_weight_node->output(0));
-    } catch (const std::exception& e) {
-        GENAI_WARN(std::string("Error: failed to import embedding weights from main model to draft model. Exception: ") + e.what());
-    } catch (...) {
-        GENAI_WARN("Error: failed to import embedding weights from main model to draft model due to unknown exception.");
-    }
+    GENAI_INFO("Sharing embedding weights between main and draft models for eagle3 speculative decoding.");
+    draft_weight_node->output(0).replace(main_weight_node->output(0));
 }
 
-void shift_fc_from_draft_to_main(std::shared_ptr<ov::Model>& main_model, std::shared_ptr<ov::Model>& draft_model) {
+void move_fc_from_draft_to_main(std::shared_ptr<ov::Model>& draft_model, std::shared_ptr<ov::Model>& main_model) {
     // extract the FC transform weight from draft model
     auto remove_fc_and_rewire = [](const std::shared_ptr<ov::Model>& model) -> std::shared_ptr<ov::Node> {
         for (const auto& node : model->get_ordered_ops()) {
@@ -118,8 +115,7 @@ void shift_fc_from_draft_to_main(std::shared_ptr<ov::Model>& main_model, std::sh
             if (!matmul_node) continue;
             auto input_node = matmul_node->get_input_node_shared_ptr(0);
             auto param_node = ov::as_type_ptr<ov::op::v0::Parameter>(input_node);
-            if (!param_node) continue;
-            if (input_node->get_friendly_name().find("hidden_states") == std::string::npos) continue;
+            if (!param_node || input_node->get_friendly_name().find("hidden_states") == std::string::npos) continue;
             // Rewire all outputs of this MatMul to use the input_node directly
             for (auto& output : matmul_node->outputs()) {
                 for (auto& target : output.get_target_inputs()) {
@@ -131,10 +127,8 @@ void shift_fc_from_draft_to_main(std::shared_ptr<ov::Model>& main_model, std::sh
         return nullptr;
     };
     auto fc_weights = remove_fc_and_rewire(draft_model);
-    if (!fc_weights) {
-        GENAI_WARN("Error: failed to retrieve and remove FC matmul from draft model.");
-        return;
-    }
+    if (!fc_weights)
+        OPENVINO_THROW("Failed to locate FC weights in eagle3 draft model for shifting to main model.");
     // now we create the fc into main model
     for (const auto& result : main_model->get_results()) {
         auto input_node = result->input_value(0).get_node_shared_ptr();
@@ -147,12 +141,14 @@ void shift_fc_from_draft_to_main(std::shared_ptr<ov::Model>& main_model, std::sh
     }
 }
 
-std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(std::shared_ptr<ov::Model>& model) {
+std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(const std::shared_ptr<ov::Model>& model) {
     // extract result nodes from model
     for (const auto& result : model->get_results()) {
         auto input_node = result->input_value(0).get_node_shared_ptr();
         auto constant = ov::as_type_ptr<ov::op::v0::Constant>(input_node);
         if (constant && constant->get_friendly_name().find("d2t") != std::string::npos) {
+            model->remove_result(result);
+            model->validate_nodes_and_infer_types();
             return constant;
         }
     }
@@ -178,8 +174,7 @@ void remove_d2t_result_node(std::shared_ptr<ov::Model>& model) {
     }
 }
 
-void hidden_state_transform(std::shared_ptr<ov::Model>& model,
-                            const std::vector<int>& hidden_layers_to_abstract) {
+void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector<int32_t>& hidden_layers_to_abstract) {
     if (hidden_layers_to_abstract.empty()) {
         return;
     }
@@ -191,7 +186,7 @@ void hidden_state_transform(std::shared_ptr<ov::Model>& model,
     std::vector<std::string> patterns;
     if (hidden_layers_to_abstract.size() > 1) {
         patterns.reserve(hidden_layers_to_abstract.size());
-        for (int idx : hidden_layers_to_abstract) {
+        for (int32_t idx : hidden_layers_to_abstract) {
             patterns.emplace_back("layers." + std::to_string(idx) + "/"); // main description
         }
     } else {
@@ -200,7 +195,7 @@ void hidden_state_transform(std::shared_ptr<ov::Model>& model,
 
     // Helper: check if node is a residual Add node with expected structure
     auto is_residual_node = [](const std::shared_ptr<ov::Node>& node) -> bool {
-        if (auto add = ov::as_type_ptr<ov::op::v1::Add>(node)) {
+        if (const auto& add = ov::as_type_ptr<ov::op::v1::Add>(node)) {
             auto input1 = add->get_input_node_shared_ptr(1);
             auto matmul = ov::as_type_ptr<ov::op::v0::MatMul>(input1);
             if (!matmul) return false;
@@ -237,13 +232,12 @@ void hidden_state_transform(std::shared_ptr<ov::Model>& model,
         const std::string output_name = "last_hidden_state";
         result->output(0).set_names({output_name});
         result->set_friendly_name(output_name);
-
+        // NPUW use this info to identify manually added outputs
         result->get_rt_info()["manually_added_output"] = true;
-
         model->add_results({result});
     }
 }
 
-}  // namespace speculative_decoding
+}  // namespace eagle3
 }  // namespace genai
 }  // namespace ov

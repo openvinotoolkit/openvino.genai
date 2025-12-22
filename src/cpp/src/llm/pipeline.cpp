@@ -167,7 +167,7 @@ static std::unique_ptr<LLMPipelineImplBase> create(
     if (draft_model_descr.model != nullptr) {
         // Extract Eagle3 configuration from draft model properties
         // Pass models_path for auto-deducing hidden_layers_list from config.json
-        auto eagle_rt_info = ov::genai::speculative_decoding::extract_eagle_mode_from_config(
+        auto eagle_rt_info = ov::genai::eagle3::extract_eagle3_info_from_config(
             draft_model_descr.properties, 
             models_path
         );

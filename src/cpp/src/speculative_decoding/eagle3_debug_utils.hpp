@@ -11,6 +11,8 @@
 #include <vector>
 #include <openvino/runtime/tensor.hpp>
 
+namespace ov {
+namespace genai {
 namespace eagle3 {
 
 // Pipeline Step Enumeration
@@ -263,3 +265,5 @@ inline void log_sequence_state(const std::string& context,
 }
 
 }  // namespace eagle3
+}  // namespace genai
+}  // namespace ov
