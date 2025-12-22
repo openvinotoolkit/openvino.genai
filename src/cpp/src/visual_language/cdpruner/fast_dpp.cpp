@@ -284,49 +284,66 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
 
         // Copy data for each original batch
         for (size_t b = 0; b < original_batch_size; ++b) {
-            // Copy first half: merged[b][0] = first[b]
             size_t first_src_offset = b * matrix_size;
             size_t first_dst_offset = b * 2 * matrix_size + 0 * matrix_size;
             std::memcpy(merged_data + first_dst_offset, first_data + first_src_offset, matrix_size_bytes);
 
-            // Copy second half: merged[b][1] = second[b]
             size_t second_src_offset = b * matrix_size;
             size_t second_dst_offset = b * 2 * matrix_size + 1 * matrix_size;
             std::memcpy(merged_data + second_dst_offset, second_data + second_src_offset, matrix_size_bytes);
         }
 
     } else {
-        // Create merged tensor with padding for different sizes
+        // Pad to max size, fill padding with first token's data from larger matrix
         size_t max_tokens = std::max(first_tokens, second_tokens);
         merged_kernel = ov::Tensor(ov::element::f32, {original_batch_size, 2, max_tokens, max_tokens});
         float* merged_data = merged_kernel.data<float>();
 
-        // Initialize with zeros
-        std::memset(merged_data, 0, merged_kernel.get_byte_size());
-
         const float* first_data = kernel_matrix_first.data<const float>();
         const float* second_data = kernel_matrix_second.data<const float>();
 
-        // Copy data for each original batch with padding
+        const float* larger_matrix_data = (first_tokens > second_tokens) ? first_data : second_data;
+        size_t larger_matrix_tokens = std::max(first_tokens, second_tokens);
+
         for (size_t b = 0; b < original_batch_size; ++b) {
-            // Copy first matrix with padding
-            for (size_t i = 0; i < first_tokens; ++i) {
-                size_t src_offset = b * first_tokens * first_tokens + i * first_tokens;
+            const float* padding_source = larger_matrix_data + b * larger_matrix_tokens * larger_matrix_tokens;
+
+            for (size_t i = 0; i < max_tokens; ++i) {
                 size_t dst_offset = b * 2 * max_tokens * max_tokens + 0 * max_tokens * max_tokens + i * max_tokens;
-                std::memcpy(merged_data + dst_offset, first_data + src_offset, first_tokens * sizeof(float));
+                if (i < first_tokens) {
+                    size_t src_offset = b * first_tokens * first_tokens + i * first_tokens;
+                    std::memcpy(merged_data + dst_offset, first_data + src_offset, first_tokens * sizeof(float));
+                    if (first_tokens < max_tokens) {
+                        for (size_t j = first_tokens; j < max_tokens; ++j) {
+                            merged_data[dst_offset + j] = padding_source[0];
+                        }
+                    }
+                } else {
+                    for (size_t j = 0; j < max_tokens; ++j) {
+                        merged_data[dst_offset + j] = padding_source[0];
+                    }
+                }
             }
 
-            // Copy second matrix with padding
-            for (size_t i = 0; i < second_tokens; ++i) {
-                size_t src_offset = b * second_tokens * second_tokens + i * second_tokens;
+            for (size_t i = 0; i < max_tokens; ++i) {
                 size_t dst_offset = b * 2 * max_tokens * max_tokens + 1 * max_tokens * max_tokens + i * max_tokens;
-                std::memcpy(merged_data + dst_offset, second_data + src_offset, second_tokens * sizeof(float));
+                if (i < second_tokens) {
+                    size_t src_offset = b * second_tokens * second_tokens + i * second_tokens;
+                    std::memcpy(merged_data + dst_offset, second_data + src_offset, second_tokens * sizeof(float));
+                    if (second_tokens < max_tokens) {
+                        for (size_t j = second_tokens; j < max_tokens; ++j) {
+                            merged_data[dst_offset + j] = padding_source[0];
+                        }
+                    }
+                } else {
+                    for (size_t j = 0; j < max_tokens; ++j) {
+                        merged_data[dst_offset + j] = padding_source[0];
+                    }
+                }
             }
         }
     }
 
-    // Use DPP selector with merged tensor
-    // Process each batch individually
     std::vector<std::vector<size_t>> batch_results;
     batch_results.reserve(original_batch_size);
 
@@ -335,26 +352,28 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
     size_t max_tokens = (first_tokens == second_tokens) ? first_tokens : std::max(first_tokens, second_tokens);
     const float* merged_data = merged_kernel.data<const float>();
     for (size_t batch_idx = 0; batch_idx < original_batch_size; ++batch_idx) {
-        // Extract single batch matrix with shape [2, max_tokens, max_tokens]
         ov::Tensor single_batch_kernel(ov::element::f32, {2, max_tokens, max_tokens});
         float* single_batch_data = single_batch_kernel.data<float>();
 
-        // Copy data for this batch: [2, max_tokens, max_tokens]
         size_t batch_matrix_size = 2 * max_tokens * max_tokens;
         size_t batch_offset = batch_idx * batch_matrix_size;
         std::memcpy(single_batch_data, merged_data + batch_offset, batch_matrix_size * sizeof(float));
 
-        // Call select_opencl_internal with single batch matrix
         auto selected_tokens = m_opencl_dpp->select(single_batch_kernel, num_tokens_to_keep);
 
         std::vector<size_t> merged_selection;
-        // convert splited selected_batches to merged_selection
+        // Filter out padded tokens and convert to absolute positions
         for (size_t i = 0; i < selected_tokens.size(); ++i) {
             size_t token_idx = selected_tokens[i];
             if (i < tokens_first_half) {
-                merged_selection.push_back(token_idx);
+                if (token_idx < first_tokens) {
+                    merged_selection.push_back(token_idx);
+                }
             } else {
-                merged_selection.push_back(token_idx + split_point);
+                if (token_idx < second_tokens) {
+                    merged_selection.push_back(token_idx + split_point);
+                }
+                // else: skip padded token
             }
         }
 
