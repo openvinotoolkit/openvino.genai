@@ -78,12 +78,12 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
     return *this;
 }
 
-void LTXVideoTransformer3DModel::set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) {
+void LTXVideoTransformer3DModel::set_hidden_states(const std::string& tensor_name, const ov::Tensor& encoder_hidden_states) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
     m_request.set_tensor(tensor_name, encoder_hidden_states);
 }
 
-ov::Tensor LTXVideoTransformer3DModel::infer(const ov::Tensor latent_model_input, const ov::Tensor timestep) {
+ov::Tensor LTXVideoTransformer3DModel::infer(const ov::Tensor& latent_model_input, const ov::Tensor& timestep) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first. Cannot infer non-compiled model");
 
     m_request.set_tensor("hidden_states", latent_model_input);

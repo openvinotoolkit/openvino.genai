@@ -44,9 +44,9 @@ public:
         return compile(device, ov::AnyMap{std::forward<Properties>(properties)...});
     }
 
-    void set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states);
+    void set_hidden_states(const std::string& tensor_name, const ov::Tensor& encoder_hidden_states);
 
-    ov::Tensor infer(const ov::Tensor latent, const ov::Tensor timestep);
+    ov::Tensor infer(const ov::Tensor& latent, const ov::Tensor& timestep);
 
     LTXVideoTransformer3DModel& reshape(int64_t batch_size, int64_t num_frames, int64_t height, int64_t width, int64_t tokenizer_model_max_length);
 
