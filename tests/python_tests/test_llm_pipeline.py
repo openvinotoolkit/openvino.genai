@@ -184,7 +184,7 @@ def test_encoded_inputs(
     assert np.all(ov_res == hf_res)
 
 
-@pytest.mark.parametrize("llm_model", ["katuni4ka/tiny-random-phi3"], indirect=True)
+@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
 def test_readonly_input_tensor(ov_pipe: ov_genai.LLMPipeline) -> None:
     input_ids = np.array([[1, 4, 42]], dtype=np.int64)
     input_ids.flags.writeable = False
