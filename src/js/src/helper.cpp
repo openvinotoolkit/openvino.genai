@@ -4,6 +4,7 @@
 #include "include/chat_history.hpp"
 #include "include/parser.hpp"
 #include "include/perf_metrics.hpp"
+#include "include/vlm_pipeline/perf_metrics.hpp"
 
 namespace {
 constexpr const char* JS_SCHEDULER_CONFIG_KEY = "schedulerConfig";
@@ -376,6 +377,25 @@ std::vector<std::shared_ptr<ov::genai::Parser>> js_to_cpp<std::vector<std::share
 }
 
 template <>
+std::vector<ov::Tensor> js_to_cpp<std::vector<ov::Tensor>>(const Napi::Env& env, const Napi::Value& value) {
+    std::vector<ov::Tensor> tensors;
+    if (value.IsUndefined() || value.IsNull()) {
+        return tensors;
+    }
+    if (value.IsArray()) {
+        auto array = value.As<Napi::Array>();
+        size_t length = array.Length();
+        tensors.reserve(length);
+        for (uint32_t i = 0; i < length; ++i) {
+            tensors.push_back(js_to_cpp<ov::Tensor>(env, array[i]));
+        }
+    } else {
+        OPENVINO_THROW("Passed argument must be an array of Tensors.");
+    }
+    return tensors;
+}
+
+template <>
 ov::genai::PerfMetrics& unwrap<ov::genai::PerfMetrics>(const Napi::Env& env, const Napi::Value& value) {
     const auto obj = value.As<Napi::Object>();
     const auto& prototype = env.GetInstanceData<AddonData>()->perf_metrics;
@@ -385,6 +405,17 @@ ov::genai::PerfMetrics& unwrap<ov::genai::PerfMetrics>(const Napi::Env& env, con
                     "Passed argument is not of type PerfMetrics");
 
     const auto js_metrics = Napi::ObjectWrap<PerfMetricsWrapper>::Unwrap(obj);
+    return js_metrics->get_value();
+}
+
+template <>
+ov::genai::VLMPerfMetrics& unwrap<ov::genai::VLMPerfMetrics>(const Napi::Env& env, const Napi::Value& value) {
+    const auto obj = value.As<Napi::Object>();
+    const auto& prototype = env.GetInstanceData<AddonData>()->vlm_perf_metrics;
+    OPENVINO_ASSERT(prototype, "Invalid pointer to prototype.");
+    OPENVINO_ASSERT(obj.InstanceOf(prototype.Value().As<Napi::Function>()),
+                    "Passed argument is not of type VLMPerfMetrics");
+    const auto js_metrics = Napi::ObjectWrap<VLMPerfMetricsWrapper>::Unwrap(obj);
     return js_metrics->get_value();
 }
 
@@ -634,4 +665,23 @@ Napi::Function get_prototype_from_ov_addon(const Napi::Env& env, const std::stri
     OPENVINO_ASSERT(ctor_val.IsFunction(), ctor_name + std::string(" is not a prototype"));
 
     return ctor_val.As<Napi::Function>();
+}
+
+Napi::Object to_decoded_result(const Napi::Env& env, const ov::genai::DecodedResults& results) {
+    Napi::Object obj = Napi::Object::New(env);
+    obj.Set("texts", cpp_to_js<std::vector<std::string>, Napi::Value>(env, results.texts));
+    obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, results.scores));
+    obj.Set("perfMetrics", PerfMetricsWrapper::wrap(env, results.perf_metrics));
+    obj.Set("parsed", cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(env, results.parsed));
+    obj.Set("subword", Napi::String::New(env, results));
+    return obj;
+}
+
+Napi::Object to_vlm_decoded_result(const Napi::Env& env, const ov::genai::VLMDecodedResults& results) {
+    Napi::Object obj = Napi::Object::New(env);
+    obj.Set("texts", cpp_to_js<std::vector<std::string>, Napi::Value>(env, results.texts));
+    obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, results.scores));
+    obj.Set("perfMetrics", VLMPerfMetricsWrapper::wrap(env, results.perf_metrics));
+    obj.Set("parsed", cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(env, results.parsed));
+    return obj;
 }
