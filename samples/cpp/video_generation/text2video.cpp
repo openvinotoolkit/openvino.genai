@@ -57,10 +57,10 @@ int main(int32_t argc, char* argv[]) try {
     auto output = pipe.generate(
         prompt,
         ov::genai::negative_prompt("worst quality, inconsistent motion, blurry, jittery, distorted"),
-        ov::genai::height(480),
-        ov::genai::width(704),
+        ov::genai::height(128),
+        ov::genai::width(128),
         ov::genai::num_frames(161),
-        ov::genai::num_inference_steps(25),
+        ov::genai::num_inference_steps(10),
         ov::genai::num_videos_per_prompt(1),
         ov::genai::callback(progress_bar),
         ov::genai::frame_rate(frame_rate),

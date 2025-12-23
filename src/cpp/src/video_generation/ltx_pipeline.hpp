@@ -217,6 +217,7 @@ ov::Tensor denormalize_latents(ov::Tensor latents,
 }
 
 inline ov::Tensor tensor_from_vector(const std::vector<float>& data) {
+    std::cout << "!!!!!!!size " << data.size() << std::endl;
     ov::Tensor t{ov::element::f32, ov::Shape{data.size()}};
     if (!data.empty()) {
         std::memcpy(t.data<float>(), data.data(), data.size() * sizeof(float));
