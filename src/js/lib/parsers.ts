@@ -35,3 +35,7 @@ export interface IDeepSeekR1ReasoningParser extends IReasoningParser {
 export interface IPhi4ReasoningParser extends Parser {
   new (): IPhi4ReasoningParser;
 }
+
+export interface ILlama3PythonicToolParser extends Parser {
+  new (): ILlama3PythonicToolParser;
+}

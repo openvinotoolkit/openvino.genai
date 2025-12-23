@@ -584,6 +584,14 @@ std::shared_ptr<ov::genai::Parser> get_native_parser(const Napi::Env& env, const
         return parser_wrapper->get_parser();
     }
 
+    // Check Llama3PythonicToolParser
+    const auto& llama3_pythonic_parser_prototype = addon_data->llama3_pythonic_tool_parser;
+    OPENVINO_ASSERT(llama3_pythonic_parser_prototype, "Invalid pointer to Llama3PythonicToolParser prototype.");
+    if (object.Get("constructor").StrictEquals(llama3_pythonic_parser_prototype.Value())) {
+        auto parser_wrapper = Napi::ObjectWrap<Llama3PythonicToolParserWrapper>::Unwrap(object);
+        return parser_wrapper->get_parser();
+    }
+
     return nullptr;
 }
 

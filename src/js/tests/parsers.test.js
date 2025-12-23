@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { before, describe, it } from "node:test";
 import {
   DeepSeekR1ReasoningParser,
+  Llama3PythonicToolParser,
   LLMPipeline,
   Phi4ReasoningParser,
   ReasoningParser,
@@ -130,6 +131,24 @@ describe("Use parsers from js", () => {
     };
     phi4Parser.parse(message);
     assert.strictEqual(message.reasoning_content, reasoning);
+  });
+
+  it('Llama3PythonicToolParser should extract tool usage between "<tool>" tags', () => {
+    const llama3Parser = new Llama3PythonicToolParser();
+    const toolCalling = '[get_weather(location="New York, NY", unit="celsius")]';
+    const message = {
+      content: `Call this tool ${toolCalling} to get answers.`,
+    };
+    llama3Parser.parse(message);
+    assert.deepStrictEqual(message.tool_calls, [
+      {
+        arguments: {
+          location: "New York, NY",
+          unit: "celsius",
+        },
+        name: "get_weather",
+      },
+    ]);
   });
 });
 

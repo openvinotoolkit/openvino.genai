@@ -4,7 +4,12 @@ import { join, dirname, resolve } from "node:path";
 import type { ChatHistory as IChatHistory } from "./chatHistory.js";
 import type { Tokenizer as ITokenizer } from "./tokenizer.js";
 import { addon as ovAddon } from "openvino-node";
-import { IReasoningParser, IDeepSeekR1ReasoningParser, IPhi4ReasoningParser } from "./parsers.js";
+import {
+  IReasoningParser,
+  IDeepSeekR1ReasoningParser,
+  IPhi4ReasoningParser,
+  ILlama3PythonicToolParser,
+} from "./parsers.js";
 
 export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
 export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
@@ -67,6 +72,7 @@ interface OpenVINOGenAIAddon {
   ReasoningParser: IReasoningParser;
   DeepSeekR1ReasoningParser: IDeepSeekR1ReasoningParser;
   Phi4ReasoningParser: IPhi4ReasoningParser;
+  Llama3PythonicToolParser: ILlama3PythonicToolParser;
   setOpenvinoAddon: (ovAddon: any) => void;
 }
 
@@ -96,9 +102,11 @@ export const {
   ReasoningParser,
   DeepSeekR1ReasoningParser,
   Phi4ReasoningParser,
+  Llama3PythonicToolParser,
 } = addon;
 export type ChatHistory = IChatHistory;
 export type Tokenizer = ITokenizer;
 export type ReasoningParser = IReasoningParser;
 export type DeepSeekR1ReasoningParser = IDeepSeekR1ReasoningParser;
 export type Phi4ReasoningParser = IPhi4ReasoningParser;
+export type Llama3PythonicToolParser = ILlama3PythonicToolParser;

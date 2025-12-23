@@ -149,3 +149,28 @@ void Phi4ReasoningParserWrapper::parse(const Napi::CallbackInfo& info) {
 std::shared_ptr<ov::genai::Phi4ReasoningParser> Phi4ReasoningParserWrapper::get_parser() {
     return _parser;
 }
+
+Llama3PythonicToolParserWrapper::Llama3PythonicToolParserWrapper(const Napi::CallbackInfo& info)
+    : Napi::ObjectWrap<Llama3PythonicToolParserWrapper>(info) {
+    Napi::Env env = info.Env();
+
+    try {
+        _parser = std::make_shared<ov::genai::Llama3PythonicToolParser>();
+    } catch (const std::exception& e) {
+        Napi::Error::New(env, e.what()).ThrowAsJavaScriptException();
+    }
+}
+
+Napi::Function Llama3PythonicToolParserWrapper::get_class(Napi::Env env) {
+    return DefineClass(env,
+                       "Llama3PythonicToolParser",
+                       {InstanceMethod("parse", &Llama3PythonicToolParserWrapper::parse)});
+}
+
+void Llama3PythonicToolParserWrapper::parse(const Napi::CallbackInfo& info) {
+    parse_with_parser(info, _parser);
+}
+
+std::shared_ptr<ov::genai::Llama3PythonicToolParser> Llama3PythonicToolParserWrapper::get_parser() {
+    return _parser;
+}
