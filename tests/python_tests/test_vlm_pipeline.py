@@ -451,6 +451,22 @@ def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Te
     assert res.texts[0] == "".join(result_from_streamer)
 
 
+@parametrize_one_model_sdpa
+def test_vlm_readonly_image_tensor(ov_pipe_model: VlmModelInfo, cat_image_32x32):
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=5)
+
+    image_array = np.array(cat_image_32x32, dtype=np.uint8)
+    image_array.flags.writeable = False
+
+    readonly_image_tensor = openvino.Tensor(image_array)
+    ov_pipe.generate(
+        PROMPTS[0],
+        images=[readonly_image_tensor],
+        generation_config=generation_config,
+    )
+
+
 @pytest.mark.parametrize(
     "config", 
     [
