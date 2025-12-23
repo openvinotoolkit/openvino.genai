@@ -414,7 +414,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
 
             auto word_timestamps = get_word_level_timestamps(accumulated_qks,
                                                              model_config,
-                                                             input_features.n_frames,
+                                                             input_features.n_active_frames,
                                                              output_tokens_with_special,
                                                              tokenizer,
                                                              config);

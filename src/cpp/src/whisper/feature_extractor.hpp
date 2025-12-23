@@ -14,6 +14,7 @@ namespace genai {
 struct WhisperFeatures {
     size_t feature_size;
     size_t n_frames;
+    size_t n_active_frames;
 
     // flattened 2d array with shape [feature_size, n_frames]
     std::vector<float> data;

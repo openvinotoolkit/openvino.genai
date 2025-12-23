@@ -912,6 +912,22 @@ std::vector<ov::genai::WhisperWordTiming> merge_punctuations(std::vector<ov::gen
     return filtered_words;
 }
 
+std::string trim(const std::string& text) {
+    std::string result = text;
+    result.erase(result.begin(), std::find_if(result.begin(), result.end(), [](unsigned char ch) {
+                     return !std::isspace(ch);
+                 }));
+
+    result.erase(std::find_if(result.rbegin(),
+                              result.rend(),
+                              [](unsigned char ch) {
+                                  return !std::isspace(ch);
+                              })
+                     .base(),
+                 result.end());
+    return result;
+}
+
 }  // namespace
 
 namespace ov::genai {
@@ -932,7 +948,13 @@ std::pair<std::vector<std::string>, std::vector<std::vector<int64_t>>> split_tok
 
         const bool is_special = subword_tokens.size() && subword_tokens[0] >= eot;
         const bool with_space = !subword.empty() && std::isspace(subword[0]);
-        const bool is_punctuation = !subword.empty() && std::ispunct(subword[0]);
+
+        // punctuation = subword.strip() in string.punctuation
+        // python is_punct: r"""!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~"""
+        // const bool is_punctuation = !subword.empty() && std::ispunct(subword[0]);
+        const std::string trimmed_subword = trim(subword);
+        const bool is_punctuation =
+            !trimmed_subword.empty() && trimmed_subword.size() == 1 && std::ispunct(trimmed_subword[0]);
 
         if (words.empty() || is_special || with_space || is_punctuation) {
             words.push_back(subword);
@@ -942,6 +964,16 @@ std::pair<std::vector<std::string>, std::vector<std::vector<int64_t>>> split_tok
             word_tokens.back().insert(word_tokens.back().end(), subword_tokens.begin(), subword_tokens.end());
         }
     }
+
+    // std::cout << "Words:\n";
+    // for (size_t i = 0; i < words.size(); ++i) {
+    //     std::cout << "  \"" << words[i] << "\", Tokens: [";
+    //     for (const auto& token_id : word_tokens[i]) {
+    //         std::cout << token_id << ", ";
+    //     }
+    //     std::cout << "]\n";
+    // }
+    // std::cout << std::endl;
 
     return {words, word_tokens};
 }
@@ -993,6 +1025,18 @@ std::vector<WhisperWordTiming> get_word_level_timestamps(const std::vector<Tenso
     truncate_long_words_at_sentence_boundaries(words_timestamps);
 
     auto merged_timestamps = merge_punctuations(words_timestamps);
+
+    // the "hack" part of OpenAI code is missing: https://github.com/openai/whisper/blob/main/whisper/timing.py#L346
+    // It is intended to adjust word timings at sentence boundaries based on median word duration.
+    // # GenAI:     That's     0.00 - 1.04 | OpenAI:  That's     0.60 - 1.04
+    // # GenAI:     funny,     1.04 - 1.34 | OpenAI:  funny,     1.04 - 1.34
+    // # GenAI:     remarked   1.72 - 1.96 | OpenAI:  remarked   1.72 - 1.96
+    // # GenAI:     a          1.96 - 2.04 | OpenAI:  a          1.96 - 2.04
+    // # GenAI:     bit,       2.04 - 2.20 | OpenAI:  bit,       2.04 - 2.20
+    // # GenAI:     see        2.38 - 2.38 | OpenAI:  see        2.38 - 2.38
+    // # GenAI:     you        2.38 - 2.50 | OpenAI:  you        2.38 - 2.50
+    // # GenAI:     thought    2.50 - 2.64 | OpenAI:  thought    2.50 - 2.64
+    // # GenAI:     funny.     2.64 - 2.86 | OpenAI:  funny.     2.64 - 2.86
 
     return merged_timestamps;
 };

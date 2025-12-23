@@ -53,7 +53,7 @@ def get_whisper_models_list(tiny_only=False):
 # used whisper models are relatively small
 # cache them in memory to speedup tests
 @functools.lru_cache()
-def read_whisper_model(params, stateful=True):
+def read_whisper_model(params, stateful=True, word_timestamps=False):
     model_id, path = params
     if not stateful:
         path = pathlib.Path(f"{path}_with_past")
@@ -92,7 +92,7 @@ def read_whisper_model(params, stateful=True):
         model_id,
         path,
         hf_pipe,
-        ov_genai.WhisperPipeline(path, "CPU", ENABLE_MMAP=False),
+        ov_genai.WhisperPipeline(path, "CPU", word_timestamps=word_timestamps, ENABLE_MMAP=False),
     )
 
 
@@ -184,6 +184,9 @@ def run_genai(
     genai_config.do_sample = config.do_sample
     genai_config.top_p = config.top_p
     genai_config.num_beams = config.num_beams
+    genai_config.word_timestamps = config.word_timestamps
+
+    print(genai_config.alignment_heads)
 
     return pipeline.generate(sample, genai_config, streamer=streamer)
 
@@ -580,6 +583,41 @@ def test_shortform(model_descr):
         tmp_path=model_descr[1],
         sample=samples,
     )
+
+
+@pytest.fixture
+def whisper_librispeech_word_timestamps_reference():
+    json_path = pathlib.Path(
+        "tests/python_tests/data/whisper/librispeech_asr_dummy_word_timestamps_reference_tiny.json"
+    )
+    with open(json_path, "r", encoding="utf-8") as f:
+        reference = json.load(f)
+    return reference
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
+def test_word_level_timestamps(model_descr, whisper_librispeech_word_timestamps_reference):
+    samples = []
+    ds = datasets.load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
+
+    for ds_row in ds:
+        samples.append(ds_row["audio"]["array"])
+
+    pipe = read_whisper_model(model_descr, word_timestamps=True)[3]
+
+    for i, sample in enumerate(samples):
+        result = pipe.generate(
+            sample,
+            return_timestamps=False,
+            word_timestamps=True,
+        )
+        reference = whisper_librispeech_word_timestamps_reference[str(i)]
+        assert result.texts[0] == reference["transcription"]
+        for res_word, ref_word in zip(result.words, reference["words"]):
+            assert res_word.word == ref_word["word"]
+            assert round(res_word.start_ts, 2) == round(ref_word["start_ts"], 2)
+            assert round(res_word.end_ts, 2) == round(ref_word["end_ts"], 2)
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
