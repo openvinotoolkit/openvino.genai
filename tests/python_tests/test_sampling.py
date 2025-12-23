@@ -35,11 +35,11 @@ def model_tinyllama_1_1b_chat() -> OVConvertedModelSchema:
 @pytest.mark.parametrize(
     "generation_config,prompt",
     [
-        ({"max_new_tokens": 30}, 'table is made of'),
-        ({"max_new_tokens": 30, "min_new_tokens": 30}, '你好！ 你好嗎？'),
-        ({"max_new_tokens": 30, "ignore_eos": True}, 'Alan Turing was a'),
-        ({"max_length": 30, "ignore_eos": True}, 'table is made of'),
-        ({"stop_token_ids": {28998}, "apply_chat_template": False}, 'The Sun is yellow because'),
+        ({"max_new_tokens": 30}, "table is made of"),
+        ({"max_new_tokens": 30, "min_new_tokens": 30}, "你好！ 你好嗎？"),
+        ({"max_new_tokens": 30, "ignore_eos": True}, "Alan Turing was a"),
+        ({"max_length": 30, "ignore_eos": True}, "table is made of"),
+        ({"stop_token_ids": {18392}, "apply_chat_template": False}, "The Sun is yellow because"),
     ],
     ids=[
         "max_new_tokens",
