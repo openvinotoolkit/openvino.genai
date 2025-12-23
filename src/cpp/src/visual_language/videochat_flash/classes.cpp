@@ -333,11 +333,10 @@ std::shared_ptr<ov::Model> build_bipartite_soft_matching_merge_opt_model(int dim
         auto src_shape = std::make_shared<ov::op::v3::ShapeOf>(src, ov::element::i64);
         auto idx_b = std::make_shared<ov::op::v1::Broadcast>(idx_u, src_shape);
 
-        // ScatterElementsUpdate with SUM reduction (opset12)
-        return std::make_shared<ov::op::v3::ScatterElementsUpdate>(
-            // dst, idx_b, src, axis_p, ov::op::v3::ScatterElementsUpdate::Reduction::SUM
-            dst, idx_b, src, axis_p
+        auto merged = std::make_shared<ov::op::v12::ScatterElementsUpdate>(
+            dst, idx_b, src, const_1, ov::op::v12::ScatterElementsUpdate::Reduction::SUM
         );
+        return merged;
     };
 
     // 7. Final Weighted Merge
@@ -437,7 +436,7 @@ ov::Tensor load_pos_emb_bin_to_ov_tensor(const std::string& bin_file_path, size_
         (size_t)1, 
         std::multiplies<size_t>()
     );
-    size_t element_size = EXPECTED_TYPE.size(); // f32 占用 4 字节
+    size_t element_size = EXPECTED_TYPE.size();
     size_t total_bytes = total_elements * element_size;
 
     std::ifstream file(bin_file_path, std::ios::binary | std::ios::ate);
