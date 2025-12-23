@@ -94,7 +94,7 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
     "tiny-random-minicpmv-2_6": {
-        "name": "katuni4ka/tiny-random-minicpmv-2_6",
+        "name": "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
         "convert_args": ['--trust-remote-code', "--task", "image-text-to-text"]
     },
     "InternVL2-1B": {
@@ -118,7 +118,7 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "convert_args": ["--task", "text-generation-with-past", "--weight-format", "int8"]
     },
     "tiny-random-latent-consistency": {
-        "name": "echarlaix/tiny-random-latent-consistency",
+        "name": "optimum-intel-internal-testing/tiny-random-latent-consistency",
         "convert_args": ['--trust-remote-code', '--weight-format', 'fp16']
     },
     "tiny-random-latent-consistency-lora": {
@@ -126,11 +126,11 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "convert_args": []
     },
     "tiny-random-llava": {
-        "name": "katuni4ka/tiny-random-llava",
+        "name": "optimum-intel-internal-testing/tiny-random-llava",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
     },
     "tiny-random-qwen2vl": {
-        "name": "katuni4ka/tiny-random-qwen2vl",
+        "name": "optimum-intel-internal-testing/tiny-random-qwen2vl",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
     },
     "bge-small-en-v1.5": {
@@ -162,7 +162,7 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "convert_args": ["--task", "text-generation-with-past", "--trust-remote-code", "--eagle3"],
     },
     "tiny-random-llava-next-video": {
-        "name": "katuni4ka/tiny-random-llava-next-video",
+        "name": "optimum-intel-internal-testing/tiny-random-llava-next-video",
         "convert_args": ["--trust-remote-code", "--task", "image-text-to-text"]
     }
 }

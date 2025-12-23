@@ -13,10 +13,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 MODEL_CACHE = tempfile.mkdtemp()
-OV_IMAGE_MODELS = ["echarlaix/tiny-random-stable-diffusion-xl",
-                   "yujiepan/stable-diffusion-3-tiny-random",
-                   "katuni4ka/tiny-random-flux",
-                   "katuni4ka/tiny-random-flux-fill"]
+OV_IMAGE_MODELS = [
+    "optimum-intel-internal-testing/tiny-random-stable-diffusion-xl",
+    "optimum-intel-internal-testing/stable-diffusion-3-tiny-random",
+    "optimum-intel-internal-testing/tiny-random-flux",
+    "optimum-intel-internal-testing/tiny-random-flux-fill",
+]
 
 
 def run_wwb(args, env=None):
@@ -115,7 +117,7 @@ def test_image_model_types(model_id, model_type, backend, tmp_path):
 def test_image_model_genai(model_id, model_type, tmp_path):
     if ("flux-fill" in model_id) and (model_type != "image-inpainting"):
         pytest.skip(reason="FLUX-Fill is supported as inpainting only")
-    if model_id == "katuni4ka/tiny-random-flux" and model_type == "image-to-image":
+    if model_id == "optimum-intel-internal-testing/tiny-random-flux" and model_type == "image-to-image":
         pytest.xfail("Randomly wwb died with <Signals.SIGABRT: 6>. Ticket 170878")
     if (model_type == "image-to-image" or model_type == "image-inpainting") and sys.platform == "win32":
         pytest.xfail("Ticket 178790")
