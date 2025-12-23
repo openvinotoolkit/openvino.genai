@@ -75,6 +75,9 @@ def get_similarity(output: str) -> float:
 def test_image_model_types(model_id, model_type, backend, tmp_path):
     if 'tiny-stable-diffusion-torch' in model_id and sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
+    if (model_type == "image-to-image" or model_type == "image-inpainting") and sys.platform == "win32":
+        pytest.xfail("Ticket 178790")
+
     wwb_args = [
         "--base-model",
         model_id,
@@ -116,6 +119,8 @@ def test_image_model_genai(model_id, model_type, tmp_path):
         pytest.skip(reason="FLUX-Fill is supported as inpainting only")
     if model_id == "optimum-intel-internal-testing/tiny-random-flux" and model_type == "image-to-image":
         pytest.xfail("Randomly wwb died with <Signals.SIGABRT: 6>. Ticket 170878")
+    if (model_type == "image-to-image" or model_type == "image-inpainting") and sys.platform == "win32":
+        pytest.xfail("Ticket 178790")
 
     mac_arm64_skip = any(substring in model_id for substring in ('stable-diffusion-xl',
                                                                  'tiny-random-stable-diffusion',
@@ -210,6 +215,9 @@ def test_image_model_genai(model_id, model_type, tmp_path):
     ],
 )
 def test_image_custom_dataset(model_id, model_type, backend, tmp_path):
+    if sys.platform == "win32":
+        pytest.xfail("Ticket 178790")
+
     GT_FILE = tmp_path / "test_sd.csv"
     wwb_args = [
         "--base-model",

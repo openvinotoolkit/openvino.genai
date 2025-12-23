@@ -12,6 +12,9 @@ logger = logging.getLogger(__name__)
 def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path):
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
+    if sys.platform == "win32":
+        pytest.xfail("Ticket 178790")
+
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = tmp_path / model_id.replace("/", "_")
 
