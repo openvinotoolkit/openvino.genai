@@ -55,28 +55,32 @@ function toolsToArraySchema(...tools) {
     });
 }
 
-/** parser to extract tool calls from the model output. */
-function parse(answer) {
-    answer.parsed = [];
-    for (const content of answer.texts) {
+class CustomToolCallParser {
+    parse(msg) {
+        if (!msg.content) {
+            msg.content = "";
+        }
+        const content = msg.content;
+
         const startTag = "functools";
         const startIndex = content.indexOf(startTag);
-        if (startIndex === -1) return;
+        if (startIndex === -1) {
+            return;
+        }
 
+        const jsonPart = content.slice(startIndex + startTag.length);
         try {
-            const jsonPart = content.slice(startIndex + startTag.length);
             const toolCalls = JSON.parse(jsonPart);
-            answer.parsed.push(toolCalls);
+            msg.tool_calls = toolCalls;
+            return;
         } catch {
-            answer.parsed.push([]);
+            return;
         }
     }
-
-    return;
 }
 
 function printToolCall(answer) {
-    for (const toolCall of answer.parsed[0]) {
+    for (const toolCall of answer.parsed[0].tool_calls) {
         const args = Object.keys(toolCall["arguments"])
             .map((key) => `${key}="${toolCall["arguments"][key]}"`);
         console.log(`${toolCall["name"]}(${args.join(", ")})`);
@@ -146,10 +150,10 @@ async function main() {
     const toolCall = SOC.Concat(startToolCallTag, toolsJson);
 
     generationConfig.structured_output_config.structural_tags_config = toolCall;
+    generationConfig.parsers = [new CustomToolCallParser()];
 
     process.stdout.write("Assistant: ");
     const answer2 = await pipe.generate(modelInput2, generationConfig);
-    parse(answer2);
     console.log("\n\nThe following tool calls were generated:")
     printToolCall(answer2)
     console.log();
