@@ -39,3 +39,7 @@ export interface IPhi4ReasoningParser extends Parser {
 export interface ILlama3PythonicToolParser extends Parser {
   new (): ILlama3PythonicToolParser;
 }
+
+export interface ILlama3JsonToolParser extends Parser {
+  new (): ILlama3JsonToolParser;
+}

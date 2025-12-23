@@ -76,3 +76,17 @@ public:
 private:
     std::shared_ptr<ov::genai::Llama3PythonicToolParser> _parser;
 };
+
+class Llama3JsonToolParserWrapper : public Napi::ObjectWrap<Llama3JsonToolParserWrapper> {
+public:
+    Llama3JsonToolParserWrapper(const Napi::CallbackInfo& info);
+
+    static Napi::Function get_class(Napi::Env env);
+
+    void parse(const Napi::CallbackInfo& info);
+
+    std::shared_ptr<ov::genai::Llama3JsonToolParser> get_parser();
+
+private:
+    std::shared_ptr<ov::genai::Llama3JsonToolParser> _parser;
+};

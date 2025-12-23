@@ -1,14 +1,15 @@
-#include <napi.h>
-#include <thread>
-
 #include "include/addon.hpp"
 
-#include "include/perf_metrics.hpp"
+#include <napi.h>
+
+#include <thread>
+
+#include "include/chat_history.hpp"
 #include "include/llm_pipeline/llm_pipeline_wrapper.hpp"
+#include "include/parser.hpp"
+#include "include/perf_metrics.hpp"
 #include "include/text_embedding_pipeline/pipeline_wrapper.hpp"
 #include "include/tokenizer.hpp"
-#include "include/chat_history.hpp"
-#include "include/parser.hpp"
 
 void init_class(Napi::Env env,
                 Napi::Object exports,
@@ -68,6 +69,11 @@ Napi::Object init_module(Napi::Env env, Napi::Object exports) {
                "Llama3PythonicToolParser",
                &Llama3PythonicToolParserWrapper::get_class,
                addon_data->llama3_pythonic_tool_parser);
+    init_class(env,
+               exports,
+               "Llama3JsonToolParser",
+               &Llama3JsonToolParserWrapper::get_class,
+               addon_data->llama3_json_tool_parser);
 
     // Expose a helper to set the openvino-node addon from JS (useful for ESM)
     exports.Set("setOpenvinoAddon", Napi::Function::New(env, set_ov_addon));
@@ -76,4 +82,4 @@ Napi::Object init_module(Napi::Env env, Napi::Object exports) {
 }
 
 // Register the addon with Node.js
-NODE_API_MODULE(openvino-genai-node, init_module)
+NODE_API_MODULE(openvino - genai - node, init_module)

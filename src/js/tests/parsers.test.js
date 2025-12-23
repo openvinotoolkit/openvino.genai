@@ -6,6 +6,7 @@ import { before, describe, it } from "node:test";
 import {
   DeepSeekR1ReasoningParser,
   Llama3PythonicToolParser,
+  Llama3JsonToolParser,
   LLMPipeline,
   Phi4ReasoningParser,
   ReasoningParser,
@@ -149,6 +150,25 @@ describe("Use parsers from js", () => {
         name: "get_weather",
       },
     ]);
+  });
+
+  it("Llama3JsonToolParser should extract JSON tool calls", () => {
+    const llama3JsonToolParser = new Llama3JsonToolParser();
+    const toolCalling = {
+      function: {
+        name: "get_weather",
+        parameters: {
+          location: "New York, NY",
+          unit: "celsius",
+        },
+      },
+      type: "function",
+    };
+    const message = {
+      content: `I'll help you with that. ${JSON.stringify(toolCalling)}`,
+    };
+    llama3JsonToolParser.parse(message);
+    assert.deepStrictEqual(message.tool_calls, [toolCalling]);
   });
 });
 

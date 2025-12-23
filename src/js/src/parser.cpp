@@ -174,3 +174,26 @@ void Llama3PythonicToolParserWrapper::parse(const Napi::CallbackInfo& info) {
 std::shared_ptr<ov::genai::Llama3PythonicToolParser> Llama3PythonicToolParserWrapper::get_parser() {
     return _parser;
 }
+
+Llama3JsonToolParserWrapper::Llama3JsonToolParserWrapper(const Napi::CallbackInfo& info)
+    : Napi::ObjectWrap<Llama3JsonToolParserWrapper>(info) {
+    Napi::Env env = info.Env();
+
+    try {
+        _parser = std::make_shared<ov::genai::Llama3JsonToolParser>();
+    } catch (const std::exception& e) {
+        Napi::Error::New(env, e.what()).ThrowAsJavaScriptException();
+    }
+}
+
+Napi::Function Llama3JsonToolParserWrapper::get_class(Napi::Env env) {
+    return DefineClass(env, "Llama3JsonToolParser", {InstanceMethod("parse", &Llama3JsonToolParserWrapper::parse)});
+}
+
+void Llama3JsonToolParserWrapper::parse(const Napi::CallbackInfo& info) {
+    parse_with_parser(info, _parser);
+}
+
+std::shared_ptr<ov::genai::Llama3JsonToolParser> Llama3JsonToolParserWrapper::get_parser() {
+    return _parser;
+}

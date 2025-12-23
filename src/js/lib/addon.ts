@@ -9,6 +9,7 @@ import {
   IDeepSeekR1ReasoningParser,
   IPhi4ReasoningParser,
   ILlama3PythonicToolParser,
+  ILlama3JsonToolParser,
 } from "./parsers.js";
 
 export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
@@ -73,6 +74,7 @@ interface OpenVINOGenAIAddon {
   DeepSeekR1ReasoningParser: IDeepSeekR1ReasoningParser;
   Phi4ReasoningParser: IPhi4ReasoningParser;
   Llama3PythonicToolParser: ILlama3PythonicToolParser;
+  Llama3JsonToolParser: ILlama3JsonToolParser;
   setOpenvinoAddon: (ovAddon: any) => void;
 }
 
@@ -103,6 +105,7 @@ export const {
   DeepSeekR1ReasoningParser,
   Phi4ReasoningParser,
   Llama3PythonicToolParser,
+  Llama3JsonToolParser,
 } = addon;
 export type ChatHistory = IChatHistory;
 export type Tokenizer = ITokenizer;
@@ -110,3 +113,4 @@ export type ReasoningParser = IReasoningParser;
 export type DeepSeekR1ReasoningParser = IDeepSeekR1ReasoningParser;
 export type Phi4ReasoningParser = IPhi4ReasoningParser;
 export type Llama3PythonicToolParser = ILlama3PythonicToolParser;
+export type Llama3JsonToolParser = ILlama3JsonToolParser;

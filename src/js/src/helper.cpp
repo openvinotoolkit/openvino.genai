@@ -592,6 +592,14 @@ std::shared_ptr<ov::genai::Parser> get_native_parser(const Napi::Env& env, const
         return parser_wrapper->get_parser();
     }
 
+    // Check Llama3JsonToolParser
+    const auto& llama3_json_parser_prototype = addon_data->llama3_json_tool_parser;
+    OPENVINO_ASSERT(llama3_json_parser_prototype, "Invalid pointer to Llama3JsonToolParser prototype.");
+    if (object.Get("constructor").StrictEquals(llama3_json_parser_prototype.Value())) {
+        auto parser_wrapper = Napi::ObjectWrap<Llama3JsonToolParserWrapper>::Unwrap(object);
+        return parser_wrapper->get_parser();
+    }
+
     return nullptr;
 }
 
