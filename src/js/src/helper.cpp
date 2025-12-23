@@ -348,7 +348,7 @@ std::shared_ptr<ov::genai::Parser> js_to_cpp<std::shared_ptr<ov::genai::Parser>>
     OPENVINO_ASSERT(value.IsObject(), "Parser must be a JS object with a 'parse' method");
     Napi::Object obj = value.As<Napi::Object>();
     
-    // Check if it's a native parser instance (ReasoningParser or DeepSeekR1ReasoningParser)
+    // Check if it's a native parser instance
     auto native_parser = get_native_parser(env, obj);
     if (native_parser) {
         return native_parser;
