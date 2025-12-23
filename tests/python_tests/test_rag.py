@@ -392,7 +392,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
         # 33 tokens handled by a chunk of 128
         (TextEmbeddingPipeline.Config(
             batch_size = 1,
-            max_length = 256,
+            max_length = 192,
             normalize = False,
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
@@ -400,7 +400,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
         ), 128, 2e-4, "embed_documents"),
         (TextEmbeddingPipeline.Config(
             batch_size = 1,
-            max_length = 256,
+            max_length = 192,
             normalize = False,
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
@@ -408,7 +408,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
         ), 128, 2e-4, "embed_documents"),
         (TextEmbeddingPipeline.Config(
             batch_size = 1,
-            max_length = 256,
+            max_length = 192,
             normalize = False,
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
@@ -418,7 +418,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
         # 33 tokens handled by 3 chunks of 16
         (TextEmbeddingPipeline.Config(
             batch_size = 1,
-            max_length = 192,
+            max_length = 180,
             normalize = False,
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
@@ -426,7 +426,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
         ), 16, 6e-3, "embed_documents"),
         (TextEmbeddingPipeline.Config(
             batch_size = 1,
-            max_length = 192,
+            max_length = 180,
             normalize = False,
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
@@ -434,7 +434,7 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
         ), 16, 6e-3, "embed_documents"),
         (TextEmbeddingPipeline.Config(
             batch_size = 1,
-            max_length = 192,
+            max_length = 180,
             normalize = False,
             pad_to_max_length = False,
             pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
