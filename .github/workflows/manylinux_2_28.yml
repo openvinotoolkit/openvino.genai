@@ -588,7 +588,6 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         run: |
           if [ -n "${{ matrix.test.env_hf_cache }}" ]; then
-            export HF_DATASETS_CACHE="${{ matrix.test.env_hf_cache }}"
             export HF_HUB_DOWNLOAD_TIMEOUT=100
           fi
           ${{ matrix.test.cmd }}

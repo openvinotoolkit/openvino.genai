@@ -58,20 +58,6 @@ MODELS: Dict[str, Dict[str, Any]] = {
     "tiny-random-flux-fill": {"name": "katuni4ka/tiny-random-flux-fill", "convert_args": []},
 }
 
-DATASETS: Dict[str, Dict[str, Any]] = {
-    "microsoft/ms_marco": {
-        "kwargs": {"split": "test", "name": "v2.1"}
-    },
-    "paint-by-inpaint/PIPE": {
-        "kwargs": {"split": "test"}
-    },
-    "phiyodr/InpaintCOCO": {
-        "kwargs": {"split": "test"}
-    },
-    "ucla-contextual/contextual_test": {
-        "kwargs": {"split": "test"}
-    }
-}
 
 def get_ov_cache_converted_models_dir():
     return get_ov_cache_dir() / "converted_models"
@@ -116,12 +102,6 @@ def convert_model(model_name):
 
 @pytest.fixture(scope="session", autouse=True)
 def module_teardown():
-    lock_file_path = os.path.join(os.environ.get("HF_DATASETS_CACHE", "."), "hf_download.lock")
-    lock = FileLock(lock_file_path)
-    with lock:
-        for name, info in DATASETS.items():
-            datasets.load_dataset(name, **info["kwargs"])
-
     ov_cache_dir = get_ov_cache_dir()
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
     logger.info(f"Creating directories: {ov_cache_converted_dir}")
@@ -140,7 +120,7 @@ def module_teardown():
 
 def run_wwb(args, env=None):
     command = ["wwb"] + args
-    base_env = {"TRANSFORMERS_VERBOSITY": "debug", "PYTHONIOENCODING": "utf-8", "HF_DATASETS_OFFLINE": "1", **os.environ}
+    base_env = {"TRANSFORMERS_VERBOSITY": "debug", "PYTHONIOENCODING": "utf-8", **os.environ}
     if env:
         base_env.update(env)
     try:

@@ -41,7 +41,7 @@ def prepare_default_data(num_samples=None):
     NUM_SAMPLES = 10 if num_samples is None else num_samples
     set_seed(42)
     default_dataset = datasets.load_dataset(
-        DATASET_NAME, split="test", streaming=True,
+        DATASET_NAME, split="test", streaming=True, download_config=datasets.DownloadConfig(max_retries=10),
     ).filter(lambda example: example["inpaint_caption"] != "").take(NUM_SAMPLES)
     return default_dataset.map(
         lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names

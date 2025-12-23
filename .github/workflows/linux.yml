@@ -612,7 +612,6 @@ jobs:
             env_hf_cache: /mount/caches/pytest/datasets_test
             cmd: |
               echo "HF_HUB_DOWNLOAD_TIMEOUT=$HF_HUB_DOWNLOAD_TIMEOUT"
-              echo "HF_DATASETS_CACHE=$HF_DATASETS_CACHE"
               python -m pip install transformers==4.48.0
               python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
@@ -667,7 +666,6 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         run: |
           if [ -n "${{ matrix.test.env_hf_cache }}" ]; then
-            export HF_DATASETS_CACHE="${{ matrix.test.env_hf_cache }}"
             export HF_HUB_DOWNLOAD_TIMEOUT=100
           fi
           ${{ matrix.test.cmd }}
