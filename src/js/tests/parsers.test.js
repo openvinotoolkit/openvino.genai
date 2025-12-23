@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2018-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
@@ -60,7 +60,7 @@ describe("Use parsers from js", () => {
       assert.strictEqual(message.reasoning_content, "reasoning content");
     });
 
-    it("should parse without opeenning tag", () => {
+    it("should parse without opening tag", () => {
       const parser = new ReasoningParser({ expectOpenTag: false });
       const message = {
         content: "Thinking</think>Answer",
@@ -112,7 +112,7 @@ describe("Use parsers from js", () => {
     });
   });
 
-  it("DeepSeekR1ReasoningParser should works", () => {
+  it("DeepSeekR1ReasoningParser should work", () => {
     const deepSeekParser = new DeepSeekR1ReasoningParser();
     const reasoning = "DeepSeek reasoning";
     const message = {
@@ -124,7 +124,7 @@ describe("Use parsers from js", () => {
     assert.notStrictEqual(message.reasoning_content, reasoning);
   });
 
-  it("Phi4ReasoningParser should works", () => {
+  it("Phi4ReasoningParser should work", () => {
     const phi4Parser = new Phi4ReasoningParser();
     const reasoning = "Phi4 reasoning";
     const message = {

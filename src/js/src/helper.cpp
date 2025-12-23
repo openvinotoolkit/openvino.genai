@@ -536,7 +536,7 @@ Napi::Value cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(
     const Napi::Env& env,
     const std::vector<ov::genai::JsonContainer>& value) {
     auto js_array = Napi::Array::New(env, value.size());
-    for (auto i = 0; i < value.size(); i++) {
+    for (size_t i = 0; i < value.size(); i++) {
         js_array[i] = json_parse(env, value[i].to_json_string());
     }
     return js_array;
