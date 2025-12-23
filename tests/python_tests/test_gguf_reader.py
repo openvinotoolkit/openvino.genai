@@ -57,7 +57,6 @@ def model_gguf(request: pytest.FixtureRequest) -> ModelInfo:
 
 @pytest.mark.parametrize("pipeline_type", GGUF_PIPELINE_TYPES)
 @pytest.mark.parametrize("model_gguf", GGUF_MODEL_LIST, indirect=True)
-@pytest.mark.xfail(condition=(sys.platform == "win32"), reason="CVS-174065")
 def test_pipelines_with_gguf_generate(
     model_gguf: ModelInfo, 
     pipeline_type: PipelineType,
@@ -128,7 +127,6 @@ def test_pipelines_with_gguf_generate(
     ],
 )
 @pytest.mark.parametrize("model_gguf", GGUF_MODEL_LIST, indirect=True)
-@pytest.mark.xfail(condition=(sys.platform == "win32"), reason="CVS-174065")
 def test_full_gguf_pipeline(
     model_gguf: ModelInfo, 
     pipeline_type: PipelineType, 
@@ -174,6 +172,18 @@ def test_full_gguf_pipeline(
     ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model, dynamic_quantization_group_size=dynamic_quantization_group_size)
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
     
+    print(f"\n{'='*60}")
+    print(f"[DEBUG] Model: {gguf_model_id}")
+    print(f"[DEBUG] Prompt: {repr(prompt)}")
+    print(f"[DEBUG] Pipeline: {pipeline_type}")
+    print(f"[DEBUG] HF input_ids: {input_ids.tolist()}")
+    ov_tokenized = ov_pipe_gguf.get_tokenizer().encode(prompt)
+    print(f"[DEBUG] OV input_ids: {ov_tokenized.input_ids.data.tolist()}")
+    print(f"[DEBUG] HF output: {repr(res_string_input_1)}")
+    print(f"[DEBUG] OV output: {repr(res_string_input_2)}")
+    print(f"[DEBUG] Match: {res_string_input_1 == res_string_input_2}")
+    print(f"{'='*60}\n")
+    
     # Check that eos_token, bos_token string representations are loaded correctly from gguf file
     assert ov_pipe_gguf.get_tokenizer().get_eos_token() == hf_tokenizer.decode([ov_pipe_gguf.get_tokenizer().get_eos_token_id()])
     assert ov_pipe_gguf.get_tokenizer().get_bos_token() == hf_tokenizer.decode([ov_pipe_gguf.get_tokenizer().get_bos_token_id()])
@@ -203,7 +213,6 @@ def test_full_gguf_pipeline(
     ]
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 172335")
-@pytest.mark.xfail(condition=(sys.platform == "win32"), reason="CVS-174065")
 def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     # Temporal testing solution until transformers starts to support qwen3 in GGUF format
     # Please refer details in issue: https://github.com/huggingface/transformers/issues/38063
