@@ -195,12 +195,7 @@ TEST_P(DPPParameterizedTest, BasicTokenSelection) {
     size_t expected_batch_count = (params.batch_mode == BatchMode::SingleBatch) ? 1 : 2;
     ASSERT_EQ(selected_tokens.size(), expected_batch_count);
 
-    // OpenCL split mode requires even token counts due to internal batch processing
     size_t expected_token_count = params.num_tokens_to_select;
-    if (params.backend == Backend::OpenCL && params.matrix_mode == MatrixMode::Split) {
-        expected_token_count = (expected_token_count % 2 == 0) ? expected_token_count : expected_token_count + 1;
-    }
-
     for (size_t batch = 0; batch < selected_tokens.size(); ++batch) {
         // Verify correct number of tokens selected
         EXPECT_EQ(selected_tokens[batch].size(), expected_token_count)

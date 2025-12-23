@@ -3,7 +3,6 @@
 
 #pragma once
 #include <memory>
-#include <optional>
 #include "openvino/runtime/infer_request.hpp"
 
 #include "openvino/genai/common_types.hpp"

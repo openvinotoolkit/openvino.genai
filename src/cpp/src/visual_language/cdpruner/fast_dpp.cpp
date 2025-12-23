@@ -239,9 +239,10 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
                                                                        size_t tokens_first_half,
                                                                        size_t tokens_second_half,
                                                                        size_t split_point) {
+    size_t original_num_tokens = tokens_first_half + tokens_second_half;
     // OpenCL requires even total token count due to internal batch splitting
     // Recalculate to ensure even distribution
-    size_t num_tokens_to_keep = tokens_first_half + tokens_second_half;
+    size_t num_tokens_to_keep = original_num_tokens;
     num_tokens_to_keep = (num_tokens_to_keep % 2 == 0) ? num_tokens_to_keep : num_tokens_to_keep + 1;
     tokens_first_half = num_tokens_to_keep / 2;
     tokens_second_half = num_tokens_to_keep / 2;
@@ -383,6 +384,12 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
             }
         }
 
+        // Trim to original requested token count if we padded to even number
+        // This removes the last selected token(s) which have the lowest quality
+        if (merged_selection.size() > original_num_tokens) {
+            merged_selection.resize(original_num_tokens);
+        }
+        
         // Sort final result to maintain order
         std::sort(merged_selection.begin(), merged_selection.end());
         batch_results.push_back(std::move(merged_selection));
