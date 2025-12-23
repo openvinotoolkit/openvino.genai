@@ -28,7 +28,7 @@ GGUF_MODEL_LIST = (
     },
     {
         "gguf_model_id": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
-        "gguf_filename": "qwen2.5-0.5B-instruct-q4_0.gguf",
+        "gguf_filename": "qwen2.5-0.5b-instruct-q4_0.gguf",
         "dynamic_quantization_group_size": None,
     },
     pytest.param(
