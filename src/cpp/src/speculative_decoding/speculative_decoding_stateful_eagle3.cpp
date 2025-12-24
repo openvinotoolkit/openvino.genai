@@ -545,15 +545,15 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
     m_tokenizer = target_model_desc.tokenizer;
 
     // Extract hidden_layers_list from draft model properties
-    // This information is training-specific and should be provided via draft model configuration
-    auto eagle_rt_info = eagle3::extract_eagle3_info_from_config(draft_model_desc.properties);
-    m_hidden_layers_to_abstract = eagle_rt_info.hidden_layers_list;
+    OPENVINO_ASSERT(draft_model_desc.properties.find("hidden_layers_list") != draft_model_desc.properties.end(),
+                    "hidden_layers_list must be present in draft model properties");
 
-    OPENVINO_ASSERT(
-        m_hidden_layers_to_abstract.size() == 3,
-        "Eagle3 requires exactly three layers for feature extraction, got: " +
-            std::to_string(m_hidden_layers_to_abstract.size()) +
-            ". Please ensure 'hidden_layers_list' is properly configured in draft model properties or rt_info.");
+    m_hidden_layers_to_abstract = draft_model_desc.properties.at("hidden_layers_list").as<std::vector<int32_t>>();
+
+    OPENVINO_ASSERT(m_hidden_layers_to_abstract.size() == 3,
+                    "Eagle3 requires exactly three layers for feature extraction, got: " +
+                        std::to_string(m_hidden_layers_to_abstract.size()) +
+                        ". Please ensure 'hidden_layers_list' is properly configured in draft model properties.");
 
     auto target_model = target_model_desc.model;
     auto draft_model = draft_model_desc.model;

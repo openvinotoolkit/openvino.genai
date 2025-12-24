@@ -47,7 +47,7 @@ struct Eagle3RTInfo {
  * @return Eagle3RTInfo structure with extracted configuration.
  * @note If hidden_layers_list is not provided, defaults to [2, num_layers/2, num_layers-3].
  */
-Eagle3RTInfo extract_eagle3_info_from_config(const ov::AnyMap& config, const std::filesystem::path& models_path = {});
+Eagle3RTInfo extract_eagle3_info_from_config(ov::AnyMap& config, const std::filesystem::path& models_path = {});
 
 /**
  * @brief Applies EAGLE3 runtime info from model to properties map.
