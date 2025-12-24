@@ -77,7 +77,7 @@ static constexpr ov::Property<size_t> num_videos_per_prompt{"num_videos_per_prom
  * Mixes with the original results from guidance by factor guidance_rescale to avoid "plain looking" images.
  * 0.0 disables rescaling.
  */
-static constexpr ov::Property<double> guidance_rescale{"guidance_rescale"};
+static constexpr ov::Property<float> guidance_rescale{"guidance_rescale"};
 
 /// The number of video frames to generate.
 static constexpr ov::Property<size_t> num_frames{"num_frames"};
