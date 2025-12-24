@@ -31,14 +31,16 @@ void ensure_num_assistant_tokens_is_set(ov::genai::GenerationConfig& config) {
     }
 }
 
-Eagle3RTInfo extract_eagle3_info_from_config(const ov::AnyMap& config, const std::filesystem::path& models_path) {
+Eagle3RTInfo extract_eagle3_info_from_config(ov::AnyMap& config, const std::filesystem::path& models_path) {
     Eagle3RTInfo eagle_rt_info;
     if (config.find("eagle3_mode") != config.end()) {
         eagle_rt_info.eagle3_mode = config.at("eagle3_mode").as<bool>();
+        config.erase("eagle3_mode");
         auto it = config.find("hidden_layers_list");
         if (it != config.end()) {
             try {
                 eagle_rt_info.hidden_layers_list = it->second.as<std::vector<int32_t>>();
+                config.erase("hidden_layers_list");
             } catch (const std::exception&) {
                 OPENVINO_THROW("please check the hidden layers input");
             }
