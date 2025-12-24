@@ -696,18 +696,6 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
         *[(PROMPTS[1], image_set) for image_set in iteration_images[1:]],
     ]
 
-    # Collect start_chat results
-    answers_start_chat = []
-    ov_pipe.start_chat()
-    for prompt, images in prompts_with_images:
-        res = ov_pipe.generate(
-            prompt,
-            images=images,
-            generation_config=generation_config,
-        )
-        answers_start_chat.append(res.texts[0])
-    ov_pipe.finish_chat()
-
     # Collect chat_history results
     answers_chat_history = []
     history = ChatHistory()
@@ -721,6 +709,18 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
         answer = res.texts[0]
         history.append({"role": "assistant", "content": answer})
         answers_chat_history.append(answer)
+
+    # Collect start_chat results
+    answers_start_chat = []
+    ov_pipe.start_chat()
+    for prompt, images in prompts_with_images:
+        res = ov_pipe.generate(
+            prompt,
+            images=images,
+            generation_config=generation_config,
+        )
+        answers_start_chat.append(res.texts[0])
+    ov_pipe.finish_chat()
 
     for i, (answer_start_chat, answer_chat_history) in enumerate(zip(answers_start_chat, answers_chat_history)):
         assert answer_start_chat == answer_chat_history, (
