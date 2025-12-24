@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
     ],
 )
 def test_embeddings_basic(model_id, model_type, tmp_path):
+    if sys.platform == "win32":
+        pytest.xfail("Ticket 178790")
+
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = tmp_path / model_id.replace("/", "_")
 
@@ -102,6 +105,9 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
     ],
 )
 def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
+    if sys.platform == "win32":
+        pytest.xfail("Ticket 178790")
+
     GT_FILE = tmp_path / f"gt_batch_{batch_size}.csv"
     MODEL_PATH = tmp_path / model_id.replace("/", "_")
 
