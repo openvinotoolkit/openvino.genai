@@ -63,8 +63,17 @@ def parse_args():
     parser.add_argument(
         "--model-type",
         type=str,
-        choices=["text", "text-to-image", "text-to-video", "visual-text", "visual-video-text", "image-to-image",
-                 "image-inpainting", "text-embedding", "text-reranking"],
+        choices=[
+            "text",
+            "text-to-image",
+            "text-to-video",
+            "visual-text",
+            "visual-video-text",
+            "image-to-image",
+            "image-inpainting",
+            "text-embedding",
+            "text-reranking",
+        ],
         default="text",
         help="Indicated the model type: text - for causal text generation, visual-text - for Visual Language Models with image inputs, "
         "visual-video-text - for Visual Language Models with video inputs, text-to-image - for image generation, "
@@ -862,7 +871,11 @@ def main():
     if args.verbose and (args.target_model or args.target_data):
         if args.model_type in ["text", "visual-text", "visual-video-text"]:
             print_text_results(evaluator)
-        elif "text-to-image" in args.model_type or "image-to-image" in args.model_type or "text-to-video" in args.model_type:
+        elif (
+            "text-to-image" in args.model_type
+            or "image-to-image" in args.model_type
+            or "text-to-video" in args.model_type
+        ):
             print_image_results(evaluator)
         elif args.model_type in ['text-embedding']:
             print_embeds_results(evaluator)

@@ -646,11 +646,7 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
             model = OVLTXPipeline.from_pretrained(model_id, device=device, **model_kwargs)
         except ValueError:
             model = OVLTXPipeline.from_pretrained(
-                model_id,
-                trust_remote_code=True,
-                use_cache=True,
-                device=device,
-                **model_kwargs
+                model_id, trust_remote_code=True, use_cache=True, device=device, **model_kwargs
             )
 
     return model
