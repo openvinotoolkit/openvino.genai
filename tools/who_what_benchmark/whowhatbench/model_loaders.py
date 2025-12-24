@@ -630,6 +630,7 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
         # model = load_text2video_genai_pipeline(model_id, device, ov_config, **kwargs)
     elif use_hf:
         from diffusers import LTXPipeline
+
         logger.info("Using HF Transformers API")
         try:
             model = LTXPipeline.from_pretrained(model_id)

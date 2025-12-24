@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 MODEL_CACHE = tempfile.mkdtemp()
-OV_VIDEO_MODELS = ["Lightricks/LTX-Video"]
+OV_VIDEO_MODELS = ["optimum-intel-internal-testing/tiny-random-ltx-video"]
 
 
 def setup_module():
@@ -27,7 +27,7 @@ def teardown_module():
 
 
 @pytest.mark.parametrize(
-    ("model_id"),
+    ("model_id", "model_type"),
     [("optimum-intel-internal-testing/tiny-random-ltx-video", "text-to-video")],
 )
 def test_image_model_genai(model_id, model_type, tmp_path):
@@ -48,6 +48,8 @@ def test_image_model_genai(model_id, model_type, tmp_path):
             model_type,
             "--num-inference-steps",
             "2",
+            "--video-frames-num",
+            "8",
         ]
     )
     assert GT_FILE.exists()
@@ -68,6 +70,8 @@ def test_image_model_genai(model_id, model_type, tmp_path):
             "--genai",
             "--num-inference-steps",
             "2",
+            "--video-frames-num",
+            "8",
         ]
     )
 
@@ -92,6 +96,8 @@ def test_image_model_genai(model_id, model_type, tmp_path):
     #     "--genai",
     #     "--num-inference-steps",
     #     "2",
+    #     "--video-frames-num",
+    #     "8",
     # ])
     # assert (tmp_path / "target").exists()
     # assert (tmp_path / "target.csv").exists()
@@ -111,5 +117,7 @@ def test_image_model_genai(model_id, model_type, tmp_path):
             model_type,
             "--num-inference-steps",
             "2",
+            "--video-frames-num",
+            "8",
         ]
     )
