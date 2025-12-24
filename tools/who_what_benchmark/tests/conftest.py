@@ -70,7 +70,7 @@ def convert_model(model_name):
 
     manager = AtomicDownloadManager(model_path)
 
-    logger.info(f"Start convertion of: {model_name}")
+    logger.info(f"Start conversion of: {model_name}")
     if manager.is_complete():
         logger.info("Conversion command is already completed")
         return model_path
