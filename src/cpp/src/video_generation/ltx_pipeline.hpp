@@ -217,7 +217,6 @@ ov::Tensor denormalize_latents(ov::Tensor latents,
 }
 
 inline ov::Tensor tensor_from_vector(const std::vector<float>& data) {
-    std::cout << "!!!!!!!size " << data.size() << std::endl;
     ov::Tensor t{ov::element::f32, ov::Shape{data.size()}};
     if (!data.empty()) {
         std::memcpy(t.data<float>(), data.data(), data.size() * sizeof(float));
@@ -528,7 +527,6 @@ public:
         m_transformer->set_hidden_states("rope_interpolation_scale", rope_interpolation_scale);
 
         // // Prepare timesteps
-        // TODO: ov::Tensor timestep(ov::element::f32, {1}); is enough
         ov::Tensor timestep(ov::element::f32, {1});
         float* timestep_data = timestep.data<float>();
 
@@ -580,7 +578,8 @@ public:
             }
 
             // TODO: support guidance_rescale
-            // if (config.guidance_rescale > 0) {...}
+            OPENVINO_ASSERT(merged_generation_config.guidance_rescale <= 0,
+                            "Parameter 'guidance_rescale' is not currently supported by LTX Pipeline. Please, contact OpenVINO GenAI developers.");
 
             auto scheduler_step_result =
                 m_scheduler->step(noisy_residual_tensor, latent, inference_step, merged_generation_config.generator);
@@ -608,7 +607,9 @@ public:
 
         latent = postprocess_latents(latent);
 
-        // TODO: if not self.vae.config.timestep_conditioning: ... else: ...
+        // TODO: support timestep_conditioning for AutoencoderKLLTX
+        OPENVINO_ASSERT(!m_vae->get_config().timestep_conditioning,
+                            "Parameter 'timestep_conditioning' is not currently supported by AutoencoderKLLTX. Please, contact OpenVINO GenAI developers.");
 
         const auto decode_start = std::chrono::steady_clock::now();
         ov::Tensor video = m_vae->decode(latent);

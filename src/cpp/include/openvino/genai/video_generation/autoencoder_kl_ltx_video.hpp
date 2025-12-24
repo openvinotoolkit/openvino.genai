@@ -25,13 +25,11 @@ public:
         size_t out_channels = 3;
         float scaling_factor = 1.0f;
         std::vector<size_t> block_out_channels = {128, 256, 512, 512};
-        
         size_t patch_size = 4;
-        std::vector<bool> spatio_temporal_scaling{true, true, true, false};  // TODO: read from vae_decoder/config.json. I use it only to compute sum over it so far, so it may be removed
+        std::vector<bool> spatio_temporal_scaling{true, true, true, false};
         size_t patch_size_t = 1;
-
-        std::vector<float> latents_mean_data; // TODO: set default value (latents_mean = torch.zeros((latent_channels,), requires_grad=False)
-        std::vector<float> latents_std_data;  // TODO: set default value (latents_std = torch.ones((latent_channels,), requires_grad=False)))
+        std::vector<float> latents_mean_data, latents_std_data;
+        bool timestep_conditioning = false;
 
         explicit Config(const std::filesystem::path& config_path);
     };
@@ -59,8 +57,6 @@ public:
     size_t get_vae_scale_factor() const;
 
     AutoencoderKLLTXVideo& reshape(int64_t batch_size, int64_t num_frames, int64_t height, int64_t width);
-
-    // std::vector<float> latents_mean_data, latents_std_data;
 
 private:
     void merge_vae_image_post_processing() const;

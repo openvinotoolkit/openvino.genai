@@ -67,12 +67,19 @@ AutoencoderKLLTXVideo::Config::Config(const std::filesystem::path& config_path) 
     read_json_param(data, "out_channels", out_channels);
     read_json_param(data, "scaling_factor", scaling_factor);
     read_json_param(data, "block_out_channels", block_out_channels);
-
     read_json_param(data, "patch_size", patch_size);
     read_json_param(data, "patch_size_t", patch_size_t);
     read_json_param(data, "spatio_temporal_scaling", spatio_temporal_scaling);
     read_json_param(data, "latents_mean_data", latents_mean_data);
     read_json_param(data, "latents_std_data", latents_std_data);
+    read_json_param(data, "timestep_conditioning", timestep_conditioning);
+
+    if (latents_mean_data.empty()) {
+        latents_mean_data.assign(latent_channels, 0.0f);
+    }
+    if (latents_std_data.empty()) {
+        latents_std_data.assign(latent_channels, 1.0f);
+    }
 }
 
 AutoencoderKLLTXVideo::AutoencoderKLLTXVideo(const std::filesystem::path& vae_decoder_path)
