@@ -127,39 +127,13 @@ protected:
         const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count
     );
 
-    // [CDPruner] Override: Convert visual features to CDPruner format
-    std::vector<ov::Tensor> convert_visual_features_for_pruning(
-        const ov::Tensor& merged_image_embeddings,
-        size_t chunk_count,
-        const std::vector<std::array<size_t, 3>>& images_grid_thw = {}) const override;
-
-    // [CDPruner] Override: Position encoding adjustment function for pruning
-    // Modifies position_ids_inout in-place
-    // Accesses vision token IDs from m_vision_token_ids member
-    void adjust_position_ids_after_pruning(ov::Tensor& position_ids_inout,
-                                           const ov::Tensor& input_ids,
-                                           const std::vector<std::array<size_t, 3>>& images_grid_thw,
-                                           const std::vector<size_t>& images_sequence,
-                                           std::vector<std::vector<bool>>& keep_flags_per_region_out) const override;
-
-    ov::Tensor update_position_ids(const ov::Tensor& original_position_ids,
-                                   const ov::Tensor& input_ids,
-                                   int64_t vision_start_token_id,
-                                   int64_t image_pad_token_id,
-                                   const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw,
-                                   const std::vector<std::vector<size_t>>& kept_indices_per_image,
-                                   size_t spatial_merge_size,
-                                   std::vector<std::vector<bool>>& keep_flags_out) const;
-
-protected:
-    size_t calc_tokens_num(size_t grid_t, size_t grid_h, size_t grid_w) const;
-
-    size_t calc_vec_tokens_num(const std::vector<std::array<size_t, 3UL>>& vec_grid_thw) const;
-
-private:
     void encode_vision_placeholder_tokens();
 
     void cvt_to_3_chn_image(ov::Tensor& image);
+
+    size_t calc_tokens_num(size_t grid_t, size_t grid_h, size_t grid_w) const;
+
+    size_t calc_vec_tokens_num(const std::vector<std::array<size_t, 3UL>>& vec_grid_thw) const;
 };
 
 namespace qwen2_vl_utils {

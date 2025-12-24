@@ -1142,20 +1142,41 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
 
     // [CDPruner] Check if pruning is active and execute pipeline if applicable
     if (is_cdpruner_active(images)) {
-        PruningResult pruning_result = execute_cdpruner_pipeline(input_ids,
-                                                                 text_embeds,
-                                                                 merged_image_embeddings_tensor,
-                                                                 images,
-                                                                 images_grid_thw,
-                                                                 images_sequence,
-                                                                 image_pad_token_id,
-                                                                 vision_start_token_id,
-                                                                 vision_end_token_id);
+        // Calculate tokens per image for CDPruner
+        std::vector<size_t> tokens_per_image;
+        tokens_per_image.reserve(images_grid_thw.size());
+        for (const auto& [grid_t, grid_h, grid_w] : images_grid_thw) {
+            tokens_per_image.push_back(calc_tokens_num(grid_t, grid_h, grid_w));
+        }
+
+        const size_t spatial_merge_size = std::max<size_t>(1, m_vision_encoder->get_processor_config().merge_size);
+
+        // Initialize PruningContext with input data (state managed by IInputsEmbedder)
+        PruningContext pruning_context{
+            input_ids,
+            text_embeds,
+            merged_image_embeddings_tensor,
+            images,
+            images_grid_thw,
+            images_sequence,
+            tokens_per_image,
+            image_pad_token_id,
+            vision_start_token_id,
+            vision_end_token_id,
+            spatial_merge_size
+        };
+
+        VisionTokenProcessor::PruningResult pruning_result = execute_cdpruner_pipeline(pruning_context);
 
         // Replace with pruned versions (all generated in pipeline)
         input_ids = pruning_result.pruned_input_ids;
         text_embeds = pruning_result.pruned_text_embeds;
         merged_image_embeddings_tensor = pruning_result.pruned_embeddings;
+        
+        // Update rope_delta if provided (RoPE models only)
+        if (pruning_result.updated_rope_delta.has_value()) {
+            m_rope_delta = pruning_result.updated_rope_delta.value();
+        }
     }
 
     return qwen2_vl_utils::merge_text_and_video_image_embeddings(input_ids,
@@ -1500,294 +1521,6 @@ ov::Tensor InputsEmbedderQwen2VL::create_position_ids(
     }
 
     return position_ids;
-}
-
-// [CDPruner] Position encoding adjustment function for pruning.
-// Example: consider a single image whose visual tokens form a 3x3 grid (indices 0-8).
-// If CDPruner keeps indices {0, 4, 7} (coords (0,0), (1,1), (2,1)), this helper
-// rebuilds the temporal/height/width tables so that:
-//   - only tokens at those coordinates are inserted back into the prompt,
-//   - each kept token retains its original grid row/col offsets, and
-//   - text tokens that follow resume indexing from the last visual position.
-// [CDPruner] Override: Position encoding adjustment function for pruning
-void InputsEmbedderQwen2VL::adjust_position_ids_after_pruning(
-    ov::Tensor& position_ids_inout,
-    const ov::Tensor& input_ids,
-    const std::vector<std::array<size_t, 3>>& images_grid_thw,
-    const std::vector<size_t>& images_sequence,
-    std::vector<std::vector<bool>>& keep_flags_per_region_out) const {
-    // Access vision token IDs from member instead of parameters
-    int64_t vision_start_token_id = m_vision_token_ids.at("vision_start");
-    int64_t image_pad_token_id = m_vision_token_ids.at("image_pad");
-    
-    auto kept_indices_per_image = m_token_processor->get_last_selected_tokens();
-    OPENVINO_ASSERT(!images_sequence.empty(), "Image sequence must not be empty when pruning visual tokens");
-    OPENVINO_ASSERT(!kept_indices_per_image.empty(), "Kept token indices are missing after pruning");
-
-    const size_t spatial_merge_size = std::max<size_t>(1, m_vision_encoder->get_processor_config().merge_size);
-
-    std::vector<std::array<size_t, 3>> reordered_images_grid_thw;
-    reordered_images_grid_thw.reserve(images_sequence.size());
-    for (size_t new_image_id : images_sequence) {
-        OPENVINO_ASSERT(new_image_id < images_grid_thw.size(), "Image sequence index is out of range");
-        // Indices are expected to be normalized to the current batch ordering.
-        reordered_images_grid_thw.push_back(images_grid_thw.at(new_image_id));
-    }
-
-    // Directly modify position_ids_inout in-place
-    position_ids_inout = update_position_ids(position_ids_inout,
-                                             input_ids,
-                                             vision_start_token_id,
-                                             image_pad_token_id,
-                                             reordered_images_grid_thw,
-                                             kept_indices_per_image,
-                                             spatial_merge_size,
-                                             keep_flags_per_region_out);
-}
-
-ov::Tensor InputsEmbedderQwen2VL::update_position_ids(
-    const ov::Tensor& original_position_ids,
-    const ov::Tensor& input_ids,
-    int64_t vision_start_token_id,
-    int64_t image_pad_token_id,
-    const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw,
-    const std::vector<std::vector<size_t>>& kept_indices_per_image,
-    size_t spatial_merge_size,
-    std::vector<std::vector<bool>>& keep_flags_out) const {
-    const ov::Shape& pos_shape = original_position_ids.get_shape();
-    OPENVINO_ASSERT(pos_shape.size() == 3 && pos_shape[0] == 3, "Position ids must be [3, batch, seq_len]");
-
-    const size_t batch_size = pos_shape[1];
-    const size_t seq_len = pos_shape[2];
-    const size_t region_count = reordered_images_grid_thw.size();
-
-    // Build region metadata
-    struct RegionInfo {
-        size_t tokens, grid_width, spatial_area, offset;
-    };
-
-    std::vector<RegionInfo> regions;
-    regions.reserve(region_count);
-    size_t cumulative_offset = 0;
-
-    for (size_t idx = 0; idx < reordered_images_grid_thw.size(); ++idx) {
-        const auto& [grid_t, grid_h, grid_w] = reordered_images_grid_thw[idx];
-        OPENVINO_ASSERT(grid_h % spatial_merge_size == 0 && grid_w % spatial_merge_size == 0,
-                        "Grid dimensions must be divisible by spatial merge size");
-
-        size_t llm_grid_h = grid_h / spatial_merge_size;
-        size_t llm_grid_w = grid_w / spatial_merge_size;
-        size_t spatial_area = llm_grid_h * llm_grid_w;
-        OPENVINO_ASSERT(spatial_area > 0, "Vision region must contain at least one spatial token");
-
-        size_t t = std::max<size_t>(1, grid_t);
-        size_t total_tokens = spatial_area * t;
-        
-        regions.push_back({total_tokens, std::max<size_t>(1, llm_grid_w), spatial_area, cumulative_offset});
-        cumulative_offset += total_tokens;
-    }
-
-    // Normalize kept indices: convert aggregated indices to per-region format if needed
-    auto normalize_kept_indices = [&]() {
-        if (kept_indices_per_image.empty())
-            return std::vector<std::vector<size_t>>(region_count);
-
-        if (kept_indices_per_image.size() == region_count) {
-            return kept_indices_per_image;
-        }
-
-        // Handle single aggregated vector case
-        OPENVINO_ASSERT(kept_indices_per_image.size() == 1 && region_count > 1,
-                        "Kept token indices layout does not match vision regions. Got " +
-                            std::to_string(kept_indices_per_image.size()) + " vectors, expected 1 or " +
-                            std::to_string(region_count));
-
-        std::vector<std::vector<size_t>> normalized(region_count);
-        for (size_t kept_idx : kept_indices_per_image[0]) {
-            OPENVINO_ASSERT(kept_idx < cumulative_offset,
-                            "Aggregated kept index " + std::to_string(kept_idx) + " out of range [0, " +
-                                std::to_string(cumulative_offset) + ")");
-            for (size_t img_idx = 0; img_idx < region_count; ++img_idx) {
-                if (kept_idx >= regions[img_idx].offset &&
-                    kept_idx < regions[img_idx].offset + regions[img_idx].tokens) {
-                    size_t local_idx = kept_idx - regions[img_idx].offset;
-                    normalized[img_idx].push_back(local_idx);
-                    break;
-                }
-            }
-        }
-        return normalized;
-    };
-
-    auto normalized_indices = normalize_kept_indices();
-
-    // Sort and deduplicate each region's indices
-    for (auto& indices : normalized_indices) {
-        std::sort(indices.begin(), indices.end());
-        indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
-    }
-
-    // Build keep flags and calculate new sequence length
-    keep_flags_out.clear();
-    keep_flags_out.reserve(region_count);
-    size_t total_removed = 0;
-
-    for (size_t idx = 0; idx < region_count; ++idx) {
-        std::vector<bool> flags(regions[idx].tokens, false);
-        for (size_t kept_idx : normalized_indices[idx]) {
-            OPENVINO_ASSERT(kept_idx < regions[idx].tokens, "Kept token index out of range");
-            flags[kept_idx] = true;
-        }
-        size_t kept_count = std::count(flags.begin(), flags.end(), true);
-        OPENVINO_ASSERT(kept_count <= regions[idx].tokens, "Kept tokens exceed region size");
-        total_removed += regions[idx].tokens - kept_count;
-        keep_flags_out.push_back(std::move(flags));
-    }
-
-    OPENVINO_ASSERT(seq_len >= total_removed, "Sequence length underflow after pruning");
-    size_t new_seq_len = seq_len - total_removed;
-
-    // Allocate new position IDs tensor
-    ov::Tensor new_position_ids(original_position_ids.get_element_type(), {3, batch_size, new_seq_len});
-    int64_t* pos_data[3] = {new_position_ids.data<int64_t>(),
-                            new_position_ids.data<int64_t>() + batch_size * new_seq_len,
-                            new_position_ids.data<int64_t>() + 2 * batch_size * new_seq_len};
-
-    const int64_t* input_ids_data = input_ids.data<const int64_t>();
-
-    // Process each batch
-    for (size_t batch_idx = 0; batch_idx < batch_size; ++batch_idx) {
-        size_t write_idx = 0, image_idx = 0, visual_idx = 0;
-        bool inside_vision = false;
-        int64_t next_pos = 0, grid_base = 0;
-        int64_t max_pos[3] = {-1, -1, -1};  // temporal, height, width
-        size_t batch_offset = batch_idx * seq_len;
-        size_t out_offset = batch_idx * new_seq_len;
-
-        for (size_t seq_idx = 0; seq_idx < seq_len; ++seq_idx) {
-            int64_t token_id = input_ids_data[batch_offset + seq_idx];
-
-            // Handle image pad tokens inside vision region
-            if (inside_vision && token_id == image_pad_token_id) {
-                OPENVINO_ASSERT(image_idx < region_count, "Vision region index out of bounds");
-                if (keep_flags_out[image_idx][visual_idx]) {
-                    const auto& region = regions[image_idx];
-                    size_t local_idx = visual_idx % region.spatial_area;
-                    size_t temporal_idx = visual_idx / region.spatial_area;
-                    size_t row = local_idx / region.grid_width;
-                    size_t col = local_idx % region.grid_width;
-
-                    int64_t pos_vals[3] = {grid_base + static_cast<int64_t>(temporal_idx),
-                                           grid_base + static_cast<int64_t>(row),
-                                           grid_base + static_cast<int64_t>(col)};
-
-                    for (int dim = 0; dim < 3; ++dim) {
-                        pos_data[dim][out_offset + write_idx] = pos_vals[dim];
-                        max_pos[dim] = std::max(max_pos[dim], pos_vals[dim]);
-                    }
-                    ++write_idx;
-                }
-                ++visual_idx;
-                continue;
-            }
-
-            // Handle end of vision region
-            if (inside_vision) {
-                inside_vision = false;
-                next_pos = std::max({max_pos[0], max_pos[1], max_pos[2]}) + 1;
-                ++image_idx;
-                visual_idx = 0;
-                std::fill(max_pos, max_pos + 3, next_pos - 1);
-            }
-
-            // Write text token position
-            for (int dim = 0; dim < 3; ++dim) {
-                pos_data[dim][out_offset + write_idx] = next_pos;
-            }
-            ++write_idx;
-            ++next_pos;
-
-            // Handle start of vision region
-            if (token_id == vision_start_token_id) {
-                inside_vision = true;
-                visual_idx = 0;
-                grid_base = next_pos;
-            }
-        }
-
-        OPENVINO_ASSERT(!inside_vision, "Unexpected end of sequence inside vision region");
-        OPENVINO_ASSERT(image_idx == region_count, "Not all vision regions processed");
-        OPENVINO_ASSERT(write_idx == new_seq_len, "Output sequence length mismatch");
-    }
-
-    return new_position_ids;
-}
-
-// [CDPruner] Override: Convert visual features to CDPruner format
-std::vector<ov::Tensor> InputsEmbedderQwen2VL::convert_visual_features_for_pruning(
-    const ov::Tensor& merged_image_embeddings,
-    size_t chunk_count,
-    const std::vector<std::array<size_t, 3>>& images_grid_thw) const {
-    // Convert from [num_patches, embedding_dim] to chunk_count * [1, num_patches, embedding_dim]
-    ov::Shape original_shape = merged_image_embeddings.get_shape();
-    size_t total_patches = original_shape[0];
-    size_t embedding_dim = original_shape[1];
-    const float* src_data = merged_image_embeddings.data<const float>();
-
-    std::vector<ov::Tensor> visual_features;
-
-    // When chunk_count = 1 (frame chunking disabled), treat all patches as a single batch
-    if (chunk_count == 1) {
-        ov::Shape batch_shape = {1, total_patches, embedding_dim};
-        ov::Tensor features(merged_image_embeddings.get_element_type(), batch_shape);
-        float* dst_data = features.data<float>();
-        std::memcpy(dst_data, src_data, total_patches * embedding_dim * sizeof(float));
-        visual_features.push_back(features);
-        return visual_features;
-    }
-
-    // Frame chunking enabled: split by individual images
-    OPENVINO_ASSERT(images_grid_thw.size() >= chunk_count,
-                    "Insufficient grid_thw information for chunk_count. Got " + std::to_string(images_grid_thw.size()) +
-                        " grids, need " + std::to_string(chunk_count));
-
-    size_t current_offset = 0;
-
-    for (size_t i = 0; i < chunk_count; i++) {
-        // Calculate actual patches count for this image AFTER merging
-        // Original patches: grid_t × grid_h × grid_w
-        // After merger: (grid_t × grid_h × grid_w) / m_merge_length
-        size_t grid_t = images_grid_thw[i][0];
-        size_t grid_h = images_grid_thw[i][1];
-        size_t grid_w = images_grid_thw[i][2];
-        size_t image_patches = calc_tokens_num(grid_t, grid_h, grid_w);  // This divides by m_merge_length
-
-        // Boundary check
-        OPENVINO_ASSERT(current_offset + image_patches <= total_patches,
-                        "Image boundary exceeds merged embeddings size. Image " + std::to_string(i) + ": offset=" +
-                            std::to_string(current_offset) + ", patches=" + std::to_string(image_patches) +
-                            ", total=" + std::to_string(total_patches) + ", grid_thw=[" + std::to_string(grid_t) + "," +
-                            std::to_string(grid_h) + "," + std::to_string(grid_w) + "]");
-
-        // Create tensor for current image [1, patches_i, D]
-        ov::Shape image_shape = {1, image_patches, embedding_dim};
-        ov::Tensor features(merged_image_embeddings.get_element_type(), image_shape);
-        float* dst_data = features.data<float>();
-
-        // Copy data
-        size_t elements_to_copy = image_patches * embedding_dim;
-        std::memcpy(dst_data, src_data + current_offset * embedding_dim, elements_to_copy * sizeof(float));
-
-        visual_features.push_back(features);
-        current_offset += image_patches;
-    }
-
-    // Verify all patches processed
-    OPENVINO_ASSERT(current_offset == total_patches,
-                    "Not all patches were processed. Expected: " + std::to_string(total_patches) +
-                        ", processed: " + std::to_string(current_offset));
-
-    return visual_features;
 }
 
 } // namespace ov::genai
