@@ -46,19 +46,19 @@ struct PruningContext {
 };
 
 /**
- * @brief Vision token processor for optimizing visual features.
+ * @brief Vision token pruning processor for optimizing visual features.
  *
- * This class provides a separate abstraction for post-processing visual tokens,
- * including pruning, compression, and other optimization techniques.
- * Currently implements visual token pruning using CDPruner algorithm.
+ * This class provides visual token pruning functionality using the CDPruner algorithm.
+ * It handles the complete pruning pipeline including text feature extraction,
+ * visual feature conversion, token selection, and position ID adjustment.
  */
-class VisionTokenProcessor {
+class VisionTokenPruningProcessor {
 public:
     /**
-     * @brief Construct a new Vision Token Processor
+     * @brief Construct a new Vision Token Pruning Processor
      * @param device Device to use for processing operations
      */
-    explicit VisionTokenProcessor(const std::string& device);
+    explicit VisionTokenPruningProcessor(const std::string& device);
 
     /**
      * @brief Process (prune) visual features based on text features
@@ -214,10 +214,10 @@ public:
      * @param prev_hist_length Previous history length for KV cache
      * @return PruningResult with pruned tensors and metadata
      */
-    PruningResult execute_full_pipeline(const PruningContext& context,
-                                        ov::Tensor& position_ids,
-                                        utils::KVCacheState& kv_cache_state,
-                                        size_t prev_hist_length);
+    PruningResult execute(const PruningContext& context,
+                          ov::Tensor& position_ids,
+                          utils::KVCacheState& kv_cache_state,
+                          size_t prev_hist_length);
 
 private:
     /// @brief CDPruner instance for token pruning (lazy initialized)

@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "vision_token_processor.hpp"
+#include "vision_token_pruning_processor.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -17,15 +17,14 @@
 
 namespace ov::genai {
 
-VisionTokenProcessor::VisionTokenProcessor(const std::string& device) : m_config() {  // Default-constructed config
-    // Set device in config, other config parameters can be set later via set_config()
+VisionTokenPruningProcessor::VisionTokenPruningProcessor(const std::string& device)
+    : m_config() {
     m_config.device = device;
 }
 
-ov::Tensor VisionTokenProcessor::process(const std::vector<ov::Tensor>& visual_features,
-                                         const ov::Tensor& text_features) {
+ov::Tensor VisionTokenPruningProcessor::process(const std::vector<ov::Tensor>& visual_features,
+                                                const ov::Tensor& text_features) {
     if (!m_pruner) {
-        // If pruner is not available, return empty tensor
         return ov::Tensor();
     }
 
@@ -33,25 +32,22 @@ ov::Tensor VisionTokenProcessor::process(const std::vector<ov::Tensor>& visual_f
     return m_pruner->apply_pruning(visual_features, text_features);
 }
 
-void VisionTokenProcessor::set_config(const cdpruner::Config& config) {
-    // Preserve device from current config, update other parameters
+void VisionTokenPruningProcessor::set_config(const cdpruner::Config& config) {
     std::string device = m_config.device;
     m_config = config;
     m_config.device = device;
 
     if (!m_pruner) {
-        // Create pruner if it doesn't exist
         m_pruner = std::make_unique<cdpruner::CDPruner>(m_config);
     } else {
         // Update existing pruner configuration
         if (!m_pruner->update_config(m_config)) {
-            // If update fails, recreate the pruner
             m_pruner = std::make_unique<cdpruner::CDPruner>(m_config);
         }
     }
 }
 
-cdpruner::Config VisionTokenProcessor::get_config() const {
+cdpruner::Config VisionTokenPruningProcessor::get_config() const {
     // If pruner exists, return its configuration as the single source of truth
     // Otherwise, return the stored configuration that will be used when pruner is created
     if (m_pruner) {
@@ -60,7 +56,7 @@ cdpruner::Config VisionTokenProcessor::get_config() const {
     return m_config;
 }
 
-std::optional<cdpruner::PruningStatistics> VisionTokenProcessor::get_last_statistics() const {
+std::optional<cdpruner::PruningStatistics> VisionTokenPruningProcessor::get_last_statistics() const {
     if (!m_pruner) {
         return std::nullopt;
     }
@@ -73,7 +69,7 @@ std::optional<cdpruner::PruningStatistics> VisionTokenProcessor::get_last_statis
     }
 }
 
-std::vector<std::vector<size_t>> VisionTokenProcessor::get_last_selected_tokens() const {
+std::vector<std::vector<size_t>> VisionTokenPruningProcessor::get_last_selected_tokens() const {
     if (!m_pruner) {
         return {};
     }
@@ -87,11 +83,11 @@ std::vector<std::vector<size_t>> VisionTokenProcessor::get_last_selected_tokens(
 }
 
 // Extract text features by averaging instruction token embeddings
-ov::Tensor VisionTokenProcessor::extract_text_features(const ov::Tensor& text_embeds,
-                                                       const ov::Tensor& input_ids,
-                                                       int64_t image_pad_token_id,
-                                                       int64_t vision_start_token_id,
-                                                       int64_t vision_end_token_id) const {
+ov::Tensor VisionTokenPruningProcessor::extract_text_features(const ov::Tensor& text_embeds,
+                                                              const ov::Tensor& input_ids,
+                                                              int64_t image_pad_token_id,
+                                                              int64_t vision_start_token_id,
+                                                              int64_t vision_end_token_id) const {
     // Find instruction token positions (skip vision regions and pad tokens)
     std::vector<size_t> instruction_indices;
     const int64_t* input_ids_data = input_ids.data<const int64_t>();
@@ -148,7 +144,7 @@ ov::Tensor VisionTokenProcessor::extract_text_features(const ov::Tensor& text_em
     return avg_embedding;
 }
 
-std::vector<ov::Tensor> VisionTokenProcessor::convert_visual_features(
+std::vector<ov::Tensor> VisionTokenPruningProcessor::convert_visual_features(
     const ov::Tensor& vision_embeds,
     size_t chunk_count,
     const std::vector<size_t>& tokens_per_image) const {
@@ -207,11 +203,12 @@ std::vector<ov::Tensor> VisionTokenProcessor::convert_visual_features(
     return visual_features;
 }
 
-ov::Tensor VisionTokenProcessor::generate_pruned_input_ids(const ov::Tensor& input_ids,
-                                                           const std::vector<std::vector<bool>>& keep_flags_per_region,
-                                                           int64_t image_pad_token_id,
-                                                           int64_t vision_start_token_id,
-                                                           int64_t vision_end_token_id) const {
+ov::Tensor VisionTokenPruningProcessor::generate_pruned_input_ids(
+    const ov::Tensor& input_ids,
+    const std::vector<std::vector<bool>>& keep_flags_per_region,
+    int64_t image_pad_token_id,
+    int64_t vision_start_token_id,
+    int64_t vision_end_token_id) const {
     size_t original_seq_len = input_ids.get_shape().at(1);
 
     // Calculate total tokens to remove
@@ -276,7 +273,7 @@ ov::Tensor VisionTokenProcessor::generate_pruned_input_ids(const ov::Tensor& inp
     return pruned_input_ids;
 }
 
-ov::Tensor VisionTokenProcessor::generate_pruned_text_embeds(
+ov::Tensor VisionTokenPruningProcessor::generate_pruned_text_embeds(
     const ov::Tensor& input_ids,
     const ov::Tensor& text_embeds,
     int64_t image_pad_token_id,
@@ -352,14 +349,14 @@ ov::Tensor VisionTokenProcessor::generate_pruned_text_embeds(
     return pruned_text_embeds;
 }
 
-void VisionTokenProcessor::adjust_position_ids(ov::Tensor& position_ids_inout,
-                                               const ov::Tensor& input_ids,
-                                               const std::vector<std::array<size_t, 3>>& images_grid_thw,
-                                               const std::vector<size_t>& images_sequence,
-                                               int64_t image_pad_token_id,
-                                               int64_t vision_start_token_id,
-                                               size_t spatial_merge_size,
-                                               std::vector<std::vector<bool>>& keep_flags_per_region_out) const {
+void VisionTokenPruningProcessor::adjust_position_ids(ov::Tensor& position_ids_inout,
+                                                      const ov::Tensor& input_ids,
+                                                      const std::vector<std::array<size_t, 3>>& images_grid_thw,
+                                                      const std::vector<size_t>& images_sequence,
+                                                      int64_t image_pad_token_id,
+                                                      int64_t vision_start_token_id,
+                                                      size_t spatial_merge_size,
+                                                      std::vector<std::vector<bool>>& keep_flags_per_region_out) const {
     auto kept_indices_per_image = get_last_selected_tokens();
     OPENVINO_ASSERT(!images_sequence.empty(), "Image sequence must not be empty when pruning visual tokens");
     OPENVINO_ASSERT(!kept_indices_per_image.empty(), "Kept token indices are missing after pruning");
@@ -399,7 +396,7 @@ void VisionTokenProcessor::adjust_position_ids(ov::Tensor& position_ids_inout,
 }
 
 // 3D position IDs update for Qwen2VL-style models
-ov::Tensor VisionTokenProcessor::update_position_ids_3d(
+ov::Tensor VisionTokenPruningProcessor::update_position_ids_3d(
     const ov::Tensor& original_position_ids,
     const ov::Tensor& input_ids,
     int64_t vision_start_token_id,
@@ -578,7 +575,7 @@ ov::Tensor VisionTokenProcessor::update_position_ids_3d(
 }
 
 // 1D position IDs update for LLaVA-style models
-ov::Tensor VisionTokenProcessor::update_position_ids_1d(
+ov::Tensor VisionTokenPruningProcessor::update_position_ids_1d(
     const ov::Tensor& original_position_ids,
     const ov::Tensor& input_ids,
     int64_t vision_start_token_id,
@@ -695,7 +692,7 @@ ov::Tensor VisionTokenProcessor::update_position_ids_1d(
     return new_position_ids;
 }
 
-VisionTokenProcessor::PruningResult VisionTokenProcessor::execute_full_pipeline(const PruningContext& context,
+VisionTokenPruningProcessor::PruningResult VisionTokenPruningProcessor::execute(const PruningContext& context,
                                                                                 ov::Tensor& position_ids,
                                                                                 utils::KVCacheState& kv_cache_state,
                                                                                 size_t prev_hist_length) {

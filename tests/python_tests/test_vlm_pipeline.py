@@ -1634,14 +1634,14 @@ def test_cdpruner_disable_after_enable(ov_pipe_model: VlmModelInfo, cat_tensor: 
 
 
 @pytest.fixture(scope="module")
-def ov_continious_batching_pipe_qwen2vl() -> ContinuousBatchingPipeline:
+def ov_continuous_batching_pipe_qwen2vl() -> ContinuousBatchingPipeline:
     """Fixture for Qwen2VL continuous batching pipeline."""
     model_path = _get_ov_model(CDPRUNER_SUPPORTED_MODELS[0])
     return ContinuousBatchingPipeline(model_path, SchedulerConfig(), "CPU")
 
 
 def test_cdpruner_continuous_batching(
-    ov_continious_batching_pipe_qwen2vl: ContinuousBatchingPipeline,
+    ov_continuous_batching_pipe_qwen2vl: ContinuousBatchingPipeline,
     cat_tensor: openvino.Tensor,
     car_tensor: openvino.Tensor,
 ):
@@ -1653,7 +1653,7 @@ def test_cdpruner_continuous_batching(
     generation_config.pruning_ratio = 25
 
     # Test batch with different images
-    results = ov_continious_batching_pipe_qwen2vl.generate(
+    results = ov_continuous_batching_pipe_qwen2vl.generate(
         [PROMPTS[0]], images=[[car_tensor]], generation_config=[generation_config]
     )
 

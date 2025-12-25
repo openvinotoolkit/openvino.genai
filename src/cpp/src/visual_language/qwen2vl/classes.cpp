@@ -5,7 +5,6 @@
 #include "visual_language/qwen2vl/classes.hpp"
 
 #include "visual_language/clip.hpp"
-#include "visual_language/embedding_model.hpp"
 
 #include "utils.hpp"
 #include "openvino/op/interpolate.hpp"
@@ -1166,7 +1165,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
             spatial_merge_size
         };
 
-        VisionTokenProcessor::PruningResult pruning_result = execute_cdpruner_pipeline(pruning_context);
+        VisionTokenPruningProcessor::PruningResult pruning_result = execute_pruning_pipeline(pruning_context);
 
         // Replace with pruned versions (all generated in pipeline)
         input_ids = pruning_result.pruned_input_ids;

@@ -17,7 +17,7 @@
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/vision_encoder.hpp"
-#include "visual_language/vision_token_processor.hpp"
+#include "visual_language/vision_token_pruning_processor.hpp"
 
 namespace ov::genai {
 struct VLMPerfMetrics;
@@ -103,7 +103,7 @@ public:
     void finish_chat();
 
     // set CDPruner setting
-    virtual void set_visual_token_pruning_config(size_t pruning_ratio, float relevance_weight);
+    virtual void set_vision_token_pruning_config(size_t pruning_ratio, float relevance_weight);
     virtual NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
@@ -131,7 +131,7 @@ private:
         // A tokenizer encoding a prompt.
         Tokenizer m_tokenizer;
         // Vision token processor for post-processing visual features (pruning, etc.)
-        std::shared_ptr<VisionTokenProcessor> m_token_processor;
+        std::shared_ptr<VisionTokenPruningProcessor> m_pruning_processor;
         // True if chat mode is activated to save conversation
         // history between generate() calls.
         bool m_is_chat_conversation = false;
@@ -202,13 +202,13 @@ private:
             return m_tokenizer;
         }
 
-        virtual void set_visual_token_pruning_config(size_t pruning_ratio, float relevance_weight) {
-            if (!m_token_processor)
+        virtual void set_vision_token_pruning_config(size_t pruning_ratio, float relevance_weight) {
+            if (!m_pruning_processor)
                 return;
-            auto config = m_token_processor->get_config();
+            auto config = m_pruning_processor->get_config();
             config.pruning_ratio = pruning_ratio;
             config.relevance_weight = relevance_weight;
-            m_token_processor->set_config(config);
+            m_pruning_processor->set_config(config);
         }
 
         utils::KVCacheState& get_kv_cache_state() {
@@ -288,10 +288,10 @@ private:
 
         /**
          * @brief Execute the full CDPruner pipeline.
-         * This method orchestrates the entire pruning workflow by calling VisionTokenProcessor functions.
+         * This method orchestrates the entire pruning workflow by calling VisionTokenPruningProcessor functions.
          * @param context PruningContext containing all necessary parameters and state
          */
-        VisionTokenProcessor::PruningResult execute_cdpruner_pipeline(const PruningContext& context);
+        VisionTokenPruningProcessor::PruningResult execute_pruning_pipeline(const PruningContext& context);
     };
 
     std::shared_ptr<IInputsEmbedder> m_impl;

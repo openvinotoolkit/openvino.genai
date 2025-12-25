@@ -217,7 +217,7 @@ public:
                 OPENVINO_ASSERT(videos.empty(), "Chat mode is currently not supported with video input for NPU device!");
         }
 
-        m_inputs_embedder->set_visual_token_pruning_config(generation_config.pruning_ratio,
+        m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                            generation_config.relevance_weight);
 
         auto encoded_images = m_inputs_embedder->encode_images(images);

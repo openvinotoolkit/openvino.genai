@@ -73,7 +73,7 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
     m_vision_encoder(VisionEncoder::create(model_dir, m_vlm_config.model_type, device, device_config)),
     m_embedding(EmbeddingsModel::create(model_dir, m_vlm_config.scale_emb, device, device_config)),
     m_tokenizer{model_dir, device_config},
-    m_token_processor(std::make_shared<VisionTokenProcessor>(device)) { }
+    m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) { }
 
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const VLMConfig& vlm_config,
@@ -98,7 +98,7 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         device_config
     )),
     m_tokenizer(tokenizer),
-    m_token_processor(std::make_shared<VisionTokenProcessor>(device)) { }
+    m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) { }
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
     bool add_special_tokens = m_add_special_tokens_is_set ? m_add_special_tokens : !(m_is_chat_conversation || m_apply_chat_template);
@@ -243,24 +243,20 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_em
 bool InputsEmbedder::IInputsEmbedder::has_token_type_ids() const { return false; }
 
 bool InputsEmbedder::IInputsEmbedder::is_cdpruner_active(const std::vector<ov::genai::EncodedImage>& images) const {
-    if (!m_token_processor || images.empty()) {
+    if (!m_pruning_processor || images.empty()) {
         return false;
     }
 
-    auto current_pruning_config = m_token_processor->get_config();
+    auto current_pruning_config = m_pruning_processor->get_config();
     bool pruner_enabled = current_pruning_config.pruning_ratio > 0;
-    return m_token_processor->is_available() && pruner_enabled;
+    return m_pruning_processor->is_available() && pruner_enabled;
 }
 
-VisionTokenProcessor::PruningResult InputsEmbedder::IInputsEmbedder::execute_cdpruner_pipeline(
+VisionTokenPruningProcessor::PruningResult InputsEmbedder::IInputsEmbedder::execute_pruning_pipeline(
     const PruningContext& context) {
-    // Directly delegate to VisionTokenProcessor's execute_full_pipeline
+    // Directly delegate to VisionTokenPruningProcessor's execute
     // Pass IInputsEmbedder state members as separate parameters
-    return m_token_processor->execute_full_pipeline(
-        context,
-        m_position_ids,
-        m_kv_cache_state,
-        m_prev_hist_length);
+    return m_pruning_processor->execute(context, m_position_ids, m_kv_cache_state, m_prev_hist_length);
 }
 
 /// Public InputsEmbedder class
@@ -438,8 +434,8 @@ void InputsEmbedder::finish_chat() {
     return m_impl->finish_chat();
 }
 
-void InputsEmbedder::set_visual_token_pruning_config(size_t pruning_ratio, float relevance_weight) {
-    return m_impl->set_visual_token_pruning_config(pruning_ratio, relevance_weight);
+void InputsEmbedder::set_vision_token_pruning_config(size_t pruning_ratio, float relevance_weight) {
+    return m_impl->set_vision_token_pruning_config(pruning_ratio, relevance_weight);
 }
 
 NormalizedPrompt InputsEmbedder::normalize_prompt(

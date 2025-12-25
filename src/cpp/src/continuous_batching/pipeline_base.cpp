@@ -259,7 +259,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
     const auto& generation_config = sampling_params[0];
     // Set visual token pruning configuration
-    m_inputs_embedder->set_visual_token_pruning_config(generation_config.pruning_ratio,
+    m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                        generation_config.relevance_weight);
 
     if (m_is_chat_conversation) {

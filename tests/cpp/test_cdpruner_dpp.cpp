@@ -387,6 +387,12 @@ TEST_P(CDPrunerIntegrationTest, LargeSequenceSplitting) {
     EXPECT_EQ(pruned_shape[0], batch_size);       // Batch size unchanged
     EXPECT_LT(pruned_shape[1], sequence_length);  // Sequence length reduced
     EXPECT_EQ(pruned_shape[2], hidden_dim);       // Hidden dim unchanged
+
+    // Verify precise token count
+    // Note: OpenCL backend requires even number of tokens, so actual count may be expected+1
+    size_t expected_tokens = sequence_length * (100 - cdp_config.pruning_ratio) / 100;
+    EXPECT_GE(pruned_shape[1], expected_tokens);
+    EXPECT_LE(pruned_shape[1], expected_tokens + 1);
 }
 
 TEST_P(CDPrunerIntegrationTest, MultiFramePruning) {
@@ -443,6 +449,11 @@ TEST_P(CDPrunerIntegrationTest, MultiFramePruningEdgeCases) {
         auto result = cdpruner.apply_pruning(single_frame, text_features);
         EXPECT_FALSE(result.get_shape().empty()) << "Single frame pruning should produce valid result";
         EXPECT_LT(result.get_shape()[1], 50) << "Single frame should be pruned";
+
+        // OpenCL backend requires even token count, allowing +1 for alignment
+        size_t expected_tokens = 50 * (100 - cdp_config.pruning_ratio) / 100;
+        EXPECT_GE(result.get_shape()[1], expected_tokens);
+        EXPECT_LE(result.get_shape()[1], expected_tokens + 1);
     }
 
     // Test case 2: Empty frames vector (should handle gracefully)
@@ -477,6 +488,55 @@ TEST_P(CDPrunerIntegrationTest, MultiFramePruningEdgeCases) {
         size_t total_original = num_small_frames * small_sequence_length;
         EXPECT_LT(result.get_shape()[1], total_original) << "Many frames concatenation should be pruned";
     }
+}
+
+TEST_P(CDPrunerIntegrationTest, MultiFrameVariableSizePruning) {
+    // Test multi-frame pruning with variable-sized frames (simulates different resolutions)
+    CDPruner cdpruner(cdp_config);
+
+    size_t hidden_dim = 512;
+    size_t batch_size = 1;
+    std::vector<size_t> frame_sizes = {120, 80, 150, 100};  // Variable frame sizes
+    ov::TensorVector variable_size_frames;
+    size_t total_original_length = 0;
+
+    for (size_t i = 0; i < frame_sizes.size(); ++i) {
+        size_t frame_seq_length = frame_sizes[i];
+        total_original_length += frame_seq_length;
+
+        ov::Tensor frame_features(ov::element::f32, {batch_size, frame_seq_length, hidden_dim});
+        float base_value = 0.2f + 0.1f * i;
+        initializeTensorWithPattern(frame_features, base_value, 0.01f);
+        variable_size_frames.push_back(std::move(frame_features));
+    }
+
+    auto text_features = createTextFeatures(batch_size, hidden_dim, 0.5f, 0.1f);
+    auto pruned_features = cdpruner.apply_pruning(variable_size_frames, text_features);
+    auto pruned_shape = pruned_features.get_shape();
+
+    // Verify output dimensions
+    EXPECT_EQ(pruned_shape.size(), 3) << "Pruned features should have 3 dimensions [batch, sequence, hidden]";
+    EXPECT_EQ(pruned_shape[0], batch_size) << "Batch size should remain unchanged";
+    EXPECT_EQ(pruned_shape[2], hidden_dim) << "Hidden dimension should remain unchanged";
+
+    // Verify sequence length is reduced
+    EXPECT_LT(pruned_shape[1], total_original_length) << "Total sequence length should be reduced after pruning";
+    EXPECT_GT(pruned_shape[1], 0) << "Pruned sequence should have at least some tokens";
+
+    // Verify output tensor validity
+    EXPECT_FALSE(pruned_features.get_shape().empty()) << "Pruned features should not be empty";
+    EXPECT_GT(pruned_features.get_byte_size(), 0) << "Pruned features should have non-zero size";
+
+    // Check for NaN/Inf values
+    float* pruned_data = pruned_features.data<float>();
+    bool has_invalid_values = false;
+    for (size_t i = 0; i < pruned_features.get_size(); ++i) {
+        if (std::isnan(pruned_data[i]) || std::isinf(pruned_data[i])) {
+            has_invalid_values = true;
+            break;
+        }
+    }
+    EXPECT_FALSE(has_invalid_values) << "Pruned features should not contain NaN or Inf values";
 }
 
 // =============================================================================
