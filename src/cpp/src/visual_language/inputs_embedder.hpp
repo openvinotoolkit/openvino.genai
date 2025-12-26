@@ -280,18 +280,26 @@ private:
         std::vector<ov::Tensor> to_single_image_tensors(const std::vector<ov::Tensor>& images);
 
         /**
-         * @brief Check if CDPruner should be active for current configuration.
-         * @param images Vector of encoded images (empty check)
-         * @return true if CDPruner is available, enabled, and has images to process
+         * @brief Check if CDPruner is available and enabled.
+         * @return true if CDPruner processor exists, is available, and enabled (pruning_ratio > 0)
          */
-        bool is_cdpruner_active(const std::vector<ov::genai::EncodedImage>& images) const;
+        bool is_cdpruner_active() const {
+            if (!m_pruning_processor) {
+                return false;
+            }
+            auto current_pruning_config = m_pruning_processor->get_config();
+            bool pruner_enabled = current_pruning_config.pruning_ratio > 0;
+            return m_pruning_processor->is_available() && pruner_enabled;
+        }
 
         /**
          * @brief Execute the full CDPruner pipeline.
          * This method orchestrates the entire pruning workflow by calling VisionTokenPruningProcessor functions.
          * @param context PruningContext containing all necessary parameters and state
          */
-        VisionTokenPruningProcessor::PruningResult execute_pruning_pipeline(const PruningContext& context);
+        VisionTokenPruningProcessor::PruningResult execute_pruning_pipeline(const PruningContext& context) {
+            return m_pruning_processor->execute(context, m_position_ids, m_kv_cache_state, m_prev_hist_length);
+        }
     };
 
     std::shared_ptr<IInputsEmbedder> m_impl;

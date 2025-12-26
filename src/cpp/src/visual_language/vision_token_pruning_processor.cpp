@@ -17,8 +17,7 @@
 
 namespace ov::genai {
 
-VisionTokenPruningProcessor::VisionTokenPruningProcessor(const std::string& device)
-    : m_config() {
+VisionTokenPruningProcessor::VisionTokenPruningProcessor(const std::string& device) : m_config() {
     m_config.device = device;
 }
 
@@ -708,16 +707,16 @@ VisionTokenPruningProcessor::PruningResult VisionTokenPruningProcessor::execute(
     // Step 1: Extract text features for relevance calculation
     ov::Tensor text_features = extract_text_features(context.text_embeds,
                                                      context.input_ids,
-                                                     context.image_pad_token_id,
+                                                     context.vision_pad_token_id,
                                                      context.vision_start_token_id,
                                                      context.vision_end_token_id);
 
     // Step 2: Convert visual features to CDPruner format
-    OPENVINO_ASSERT(!current_pruning_config.enable_frame_chunking || !context.images.empty(),
-                    "images must be non-empty when frame chunking is enabled");
-    size_t chunk_count = current_pruning_config.enable_frame_chunking ? context.images.size() : 1;
+    OPENVINO_ASSERT(!current_pruning_config.enable_frame_chunking || context.vision_count > 0,
+                    "vision_count must be non-zero when frame chunking is enabled");
+    size_t chunk_count = current_pruning_config.enable_frame_chunking ? context.vision_count : 1;
     std::vector<ov::Tensor> visual_features =
-        convert_visual_features(context.merged_visual_embeddings, chunk_count, context.tokens_per_image);
+        convert_visual_features(context.merged_visual_embeddings, chunk_count, context.tokens_per_vision);
 
     // Step 3: Apply vision token processing (pruning)
     ov::Tensor pruned_visual_features = process(visual_features, text_features);
@@ -743,9 +742,9 @@ VisionTokenPruningProcessor::PruningResult VisionTokenPruningProcessor::execute(
     // Step 5: Adjust position_ids to account for removed visual tokens
     adjust_position_ids(position_ids,
                         context.input_ids,
-                        context.images_grid_thw,
-                        context.images_sequence,
-                        context.image_pad_token_id,
+                        context.visions_grid_thw,
+                        context.visions_sequence,
+                        context.vision_pad_token_id,
                         context.vision_start_token_id,
                         context.spatial_merge_size,
                         result.keep_flags_per_region);
@@ -770,20 +769,20 @@ VisionTokenPruningProcessor::PruningResult VisionTokenPruningProcessor::execute(
     OPENVINO_ASSERT(total_pruned_tokens == result.pruned_visual_tokens,
                     "Pruned visual token metadata mismatch after pruning. Expected: " +
                         std::to_string(result.pruned_visual_tokens) + ", Got: " + std::to_string(total_pruned_tokens));
-    OPENVINO_ASSERT(result.keep_flags_per_region.size() == context.images_sequence.size(),
+    OPENVINO_ASSERT(result.keep_flags_per_region.size() == context.visions_sequence.size(),
                     "Kept visual token mask count mismatch with vision regions");
 
     // Step 7: Generate pruned input_ids with visual tokens removed
     result.pruned_input_ids = generate_pruned_input_ids(context.input_ids,
                                                         result.keep_flags_per_region,
-                                                        context.image_pad_token_id,
+                                                        context.vision_pad_token_id,
                                                         context.vision_start_token_id,
                                                         context.vision_end_token_id);
 
     // Step 8: Generate pruned text embeddings
     result.pruned_text_embeds = generate_pruned_text_embeds(context.input_ids,
                                                             context.text_embeds,
-                                                            context.image_pad_token_id,
+                                                            context.vision_pad_token_id,
                                                             context.vision_start_token_id,
                                                             context.vision_end_token_id,
                                                             result.keep_flags_per_region);

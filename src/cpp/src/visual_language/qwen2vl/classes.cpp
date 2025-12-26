@@ -1108,13 +1108,9 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     }
 
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
-    ov::Tensor text_embeds;
-    {
-        // Acquire request, run inference, then copy the result to safeguard against later reuse
-        CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
-        EmbeddingsRequest& req = embeddings_request_guard.get();
-        text_embeds = m_embedding->infer(req, input_ids);
-    } // Request released here
+    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
+    EmbeddingsRequest& req = embeddings_request_guard.get();
+    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
 
     int64_t vision_start_token_id = m_vision_token_ids["vision_start"];
     int64_t vision_end_token_id = m_vision_token_ids["vision_end"];
@@ -1139,43 +1135,52 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     merged_video_embeddings_tensor = m_merged_video_embeddings;
     merged_image_embeddings_tensor = m_merged_image_embeddings;
 
-    // [CDPruner] Check if pruning is active and execute pipeline if applicable
-    if (is_cdpruner_active(images)) {
-        // Calculate tokens per image for CDPruner
-        std::vector<size_t> tokens_per_image;
-        tokens_per_image.reserve(images_grid_thw.size());
-        for (const auto& [grid_t, grid_h, grid_w] : images_grid_thw) {
-            tokens_per_image.push_back(calc_tokens_num(grid_t, grid_h, grid_w));
+    // [CDPruner] Lambda to apply pruning
+    auto apply_pruning = [&](size_t vision_count,
+                             const std::vector<std::array<size_t, 3>>& grid_thw,
+                             const std::vector<size_t>& sequence,
+                             ov::Tensor& merged_embeddings,
+                             int64_t vision_pad_token_id) {
+        // Calculate tokens per vision input
+        std::vector<size_t> tokens_per_vision;
+        tokens_per_vision.reserve(grid_thw.size());
+        for (const auto& [grid_t, grid_h, grid_w] : grid_thw) {
+            tokens_per_vision.push_back(calc_tokens_num(grid_t, grid_h, grid_w));
         }
 
         const size_t spatial_merge_size = std::max<size_t>(1, m_vision_encoder->get_processor_config().merge_size);
 
-        // Initialize PruningContext with input data (state managed by IInputsEmbedder)
-        PruningContext pruning_context{
-            input_ids,
-            text_embeds,
-            merged_image_embeddings_tensor,
-            images,
-            images_grid_thw,
-            images_sequence,
-            tokens_per_image,
-            image_pad_token_id,
-            vision_start_token_id,
-            vision_end_token_id,
-            spatial_merge_size
-        };
+        PruningContext pruning_context{input_ids,
+                                       text_embeds,
+                                       merged_embeddings,
+                                       vision_count,
+                                       grid_thw,
+                                       sequence,
+                                       tokens_per_vision,
+                                       vision_pad_token_id,
+                                       vision_start_token_id,
+                                       vision_end_token_id,
+                                       spatial_merge_size};
 
         VisionTokenPruningProcessor::PruningResult pruning_result = execute_pruning_pipeline(pruning_context);
 
-        // Replace with pruned versions (all generated in pipeline)
+        // Update with pruned versions
         input_ids = pruning_result.pruned_input_ids;
         text_embeds = pruning_result.pruned_text_embeds;
-        merged_image_embeddings_tensor = pruning_result.pruned_embeddings;
-        
-        // Update rope_delta if provided (RoPE models only)
+        merged_embeddings = pruning_result.pruned_embeddings;
+
         if (pruning_result.updated_rope_delta.has_value()) {
             m_rope_delta = pruning_result.updated_rope_delta.value();
         }
+    };
+
+    // Only apply pruning to images
+    if (!images.empty() && is_cdpruner_active()) {
+        apply_pruning(images.size(),
+                      images_grid_thw,
+                      images_sequence,
+                      merged_image_embeddings_tensor,
+                      image_pad_token_id);
     }
 
     return qwen2_vl_utils::merge_text_and_video_image_embeddings(input_ids,

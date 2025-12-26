@@ -30,14 +30,14 @@ struct PruningContext {
     const ov::Tensor& text_embeds;
     const ov::Tensor& merged_visual_embeddings;
 
-    // Image metadata
-    const std::vector<ov::genai::EncodedImage>& images;
-    const std::vector<std::array<size_t, 3>>& images_grid_thw;
-    const std::vector<size_t>& images_sequence;
-    const std::vector<size_t>& tokens_per_image;
+    // Vision metadata (generic for images or videos)
+    size_t vision_count;  // Number of vision inputs (images or videos)
+    const std::vector<std::array<size_t, 3>>& visions_grid_thw;
+    const std::vector<size_t>& visions_sequence;
+    const std::vector<size_t>& tokens_per_vision;
 
     // Token IDs
-    int64_t image_pad_token_id;
+    int64_t vision_pad_token_id;         // Can be image_pad_token_id or video_pad_token_id
     int64_t vision_start_token_id = -1;  // -1 means not used (optional)
     int64_t vision_end_token_id = -1;    // -1 means not used (optional)
 
@@ -208,7 +208,7 @@ public:
      * - Input IDs and embeddings regeneration
      * - KV cache update
      *
-     * @param context PruningContext containing input data and optional rope_delta pointer
+     * @param context PruningContext containing input data
      * @param position_ids Position IDs tensor (modified in-place)
      * @param kv_cache_state KV cache state (modified)
      * @param prev_hist_length Previous history length for KV cache

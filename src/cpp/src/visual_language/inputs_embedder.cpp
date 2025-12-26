@@ -242,23 +242,6 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::IInputsEmbedder::get_inputs_em
 
 bool InputsEmbedder::IInputsEmbedder::has_token_type_ids() const { return false; }
 
-bool InputsEmbedder::IInputsEmbedder::is_cdpruner_active(const std::vector<ov::genai::EncodedImage>& images) const {
-    if (!m_pruning_processor || images.empty()) {
-        return false;
-    }
-
-    auto current_pruning_config = m_pruning_processor->get_config();
-    bool pruner_enabled = current_pruning_config.pruning_ratio > 0;
-    return m_pruning_processor->is_available() && pruner_enabled;
-}
-
-VisionTokenPruningProcessor::PruningResult InputsEmbedder::IInputsEmbedder::execute_pruning_pipeline(
-    const PruningContext& context) {
-    // Directly delegate to VisionTokenPruningProcessor's execute
-    // Pass IInputsEmbedder state members as separate parameters
-    return m_pruning_processor->execute(context, m_position_ids, m_kv_cache_state, m_prev_hist_length);
-}
-
 /// Public InputsEmbedder class
 
 InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
