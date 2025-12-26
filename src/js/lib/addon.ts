@@ -1,9 +1,12 @@
 import { createRequire } from "module";
 import { platform } from "node:os";
 import { join, dirname, resolve } from "node:path";
+import { Tensor } from "openvino-node";
 import type { ChatHistory as IChatHistory } from "./chatHistory.js";
 import type { Tokenizer as ITokenizer } from "./tokenizer.js";
 import { addon as ovAddon } from "openvino-node";
+import { GenerationConfig, StreamingStatus, VLMPipelineProperties } from "./utils.js";
+import { VLMPerfMetrics } from "./perfMetrics.js";
 
 export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
 export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
@@ -58,9 +61,36 @@ export interface TextEmbeddingPipelineWrapper {
   embedDocumentsSync(documents: string[]): EmbeddingResults;
 }
 
+export interface VLMPipeline {
+  new (): VLMPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    ovProperties: VLMPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    prompt: string,
+    images: Tensor[] | undefined,
+    videos: Tensor[] | undefined,
+    streamer: ((chunk: string) => StreamingStatus) | undefined,
+    generationConfig: GenerationConfig | undefined,
+    callback: (
+      err: Error | null,
+      result: { texts: string[]; scores: number[]; perfMetrics: VLMPerfMetrics },
+    ) => void,
+  ): void;
+  startChat(systemMessage: string, callback: (err: Error | null) => void): void;
+  finishChat(callback: (err: Error | null) => void): void;
+  getTokenizer(): ITokenizer;
+  setChatTemplate(template: string): void;
+  setGenerationConfig(config: GenerationConfig): void;
+}
+
 interface OpenVINOGenAIAddon {
   TextEmbeddingPipeline: TextEmbeddingPipelineWrapper;
   LLMPipeline: any;
+  VLMPipeline: VLMPipeline;
   ChatHistory: IChatHistory;
   Tokenizer: ITokenizer;
   setOpenvinoAddon: (ovAddon: any) => void;
@@ -84,6 +114,6 @@ function getGenAIAddon(): OpenVINOGenAIAddon {
 const addon = getGenAIAddon();
 addon.setOpenvinoAddon(ovAddon);
 
-export const { TextEmbeddingPipeline, LLMPipeline, ChatHistory, Tokenizer } = addon;
+export const { TextEmbeddingPipeline, LLMPipeline, VLMPipeline, ChatHistory, Tokenizer } = addon;
 export type ChatHistory = IChatHistory;
 export type Tokenizer = ITokenizer;
