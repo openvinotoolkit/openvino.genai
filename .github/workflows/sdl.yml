@@ -43,13 +43,13 @@ jobs:
       - name: Install Python tests dependencies
         run: |
           python3 -m pip install flake8 pytest black bandit
-          
+
       - name: Lint with flake8 (WWB)
         run: |
           # stop the build if there are Python syntax errors or undefined names
           python -m flake8 . --config=./setup.cfg
         working-directory: ${{ github.workspace }}/tools/who_what_benchmark
-          
+
       - name: Lint with flake8 (LLM)
         run: |
           # stop the build if there are Python syntax errors or undefined names
@@ -70,4 +70,3 @@ jobs:
         uses: actions/dependency-review-action@3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261 # v4.8.2
         with:
           config-file: './.github/dependency_review.yml'
-
