@@ -1251,3 +1251,38 @@ def create_text_reranker_model(model_path: Path, device: str, memory_monitor: Me
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     return ov_model, tokenizer, from_pretrained_time, bench_hook, False
+
+
+def create_video_gen_model(model_path, device, memory_data_collector, **kwargs):
+    model_class = kwargs['use_case'].ov_cls
+
+    model_path = Path(model_path)
+    ov_config = kwargs['config']
+    if not Path(model_path).exists():
+        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
+    else:
+        if kwargs.get("genai", True) and is_genai_available(log_msg=True):
+            log.info("Selected OpenVINO GenAI for benchmarking")
+            raise RuntimeError('==Failure ==: OpenVINO GenAI is not supported for benchmarking yet')
+
+        if kwargs.get("mem_consumption"):
+            memory_data_collector.start()
+        log.info("Selected Optimum Intel for benchmarking")
+        start = time.perf_counter()
+        if kwargs.get("static_reshape", False):
+            ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config, compile=False)
+            height = kwargs.get("height", 512)
+            width = kwargs.get("width", 512)
+            num_frames = kwargs.get("num_frames", 25)
+            log.info(f"Video Pipeline reshape(batch_size=1, height={height}, width={width}, num_frames={num_frames})")
+            ov_model.reshape(batch_size=1, height=height, width=width, num_frames=num_frames, num_images_per_prompt=1)
+            ov_model.compile()
+        else:
+            ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config)
+        end = time.perf_counter()
+        if kwargs.get("mem_consumption"):
+            memory_data_collector.stop_and_collect_data('compilation_phase')
+            memory_data_collector.log_data(compilation_phase=True)
+    from_pretrained_time = end - start
+    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    return ov_model, from_pretrained_time, False
