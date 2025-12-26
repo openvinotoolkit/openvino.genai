@@ -40,9 +40,9 @@ protected:
 
     /// @brief A config to follow.
     VLMConfig m_vlm_config;
-    
-    /// @brief TEMP: A path to load pos_emb.
-    std::filesystem::path m_pos_emb_path;
+
+    /// @brief pos_emb Tensor.
+    ov::Tensor m_pos_emb;
 };
 
 class InputsEmbedderVideoChat_Flash : public InputsEmbedder::IInputsEmbedder {

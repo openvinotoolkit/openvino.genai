@@ -261,8 +261,7 @@ ov::Tensor remove_second_dim_first_element(const ov::Tensor& input) {
 }
 
 std::shared_ptr<ov::Model> build_bipartite_soft_matching_merge_opt_model(int dim, ov::element::Type dtype = ov::element::f32) {
-    // 1. Parameters
-    // x: [B, P, C], size: [B, P, 1]
+    // Parameters: x: [B, P, C], size: [B, P, 1]
     auto x_p = std::make_shared<ov::op::v0::Parameter>(dtype, ov::PartialShape({-1, -1, -1}));
     x_p->set_friendly_name("hidden_states");
     x_p->output(0).set_names({"hidden_states"});
@@ -270,7 +269,7 @@ std::shared_ptr<ov::Model> build_bipartite_soft_matching_merge_opt_model(int dim
     size_p->set_friendly_name("size");
     size_p->output(0).set_names({"size"});
 
-    // 2. Metric Calculation
+    // Metric Calculation
     // metric4d = x.reshape(0, 0, -1, dim)
     auto reshape_pat = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{4}, std::vector<int32_t>{0, 0, -1, dim});
     auto metric4d = std::make_shared<ov::op::v1::Reshape>(x_p, reshape_pat, true);
@@ -279,7 +278,7 @@ std::shared_ptr<ov::Model> build_bipartite_soft_matching_merge_opt_model(int dim
     auto axis_2 = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int32_t>{2});
     auto metric = std::make_shared<ov::op::v1::ReduceMean>(metric4d, axis_2, false);
 
-    // 3. L2 Normalization
+    // L2 Normalization
     // metric_n = metric / sqrt(sum(metric^2))
     auto metric_sq = std::make_shared<ov::op::v1::Multiply>(metric, metric);
     auto axis_neg1 = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int32_t>{-1});
@@ -287,7 +286,7 @@ std::shared_ptr<ov::Model> build_bipartite_soft_matching_merge_opt_model(int dim
     auto metric_norm = std::make_shared<ov::op::v0::Sqrt>(metric_ss);
     auto metric_n = std::make_shared<ov::op::v1::Divide>(metric, metric_norm);
 
-    // 4. Bipartite Indices (Even/Odd)
+    // Bipartite Indices (Even/Odd)
     auto shape_x = std::make_shared<ov::op::v3::ShapeOf>(x_p, ov::element::i64);
     auto axis_0 = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int32_t>{0});
     auto p_node = std::make_shared<ov::op::v1::Gather>(shape_x,
@@ -302,13 +301,12 @@ std::shared_ptr<ov::Model> build_bipartite_soft_matching_merge_opt_model(int dim
     auto idx_even = std::make_shared<ov::op::v4::Range>(const_0, p_node, const_2, ov::element::i64);
     auto idx_odd = std::make_shared<ov::op::v4::Range>(const_1, p_node, const_2, ov::element::i64);
 
-    // 5. Scoring & Matching
+    // Scoring & Matching
     auto axis_p = std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int32_t>{1});
     auto a = std::make_shared<ov::op::v1::Gather>(metric_n, idx_even, axis_p); // [B, P/2, dim]
     auto b = std::make_shared<ov::op::v1::Gather>(metric_n, idx_odd, axis_p);  // [B, P/2, dim]
 
     // scores = a @ b.T -> [B, P/2, P/2]
-    // C++ MatMul doesn't have a simple transpose_b bool like Python, use Transpose or MatMul flags
     auto b_t = std::make_shared<ov::op::v1::Transpose>(b, std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{3}, std::vector<int32_t>{0, 2, 1}));
     auto scores = std::make_shared<ov::op::v0::MatMul>(a, b_t, false, false);
 
@@ -322,7 +320,7 @@ std::shared_ptr<ov::Model> build_bipartite_soft_matching_merge_opt_model(int dim
     auto node_idx = std::make_shared<ov::op::v0::Squeeze>(topk->output(1),
                                                           std::make_shared<ov::op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int32_t>{2}));
 
-    // 6. Merge Subgraph Logic
+    // Merge Subgraph Logic
     auto merge_subgraph = [&](ov::Output<ov::Node> data_3d) {
         auto src = std::make_shared<ov::op::v1::Gather>(data_3d, idx_even, axis_p);
         auto dst = std::make_shared<ov::op::v1::Gather>(data_3d, idx_odd, axis_p);
@@ -339,13 +337,13 @@ std::shared_ptr<ov::Model> build_bipartite_soft_matching_merge_opt_model(int dim
         return merged;
     };
 
-    // 7. Final Weighted Merge
+    // Final Weighted Merge
     auto x_weighted = std::make_shared<ov::op::v1::Multiply>(x_p, size_p);
     auto x_m = merge_subgraph(x_weighted);
     auto size_m = merge_subgraph(size_p);
     auto x_out = std::make_shared<ov::op::v1::Divide>(x_m, size_m);
 
-    // 8. Construct Model
+    // Construct Model
     x_out->set_friendly_name("x_out");
     size_m->set_friendly_name("size_out");
 
@@ -383,7 +381,6 @@ ov::Tensor merge_tokens(const ov::Tensor& input, ov::InferRequest& merge_embeddi
 
     ov::Tensor current_x = input;
 
-    // 多轮合并
     for (int64_t r : r_merge_list) {
         int64_t current_p = current_x.get_shape()[1];
         merge_embeddings.set_tensor("hidden_states", current_x);
@@ -393,7 +390,6 @@ ov::Tensor merge_tokens(const ov::Tensor& input, ov::InferRequest& merge_embeddi
         size_tensor = merge_embeddings.get_output_tensor(1);
     }
 
-    // 验证输出形状
     const ov::Shape& final_shape = current_x.get_shape();
     ov::Shape expected_shape = { b, target_num_token, c };
     if (final_shape != expected_shape) {
@@ -423,44 +419,84 @@ ov::Tensor efficient_flatten(ov::Tensor& original_tensor) {
     return new_tensor;
 }
 
+std::vector<float> get_1d_sincos_pos_embed_from_grid(int embed_dim, const std::vector<float>& pos) {
+    assert(embed_dim % 2 == 0);
+    int M = pos.size();
+    int half_dim = embed_dim / 2;
 
-// TODO: temporary function and will need to be updated later.
-ov::Tensor load_pos_emb_bin_to_ov_tensor(const std::string& bin_file_path, size_t num_patches, size_t emb_dim) {
-    // Load internvideo_pos_embed.bin to ov Tensor
-    const ov::Shape EXPECTED_SHAPE = {1, num_patches+1, emb_dim};
-    const ov::element::Type EXPECTED_TYPE = ov::element::f32;
-
-    size_t total_elements = std::accumulate(
-        EXPECTED_SHAPE.begin(), 
-        EXPECTED_SHAPE.end(), 
-        (size_t)1, 
-        std::multiplies<size_t>()
-    );
-    size_t element_size = EXPECTED_TYPE.size();
-    size_t total_bytes = total_elements * element_size;
-
-    std::ifstream file(bin_file_path, std::ios::binary | std::ios::ate);
-    if (!file.is_open()) {
-        OPENVINO_THROW("Error opening file: ", bin_file_path);
+    std::vector<float> omega(half_dim);
+    for (int i = 0; i < half_dim; ++i) {
+        omega[i] = 1.0f / std::pow(10000.0f, (float)i / (embed_dim / 2.0f));
     }
 
-    size_t file_size = file.tellg();
-    if (file_size != total_bytes) {
-        OPENVINO_THROW("File size mismatch. Expected ", total_bytes, " bytes, but found ", file_size, " bytes.");
+    std::vector<float> emb(M * embed_dim);
+    for (int m = 0; m < M; ++m) {
+        for (int d = 0; d < half_dim; ++d) {
+            float out = pos[m] * omega[d];
+            emb[m * embed_dim + d] = std::sin(out);            // 前一半是 sin
+            emb[m * embed_dim + d + half_dim] = std::cos(out); // 后一半是 cos
+        }
+    }
+    return emb;
+}
+
+std::vector<float> get_2d_sincos_pos_embed_from_grid(int embed_dim, const std::vector<std::vector<float>>& grid) {
+    assert(embed_dim % 2 == 0);
+    int half_dim = embed_dim / 2;
+    int num_points = grid[0].size();
+
+    auto emb_h = get_1d_sincos_pos_embed_from_grid(half_dim, grid[0]);
+    auto emb_w = get_1d_sincos_pos_embed_from_grid(half_dim, grid[1]);
+
+    std::vector<float> emb(num_points * embed_dim);
+    for (int i = 0; i < num_points; ++i) {
+        std::copy(emb_h.begin() + i * half_dim, emb_h.begin() + (i + 1) * half_dim, emb.begin() + i * embed_dim);
+        std::copy(emb_w.begin() + i * half_dim, emb_w.begin() + (i + 1) * half_dim, emb.begin() + i * embed_dim + half_dim);
+    }
+    return emb;
+}
+
+ov::Tensor get_3d_sincos_pos_embed(int embed_dim, int grid_size, int t_size, bool cls_token = false) {
+    assert(embed_dim % 4 == 0);
+    int embed_dim_spatial = (embed_dim / 4) * 3;
+    int embed_dim_temporal = embed_dim / 4;
+    int hw = grid_size * grid_size;
+    int total_tokens = t_size * hw;
+    int num_rows = (cls_token ? 1 : 0) + total_tokens;
+
+    ov::Shape output_shape = {1, static_cast<size_t>(num_rows), static_cast<size_t>(embed_dim)};
+    ov::Tensor pos_tensor(ov::element::f32, output_shape);
+
+    float* out_ptr = pos_tensor.data<float>();
+    std::fill(out_ptr, out_ptr + pos_tensor.get_size(), 0.0f);
+
+    std::vector<std::vector<float>> grid(2, std::vector<float>(hw));
+    for (int h = 0; h < grid_size; ++h) {
+        for (int w = 0; w < grid_size; ++w) {
+            grid[0][h * grid_size + w] = (float)w;
+            grid[1][h * grid_size + w] = (float)h;
+        }
+    }
+    auto pos_embed_spatial = get_2d_sincos_pos_embed_from_grid(embed_dim_spatial, grid);
+
+    std::vector<float> grid_t(t_size);
+    std::iota(grid_t.begin(), grid_t.end(), 0.0f);
+    auto pos_embed_temporal = get_1d_sincos_pos_embed_from_grid(embed_dim_temporal, grid_t);
+
+    int output_offset = cls_token ? 1 : 0;
+    for (int t = 0; t < t_size; ++t) {
+        for (int i = 0; i < hw; ++i) {
+            float* token_ptr = out_ptr + (output_offset + t * hw + i) * embed_dim;
+            std::memcpy(token_ptr, 
+                        &pos_embed_temporal[t * embed_dim_temporal], 
+                        embed_dim_temporal * sizeof(float));
+            std::memcpy(token_ptr + embed_dim_temporal, 
+                        &pos_embed_spatial[i * embed_dim_spatial], 
+                        embed_dim_spatial * sizeof(float));
+        }
     }
 
-    file.seekg(0, std::ios::beg);
-
-    ov::Tensor pos_emd_tensor(EXPECTED_TYPE, EXPECTED_SHAPE);
-
-    void* tensor_data_ptr = pos_emd_tensor.data(); 
-
-    file.read(static_cast<char*>(tensor_data_ptr), total_bytes);
-
-    if (file.fail()) {
-        OPENVINO_THROW("Error reading data from file: ", bin_file_path);
-    }
-    return pos_emd_tensor;
+    return pos_tensor;
 }
 
 }  // namespace videochat_flash_utils
@@ -478,7 +514,6 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
             return compiled_model.create_infer_request();
         });
 
-    m_pos_emb_path = model_dir / "internvideo_pos_embed.bin";
     auto merge_dim = m_vlm_config.mm_hidden_size / 16;
     auto merge_model = videochat_flash_utils::build_bipartite_soft_matching_merge_opt_model(merge_dim);
     auto compiled_merge_model = utils::singleton_core().compile_model(merge_model, "CPU", {});
@@ -487,6 +522,15 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
         [&compiled_merge_model]() -> ov::InferRequest {
             return compiled_merge_model.create_infer_request();
         });
+    
+    // init 3d_sincos_pos_embed
+    size_t mm_hidden_size = m_vlm_config.mm_hidden_size;
+    size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;
+    // Can not obtain this from config for now
+    const size_t img_size = 224;
+    const size_t patch_size = 14;
+    size_t grid_size = img_size / patch_size; // 16
+    m_pos_emb = videochat_flash_utils::get_3d_sincos_pos_embed(mm_hidden_size, grid_size, mm_local_num_frames, true);
 }
 
 VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
@@ -512,6 +556,15 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
         [&compiled_merge_model]() -> ov::InferRequest {
             return compiled_merge_model.create_infer_request();
         });
+    
+    // init 3d_sincos_pos_embed
+    size_t mm_hidden_size = m_vlm_config.mm_hidden_size;
+    size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;
+    // Can not obtain this from config for now
+    const size_t img_size = 224;
+    const size_t patch_size = 14;
+    size_t grid_size = img_size / patch_size; // 16
+    m_pos_emb = videochat_flash_utils::get_3d_sincos_pos_embed(mm_hidden_size, grid_size, mm_local_num_frames, true);
 }
 
 EncodedImage VisionEncoderVideoChat_Flash::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
@@ -519,8 +572,6 @@ EncodedImage VisionEncoderVideoChat_Flash::encode(const ov::Tensor& image, const
     size_t frame_num = image.get_shape().at(0);
     size_t mm_local_num_frames = m_vlm_config.mm_local_num_frames;
     size_t mm_hidden_size = m_vlm_config.mm_hidden_size;
-    // TODO: how to calculate this value for num_patches
-    size_t num_patches = 1024;
     auto input_shape = image.get_shape();
     OPENVINO_ASSERT(input_shape.size() == 4, "Input video features must be 4D.");
 
@@ -529,17 +580,11 @@ EncodedImage VisionEncoderVideoChat_Flash::encode(const ov::Tensor& image, const
 
     // transpose video features
     auto transpose_features = videochat_flash_utils::transpose_video_features(image, mm_local_num_frames);
-    // TODO: split each frame group and use static shape vit for better performance
-
-    // TODO: obtain rotary_pos_emb from cpp code
-    // now obtain rotary_pos_emd from bin file
-    ov::Tensor rotary_pos_emb = videochat_flash_utils::load_pos_emb_bin_to_ov_tensor(m_pos_emb_path.string(), num_patches, mm_hidden_size);
-
     // video embedding
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& vision_embeddings = infer_request_guard.get();
     vision_embeddings.set_tensor("hidden_states", transpose_features);
-    vision_embeddings.set_tensor("rotary_pos_emb", rotary_pos_emb);
+    vision_embeddings.set_tensor("rotary_pos_emb", m_pos_emb);
     vision_embeddings.infer();
     ov::Tensor processed_vision_embeds = vision_embeddings.get_output_tensor();
 
