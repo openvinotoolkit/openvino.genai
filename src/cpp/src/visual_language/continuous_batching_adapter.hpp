@@ -77,6 +77,45 @@ public:
         return decoded;
     }
 
+    VLMDecodedResults generate(
+        ChatHistory& history,
+        const std::vector<ov::Tensor>& images,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) override {
+        return generate(history, images, {}, std::move(generation_config), streamer);
+    }
+
+    VLMDecodedResults generate(
+        ChatHistory& history,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) override {
+        auto start_time = std::chrono::steady_clock::now();
+        std::vector<ChatHistory> histories = {history};
+        
+        auto result = m_impl.generate(histories, {images}, {videos}, {std::move(generation_config)}, streamer)[0];
+        history = histories[0];
+        auto stop_time = std::chrono::steady_clock::now();
+
+        VLMDecodedResults decoded;
+        decoded.perf_metrics = result.perf_metrics;
+        decoded.perf_metrics.load_time = get_load_time();
+
+        decoded.perf_metrics.raw_metrics.generate_durations.clear();
+        decoded.perf_metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+        decoded.perf_metrics.m_evaluated = false;
+        decoded.perf_metrics.evaluate_statistics(start_time);
+        
+        for (size_t idx = 0; idx < result.texts.size(); ++idx) {
+            decoded.texts.push_back(result.texts.at(idx));
+            decoded.scores.push_back(result.scores.at(idx));
+        }
+        return decoded;
+    }
+
     virtual void start_chat(const std::string& system_message) override { m_impl.start_chat(system_message); };
 
     virtual void finish_chat() override { m_impl.finish_chat(); };
