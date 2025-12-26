@@ -84,10 +84,7 @@ std::vector<std::vector<size_t>> CDPruner::select_tokens(const ov::Tensor& visua
     size_t total_tokens = visual_shape[1];
     size_t feature_dim = visual_shape[2];
 
-    size_t raw_tokens_to_keep = static_cast<size_t>(std::round(total_tokens * (1.0 - m_config.pruning_ratio / 100.0)));
-    // Round up to the next even number of tokens to keep
-    // This is required for DPP OpenCL implementation
-    size_t num_tokens_to_keep = (raw_tokens_to_keep % 2 == 0) ? raw_tokens_to_keep : raw_tokens_to_keep + 1;
+    size_t num_tokens_to_keep = static_cast<size_t>(std::round(total_tokens * (1.0 - m_config.pruning_ratio / 100.0)));
 
     try {
         std::vector<std::vector<size_t>> selected_tokens;
