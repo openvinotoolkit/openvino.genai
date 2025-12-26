@@ -36,7 +36,7 @@ private:
                                         size_t frame_num = 1,
                                         size_t frame_id = 0);
 
-    bool use_ov_image_preprocess = true; // default use ov image preprocess, control by env IMAGE_PREPROCESS=CPP to use cpp image preprocess
+    bool use_ov_vision_preprocess = true; // default use ov vision preprocess, control by env VISION_PREPROCESS=CPP to use cpp vision preprocess
 };
 
 class InputsEmbedderQwen2VL : public InputsEmbedder::IInputsEmbedder {
