@@ -131,5 +131,13 @@ void ChatHistory::set_internal_state(const std::shared_ptr<ChatHistoryInternalSt
     m_internal_state = state;
 }
 
+std::shared_ptr<ChatHistoryInternalStateClass> ChatHistory::get_internal_state_class() const {
+    return m_internal_state_class;
+}
+
+void ChatHistory::set_internal_state_class(const std::shared_ptr<ChatHistoryInternalStateClass>& state) {
+    m_internal_state_class = state;
+}
+
 } // namespace genai
 } // namespace ov

@@ -14,7 +14,10 @@
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/pipeline_base.hpp"
 #include "visual_language/continuous_batching_adapter.hpp"
+// TODO Check if needed
 #include "visual_language/chat_history_state.hpp"
+#include "visual_language/vision_registry.hpp"
+#include "visual_language/vlm_chat_context.hpp"
 
 #include "sampling/sampler.hpp"
 #include "utils.hpp"
@@ -68,6 +71,7 @@ class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
     // It stores encoded images in case when m_use_full_chat_history is true
     std::vector<ov::genai::EncodedImage> m_encoded_images;
     std::string m_system_message;
+    std::shared_ptr<VisionRegistry> m_vision_registry;
 public:
     VLMPipelineImpl(
         const std::filesystem::path& models_dir,
@@ -136,6 +140,8 @@ public:
 
         m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
+
+        m_vision_registry = std::make_shared<VisionRegistry>();
     }
 
 
@@ -171,6 +177,8 @@ public:
 
         m_sampler.set_tokenizer(m_tokenizer);
         m_sampler.set_seed(m_generation_config.rng_seed);
+
+        m_vision_registry = std::make_shared<VisionRegistry>();
     }
 
     VLMDecodedResults generate(
@@ -210,6 +218,8 @@ public:
 
         if (m_is_chat_conversation) {
             m_history.push_back({{"role", "user"}, {"content", unified_prompt}});
+            std::cout << "generate with start_chat()\n" << std::endl;
+            std::cout << "normalized_history:\n" << m_history.get_messages().to_json_string(2) << std::endl;
             unified_prompt = m_tokenizer.apply_chat_template(m_history, true);
 
             if (m_use_full_chat_history) {
@@ -325,12 +335,151 @@ public:
         auto& raw_counters = perf_metrics.raw_metrics;
 
         m_is_chat_conversation = true;
+        // m_use_full_chat_history = true;
         
         setup_generation_config(generation_config);
 
         if (m_is_npu) {
             validate_inputs_for_npu(images, videos, generation_config);
         }
+
+        VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
+        const size_t checkpoint = chat_context.message_count();
+
+        try {
+            auto processed_chat_data = chat_context.process(images, videos);
+
+            bool use_full_history = chat_context.needs_kv_cache_reset() || m_use_full_chat_history;
+
+            if (use_full_history) {
+                m_language.reset_state();
+                m_language.get_tensor("attention_mask").set_shape({1, 0});
+                m_inputs_embedder->start_chat("");
+            }
+            std::cout << "generate with chat history\n" << std::endl;
+            std::cout << "normalized_history:\n" << processed_chat_data.normalized_history.get_messages().to_json_string(2) << std::endl;
+
+            std::string templated_history = m_tokenizer.apply_chat_template(
+                processed_chat_data.normalized_history,
+                true
+            );
+
+            std::cout << "Images:\n";
+            for (const auto& encoded_image : processed_chat_data.encoded_images) {
+                auto shape = encoded_image.resized_source.get_shape();
+                std::cout << shape << "\n";
+            }
+            std::cout << std::endl;
+
+            std::cout << "Image sequence:\n";
+            for (const auto& idx : processed_chat_data.image_sequence) {
+                std::cout << idx << ", ";
+            }
+            std::cout << std::endl;
+
+            constexpr bool recalculate_merged_embeddings = true;
+
+            ov::genai::utils::GenerationFinishInfo generation_finish_info;
+            
+            if (use_full_history) {
+                generation_finish_info = prepare_inputs_and_generate(
+                    templated_history,
+                    processed_chat_data.encoded_images,
+                    processed_chat_data.encoded_videos,
+                    processed_chat_data.image_sequence,
+                    processed_chat_data.video_sequence,
+                    generation_config,
+                    perf_metrics,
+                    streamer
+                );
+            } else {
+                std::vector<EncodedImage> new_images = processed_chat_data.get_new_images();
+                std::vector<EncodedVideo> new_videos = processed_chat_data.get_new_videos();
+
+                std::vector<size_t> local_image_seq(new_images.size());
+                std::iota(local_image_seq.begin(), local_image_seq.end(), 0);
+                
+                std::vector<size_t> local_video_seq(new_videos.size());
+                std::iota(local_video_seq.begin(), local_video_seq.end(), 0);
+
+
+                std::cout << "new_images:\n";
+                for (const auto& encoded_image : new_images) {
+                    auto shape = encoded_image.resized_source.get_shape();
+                    std::cout << shape << "\n";
+                }
+                std::cout << std::endl;
+
+                std::cout << "local_image_seq:\n";
+                for (const auto& idx : local_image_seq) {
+                    std::cout << idx << ", ";
+                }
+                std::cout << std::endl;
+
+                generation_finish_info = prepare_inputs_and_generate(
+                    templated_history,
+                    new_images,
+                    new_videos,
+                    local_image_seq,
+                    local_video_seq,
+                    generation_config,
+                    perf_metrics,
+                    streamer
+                );
+            }
+
+
+            EncodedResults& encoded_result = generation_finish_info.results;
+
+            auto decode_start_time = std::chrono::steady_clock::now();
+            VLMDecodedResults decoded;
+            for (size_t idx = 0; idx < encoded_result.tokens.size(); ++idx) {
+                decoded.texts.push_back(m_tokenizer.decode(encoded_result.tokens.at(idx)));
+                decoded.scores.push_back(encoded_result.scores.at(idx));
+            }
+            auto decode_end_time = std::chrono::steady_clock::now();
+
+            std::string decoded_text = decoded.texts.at(0);
+            
+            // TODO consider moving this to finalize method
+            m_inputs_embedder->update_chat_history(decoded_text, generation_finish_info.streaming_finish_status);
+
+            if (generation_finish_info.streaming_finish_status != ov::genai::GenerationStatus::CANCEL) {
+                chat_context.finalize();
+            } else {
+                chat_context.rollback(checkpoint);
+            }
+
+            auto generate_end_time = std::chrono::steady_clock::now();
+            decoded.perf_metrics = encoded_result.perf_metrics;
+
+            // Common perf metrics
+            auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
+            decoded.perf_metrics.num_input_tokens = perf_metrics.num_input_tokens;
+            decoded.perf_metrics.load_time = this->get_load_time();
+            res_raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(generate_end_time - generate_start_time));
+            res_raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
+            res_raw_counters.tokenization_durations.insert(res_raw_counters.tokenization_durations.end(), raw_counters.tokenization_durations.begin(), raw_counters.tokenization_durations.end());
+
+            // VLM specific perf metrics
+            decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.insert(
+                decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end(),
+                perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.begin(),
+                perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end()
+            );
+
+            // Evaluate statistics
+            decoded.perf_metrics.m_evaluated = false;
+            decoded.perf_metrics.evaluate_statistics(generate_start_time);
+
+            return decoded;
+        } catch (...) {
+            chat_context.rollback(checkpoint);
+            throw;
+        }
+
+
+        /* Original code */
 
         std::vector<ov::genai::EncodedImage> encoded_images;
         std::vector<ov::genai::EncodedVideo> encoded_videos;

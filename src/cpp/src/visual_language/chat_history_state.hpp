@@ -3,7 +3,9 @@
 
 #pragma once
 
-#include "visual_language/vision_encoder.hpp"
+// #include "visual_language/vision_encoder.hpp" // TODO Remove after migrating to class
+#include "visual_language/vision_registry.hpp"
+#include "openvino/genai/chat_history.hpp"
 
 namespace ov::genai {
 
@@ -37,6 +39,91 @@ struct ChatHistoryInternalState {
         }
         return state;
     }
+};
+
+struct MessageMetadata {
+    std::string original_message_json;
+    
+    // TODO Consider using full serialized message json
+    std::string normalized_content;
+    
+    // VisionIDs provided WITH this message (for reference counting)
+    std::vector<VisionID> provided_image_ids;
+    std::vector<VisionID> provided_video_ids;
+    
+    // VisionIDs appearing in normalized content, in order of appearance
+    std::vector<VisionID> image_sequence;
+    std::vector<VisionID> video_sequence;
+    
+    // TODO Check if needed
+    size_t compute_hash() const {
+        return std::hash<std::string>{}(original_message_json);
+    }
+    
+    bool matches(const std::string& message_json) const {
+        return original_message_json == message_json;
+    }
+    
+    std::pair<size_t, size_t> get_vision_count() const {
+        return {video_sequence.size(), image_sequence.size()};
+    }
+};
+
+class ChatHistoryInternalStateClass {
+public:
+    // TODO Check constructors and destructors
+    ChatHistoryInternalStateClass() = default;
+    explicit ChatHistoryInternalStateClass(std::shared_ptr<VisionRegistry> registry);
+    ~ChatHistoryInternalStateClass();
+
+    ChatHistoryInternalStateClass(const ChatHistoryInternalStateClass&) = delete;
+    ChatHistoryInternalStateClass& operator=(const ChatHistoryInternalStateClass&) = delete;
+
+    ChatHistoryInternalStateClass(ChatHistoryInternalStateClass&&) = default;
+    ChatHistoryInternalStateClass& operator=(ChatHistoryInternalStateClass&&) = default;
+
+    void set_vision_registry(std::shared_ptr<VisionRegistry> vision_registry);
+    
+    std::shared_ptr<VisionRegistry> get_vision_registry() const;
+
+    const std::vector<MessageMetadata>& get_messages_metadata() const { return m_messages_metadata; }
+    std::vector<MessageMetadata>& get_messages_metadata() { return m_messages_metadata; }
+
+    size_t messages_metadata_size() const { return m_messages_metadata.size(); }
+    
+    // TODO Check if index getter needed
+    const MessageMetadata& get_message_metadata(size_t index) const { return m_messages_metadata.at(index); }
+    MessageMetadata& get_message_metadata(size_t index) { return m_messages_metadata.at(index); }
+    
+    void add_message_metadata(MessageMetadata metadata);
+
+    size_t find_valid_prefix(const ChatHistory& history) const;
+
+    void truncate_to(size_t size);
+
+    // TODO Check if needed
+    void reset();
+
+    std::vector<VisionID> build_full_image_sequence() const;
+    std::vector<VisionID> build_full_video_sequence() const;
+    std::vector<std::pair<size_t, size_t>> build_vision_counts() const;
+
+    ChatHistory build_normalized_history(const ChatHistory& history) const;
+
+    size_t get_kv_cache_valid_messages() const { return m_kv_cache_valid_messages; }
+    void set_kv_cache_valid_messages(size_t count) { m_kv_cache_valid_messages = count; }
+
+    static std::shared_ptr<ChatHistoryInternalStateClass> get_or_create(
+        ChatHistory& history,
+        std::shared_ptr<VisionRegistry> vision_registry = nullptr
+    );
+
+private:
+    std::vector<MessageMetadata> m_messages_metadata;
+    std::weak_ptr<VisionRegistry> m_vision_registry;
+    size_t m_kv_cache_valid_messages = 0;
+
+    void release_all_references();
 };
 
 } // namespace ov::genai
