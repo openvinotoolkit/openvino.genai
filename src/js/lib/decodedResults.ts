@@ -12,11 +12,18 @@ export class DecodedResults {
    * @param {string[]} texts - Vector of resulting sequences.
    * @param {number[]} scores - Scores for each sequence.
    * @param {PerfMetrics} perfMetrics - Performance metrics (tpot, ttft, etc.).
+   * @param {Record<string, unknown>[]} parsed - The results of parsers processing for each sequence.
    */
-  constructor(texts: string[], scores: number[], perfMetrics: PerfMetrics) {
+  constructor(
+    texts: string[],
+    scores: number[],
+    perfMetrics: PerfMetrics,
+    parsed?: Record<string, unknown>[],
+  ) {
     this.texts = texts;
     this.scores = scores;
     this.perfMetrics = perfMetrics;
+    this.parsed = parsed;
   }
   toString() {
     if (this.scores.length !== this.texts.length) {
@@ -34,6 +41,7 @@ export class DecodedResults {
   texts: string[];
   scores: number[];
   perfMetrics: PerfMetrics;
+  parsed?: Record<string, unknown>[];
 }
 
 /**

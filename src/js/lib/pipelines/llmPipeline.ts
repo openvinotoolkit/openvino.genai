@@ -133,6 +133,7 @@ export class LLMPipeline {
             result.texts,
             result.scores,
             result.perfMetrics,
+            result.parsed,
           );
           resolve(decodedResults);
         } else if (callback && typeof result === "string") {
