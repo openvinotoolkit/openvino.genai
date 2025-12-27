@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "md_llm_inference.hpp"
+#include <fstream>
 
 namespace ov {
 namespace genai {
