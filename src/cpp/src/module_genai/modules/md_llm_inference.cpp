@@ -2,41 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "md_llm_inference.hpp"
-#include <fstream>
-
-// ============ To Be Removed: laod position_ids_list from files (debug purpose) ============
-std::vector<std::pair<ov::Tensor, std::optional<int64_t>>> load_test_data_position_ids_list() {
-    std::vector<std::pair<ov::Tensor, std::optional<int64_t>>> position_ids_list;
-
-    // pair_count: 1
-    // pair_0_element_type: i64
-    // pair_0_shape: 3,1,30
-    // pair_0_byte_size: 720
-    // pair_0_has_rope_delta: true
-    // pair_0_rope_delta: -2
-
-    ov::element::Type element_type = ov::element::i64;
-    ov::Shape shape = {3, 1, 30};
-    size_t byte_size = 720;
-    bool has_rope_delta = true;
-    int64_t rope_delta_value = -2;
-
-    ov::Tensor tensor(element_type, shape);
-    std::string bin_path = "ut_test_data/position_ids_0.bin";
-    std::ifstream bin_file(bin_path, std::ios::binary);
-    if (bin_file.is_open()) {
-        bin_file.read(reinterpret_cast<char*>(tensor.data()), byte_size);
-        bin_file.close();
-    } else {
-        return position_ids_list;
-    }
-
-    std::optional<int64_t> rope_delta = has_rope_delta ? std::optional<int64_t>(rope_delta_value) : std::nullopt;
-    position_ids_list.emplace_back(std::move(tensor), rope_delta);
-
-    return position_ids_list;
-}
-// ============ To Be Removed: laod position_ids_list from files (debug purpose) ============
 
 namespace ov {
 namespace genai {
