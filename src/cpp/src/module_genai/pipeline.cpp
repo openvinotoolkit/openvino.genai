@@ -15,9 +15,15 @@ namespace genai {
 
 namespace module {
 
-// config_path: yaml file.
-ModulePipeline::ModulePipeline(const std::filesystem::path& config_path) {
-    ModulePipelineImpl* pImpl = new ModulePipelineImpl(config_path);
+// config_yaml_path: yaml file.
+ModulePipeline::ModulePipeline(const std::filesystem::path& config_yaml_path) {
+    ModulePipelineImpl* pImpl = new ModulePipelineImpl(config_yaml_path);
+    OPENVINO_ASSERT(pImpl != NULL, "Create ModulePipelineImpl return null.");
+    m_pipeline_impl = (ModulePipelineImpl*)pImpl;
+}
+
+ModulePipeline::ModulePipeline(const std::string& config_yaml_content) {
+    ModulePipelineImpl* pImpl = new ModulePipelineImpl(config_yaml_content);
     OPENVINO_ASSERT(pImpl != NULL, "Create ModulePipelineImpl return null.");
     m_pipeline_impl = (ModulePipelineImpl*)pImpl;
 }

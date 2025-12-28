@@ -16,8 +16,11 @@ namespace module {
 class OPENVINO_GENAI_EXPORTS ModulePipeline {
 
 public:
-    // config_path: yaml file.
-    ModulePipeline(const std::filesystem::path& config_path);
+    // config_yaml_path: yaml file.
+    ModulePipeline(const std::filesystem::path& config_yaml_path);
+
+    // config_yaml_content: yaml content string.
+    ModulePipeline(const std::string& config_yaml_content);
 
     ~ModulePipeline();
 

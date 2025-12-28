@@ -51,49 +51,27 @@ def read_images(path: str) -> list[Tensor]:
     return [read_image(path)]
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('image_dir', default="", help="Image file or dir with images")
-    parser.add_argument('model_dir', default="", help="Path to the directory with models")
-    parser.add_argument('device', nargs='?', default='CPU', help="Device to run the model on (default: CPU)")
-    args = parser.parse_args()
+def run_pipeline_test(pipe, **kwargs):
+    print(" rgbs[0] shape:", kwargs['image'].get_shape())
+    pipe.generate(**kwargs)
+    source_size = pipe.get_output("source_size")
+    print(" Output source_size:", source_size)
 
-    rgbs = read_images(args.image_dir)
-
-    # GPU and NPU can be used as well.
-    # Note: If NPU is selected, only the language model will be run on the NPU.
-    enable_compile_cache = dict()
-    if args.device == "GPU":
-        # Cache compiled models on disk for GPU to save time on the next run.
-        # It's not beneficial for CPU.
-        enable_compile_cache["CACHE_DIR"] = "vlm_cache"
-
-    # yaml config
-    cfg_data = {
-        'global_context': {
+def get_yaml_config(image_model_path: str, device: str) -> str:
+    img_preprocess_cfg = {
+         'global_context': {
             'model_type': 'qwen2_5_vl'
         },
         'pipeline_modules': {
-            'pipeline_params': {
-                'type': 'ParameterModule',
-                'device': args.device,
-                'description': 'Pipeline parameters module.',
-                'outputs': [
-                    {
-                        'name': 'img1',
-                        'type': 'OVTensor'
-                    }
-                ]
-            },
             'image_preprocessor': {
                 'type': 'ImagePreprocessModule',
-                'device': args.device,
+                'device': device,
                 'description': 'Image or Video preprocessing.',
                 'inputs': [
                     {
                         'name': 'image',
                         'type': 'OVTensor',
-                        'source': 'pipeline_params.img1'
+                        # For only one module, don't need to specify `source`. it will be set during runtime.
                     }
                 ],
                 'outputs': [
@@ -110,7 +88,56 @@ def main():
                     'target_resolution': str([224, 224]),
                     'mean': str([0.485, 0.456, 0.406]),
                     'std': str([0.229, 0.224, 0.225]),
-                    'model_path': args.model_dir
+                    'model_path': image_model_path
+                }
+            }
+        }
+    }
+    return yaml.dump(img_preprocess_cfg)
+
+def get_yaml_full_config(image_model_path: str, device: str) -> str:
+    cfg_data = {
+        'global_context': {
+            'model_type': 'qwen2_5_vl'
+        },
+        'pipeline_modules': {
+            'pipeline_params': {
+                'type': 'ParameterModule',
+                'device': device,
+                'description': 'Pipeline parameters module.',
+                'outputs': [
+                    {
+                        'name': 'image',
+                        'type': 'OVTensor'
+                    }
+                ]
+            },
+            'image_preprocessor': {
+                'type': 'ImagePreprocessModule',
+                'device': device,
+                'description': 'Image or Video preprocessing.',
+                'inputs': [
+                    {
+                        'name': 'image',
+                        'type': 'OVTensor',
+                        'source': 'pipeline_params.image'
+                    }
+                ],
+                'outputs': [
+                    {
+                        'name': 'raw_data',
+                        'type': 'OVTensor'
+                    },
+                    {
+                        'name': 'source_size',
+                        'type': 'VecInt'
+                    }
+                ],
+                'params': {
+                    'target_resolution': str([224, 224]),
+                    'mean': str([0.485, 0.456, 0.406]),
+                    'std': str([0.229, 0.224, 0.225]),
+                    'model_path': image_model_path
                 }
             },
             'pipeline_results': {
@@ -130,25 +157,43 @@ def main():
             }
         }
     }
-    cfg_yaml = yaml.dump(cfg_data)
-    # convert yaml str to local file
-    fn = "module_pipeline_imp_process.yaml"
-    with open(fn, "w") as f:
-        f.write(cfg_yaml)
+    return yaml.dump(cfg_data)
 
-    pipe = openvino_genai.ModulePipeline(fn)
+def run_specific_test(model_dir: str, device: str, rgbs: list[Tensor], is_full_yaml: bool, is_yaml_path: bool):
+    cfg_yaml_content = get_yaml_full_config(model_dir, device) if is_full_yaml else get_yaml_config(model_dir, device)
 
-    # config = openvino_genai.GenerationConfig()
-    # config.max_new_tokens = 100
+    # Find inputs in yaml config, and prepare inputs dict.
+    inputs = {'image': rgbs[0]}
 
-    # pipe.start_chat()
-    print("rgbs[0] shape:", rgbs[0].get_shape())
-    pipe.generate(img1=rgbs[0])
-    source_size = pipe.get_output("source_size")
-    print("Output source_size:", source_size)
+    print(f"\n--- Test: is_full_yaml={is_full_yaml}, is_yaml_path={is_yaml_path} ---")
+    if is_yaml_path:
+        fn = "module_pipeline_imp_process.yaml"
+        print(f"    YAML config file path: {fn}")
+        with open(fn, "w") as f:
+            f.write(cfg_yaml_content)
 
-    # pipe.finish_chat()
+        pipe = openvino_genai.ModulePipeline(config_yaml_path=fn)
+    else:
+        pipe = openvino_genai.ModulePipeline(config_yaml_content=cfg_yaml_content)
+    run_pipeline_test(pipe, **inputs)
 
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('image_dir', default="", help="Image file or dir with images")
+    parser.add_argument('model_dir', default="", help="Path to the directory with models")
+    parser.add_argument('device', nargs='?', default='CPU', help="Device to run the model on (default: CPU)")
+    args = parser.parse_args()
+
+    rgbs = read_images(args.image_dir)
+
+    # enable_compile_cache = dict()
+    # if args.device == "GPU":
+    #     enable_compile_cache["CACHE_DIR"] = "vlm_cache"
+
+    run_specific_test(args.model_dir, args.device, rgbs, is_full_yaml=False, is_yaml_path=True)
+    run_specific_test(args.model_dir, args.device, rgbs, is_full_yaml=False, is_yaml_path=False)
+    run_specific_test(args.model_dir, args.device, rgbs, is_full_yaml=True, is_yaml_path=True)
+    run_specific_test(args.model_dir, args.device, rgbs, is_full_yaml=True, is_yaml_path=False)
 
 if '__main__' == __name__:
     main()

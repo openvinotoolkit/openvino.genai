@@ -40,7 +40,7 @@ std::string IBaseModuleDesc::get_full_path(const std::string& fn) {
         return fn;
     }
 
-    fs::path joined_path = fs::path(config_root_path) / fn;
+    fs::path joined_path = config_root_path / fn;
     if (fs::exists(joined_path) || fs::path(joined_path).is_absolute()) {
         return joined_path.string();
     }

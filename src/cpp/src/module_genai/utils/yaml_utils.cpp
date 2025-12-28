@@ -56,9 +56,8 @@ OutputPort parse_output_port(const YAML::Node& node, bool is_input) {
     return port;
 }
 
-IBaseModuleDesc::PTR parse_module(const YAML::Node& node, const std::string& root_path) {
+IBaseModuleDesc::PTR parse_module(const YAML::Node& node) {
     IBaseModuleDesc::PTR desc = IBaseModuleDesc::create();
-    desc->config_root_path = root_path;
 
     ModuleType module_type = ModuleType::Unknown;
     if (node["type"]) {
@@ -96,50 +95,67 @@ IBaseModuleDesc::PTR parse_module(const YAML::Node& node, const std::string& roo
     return desc;
 }
 
-PipelineModuleDesc load_config(const std::string& cfg_path) {
+PipelineModuleDesc parse_pipeline_config_internal(const YAML::Node& config, const std::string& root_path = ".") {
     PipelineModuleDesc pipeline_desc;
+    const YAML::Node& global = config["global_context"];
+    std::string model_type;
+    if (global) {
+        std::string device = global["default_device"] ? global["default_device"].as<std::string>() : "N/A";
+        bool shared_mem = global["enable_shared_memory"] ? global["enable_shared_memory"].as<bool>() : false;
+        model_type = global["model_type"] ? global["model_type"].as<std::string>() : "N/A";
+
+        GENAI_INFO("  Default Device: " + device);
+        GENAI_INFO("  Enable Shared Memory: " + std::string(shared_mem ? "True" : "False"));
+        GENAI_INFO("  Model Type: " + model_type);
+    }
+
+    const YAML::Node& modules_node = config["pipeline_modules"];
+    if (modules_node && modules_node.IsMap()) {
+        for (YAML::const_iterator it = modules_node.begin(); it != modules_node.end(); ++it) {
+            std::string module_name = it->first.as<std::string>();
+            const YAML::Node& module_config = it->second;
+
+            auto module_desc = parse_module(module_config);
+            module_desc->name = module_name;
+            module_desc->model_type = model_type;
+            module_desc->config_root_path = root_path;
+            pipeline_desc[module_name] = module_desc;
+
+            GENAI_INFO((std::stringstream() << module_desc).str());
+        }
+    } else {
+        GENAI_ERR("'pipeline_modules' key not found or is not a map.");
+    }
+    return pipeline_desc;
+}
+
+PipelineModuleDesc load_config(const std::string& cfg_path) {
     try {
         YAML::Node config = YAML::LoadFile(cfg_path);
+        yaml_cfg_auto_padding(config);
 
         std::string root_path = std::filesystem::path(cfg_path).has_parent_path()
                                     ? std::filesystem::path(cfg_path).parent_path().string()
                                     : std::filesystem::current_path().string();
-
-        const YAML::Node& global = config["global_context"];
-        std::string model_type;
-        if (global) {
-            std::string device = global["default_device"] ? global["default_device"].as<std::string>() : "N/A";
-            bool shared_mem = global["enable_shared_memory"] ? global["enable_shared_memory"].as<bool>() : false;
-            model_type = global["model_type"] ? global["model_type"].as<std::string>() : "N/A";
-
-            GENAI_INFO("  Default Device: " + device);
-            GENAI_INFO("  Enable Shared Memory: " + std::string(shared_mem ? "True" : "False"));
-            GENAI_INFO("  Model Type: " + model_type);
-        }
-
-        const YAML::Node& modules_node = config["pipeline_modules"];
-        if (modules_node && modules_node.IsMap()) {
-            for (YAML::const_iterator it = modules_node.begin(); it != modules_node.end(); ++it) {
-                std::string module_name = it->first.as<std::string>();
-                const YAML::Node& module_config = it->second;
-
-                auto module_desc = parse_module(module_config, root_path);
-                module_desc->name = module_name;
-                module_desc->model_type = model_type;
-                pipeline_desc[module_name] = module_desc;
-
-                GENAI_INFO((std::stringstream() << module_desc).str());
-            }
-        } else {
-            GENAI_ERR("'pipeline_modules' key not found or is not a map.");
-        }
+        return parse_pipeline_config_internal(config, root_path);
 
     } catch (const YAML::BadFile& e) {
         GENAI_ERR("Could not find or open 'config.yaml'. Please make sure the file exists.");
     } catch (const YAML::Exception& e) {
         GENAI_ERR(std::string("Error parsing YAML: ") + e.what());
     }
-    return pipeline_desc;
+    return {};
+}
+
+PipelineModuleDesc load_config_from_string(const std::string& content) {
+    try {
+        YAML::Node config = YAML::Load(content);
+        yaml_cfg_auto_padding(config);
+        return parse_pipeline_config_internal(config);
+    } catch (const YAML::Exception& e) {
+        GENAI_ERR(std::string("Error parsing YAML: ") + e.what());
+    }
+    return {};
 }
 
 std::ostream& operator<<(std::ostream& os, const IBaseModuleDesc::PTR& desc) {

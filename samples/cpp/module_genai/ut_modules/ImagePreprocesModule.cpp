@@ -13,7 +13,11 @@ protected:
 global_context:
   model_type: "qwen2_5_vl"
 pipeline_modules:
-  # ParameterModule will be auto padding with name: pipeline_params
+
+  # When only specify one module,
+  # ParameterModule and ResultModule will be automatically inferred and added
+  # so there is no need to specify the inputs' `source`.
+
   image_preprocessor:       # Module Name
     type: "ImagePreprocessModule"
     device: "CPU"
@@ -21,7 +25,6 @@ pipeline_modules:
     inputs:
       - name: "image"           # single image
         type: "OVTensor"        # Support DataType: [OVTensor, OVRemoteTensor]
-        source: "pipeline_params.img1"
     outputs:
       - name: "raw_data"        # Output port name
         type: "OVTensor"        # Support DataType: [OVTensor, OVRemoteTensor]
@@ -32,7 +35,6 @@ pipeline_modules:
       mean: [0.485, 0.456, 0.406]     # optional
       std: [0.229, 0.224, 0.225]      # optional
       model_path: "./ut_pipelines/Qwen2.5-VL-3B-Instruct/INT4/"
-  # ResultModule will be auto padding with name: pipeline_results
 )";
     }
 
@@ -41,7 +43,7 @@ pipeline_modules:
       
         auto img1 = utils::load_image("ut_test_data/cat_120_100.png");
         CHECK(img1, "Failed to load test image: ut_test_data/cat_120_100.png");
-        inputs["img1"] = img1;
+        inputs["image"] = img1;
         return inputs;
     }
 

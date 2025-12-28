@@ -58,7 +58,7 @@ public:
     }
 
     std::string get_full_path(const std::string& fn);
-    std::string config_root_path;
+    std::filesystem::path config_root_path = ".";  // default to current directory
 };
 
 class IBaseModule {

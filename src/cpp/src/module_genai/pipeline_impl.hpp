@@ -16,8 +16,10 @@ private:
     PipelineModuleInstance m_modules;
 
 public:
-    // config_path: yaml file.
-    ModulePipelineImpl(const std::filesystem::path& config_path);
+    // config_yaml_path: yaml file.
+    ModulePipelineImpl(const std::filesystem::path& config_yaml_path);
+
+    ModulePipelineImpl(const std::string& config_yaml_content);
 
     ~ModulePipelineImpl();
 

@@ -32,19 +32,26 @@ public:
     virtual ~ModuleTestBase() = default;
 
     void run() {
-        std::string config_path = generate_yaml();
-
+#define EANBEL_YAML_CONTEXT 1
+#if EANBEL_YAML_CONTEXT
+        std::string yaml_content = generate_yaml_content();
+        ov::genai::module::ModulePipeline pipe(yaml_content);
+#else
+        std::filesystem::path config_path = generate_yaml_path();
         ov::genai::module::ModulePipeline pipe(config_path);
+#endif
 
         ov::AnyMap inputs = prepare_inputs();
         pipe.generate(inputs);
 
         verify_outputs(pipe);
 
-        // Cleanup
+// Cleanup
+#ifndef EANBEL_YAML_CONTEXT
         if (std::filesystem::exists(config_path)) {
             std::filesystem::remove(config_path);
         }
+#endif
     }
 
 protected:
@@ -53,99 +60,11 @@ protected:
     virtual ov::AnyMap prepare_inputs() = 0;
     virtual void verify_outputs(ov::genai::module::ModulePipeline& pipe) = 0;
 
-    std::string save_yaml(const YAML::Node& config) {
-        std::string filename = "temp_" + m_test_name + ".yaml";
-        std::ofstream out(filename);
-        out << config;
-        out.close();
-        return filename;
-    }
+    bool compare_tensors(const ov::Tensor& output, const ov::Tensor& expected);
 
-    virtual std::string generate_yaml() {
-        std::string cur_module_cfg = get_yaml_content();
-        YAML::Node config = YAML::Load(cur_module_cfg);
+    bool compare_big_tensor(const ov::Tensor& output, const std::vector<float>& expected_top, const float& thr = 1e-3);
 
-        OPENVINO_ASSERT(config["pipeline_modules"], "Test yaml config miss 'pipeline_modules'.");
-
-        YAML::Node modules = config["pipeline_modules"];
-        std::map<std::string, std::string> extracted_params;
-        std::map<std::string, std::string> extracted_results;
-
-        if (modules.size() != 1) {
-            return save_yaml(config);
-        }
-
-        // only one node recursive
-        std::string test_module_name;
-        for (auto it = modules.begin(); it != modules.end(); ++it) {
-            test_module_name = it->first.as<std::string>();
-            // get inputs
-            YAML::Node inputs = it->second["inputs"];
-            if (inputs && inputs.IsSequence()) {
-                for (const auto& input : inputs) {
-                    std::string source = input["source"].as<std::string>("");
-                    if (source.find("pipeline_params.") == 0) {
-                        std::string param_name = source.substr(16);
-                        std::string type = input["type"].as<std::string>("");
-                        extracted_params[param_name] = type;
-                    }
-                }
-            }
-
-            // get outputs
-            YAML::Node outputs = it->second["outputs"];
-            if (outputs && outputs.IsSequence()) {
-                for (const auto& output : outputs) {
-                    std::string name = output["name"].as<std::string>("");
-                    std::string type = output["type"].as<std::string>("");
-                    extracted_results[name] = type;
-                }
-            }
-        }
-
-        // pipeline_params
-        YAML::Node params_node;
-        params_node["type"] = "ParameterModule";
-        YAML::Node outputs_seq;
-        for (const auto& param : extracted_params) {
-            YAML::Node item;
-            item["name"] = param.first;
-            item["type"] = param.second;
-            outputs_seq.push_back(item);
-        }
-        if (outputs_seq.size() > 0) {
-            params_node["outputs"] = outputs_seq;
-        }
-        config["pipeline_modules"]["pipeline_params"] = params_node;
-
-        // pipeline_results
-        YAML::Node results_node;
-        results_node["type"] = "ResultModule";
-        YAML::Node inputs_seq;
-        for (const auto& result : extracted_results) {
-            YAML::Node item;
-            item["name"] = result.first;
-            item["type"] = result.second;
-            item["source"] = test_module_name + "." + result.first;
-            inputs_seq.push_back(item);
-        }
-        if (inputs_seq.size() > 0) {
-            results_node["inputs"] = inputs_seq;
-        }
-        config["pipeline_modules"]["pipeline_results"] = results_node;
-
-        return save_yaml(config);
-    }
-
-    virtual bool compare_tensors(const ov::Tensor& output, const ov::Tensor& expected) {
-        if (output.get_shape() != expected.get_shape() || output.get_element_type() != expected.get_element_type()) {
-            return false;
-        }
-        size_t byte_size = output.get_byte_size();
-        return std::memcmp(output.data(), expected.data(), byte_size) == 0;
-    }
-
-    template<typename T>
+    template <typename T>
     bool compare_big_tensor(const ov::Tensor& output, const std::vector<T>& expected_top) {
         int real_size = std::min(expected_top.size(), output.get_size());
         bool bresult = true;
@@ -153,48 +72,32 @@ protected:
             T val = static_cast<T>(output.data<T>()[i]);
             if (val != expected_top[i]) {
                 bresult = false;
-                std::cout << "Mismatch at index " << i << ": expected " << expected_top[i] << ", got " << val << std::endl;
+                std::cout << "Mismatch at index " << i << ": expected " << expected_top[i] << ", got " << val
+                          << std::endl;
             }
         }
+
         return bresult;
     }
 
-    bool compare_big_tensor(const ov::Tensor& output, const std::vector<float>& expected_top, const float& thr = 1e-3) {
-        int real_size = std::min(expected_top.size(), output.get_size());
-        bool bresult = true;
-        for (int i = 0; i < real_size; ++i) {
-            float val = static_cast<float>(output.data<float>()[i]);
-            if (std::fabs(val - expected_top[i]) > thr) {
-                bresult = false;
-                std::cout << "Mismatch at index " << i << ": expected " << expected_top[i] << ", got " << val << std::endl;
-            }
-        }
-        return bresult;
-    }
+    bool compare_shape(const ov::Shape& shape1, const ov::Shape& shape2);
 
-    bool compare_shape(const ov::Shape& shape1, const ov::Shape& shape2) {
-        if (shape1.size() != shape2.size()) {
-            return false;
-        }
-        for (size_t i = 0; i < shape1.size(); ++i) {
-            if (shape1[i] != shape2[i]) {
-                return false;
-            }
-        }
-        return true;
-    }
+    ov::Tensor ut_randn_tensor(const ov::Shape& shape, size_t seed);
 
-    ov::Tensor ut_randn_tensor(const ov::Shape& shape, size_t seed) {
-        ov::Tensor rand_tensor(ov::element::f32, shape);
-        float * rand_tensor_data = rand_tensor.data<float>();
-        std::mt19937 rng(seed);
-        std::uniform_real_distribution<float> dist(0.0f, 1.0f);
-    
-        for (size_t i = 0; i < rand_tensor.get_size(); ++i) {
-            rand_tensor_data[i] = dist(rng);
-        }
-    
-        return rand_tensor;
+private:
+    std::string check_yaml(const std::string& yaml_content);
+
+    std::filesystem::path generate_yaml_path() {
+        std::string yaml_content = check_yaml(get_yaml_content());
+        std::string filename = "temp_" + m_test_name + ".yaml";
+        std::ofstream out(filename);
+        out << yaml_content;
+        out.close();
+        return std::filesystem::path(filename);
+    }
+    std::string generate_yaml_content() {
+        std::string yaml_content = check_yaml(get_yaml_content());
+        return yaml_content;
     }
 };
 
