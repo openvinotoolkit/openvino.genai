@@ -186,7 +186,7 @@ inline ov::Tensor make_scalar(const ov::element::Type& et, float v) {
 
 // Denormalize latents across channel dim: [B, C, F, H, W]
 // latents = latents * latents_std / scaling_factor + latents_mean
-ov::Tensor denormalize_latents(ov::Tensor latents,
+ov::Tensor denormalize_latents(const ov::Tensor& latents,
                                ov::Tensor latents_mean,
                                ov::Tensor latents_std,
                                float scaling_factor = 1.0f) {
