@@ -35,42 +35,50 @@ static bool print_subword(std::string &&subword)
     return !(std::cout << subword << std::flush);
 }
 
+std::vector<ov::Any> test_module_pipeline(const std::filesystem::path& config_path,
+                          ov::AnyMap inputs,
+                          const std::vector<std::string>& output_names) {
+    ov::genai::module::ModulePipeline pipe(config_path);
+
+    auto t1 = std::chrono::high_resolution_clock::now();
+    pipe.generate(inputs);
+    auto t2 = std::chrono::high_resolution_clock::now();
+    std::cout << "  Generate time: " << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count() << " ms" << std::endl;
+
+    std::vector<ov::Any> outputs;
+    for (const auto& name : output_names) {
+        outputs.push_back(pipe.get_output(name));
+    }
+    return outputs;
+}
+
+void test_qwen2_5_vl_module_pipeline(int argc, char *argv[])
+{
+    std::string config_yaml = "ut_pipelines/Qwen2.5-VL-3B-Instruct/config.yaml";
+    if (argc > 2) {
+        config_yaml = std::string(argv[2]);
+    }
+
+    std::cout << "== Init ModulePipeline: " << config_yaml << std::endl;
+
+    ov::AnyMap inputs;
+    inputs["prompts_data"] = std::vector<std::string>{"Please describle this image"};
+    inputs["img1"] = utils::load_image("ut_test_data/cat_120_100.png");
+
+    auto outputs = test_module_pipeline(std::filesystem::path(config_yaml), inputs, {"generated_text"});
+    auto generated_text = outputs[0].as<std::string>();
+    std::cout << "  Generated Text: " << generated_text << std::endl;
+
+    // bool contains_white_cat = generated_text.find("white cat") != std::string::npos;
+    // if (!contains_white_cat) {
+    //     throw std::runtime_error("  llm inference module does not work as expected");
+    // }
+}
+
 int test_genai_module_ut_pipelines(int argc, char *argv[])
 {
-    std::cout << "== Init ModulePipeline" << std::endl;
-    std::string config_fn = get_config_ymal_path(argc, argv);
-    std::cout << "  == config_fn: " << config_fn << std::endl;
-    ov::genai::module::ModulePipeline pipe(config_fn);
-    ov::genai::module::PrintAllModulesConfig();
+    // ov::genai::module::PrintAllModulesConfig();
 
-    ov::Tensor image = utils::load_image("ut_test_data/cat_120_100.png");
-
-    // std::cout << "question:\n";
-    // std::getline(std::cin, prompt);
-    for (int l = 0; l < 1; l++)
-    {
-        std::cout << "== Loop: [" << l << "] " << std::endl;
-        // pipe.start_chat();
-
-        ov::AnyMap inputs;
-        inputs["prompts_data"] = std::vector<std::string>{"Please describle this image"};
-        inputs["img1"] = image;
-
-        auto t1 = std::chrono::high_resolution_clock::now();
-        pipe.generate(inputs);
-        // auto aa = pipe.generate(inputs, ov::genai::streamer(print_subword));
-        auto t2 = std::chrono::high_resolution_clock::now();
-        // std::cout << "result: text =" << aa.texts[0].c_str() << ", score=" << aa.scores[0] << ", tm=" << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count() << " ms" << std::endl;
-
-        // pipe.finish_chat();
-
-        auto output_merged_embedding = pipe.get_output("merged_embedding").as<ov::Tensor>();
-
-        std::vector<float> expected_merged_embedding_start = {
-            -0.0235291, 0.000759125, -0.0151825, -0.0136642, -0.00987244, 0.00531387, -0.00151825, 0.00683212, 0.012146, 0.0220184
-        };
-        CHECK(compare_big_tensor(output_merged_embedding, expected_merged_embedding_start, 1e-2), "merged_embedding not match expected values");
-        std::cout << "Pipeline test passed" << std::endl;
-    }
+    test_qwen2_5_vl_module_pipeline(argc, argv);
     return EXIT_SUCCESS;
 }

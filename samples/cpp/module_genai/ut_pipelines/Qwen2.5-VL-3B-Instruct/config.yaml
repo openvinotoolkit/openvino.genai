@@ -16,7 +16,7 @@ pipeline_modules:
       - name: "img1"
         type: "OVTensor"
       - name: "prompts_data"
-        type: "VecString"
+        type: "String"
 
   # --- 1. 图像预处理模块 (Image Preprocessing) ---
   image_preprocessor:       # Module Name
@@ -44,7 +44,7 @@ pipeline_modules:
     device: "CPU"
     inputs:
       - name: "prompts"
-        type: "VecString"
+        type: "String"
         source: "pipeline_params.prompts_data"
       - name: "encoded_image"
         type: "OVTensor"
@@ -91,13 +91,19 @@ pipeline_modules:
       - name: "images_sequence"
         type: "VecInt"
         source: "prompt_encoder.images_sequence"
+      - name: "input_ids"
+        type: "OVTensor"
+        source: "prompt_encoder.input_ids"
     outputs:
       - name: "image_embedding"
         type: "OVTensor"
       - name: "video_embedding"
         type: "OVTensor"
+      - name: "position_ids"
+        type: "OVTensor"
     params:
       model_path: "./ut_pipelines/Qwen2.5-VL-3B-Instruct/INT4/"
+      vision_start_token_id: 151652
 
   # --- 5. Embedding Merger 模块 ---
   embedding_merger:
@@ -122,16 +128,36 @@ pipeline_modules:
     params:
       model_path: "./ut_pipelines/Qwen2.5-VL-3B-Instruct/INT4/"
 
-  # --- 2. Result Module ---
+  # --- 6. LLM Inference ---
+  llm_inference:
+    type: "LLMInferenceModule"
+    description: "LLM module for Continuous Batch pipeline"
+    device: "CPU"
+    inputs:
+      - name: "embeds"
+        type: "OVTensor"
+        source: "embedding_merger.merged_embedding"
+      - name: "position_ids"
+        type: "OVTensor"
+        source: "vision_encoder.position_ids"
+    outputs:
+      - name: "generated_text"
+        type: "String"
+    params:
+      model_path: "./ut_pipelines/Qwen2.5-VL-3B-Instruct/INT4/"
+      max_new_tokens: "16"
+      do_sample: "false"
+      top_p: "1.0"
+      top_k: "50"
+      temperature: "1.0"
+      repetition_penalty: "1.0"
+  
+  # --- 7. Result Module ---
   pipeline_result:
     type: "ResultModule"
     description: "Collects final results and formats the output structure."
     device: "CPU"
     inputs:
-      - name: "merged_embedding"
-        type: "OVTensor"
-        source: "embedding_merger.merged_embedding"
-
-    outputs:
-      - name: "merged_embedding"
-        type: "OVTensor"
+      - name: "generated_text"
+        type: "String"
+        source: "llm_inference.generated_text"
