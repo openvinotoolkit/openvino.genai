@@ -239,20 +239,12 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
                                                                        size_t tokens_first_half,
                                                                        size_t tokens_second_half,
                                                                        size_t split_point) {
-    size_t original_num_tokens = tokens_first_half + tokens_second_half;
-    // OpenCL requires even total token count due to internal batch splitting
-    // Recalculate to ensure even distribution
-    size_t num_tokens_to_keep = original_num_tokens;
-    num_tokens_to_keep = (num_tokens_to_keep % 2 == 0) ? num_tokens_to_keep : num_tokens_to_keep + 1;
-    tokens_first_half = num_tokens_to_keep / 2;
-    tokens_second_half = num_tokens_to_keep / 2;
-
     // Initialize OpenCL DPP if not already done
     if (!m_opencl_dpp) {
         m_opencl_dpp = std::make_unique<OpenCLDPP>(m_config);
     }
 
-    // Verify OpenCL is available
+    // Verify OpenCL is available - if not, fallback to CPU with original token counts
     if (!m_opencl_dpp || !m_opencl_dpp->is_available()) {
         return select_parallel(kernel_matrix_first,
                                kernel_matrix_second,
@@ -260,6 +252,12 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
                                tokens_second_half,
                                split_point);
     }
+
+    // OpenCL requires even total token count due to internal batch splitting
+    // Calculate adjusted token counts for OpenCL
+    size_t original_num_tokens = tokens_first_half + tokens_second_half;
+    size_t num_tokens_to_keep = (original_num_tokens % 2 == 0) ? original_num_tokens : original_num_tokens + 1;
+    size_t opencl_tokens_first_half = num_tokens_to_keep / 2;
 
     // Get tensor shapes: [B, tokens/2, tokens/2]
     auto first_shape = kernel_matrix_first.get_shape();
@@ -372,7 +370,7 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
         // Filter out padded tokens and convert to absolute positions
         for (size_t i = 0; i < selected_tokens.size(); ++i) {
             size_t token_idx = selected_tokens[i];
-            if (i < tokens_first_half) {
+            if (i < opencl_tokens_first_half) {
                 if (token_idx < first_tokens) {
                     merged_selection.push_back(token_idx);
                 }
@@ -389,7 +387,7 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
         if (merged_selection.size() > original_num_tokens) {
             merged_selection.resize(original_num_tokens);
         }
-        
+
         // Sort final result to maintain order
         std::sort(merged_selection.begin(), merged_selection.end());
         batch_results.push_back(std::move(merged_selection));
