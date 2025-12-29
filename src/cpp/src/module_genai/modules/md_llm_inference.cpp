@@ -139,7 +139,7 @@ void LLMInferenceModule::run() {
         position_ids_list = inputs["position_ids_list"].data.as<std::vector<ov::Tensor>>();
         is_batch = true;
     } else {
-        GENAI_ERR("TextEmbeddingModule[" + module_desc->name + "]: 'embeds or embeds_list' input not found")
+        GENAI_ERR("LLMInferenceModule[" + module_desc->name + "]: 'embeds or embeds_list' input not found")
     }
 
     std::vector<std::pair<ov::Tensor, std::optional<int64_t>>> input_position_ids_list;
