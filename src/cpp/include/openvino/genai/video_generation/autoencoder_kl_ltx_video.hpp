@@ -31,8 +31,7 @@ public:
         std::vector<bool> spatio_temporal_scaling{true, true, true, false};  // TODO: read from vae_decoder/config.json. I use it only to compute sum over it so far, so it may be removed
         size_t patch_size_t = 1;  // TODO: read from vae_decoder/config.json
 
-        std::vector<float> latents_mean_data; // TODO: set default value (latents_mean = torch.zeros((latent_channels,), requires_grad=False)
-        std::vector<float> latents_std_data;  // TODO: set default value (latents_std = torch.ones((latent_channels,), requires_grad=False)))
+        std::vector<float> latents_mean_data, latents_std_data;
 
         explicit Config(const std::filesystem::path& config_path);
     };
@@ -68,7 +67,7 @@ private:
     ov::InferRequest m_encoder_request, m_decoder_request;
     std::shared_ptr<ov::Model> m_encoder_model = nullptr, m_decoder_model = nullptr;
 
-    int64_t m_patch_size, m_patch_size_t;
+    int64_t m_transformer_patch_size = -1, m_transformer_patch_size_t = -1;
 };
 
 } // namespace ov::genai

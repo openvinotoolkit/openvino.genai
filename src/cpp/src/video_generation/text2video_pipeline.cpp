@@ -23,7 +23,7 @@ const VideoGenerationConfig& Text2VideoPipeline::get_generation_config() const {
 }
 
 void Text2VideoPipeline::set_generation_config(const VideoGenerationConfig& generation_config) {
-    validate_generation_config(generation_config);
+    utils::validate_generation_config(generation_config);
     m_impl->m_generation_config = generation_config;
     replace_defaults(m_impl->m_generation_config);
 }

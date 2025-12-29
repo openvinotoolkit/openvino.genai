@@ -41,7 +41,7 @@ ov::AnyMap handle_scale_factor(std::shared_ptr<ov::Model> model, const std::stri
     return properties;
 }
 
-std::pair<int64_t, int64_t> get_patch_size(const std::filesystem::path& config_path) {
+std::pair<int64_t, int64_t> get_transformer_patch_size(const std::filesystem::path& config_path) {
     std::ifstream file(config_path);
     OPENVINO_ASSERT(file.is_open(), "Failed to open ", config_path);
     nlohmann::json data = nlohmann::json::parse(file);
@@ -79,7 +79,7 @@ AutoencoderKLLTXVideo::Config::Config(const std::filesystem::path& config_path) 
 AutoencoderKLLTXVideo::AutoencoderKLLTXVideo(const std::filesystem::path& vae_decoder_path)
     : m_config(vae_decoder_path / "config.json") {
     m_decoder_model = utils::singleton_core().read_model(vae_decoder_path / "openvino_model.xml");
-    std::tie(m_patch_size, m_patch_size_t) = get_patch_size(vae_decoder_path.parent_path() / "transformer" / "config.json");
+    std::tie(m_transformer_patch_size, m_transformer_patch_size_t) = get_transformer_patch_size(vae_decoder_path.parent_path() / "transformer" / "config.json");
     // apply VaeImageProcessor postprocessing steps by merging them into the VAE decoder model
     // merge_vae_image_post_processing(); // TODO: check if it's the same - not the same, fix!!!
 }
@@ -148,9 +148,9 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
             2,
             std::reduce(get_config().spatio_temporal_scaling.begin(), get_config().spatio_temporal_scaling.end(), 0));
 
-    num_frames = ((num_frames - 1) / temporal_compression_ratio + 1) / m_patch_size_t;
-    height /= (spatial_compression_ratio * m_patch_size);
-    width /= (spatial_compression_ratio * m_patch_size);
+    num_frames = ((num_frames - 1) / temporal_compression_ratio + 1) / m_transformer_patch_size_t;
+    height /= (spatial_compression_ratio * m_transformer_patch_size);
+    width /= (spatial_compression_ratio * m_transformer_patch_size);
 
     ov::PartialShape input_shape = m_decoder_model->input(0).get_partial_shape();
     std::map<size_t, ov::PartialShape> idx_to_shape{{0, {batch_size, input_shape[1], num_frames, height, width}}};

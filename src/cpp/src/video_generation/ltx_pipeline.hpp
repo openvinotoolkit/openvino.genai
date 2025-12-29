@@ -19,7 +19,7 @@
 #include "image_generation/schedulers/ischeduler.hpp"
 #include "image_generation/threaded_callback.hpp"
 #include "openvino/genai/video_generation/ltx_video_transformer_3d_model.hpp"
-#include "openvino/genai/video_generation/generation_config.hpp"
+#include "generation_config_utils.hpp"
 
 #include "utils.hpp"
 
@@ -71,7 +71,7 @@ std::shared_ptr<IScheduler> cast_scheduler(std::shared_ptr<Scheduler>&& schedule
 }
 
 void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_scale_factor) {
-    validate_generation_config(generation_config);
+    utils::validate_generation_config(generation_config);
     OPENVINO_ASSERT(generation_config.height > 0, "Height must be positive");
     OPENVINO_ASSERT(generation_config.height % 32 == 0,
                     "Height have to be divisible by 32 but got ",
@@ -464,7 +464,7 @@ public:
         m_perf_metrics.clean_up();
 
         VideoGenerationConfig merged_generation_config = m_generation_config;
-        update_generation_config(merged_generation_config, properties);
+        utils::update_generation_config(merged_generation_config, properties);
         replace_defaults(merged_generation_config);
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
