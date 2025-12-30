@@ -17,6 +17,12 @@ pipeline_modules:
         type: "String"
       - name: "prompts_negative"  # [optinonal]
         type: "String"
+      - name: "width"
+        type: "Int"
+      - name: "height"
+        type: "Int"
+      - name: "num_inference_steps"
+        type: "Int"
 
   # --- 1. Prompt Encode  ---
   tokenizer:
@@ -61,17 +67,26 @@ pipeline_modules:
     type: "ZImageDenoiserLoopModule"
     device: "GPU"
     inputs:
-      - name: "prompt_embeds"
+      - name: "prompt_embed"
         type: "OVTensor"
         source: "text_encoder.prompt_embeds"
-      - name: "prompt_embeds_negative"  # [optinonal]
+      - name: "prompt_embed_negative"  # [optinonal]
         type: "OVTensor"
         source: "text_encoder.prompt_embeds_negative"
+      - name: "width"
+        type: "Int"
+        source: "pipeline_params.width"
+      - name: "height"
+        type: "Int"
+        source: "pipeline_params.height"
+      - name: "num_inference_steps"
+        type: "Int"
+        source: "pipeline_params.num_inference_steps"
     outputs:
       - name: "latent"
         type: "OVTensor"
     params:
-      model_path: "./ut_pipelines/Z-Image-Turbo-fp16-ov/denoiser/"
+      model_path: "./ut_pipelines/Z-Image-Turbo-fp16-ov/"
 
   # --- 4. vae.decode ---
   vae_decoder:

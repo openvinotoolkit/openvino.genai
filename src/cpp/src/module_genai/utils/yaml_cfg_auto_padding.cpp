@@ -44,7 +44,14 @@ void yaml_cfg_auto_padding(YAML::Node& config_node) {
                 if (source.empty()) {
                     std::string type = input["type"].as<std::string>("");
                     extracted_params[input_name] = type;
-                    it->second["inputs"][0]["source"] = auto_padding_param_name + "." + input_name;
+                    int index = 0;
+                    for (const auto &item: it->second["inputs"]) {
+                        if (item["name"].as<std::string>() == input_name) {
+                            break;
+                        }
+                        index++;
+                    }
+                    it->second["inputs"][index]["source"] = auto_padding_param_name + "." + input_name;
                     continue;
                 } else if (source.find(auto_padding_param_name + ".") == 0) {
                     std::string param_name = source.substr(auto_padding_param_name.size() + 1);

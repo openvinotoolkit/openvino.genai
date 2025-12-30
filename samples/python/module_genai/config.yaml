@@ -98,6 +98,7 @@ pipeline_modules:
         type: "OVTensor"
     params:
       model_path: "../../cpp/module_genai/ut_pipelines/Qwen2.5-VL-3B-Instruct/INT4/"
+      vision_start_token_id: 100001
 
   # --- 5. Embedding Merger 模块 ---
   embedding_merger:

@@ -70,7 +70,7 @@ def main():
     tokenizer = AutoTokenizer.from_pretrained(args.torch_model)
 
     model = AutoModelForImageTextToText.from_pretrained(
-        args.torch_model, dtype="auto")
+        args.torch_model)
 
     with torch.no_grad():
         outputs_ids = model.generate(

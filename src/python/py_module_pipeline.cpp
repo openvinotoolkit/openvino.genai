@@ -56,6 +56,8 @@ ov::AnyMap kwargs_to_intputs(const py::kwargs& kwargs) {
             }
         } else if (py::isinstance<py::str>(value)) {
             params[key] = value.cast<std::string>();
+        } else if (py::isinstance<py::int_>(value)) {
+            params[key] = value.cast<int>();
         } else {
             std::cout << "Error: Input unsupported data type with key: " << key << std::endl;
         }
