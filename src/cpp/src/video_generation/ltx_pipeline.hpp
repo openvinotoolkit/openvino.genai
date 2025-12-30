@@ -239,9 +239,9 @@ class Text2VideoPipeline::LTXPipeline {
     VideoGenerationPerfMetrics m_perf_metrics;
     Ms m_load_time;
 
-    size_t m_latent_num_frames = -1;
-    size_t m_latent_height = -1;
-    size_t m_latent_width = -1;
+    size_t m_latent_num_frames = 0;
+    size_t m_latent_height = 0;
+    size_t m_latent_width = 0;
 
     ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_config,
                                size_t num_channels_latents,

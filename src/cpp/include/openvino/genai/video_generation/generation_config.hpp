@@ -8,7 +8,6 @@
 
 #include "openvino/genai/image_generation/generation_config.hpp"
 
-using namespace ov::genai;
 
 namespace ov::genai {
 /**

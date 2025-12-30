@@ -22,7 +22,11 @@ void stretch_shift_to_terminal(std::vector<float>& sigmas, float shift_terminal)
     std::transform(sigmas.begin(), sigmas.end(), sigmas.begin(), [](float val) {
         return 1.0f - val;
     });
+
     OPENVINO_ASSERT(!sigmas.empty());
+    OPENVINO_ASSERT(std::abs(1.0 - static_cast<double>(shift_terminal)) > 1e-6,
+                    "shift_terminal must not be 1.0 to avoid division by zero");
+
     double scale_factor = sigmas.back() / (1.0 - shift_terminal);
     std::transform(sigmas.begin(), sigmas.end(), sigmas.begin(), [scale_factor](float val) {
         return 1.0f - (val / scale_factor);
