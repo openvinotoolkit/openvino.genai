@@ -381,6 +381,7 @@ class GreedySearchHook:
         trans_version = version.parse(transformers.__version__)
         if trans_version >= version.parse("4.57.0"):
             import llm_bench_utils.llm_hook_sample.hook_sample_v57 as hook_sample_v57
+
             type(model)._sample = hook_sample_v57.new_sample
         elif trans_version >= version.parse("4.55.0"):
             import llm_bench_utils.llm_hook_sample.hook_sample_v55 as hook_sample_v55
