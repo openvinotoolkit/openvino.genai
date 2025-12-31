@@ -48,7 +48,7 @@ void ImagePreprocesModule::print_static_config() {
 
 ImagePreprocesModule::ImagePreprocesModule(const IBaseModuleDesc::PTR& desc) : IBaseModule(desc) {
     std::string model_path = desc->get_full_path(desc->params["model_path"]);
-    std::string device = desc->params["device"];
+    std::string device = desc->device;
     if (device.empty()) {
         device = "CPU";
     }

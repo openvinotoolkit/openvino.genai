@@ -25,6 +25,9 @@ pipeline_modules:
       - name: "position_ids"
         type: "VecOVTensor"
         source: "pipeline_params.position_ids"
+      - name: "rope_delta"
+        type: "Int"
+        source: "pipeline_params.rope_delta"
     outputs:
       - name: "generated_text"
         type: "String"
@@ -51,11 +54,13 @@ pipeline_modules:
         load_test_data_position_ids_list(input_position_ids_list);
         CHECK(input_position_ids_list.size(), "Failed to load position ids list data");
         std::vector<ov::Tensor> only_position_ids_list;
+        std::vector<int> rope_delta_list;
         for (auto& pids : input_position_ids_list) {
             only_position_ids_list.push_back(pids.first);
+            rope_delta_list.push_back(pids.second.has_value() ? pids.second.value() : 0);
         }
         inputs["position_ids"] = only_position_ids_list[0];
-
+        inputs["rope_delta"] = rope_delta_list[0];
         return inputs;
     }
 
@@ -135,6 +140,9 @@ pipeline_modules:
       - name: "position_ids_list"
         type: "VecOVTensor"
         source: "pipeline_params.position_ids_list"
+      - name: "rope_delta_list"
+        type: "VecInt"
+        source: "pipeline_params.rope_delta_list"
     outputs:
       - name: "generated_texts"
         type: "VecString"
@@ -162,11 +170,14 @@ pipeline_modules:
         CHECK(input_position_ids_list.size(), "Failed to load position ids list data");
 
         std::vector<ov::Tensor> only_position_ids_list;
+        std::vector<int> rope_delta_list;
         for (auto& pids : input_position_ids_list) {
             only_position_ids_list.push_back(pids.first);
+            rope_delta_list.push_back(pids.second.has_value() ? pids.second.value() : 0);
         }
 
         inputs["position_ids_list"] = only_position_ids_list;
+        inputs["rope_delta_list"] = rope_delta_list;
 
         return inputs;
     }

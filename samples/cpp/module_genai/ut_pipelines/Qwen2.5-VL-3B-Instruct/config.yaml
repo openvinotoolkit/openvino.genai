@@ -101,6 +101,8 @@ pipeline_modules:
         type: "OVTensor"
       - name: "position_ids"
         type: "OVTensor"
+      - name: "rope_delta"
+        type: "Int"
     params:
       model_path: "./ut_pipelines/Qwen2.5-VL-3B-Instruct/INT4/"
       vision_start_token_id: 151652
@@ -140,6 +142,9 @@ pipeline_modules:
       - name: "position_ids"
         type: "OVTensor"
         source: "vision_encoder.position_ids"
+      - name: "rope_delta"
+        type: "Int"
+        source: "vision_encoder.rope_delta"
     outputs:
       - name: "generated_text"
         type: "String"

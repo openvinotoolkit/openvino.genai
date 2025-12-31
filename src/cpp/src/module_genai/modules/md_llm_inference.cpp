@@ -24,11 +24,17 @@ pipeline_modules:
       - name: "position_ids"        # [Optional]
         type: "OVTensor"
         source: "ParentModuleName.OutputPortName"
+      - name: "rope_delta"          # [Optional]
+        type: "Int"
+        source: "ParentModuleName.OutputPortName"
       - name: "embeds_list"         # [Optional]
         type: "VecOVTensor"
         source: "ParentModuleName.OutputPortName"
       - name: "position_ids_list"   # [Optional]
         type: "VecOVTensor"
+        source: "ParentModuleName.OutputPortName"
+      - name: "rope_delta_list"     # [Optional]
+        type: "VecInt"
         source: "ParentModuleName.OutputPortName"
     outputs:
       - name: "generated_text"      # Correspoding input: embeds
@@ -131,20 +137,24 @@ void LLMInferenceModule::run() {
     bool is_batch = false;
     std::vector<ov::Tensor> embeds_list;
     std::vector<ov::Tensor> position_ids_list;
+    std::vector<int> rope_delta_list;
     if (this->inputs.find("embeds") != this->inputs.end()) {
         embeds_list.push_back(inputs["embeds"].data.as<ov::Tensor>());
         position_ids_list.push_back(inputs["position_ids"].data.as<ov::Tensor>());
+        rope_delta_list.push_back(inputs["rope_delta"].data.as<int>());
     } else if (this->inputs.find("embeds_list") != this->inputs.end()) {
         embeds_list = inputs["embeds_list"].data.as<std::vector<ov::Tensor>>();
         position_ids_list = inputs["position_ids_list"].data.as<std::vector<ov::Tensor>>();
+        rope_delta_list = inputs["rope_delta_list"].data.as<std::vector<int>>();
         is_batch = true;
     } else {
         GENAI_ERR("LLMInferenceModule[" + module_desc->name + "]: 'embeds or embeds_list' input not found")
     }
 
     std::vector<std::pair<ov::Tensor, std::optional<int64_t>>> input_position_ids_list;
-    for (auto& pids : position_ids_list) {
-        input_position_ids_list.push_back({pids, std::optional<int64_t>(std::nullopt)});
+    input_position_ids_list.reserve(position_ids_list.size());
+    for (size_t i = 0; i < position_ids_list.size(); ++i) {
+        input_position_ids_list.push_back({position_ids_list[i], std::optional<int64_t>(rope_delta_list[i])});
     }
 
     auto results_vec = m_cb_pipeline->generate(embeds_list, std::vector<GenerationConfig>{m_generation_config}, std::monostate(), std::nullopt, input_position_ids_list);

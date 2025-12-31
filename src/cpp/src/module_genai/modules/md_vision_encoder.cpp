@@ -46,6 +46,8 @@ void VisionEncoderModule::print_static_config() {
         type: "OVTensor"                                   # Support DataType: [OVTensor]
       - name: "position_ids"                               # [Optional], depends on input_ids
         type: "OVTensor"                                   # Support DataType: [OVTensor]
+      - name: "rope_delta"                                 # [Optional], depends on input_ids
+        type: "Int"                                     # Support DataType: [Int]
     params:
       model_path: "model"
       vision_start_token_id: 100001
@@ -146,8 +148,11 @@ void VisionEncoderModule::run() {
     
     this->outputs["image_embedding"].data = image_embedding;
     this->outputs["video_embedding"].data = video_embedding;
-    if (input_ids)
+    if (input_ids) {
         this->outputs["position_ids"].data = m_position_ids;
+        int position_ids_max_element = static_cast<int>(*std::max_element(m_position_ids.data<int64_t>(), m_position_ids.data<int64_t>() + m_position_ids.get_size()));
+        this->outputs["rope_delta"].data = position_ids_max_element + 1 - static_cast<int>(input_ids.get_shape().at(1));
+    }   
 }
 
 

@@ -30,7 +30,9 @@ PipelineModuleInstance sort_pipeline(PipelineModuleInstance& pipeline_instrance)
         for (auto& output : pair.second->outputs) {
             if (!output.second.module_ptrs.empty()) {
                 for (const auto& module_ptr : output.second.module_ptrs) {
-                    adjacency_list[pair.first].push_back(module_ptr->get_module_name());
+                    if (std::find(adjacency_list[pair.first].begin(), adjacency_list[pair.first].end(), module_ptr->get_module_name()) == adjacency_list[pair.first].end()) {
+                        adjacency_list[pair.first].push_back(module_ptr->get_module_name());
+                    }
                 }
             }
             else {
