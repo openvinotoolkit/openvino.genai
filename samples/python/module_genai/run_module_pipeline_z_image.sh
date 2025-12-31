@@ -14,4 +14,4 @@ model_dir=${SCRIPT_DIR_GENAI_MODULE_PY}/../../cpp/module_genai/ut_pipelines/Z-Im
 prompt="Young Chinese woman in red Hanfu, intricate embroidery. Impeccable makeup, red floral forehead pattern. Elaborate high bun, golden phoenix headdress, red flowers, beads. Holds round folding fan with lady, trees, bird. Neon lightning-bolt lamp (⚡️), bright yellow glow, above extended left palm. Soft-lit outdoor night background, silhouetted tiered pagoda (西安大雁塔), blurred colorful distant lights."
 # prompt="A chinese man with white T-shirt and blue jeans, standing in the forest, draw the light and shadow of the scene clearly, photo taken by Nikon D850, high resolution, detailed texture, draw full person"
 
-python module_pipeline_z_image_denoiser_loop.py ${model_dir} "${prompt}"
+python module_pipeline_z_image.py ${model_dir} "${prompt}"

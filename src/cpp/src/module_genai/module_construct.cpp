@@ -10,6 +10,7 @@
 #include "modules/md_embedding_merger.hpp"
 #include "modules/md_llm_inference.hpp"
 #include "modules/md_zimage_denoiser_loop.hpp"
+#include "modules/md_vae_decoder.hpp"
 #include "utils/yaml_utils.hpp"
 
 namespace ov {
@@ -71,6 +72,9 @@ void construct_pipeline(const PipelineModuleDesc& pipeline_desc, PipelineModuleI
             break;
         case ModuleType::ZImageDenoiserLoopModule:
             module_ptr = ZImageDenoiserLoopModule::create(module_desc.second);
+            break;
+        case ModuleType::VAEDecoderModule:
+            module_ptr = VAEDecoderModule::create(module_desc.second);
             break;
         default:
             break;

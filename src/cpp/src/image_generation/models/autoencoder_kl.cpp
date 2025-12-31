@@ -130,7 +130,14 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_decoder_path,
                              const ov::AnyMap& properties)
     : m_config(vae_decoder_path / "config.json") {
 
-    const auto [properties_without_blob, blob_path] = utils::extract_export_properties(properties);
+    auto properties_copy = properties;
+    bool enable_postprocess = true;
+    if (auto it = properties_copy.find("enable_postprocess"); it != properties_copy.end()) {
+        enable_postprocess = it->second.as<bool>();
+        properties_copy.erase(it);
+    }
+
+    const auto [properties_without_blob, blob_path] = utils::extract_export_properties(properties_copy);
 
     if (blob_path.has_value()) {
         import_model(*blob_path, device, properties_without_blob);
@@ -139,7 +146,9 @@ AutoencoderKL::AutoencoderKL(const std::filesystem::path& vae_decoder_path,
 
     m_decoder_model = utils::singleton_core().read_model(vae_decoder_path / "openvino_model.xml");
     // apply VaeImageProcessor postprocessing steps by merging them into the VAE decoder model
-    merge_vae_image_post_processing();
+    if (enable_postprocess) {
+        merge_vae_image_post_processing();
+    }
     compile(device, *extract_adapters_from_properties(properties_without_blob));
 }
 

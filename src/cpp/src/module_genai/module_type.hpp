@@ -35,6 +35,7 @@ namespace module {
         // 4. Inference/Generator Modules
         LLMInferenceModule = 40,
         ZImageDenoiserLoopModule = 41,
+        VAEDecoderModule = 42,
         
         // 5. Output/Result Modules
         ResultModule = 50,

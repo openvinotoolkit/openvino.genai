@@ -42,6 +42,27 @@ class TransformerPipeline():
                 'model_type': 'zimage'
             },
             'pipeline_modules': {
+                'pipeline_params': {
+                    'type': 'ParameterModule',
+                    'outputs': [
+                        {
+                            'name': 'prompt_embed',
+                            'type': 'OVTensor'
+                        },
+                        {
+                            'name': 'num_inference_steps',
+                            'type': 'Int'
+                        },
+                        {
+                            'name': 'width',
+                            'type': 'Int'
+                        },
+                        {
+                            'name': 'height',
+                            'type': 'Int'
+                        }
+                    ]
+                },
                 'denoiser_loop': {
                     'type': 'ZImageDenoiserLoopModule',
                     'device': self.device,
@@ -50,18 +71,22 @@ class TransformerPipeline():
                         {
                             'name': 'prompt_embed',
                             'type': 'OVTensor',
+                            'source': "pipeline_params.prompt_embed"
                         },
                         {
                             'name': 'num_inference_steps',
                             'type': 'Int',
+                            'source': "pipeline_params.num_inference_steps"
                         },
                         {
                             'name': 'width',
                             'type': 'Int',
+                            'source': "pipeline_params.width"
                         },
                         {
                             'name': 'height',
                             'type': 'Int',
+                            'source': "pipeline_params.height"
                         }
                     ],
                     'outputs': [
@@ -73,6 +98,37 @@ class TransformerPipeline():
                     'params': {
                         'model_path': self.model_path
                     }
+                },
+                'vae': {
+                    'type': 'VAEDecoderModule',
+                    'device': self.device,
+                    'description': 'Z-Image denoiser loop.',
+                    'inputs': [
+                        {
+                            'name': 'latent',
+                            'type': 'OVTensor',
+                            'source': 'denoiser_loop.latent',
+                        }
+                    ],
+                    'outputs': [
+                        {
+                            'name': 'image',
+                            'type': 'OVTensor'
+                        }
+                    ],
+                    'params': {
+                        'model_path': self.model_path
+                    }
+                },
+                'pipeline_result': {
+                    'type': 'ResultModule',
+                    'inputs': [
+                        {
+                            'name': 'image',
+                            'type': 'OVTensor',
+                            'source': 'vae.image'
+                        }
+                    ]
                 }
             }
         }
@@ -209,19 +265,10 @@ class TransformerPipeline():
             height=height
         )
 
-        output = self.pipe.get_output("latent")
-        latents = torch.from_numpy(output.data).unsqueeze(0)
+        output = self.pipe.get_output("image_output")
+        latents = torch.from_numpy(output.data).to(torch.uint8)
 
-        latents = latents.to(torch.float32)
-        latents = (latents / self.vae_scaling_factor) + self.vae_shift_factor
-        ov_outputs = self.vae_decoder_request({"latent_sample": latents}, share_inputs=True).to_dict()
-        model_outputs = {}
-        for key, value in ov_outputs.items():
-            model_outputs[next(iter(key.names))] = torch.from_numpy(value)
-        image = model_outputs["sample"]
-
-        image = (image * 0.5 + 0.5).clamp(0, 1)
-        image = image.cpu().permute(0, 2, 3, 1).float().numpy()
+        image = latents.cpu().numpy()
         images = self.numpy_to_pil(image)
 
         return images
@@ -229,18 +276,18 @@ class TransformerPipeline():
     def numpy_to_pil(self, images: np.ndarray) -> List[PIL.Image.Image]:
         if images.ndim == 3:
             images = images[None, ...]
-        images = (images * 255).round().astype("uint8")
+
         if images.shape[-1] == 1:
             # special case for grayscale (single channel) images
             pil_images = [Image.fromarray(image.squeeze(), mode="L") for image in images]
         else:
-            pil_images = [Image.fromarray(image) for image in images]
+            pil_images = [Image.fromarray(image.astype("uint8")) for image in images]
 
         return pil_images
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('model_path', default="Young Chinese woman in red Hanfu, intricate embroidery. Impeccable makeup, red floral forehead pattern. Elaborate high bun, golden phoenix headdress, red flowers, beads. Holds round folding fan with lady, trees, bird. Neon lightning-bolt lamp (⚡️), bright yellow glow, above extended left palm. Soft-lit outdoor night background, silhouetted tiered pagoda (西安大雁塔), blurred colorful distant lights.", help="Path to the directory of models")
+    parser.add_argument('model_path', default="./ut_pipelines/Z-Image-Turbo-fp16-ov/",  help="Path to the directory of models")
     parser.add_argument('prompt', default="", help="The prompt for generation")
     args = parser.parse_args()
 
@@ -251,7 +298,7 @@ def main():
         width=512,
         num_inference_steps=9
     )
-    images[0].save("zimage_denoiser_loop_output.png")
+    images[0].save("zimage_denoiser_loop_output-vae.png")
 
 if __name__ == "__main__":
     main()
