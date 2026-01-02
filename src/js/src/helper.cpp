@@ -370,8 +370,7 @@ std::vector<std::shared_ptr<ov::genai::Parser>> js_to_cpp<std::vector<std::share
     std::vector<std::shared_ptr<ov::genai::Parser>> parsers;
     parsers.reserve(arr.Length());
     for (uint32_t i = 0; i < arr.Length(); ++i) {
-        Napi::Value element = arr[i];
-        parsers.push_back(js_to_cpp<std::shared_ptr<ov::genai::Parser>>(env, element));
+        parsers.push_back(js_to_cpp<std::shared_ptr<ov::genai::Parser>>(env, arr[i]));
     }
     return parsers;
 }

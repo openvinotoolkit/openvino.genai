@@ -18,7 +18,7 @@ export class DecodedResults {
     texts: string[],
     scores: number[],
     perfMetrics: PerfMetrics,
-    parsed?: Record<string, unknown>[],
+    parsed: Record<string, unknown>[],
   ) {
     this.texts = texts;
     this.scores = scores;
@@ -41,7 +41,7 @@ export class DecodedResults {
   texts: string[];
   scores: number[];
   perfMetrics: PerfMetrics;
-  parsed?: Record<string, unknown>[];
+  parsed: Record<string, unknown>[];
 }
 
 /**
@@ -53,9 +53,15 @@ export class VLMDecodedResults extends DecodedResults {
    * @param {string[]} texts - Vector of resulting sequences.
    * @param {number[]} scores - Scores for each sequence.
    * @param {VLMPerfMetrics} perfMetrics - VLM-specific performance metrics.
+   * @param {Record<string, unknown>[]} parsed - The results of parsers processing for each sequence.
    */
-  constructor(texts: string[], scores: number[], perfMetrics: VLMPerfMetrics) {
-    super(texts, scores, perfMetrics);
+  constructor(
+    texts: string[],
+    scores: number[],
+    perfMetrics: VLMPerfMetrics,
+    parsed: Record<string, unknown>[],
+  ) {
+    super(texts, scores, perfMetrics, parsed);
     this.perfMetrics = perfMetrics;
   }
 

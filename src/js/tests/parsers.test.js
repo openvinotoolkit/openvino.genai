@@ -8,12 +8,14 @@ import {
   Llama3PythonicToolParser,
   Llama3JsonToolParser,
   LLMPipeline,
+  VLMPipeline,
   Phi4ReasoningParser,
   ReasoningParser,
 } from "../dist/index.js";
 import { models } from "./models.js";
 
 const MODEL_PATH = process.env.MODEL_PATH || `./tests/models/${models.LLM.split("/")[1]}`;
+const VLM_MODEL_PATH = process.env.VLM_MODEL_PATH || `./tests/models/${models.VLM.split("/")[1]}`;
 
 class PostfixParser {
   constructor(postfix) {
@@ -238,6 +240,7 @@ describe("LLMPipeline with Parser in GenerationConfig", () => {
 
     const result = await pipeline.generate("Hello", config);
     assert.ok(result.texts.length > 0);
+    assert.strictEqual(result.parsed.length, 0, "Parsed content should be empty");
   });
 
   it("should throw error if parser is not an object", async () => {
@@ -329,5 +332,27 @@ describe("LLMPipeline with ReasoningParser", () => {
       "reasoning[custom processed]",
       "Custom processing should be applied to reasoning content",
     );
+  });
+});
+
+describe("VLMPipeline with Parser in GenerationConfig", () => {
+  let pipeline = null;
+
+  const postfix = "<parsed>";
+  const postfixParser = new PostfixParser(postfix);
+
+  before(async () => {
+    pipeline = await VLMPipeline(VLM_MODEL_PATH, "CPU");
+  });
+
+  it("should apply custom parser object", async () => {
+    const config = {
+      max_new_tokens: 10,
+      parsers: [postfixParser],
+    };
+
+    const result = await pipeline.generate("Hello", config);
+    // VLMPipeline doesn't use parsers and always returns empty array
+    assert.strictEqual(result.parsed.length, 0, "Parsed content is empty");
   });
 });

@@ -84,7 +84,12 @@ export interface VLMPipeline {
     generationConfig: GenerationConfig | undefined,
     callback: (
       err: Error | null,
-      result: { texts: string[]; scores: number[]; perfMetrics: VLMPerfMetrics },
+      result: {
+        texts: string[];
+        scores: number[];
+        perfMetrics: VLMPerfMetrics;
+        parsed: Record<string, unknown>[];
+      },
     ) => void,
   ): void;
   startChat(systemMessage: string, callback: (err: Error | null) => void): void;
