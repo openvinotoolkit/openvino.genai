@@ -335,24 +335,29 @@ describe("LLMPipeline with ReasoningParser", () => {
   });
 });
 
-describe("VLMPipeline with Parser in GenerationConfig", () => {
-  let pipeline = null;
+// Skip tests on macOS due to insufficient memory
+describe(
+  "VLMPipeline with Parser in GenerationConfig",
+  { skip: process.platform === "darwin" },
+  () => {
+    let pipeline = null;
 
-  const postfix = "<parsed>";
-  const postfixParser = new PostfixParser(postfix);
+    const postfix = "<parsed>";
+    const postfixParser = new PostfixParser(postfix);
 
-  before(async () => {
-    pipeline = await VLMPipeline(VLM_MODEL_PATH, "CPU");
-  });
+    before(async () => {
+      pipeline = await VLMPipeline(VLM_MODEL_PATH, "CPU");
+    });
 
-  it("should apply custom parser object", async () => {
-    const config = {
-      max_new_tokens: 10,
-      parsers: [postfixParser],
-    };
+    it("should apply custom parser object", async () => {
+      const config = {
+        max_new_tokens: 10,
+        parsers: [postfixParser],
+      };
 
-    const result = await pipeline.generate("Hello", config);
-    // VLMPipeline doesn't use parsers and always returns empty array
-    assert.strictEqual(result.parsed.length, 0, "Parsed content is empty");
-  });
-});
+      const result = await pipeline.generate("Hello", config);
+      // VLMPipeline doesn't use parsers and always returns empty array
+      assert.strictEqual(result.parsed.length, 0, "Parsed content is empty");
+    });
+  },
+);
