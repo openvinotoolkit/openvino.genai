@@ -14,6 +14,7 @@ tm_mm_embeddings = []
 
 if version.parse(transformers.__version__) >= version.parse("4.57.0"):
     import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v57 as hook_beam_search_v57
+
     new_beam_search = hook_beam_search_v57.new_beam_search_v57
 elif version.parse(transformers.__version__) >= version.parse("4.55.0"):
     import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v55 as hook_beam_search_v55
