@@ -265,7 +265,7 @@ class TransformerPipeline():
             height=height
         )
 
-        output = self.pipe.get_output("image_output")
+        output = self.pipe.get_output("image")
         latents = torch.from_numpy(output.data).to(torch.uint8)
 
         image = latents.cpu().numpy()
