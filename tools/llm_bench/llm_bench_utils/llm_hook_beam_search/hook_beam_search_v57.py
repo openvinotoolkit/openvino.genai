@@ -195,9 +195,7 @@ def new_beam_search_v57(
     # if model is an encoder-decoder, retrieve encoder attention weights and hidden states
     if return_dict_in_generate and self.config.is_encoder_decoder:
         encoder_attentions = model_kwargs["encoder_outputs"].get("attentions") if output_attentions else None
-        encoder_hidden_states = (
-            model_kwargs["encoder_outputs"].get("hidden_states") if output_hidden_states else None
-        )
+        encoder_hidden_states = model_kwargs["encoder_outputs"].get("hidden_states") if output_hidden_states else None
 
     # 3. init running tensors and static-shaped placeholders
 
@@ -226,9 +224,7 @@ def new_beam_search_v57(
     is_early_stop_heuristic_unsatisfied = torch.ones((batch_size, 1), dtype=torch.bool, device=input_ids.device)
 
     # per batch, beam-item state bit indicating if there are valid continuations.
-    next_token_hits_stopping_criteria = torch.zeros(
-        (batch_size, num_beams), dtype=torch.bool, device=input_ids.device
-    )
+    next_token_hits_stopping_criteria = torch.zeros((batch_size, num_beams), dtype=torch.bool, device=input_ids.device)
 
     # per batch selected beam indices
     running_beam_indices = torch.full(
