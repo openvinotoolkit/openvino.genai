@@ -38,12 +38,10 @@ Eagle3RTInfo extract_eagle3_info_from_config(ov::AnyMap& config, const std::file
         config.erase("eagle3_mode");
         auto it = config.find("hidden_layers_list");
         if (it != config.end()) {
-            try {
-                eagle_rt_info.hidden_layers_list = it->second.as<std::vector<int32_t>>();
-                config.erase("hidden_layers_list");
-            } catch (const std::exception&) {
-                OPENVINO_THROW("please check the hidden layers input");
-            }
+            OPENVINO_ASSERT(it->second.is<std::vector<int32_t>>(),
+                            "hidden_layers_list must be a vector of int32_t values");
+            eagle_rt_info.hidden_layers_list = it->second.as<std::vector<int32_t>>();
+            config.erase("hidden_layers_list");
         } else {
             // compute the layers from number of hidden layers
             auto config_file_path = models_path / "config.json";
