@@ -15,7 +15,7 @@ void VAEDecoderModule::print_static_config() {
   - name: "VAE_decoder"
     type: "VAEDecoderModule"
     inputs:
-      - name: "latent"
+      - name: "latents"
         type: "OVTensor"
     outputs:
       - name: "image"
@@ -81,13 +81,13 @@ void VAEDecoderModule::run() {
 
     prepare_inputs();
     
-    if (this->inputs.find("latent") == this->inputs.end()) {
-        GENAI_ERR("VAEDecoderModule[" + module_desc->name + "]: 'latent' input not found");
+    if (this->inputs.find("latents") == this->inputs.end()) {
+        GENAI_ERR("VAEDecoderModule[" + module_desc->name + "]: 'latents' input not found");
         return;
     }
 
-    ov::Tensor latent = tensor_utils::unsqueeze(this->inputs["latent"].data.as<ov::Tensor>(), 0);
-    ov::Tensor image = m_vae->decode(latent);
+    ov::Tensor latents = this->inputs["latents"].data.as<ov::Tensor>();
+    ov::Tensor image = m_vae->decode(latents);
 
     this->outputs["image"].data = image;
 }

@@ -27,7 +27,7 @@ pipeline_modules:
       - name: "height"                            # [optional], default 512
         type: "Int"
     outputs:
-      - name: "latent"
+      - name: "latents"
         type: "OVTensor"
     params:
       model_path: "./ut_pipelines/Z-Image-Turbo-fp16-ov/"
@@ -46,7 +46,7 @@ pipeline_modules:
     }
 
     void verify_outputs(ov::genai::module::ModulePipeline& pipe) override {
-        auto output = pipe.get_output("latent").as<ov::Tensor>();
+        auto output = pipe.get_output("latents").as<ov::Tensor>();
         std::vector<float> expected_ouput = { 
           0.0279331, -0.0194968, -0.158097, 0.142582, -0.313633, -0.452601, 0.107033, 0.305759, -0.0610831, 0.136313
         };

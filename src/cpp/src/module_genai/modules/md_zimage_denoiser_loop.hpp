@@ -33,18 +33,17 @@ public:
 private:
     bool initialize();
     int get_vae_scale_factor(const std::filesystem::path &model_path) const;
-    std::vector<ov::Tensor> run(
+    ov::Tensor run(
         const std::vector<ov::Tensor>& prompt_embeds,
         const std::vector<ov::Tensor>& negative_prompt_embeds,
         const ImageGenerationConfig &generation_config);
     ov::Tensor prepare_latents(
-        int batch_size,
+        size_t batch_size,
         int num_channels,
-        int height,
-        int width,
+        size_t width,
+        size_t height,
         element::Type element_type,
         std::shared_ptr<Generator> generator);
-    ov::Tensor stack(const std::vector<ov::Tensor>& tensors);
     ImageGenerationModelType m_model_type;
     TransformerConfig m_transformer_config;
     std::unique_ptr<IScheduler> m_scheduler;

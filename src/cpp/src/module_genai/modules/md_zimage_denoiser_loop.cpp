@@ -50,10 +50,8 @@ void ZImageDenoiserLoopModule::print_static_config() {
         type: "Float"                                      # Support DataType: [Int]
         source: "ParentModuleName.OutputPortName"
     outputs:
-      - name: "latent"
-        type: "OVTensor"                                   # Support DataType: [VecOVTensor]
       - name: "latents"
-        type: "VecOVTensor"                                   # Support DataType: [VecOVTensor]
+        type: "OVTensor"                                   # Support DataType: [OVTensor]
     params:
       model_path: "model"
     )" << std::endl;
@@ -175,20 +173,15 @@ void ZImageDenoiserLoopModule::run() {
     } else {
         generation_config.guidance_scale = 1.0f;
     }
-    auto outputs = run(prompt_embeds, negative_prompt_embeds, generation_config);
-    if (m_is_multi_prompts) {
-        this->outputs["latents"].data = outputs;
-    } else {
-        this->outputs["latent"].data = outputs[0];
-    }
+    this->outputs["latents"].data = run(prompt_embeds, negative_prompt_embeds, generation_config);
 }
 
-std::vector<ov::Tensor> ZImageDenoiserLoopModule::run(
+ov::Tensor ZImageDenoiserLoopModule::run(
         const std::vector<ov::Tensor>& prompt_embeds,
         const std::vector<ov::Tensor>& negative_prompt_embeds,
         const ImageGenerationConfig &generation_config) {
     // TODO: Add multi image support and negative prompt support
-    int batch_size = prompt_embeds.size();
+    size_t batch_size = prompt_embeds.size();
     int num_channels_latents = m_transformer_config.in_channels;
     ov::Tensor latents = prepare_latents(
         batch_size * generation_config.num_images_per_prompt, 
@@ -217,7 +210,6 @@ std::vector<ov::Tensor> ZImageDenoiserLoopModule::run(
         }
     }
 
-    int image_seq_len = (latents.get_shape().at(2) / 2) * (latents.get_shape().at(3) / 2);
     m_scheduler->set_timesteps(
         generation_config.num_inference_steps,
          generation_config.strength);
@@ -242,14 +234,14 @@ std::vector<ov::Tensor> ZImageDenoiserLoopModule::run(
             noise_pred, latents, inference_step, generation_config.generator);
         latents = scheduler_step_result["latent"];
     }
-    return tensor_utils::split(latents);
+    return latents;
 }
 
 ov::Tensor ZImageDenoiserLoopModule::prepare_latents(
-        int batch_size,
+        size_t batch_size,
         int num_channels,
-        int width,
-        int height,
+        size_t width,
+        size_t height,
         element::Type element_type,
         std::shared_ptr<Generator> generator) {
     height = 2 * (height / (m_vae_scale_factor * 2));

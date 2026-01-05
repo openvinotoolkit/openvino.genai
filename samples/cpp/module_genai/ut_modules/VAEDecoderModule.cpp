@@ -18,7 +18,7 @@ pipeline_modules:
     type: "VAEDecoderModule"
     device: "CPU"
     inputs:
-      - name: "latent"
+      - name: "latents"
         type: "OVTensor"
         source: "pipeline_params.latent_input"
     outputs:
@@ -34,7 +34,7 @@ pipeline_modules:
         // Latent shape for VAE decoder usually depends on the model config.
         // The model expects 16 channels (e.g. Z-Image-Turbo).
         // Using a small size for testing.
-        auto latent = ut_randn_tensor(ov::Shape{16, 64, 64}, 42);
+        auto latent = ut_randn_tensor(ov::Shape{1, 16, 64, 64}, 42);
         inputs["latent_input"] = latent;
         return inputs;
     }
@@ -62,7 +62,7 @@ pipeline_modules:
     type: "VAEDecoderModule"
     device: "CPU"
     inputs:
-      - name: "latent"
+      - name: "latents"
         type: "OVTensor"
         source: "pipeline_params.latent_input"
     outputs:
@@ -77,7 +77,7 @@ pipeline_modules:
     ov::AnyMap prepare_inputs() override {
         ov::AnyMap inputs;
 
-        auto latent = ut_randn_tensor(ov::Shape{16, 64, 64}, 42);
+        auto latent = ut_randn_tensor(ov::Shape{1, 16, 64, 64}, 42);
         inputs["latent_input"] = latent;
         return inputs;
     }
