@@ -1,6 +1,7 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 #include "speculative_decoding_eagle3_impl.hpp"
+#include "openvino/pass/pa_to_pa_with_bias.hpp"
 #include "logger.hpp"
 
 namespace ov::genai {
@@ -203,6 +204,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     // move the FC layer from draft model to main model
     shift_fc_from_draft_to_main(main_model, draft_model);
     hidden_state_transform(draft_model, { -1 });
+    ov::serialize(main_model, "debug_main_eagle3_model.xml");
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
     m_main_pipeline = std::make_shared<ContinuousBatchingForEagle3DecodingImpl>(main_model,
@@ -307,6 +309,8 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
             main_cfg.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
             draft_cfg.num_assistant_tokens = main_cfg.num_assistant_tokens;
         }
+        main_cfg.eagle_tree_params.tree_depth = 0; // disable tree search in main model
+
         draft_cfg.ignore_eos = true;
         draft_cfg.stop_strings = {};
         main_in = in_ids;
@@ -318,7 +322,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
                                   const std::vector<GenerationConfig>& sampling_params) {
         OPENVINO_ASSERT(!streamer_ptr->has_callback() ||
                         (input_ids.size() == 1 &&
-                         (sampling_params[0].is_greedy_decoding())),
+                         (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_tree_search())),
                         "Eagle3 streaming only supports batch size=1 with greedy");
     };
     strategy.start_timer = [](){

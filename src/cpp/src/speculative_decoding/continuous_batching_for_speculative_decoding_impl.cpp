@@ -63,7 +63,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_ge
         for (const auto& sequence : request->get_running_sequences()) {
             const auto& sequence_id = sequence->get_grouped_id();
             OPENVINO_ASSERT(!generated_request.count(sequence_id));
-            generated_request.insert({{sequence_id, { sequence->get_generated_ids(), sequence->get_generated_log_probs(), sequence->get_hidden_state() } }});
+            generated_request.insert({{sequence_id, { sequence->get_generated_ids(), sequence->get_generated_log_probs(), sequence->get_hidden_state(), sequence->get_eagle_metadata() }}});
         }
     }
     return result;
@@ -268,15 +268,17 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             // update existing sequences by the candidates
             auto& logit_processor = m_sampler->get_logit_processor(request_id);
             std::tie(min_generated_tokens, min_candidate_len) = get_prefix_len(running_sequences, candidates);
-
-            for (auto& running_sequence : running_sequences) {
+            OPENVINO_ASSERT(running_sequences.size() == 1);
+            auto running_sequence = running_sequences[0];
+            {
+            
                 if (!candidates.count(running_sequence->get_grouped_id())) {
                     continue;
                 }
+                auto candidate_sequence = candidates.at(running_sequence->get_grouped_id());
 
                 result.removed_tokens_cnt = remove_tokens_from_sequence(running_sequence, min_generated_tokens, logit_processor);
-
-                auto candidate_sequence = candidates.at(running_sequence->get_grouped_id());
+                    
                 std::vector<int64_t> candidate_token_ids = candidate_sequence.token_ids;
                 std::vector<float> candidate_token_log_probs = candidate_sequence.log_probs;
                 candidate_token_ids.resize(min_candidate_len);
@@ -285,14 +287,40 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                 // handle hidden states for eagle mode
                 if (eagle_mode_enabled && !m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) { // update hidden states for draft model
                     // at least there should be one bonus token from main
-                    auto& hidden_state = candidate_sequence.hidden_states;
-                    ov::Tensor pruned_hidden_state = truncate_hidden_state_from_end(hidden_state, result.removed_tokens_cnt);
-                    const auto& shape = pruned_hidden_state.get_shape();
-                    OPENVINO_ASSERT(shape[0] >= 1, "Unexpected hidden state shape from the main model.");
-                    m_model_runner->set_initial_hidden_state(request_id,
-                                                            pruned_hidden_state);
-                    // to calculate the number of tokens that needs to do kv cache re-generate in draft model
-                    num_tokens_needs_kv_update = shape[0] - 1; // remove the first dim, which is the reliable hidden state from main model
+                    if (!request->get_sampling_parameters().is_tree_search()) {
+                        auto& hidden_state = candidate_sequence.hidden_states;
+                        ov::Tensor pruned_hidden_state = truncate_hidden_state_from_end(hidden_state, result.removed_tokens_cnt);
+                        const auto& shape = pruned_hidden_state.get_shape();
+                        OPENVINO_ASSERT(shape[0] >= 1, "Unexpected hidden state shape from the main model.");
+                        m_model_runner->set_initial_hidden_state(request_id,
+                                                                pruned_hidden_state);
+                        // to calculate the number of tokens that needs to do kv cache re-generate in draft model
+                        num_tokens_needs_kv_update = shape[0] - 1; // remove the first dim, which is the reliable hidden state from main model
+                    } else {
+                        auto tree_indice = candidate_sequence.eagle_metadata.retrieve_indices[0];
+                        // select the hidden state according to tree indice
+                        // for example, the hidden state shape is [10, hidden_size]
+                        // retrieve_indices is [0,2,4,6,8], then we need to select hidden states with indice [0,2,4,6,8]
+                        std::vector<ov::Tensor> selected_hidden_states;
+                        auto& hidden_state = candidate_sequence.hidden_states;
+                        const auto& shape = hidden_state.get_shape();
+                        OPENVINO_ASSERT(shape[0] >= 1, "Unexpected hidden state shape from the main model.");
+                        for (const auto& indice : tree_indice) {
+                            OPENVINO_ASSERT(indice < shape[0], "Tree indice is out of range of hidden state.");
+                            auto [start_coord, end_coord] = ov::genai::utils::make_roi(shape, 0, indice, indice + 1);
+                            selected_hidden_states.push_back(ov::Tensor(hidden_state, start_coord, end_coord));
+                        }
+                        ov::Tensor concatenated_hidden_state = ov::genai::utils::concat_tensors(selected_hidden_states, 0);
+                        m_model_runner->set_initial_hidden_state(request_id,
+                                                                 concatenated_hidden_state);
+                        // to calculate the number of tokens that needs to do kv cache re-generate in draft model
+                        num_tokens_needs_kv_update = tree_indice.size() - 1;
+                    }
+                }
+                if (eagle_mode_enabled && m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) { // update hidden states for main model in validation mode
+                    // retrieve eagle metadata
+                    const auto& eagle_metadata = candidate_sequence.eagle_metadata;
+                    running_sequence->set_eagle_metadata(eagle_metadata);
                 }
             }
             // we should update a logit processor just for draft model to generate the same tokens
@@ -399,6 +427,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             } else if (request->get_num_processed_tokens() == request->get_prompt_len()) {
                 request->pause_generation(true);
             } else if (is_stop_token_id_hit_in_sequence_group(request, sampling_params.stop_token_ids)) {
+                request->pause_generation(true);
+            } else if (sampling_params.eagle_tree_params.tree_depth > 0 && sampling_params.eagle_tree_params.tree_depth + 1 <= generated_tokens_cnt) {
                 request->pause_generation(true);
             }
             to_generate |= request->can_generate_tokens();

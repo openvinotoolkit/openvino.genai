@@ -129,6 +129,7 @@ class ModelRunner {
     ov::Tensor m_cached_max_context_len;
     ov::Tensor m_cached_score_aggregation_window;
     ov::Tensor m_cached_token_type_ids;
+    ov::Tensor m_cached_qq_bias;
 public:
     /**
      * Constructs the ModelRunner.
@@ -267,6 +268,8 @@ public:
         if (hidden_state_input) {
             hidden_state_data = hidden_state_input.data<float>();
         }
+        // handle 1 sequence for now
+        ov::Tensor tree_mask_tensor = _get_or_resize_tensor(m_cached_qq_bias, "qq_bias", {num_sequence_groups, total_num_tokens, total_num_tokens}, ov::element::u8); // reuse qq_bias input for tree mask input
 
         ov::Tensor generated_ids_embeds;
         float *generated_ids_embeds_data = nullptr;
@@ -277,7 +280,7 @@ public:
         float *inputs_embeds_data = nullptr;
         int64_t *input_ids_data = nullptr;
         int64_t *token_type_ids_data = nullptr;
-
+        uint8_t *tree_mask_data = nullptr;
         ov::Tensor position_ids;
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             inputs_embeds_data = inputs_embeds.data<float>();
@@ -355,6 +358,31 @@ public:
 
                     SequenceKey key{sequence_group->get_request_id(), sequence->get_grouped_id()};
                     m_sequence_hidden_state_mapping[key] = HiddenStateRange{start_token_idx, sequence_length};
+                    if (!_is_hs_import() && !_is_hs_internal()) {
+                        OPENVINO_ASSERT(num_running_sequences == 1,
+                                    "Eagle3 target model does not support beam search generation config.");
+                        // get tree mask info from sequence eagle metadata
+                        auto& eagle_metadata = sequence->get_eagle_metadata();
+                        auto tree_mask = eagle_metadata.tree_mask;
+                        tree_mask_data = tree_mask_tensor.data<uint8_t>();
+                        // copy num_scheduled_tokens * num_scheduled_tokens tree mask into tree_mask_data
+                        // handle 3D later -- bell TBD
+                        // tree_mask is type of std::vector<std::vector<int8_t>>
+                        if (tree_mask.size() > 0) {
+                            auto num_speculated_tokens = tree_mask.size();
+                            OPENVINO_ASSERT(num_speculated_tokens == tree_mask[0].size(),
+                                            "Eagle3 tree mask is expected to be a square matrix.");
+                            auto offset = seq_idx * num_speculated_tokens * num_speculated_tokens; // tree mask is same shape for all sequence groups
+                            for (size_t row = 0; row < num_speculated_tokens; ++row) {
+                                for (size_t col = 0; col < num_speculated_tokens; ++col) {
+                                    tree_mask_data[offset + row * num_speculated_tokens + col] = tree_mask[row][col];
+                                }
+                            }
+                        } else {
+                            // fill with ones
+                            std::memset(tree_mask_data, 1, num_scheduled_tokens * num_scheduled_tokens * sizeof(uint8_t));
+                        }
+                    }
                 }
                 if (_is_hs_import()) {
                     auto it = m_initial_hidden_states.find(sequence_group->get_request_id());
@@ -396,10 +424,18 @@ public:
                 for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++gathering_current_index) {
                     // compute token for current sequence
                     if (sequence_group_type == SequenceGroupType::TOKENS) {
+                        auto tree_pos_ids = sequence->get_eagle_metadata().tree_position_ids;
+                        // suppose tree_pos_ids [0, 1, 1, 2, 2, 2, 2,...] means the first token is at position 0 in the tree,
+                        // the second and third tokens are at position 1, and the rest tokens are at position 2, etc.
+                        if (!tree_pos_ids.empty()) {
+                            size_t tree_pos_id = tree_pos_ids[position_ids_idx];
+                            position_ids_data[position_ids_idx] = group_position_id + static_cast<int64_t>(tree_pos_id);
+                        } else {
+                            position_ids_data[position_ids_idx] = position_id;
+                        }
                         input_ids_data[token_id] = position_id < prompt_len ?
                             sequence_group->get_prompt_ids()[position_id] :
                             sequence->get_generated_ids()[position_id - prompt_len];
-                        position_ids_data[position_ids_idx] = position_id;
                     } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
                         const auto& generated_embeds = sequence->get_generated_ids_embeds();
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
@@ -487,6 +523,9 @@ public:
 
         if (sequence_group_type == SequenceGroupType::TOKENS && !m_cached_input_ids) {
             m_request.set_tensor("input_ids", input_ids);
+        }
+        if (tree_mask_data) {
+            m_request.set_tensor("qq_bias", tree_mask_tensor);
         }
         else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             if (!m_cached_inputs_embeds) {

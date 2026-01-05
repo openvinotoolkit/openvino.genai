@@ -666,6 +666,15 @@ public:
     float assistant_confidence_threshold = 0.f;
     size_t num_assistant_tokens = 0;
     size_t max_ngram_size = 0;
+    struct eagle_params {
+        // eagle/model/cnets.py
+        // total_tokens = self.total_tokens
+        // depth = self.depth
+        // top_k = self.top_k
+        size_t branching_factor = 1; // top-k
+        size_t tree_depth = 0; // How deep to look ahead, eagle tree depth, draft will run depth + 1(tree init) levels
+        size_t total_tokens = 1; // Total number of tokens to generate in eagle tree
+    } eagle_tree_params;
 
     // Structured output parameters
     std::optional<StructuredOutputConfig> structured_output_config;
@@ -684,6 +693,7 @@ public:
 
     bool is_greedy_decoding() const;
     bool is_beam_search() const;
+    bool is_tree_search() const;
     bool is_multinomial() const;
     bool is_assisting_generation() const;
     bool is_prompt_lookup() const;

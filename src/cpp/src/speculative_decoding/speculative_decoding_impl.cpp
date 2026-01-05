@@ -36,15 +36,21 @@ ContinuousBatchingPipeline::SpeculativeDecodingImpl::init_speculative_models(con
     auto main_scheduler_config = main_model_desc.scheduler_config;
     bool allow_score_aggregation = true;
     bool allow_xattention = false;
-
+    bool allow_cache_rotation = false;
+    bool main_allow_qq_bias = true;
+    bool draft_allow_qq_bias = false;
     ov::pass::SDPAToPagedAttention(main_model_desc.scheduler_config.use_cache_eviction,
                                    main_model_desc.scheduler_config.use_cache_eviction,
                                    allow_score_aggregation,
-                                   allow_xattention).run_on_model(main_model);
+                                   allow_cache_rotation,
+                                   allow_xattention,
+                                   main_allow_qq_bias).run_on_model(main_model);
     ov::pass::SDPAToPagedAttention(main_model_desc.scheduler_config.use_cache_eviction,
                                    main_model_desc.scheduler_config.use_cache_eviction,
                                    allow_score_aggregation,
-                                   allow_xattention).run_on_model(draft_model);
+                                   allow_cache_rotation,
+                                   allow_xattention,
+                                   draft_allow_qq_bias).run_on_model(draft_model);
 
     utils::apply_gather_before_matmul_transformation(main_model);
     utils::apply_gather_before_matmul_transformation(draft_model);
