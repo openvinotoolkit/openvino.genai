@@ -188,8 +188,12 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
     if "optimum-intel-internal-testing/tiny-random-phi3-vision" == model_id:
         pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
-    if "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6" == model_id and is_transformers_version(">", "4.51.3"):
-        pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3")
+    if "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6" == model_id and is_transformers_version(
+       ">", "4.51.3"
+    ):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3"
+        )
 
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
@@ -392,9 +396,11 @@ def synthetic_video(pytestconfig):
 def synthetic_video_32x32(synthetic_video):
     return resize_video(synthetic_video, (32, 32))
 
+
 @pytest.fixture(scope="module")
 def cat_image_448x448(cat_image):
     return cat_image.resize((448, 448))
+
 
 @pytest.fixture(scope="module")
 def cat_image_384x384(cat_image):
@@ -1612,7 +1618,9 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
         # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
         if model.config.model_type == "gemma3":
             processor.tokenizer.add_bos_token = False
-        inputs = model.preprocess_inputs(text=prompt, image=resized_image, video=resized_video, processor=processor, config=model.config)
+        inputs = model.preprocess_inputs(
+            text=prompt, image=resized_image, video=resized_video, processor=processor, config=model.config
+        )
 
     max_new_tokens = 100
 
