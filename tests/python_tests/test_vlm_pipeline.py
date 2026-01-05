@@ -83,20 +83,20 @@ PROMPTS: list[str] = [
 
 
 VIDEO_MODEL_IDS = [
-    "katuni4ka/tiny-random-llava-next-video",
-    "katuni4ka/tiny-random-qwen2vl",
-    "katuni4ka/tiny-random-qwen2.5-vl"
+    "optimum-intel-internal-testing/tiny-random-llava-next-video",
+    "optimum-intel-internal-testing/tiny-random-qwen2vl",
+    "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
 ]
 
 
 MODEL_IDS: list[str] = [
-    "katuni4ka/tiny-random-minicpmv-2_6",
-    "katuni4ka/tiny-random-phi3-vision",
-    "katuni4ka/tiny-random-phi-4-multimodal",
-    "katuni4ka/tiny-random-llava",
-    "katuni4ka/tiny-random-llava-next",
-    "katuni4ka/tiny-random-internvl2",
-    "katuni4ka/tiny-random-gemma3",
+    "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
+    "optimum-intel-internal-testing/tiny-random-phi3-vision",
+    "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
+    "optimum-intel-internal-testing/tiny-random-llava",
+    "optimum-intel-internal-testing/tiny-random-llava-next",
+    "optimum-intel-internal-testing/tiny-random-internvl2",
+    "optimum-intel-internal-testing/tiny-random-gemma3",
     "qnguyen3/nanoLLaVA",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
     *VIDEO_MODEL_IDS,
@@ -110,30 +110,30 @@ ADD_REQUEST_MODEL_IDS = [
 
 
 TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
-    "katuni4ka/tiny-random-llava": lambda idx: "<image>",
-    "katuni4ka/tiny-random-llava-next": lambda idx: "<image>",
-    "katuni4ka/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
-    "katuni4ka/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
-    "katuni4ka/tiny-random-gemma3": lambda idx: "<start_of_image>",
-    "katuni4ka/tiny-random-internvl2": lambda idx: "<image>\n",
-    "katuni4ka/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
+    "optimum-intel-internal-testing/tiny-random-llava": lambda idx: "<image>",
+    "optimum-intel-internal-testing/tiny-random-llava-next": lambda idx: "<image>",
+    "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
+    "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
+    "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
+    "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
+    "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
-    "katuni4ka/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
-    "katuni4ka/tiny-random-llava-next-video": lambda idx: "<image>\n",
+    "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
+    "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
 }
 
 
 RESOLUTION_BY_MODEL: dict[str, int | None] = {
-    "katuni4ka/tiny-random-gemma3": 32,
+    "optimum-intel-internal-testing/tiny-random-gemma3": 32,
     "qnguyen3/nanoLLaVA": 384,
-    "katuni4ka/tiny-random-llava-next-video": 336,
+    "optimum-intel-internal-testing/tiny-random-llava-next-video": 336,
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": 448,
 }
 
 
 RESOLUTION_BY_VIDEO_MODEL: dict[str, int | None] = {
-    "katuni4ka/tiny-random-llava-next-video": 32,
+    "optimum-intel-internal-testing/tiny-random-llava-next-video": 32,
 }
 
 
@@ -158,8 +158,8 @@ TEST_IMAGE_URLS = {
 
 
 NPU_UNSUPPORTED_MODELS = {
-    "katuni4ka/tiny-random-internvl2",
-    "katuni4ka/tiny-random-gemma3",
+    "optimum-intel-internal-testing/tiny-random-internvl2",
+    "optimum-intel-internal-testing/tiny-random-gemma3",
 }
 
 
@@ -184,9 +184,9 @@ def _setup_generation_config(
 
 
 def _get_ov_model(model_id: str) -> str:
-    if model_id in {"katuni4ka/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
+    if model_id in {"optimum-intel-internal-testing/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
         pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
-    if "katuni4ka/tiny-random-phi3-vision" == model_id:
+    if "optimum-intel-internal-testing/tiny-random-phi3-vision" == model_id:
         pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
     if "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6" == model_id and is_transformers_version(">", "4.51.3"):
         pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3")
@@ -217,10 +217,10 @@ def _get_ov_model(model_id: str) -> str:
                 export=True,
                 load_in_8bit=False,
                 trust_remote_code=model_id in {
-                    "katuni4ka/tiny-random-minicpmv-2_6",
-                    "katuni4ka/tiny-random-internvl2",
-                    "katuni4ka/tiny-random-phi3-vision",
-                    "katuni4ka/tiny-random-phi-4-multimodal",
+                    "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
+                    "optimum-intel-internal-testing/tiny-random-internvl2",
+                    "optimum-intel-internal-testing/tiny-random-phi3-vision",
+                    "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
                     "qnguyen3/nanoLLaVA",
                     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
                 },
@@ -836,7 +836,7 @@ def test_perf_metrics(
     max_new_tokens = DEFAULT_MAX_NEW_TOKENS
 
     # Using non-cached model to get more accurate load time
-    model_path = _get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
+    model_path = _get_ov_model("optimum-intel-internal-testing/tiny-random-minicpmv-2_6")
     start_time = perf_counter_ns()
     pipe = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
     start_generate = perf_counter_ns()
@@ -1168,24 +1168,24 @@ def conversation_requests(
 
 
 TAG_INSERTED_BY_TEMPLATE = [
-    ("katuni4ka/tiny-random-llava", "PA"),
-    ("katuni4ka/tiny-random-llava-next", "PA"),
-    ("katuni4ka/tiny-random-qwen2vl", "PA"),
-    ("katuni4ka/tiny-random-qwen2.5-vl", "PA"),
-    ("katuni4ka/tiny-random-gemma3", "SDPA"),
+    ("optimum-intel-internal-testing/tiny-random-llava", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-llava-next", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
     ("qnguyen3/nanoLLaVA", "PA"),
-    ("katuni4ka/tiny-random-llava-next-video", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
 ]
 
 
 IMAGE_ID_IGNORANT_MODELS_TO_TAG = TAG_INSERTED_BY_TEMPLATE + [
-    ("katuni4ka/tiny-random-internvl2", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-internvl2", "PA"),
 ]
 
 
 MODELS_TO_TAG = IMAGE_ID_IGNORANT_MODELS_TO_TAG + [
-    ("katuni4ka/tiny-random-minicpmv-2_6", "PA"),
-    ("katuni4ka/tiny-random-phi3-vision", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-minicpmv-2_6", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-phi3-vision", "PA"),
 ]
 
 
@@ -1407,34 +1407,123 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
 @pytest.mark.parametrize(
     "ov_pipe_model,has_image,has_video",
     [
-        pytest.param(("katuni4ka/tiny-random-qwen2vl","SDPA"), True, False, id="qwen2vl/SDPA/image"),
-        pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA"), True, False, id="qwen2vl/PA/image"),
-        pytest.param(("katuni4ka/tiny-random-qwen2vl","SDPA"), False, True, id="qwen2vl/SDPA/video"),
-        pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA"), False, True, id="qwen2vl/PA/video"),
-        pytest.param(("katuni4ka/tiny-random-qwen2vl", "SDPA"), True, True, id="qwen2vl/PA/image+video"),
-        pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA"), True, True, id="qwen2vl/PA/image+video"),
-        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "SDPA"), True, False, id="qwen2.5-vl/SDPA/image"),
-        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "PA"), True, False, id="qwen2.5-vl/PA/image", marks=pytest.mark.xfail(reason="CVS-167316")),
-        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "SDPA"), False, True, id="qwen2.5-vl/SDPA/video"),
-        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "PA"), False, True, id="qwen2.5-vl/PA/video", marks=pytest.mark.xfail(reason="CVS-167316")),
-        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "SDPA"), True, True, id="qwen2.5-vl/SDPA/image+video"),
-        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "PA"), True, True, id="qwen2.5-vl/PA/image+video", marks=pytest.mark.xfail(reason="CVS-167316")),
-        (
-            pytest.param(("katuni4ka/tiny-random-gemma3", "SDPA"), True, False, id="gemma3/SDPA/image", marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) 
-            if sys.platform == "darwin" 
-            else pytest.param(("katuni4ka/tiny-random-gemma3",  "SDPA"), True, False, id="gemma3/SDPA/image")
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), True, False, id="qwen2vl/SDPA/image"
         ),
-        pytest.param(("katuni4ka/tiny-random-gemma3", "PA"), True, False, id="gemma3/PA/image", marks=pytest.mark.xfail(reason="CVS-171180")),
+        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), True, False, id="qwen2vl/PA/image"),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), False, True, id="qwen2vl/SDPA/video"
+        ),
+        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), False, True, id="qwen2vl/PA/video"),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), True, True, id="qwen2vl/PA/image+video"
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), True, True, id="qwen2vl/PA/image+video"
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"), True, False, id="qwen2.5-vl/SDPA/image"
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+            True,
+            False,
+            id="qwen2.5-vl/PA/image",
+            marks=pytest.mark.xfail(reason="CVS-167316"),
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"), False, True, id="qwen2.5-vl/SDPA/video"
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+            False,
+            True,
+            id="qwen2.5-vl/PA/video",
+            marks=pytest.mark.xfail(reason="CVS-167316"),
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"),
+            True,
+            True,
+            id="qwen2.5-vl/SDPA/image+video",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+            True,
+            True,
+            id="qwen2.5-vl/PA/image+video",
+            marks=pytest.mark.xfail(reason="CVS-167316"),
+        ),
+        (
+            pytest.param(
+                ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
+                True,
+                False,
+                id="gemma3/SDPA/image",
+                marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON),
+            )
+            if sys.platform == "darwin"
+            else pytest.param(
+                ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"), True, False, id="gemma3/SDPA/image"
+            )
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-gemma3", "PA"),
+            True,
+            False,
+            id="gemma3/PA/image",
+            marks=pytest.mark.xfail(reason="CVS-171180"),
+        ),
         pytest.param(("qnguyen3/nanoLLaVA", "SDPA"), True, False, id="nanoLLaVA/SDPA/image"),
         pytest.param(("qnguyen3/nanoLLaVA", "PA"), True, False, id="nanoLLaVA/PA/image"),
-        pytest.param(("katuni4ka/tiny-random-llava-next-video", "SDPA"), True, False, id="llava-next-video/SDPA/image"),
-        pytest.param(("katuni4ka/tiny-random-llava-next-video", "PA"), True, False, id="llava-next-video/PA/image"),
-        pytest.param(("katuni4ka/tiny-random-llava-next-video", "SDPA"), False, True, id="llava-next-video/SDPA/video"),
-        pytest.param(("katuni4ka/tiny-random-llava-next-video", "PA"), False, True, id="llava-next-video/PA/video"),
-        pytest.param(("katuni4ka/tiny-random-llava-next-video", "SDPA"), True, True, id="llava-next-video/SDPA/image+video"),
-        pytest.param(("katuni4ka/tiny-random-llava-next-video", "PA"), True, True, id="llava-next-video/PA/image+video"),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6", "SDPA"), True, False, id="MiniCPM-o-2_6/SDPA/image"),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6", "PA"), True, False, id="MiniCPM-o-2_6/PA/image")
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"),
+            True,
+            False,
+            id="llava-next-video/SDPA/image",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
+            True,
+            False,
+            id="llava-next-video/PA/image",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"),
+            False,
+            True,
+            id="llava-next-video/SDPA/video",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
+            False,
+            True,
+            id="llava-next-video/PA/video",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"),
+            True,
+            True,
+            id="llava-next-video/SDPA/image+video",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
+            True,
+            True,
+            id="llava-next-video/PA/image+video",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6", "SDPA"),
+            True,
+            False,
+            id="MiniCPM-o-2_6/SDPA/image",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6", "PA"),
+            True,
+            False,
+            id="MiniCPM-o-2_6/PA/image",
+        ),
     ],
     indirect=["ov_pipe_model"],
 )
@@ -1485,7 +1574,15 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
     # For QWen-VL series models, in GenAI VLM implementation, video is placed before image in chat template, 
     # but in Optimum, this order depends only on the image and video order in the "conversation".
     # So just reverse here in order to keep align.
-    if has_image and has_video and model_id in ["katuni4ka/tiny-random-qwen2.5-vl", "katuni4ka/tiny-random-qwen2vl"]:
+    if (
+        has_image
+        and has_video
+        and model_id
+        in [
+            "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
+            "optimum-intel-internal-testing/tiny-random-qwen2vl",
+        ]
+    ):
         media_content.reverse()
     conversation[0]["content"] = media_content + conversation[0]["content"]
     
