@@ -332,10 +332,23 @@ class MemMonitorWrapper():
         for mm in self.memory_monitors.values():
             mm.stop()
 
-    def get_data(self):
-        return (self.memory_data['full_mem'].get(MemoryType.RSS, -1), self.memory_data['from_zero'].get(MemoryType.RSS, -1),
-                self.memory_data['full_mem'].get(MemoryType.SYSTEM, -1), self.memory_data['from_zero'].get(MemoryType.SYSTEM, -1))
-
+    def get_data(self, dict_format=False):
+        if dict_format:
+            bytes_total = cast_bytes_to(psutil.virtual_memory().total, memory_unit=self.memory_unit)
+            return {
+                "max_rss_mem": self.memory_data["full_mem"].get(MemoryType.RSS, -1),
+                "max_rss_mem_increase": self.memory_data["from_zero"].get(MemoryType.RSS, -1),
+                "max_rss_mem_share": 100.0 * float(self.memory_data["full_mem"].get(MemoryType.RSS, -1)) / bytes_total,                
+                "max_sys_mem": self.memory_data["full_mem"].get(MemoryType.SYSTEM, -1),
+                "max_sys_mem_increase": self.memory_data["from_zero"].get(MemoryType.SYSTEM, -1),
+                "max_sys_mem_share": 100.0 * float(self.memory_data["full_mem"].get(MemoryType.SYSTEM, -1)) / bytes_total,
+            }
+        return (
+            self.memory_data["full_mem"].get(MemoryType.RSS, -1),
+            self.memory_data["from_zero"].get(MemoryType.RSS, -1),
+            self.memory_data["full_mem"].get(MemoryType.SYSTEM, -1),
+            self.memory_data["from_zero"].get(MemoryType.SYSTEM, -1),
+        )
 
 class MemStatus():
     def __init__(self, rss=None, sys=None):
@@ -347,12 +360,18 @@ class MemoryDataSummarizer():
     MEMORY_NOT_COLLECTED = ''
     DEF_MEM_UNIT = MemoryUnit.MiB
 
-    def __init__(self, memory_monitor: MemMonitorWrapper):
+    def __init__(self, args):
+        memory_monitor = MemMonitorWrapper()
+        if args.memory_consumption_delay:
+            memory_monitor.interval = args.memory_consumption_delay
+        memory_monitor.create_monitors()
+        if args.memory_consumption_dir:
+            memory_monitor.set_dir(args.memory_consumption_dir)
         self.memory_monitor = memory_monitor
+
         self.iteration_mem_data = []
         self.compilation_mem_info = {'max_mem': MemStatus(self.MEMORY_NOT_COLLECTED, self.MEMORY_NOT_COLLECTED),
                                      'increase_mem': MemStatus(self.MEMORY_NOT_COLLECTED, self.MEMORY_NOT_COLLECTED)}
-
         self.initial_mem_status = self.log_curent_memory_data(prefix="Start")
 
     def start(self):
@@ -361,8 +380,11 @@ class MemoryDataSummarizer():
     def stop_and_collect_data(self, dir_name='mem_monitor_log'):
         self.memory_monitor.stop_and_collect_data(dir_name)
 
-    def get_data(self):
-        return self.memory_monitor.get_data()
+    def stop(self):
+        self.memory_monitor.stop()
+
+    def get_data(self, dict_format=False):
+        return self.memory_monitor.get_data(dict_format)
 
     def log_data(self, compilation_phase: bool = False):
         max_rss_mem, rss_increase, max_sys_mem, sys_increase = self.memory_monitor.get_data()
@@ -394,26 +416,38 @@ class MemoryDataSummarizer():
         if print_unit and print_unit != self.memory_monitor.memory_unit:
             sys = convert_mem_unit(sys, self.memory_monitor.memory_unit, print_unit)
             rss = convert_mem_unit(rss, self.memory_monitor.memory_unit, print_unit)
-
-        return {f'initial_sys_mem{suffix}': round(sys, 5),
-                f'initial_rss_mem{suffix}': round(rss, 5)}
+        return {
+            f"initial_sys_mem{suffix}": round(sys, 5),
+            f"initial_rss_mem{suffix}": round(rss, 5),
+        }
 
     def get_compilation_mem_data(self, print_unit: MemoryUnit | None = None):
+        bytes_total = cast_bytes_to(psutil.virtual_memory().total, memory_unit=self.memory_monitor.memory_unit)
+
         suffix = f'({print_unit.value})' if print_unit else ''
         sys_max = self.compilation_mem_info['max_mem'].sys
         rss_max = self.compilation_mem_info['max_mem'].rss
         sys_increase = self.compilation_mem_info['increase_mem'].sys
         rss_increase = self.compilation_mem_info['increase_mem'].rss
+        sys_share = 100.0 * float(self.compilation_mem_info['max_mem'].sys) / bytes_total
+        rss_share = 100.0 * float(self.compilation_mem_info['max_mem'].rss) / bytes_total
+ 
         if print_unit and print_unit != self.memory_monitor.memory_unit:
             sys_max = convert_mem_unit(sys_max, self.memory_monitor.memory_unit, print_unit)
             rss_max = convert_mem_unit(rss_max, self.memory_monitor.memory_unit, print_unit)
             sys_increase = convert_mem_unit(sys_increase, self.memory_monitor.memory_unit, print_unit)
             rss_increase = convert_mem_unit(rss_increase, self.memory_monitor.memory_unit, print_unit)
+            sys_share = convert_mem_unit(sys_share, self.memory_monitor.memory_unit, print_unit)
+            rss_share = convert_mem_unit(rss_share, self.memory_monitor.memory_unit, print_unit)
 
-        return {f'compile_max_rss_mem{suffix}': round(rss_max, 5),
-                f'compile_max_sys_mem{suffix}': round(sys_max, 5),
-                f'compile_max_increase_rss_mem{suffix}': round(rss_increase, 5),
-                f'compile_max_increase_sys_mem{suffix}': round(sys_increase, 5)}
+        return {
+            f"compile_max_rss_mem{suffix}": round(rss_max, 5),
+            f"compile_max_sys_mem{suffix}": round(sys_max, 5),
+            f"compile_max_increase_rss_mem{suffix}": round(rss_increase, 5),
+            f"compile_max_increase_sys_mem{suffix}": round(sys_increase, 5),
+            f"compile_max_share_rss_mem{suffix}": round(rss_share, 3),
+            f"compile_max_share_sys_mem{suffix}": round(sys_share, 3),
+        }
 
 
 def cast_bytes_to(bytes, memory_unit, round_to_int=False):

@@ -63,10 +63,6 @@ def run_visual_language_generation_optimum(
             out_str += 'all max_output_token_size: {} * {}'.format(args['infer_count'], args['batch_size'])
         log.info(out_str)
 
-    max_rss_mem_consumption = ''
-    max_sys_mem_consumption = ''
-    max_rss_mem_increase = ''
-    max_sys_mem_increase = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start()
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
@@ -98,7 +94,9 @@ def run_visual_language_generation_optimum(
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
-        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
+        memory_metrics = mem_consumption.get_data(dict_format=True)
+    else:
+        memory_metrics = {}
 
     generation_time = end - start
     tok_decode_start = time.perf_counter()
@@ -147,13 +145,10 @@ def run_visual_language_generation_optimum(
         gen_time=generation_time,
         latency=per_token_time,
         res_md5=result_md5_list,
-        max_rss_mem=max_rss_mem_consumption,
-        max_rss_mem_increase=max_rss_mem_increase,
-        max_sys_mem=max_sys_mem_consumption,
-        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=prompt_index,
         tokenization_time=(tok_encode_time, tok_decode_time),
-        mm_embeddings_preparation_time=tm_mm_embeddings
+        mm_embeddings_preparation_time=tm_mm_embeddings,
+        **memory_metrics,
     )
     iter_data_list.append(iter_data)
     metrics_print.print_metrics(
@@ -195,10 +190,6 @@ def run_visual_language_generation_genai(
                 in_text, args, model_precision,
                 prompt_index, bs_index, proc_id)
 
-    max_rss_mem_consumption = ''
-    max_sys_mem_consumption = ''
-    max_rss_mem_increase = ''
-    max_sys_mem_increase = ''
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start()
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
@@ -228,7 +219,9 @@ def run_visual_language_generation_genai(
     perf_metrics = generation_result.perf_metrics
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
-        max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
+        memory_metrics = mem_consumption.get_data(dict_format=True)
+    else:
+        memory_metrics = {}
 
     generation_time = end - start
     result_md5_list = []
@@ -269,13 +262,10 @@ def run_visual_language_generation_genai(
         gen_time=generation_time,
         latency=per_token_time,
         res_md5=result_md5_list,
-        max_rss_mem=max_rss_mem_consumption,
-        max_rss_mem_increase=max_rss_mem_increase,
-        max_sys_mem=max_sys_mem_consumption,
-        max_sys_mem_increase=max_sys_mem_increase,
         prompt_idx=prompt_index,
         tokenization_time=tokenization_time,
-        mm_embeddings_preparation_time=perf_metrics.get_prepare_embeddings_duration().mean
+        mm_embeddings_preparation_time=perf_metrics.get_prepare_embeddings_duration().mean,
+        **memory_metrics,
     )
     iter_data_list.append(iter_data)
     inference_durations = np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000
