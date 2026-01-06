@@ -167,7 +167,7 @@ MODELS: Dict[str, Dict[str, Any]] = {
     },
     "tiny-random-ltx-video": {
         "name": "optimum-intel-internal-testing/tiny-random-ltx-video",
-        "convert_args": ["--trust-remote-code"]
+        "convert_args": ["--trust-remote-code"],
     },
 }
 
@@ -431,6 +431,7 @@ def generate_test_content(request):
         if os.path.exists(file_path):
             logger.info(f"Removing test content: {file_path}")
             os.remove(file_path)
+
 
 @pytest.fixture(scope="session")
 def generate_llm_bench_input_generation_jsonl(request):

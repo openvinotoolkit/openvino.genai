@@ -39,7 +39,7 @@ def get_param_from_file(args, input_key):
                 elif args['use_case'].task == 'image_gen':
                     data_list.append('sailing ship in storm by Leonardo da Vinci')
                 elif args['use_case'].task == 'video_gen':
-                    data_dict["prompt"] = 'cat plays with ball on the christmas tree'
+                    data_list["prompt"] = 'cat plays with ball on the christmas tree'
                 else:
                     raise RuntimeError(f'== {input_key} and prompt file is empty ==')
             elif args[input_key] is not None and args['prompt_file'] is not None:

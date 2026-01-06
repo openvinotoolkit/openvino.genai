@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 # Copyright (C) 2023-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
-import copy
-# import hashlib
 import logging as log
 
 from typing import Any
@@ -20,7 +18,7 @@ from llm_bench_utils.hook_forward import StableDiffusionHook
 from llm_bench_utils.prompt_utils import get_video_gen_prompt
 from task.pipeline_utils import CommonPipeline, execution_time_in_sec, collect_prompts_step, iteration_step
 
-FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
+FW_UTILS = {"pt": llm_bench_utils.pt_utils, "ov": llm_bench_utils.ov_utils}
 
 DEFAULT_NUM_FRAMES = 25
 DEFAULT_INFERENCE_STEPS = 25
@@ -29,28 +27,43 @@ DEFAULT_IMAGE_HEIGHT = 512
 DEFAULT_FRAME_RATE = 25
 
 
-def collect_input_args(input_param: dict, width: int = None, height: int = None, num_steps: int = None, num_frames: int = None, frame_rate: int = None):
+def collect_input_args(
+    input_param: dict,
+    width: int = None,
+    height: int = None,
+    num_steps: int = None,
+    num_frames: int = None,
+    frame_rate: int = None,
+):
     input_args = {}
+    input_args["width"] = input_param.get("width", width or DEFAULT_IMAGE_WIDTH)
+    input_args["height"] = input_param.get("height", height or DEFAULT_IMAGE_HEIGHT)
+    input_args["num_inference_steps"] = input_param.get("num_steps", num_steps or DEFAULT_INFERENCE_STEPS)
+    input_args["num_frames"] = input_param.get("num_frames", num_frames or DEFAULT_NUM_FRAMES)
+    input_args["frame_rate"] = input_param.get("frame_rate", frame_rate or DEFAULT_FRAME_RATE)
 
-    input_args["width"] = input_param.get('width', width or DEFAULT_IMAGE_WIDTH)
-    input_args["height"] = input_param.get('height', height or DEFAULT_IMAGE_HEIGHT)
-    input_args["num_inference_steps"] = input_param.get('num_steps', num_steps or DEFAULT_INFERENCE_STEPS)
-    input_args["num_frames"] = input_param.get('num_frames', num_frames or DEFAULT_NUM_FRAMES)
-    input_args["frame_rate"] = input_param.get('frame_rate', frame_rate or DEFAULT_FRAME_RATE)
-
-    guidance_scale = input_param.get('guidance_scale')
+    guidance_scale = input_param.get("guidance_scale")
     if guidance_scale is not None:
         input_args["guidance_scale"] = guidance_scale
-    guidance_rescale = input_param.get('guidance_scale')
+    guidance_rescale = input_param.get("guidance_scale")
     if guidance_rescale is not None:
         input_args["guidance_rescale"] = guidance_rescale
+    if "negative_prompt" in input_param:
+        input_args["negative_prompt"] = input_param["negative_prompt"]
 
     return input_args
 
 
 class TextToVideoOptimum(CommonPipeline):
-    def __init__(self, model: object, tokenizer: object | None, args: dict, model_path: Path,
-                 mem_consumption_meter: MemMonitorWrapper, time_collection_hook: StableDiffusionHook):
+    def __init__(
+        self,
+        model: object,
+        tokenizer: object | None,
+        args: dict,
+        model_path: Path,
+        mem_consumption_meter: MemMonitorWrapper,
+        time_collection_hook: StableDiffusionHook,
+    ):
         super().__init__(model, tokenizer, args, model_path, mem_consumption_meter)
         self.genai = False
 
@@ -69,12 +82,14 @@ class TextToVideoOptimum(CommonPipeline):
 
     def print_batch_size_info(self, iter_num: int, input_args: dict):
         out_str = "[warm-up]" if iter_num == 0 else "[{}]".format(iter_num)
-        out_str = f"Input params: Batch_size={self.batch_size}, " \
-                  f"steps={self.num_steps}, width={input_args['width']}, " \
-                  f"height={input_args['height']}, frame number={input_args['num_frames']}"
-        if input_args.get('guidance_scale'):
+        out_str = (
+            f"Input params: Batch_size={self.batch_size}, "
+            f"steps={self.num_steps}, width={input_args['width']}, "
+            f"height={input_args['height']}, frame number={input_args['num_frames']}"
+        )
+        if input_args.get("guidance_scale"):
             out_str += f", guidance_scale={input_args['guidance_scale']}"
-        if input_args.get('guidance_rescale'):
+        if input_args.get("guidance_rescale"):
             out_str += f", guidance_rescale={input_args['guidance_rescale']}"
         log.info(out_str)
 
@@ -131,7 +146,8 @@ class TextToVideoOptimum(CommonPipeline):
 
         input_args = collect_input_args(input_param, self.width, self.height, self.num_steps, self.num_frames, self.frame_rate)
         input_text_list = input_param["prompt"] * self.batch_size
-        tokenized_input, tokenization_time = self.tokenize(input_text_list)
+        kwargs = {"negative_prompt": input_param["negative_prompt"] * self.batch_size} if input_param.get("negative_prompt") else {}
+        tokenized_input, tokenization_time = self.tokenize(input_text_list, **kwargs)
         input_tokens = tokenized_input["input_ids"] if "input_ids" in tokenized_input else tokenized_input
         input_token_size = input_tokens[0].numel()
         org_num_steps = self.num_steps
@@ -196,5 +212,5 @@ def run_video_generation_benchmark(model_path, framework, device, args, num_iter
 
     iter_data_list, iter_timestamp = iteration_step(image_gen_pipeline, num_iters, text_list, prompt_idx_list, bench_hook=None, subsequent=args['subsequent'])
 
-    metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], False)
+    metrics_print.print_average(iter_data_list, prompt_idx_list, args["batch_size"], False)
     return iter_data_list, pretrain_time, iter_timestamp
