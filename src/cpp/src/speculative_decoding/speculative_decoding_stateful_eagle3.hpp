@@ -153,7 +153,8 @@ protected:
     static constexpr size_t BATCH_SIZE = 1;
 
     uint64_t execute_inference();
-    void update_performance_metrics(uint64_t inference_time_us, size_t tokens_count);
+    void update_inference_time(uint64_t inference_time_us);
+    void record_generated_tokens(size_t actual_generated_count);
 
     std::string m_device;
     ov::AnyMap m_properties;
