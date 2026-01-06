@@ -275,6 +275,8 @@ std::vector<int64_t> Eagle3InferWrapperBase::sample_tokens(const ov::Tensor& log
 
         std::vector<int64_t> result_tokens(generated_ids.end() - sample_count, generated_ids.end());
 
+        record_generated_tokens(sample_count);
+
         eagle3::log_debug(
             eagle3::PipelineStep::SAMPLE,
             "Sampled " + std::to_string(sample_count) + " token(s): " + eagle3::format_tokens(result_tokens),
@@ -290,6 +292,8 @@ std::vector<int64_t> Eagle3InferWrapperBase::sample_tokens(const ov::Tensor& log
         //   - Therefore: result_count = new_generated_len - prev_generated_len + num_tokens_to_validate
         const size_t result_count = new_generated_len - prev_generated_len + num_tokens_to_validate;
         std::vector<int64_t> result_tokens(generated_ids.end() - result_count, generated_ids.end());
+
+        record_generated_tokens(result_tokens.size());
 
         const size_t accepted_drafts = result_tokens.size() - 1;
         eagle3::log_debug(eagle3::PipelineStep::VALID,
@@ -336,10 +340,13 @@ uint64_t Eagle3InferWrapperBase::execute_inference() {
     return duration_us;
 }
 
-void Eagle3InferWrapperBase::update_performance_metrics(uint64_t inference_time_us, size_t tokens_count) {
+void Eagle3InferWrapperBase::update_inference_time(uint64_t inference_time_us) {
     m_raw_perf_metrics.m_durations.emplace_back(static_cast<float>(inference_time_us));
     m_raw_perf_metrics.m_inference_durations[0] += MicroSeconds(static_cast<float>(inference_time_us));
-    m_raw_perf_metrics.m_batch_sizes.emplace_back(tokens_count);
+}
+
+void Eagle3InferWrapperBase::record_generated_tokens(size_t actual_generated_count) {
+    m_raw_perf_metrics.m_batch_sizes.emplace_back(actual_generated_count);
 }
 
 Eagle3TargetWrapper::Eagle3TargetWrapper(const ov::genai::ModelDesc& model_desc) : Eagle3InferWrapperBase(model_desc) {
@@ -395,7 +402,7 @@ InferenceOutput Eagle3TargetWrapper::infer(const ov::Tensor& input_ids,
 
     // Execute inference
     uint64_t time_us = execute_inference();
-    update_performance_metrics(time_us, prompt_len);
+    update_inference_time(time_us);
 
     // Collect outputs
     InferenceOutput output;
@@ -487,7 +494,7 @@ InferenceOutput Eagle3DraftWrapper::infer(const ov::Tensor& input_ids,
 
     // Execute inference
     uint64_t time_us = execute_inference();
-    update_performance_metrics(time_us, input_token_count);
+    update_inference_time(time_us);
 
     // Collect outputs
     InferenceOutput output;
@@ -878,6 +885,12 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
     m_sd_perf_metrics.num_accepted_tokens = total_draft_accepted;
     m_sd_perf_metrics.raw_metrics.generate_durations.clear();
     m_sd_perf_metrics.raw_metrics.generate_durations.emplace_back(generate_timer.get_duration_microsec());
+
+    // Reset evaluated flags before updating raw_metrics to ensure statistics are recalculated
+    m_sd_perf_metrics.m_evaluated = false;
+    m_sd_perf_metrics.main_model_metrics.m_evaluated = false;
+    m_sd_perf_metrics.draft_model_metrics.m_evaluated = false;
+
     m_sd_perf_metrics.main_model_metrics.raw_metrics = m_target->get_raw_perf_metrics();
     m_sd_perf_metrics.draft_model_metrics.raw_metrics = m_draft->get_raw_perf_metrics();
 
