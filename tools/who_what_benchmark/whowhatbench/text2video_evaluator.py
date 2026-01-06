@@ -79,7 +79,7 @@ default_data = [
     },
     {
         "prompt": "Levitating woman uses magic and fairy dusty spews forth from her fingers.  cinematic shot  photos taken by ARRI, photos taken "
-                  + "by sony, photos taken by canon, photos taken by nikon, photos taken by sony, photos taken by hasselblad  ",
+        + "by sony, photos taken by canon, photos taken by nikon, photos taken by sony, photos taken by hasselblad  ",
         "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
         "width": 480,
         "height": 704,
@@ -88,8 +88,8 @@ default_data = [
     },
     {
         "prompt": "A mythical river adventure in the Yellow River basin during ancient times, where majestic dragons soar through the turbulent waters, "
-                  + "casting a vibrant glow on the submerged landscapes, blending a sense of awe and fantasy, Sculpture, intricate clay model with luminescent "
-                  + "elements, --ar 16:9 --v 5  ",
+        + "casting a vibrant glow on the submerged landscapes, blending a sense of awe and fantasy, Sculpture, intricate clay model with luminescent "
+        + "elements, --ar 16:9 --v 5  ",
         "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
         "width": 480,
         "height": 704,
@@ -123,9 +123,9 @@ class Text2VideoEvaluator(BaseEvaluator):
         seed=42,
         is_genai=False,
     ) -> None:
-        assert (
-            base_model is not None or gt_data is not None
-        ), "Text generation pipeline for evaluation or ground trush data must be defined"
+        assert base_model is not None or gt_data is not None, (
+            "Text generation pipeline for evaluation or ground trush data must be defined"
+        )
 
         self.test_data = test_data
         self.metrics = metrics
@@ -158,9 +158,7 @@ class Text2VideoEvaluator(BaseEvaluator):
         if isinstance(model_or_data, str) and os.path.exists(model_or_data):
             predictions = pd.read_csv(model_or_data, keep_default_na=False)
         else:
-            predictions = self._generate_data(
-                model_or_data, gen_image_fn, video_folder
-            )
+            predictions = self._generate_data(model_or_data, gen_image_fn, video_folder)
         self.predictions = predictions
 
         all_metrics_per_prompt = {}

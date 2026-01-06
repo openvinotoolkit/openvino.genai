@@ -28,7 +28,7 @@ def teardown_module():
 
 @pytest.mark.parametrize(
     ("model_id"),
-    ["Lightricks/LTX-Video"],
+    [("optimum-intel-internal-testing/tiny-random-ltx-video", "text-to-video")],
 )
 def test_image_model_genai(model_id, model_type, tmp_path):
     GT_FILE = tmp_path / "gt.csv"

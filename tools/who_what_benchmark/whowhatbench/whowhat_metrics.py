@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
-from transformers import CLIPImageProcessor, CLIPModel, LlavaNextVideoProcessor, LlavaNextVideoModel
+from transformers import CLIPImageProcessor, CLIPModel
 from tqdm import tqdm
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -236,6 +236,8 @@ class RerankingSimilarity:
 
 class VideoSimilarity:
     def __init__(self) -> None:
+        from transformers import LlavaNextVideoProcessor, LlavaNextVideoModel
+
         self.processor = LlavaNextVideoProcessor.from_pretrained("llava-hf/LLaVA-NeXT-Video-7B-hf")
         self.model = LlavaNextVideoModel.from_pretrained("llava-hf/LLaVA-NeXT-Video-7B-hf").eval()
 
