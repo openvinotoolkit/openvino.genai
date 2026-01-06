@@ -39,7 +39,7 @@ def get_param_from_file(args, input_key):
                 elif args['use_case'].task == 'image_gen':
                     data_list.append('sailing ship in storm by Leonardo da Vinci')
                 elif args['use_case'].task == 'video_gen':
-                    data_dict["prompt"] = 'sailing ship in storm by Leonardo da Vinci'
+                    data_dict["prompt"] = 'cat plays with ball on the christmas tree'
                 else:
                     raise RuntimeError(f'== {input_key} and prompt file is empty ==')
             elif args[input_key] is not None and args['prompt_file'] is not None:
@@ -72,9 +72,14 @@ def get_param_from_file(args, input_key):
                 elif args['use_case'].task == 'image_gen':
                     data_dict["prompt"] = 'sailing ship in storm by Leonardo da Vinci'
                 elif args['use_case'].task == 'video_gen':
-                    data_dict["prompt"] = 'sailing ship in storm by Leonardo da Vinci'
+                    data_dict["prompt"] = 'A cat plays with ball on the christmas tree'
             else:
                 data_dict["prompt"] = args["prompt"]
+            if "negative_prompt" in input_key:
+                if args.get("negative_prompt"):
+                    data_dict['negative_prompt'] = args['negative_prompt']
+                else:
+                    data_dict['negative_prompt'] = "worst quality, inconsistent motion, blurry, jittery, distorted"
             if "mask_image" in input_key:
                 if args.get("mask_image"):
                     data_dict["mask_image"] = args["mask_image"]
@@ -131,8 +136,9 @@ def analyze_args(args):
     model_args['media'] = args.media
     model_args["disable_prompt_permutation"] = args.disable_prompt_permutation
     model_args["static_reshape"] = args.static_reshape
-    model_args["guidance_scale"] = args.guidance_scale
     model_args["num_frames"] = args.num_frames
+    model_args["frame_rate"] = args.frame_rate
+    model_args["negative_prompt"] = args.negative_prompt
     model_args['mask_image'] = args.mask_image
     model_args['task'] = args.task
     model_args['strength'] = args.strength

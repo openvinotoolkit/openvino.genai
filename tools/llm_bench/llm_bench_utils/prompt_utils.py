@@ -167,7 +167,7 @@ def get_image_prompt(args):
 
 def get_video_gen_prompt(args):
     input_list = []
-    output_data_list, is_json_data = get_param_from_file(args, ['prompt'])
+    output_data_list, is_json_data = get_param_from_file(args, ['prompt', 'negative_prompt'])
     if is_json_data is True:
         media_param_list = parse_video_json_data(output_data_list)
         if len(media_param_list) > 0:

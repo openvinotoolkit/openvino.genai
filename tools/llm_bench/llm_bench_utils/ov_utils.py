@@ -1254,10 +1254,6 @@ def create_text_reranker_model(model_path: Path, device: str, memory_monitor: Me
 
 
 def create_video_gen_model(model_path, device, memory_data_collector, **kwargs):
-    model_index_data = {}
-    with open(str(model_path / "model_index.json"), 'r') as f:
-        model_index_data = json.load(f)
-
     model_class = kwargs['use_case'].ov_cls
 
     model_path = Path(model_path)
@@ -1267,7 +1263,7 @@ def create_video_gen_model(model_path, device, memory_data_collector, **kwargs):
     else:
         if kwargs.get("genai", True) and is_genai_available(log_msg=True):
             log.info("Selected OpenVINO GenAI for benchmarking")
-            raise RuntimeError(f'==Failure ==: OpenVINO GenAI is not supported for benchmarking yet')
+            raise RuntimeError('==Failure ==: OpenVINO GenAI is not supported for benchmarking yet')
 
         if kwargs.get("mem_consumption"):
             memory_data_collector.start()

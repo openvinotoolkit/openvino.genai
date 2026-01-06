@@ -211,26 +211,26 @@ class CommonPipeline(ABC):
 
 
 def collect_prompts_step(args, get_prompt_fn):
-    input_text_list = get_prompt_fn(args)
+    input_items_list = get_prompt_fn(args)
     if args["prompt_index"] is None:
-        prompt_idx_list = [prompt_idx for prompt_idx, _ in enumerate(input_text_list)]
-        text_list = input_text_list
+        prompt_idx_list = [prompt_idx for prompt_idx, _ in enumerate(input_items_list)]
+        text_list = input_items_list
     else:
         prompt_idx_list = []
         text_list = []
         for i in args["prompt_index"]:
-            if 0 <= i < len(input_text_list):
-                text_list.append(input_text_list[i])
+            if 0 <= i < len(input_items_list):
+                text_list.append(input_items_list[i])
                 prompt_idx_list.append(i)
-    if len(input_text_list) == 0:
+    if len(input_items_list) == 0:
         raise RuntimeError("==Failure prompts is empty ==")
 
     return text_list, prompt_idx_list
 
 
-def launch(pipeline: CommonPipeline, iter_num: int, prompt_idx: int, iter_timestamp: dict, input_text: str, proc_id: int, bench_hook: object | None) -> dict:
+def launch(pipeline: CommonPipeline, iter_num: int, prompt_idx: int, iter_timestamp: dict, input_item: str|dict, proc_id: int, bench_hook: object | None) -> dict:
     iter_timestamp[iter_num][prompt_idx]["start"] = datetime.datetime.now().isoformat()
-    iter_data, _ = pipeline.run(input_text, iter_num, prompt_idx, proc_id, bench_hook)
+    iter_data, _ = pipeline.run(input_item, iter_num, prompt_idx, proc_id, bench_hook)
     iter_timestamp[iter_num][prompt_idx]["end"] = datetime.datetime.now().isoformat()
     prefix = "[warm-up]" if iter_num == 0 else "[{}]".format(iter_num)
     log.info(f"{prefix}[P{prompt_idx}] start: {iter_timestamp[iter_num][prompt_idx]['start']}, end: {iter_timestamp[iter_num][prompt_idx]['end']}")
@@ -243,14 +243,14 @@ def iteration_step(pipelilne, num_iters, text_list, prompt_idx_list, bench_hook,
     proc_id = os.getpid()
     iter_timestamp = model_utils.init_timestamp(num_iters, text_list, prompt_idx_list)
     if subsequent is False:
-        for idx, input_text in enumerate(text_list):
+        for idx, input_item in enumerate(text_list):
             p_idx = prompt_idx_list[idx]
             for num in range(num_iters + 1):
-                iter_data_list.append(launch(pipelilne, num, p_idx, iter_timestamp, input_text, proc_id, bench_hook))
+                iter_data_list.append(launch(pipelilne, num, p_idx, iter_timestamp, input_item, proc_id, bench_hook))
     else:
         for num in range(num_iters + 1):
-            for idx, input_text in enumerate(text_list):
+            for idx, input_item in enumerate(text_list):
                 p_idx = prompt_idx_list[idx]
-                iter_data_list.append(launch(pipelilne, num, p_idx, iter_timestamp, input_text, proc_id, bench_hook))
-                
+                iter_data_list.append(launch(pipelilne, num, p_idx, iter_timestamp, input_item, proc_id, bench_hook))
+
     return iter_data_list, iter_timestamp
