@@ -63,12 +63,14 @@ def parse_args():
     parser.add_argument(
         "--model-type",
         type=str,
-        choices=["text", "text-to-image", "visual-text", "visual-video-text", "image-to-image", "image-inpainting", "text-embedding", "text-reranking"],
+        choices=["text", "text-to-image", "text-to-video", "visual-text", "visual-video-text", "image-to-image",
+                 "image-inpainting", "text-embedding", "text-reranking"],
         default="text",
-        help="Indicated the model type: 'text' - for causal text generation, 'text-to-image' - for image generation, "
-        "visual-text - for Visual Language Models with image inputs, visual-video-text - for Visual Language Models with video inputs, "
-        "image-to-image - for image generation based on image and prompt "
-        "image-inpainting - for image generation based on image, mask and prompt, text-reranking - for reranking a list of texts based on relevance to query",
+        help="Indicated the model type: text - for causal text generation, visual-text - for Visual Language Models with image inputs, "
+        "visual-video-text - for Visual Language Models with video inputs, text-to-image - for image generation, "
+        "image-to-image - for image generation based on image and prompt, image-inpainting - for image generation based on image, mask and prompt, "
+        "text-to-video - for video generation, text-reranking - for reranking a list of texts based on relevance to query, "
+        "text-embedding - for creation of embedding for a list of texts ",
     )
     parser.add_argument(
         "--data-encoder",
@@ -605,6 +607,18 @@ def create_evaluator(base_model, args):
                 is_genai=args.genai,
                 seed=args.seed,
             )
+        elif task == "text-to-video":
+            return EvaluatorCLS(
+                base_model=base_model,
+                gt_data=args.gt_data,
+                test_data=prompts,
+                num_samples=args.num_samples,
+                num_inference_steps=args.num_inference_steps,
+                num_frames=args.video_frames_num,
+                gen_image_fn=genai_gen_image if args.genai else None,
+                is_genai=args.genai,
+                seed=args.seed,
+            )
         elif task == "visual-text" or task == "visual-video-text":
             processor, config = load_processor(args)
             tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
@@ -848,7 +862,7 @@ def main():
     if args.verbose and (args.target_model or args.target_data):
         if args.model_type in ["text", "visual-text", "visual-video-text"]:
             print_text_results(evaluator)
-        elif "text-to-image" in args.model_type or "image-to-image" in args.model_type:
+        elif "text-to-image" in args.model_type or "image-to-image" in args.model_type or "text-to-video" in args.model_type:
             print_image_results(evaluator)
         elif args.model_type in ['text-embedding']:
             print_embeds_results(evaluator)
