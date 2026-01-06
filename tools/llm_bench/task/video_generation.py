@@ -190,30 +190,189 @@ class TextToVideoOptimum(CommonPipeline):
         return iter_data, []
 
 
+class TextToVideoGenAI(CommonPipeline):
+    def __init__(
+        self,
+        model,
+        tokenizer,
+        args: dict,
+        model_path: Path,
+        mem_consumption_meter: MemMonitorWrapper,
+        perf_callback,
+    ):
+        super().__init__(model, tokenizer, args, model_path, mem_consumption_meter)
+        self.genai = True
+
+        self.use_case = args.get("use_case")
+        self.num_steps = args.get("num_steps")
+        self.num_frames = args.get("num_frames")
+        self.frame_rate = args.get("frame_rate")
+        self.height = args.get("height")
+        self.width = args.get("width")
+
+        self.perf_callback = perf_callback
+
+    @execution_time_in_sec
+    def generate(self, input_data: Any, **kwargs):
+        return self.model.generate(input_data, **kwargs)
+
+    def get_input_tokens_num(self, prompt: str):
+        return self.perf_callback.orig_tokenizer(prompt, return_tensors="pt").input_ids.numel()
+
+    def print_batch_size_info(self, iter_num: int, input_args: dict):
+        out_str = "[warm-up]" if iter_num == 0 else "[{}]".format(iter_num)
+        out_str = (
+            f"Input params: Batch_size={self.batch_size}, "
+            f"steps={self.num_steps}, width={input_args['width']}, "
+            f"height={input_args['height']}, frame number={input_args['num_frames']}"
+        )
+        if input_args.get("guidance_scale"):
+            out_str += f", guidance_scale={input_args['guidance_scale']}"
+        if input_args.get("guidance_rescale"):
+            out_str += f", guidance_rescale={input_args['guidance_rescale']}"
+        log.info(out_str)
+
+    def get_performance_metrics(self):
+        if hasattr(self.model, "get_performance_metrics"):
+            return self.model.get_performance_metrics()
+        return self.perf_callback
+
+    def postprocess_output_info(
+        self,
+        generation_result: Any,
+        generation_time: float,
+        iter_num: int,
+        input_tokens: list,
+        num_input_tokens: int,
+        max_rss_mem_consumption: float,
+        rss_mem_increase: float,
+        max_sys_mem_consumption: float,
+        sys_mem_increase: float,
+        prompt_index: int,
+        tokenization_time: list,
+        prev_md5: int,
+        proc_id: int,
+        bench_hook,
+    ):
+        result_md5_list = []
+        frames = generation_result.data if hasattr(generation_result, "data") else generation_result
+        for bs_idx in range(self.batch_size):
+            llm_bench_utils.output_file.output_gen_video(
+                frames[bs_idx],
+                {"batch_size": self.batch_size, "model_name": self.model_name, "output_dir": self.output_dir},
+                prompt_index,
+                iter_num,
+                bs_idx,
+                proc_id,
+                ".mp4",
+            )
+
+        iter_data = gen_output_data.gen_iterate_data(
+            iter_idx=iter_num,
+            in_size=num_input_tokens * self.batch_size,
+            infer_count=self.num_steps,
+            gen_time=generation_time,
+            res_md5=result_md5_list,
+            max_rss_mem=max_rss_mem_consumption,
+            max_rss_mem_increase=rss_mem_increase,
+            max_sys_mem=max_sys_mem_consumption,
+            max_sys_mem_increase=sys_mem_increase,
+            prompt_idx=prompt_index,
+        )
+
+        performance_metrics = self.get_performance_metrics()
+        metrics_print.print_metrics(
+            iter_num,
+            iter_data,
+            warm_up=(iter_num == 0),
+            batch_size=self.batch_size,
+            stable_diffusion=performance_metrics,
+            prompt_idx=prompt_index,
+        )
+
+        return iter_data, result_md5_list
+
+    def run(self, input_param: dict, iter_num: int, prompt_index: int, proc_id: int, bench_hook) -> tuple[dict, list]:
+        set_seed(self.seed)
+
+        input_args = collect_input_args(
+            input_param, self.width, self.height, self.num_steps, self.num_frames, self.frame_rate
+        )
+        input_token_size = self.get_input_tokens_num(input_param["prompt"])
+        if input_param.get("negative_prompt"):
+            input_token_size += self.get_input_tokens_num(input_param["negative_prompt"])
+
+        org_num_steps = self.num_steps
+        self.num_steps = input_args["num_inference_steps"]
+        self.print_batch_size_info(iter_num, input_args)
+
+        max_rss_mem_consumption = ""
+        max_sys_mem_consumption = ""
+        rss_mem_increase = ""
+        sys_mem_increase = ""
+        if (self.mem_consumption_level == 1 and iter_num == 0) or self.mem_consumption_level == 2:
+            self.mem_consumption_meter.start()
+
+        self.perf_callback.reset()
+        generation_result, generation_time = self.generate(input_param["prompt"], **input_args)
+        self.perf_callback.duration = generation_time
+
+        if (self.mem_consumption_level == 1 and iter_num == 0) or self.mem_consumption_level == 2:
+            self.mem_consumption_meter.stop_and_collect_data(
+                f"{'P' + str(iter_num) if iter_num > 0 else 'warm-up'}_{proc_id}"
+            )
+            max_rss_mem_consumption, rss_mem_increase, max_sys_mem_consumption, sys_mem_increase = (
+                self.mem_consumption_meter.get_data()
+            )
+
+        iter_data, _ = self.postprocess_output_info(
+            generation_result,
+            generation_time,
+            iter_num,
+            [],
+            input_token_size,
+            max_rss_mem_consumption,
+            rss_mem_increase,
+            max_sys_mem_consumption,
+            sys_mem_increase,
+            prompt_index,
+            None,
+            None,
+            proc_id,
+            bench_hook,
+        )
+
+        self.num_steps = org_num_steps
+        return iter_data, []
+
+
 def run_video_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
     text_list, prompt_idx_list = collect_prompts_step(args, get_video_gen_prompt)
 
-    # If --static_reshape is specified, we need to get width, height, and guidance scale to drop into args
-    # as genai's create_image_gen_model implementation will need those to reshape the pipeline before compile().
     if args.get("static_reshape", False):
         input_args = collect_input_args(text_list[0], args["width"], args["height"], args["num_steps"], args["num_frames"], args["frame_rate"])
         args |= input_args
 
-    pipe, pretrain_time, use_genai = FW_UTILS[framework].create_video_gen_model(model_path, device, mem_consumption, **args)
+    pipe, tokenizer, pretrain_time, callback, use_genai = FW_UTILS[framework].create_video_gen_model(
+        model_path, device, mem_consumption, **args
+    )
     iter_data_list = []
 
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(text_list)}, prompt idx: {prompt_idx_list}')
 
     if use_genai:
-        log.info('not supported yet')
-        return [], 0, {}
+        video_gen_pipeline = TextToVideoGenAI(pipe, tokenizer, args, model_path, mem_consumption, callback)
     else:
         stable_diffusion_hook = StableDiffusionHook()
         if framework == "ov":
             stable_diffusion_hook.init_custom_pipe(pipe)
-        image_gen_pipeline = TextToVideoOptimum(pipe, pipe.tokenizer, args, model_path, mem_consumption, stable_diffusion_hook)
+        video_gen_pipeline = TextToVideoOptimum(
+            pipe, tokenizer, args, model_path, mem_consumption, stable_diffusion_hook
+        )
 
-    iter_data_list, iter_timestamp = iteration_step(image_gen_pipeline, num_iters, text_list, prompt_idx_list, bench_hook=None, subsequent=args['subsequent'])
+    iter_data_list, iter_timestamp = iteration_step(
+        video_gen_pipeline, num_iters, text_list, prompt_idx_list, bench_hook=None, subsequent=args["subsequent"]
+    )
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args["batch_size"], False)
     return iter_data_list, pretrain_time, iter_timestamp
