@@ -337,9 +337,9 @@ class TestBenchmarkLLM:
     @pytest.mark.samples
     @pytest.mark.parametrize("convert_model, sample_args", [
         pytest.param("tiny-random-ltx-video",
-                     ["-d", "cpu", "-n", "1", "--optimum", "--num_steps", "5", "--num_frames", "9", "--frame_rate", "23", "width", "256", "height", "256"]),
+                     ["-d", "cpu", "-n", "1", "--optimum", "--num_steps", "5", "--num_frames", "9", "--frame_rate", "23", "--width", "256", "--height", "256"]),
         # pytest.param("tiny-random-ltx-video", 
-        #              [ "-d", "cpu", "-n", "1", "--num_steps", "4", "--static_reshape", "width", "256", "height", "256", "--optimum"]),
+        #              [ "-d", "cpu", "-n", "1", "--num_steps", "4", "--static_reshape", "--width", "256", "--height", "256", "--optimum"]),
         # pytest.param("tiny-random-ltx-video",
         #              ["-d", "cpu", "-n", "1", "--genai", "--num_steps", "5", "--num_frames", "9", "width", 256, "height", 256]),
     ], indirect=["convert_model"])
