@@ -1135,7 +1135,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     merged_video_embeddings_tensor = m_merged_video_embeddings;
     merged_image_embeddings_tensor = m_merged_image_embeddings;
 
-    // [CDPruner] Lambda to apply pruning
+    // [CDPruner] Lambda to apply pruning (reusable for both images and videos)
     auto apply_pruning = [&](size_t vision_count,
                              const std::vector<std::array<size_t, 3>>& grid_thw,
                              const std::vector<size_t>& sequence,
@@ -1164,17 +1164,20 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
 
         VisionTokenPruningProcessor::PruningResult pruning_result = execute_pruning_pipeline(pruning_context);
 
-        // Update with pruned versions
-        input_ids = pruning_result.pruned_input_ids;
-        text_embeds = pruning_result.pruned_text_embeds;
+        // Always update visual embeddings (processed even when no pruning occurs)
         merged_embeddings = pruning_result.pruned_embeddings;
 
-        if (pruning_result.updated_rope_delta.has_value()) {
-            m_rope_delta = pruning_result.updated_rope_delta.value();
+        if (pruning_result.is_pruned) {
+            input_ids = pruning_result.pruned_input_ids;
+            text_embeds = pruning_result.pruned_text_embeds;
+
+            if (pruning_result.updated_rope_delta.has_value()) {
+                m_rope_delta = pruning_result.updated_rope_delta.value();
+            }
         }
     };
 
-    // Only apply pruning to images
+    // Apply pruning to images
     if (!images.empty() && is_cdpruner_active()) {
         apply_pruning(images.size(),
                       images_grid_thw,
@@ -1182,6 +1185,8 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
                       merged_image_embeddings_tensor,
                       image_pad_token_id);
     }
+
+    // TODO: Apply pruning to videos when video pruning is supported
 
     return qwen2_vl_utils::merge_text_and_video_image_embeddings(input_ids,
                                                                  text_embeds,
