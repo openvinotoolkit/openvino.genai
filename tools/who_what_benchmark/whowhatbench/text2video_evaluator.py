@@ -10,25 +10,22 @@ import openvino_genai
 from .registry import register_evaluator, BaseEvaluator
 
 from .whowhat_metrics import VideoSimilarity
+# from diffusers.utils import export_to_video
 
 
+# let's agreed default parameter will be:
+# width: 704, height: 480, guidance_scale: 3, guidance_rescale: 0.3
 default_data = [
+    # small resolution
     {
-        "prompt": "cowboy running in slow motion in a field  ",
+        "prompt": "octopus figure skating, cartoon  ",
         "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
-        "width": 480,
-        "height": 704,
+        "width": 256,
+        "height": 128,
         "guidance_scale": 3,
         "guidance_rescale": 0.3,
     },
-    {
-        "prompt": "House in front of a lake and the wind blowing through the trees  ",
-        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
-        "width": 1216,
-        "height": 704,
-        "guidance_scale": 3,
-        "guidance_rescale": 0.3,
-    },
+    # small resolution
     {
         "prompt": "slow motion, hydrogen bond energy, atom, 4k, cinematic -gs 24 -motion 2 -ar 16:9 -fps 24  ",
         "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
@@ -37,62 +34,78 @@ default_data = [
         "guidance_scale": 3,
         "guidance_rescale": 0.3,
     },
+    # middle/common resolution
+    {
+        "prompt": "cowboy running in slow motion in a field  ",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 704,
+        "height": 480,
+        "guidance_scale": 3,
+        "guidance_rescale": 0.3,
+    },
+    # big resolution
+    {
+        "prompt": "House in front of a lake and the wind blowing through the trees  ",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 1216,
+        "height": 704,
+        "guidance_scale": 3,
+        "guidance_rescale": 0.3,
+    },
+    # guidance_rescale 0
     {
         "prompt": "fight naruto vs saske  ",
         "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
-        "width": 480,
-        "height": 704,
+        "width": 704,
+        "height": 480,
         "guidance_scale": 3,
         "guidance_rescale": 0,
     },
+    # guidance_scale 1
     {
         "prompt": "reporter in front of the TV cameras talking about the joker  ",
         "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
-        "width": 480,
-        "height": 704,
+        "width": 704,
+        "height": 480,
         "guidance_scale": 1,
         "guidance_rescale": 0.3,
     },
+    # guidance_scale 1 guidance_rescale 0
     {
         "prompt": "Realistic night silhouette of a white Lwxux LX III 2008 with headlights on driving on in the fog in the dark  ",
         "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
-        "width": 480,
-        "height": 704,
+        "width": 704,
+        "height": 480,
         "guidance_scale": 1,
         "guidance_rescale": 0,
     },
+    # guidance_scale 1 guidance_rescale 0
     {
         "prompt": "indian womens wahsing clothes at river side  ",
         "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
-        "width": 480,
-        "height": 704,
+        "width": 256,
+        "height": 128,
         "guidance_scale": 3,
         "guidance_rescale": 0.3,
     },
-    {
-        "prompt": "octopus figure skating, cartoon  ",
-        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
-        "width": 480,
-        "height": 704,
-        "guidance_scale": 3,
-        "guidance_rescale": 0.3,
-    },
+    # big prompt
     {
         "prompt": "Levitating woman uses magic and fairy dusty spews forth from her fingers.  cinematic shot  photos taken by ARRI, photos taken "
         + "by sony, photos taken by canon, photos taken by nikon, photos taken by sony, photos taken by hasselblad  ",
         "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
-        "width": 480,
-        "height": 704,
+        "width": 704,
+        "height": 480,
         "guidance_scale": 3,
         "guidance_rescale": 0.3,
     },
+    # big prompt, small resolution
     {
         "prompt": "A mythical river adventure in the Yellow River basin during ancient times, where majestic dragons soar through the turbulent waters, "
         + "casting a vibrant glow on the submerged landscapes, blending a sense of awe and fantasy, Sculpture, intricate clay model with luminescent "
         + "elements, --ar 16:9 --v 5  ",
         "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
-        "width": 480,
-        "height": 704,
+        "width": 256,
+        "height": 128,
         "guidance_scale": 3,
         "guidance_rescale": 0.3,
     },
@@ -104,8 +117,8 @@ class Text2VideoEvaluator(BaseEvaluator):
     DEF_NUM_FRAMES = 25
     DEF_NUM_INF_STEPS = 25
     DEF_FRAME_RATE = 25
-    DEF_WIDTH = 480
-    DEF_HEIGHT = 704
+    DEF_WIDTH = 704
+    DEF_HEIGHT = 480
     DEF_GUIDANCE_SCALE = 3
     DEF_GUIDANCE_RESCALE = 0.3
 
@@ -119,7 +132,7 @@ class Text2VideoEvaluator(BaseEvaluator):
         num_frames=25,
         crop_prompts=True,
         num_samples=None,
-        gen_image_fn=None,
+        gen_video_fn=None,
         seed=42,
         is_genai=False,
     ) -> None:
@@ -136,20 +149,20 @@ class Text2VideoEvaluator(BaseEvaluator):
         self.similarity = VideoSimilarity()
         self.last_cmp = None
         self.gt_dir = os.path.dirname(gt_data)
-        self.generation_fn = gen_image_fn
+        self.generation_fn = gen_video_fn
         self.is_genai = is_genai
         self.num_frames = num_frames or self.DEF_NUM_FRAMES
         self.frame_rate = self.DEF_FRAME_RATE
 
         if base_model:
-            self.gt_data = self._generate_data(base_model, gen_image_fn, os.path.join(self.gt_dir, "reference"))
+            self.gt_data = self._generate_data(base_model, gen_video_fn, os.path.join(self.gt_dir, "reference"))
         else:
             self.gt_data = pd.read_csv(gt_data, keep_default_na=False)
 
     def get_generation_fn(self):
         return self.generation_fn
 
-    def score(self, model_or_data, gen_image_fn=None, output_dir=None, **kwargs):
+    def score(self, model_or_data, gen_video_fn=None, output_dir=None, **kwargs):
         if output_dir is None:
             video_folder = os.path.join(self.gt_dir, "target")
         else:
@@ -158,7 +171,7 @@ class Text2VideoEvaluator(BaseEvaluator):
         if isinstance(model_or_data, str) and os.path.exists(model_or_data):
             predictions = pd.read_csv(model_or_data, keep_default_na=False)
         else:
-            predictions = self._generate_data(model_or_data, gen_image_fn, video_folder)
+            predictions = self._generate_data(model_or_data, gen_video_fn, video_folder)
         self.predictions = predictions
 
         all_metrics_per_prompt = {}
@@ -185,8 +198,8 @@ class Text2VideoEvaluator(BaseEvaluator):
 
         return res
 
-    def _generate_data(self, model, gen_image_fn=None, videos_dir="reference"):
-        def default_gen_image_fn(
+    def _generate_data(self, model, gen_video_fn=None, videos_dir="reference"):
+        def default_gen_video_fn(
             model,
             prompt,
             negative_prompt,
@@ -214,8 +227,8 @@ class Text2VideoEvaluator(BaseEvaluator):
                 )
             return output.frames[0]
 
-        # generation_fn = gen_image_fn or default_gen_image_fn
-        generation_fn = default_gen_image_fn
+        # generation_fn = gen_video_fn or default_gen_video_fn
+        generation_fn = default_gen_video_fn
 
         if self.test_data:
             if isinstance(self.test_data, str):
@@ -262,6 +275,9 @@ class Text2VideoEvaluator(BaseEvaluator):
                 frame_path = os.path.join(video_path, f"{number}.png")
                 frame.save(frame_path)
             videos.append(video_path)
+            # video_path = os.path.join(videos_dir, f"video_{i}.mp4")
+            # export_to_video(frames, video_path, self.frame_rate)
+            # videos.append(video_path)
 
         res_data["videos"] = videos
         df = pd.DataFrame(res_data)
