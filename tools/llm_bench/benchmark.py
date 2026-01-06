@@ -14,6 +14,7 @@ import llm_bench_utils.output_json
 import task.visual_language_generation as bench_vlm
 import task.text_generation as bench_text
 import task.image_generation as bench_image
+import task.video_generation as bench_video
 import task.super_resolution_generation as bench_ldm_sr
 import task.speech_to_text_generation as bench_speech
 import task.text_embeddings as bench_text_embed
@@ -196,6 +197,8 @@ def get_argprser():
         "--static_reshape",
         action="store_true",
         help="Reshape image generation pipeline to specific width & height at pipeline creation time. Applicable for Image Generation.")
+    parser.add_argument("--guidance_scale", type=float, required=False, help="Generated guidance scale. Applicable only for Image/Video Generation.")
+    parser.add_argument("--num_frames", type=int, required=False, help="Generated guidance scale. Applicable only for Video Generation.")
     parser.add_argument('-mi', '--mask_image', default=None,
                         help='Mask image for Inpainting pipelines. Can be directory or path to single image. Applicable for Image Generation.')
     parser.add_argument('-t', '--task', default=None,
@@ -238,6 +241,7 @@ def get_argprser():
 CASE_TO_BENCH = {
     "text_gen": bench_text.run_text_generation_benchmark,
     "image_gen": bench_image.run_image_generation_benchmark,
+    "video_gen": bench_video.run_video_generation_benchmark,
     "code_gen": bench_text.run_text_generation_benchmark,
     "ldm_super_resolution": bench_ldm_sr.run_ldm_super_resolution_benchmark,
     "speech_to_text": bench_speech.run_speech_2_txt_benchmark,

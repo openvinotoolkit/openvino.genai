@@ -310,7 +310,6 @@ class TestBenchmarkLLM:
         run_sample(benchmark_py_command)
 
 
-
     @pytest.mark.samples
     @pytest.mark.parametrize("download_test_content", ["video0.mp4"], indirect=True)
     @pytest.mark.parametrize("convert_model, sample_args", [
@@ -326,6 +325,24 @@ class TestBenchmarkLLM:
             "-m", convert_model,
             "--video", download_test_content,
             "--prompt", "What_is_presented_in_the_video?"
+        ]
+        benchmark_py_command.extend(sample_args)
+        run_sample(benchmark_py_command)
+
+
+    @pytest.mark.samples
+    @pytest.mark.parametrize("convert_model, sample_args", [
+        pytest.param("optimum-intel-internal-testing/tiny-random-ltx-video",
+                     ["-d", "cpu", "-n", "1", "--optimum", "--num_steps", "5", "--num_frames", "3", "width", 256, "height", 256]),
+        # pytest.param("optimum-intel-internal-testing/tiny-random-ltx-video", ["-d", "cpu", "-n", "1", "--optimum", "-vf", "-3"]),
+    ], indirect=["convert_model"])
+    def test_python_tool_llm_benchmark_video_gen(self, convert_model, sample_args):
+        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m", convert_model,
+            "--prompt", "A cat is playing with a ball on a Christmas tree."
         ]
         benchmark_py_command.extend(sample_args)
         run_sample(benchmark_py_command)
