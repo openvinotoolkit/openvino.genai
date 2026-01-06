@@ -80,6 +80,12 @@ class TextToVideoOptimum(CommonPipeline):
     def generate(self, input_data: Any, **kwargs):
         return self.model(input_data, **kwargs).frames
 
+    def get_input_tokens_num(self, prompt: str):
+        input_text_list = prompt * self.batch_size
+        tokenized_input, _ = self.tokenize(input_text_list)
+        input_tokens = tokenized_input["input_ids"] if "input_ids" in tokenized_input else tokenized_input
+        return input_tokens[0].numel()
+
     def print_batch_size_info(self, iter_num: int, input_args: dict):
         out_str = "[warm-up]" if iter_num == 0 else "[{}]".format(iter_num)
         out_str = (
@@ -133,7 +139,6 @@ class TextToVideoOptimum(CommonPipeline):
             iter_num,
             iter_data,
             warm_up=(iter_num == 0),
-            tokenization_time=tokenization_time,
             batch_size=self.batch_size,
             stable_diffusion=self.time_collection_hook,
             prompt_idx=prompt_index,
@@ -145,11 +150,9 @@ class TextToVideoOptimum(CommonPipeline):
         set_seed(self.seed)
 
         input_args = collect_input_args(input_param, self.width, self.height, self.num_steps, self.num_frames, self.frame_rate)
-        input_text_list = input_param["prompt"] * self.batch_size
-        kwargs = {"negative_prompt": input_param["negative_prompt"] * self.batch_size} if input_param.get("negative_prompt") else {}
-        tokenized_input, tokenization_time = self.tokenize(input_text_list, **kwargs)
-        input_tokens = tokenized_input["input_ids"] if "input_ids" in tokenized_input else tokenized_input
-        input_token_size = input_tokens[0].numel()
+        input_token_size = self.get_input_tokens_num(input_param["prompt"])
+        if input_param.get("negative_prompt"):
+            input_token_size += self.get_input_tokens_num(input_param["negative_prompt"])
         org_num_steps = self.num_steps
         self.num_steps = input_args["num_inference_steps"]
         self.print_batch_size_info(iter_num, input_args)
@@ -177,7 +180,7 @@ class TextToVideoOptimum(CommonPipeline):
             max_sys_mem_consumption,
             sys_mem_increase,
             prompt_index,
-            [tokenization_time * 1000],
+            None,
             None,
             proc_id,
             bench_hook,
