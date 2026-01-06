@@ -227,8 +227,7 @@ class Text2VideoEvaluator(BaseEvaluator):
                 )
             return output.frames[0]
 
-        # generation_fn = gen_video_fn or default_gen_video_fn
-        generation_fn = default_gen_video_fn
+        generation_fn = gen_video_fn or default_gen_video_fn
 
         if self.test_data:
             if isinstance(self.test_data, str):

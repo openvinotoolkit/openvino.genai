@@ -528,7 +528,18 @@ def genai_gen_text2video(
     guidance_rescale=0.3,
     generator=None,
 ):
-    return None
+    video_tensor = model.generate(
+        prompt,
+        negative_prompt=negative_prompt,
+        num_inference_steps=num_inference_steps,
+        width=width,
+        height=height,
+        num_frames=num_frames,
+        guidance_scale=guidance_scale,
+        generator=generator,
+    )
+    frames = [Image.fromarray(frame) for frame in video_tensor.data]
+    return frames
 
 
 def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, generator=None):
