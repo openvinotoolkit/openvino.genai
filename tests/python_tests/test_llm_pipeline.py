@@ -184,6 +184,21 @@ def test_encoded_inputs(
     assert np.all(ov_res == hf_res)
 
 
+@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
+def test_readonly_input_tensor(ov_pipe: ov_genai.LLMPipeline) -> None:
+    input_ids = np.array([[1, 4, 42]], dtype=np.int64)
+    input_ids.flags.writeable = False
+
+    attention_mask = np.array([[1, 1, 1]], dtype=np.int64)
+    attention_mask.flags.writeable = False
+
+    inputs_ov = ov_genai.TokenizedInputs(ov.Tensor(input_ids), ov.Tensor(attention_mask))
+    ov_pipe.generate(inputs_ov, max_new_tokens=5)
+
+    readonly_tensor = ov.Tensor(input_ids)
+    ov_pipe.generate(readonly_tensor, max_new_tokens=5)
+
+
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("generation_config_dict", TEST_CONFIGS)
 @pytest.mark.parametrize("prompts", BATCHED_PROMPTS)
@@ -202,14 +217,14 @@ def test_batch_string_inputs(
     )
 
 
-@pytest.mark.parametrize("llm_model", ['katuni4ka/tiny-random-phi3'], indirect=True)
+@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
 def test_batch_size_switch(ov_pipe: ov_genai.LLMPipeline) -> None:
     ov_pipe.generate(["a"], max_new_tokens=2)
     ov_pipe.generate(["1", "2"], max_new_tokens=2)
     ov_pipe.generate(["a"], max_new_tokens=2)
 
 
-@pytest.mark.parametrize("llm_model", ['katuni4ka/tiny-random-phi3'], indirect=True)
+@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True)
 def test_empty_encoded_inputs_throw(ov_pipe: ov_genai.LLMPipeline) -> None:
     with pytest.raises(RuntimeError):
         ov_pipe.generate(ov.Tensor(np.array([[]], dtype=np.int64)), max_new_tokens=2)
@@ -698,29 +713,41 @@ def test_pipeline_validates_generation_config(ov_pipe: ov_genai.LLMPipeline) -> 
 # Work with Unicode in Python API
 #
 
-@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
-def test_unicode_pybind_decoding_one_string(ov_pipe: ov_genai.LLMPipeline) -> None:
-    res_str = ov_pipe.generate(',', max_new_tokens=4, apply_chat_template=False)
+# Model, prompt and max_new_tokens that generate unfinished utf-8 string
+UNICODE_PYBIND_DECODING_TEST_CASES: list[tuple[str, str, int]] = [
+    ("optimum-intel-internal-testing/tiny-random-PhiForCausalLM", ",", 3)
+]
+
+
+@pytest.mark.parametrize("llm_model,prompt,max_new_tokens", UNICODE_PYBIND_DECODING_TEST_CASES, indirect=["llm_model"])
+def test_unicode_pybind_decoding_one_string(ov_pipe: ov_genai.LLMPipeline, prompt: str, max_new_tokens: int) -> None:
+    res_str = ov_pipe.generate(prompt, max_new_tokens=max_new_tokens, apply_chat_template=False)
     assert '�' == res_str[-1]
 
 
-@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
-def test_unicode_pybind_decoding_batched(ov_pipe: ov_genai.LLMPipeline) -> None:
-    res_str = ov_pipe.generate([","], max_new_tokens=4, apply_chat_template=False)
+@pytest.mark.parametrize("llm_model,prompt,max_new_tokens", UNICODE_PYBIND_DECODING_TEST_CASES, indirect=["llm_model"])
+def test_unicode_pybind_decoding_batched(ov_pipe: ov_genai.LLMPipeline, prompt: str, max_new_tokens: int) -> None:
+    res_str = ov_pipe.generate([prompt], max_new_tokens=max_new_tokens, apply_chat_template=False)
     assert '�' == res_str.texts[0][-1]
 
 
-@pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
-def test_unicode_pybind_decoding_one_string_streamer(ov_pipe: ov_genai.LLMPipeline) -> None:
+@pytest.mark.parametrize("llm_model,prompt,max_new_tokens", UNICODE_PYBIND_DECODING_TEST_CASES, indirect=["llm_model"])
+def test_unicode_pybind_decoding_one_string_streamer(
+    ov_pipe: ov_genai.LLMPipeline, prompt: str, max_new_tokens: int
+) -> None:
     res_str = []
-    ov_pipe.generate(",", max_new_tokens=4, apply_chat_template=False, streamer=lambda x: res_str.append(x))
-    assert '�' == ''.join(res_str)[-1]
+    ov_pipe.generate(
+        prompt, max_new_tokens=max_new_tokens, apply_chat_template=False, streamer=lambda x: res_str.append(x)
+    )
+    assert "�" == "".join(res_str)[-1]
+
 
 #
 # Perf metrics
 #
 
-@pytest.mark.parametrize("llm_model", ['katuni4ka/tiny-random-gemma2'], indirect=True)
+
+@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-gemma2"], indirect=True)
 @pytest.mark.parametrize("generation_config,prompt", PERF_METRICS_TEST_CASES)
 @pytest.mark.parametrize("pipeline_type", [PipelineType.STATEFUL, PipelineType.PAGED_ATTENTION])
 def test_perf_metrics(
@@ -812,7 +839,7 @@ def test_perf_metrics(
     assert len(raw_metrics.m_durations) == num_generated_tokens - 1
 
 
-@pytest.mark.parametrize("llm_model", ['katuni4ka/tiny-random-gemma2'], indirect=True)
+@pytest.mark.parametrize("llm_model", ["optimum-intel-internal-testing/tiny-random-gemma2"], indirect=True)
 @pytest.mark.parametrize("generation_config,prompt", PERF_METRICS_STRUCTURED_OUTPUT_TEST_CASES)
 def test_perf_metrics_with_structured_output(
     ov_pipe: ov_genai.LLMPipeline,

@@ -16,8 +16,18 @@ from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_tex
 from utils.generation_config import get_greedy, get_beam_search, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
     get_multinomial_temperature_and_top_k, get_multinomial_temperature, get_multinomial_temperature_and_top_p
-from utils.hugging_face import OVConvertedModelSchema, download_and_convert_model
-from utils.ov_genai_pipelines import create_ov_pipeline, create_ov_cb_pipeline, PipelineType, dict_to_scheduler_config, generate_and_compare, prepare_generation_config_by_pipe_type, GenerationChatInputsType
+from utils.hugging_face import OVConvertedModelSchema, download_and_convert_model, run_hugging_face
+from utils.ov_genai_pipelines import (
+    create_ov_pipeline,
+    create_ov_cb_pipeline,
+    PipelineType,
+    dict_to_scheduler_config,
+    generate_and_compare,
+    prepare_generation_config_by_pipe_type,
+    convert_decoded_results_to_generation_result,
+    GenerationChatInputsType,
+)
+from utils.comparation import compare_generation_results
 from data.models import CHAT_MODELS_LIST
 from data.test_dataset import get_test_dataset
 
@@ -540,6 +550,24 @@ def test_dynamic_split_fuse_doesnt_affect_generated_text():
     assert generated == reference
 
 
+eagle_models_and_input = [
+    (
+        "Qwen/Qwen3-1.7B",
+        "AngelSlim/Qwen3-1.7B_eagle3",
+        """Code:
+def add(a, b):
+    return a + b
+
+Question: Can you please add 2 and 3
+A:""",
+    )
+]
+
+speculative_cases = [
+    ("TinyLlama/TinyLlama-1.1B-Chat-v1.0", None, "Why is the Sun yellow?"),
+    eagle_models_and_input[0],
+]
+
 @pytest.mark.parametrize(
     "pipeline_type", 
     [
@@ -547,32 +575,48 @@ def test_dynamic_split_fuse_doesnt_affect_generated_text():
         PipelineType.SPECULATIVE_DECODING,
     ]
 )
-def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType):
+@pytest.mark.parametrize("main_model_id,draft_model_id, prompt", speculative_cases)
+def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType, main_model_id, draft_model_id, prompt):
     def run_extended_perf_metrics_collection(
-            model_id: str,
-            generation_config: GenerationConfig,
-            prompt: str,
-            pipeline_type: PipelineType
+        model_id: str,
+        generation_config: GenerationConfig,
+        prompt: str,
+        pipeline_type: PipelineType,
+        draft_model_id: str,
     ):
         model_path = download_and_convert_model(model_id).models_path
-        ov_pipe = create_ov_pipeline(model_path, pipeline_type=pipeline_type)
+        draft_model_path = None
+        if draft_model_id is not None:
+            draft_model_path = download_and_convert_model(draft_model_id).models_path
+        ov_pipe = create_ov_pipeline(model_path, pipeline_type=pipeline_type, draft_model_path=draft_model_path)
         return ov_pipe.generate([prompt], generation_config).extended_perf_metrics
 
     import time
     start_time = time.perf_counter()
-    model_id : str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
     generation_config = GenerationConfig(
         do_sample=False, 
         max_new_tokens=20, 
         ignore_eos=True, 
         num_assistant_tokens=5,
     )
-    extended_perf_metrics = run_extended_perf_metrics_collection(
-        model_id, generation_config, "Why is the Sun yellow?", pipeline_type
-    )
-    total_time = (time.perf_counter() - start_time) * 1000
+    extended_perf_metrics = None
+    if draft_model_id is None:
+        extended_perf_metrics = run_extended_perf_metrics_collection(
+            main_model_id, generation_config, prompt, pipeline_type, draft_model_id
+        )
+        total_time = (time.perf_counter() - start_time) * 1000
 
-    if (pipeline_type == PipelineType.SPECULATIVE_DECODING):
+    else:
+        if pipeline_type == PipelineType.SPECULATIVE_DECODING:
+            generation_config = GenerationConfig(
+                do_sample=False, max_new_tokens=20, ignore_eos=True, num_assistant_tokens=5
+            )
+            extended_perf_metrics = run_extended_perf_metrics_collection(
+                main_model_id, generation_config, prompt, pipeline_type, draft_model_id
+            )
+            total_time = (time.perf_counter() - start_time) * 1000
+
+    if pipeline_type == PipelineType.SPECULATIVE_DECODING:
         assert not extended_perf_metrics is None
         assert not extended_perf_metrics.main_model_metrics is None
         assert not extended_perf_metrics.draft_model_metrics is None
@@ -612,6 +656,40 @@ def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType)
             assert std_gen_duration == 0
     else:
         assert extended_perf_metrics is None
+
+
+devices = [("CPU", "CPU")]
+
+
+@pytest.mark.parametrize("main_model,draft_model,prompt", eagle_models_and_input)
+@pytest.mark.parametrize("main_device,draft_device", devices)
+def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_device, prompt):
+    # Download and convert model:
+    main_model_schema = download_and_convert_model(main_model)
+    main_opt_model = main_model_schema.opt_model
+    main_hf_tokenizer = main_model_schema.hf_tokenizer
+    main_model_path = main_model_schema.models_path
+
+    draft_model_path = download_and_convert_model(draft_model).models_path
+
+    # Create OpenVINO GenAI pipeline:
+
+    ov_pipe = create_ov_pipeline(
+        main_model_path, pipeline_type=PipelineType.SPECULATIVE_DECODING, draft_model_path=draft_model_path
+    )
+
+    # Run reference HF model:
+    ov_generation_config = GenerationConfig(max_new_tokens=20)
+    ref_gen_results = run_hugging_face(main_opt_model, main_hf_tokenizer, [prompt], ov_generation_config)
+
+    # Run OpenVINO GenAI pipeline:
+    ov_decoded_results = ov_pipe.generate([prompt], ov_generation_config)
+    ov_gen_results = convert_decoded_results_to_generation_result(ov_decoded_results, 1, 1, False)
+
+    del ov_pipe
+
+    # Compare results:
+    compare_generation_results([prompt], ref_gen_results, ov_gen_results, ov_generation_config)
 
 
 def test_continuous_batching_add_extension():

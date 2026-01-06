@@ -2,7 +2,14 @@ from pathlib import Path
 import logging
 import torch
 
-from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq, AutoTokenizer
+from transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+    AutoModel,
+    AutoModelForVision2Seq,
+    AutoTokenizer,
+    AutoModelForImageTextToText,
+)
 
 from .embeddings_evaluator import DEFAULT_MAX_LENGTH as EMBED_DEFAULT_MAX_LENGTH
 from .reranking_evaluator import DEFAULT_MAX_LENGTH as RERANK_DEFAULT_MAX_LENGTH, DEFAULT_TOP_K as RERANK_DEFAULT_TOP_K, is_qwen3_causallm
@@ -343,7 +350,8 @@ def load_visual_text_model(
             )
         except ValueError:
             try:
-                model = AutoModel.from_pretrained(
+                model_cls = AutoModelForImageTextToText if config.model_type in ["smolvlm"] else AutoModel
+                model = model_cls.from_pretrained(
                     model_id, trust_remote_code=trust_remote_code, device_map=device.lower()
                 )
             except ValueError:
