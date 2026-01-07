@@ -97,7 +97,7 @@ TEST(TestBlockManager, CanFreeBlocksFromSequence) {
     ov::genai::SequenceGroup::Ptr sequence_group =
         std::make_shared<ov::genai::SequenceGroup>(0,
                                                    ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                   ov::genai::utils::get_greedy_config(),
+                                                   ov::genai::utils::get_beam_search_config(),
                                                    BLOCK_SIZE);
     sequence_group->schedule_tokens(5);
     bm.append_slots(sequence_group);
