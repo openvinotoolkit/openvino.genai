@@ -70,7 +70,7 @@ def test_string_inputs(main_model, main_device, draft_model, draft_device, promp
 def test_perf_metrics():
     import time
     start_time = time.perf_counter()
-    model_id = 'katuni4ka/tiny-random-gemma2'
+    model_id = "optimum-intel-internal-testing/tiny-random-gemma2"
     model_path = download_and_convert_model(model_id).models_path
 
     # Create OpenVINO GenAI pipeline:

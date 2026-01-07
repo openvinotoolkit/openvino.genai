@@ -19,7 +19,7 @@
 #include "image_generation/schedulers/ischeduler.hpp"
 #include "image_generation/threaded_callback.hpp"
 #include "openvino/genai/video_generation/ltx_video_transformer_3d_model.hpp"
-#include "openvino/genai/video_generation/generation_config.hpp"
+#include "generation_config_utils.hpp"
 
 #include "utils.hpp"
 
@@ -71,7 +71,7 @@ std::shared_ptr<IScheduler> cast_scheduler(std::shared_ptr<Scheduler>&& schedule
 }
 
 void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_scale_factor) {
-    validate_generation_config(generation_config);
+    utils::validate_generation_config(generation_config);
     OPENVINO_ASSERT(generation_config.height > 0, "Height must be positive");
     OPENVINO_ASSERT(generation_config.height % 32 == 0,
                     "Height have to be divisible by 32 but got ",
@@ -186,7 +186,7 @@ inline ov::Tensor make_scalar(const ov::element::Type& et, float v) {
 
 // Denormalize latents across channel dim: [B, C, F, H, W]
 // latents = latents * latents_std / scaling_factor + latents_mean
-ov::Tensor denormalize_latents(ov::Tensor latents,
+ov::Tensor denormalize_latents(const ov::Tensor& latents,
                                ov::Tensor latents_mean,
                                ov::Tensor latents_std,
                                float scaling_factor = 1.0f) {
@@ -239,9 +239,9 @@ class Text2VideoPipeline::LTXPipeline {
     VideoGenerationPerfMetrics m_perf_metrics;
     Ms m_load_time;
 
-    size_t m_latent_num_frames = -1;
-    size_t m_latent_height = -1;
-    size_t m_latent_width = -1;
+    size_t m_latent_num_frames = 0;
+    size_t m_latent_height = 0;
+    size_t m_latent_width = 0;
 
     ov::Tensor prepare_latents(const ov::genai::VideoGenerationConfig& generation_config,
                                size_t num_channels_latents,
@@ -464,7 +464,7 @@ public:
         m_perf_metrics.clean_up();
 
         VideoGenerationConfig merged_generation_config = m_generation_config;
-        update_generation_config(merged_generation_config, properties);
+        utils::update_generation_config(merged_generation_config, properties);
         replace_defaults(merged_generation_config);
 
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
@@ -520,8 +520,10 @@ public:
         // Prepare micro-conditions
         // TODO: move to compute_hidden_states
         ov::Tensor rope_interpolation_scale(ov::element::f32, {3});
+        const float frame_rate =
+            merged_generation_config.frame_rate.value_or(LTX_VIDEO_DEFAULT_CONFIG.frame_rate.value());
         rope_interpolation_scale.data<float>()[0] =
-            static_cast<float>(temporal_compression_ratio) / *merged_generation_config.frame_rate;
+            static_cast<float>(temporal_compression_ratio) / frame_rate;
         rope_interpolation_scale.data<float>()[1] = spatial_compression_ratio;
         rope_interpolation_scale.data<float>()[2] = spatial_compression_ratio;
         m_transformer->set_hidden_states("rope_interpolation_scale", rope_interpolation_scale);

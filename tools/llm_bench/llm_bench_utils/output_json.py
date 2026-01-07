@@ -69,6 +69,13 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         if len(values) > 0:
             results_averaged[key] = round(sum(values) / len(values), 5)
 
+    if "second_avg_latency" in results_averaged:
+        avg_2nd_tokens_latency = results_averaged["second_avg_latency"]
+        if avg_2nd_tokens_latency > 0:
+            bs = int(model_args["batch_size"])
+            second_token_tput = round(bs * 1000.0 / avg_2nd_tokens_latency, 5)
+            results_averaged["second_token_throughput"] = second_token_tput
+
     output_result = {'metadata': metadata,
                      'perfdata': {'compile_time': pretrain_time,
                                   'results': result} | get_pre_gen_memory_data(memory_data_collector)}

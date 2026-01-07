@@ -328,7 +328,7 @@ static inline void pack_to_rgb_u8(const uint8_t* src, size_t H, size_t W, size_t
 }
 
 // accept video [B, F, H, W, C]
-void imwrite_video(const std::string& name, ov::Tensor video, const uint32_t fps, bool convert_bgr2rgb, int quality) {
+void imwrite_video(const std::string& name, const ov::Tensor& video, const uint32_t fps, bool convert_bgr2rgb, int quality) {
     const auto shape = video.get_shape(); // [B, F, H, W, C]
     if (shape.size() != 5) throw std::runtime_error("imwrite_video: expected [B, F, H, W, C]");
 

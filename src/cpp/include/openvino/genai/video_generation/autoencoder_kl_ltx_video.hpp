@@ -65,7 +65,7 @@ private:
     ov::InferRequest m_encoder_request, m_decoder_request;
     std::shared_ptr<ov::Model> m_encoder_model = nullptr, m_decoder_model = nullptr;
 
-    int64_t m_patch_size, m_patch_size_t;
+    int64_t m_transformer_patch_size = -1, m_transformer_patch_size_t = -1;
 };
 
 } // namespace ov::genai

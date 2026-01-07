@@ -25,8 +25,9 @@ std::pair<int64_t, int64_t> get_compression_ratio(const std::filesystem::path& c
     utils::read_json_param(data, "patch_size", patch_size);
     utils::read_json_param(data, "patch_size_t", patch_size_t);
 
-    const int64_t spatial_compression_ratio = patch_size * std::pow(2, std::reduce(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
-    const int64_t temporal_compression_ratio = patch_size_t * std::pow(2, std::reduce(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
+    const auto compression_factor = std::pow(2, std::reduce(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
+    const int64_t spatial_compression_ratio = patch_size * compression_factor;
+    const int64_t temporal_compression_ratio = patch_size_t * compression_factor;
 
     return {spatial_compression_ratio, temporal_compression_ratio};
 }
@@ -78,12 +79,12 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
     return *this;
 }
 
-void LTXVideoTransformer3DModel::set_hidden_states(const std::string& tensor_name, ov::Tensor encoder_hidden_states) {
+void LTXVideoTransformer3DModel::set_hidden_states(const std::string& tensor_name, const ov::Tensor& encoder_hidden_states) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
     m_request.set_tensor(tensor_name, encoder_hidden_states);
 }
 
-ov::Tensor LTXVideoTransformer3DModel::infer(const ov::Tensor latent_model_input, const ov::Tensor timestep) {
+ov::Tensor LTXVideoTransformer3DModel::infer(const ov::Tensor& latent_model_input, const ov::Tensor& timestep) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first. Cannot infer non-compiled model");
 
     m_request.set_tensor("hidden_states", latent_model_input);

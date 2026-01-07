@@ -189,18 +189,27 @@ def get_huggingface_models(
             local_files_only=local_files_only,
         )
 
+    is_eagle_model = "eagle3" in str(model_id).lower()
+
     def auto_model_from_pretrained() -> OptimizedModel:
-        return model_class.from_pretrained(
-            model_id, 
-            export=isinstance(model_id, str), 
-            compile=False, 
-            load_in_8bit=False, 
-            ov_config=get_default_llm_properties(), 
-            local_files_only=local_files_only,
-        )
+        params = {
+            "export": isinstance(model_id, str),
+            "compile": False,
+            "load_in_8bit": False,
+            "ov_config": get_default_llm_properties(),
+            "local_files_only": local_files_only,
+        }
+        if is_eagle_model:
+            params["eagle3"] = True
+        return model_class.from_pretrained(model_id, **params)
 
-    return retry_request(auto_model_from_pretrained), retry_request(auto_tokenizer_from_pretrained)
+    opt_model = retry_request(auto_model_from_pretrained)
 
+    if is_eagle_model:
+        return opt_model, None
+    else:
+        hf_tokenizer = retry_request(auto_tokenizer_from_pretrained)
+        return opt_model, hf_tokenizer
 
 def convert_and_save_tokenizer(
     hf_tokenizer : AutoTokenizer,
@@ -228,9 +237,10 @@ def convert_models(
     opt_model.config.save_pretrained(str(models_path))
 
     # to store tokenizer config jsons with special tokens
-    hf_tokenizer.save_pretrained(str(models_path))
-    # convert tokenizers as well
-    convert_and_save_tokenizer(hf_tokenizer, models_path)
+    if hf_tokenizer:
+        hf_tokenizer.save_pretrained(str(models_path))
+        # convert tokenizers as well
+        convert_and_save_tokenizer(hf_tokenizer, models_path)
 
 
 def download_and_convert_model(model_id: str, **tokenizer_kwargs) -> OVConvertedModelSchema:

@@ -314,6 +314,19 @@ void export_model(ov::CompiledModel& compiled_model, const std::filesystem::path
  */
 bool has_input(const std::shared_ptr<Model>& model, const std::string& name);
 
+/**
+ * @brief Helper to create ROI coordinates for a tensor along an arbitrary dimension.
+ *
+ * Given a tensor shape and a range on a specified dimension, returns start and end coordinates
+ * for slicing [start, end) along that dimension, and full range for others.
+ *
+ * @param shape The shape of the tensor.
+ * @param dim The dimension along which to slice.
+ * @param range_start The starting index along the specified dimension.
+ * @param range_end The ending index (exclusive) along the specified dimension.
+ * @return A pair of ov::Coordinate (start, end) for ROI slicing.
+ */
+std::pair<ov::Coordinate, ov::Coordinate> make_roi(const std::vector<size_t>& shape, const size_t dim, const size_t range_start, const size_t range_end);
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

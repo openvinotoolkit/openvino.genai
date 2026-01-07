@@ -199,7 +199,6 @@ void init_t5_encoder_model(py::module_& m) {
                     tokenization_params
                 );
             },
-            py::call_guard<py::gil_scoped_release>(), 
             py::arg("pos_prompt"), 
             py::arg("neg_prompt"), 
             py::arg("do_classifier_free_guidance"), 
