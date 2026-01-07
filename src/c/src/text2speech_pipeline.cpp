@@ -1,10 +1,8 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 
 #include "openvino/genai/c/text2speech_pipeline.h"
-
-#include <stdarg.h>
 
 #include <filesystem>
 #include <memory>

@@ -1,7 +1,13 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
+
+#include <cstdarg>
+#include <functional>
+#include <memory>
+#include <string>
+
 #include "openvino/genai/chat_history.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/json_container.hpp"

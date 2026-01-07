@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/c/perf_metrics.h"
@@ -6,9 +6,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include <memory>
+
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/speech_generation/speech_generation_perf_metrics.hpp"
 #include "types_c.h"
+
 
 ov_genai_perf_metrics* ov_genai_perf_metrics_create() {
     ov_genai_perf_metrics* metrics = new ov_genai_perf_metrics;

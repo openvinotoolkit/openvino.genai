@@ -1,8 +1,11 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 
 #include "openvino/genai/c/speech_generation_config.h"
+
+#include <filesystem>
+#include <memory>
 
 #include "openvino/genai/speech_generation/speech_generation_config.hpp"
 #include "types_c.h"

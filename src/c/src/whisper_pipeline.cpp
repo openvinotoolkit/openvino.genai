@@ -1,11 +1,12 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/c/whisper_pipeline.h"
 
-#include <stdarg.h>
-
 #include <filesystem>
+#include <memory>
+#include <string>
+#include <vector>
 
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
