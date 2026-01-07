@@ -324,7 +324,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             request->set_num_validated_tokens(num_tokens_needs_kv_update);  // in generation stage
         }
         // to pause `draft_model` generation in case of `generated_len >= max_new_tokens - 1` to generate last token by `main_model`
-        if (!m_is_validation_mode_enabled && result.inserted_tokens_cnt != 0) {
+        if (!m_is_validation_mode_enabled) {
             bool pause_gen_status = false;
             generated_len -= result.removed_tokens_cnt;
             generated_len += result.inserted_tokens_cnt;
