@@ -1621,6 +1621,7 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
 
     assert optimum_text == genai_text
 
+
 def test_vlm_pipeline_add_extension():
     models_path = _get_ov_model(MODEL_IDS[3])
 
