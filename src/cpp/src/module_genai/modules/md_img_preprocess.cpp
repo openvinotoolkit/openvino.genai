@@ -69,11 +69,28 @@ void ImagePreprocessModule::run() {
     GENAI_INFO("Running module: " + module_desc->name);
     prepare_inputs();
 
-    auto image1_data = this->inputs["image"].data.as<ov::Tensor>();
-    auto encoded_img = encoder_ptr->encode(image1_data, ov::AnyMap{});
-
-    this->outputs["raw_data"].data = encoded_img.resized_source;
-    this->outputs["source_size"].data = std::vector<int>{encoded_img.resized_source_size.height, encoded_img.resized_source_size.width};
+    if (exists_input("images")) {
+        auto images_data = this->inputs["images"].data.as<std::vector<ov::Tensor>>();
+        std::vector<ov::Tensor> output_tensors;
+        std::vector<ImageSize> output_sizes;
+        for (size_t i = 0; i < images_data.size(); ++i) {
+            auto encoded_img = encoder_ptr->encode(images_data[i], ov::AnyMap{});
+            output_tensors.push_back(encoded_img.resized_source);
+            output_sizes.push_back(encoded_img.resized_source_size);
+        }
+        this->outputs["raw_datas"].data = output_tensors;
+        std::vector<std::vector<int>> sizes_vec;
+        for (const auto& sz : output_sizes) {
+            sizes_vec.push_back({static_cast<int>(sz.height), static_cast<int>(sz.width)});
+        }
+        this->outputs["source_sizes"].data = sizes_vec;
+    } else {
+        auto image1_data = this->inputs["image"].data.as<ov::Tensor>();
+        auto encoded_img = encoder_ptr->encode(image1_data, ov::AnyMap{});
+        this->outputs["raw_data"].data = encoded_img.resized_source;
+        this->outputs["source_size"].data =
+            std::vector<int>{static_cast<int>(encoded_img.resized_source_size.height), static_cast<int>(encoded_img.resized_source_size.width)};
+    }
 }
 
 }  // namespace module

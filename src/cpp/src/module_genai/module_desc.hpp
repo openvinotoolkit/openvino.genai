@@ -23,6 +23,7 @@ enum class DataType : int {
     VecString = 11,
     Int = 20,
     VecInt = 21,
+    VecVecInt = 22,
     Float = 30,
     VecFloat = 31
 };

@@ -20,6 +20,7 @@ const std::unordered_map<DataType, std::string> DataTypeConverter::kTypeToString
     {DataType::VecString, "VecString"},
     {DataType::Int, "Int"},
     {DataType::VecInt, "VecInt"},
+    {DataType::VecVecInt, "VecVecInt"},
     {DataType::Float, "Float"},
     {DataType::VecFloat, "VecFloat"}};
 
