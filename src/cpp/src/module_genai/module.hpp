@@ -17,9 +17,7 @@ namespace module {
 
 using PipelineModuleInstance = std::vector<IBaseModule::PTR>;
 
-using PipelineModuleDesc = std::unordered_map<std::string, IBaseModuleDesc::PTR>;
-
-void construct_pipeline(const PipelineModuleDesc& pipeline_desc, PipelineModuleInstance& pipeline_instance);
+void construct_pipeline(const PipelineModulesDesc& pipeline_modules_desc, PipelineModuleInstance& pipeline_instance, const PipelineDesc::PTR& pipeline_desc);
 
 PipelineModuleInstance sort_pipeline(PipelineModuleInstance& pipeline_instrance);
 

@@ -17,13 +17,15 @@ namespace module {
 
 // config_yaml_path: yaml file.
 ModulePipeline::ModulePipeline(const std::filesystem::path& config_yaml_path) {
-    ModulePipelineImpl* pImpl = new ModulePipelineImpl(config_yaml_path);
+    auto pipeline_desc = utils::load_config(config_yaml_path);
+    ModulePipelineImpl* pImpl = new ModulePipelineImpl(pipeline_desc->main_pipeline_desc, pipeline_desc);
     OPENVINO_ASSERT(pImpl != NULL, "Create ModulePipelineImpl return null.");
     m_pipeline_impl = (ModulePipelineImpl*)pImpl;
 }
 
 ModulePipeline::ModulePipeline(const std::string& config_yaml_content) {
-    ModulePipelineImpl* pImpl = new ModulePipelineImpl(config_yaml_content);
+    auto pipeline_desc = utils::load_config_from_string(config_yaml_content);
+    ModulePipelineImpl* pImpl = new ModulePipelineImpl(pipeline_desc->main_pipeline_desc, pipeline_desc);
     OPENVINO_ASSERT(pImpl != NULL, "Create ModulePipelineImpl return null.");
     m_pipeline_impl = (ModulePipelineImpl*)pImpl;
 }

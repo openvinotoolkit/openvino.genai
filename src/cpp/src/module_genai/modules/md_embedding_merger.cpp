@@ -32,7 +32,8 @@ void EmbeddingMergerModule::print_static_config() {
     )" << std::endl;
 }
 
-EmbeddingMergerModule::EmbeddingMergerModule(const IBaseModuleDesc::PTR &desc) : IBaseModule(desc) {
+EmbeddingMergerModule::EmbeddingMergerModule(const IBaseModuleDesc::PTR& desc, const PipelineDesc::PTR& pipeline_desc)
+    : IBaseModule(desc, pipeline_desc) {
     VLMModelType model_type = to_vlm_model_type(desc->model_type);
     if (model_type != VLMModelType::QWEN2_VL && model_type != VLMModelType::QWEN2_5_VL) {
         GENAI_ERR("EmbeddingMergerModule[" + desc->name + "]: Unsupported model type: " + desc->model_type);
@@ -41,6 +42,8 @@ EmbeddingMergerModule::EmbeddingMergerModule(const IBaseModuleDesc::PTR &desc) :
         GENAI_ERR("Failed to initiate EmbeddingMergerModule");
     }
 }
+
+EmbeddingMergerModule::~EmbeddingMergerModule() {}
 
 bool EmbeddingMergerModule::initialize() {
     const auto &params = module_desc->params;

@@ -83,7 +83,7 @@ pipeline_modules:
         std::vector<float> expected_merged_embeds = { 
           0.37454, 0.796543, 0.950714, 0.183435, 0.731994, 0.779691, 0.598659, 0.59685, 0.156019, 0.445833
         };
-        CHECK(compare_big_tensor(output, expected_merged_embeds, 1e-2), "merged_embedding do not match expected values");
+        CHECK(compare_big_tensor<float>(output, expected_merged_embeds, 1e-2), "merged_embedding do not match expected values");
         CHECK(compare_shape(output.get_shape(), ov::Shape{1, 6, 2048}), "merged_embedding's shape not match expected shape");
     }
 };

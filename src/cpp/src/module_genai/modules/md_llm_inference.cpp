@@ -52,11 +52,14 @@ pipeline_modules:
     )" << std::endl;
 }
 
-LLMInferenceModule::LLMInferenceModule(const IBaseModuleDesc::PTR& desc) : IBaseModule(desc) {
+LLMInferenceModule::LLMInferenceModule(const IBaseModuleDesc::PTR& desc, const PipelineDesc::PTR& pipeline_desc)
+    : IBaseModule(desc, pipeline_desc) {
     if (!initialize()) {
         GENAI_ERR("Failed to initialize LLMInferenceModule");
     }
 }
+
+LLMInferenceModule::~LLMInferenceModule() {}
 
 bool LLMInferenceModule::load_generation_config(const std::string& config_path) {
     try {

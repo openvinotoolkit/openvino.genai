@@ -16,20 +16,7 @@ namespace genai {
 namespace module {
 
 class EmbeddingMergerModule : public IBaseModule {
-protected:
-    EmbeddingMergerModule() = delete;
-    EmbeddingMergerModule(const IBaseModuleDesc::PTR& desc);
-
-public:
-    ~EmbeddingMergerModule() {}
-
-    void run() override;
-
-    using PTR = std::shared_ptr<EmbeddingMergerModule>;
-    static PTR create(const IBaseModuleDesc::PTR& desc) {
-        return PTR(new EmbeddingMergerModule(desc));
-    }
-    static void print_static_config();
+    DeclareModuleConstructor(EmbeddingMergerModule);
 
 private:
     bool initialize();
@@ -37,14 +24,12 @@ private:
     VLMConfig m_vlm_config;
     std::map<std::string, int64_t> m_vision_token_ids;
     void encode_vision_placeholder_tokens();
-    ov::Tensor merge_text_and_video_image_embeddings(
-        const ov::Tensor& input_ids,
-        const ov::Tensor& text_embeds, 
-        const ov::Tensor& processed_image_embeds,
-        const ov::Tensor& processed_video_embeds,
-        const int64_t image_pad_token_id,
-        const int64_t video_pad_token_id
-    );
+    ov::Tensor merge_text_and_video_image_embeddings(const ov::Tensor& input_ids,
+                                                     const ov::Tensor& text_embeds,
+                                                     const ov::Tensor& processed_image_embeds,
+                                                     const ov::Tensor& processed_video_embeds,
+                                                     const int64_t image_pad_token_id,
+                                                     const int64_t video_pad_token_id);
 };
 
 REGISTER_MODULE_CONFIG(EmbeddingMergerModule);

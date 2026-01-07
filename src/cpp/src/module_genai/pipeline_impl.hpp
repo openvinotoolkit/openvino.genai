@@ -17,9 +17,7 @@ private:
 
 public:
     // config_yaml_path: yaml file.
-    ModulePipelineImpl(const std::filesystem::path& config_yaml_path);
-
-    ModulePipelineImpl(const std::string& config_yaml_content);
+    ModulePipelineImpl(const PipelineModulesDesc& pipeline_modules_desc, const PipelineDesc::PTR& pipeline_desc);
 
     ~ModulePipelineImpl();
 

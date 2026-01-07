@@ -15,20 +15,7 @@ namespace genai {
 namespace module {
 
 class TextEmbeddingModule : public IBaseModule {
-protected:
-    TextEmbeddingModule() = delete;
-    TextEmbeddingModule(const IBaseModuleDesc::PTR& desc);
-
-public:
-    ~TextEmbeddingModule() {}
-
-    void run() override;
-
-    using PTR = std::shared_ptr<TextEmbeddingModule>;
-    static PTR create(const IBaseModuleDesc::PTR& desc) {
-        return PTR(new TextEmbeddingModule(desc));
-    }
-    static void print_static_config();
+    DeclareModuleConstructor(TextEmbeddingModule);
 
 private:
     bool initialize();

@@ -31,6 +31,7 @@ namespace module {
         // 3. Fusion/Pruning Modules
         FeaturePrunerModule = 30,
         FeatureFusionModule = 31,
+        VAEDecoderTilingModule = 32,
         
         // 4. Inference/Generator Modules
         LLMInferenceModule = 40,

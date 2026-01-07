@@ -52,11 +52,14 @@ void TextEncoderModule::print_static_config() {
     )" << std::endl;
 }
 
-TextEncoderModule::TextEncoderModule(const IBaseModuleDesc::PTR& desc) : IBaseModule(desc) {
+TextEncoderModule::TextEncoderModule(const IBaseModuleDesc::PTR& desc, const PipelineDesc::PTR& pipeline_desc)
+    : IBaseModule(desc, pipeline_desc) {
     if (!initialize()) {
         GENAI_ERR("Failed to initiate TextEncoderModule");
     }
 }
+
+TextEncoderModule::~TextEncoderModule() {}
 
 bool TextEncoderModule::initialize() {
     const auto& params = module_desc->params;

@@ -54,7 +54,8 @@ void VisionEncoderModule::print_static_config() {
     )" << std::endl;
 }
 
-VisionEncoderModule::VisionEncoderModule(const IBaseModuleDesc::PTR &desc) : IBaseModule(desc) {
+VisionEncoderModule::VisionEncoderModule(const IBaseModuleDesc::PTR& desc, const PipelineDesc::PTR& pipeline_desc)
+    : IBaseModule(desc, pipeline_desc) {
     VLMModelType model_type = to_vlm_model_type(desc->model_type);
     if (model_type != VLMModelType::QWEN2_VL && model_type != VLMModelType::QWEN2_5_VL) {
         GENAI_ERR("VisionEncoderModule[" + desc->name + "]: Unsupported model type: " + desc->model_type);
@@ -64,6 +65,8 @@ VisionEncoderModule::VisionEncoderModule(const IBaseModuleDesc::PTR &desc) : IBa
         GENAI_ERR("Failed to initiate VisionEncoderModule");
     }
 }
+
+VisionEncoderModule::~VisionEncoderModule() {}
 
 bool VisionEncoderModule::initialize() {
     const auto &params = module_desc->params;

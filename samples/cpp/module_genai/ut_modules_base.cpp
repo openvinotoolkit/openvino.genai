@@ -44,18 +44,3 @@ bool ModuleTestBase::compare_tensors(const ov::Tensor& output, const ov::Tensor&
     size_t byte_size = output.get_byte_size();
     return std::memcmp(output.data(), expected.data(), byte_size) == 0;
 }
-
-bool ModuleTestBase::compare_big_tensor(const ov::Tensor& output,
-                                        const std::vector<float>& expected_top,
-                                        const float& thr) {
-    int real_size = std::min(expected_top.size(), output.get_size());
-    bool bresult = true;
-    for (int i = 0; i < real_size; ++i) {
-        float val = static_cast<float>(output.data<float>()[i]);
-        if (std::fabs(val - expected_top[i]) > thr) {
-            bresult = false;
-            std::cout << "Mismatch at index " << i << ": expected " << expected_top[i] << ", got " << val << std::endl;
-        }
-    }
-    return bresult;
-}

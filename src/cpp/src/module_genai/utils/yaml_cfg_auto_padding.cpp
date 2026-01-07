@@ -7,6 +7,7 @@
 
 #include <yaml-cpp/yaml.h>
 #include <filesystem>
+#include <fstream>
 
 namespace ov {
 namespace genai {
@@ -14,16 +15,7 @@ namespace genai {
 namespace module {
 namespace utils {
 
-// Auto padding for yaml config_node when only one module is defined.
-void yaml_cfg_auto_padding(YAML::Node& config_node) {
-    OPENVINO_ASSERT(config_node["pipeline_modules"], "Test yaml config miss 'pipeline_modules'.");
-
-    YAML::Node modules = config_node["pipeline_modules"];
-    // Check if only one module is defined
-    if (modules.size() != 1) {
-        return;
-    }
-
+inline void yaml_cfg_auto_padding_io_module(YAML::Node& modules) {
     std::map<std::string, std::string> extracted_params;
     std::map<std::string, std::string> extracted_results;
 
@@ -35,6 +27,11 @@ void yaml_cfg_auto_padding(YAML::Node& config_node) {
     std::string test_module_name;
     for (auto it = modules.begin(); it != modules.end(); ++it) {
         test_module_name = it->first.as<std::string>();
+        if (test_module_name == "name") {
+            // skip name key
+            continue;
+        }
+
         // get inputs
         YAML::Node inputs = it->second["inputs"];
         if (inputs && inputs.IsSequence()) {
@@ -87,7 +84,7 @@ void yaml_cfg_auto_padding(YAML::Node& config_node) {
     if (outputs_seq.size() > 0) {
         params_node["outputs"] = outputs_seq;
     }
-    config_node["pipeline_modules"][auto_padding_param_name] = params_node;
+    modules[auto_padding_param_name] = params_node;
 
     // pipeline_results
     YAML::Node results_node;
@@ -103,7 +100,47 @@ void yaml_cfg_auto_padding(YAML::Node& config_node) {
     if (inputs_seq.size() > 0) {
         results_node["inputs"] = inputs_seq;
     }
-    config_node["pipeline_modules"][auto_padding_result_name] = results_node;
+    modules[auto_padding_result_name] = results_node;
+}
+
+void yaml_cfg_auto_padding(YAML::Node& config_node) {
+    OPENVINO_ASSERT(config_node["pipeline_modules"], "Test yaml config miss 'pipeline_modules'.");
+
+    YAML::Node modules = config_node["pipeline_modules"];
+    if (modules.size() == 1) {
+        // only one module, auto padding ParameterModule and ResultModule
+        yaml_cfg_auto_padding_io_module(modules);
+    }
+
+    // dump yaml to file for debug
+    // save_yaml_to_file(config_node, "debug_auto_padding.yaml");
+
+    YAML::Node sub_modules = config_node["sub_modules"];
+    if (sub_modules && sub_modules.IsSequence()) {
+        for (auto sub_module_entry : sub_modules) {
+            OPENVINO_ASSERT(sub_module_entry["name"], "Each sub_module entry must have a 'name' key.");
+            std::string sub_pipeline_name = sub_module_entry["name"].as<std::string>();
+
+            if (sub_module_entry.size() == 2) {
+                 // only one module except for "name", auto padding ParameterModule and ResultModule
+                for (YAML::const_iterator it = sub_module_entry.begin(); it != sub_module_entry.end(); ++it) {
+                    std::string key = it->first.as<std::string>();
+                    if (key != "name") {
+                        yaml_cfg_auto_padding_io_module(sub_module_entry);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // save_yaml_to_file(config_node, "debug_auto_padding_2.yaml");
+}
+
+void save_yaml_to_file(const YAML::Node& node, const std::filesystem::path& file_path) {
+    std::ofstream fout(file_path, std::ios::out | std::ios::binary);
+    fout << YAML::Dump(node);
+    fout.close();
 }
 
 }  // namespace utils

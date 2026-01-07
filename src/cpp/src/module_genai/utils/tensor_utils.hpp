@@ -15,4 +15,9 @@ std::vector<ov::Tensor> split(const ov::Tensor& tensor);
 
 ov::Tensor stack(const std::vector<ov::Tensor>& tensors);
 
+ov::Tensor slice_tensor(const ov::Tensor& tensor, ov::Coordinate begin, ov::Coordinate end);
+
+ov::Tensor concat_tensors(const std::vector<ov::Tensor>& tensors, size_t axis = 0);
+
+const std::string shape_to_string(const ov::Shape& shape);
 }

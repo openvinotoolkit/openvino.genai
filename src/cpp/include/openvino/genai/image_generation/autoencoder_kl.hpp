@@ -146,7 +146,7 @@ public:
     void export_model(const std::filesystem::path& export_path);
 
 private:
-    void merge_vae_image_post_processing() const;
+    void merge_vae_image_post_processing(const bool& enable_postprocess = true) const;
     void import_model(const std::filesystem::path& blob_path, const std::string& device, const ov::AnyMap& properties = {});
 
     Config m_config;

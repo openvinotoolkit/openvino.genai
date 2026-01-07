@@ -20,13 +20,16 @@ namespace utils {
 
 std::pair<std::string, std::string> parse_source(const std::string& source);
 
-PipelineModuleDesc load_config(const std::string& cfg_path);
+PipelineDesc::PTR load_config(const std::string& cfg_path);
 
-PipelineModuleDesc load_config_from_string(const std::string& content);
+PipelineDesc::PTR load_config_from_string(const std::string& content);
 
 void yaml_cfg_auto_padding(YAML::Node& config_node);
 
 std::ostream& operator<<(std::ostream& os, const IBaseModuleDesc::PTR& desc);
+const std::string module_desc_to_string(const IBaseModuleDesc::PTR& desc);
+
+void save_yaml_to_file(const YAML::Node& node, const std::filesystem::path& file_path);
 
 }  // namespace utils
 }  // namespace module

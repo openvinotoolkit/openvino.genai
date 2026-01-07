@@ -5,6 +5,7 @@
 
 #include "module_genai/module_print_config.hpp"
 #include "module_genai/module_type.hpp"
+#include "module_genai/module_desc.hpp"
 #include "openvino/core/any.hpp"
 #include "openvino/genai/visibility.hpp"
 #include "visual_language/vision_encoder.hpp"
@@ -12,54 +13,6 @@
 namespace ov {
 namespace genai {
 namespace module {
-
-enum class DataType : int {
-    Unknown = 0,
-    OVTensor = 1,
-    VecOVTensor = 2,
-    OVRemoteTensor = 3,
-    VecOVRemoteTensor = 4,
-    String = 10,
-    VecString = 11,
-    Int = 20,
-    VecInt = 21,
-    Float = 30,
-    VecFloat = 31
-};
-
-struct OutputPort {
-    std::string name;
-    DataType dt_type;
-};
-
-struct InputPort {
-    std::string name;
-    DataType dt_type;
-    std::string source_module_name;
-    std::string source_module_out_name;
-};
-
-class IBaseModuleDesc {
-public:
-    virtual ~IBaseModuleDesc() = default;
-
-    std::string name = "Unknown";
-    ModuleType type = ModuleType::Unknown;
-    std::vector<InputPort> inputs;
-    std::vector<OutputPort> outputs;
-    std::string device;
-    std::string description;
-    std::unordered_map<std::string, std::string> params;
-    std::string model_type;
-
-    using PTR = std::shared_ptr<IBaseModuleDesc>;
-    static PTR create() {
-        return std::make_shared<IBaseModuleDesc>();
-    }
-
-    std::string get_full_path(const std::string& fn);
-    std::filesystem::path config_root_path = ".";  // default to current directory
-};
 
 class IBaseModule {
 public:
@@ -81,7 +34,7 @@ public:
     };
 
     IBaseModule() = delete;
-    IBaseModule(const IBaseModuleDesc::PTR& desc);
+    IBaseModule(const IBaseModuleDesc::PTR& desc, const PipelineDesc::PTR& pipeline_desc);
 
     virtual void prepare_inputs();
 
@@ -92,10 +45,29 @@ public:
     // Port name -> InputModule
     std::map<std::string, InputModule> inputs;
     std::map<std::string, OutputModule> outputs;
-    IBaseModuleDesc::PTR module_desc;
+    IBaseModuleDesc::PTR module_desc = nullptr;
+    PipelineDesc::PTR pipeline_desc = nullptr;
     bool is_input_module = false;
     bool is_output_module = false;
 };
+
+#ifndef DeclareModuleConstructor
+#    define DeclareModuleConstructor(class_name)                                                      \
+    protected:                                                                                        \
+        class_name() = delete;                                                                        \
+        class_name(const IBaseModuleDesc::PTR& desc, const PipelineDesc::PTR& pipeline_desc);         \
+                                                                                                      \
+    public:                                                                                           \
+        ~class_name();                                                                                \
+                                                                                                      \
+        void run() override;                                                                          \
+                                                                                                      \
+        using PTR = std::shared_ptr<class_name>;                                                      \
+        static PTR create(const IBaseModuleDesc::PTR& desc, const PipelineDesc::PTR& pipeline_desc) { \
+            return PTR(new class_name(desc, pipeline_desc));                                          \
+        }                                                                                             \
+        static void print_static_config()
+#endif
 
 }  // namespace module
 }  // namespace genai

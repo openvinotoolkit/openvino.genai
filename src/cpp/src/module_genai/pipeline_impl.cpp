@@ -13,21 +13,10 @@ namespace genai {
 namespace module {
 
 // config_yaml_path: yaml file.
-ModulePipelineImpl::ModulePipelineImpl(const std::filesystem::path& config_yaml_path) {
-    auto pipeline_desc = utils::load_config(config_yaml_path);
-
+ModulePipelineImpl::ModulePipelineImpl(const PipelineModulesDesc& pipeline_modules_desc,
+                                       const PipelineDesc::PTR& pipeline_desc) {
     // Construct pipeline
-    construct_pipeline(pipeline_desc, m_modules);
-
-    // Sort pipeline
-    m_modules = sort_pipeline(m_modules);
-}
-
-ModulePipelineImpl::ModulePipelineImpl(const std::string& config_yaml_content) {
-    auto pipeline_desc = utils::load_config_from_string(config_yaml_content);
-
-    // Construct pipeline
-    construct_pipeline(pipeline_desc, m_modules);
+    construct_pipeline(pipeline_modules_desc, m_modules, pipeline_desc);
 
     // Sort pipeline
     m_modules = sort_pipeline(m_modules);

@@ -15,20 +15,7 @@ namespace genai {
 namespace module {
 
 class VisionEncoderModule : public IBaseModule {
-protected:
-    VisionEncoderModule() = delete;
-    VisionEncoderModule(const IBaseModuleDesc::PTR &desc);
-
-public:
-    ~VisionEncoderModule() {}
-
-    void run() override;
-
-    using PTR = std::shared_ptr<VisionEncoderModule>;
-    static PTR create(const IBaseModuleDesc::PTR &desc) {
-        return PTR(new VisionEncoderModule(desc));
-    }
-    static void print_static_config();
+    DeclareModuleConstructor(VisionEncoderModule);
 
 private:
     bool initialize();

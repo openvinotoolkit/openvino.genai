@@ -62,17 +62,17 @@ protected:
 
     bool compare_tensors(const ov::Tensor& output, const ov::Tensor& expected);
 
-    bool compare_big_tensor(const ov::Tensor& output, const std::vector<float>& expected_top, const float& thr = 1e-3);
-
     template <typename T>
-    bool compare_big_tensor(const ov::Tensor& output, const std::vector<T>& expected_top) {
+    bool compare_big_tensor(const ov::Tensor& output, const std::vector<T>& expected_top, const float& thr = 0) {
         int real_size = std::min(expected_top.size(), output.get_size());
         bool bresult = true;
         for (int i = 0; i < real_size; ++i) {
             T val = static_cast<T>(output.data<T>()[i]);
-            if (val != expected_top[i]) {
+            float expected_flt = static_cast<float>(expected_top[i]);
+            float val_flt = static_cast<float>(val);
+            if (std::fabs(val_flt - expected_flt) > thr) {
                 bresult = false;
-                std::cout << "Mismatch at index " << i << ": expected " << expected_top[i] << ", got " << val
+                std::cout << "Mismatch at index " << i << ": expected " << expected_flt << ", got " << val_flt
                           << std::endl;
             }
         }

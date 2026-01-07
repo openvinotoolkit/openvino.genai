@@ -62,7 +62,7 @@ pipeline_modules:
         std::vector<float> expected_text_embeds = { 
           0.0129318, 0.000862122, 0.0021553, 0, -0.0133667, 0.0168152, 0.00387955, 0.0021553, -0.0375061, -0.0241394
         };
-        CHECK(compare_big_tensor(output, expected_text_embeds, 1e-5), "input_embedding do not match expected values");
+        CHECK(compare_big_tensor<float>(output, expected_text_embeds, 1e-5), "input_embedding do not match expected values");
         CHECK(compare_shape(output.get_shape(), ov::Shape{1, 6, 2048}), "input_embedding's shape not match expected shape");
     }
 };

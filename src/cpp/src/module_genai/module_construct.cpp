@@ -10,6 +10,7 @@
 #include "modules/md_embedding_merger.hpp"
 #include "modules/md_llm_inference.hpp"
 #include "modules/md_zimage_denoiser_loop.hpp"
+#include "modules/md_vae_decoder_tiling.hpp"
 #include "modules/md_vae_decoder.hpp"
 #include "utils/yaml_utils.hpp"
 
@@ -42,40 +43,28 @@ void module_connect(PipelineModuleInstance& pipeline_instance) {
     }
 }
 
-void construct_pipeline(const PipelineModuleDesc& pipeline_desc, PipelineModuleInstance& pipeline_instance) {
-    for (auto& module_desc : pipeline_desc) {
+void construct_pipeline(const PipelineModulesDesc& pipeline_modules_desc, PipelineModuleInstance& pipeline_instance, const PipelineDesc::PTR& pipeline_desc) {
+    for (auto& module_desc : pipeline_modules_desc) {
         IBaseModule::PTR module_ptr = nullptr;
         switch (module_desc.second->type) {
-        case ModuleType::ParameterModule:
-            module_ptr = ParameterModule::create(module_desc.second);
-            break;
-        case ModuleType::ResultModule:
-            module_ptr = ResultModule::create(module_desc.second);
-            break;
-        case ModuleType::ImagePreprocessModule:
-            module_ptr = ImagePreprocesModule::create(module_desc.second);
-            break;
-        case ModuleType::TextEncoderModule:
-            module_ptr = TextEncoderModule::create(module_desc.second);
-            break;
-        case ModuleType::VisionEncoderModule:
-            module_ptr = VisionEncoderModule::create(module_desc.second);
-            break;
-        case ModuleType::TextEmbeddingModule:
-            module_ptr = TextEmbeddingModule::create(module_desc.second);
-            break;
-        case ModuleType::EmbeddingMergerModule:
-            module_ptr = EmbeddingMergerModule::create(module_desc.second);
-            break;
-        case ModuleType::LLMInferenceModule:
-            module_ptr = LLMInferenceModule::create(module_desc.second);
-            break;
-        case ModuleType::ZImageDenoiserLoopModule:
-            module_ptr = ZImageDenoiserLoopModule::create(module_desc.second);
-            break;
-        case ModuleType::VAEDecoderModule:
-            module_ptr = VAEDecoderModule::create(module_desc.second);
-            break;
+#define GENAI_MODULE_TYPE_CASE(module_type_enum, module_class) \
+    case ModuleType::module_type_enum:                         \
+        module_ptr = module_class::create(module_desc.second, pipeline_desc); \
+        break;
+
+        GENAI_MODULE_TYPE_CASE(ParameterModule, ParameterModule);
+        GENAI_MODULE_TYPE_CASE(ResultModule, ResultModule);
+        GENAI_MODULE_TYPE_CASE(ImagePreprocessModule, ImagePreprocessModule);
+        GENAI_MODULE_TYPE_CASE(TextEncoderModule, TextEncoderModule);
+        GENAI_MODULE_TYPE_CASE(VisionEncoderModule, VisionEncoderModule);
+        GENAI_MODULE_TYPE_CASE(TextEmbeddingModule, TextEmbeddingModule);
+        GENAI_MODULE_TYPE_CASE(EmbeddingMergerModule, EmbeddingMergerModule);
+        GENAI_MODULE_TYPE_CASE(LLMInferenceModule, LLMInferenceModule);
+        GENAI_MODULE_TYPE_CASE(ZImageDenoiserLoopModule, ZImageDenoiserLoopModule);
+        GENAI_MODULE_TYPE_CASE(VAEDecoderTilingModule, VAEDecoderTilingModule);
+        GENAI_MODULE_TYPE_CASE(VAEDecoderModule, VAEDecoderModule);
+
+#undef GENAI_MODULE_TYPE_CASES
         default:
             break;
         }

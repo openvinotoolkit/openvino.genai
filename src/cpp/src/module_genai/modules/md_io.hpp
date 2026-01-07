@@ -12,44 +12,19 @@ namespace genai {
 namespace module {
 
 class ParameterModule : public IBaseModule {
-protected:
-    ParameterModule() = delete;
-    ParameterModule(const IBaseModuleDesc::PTR& desc);
+    DeclareModuleConstructor(ParameterModule);
 
 public:
-    ~ParameterModule() {}
-
-    void run() override {};
-
     void run(ov::AnyMap& inputs);
-
-    using PTR = std::shared_ptr<ParameterModule>;
-    static PTR create(const IBaseModuleDesc::PTR& desc) {
-        return PTR(new ParameterModule(desc));
-    }
-
-    static void print_static_config();
 };
 
 REGISTER_MODULE_CONFIG(ParameterModule);
 
 class ResultModule : public IBaseModule {
-protected:
-    ResultModule() = delete;
-    ResultModule(const IBaseModuleDesc::PTR& desc);
+    DeclareModuleConstructor(ResultModule);
 
 public:
-    ~ResultModule()  {}
-
-    void run() override {};
     void run(ov::AnyMap& outputs);
-
-    using PTR = std::shared_ptr<ResultModule>;
-    static PTR create(const IBaseModuleDesc::PTR& desc) {
-        return PTR(new ResultModule(desc));
-    }
-
-    static void print_static_config();
 };
 
 REGISTER_MODULE_CONFIG(ResultModule);

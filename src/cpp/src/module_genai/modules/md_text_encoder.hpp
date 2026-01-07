@@ -16,20 +16,7 @@ namespace genai {
 namespace module {
 
 class TextEncoderModule : public IBaseModule {
-protected:
-    TextEncoderModule() = delete;
-    TextEncoderModule(const IBaseModuleDesc::PTR& desc);
-
-public:
-    ~TextEncoderModule() {}
-
-    void run() override;
-
-    using PTR = std::shared_ptr<TextEncoderModule>;
-    static PTR create(const IBaseModuleDesc::PTR& desc) {
-        return PTR(new TextEncoderModule(desc));
-    }
-    static void print_static_config();
+    DeclareModuleConstructor(TextEncoderModule);
 
 private:
     std::shared_ptr<Tokenizer::TokenizerImpl> m_tokenizer_impl;

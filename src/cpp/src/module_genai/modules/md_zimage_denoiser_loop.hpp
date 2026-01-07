@@ -16,19 +16,7 @@ class IScheduler;
 namespace module {
 
 class ZImageDenoiserLoopModule : public IBaseModule {
-protected:
-    ZImageDenoiserLoopModule() = delete;
-    ZImageDenoiserLoopModule(const IBaseModuleDesc::PTR& desc);
-public:
-    ~ZImageDenoiserLoopModule();
-
-    void run() override;
-
-    using PTR = std::shared_ptr<ZImageDenoiserLoopModule>;
-    static PTR create(const IBaseModuleDesc::PTR& desc) {
-        return PTR(new ZImageDenoiserLoopModule(desc));
-    }
-    static void print_static_config();
+    DeclareModuleConstructor(ZImageDenoiserLoopModule);
 
 private:
     bool initialize();

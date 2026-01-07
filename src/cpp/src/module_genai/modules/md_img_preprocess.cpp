@@ -10,11 +10,11 @@ namespace ov {
 namespace genai {
 namespace module {
 
-void ImagePreprocesModule::print_static_config() {
+void ImagePreprocessModule::print_static_config() {
     std::cout << R"(
-  image_preprocessor:       # Module Name
+  image_preprocessor:           # Module Name
     type: "ImagePreprocessModule"
-    device: "CPU"
+    device: "CPU"               # Optional, default to CPU
     description: "Image or Video preprocessing."
     inputs:
       - name: "image"           # [optional]
@@ -46,7 +46,8 @@ void ImagePreprocesModule::print_static_config() {
     )" << std::endl;
 }
 
-ImagePreprocesModule::ImagePreprocesModule(const IBaseModuleDesc::PTR& desc) : IBaseModule(desc) {
+ImagePreprocessModule::ImagePreprocessModule(const IBaseModuleDesc::PTR& desc, const PipelineDesc::PTR& pipeline_desc)
+    : IBaseModule(desc, pipeline_desc) {
     std::string model_path = desc->get_full_path(desc->params["model_path"]);
     std::string device = desc->device;
     if (device.empty()) {
@@ -58,14 +59,13 @@ ImagePreprocesModule::ImagePreprocesModule(const IBaseModuleDesc::PTR& desc) : I
     if (model_type == VLMModelType::QWEN2_VL || model_type == VLMModelType::QWEN2_5_VL) {
         encoder_ptr = std::make_shared<VisionEncoderQwen2VL>(std::filesystem::path(model_path), device, ov::AnyMap{});
     } else {
-        GENAI_ERR("ImagePreprocesModule[" + desc->name + "]: Unsupported model type: " + desc->model_type);
+        GENAI_ERR("ImagePreprocessModule[" + desc->name + "]: Unsupported model type: " + desc->model_type);
     }
 }
-    
 
-ImagePreprocesModule::~ImagePreprocesModule() {}
+ImagePreprocessModule::~ImagePreprocessModule() {}
 
-void ImagePreprocesModule::run() {
+void ImagePreprocessModule::run() {
     GENAI_INFO("Running module: " + module_desc->name);
     prepare_inputs();
 

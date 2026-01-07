@@ -20,26 +20,12 @@ namespace module {
 /// @brief Unified generation module supporting multiple modalities
 /// Supports: LLM, VLM
 class LLMInferenceModule : public IBaseModule {
-protected:
-    LLMInferenceModule() = delete;
-    LLMInferenceModule(const IBaseModuleDesc::PTR& desc);
-
-public:
-    ~LLMInferenceModule() {}
-
-    void run() override;
-
-    using PTR = std::shared_ptr<LLMInferenceModule>;
-    static PTR create(const IBaseModuleDesc::PTR& desc) {
-        return PTR(new LLMInferenceModule(desc));
-    }
-    static void print_static_config();
+    DeclareModuleConstructor(LLMInferenceModule);
 
 private:
-    
     bool initialize();
     bool load_generation_config(const std::string& config_path);
-    
+
     // Pipeline instances (only one will be initialized based on model type)
     std::shared_ptr<ov::genai::VLMPipeline::VLMContinuousBatchingAdapter> m_cb_pipeline;
 

@@ -57,4 +57,62 @@ ov::Tensor stack(const std::vector<ov::Tensor>& tensors) {
     return stacked_tensor;
 }
 
+ov::Tensor slice_tensor(const ov::Tensor& tensor, ov::Coordinate begin, ov::Coordinate end) {
+    OPENVINO_ASSERT(begin.size() == end.size(), "Begin and end coordinates must have the same number of dimensions.");
+    ov::Shape tensor_shape = tensor.get_shape();
+    OPENVINO_ASSERT(begin.size() == tensor_shape.size(), "Begin coordinate size must match tensor rank.");
+
+    ov::Tensor sliced_view = ov::Tensor(tensor, begin, end);
+    ov::Tensor deep_copy(sliced_view.get_element_type(), sliced_view.get_shape());
+
+    sliced_view.copy_to(deep_copy);
+    return deep_copy;
 }
+
+ov::Tensor concat_tensors(const std::vector<ov::Tensor>& tensors, size_t axis) {
+    OPENVINO_ASSERT(!tensors.empty(), "Input tensor list is empty.");
+
+    ov::Shape result_shape = tensors[0].get_shape();
+    OPENVINO_ASSERT(axis < result_shape.size(), "Axis is out of bounds.");
+
+    size_t concat_dim_size = 0;
+    for (const auto& t : tensors) {
+        concat_dim_size += t.get_shape()[axis];
+    }
+    result_shape[axis] = concat_dim_size;
+    ov::Tensor result_tensor(tensors[0].get_element_type(), result_shape);
+
+    size_t element_byte_size = tensors[0].get_element_type().size();
+    size_t inner_size = 1;
+    for (size_t i = axis + 1; i < result_shape.size(); ++i) {
+        inner_size *= result_shape[i];
+    }
+
+    size_t outer_iterations = 1;
+    for (size_t i = 0; i < axis; ++i) {
+        outer_iterations *= result_shape[i];
+    }
+
+    uint8_t* dst_ptr = static_cast<uint8_t*>(result_tensor.data());
+    for (size_t outer = 0; outer < outer_iterations; ++outer) {
+        for (const auto& t : tensors) {
+            const uint8_t* src_ptr = static_cast<const uint8_t*>(t.data());
+            size_t axis_dim = t.get_shape()[axis];
+
+            size_t bytes_to_copy = axis_dim * inner_size * element_byte_size;
+            size_t src_offset = outer * bytes_to_copy;
+
+            std::memcpy(dst_ptr, src_ptr + src_offset, bytes_to_copy);
+            dst_ptr += bytes_to_copy;
+        }
+    }
+
+    return result_tensor;
+}
+
+const std::string shape_to_string(const ov::Shape& shape) {
+    std::ostringstream oss;
+    oss << shape;
+    return oss.str();
+}
+}  // namespace ov::genai::module::tensor_utils

@@ -11,7 +11,9 @@ namespace module {
 
 namespace fs = std::filesystem;
 
-IBaseModule::IBaseModule(const IBaseModuleDesc::PTR& desc) : module_desc(desc) {
+IBaseModule::IBaseModule(const IBaseModuleDesc::PTR& desc, const PipelineDesc::PTR& pipeline_desc)
+    : module_desc(desc),
+      pipeline_desc(pipeline_desc) {
     for (auto& input : desc->inputs) {
         this->inputs[input.name] = InputModule();
         this->inputs[input.name].parent_port_name = input.source_module_out_name;

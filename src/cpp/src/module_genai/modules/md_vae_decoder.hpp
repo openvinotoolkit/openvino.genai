@@ -10,20 +10,7 @@ namespace genai {
 namespace module {
 
 class VAEDecoderModule : public IBaseModule {
-protected:
-    VAEDecoderModule() = delete;
-    VAEDecoderModule(const IBaseModuleDesc::PTR& desc);
-public:
-    ~VAEDecoderModule();
-
-    void run() override;
-
-    using PTR = std::shared_ptr<VAEDecoderModule>;
-    static PTR create(const IBaseModuleDesc::PTR& desc) {
-        return PTR(new VAEDecoderModule(desc));
-    }
-
-    static void print_static_config();
+    DeclareModuleConstructor(VAEDecoderModule);
 
 private:
     bool initialize();

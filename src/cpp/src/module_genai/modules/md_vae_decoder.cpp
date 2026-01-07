@@ -26,15 +26,14 @@ void VAEDecoderModule::print_static_config() {
     )" << std::endl;
 }
 
-VAEDecoderModule::VAEDecoderModule(const IBaseModuleDesc::PTR &desc) : IBaseModule(desc) {
+VAEDecoderModule::VAEDecoderModule(const IBaseModuleDesc::PTR& desc, const PipelineDesc::PTR& pipeline_desc)
+    : IBaseModule(desc, pipeline_desc) {
     if (!initialize()) {
     	 GENAI_ERR("Failed to initialize VAEDecoderModule");
     }
 }
 
-VAEDecoderModule::~VAEDecoderModule() {
-
-}
+VAEDecoderModule::~VAEDecoderModule() {}
 
 bool VAEDecoderModule::initialize() {
     const auto &params = module_desc->params;
@@ -86,8 +85,14 @@ void VAEDecoderModule::run() {
         return;
     }
 
-    ov::Tensor latents = this->inputs["latents"].data.as<ov::Tensor>();
-    ov::Tensor image = m_vae->decode(latents);
+    ov::Tensor image;
+    auto& latent_data = this->inputs["latents"].data.as<ov::Tensor>();
+    if (latent_data.get_shape().size() == 3u) {
+        ov::Tensor latent = tensor_utils::unsqueeze(this->inputs["latents"].data.as<ov::Tensor>(), 0);
+        image = m_vae->decode(latent);
+    } else {
+        image = m_vae->decode(this->inputs["latents"].data.as<ov::Tensor>());
+    }
 
     this->outputs["image"].data = image;
 }

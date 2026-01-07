@@ -113,7 +113,7 @@ pipeline_modules:
         std::vector<float> expected_image_embedding = { 
             -1.03223, 0.269775, 0.316406, 1.99805, -1.7666, 1.14746, 1.60254, 1.89453, 3.13086, 0.59082
         };
-        CHECK(compare_big_tensor(image_embedding, expected_image_embedding, 0.2f), "image_embedding do not match expected values");
+        CHECK(compare_big_tensor<float>(image_embedding, expected_image_embedding, 0.2f), "image_embedding do not match expected values");
 
         auto position_ids = pipe.get_output("position_ids").as<ov::Tensor>();
         CHECK(compare_shape(position_ids.get_shape(), ov::Shape({3, 1, 43})), "position_ids shape do not match expected values");

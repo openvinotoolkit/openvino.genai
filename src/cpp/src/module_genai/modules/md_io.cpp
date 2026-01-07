@@ -20,10 +20,12 @@ void ParameterModule::print_static_config() {
         )" << std::endl;
 }
 
-ParameterModule::ParameterModule(const IBaseModuleDesc::PTR& desc) : IBaseModule(desc) {
+ParameterModule::ParameterModule(const IBaseModuleDesc::PTR& desc, const PipelineDesc::PTR& pipeline_desc)
+    : IBaseModule(desc, pipeline_desc) {
     is_input_module = true;
     // std::cout << "ParameterModule:" << m_desc << std::endl;
 }
+ParameterModule::~ParameterModule() {}
 
 void ParameterModule::run(ov::AnyMap& inputs) {
     GENAI_INFO("Running module: " + module_desc->name);
@@ -33,6 +35,10 @@ void ParameterModule::run(ov::AnyMap& inputs) {
         output.second.data = inputs[output.first];
         GENAI_INFO("    Pass " + output.first + " to output port");
     }
+}
+
+void ParameterModule::run() {
+    OPENVINO_ASSERT(false, "ParameterModule::run() should not be called");
 }
 
 void ResultModule::print_static_config() {
@@ -48,9 +54,12 @@ void ResultModule::print_static_config() {
     )" << std::endl;
 }
 
-ResultModule::ResultModule(const IBaseModuleDesc::PTR& desc) : IBaseModule(desc) {
+ResultModule::ResultModule(const IBaseModuleDesc::PTR& desc, const PipelineDesc::PTR& pipeline_desc)
+    : IBaseModule(desc, pipeline_desc) {
     is_output_module = true;
 }
+
+ResultModule::~ResultModule() {}
 
 void ResultModule::run(ov::AnyMap& outputs) {
     GENAI_INFO("Running module: " + module_desc->name);
@@ -60,6 +69,10 @@ void ResultModule::run(ov::AnyMap& outputs) {
         auto raw_data = this->inputs[port_name.source_module_out_name].data;
         outputs[port_name.source_module_out_name] = raw_data;
     }
+}
+
+void ResultModule::run() {
+    OPENVINO_ASSERT(false, "ResultModule::run() should not be called");
 }
 
 }  // namespace module

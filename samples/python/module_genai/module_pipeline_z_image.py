@@ -15,9 +15,9 @@ from PIL import Image
 import json
 
 class TransformerPipeline():
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: str, device: str, enable_tiling:bool):
         self.model_path = model_path
-        self.device = "CPU"
+        self.device = device
         core = Core()
         vae_decoder_model = core.read_model(self.model_path + "/vae_decoder/openvino_model.xml")
         self.vae_decoder_request = core.compile_model(vae_decoder_model, self.device)
@@ -105,7 +105,7 @@ class TransformerPipeline():
                     'description': 'Z-Image denoiser loop.',
                     'inputs': [
                         {
-                            'name': 'latents',
+                            'name': 'latent' if enable_tiling else 'latents',
                             'type': 'OVTensor',
                             'source': 'denoiser_loop.latents',
                         }
@@ -133,7 +133,62 @@ class TransformerPipeline():
             }
         }
 
+        if enable_tiling:
+            print(f"enable_tiling = {enable_tiling}")
+            cfg_data = self._update_config_with_tiling(cfg_data, decoder_module_name="vae")
+
         self.pipe = openvino_genai.ModulePipeline(config_yaml_content=yaml.dump(cfg_data))
+
+    def _update_config_with_tiling(self, cfg_data:dict, decoder_module_name:str):
+        decoder_node = cfg_data["pipeline_modules"][decoder_module_name]
+
+        vae_decoder_tiling = {
+            'vae_decoder_tiling': {
+                'type': "VAEDecoderTilingModule",
+                'device': self.device,
+                'inputs': [],
+                'outputs': [],
+                'params': {
+                    'tile_overlap_factor': "0.25",
+                    'model_path': self.model_path,
+                    'sub_module_name': "vae_decoder_submodule"
+                }
+            }
+        }
+        vae_decoder_tiling['vae_decoder_tiling']['inputs'] = decoder_node['inputs']
+        vae_decoder_tiling['vae_decoder_tiling']['outputs'] = decoder_node['outputs']
+        cfg_data["pipeline_modules"][decoder_module_name] = vae_decoder_tiling['vae_decoder_tiling']
+
+        sub_modules = {
+            'sub_modules': [
+                {
+                    'name': "vae_decoder_submodule",
+                    'vae_decoder': {
+                        'type' : "VAEDecoderModule",
+                        'device': self.device,
+                        'inputs': [
+                            {
+                               'name': 'latents',
+                                'type': 'OVTensor',
+                            }
+                        ],
+                        'outputs': [
+                            {
+                               'name': 'image',
+                                'type': 'OVTensor',
+                            }
+                        ],
+                        'params': {
+                            'model_path': self.model_path,
+                            'enable_postprocess': 'false',
+                        }
+                    }
+                }
+            ]
+        }
+
+        cfg_data["sub_modules"] = sub_modules['sub_modules']
+        return cfg_data
 
     def encode_prompt(
         self,
@@ -289,16 +344,20 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('model_path', default="./ut_pipelines/Z-Image-Turbo-fp16-ov/",  help="Path to the directory of models")
     parser.add_argument('prompt', default="", help="The prompt for generation")
+    parser.add_argument('device', default="CPU", help="Device, deault `CPU`, 'GPU' is preferred.")
+    parser.add_argument('--enable_tiling', action='store_true', help="Enable tiling. default false.")
     args = parser.parse_args()
 
-    pipeline = TransformerPipeline(args.model_path)
+    pipeline = TransformerPipeline(args.model_path, args.device, args.enable_tiling)
     images = pipeline(
         prompt=args.prompt,
-        height=512,
-        width=512,
+        height=16*65,
+        width=16*65,
         num_inference_steps=9
     )
-    images[0].save("zimage_denoiser_loop_output-vae.png")
+
+    out_name = "output_zimage_tiling.png" if args.enable_tiling else "output_zimage.png"
+    images[0].save(out_name)
 
 if __name__ == "__main__":
     main()
