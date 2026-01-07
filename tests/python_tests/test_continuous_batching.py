@@ -694,7 +694,7 @@ def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_dev
 
 def test_continuous_batching_add_extension():
     model_id = "katuni4ka/tiny-random-phi3"
-    _, _, models_path = download_and_convert_model(model_id)
+    models_path = download_and_convert_model(model_id).models_path
 
     scheduler_config = SchedulerConfig()
 
@@ -703,4 +703,3 @@ def test_continuous_batching_add_extension():
     with pytest.raises(RuntimeError) as exc_info:
         ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties)
     assert "Cannot find entry point to the extension library" in str(exc_info.value)
-    

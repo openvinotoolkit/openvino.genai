@@ -1391,7 +1391,7 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
     
     with pytest.raises(RuntimeError):
         ov_pipe.generate(image_tag(0))
-        
+
 
 @pytest.mark.parametrize(
     "ov_pipe_model,has_image,has_video",
@@ -1622,7 +1622,7 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
     assert optimum_text == genai_text
 
 def test_vlm_pipeline_add_extension():
-    models_path = _get_ov_model(MODEL_IDS[0])
+    models_path = _get_ov_model(MODEL_IDS[3])
 
     properties = {"EXTENSIONS": ["fake_path"]}
 

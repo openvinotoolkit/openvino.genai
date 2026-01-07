@@ -152,17 +152,17 @@ public:
         OPENVINO_ASSERT(!m_is_npu,
             "VLMPipeline initialization from string isn't supported for NPU device");
 
-        auto properties_without_extensions = properties;
-        utils::add_extensions_to_core(properties_without_extensions);
-        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties_without_extensions);
+        auto properties_copy = properties;
+        utils::add_extensions_to_core(properties_copy);
+        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties_copy);
 
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
 
         auto m_language_pair = utils::get_model_weights_pair(models_map, "language");
-        m_language = utils::singleton_core().compile_model(
-            m_language_pair.first, m_language_pair.second, device, properties_without_extensions
-        ).create_infer_request();
+        m_language = utils::singleton_core()
+                         .compile_model(m_language_pair.first, m_language_pair.second, device, properties_copy)
+                         .create_infer_request();
 
         m_language.get_tensor("attention_mask").set_shape({1, 0});
 
