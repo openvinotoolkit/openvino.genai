@@ -13,23 +13,23 @@ void print_cb_generation_result(const ov::genai::GenerationResult& generation_re
 }
 
 ov::genai::GenerationConfig greedy_config() {
-    ov::genai::GenerationConfig greedy_config;
-    greedy_config.max_new_tokens = 30;
-    return greedy_config;
+    ov::genai::GenerationConfig config;
+    config.max_new_tokens = 30;
+    return config;
 }
 
 ov::genai::GenerationConfig multinomial_config() {
-    ov::genai::GenerationConfig multinomial_config;
-    multinomial_config.do_sample = true;
-    multinomial_config.temperature = 0.9f;
-    multinomial_config.top_p = 0.9f;
-    multinomial_config.top_k = 20;
-    multinomial_config.num_return_sequences = 3;
-    multinomial_config.presence_penalty = 0.01f;
-    multinomial_config.frequency_penalty = 0.1f;
-    multinomial_config.min_new_tokens = 15;
-    multinomial_config.max_new_tokens = 30;
-    return multinomial_config;
+    ov::genai::GenerationConfig config;
+    config.do_sample = true;
+    config.temperature = 0.9f;
+    config.top_p = 0.9f;
+    config.top_k = 20;
+    config.num_return_sequences = 3;
+    config.presence_penalty = 0.01f;
+    config.frequency_penalty = 0.1f;
+    config.min_new_tokens = 15;
+    config.max_new_tokens = 30;
+    return config;
 }
 
 std::vector<ov::genai::GenerationConfig> get_spec_decoding_generation_config_examples() {

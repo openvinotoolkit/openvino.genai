@@ -333,7 +333,7 @@ TEST(TestScheduler, test_partial_preemption_beam_search) {
 
         // create beam search group
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, ov::Tensor(ov::element::i64, {tokens.size()}, tokens.data()),
-                                                                                utils::get_greedy_config(), 4);
+                                                                                utils::get_beam_search_config(), 4);
         std::vector<SequenceGroup::Ptr> requests = {sequence_group};
         EXPECT_NO_THROW(requests[0]->get_running_sequences()[0]->get_sequence_group_ptr());
 

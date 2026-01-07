@@ -13,33 +13,33 @@ void print_generation_result(const ov::genai::GenerationResult& generation_resul
 }
 
 ov::genai::GenerationConfig beam_search_config() {
-    ov::genai::GenerationConfig beam_search_config;
-    beam_search_config.num_beams = 4;
-    beam_search_config.num_return_sequences = 3;
-    beam_search_config.num_beam_groups = 2;
-    beam_search_config.max_new_tokens = 100;
-    beam_search_config.diversity_penalty = 2.0f;
-    return beam_search_config;
+    ov::genai::GenerationConfig config;
+    config.num_beams = 4;
+    config.num_return_sequences = 3;
+    config.num_beam_groups = 2;
+    config.max_new_tokens = 100;
+    config.diversity_penalty = 2.0f;
+    return config;
 }
 
 ov::genai::GenerationConfig greedy_config() {
-    ov::genai::GenerationConfig greedy_config;
-    greedy_config.max_new_tokens = 30;
-    return greedy_config;
+    ov::genai::GenerationConfig config;
+    config.max_new_tokens = 30;
+    return config;
 }
 
 ov::genai::GenerationConfig multinomial_config() {
-    ov::genai::GenerationConfig multinomial_config;
-    multinomial_config.do_sample = true;
-    multinomial_config.temperature = 0.9f;
-    multinomial_config.top_p = 0.9f;
-    multinomial_config.top_k = 20;
-    multinomial_config.num_return_sequences = 3;
-    multinomial_config.presence_penalty = 0.01f;
-    multinomial_config.frequency_penalty = 0.1f;
-    multinomial_config.min_new_tokens = 15;
-    multinomial_config.max_new_tokens = 30;
-    return multinomial_config;
+    ov::genai::GenerationConfig config;
+    config.do_sample = true;
+    config.temperature = 0.9f;
+    config.top_p = 0.9f;
+    config.top_k = 20;
+    config.num_return_sequences = 3;
+    config.presence_penalty = 0.01f;
+    config.frequency_penalty = 0.1f;
+    config.min_new_tokens = 15;
+    config.max_new_tokens = 30;
+    return config;
 }
 
 int main(int argc, char* argv[]) try {
