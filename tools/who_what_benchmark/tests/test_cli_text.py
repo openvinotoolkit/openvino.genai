@@ -164,7 +164,7 @@ hf_model_scope = [
 ]
 if sys.platform != 'darwin' and sys.platform != 'win32':
     hf_model_scope += [
-        # model load failed in optimum, ticker: 178940
+        # model load failed in optimum, ticket: 178940
         # (gptq_model_id),
         (awq_model_id),
     ]
