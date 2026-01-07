@@ -722,10 +722,11 @@ void add_extensions_to_core(ov::AnyMap& properties) {
     auto it = properties.find(EXTENSIONS_ARG_NAME);
     if (it != properties.end()) {
 #ifdef _WIN32
-        auto extensions = it->second.as<std::vector<std::wstring>>();
+        using ExtensionPathType = std::wstring;
 #else
-        auto extensions = it->second.as<std::vector<std::string>>();
+        using ExtensionPathType = std::string;
 #endif
+        auto extensions = it->second.as<std::vector<ExtensionPathType>>();
         for (const auto& extension : extensions) {
             singleton_core().add_extension(extension);
         }
