@@ -24,111 +24,231 @@ ov::Tensor clip_image_f32_to_tensor(const clip_image_f32& image) {
     return image_tensor;
 }
 
-
-// Linear interpolation between two points
-static float clip_lerp(float s, float e, float t) {
-    return s + (e - s) * t;
+static inline int clip_int(int v, int lo, int hi) {
+    return (v < lo) ? lo : (v > hi) ? hi : v;
 }
 
-// Bilinear resize function
-void bilinear_resize(const clip_image_u8& src, clip_image_u8& dst, int target_width, int target_height) {
-    dst.nx = target_width;
-    dst.ny = target_height;
-    dst.buf.resize(3 * target_width * target_height);
-
-    float x_ratio = static_cast<float>(src.nx - 1) / target_width;
-    float y_ratio = static_cast<float>(src.ny - 1) / target_height;
-
-    for (int y = 0; y < target_height; y++) {
-        for (int x = 0; x < target_width; x++) {
-            float px = x_ratio * x;
-            float py = y_ratio * y;
-            int x_floor = static_cast<int>(px);
-            int y_floor = static_cast<int>(py);
-            float x_lerp = px - x_floor;
-            float y_lerp = py - y_floor;
-
-            for (int c = 0; c < 3; c++) {
-                float top = clip_lerp(
-                    static_cast<float>(src.buf[3 * (y_floor * src.nx + x_floor) + c]),
-                    static_cast<float>(src.buf[3 * (y_floor * src.nx + (x_floor + 1)) + c]),
-                    x_lerp
-                );
-                float bottom = clip_lerp(
-                    static_cast<float>(src.buf[3 * ((y_floor + 1) * src.nx + x_floor) + c]),
-                    static_cast<float>(src.buf[3 * ((y_floor + 1) * src.nx + (x_floor + 1)) + c]),
-                    x_lerp
-                );
-                dst.buf[3 * (y * target_width + x) + c] = static_cast<uint8_t>(clip_lerp(top, bottom, y_lerp));
-            }
-        }
+// Pillow's bicubic kernel (a = -0.5).
+static inline double pillow_bicubic_filter(double x) {
+    // a = -0.5
+    constexpr double a = -0.5;
+    x = std::abs(x);
+    if (x < 1.0) {
+        return ((a + 2.0) * x - (a + 3.0)) * x * x + 1.0;
     }
+    if (x < 2.0) {
+        return (((x - 5.0) * x + 8.0) * x - 4.0) * a;
+    }
+    return 0.0;
 }
 
-template<typename NUM>
-NUM clip(NUM x, NUM lower, NUM upper) {
-    return std::max(lower, std::min(x, upper));
+// Pillow-style bilinear (triangle) filter.
+static inline double pillow_bilinear_filter(double x) {
+    x = std::abs(x);
+    if (x < 1.0)
+        return 1.0 - x;
+    return 0.0;
 }
 
-void bicubic_resize(const clip_image_u8 &img, clip_image_u8 &dst, int target_width, int target_height) {
-    const int nx = img.nx;
-    const int ny = img.ny;
+struct Coeffs1D {
+    int outSize = 0;
+    int ksize = 0;
+    std::vector<int> bounds_xmin;   // size outSize
+    std::vector<int> bounds_count;  // size outSize
+    std::vector<int32_t> kk;        // size outSize * ksize, fixed-point
+};
 
-    dst.nx = target_width;
-    dst.ny = target_height;
-    dst.buf.resize(3 * target_width * target_height);
+// Pillow uses fixed point with PRECISION_BITS = (32 - 8 - 2).
+static constexpr int PRECISION_BITS = (32 - 8 - 2);
 
-    float Cc;
-    float C[5];
-    float d0, d2, d3, a0, a1, a2, a3;
-    int i, j, k, jj;
-    int x, y;
-    float dx, dy;
-    float tx, ty;
+static inline uint8_t clip8_from_fixed(int ss) {
+    // Pillow does clip after shifting by PRECISION_BITS; clamp to [0,255].
+    int v = ss >> PRECISION_BITS;
+    v = (v < 0) ? 0 : (v > 255) ? 255 : v;
+    return static_cast<uint8_t>(v);
+}
 
-    tx = (float)nx / (float)target_width;
-    ty = (float)ny / (float)target_height;
+// Generic coefficient precompute in the same Pillow-ish style:
+// center = (xx + 0.5)*scale, filterscale=max(1,scale), widened support when downscaling.
+template <typename FilterFn>
+static Coeffs1D precompute_pillow_coeffs_1d(int inSize, int outSize, double base_support, FilterFn filter_fn) {
+    Coeffs1D c;
+    c.outSize = outSize;
 
-    // Bicubic interpolation; adapted from ViT.cpp, inspired from :
-    //    -> https://github.com/yglukhov/bicubic-interpolation-image-processing/blob/master/libimage.c#L36
-    //    -> https://en.wikipedia.org/wiki/Bicubic_interpolation
+    const double scale = static_cast<double>(inSize) / static_cast<double>(outSize);
 
-    for (i = 0; i < target_height; i++) {
-        for (j = 0; j < target_width; j++) {
-            x = (int)(tx * j);
-            y = (int)(ty * i);
+    double filterscale = scale;
+    if (filterscale < 1.0)
+        filterscale = 1.0;
 
-            dx = tx * j - x;
-            dy = ty * i - y;
+    const double support = base_support * filterscale;  // widen when downscaling
+    const double ss = 1.0 / filterscale;
 
-            for (k = 0; k < 3; k++) {
-                for (jj = 0; jj <= 3; jj++) {
-                    d0 = img.buf[(clip(y - 1 + jj, 0, ny - 1) * nx + clip(x - 1, 0, nx - 1)) * 3 + k] - img.buf[(clip(y - 1 + jj, 0, ny - 1) * nx + clip(x, 0, nx - 1)) * 3 + k];
-                    d2 = img.buf[(clip(y - 1 + jj, 0, ny - 1) * nx + clip(x + 1, 0, nx - 1)) * 3 + k] - img.buf[(clip(y - 1 + jj, 0, ny - 1) * nx + clip(x, 0, nx - 1)) * 3 + k];
-                    d3 = img.buf[(clip(y - 1 + jj, 0, ny - 1) * nx + clip(x + 2, 0, nx - 1)) * 3 + k] - img.buf[(clip(y - 1 + jj, 0, ny - 1) * nx + clip(x, 0, nx - 1)) * 3 + k];
-                    a0 = img.buf[(clip(y - 1 + jj, 0, ny - 1) * nx + clip(x, 0, nx - 1)) * 3 + k];
+    // Match Pillow’s style: ksize based on ceil(support)*2 + 1
+    const int ksize = static_cast<int>(std::ceil(support)) * 2 + 1;
+    c.ksize = ksize;
 
-                    a1 = -1.0 / 3 * d0 + d2 - 1.0 / 6 * d3;
-                    a2 =  1.0 / 2 * d0 +      1.0 / 2 * d2;
-                    a3 = -1.0 / 6 * d0 -      1.0 / 2 * d2 + 1.0 / 6 * d3;
+    c.bounds_xmin.resize(outSize);
+    c.bounds_count.resize(outSize);
 
-                    C[jj] = a0 + a1 * dx + a2 * dx * dx + a3 * dx * dx * dx;
+    std::vector<double> prekk(static_cast<size_t>(outSize) * ksize, 0.0);
 
-                    d0 = C[0] - C[1];
-                    d2 = C[2] - C[1];
-                    d3 = C[3] - C[1];
-                    a0 = C[1];
-                    a1 = -1.0 / 3 * d0 + d2 - 1.0 / 6 * d3;
-                    a2 =  1.0 / 2 * d0 +      1.0 / 2 * d2;
-                    a3 = -1.0 / 6 * d0 -      1.0 / 2 * d2 + 1.0 / 6 * d3;
-                    Cc = a0 + a1 * dy + a2 * dy * dy + a3 * dy * dy * dy;
+    for (int xx = 0; xx < outSize; ++xx) {
+        const double center = (xx + 0.5) * scale;
 
-                    const uint8_t Cc2 = std::min(std::max(std::round(Cc), 0.0f), 255.0f);
-                    dst.buf[(i * target_width + j) * 3 + k] = float(Cc2);
+        int xmin = static_cast<int>(center - support + 0.5);
+        if (xmin < 0)
+            xmin = 0;
+
+        int xmax = static_cast<int>(center + support + 0.5);
+        if (xmax > inSize)
+            xmax = inSize;
+
+        const int count = xmax - xmin;
+
+        c.bounds_xmin[xx] = xmin;
+        c.bounds_count[xx] = count;
+
+        double* k = &prekk[static_cast<size_t>(xx) * ksize];
+
+        double ww = 0.0;
+        for (int i = 0; i < count; ++i) {
+            const double w = filter_fn((i + xmin - center + 0.5) * ss);
+            k[i] = w;
+            ww += w;
+        }
+
+        // Normalize to sum=1.
+        if (ww != 0.0) {
+            for (int i = 0; i < count; ++i)
+                k[i] /= ww;
+        }
+        // remaining k[i] are already 0
+    }
+
+    // Quantize to fixed point with symmetric rounding.
+    c.kk.resize(static_cast<size_t>(outSize) * ksize);
+    for (size_t i = 0; i < prekk.size(); ++i) {
+        const double v = prekk[i];
+        if (v < 0.0)
+            c.kk[i] = static_cast<int32_t>(-0.5 + v * (1 << PRECISION_BITS));
+        else
+            c.kk[i] = static_cast<int32_t>(0.5 + v * (1 << PRECISION_BITS));
+    }
+
+    return c;
+}
+
+template <typename FilterFn>
+static void resize_pillow_like(const clip_image_u8& img,
+                               clip_image_u8& dst,
+                               int target_width,
+                               int target_height,
+                               double base_support,
+                               FilterFn filter_fn) {
+    const int inW = img.nx;
+    const int inH = img.ny;
+    const int outW = target_width;
+    const int outH = target_height;
+
+    dst.nx = outW;
+    dst.ny = outH;
+    dst.buf.resize(static_cast<size_t>(outW) * outH * 3);
+
+    // Trivial copy
+    if (outW == inW && outH == inH) {
+        dst.buf = img.buf;
+        return;
+    }
+
+    const bool do_h = (outW != inW);
+    const bool do_v = (outH != inH);
+
+    // tmp buffer is used when scaling in both horizontal & vertical directions
+    clip_image_u8 tmp;
+    tmp.nx = outW;
+    tmp.ny = inH;
+    if (do_h && do_v) {
+        tmp.buf.resize(static_cast<size_t>(outW) * inH * 3);
+    }
+
+    // 1) Horizontal pass from src -> tmp (or dst if do_v is false).
+    if (do_h) {
+        // Precompute horizontal coefficient tables
+        const Coeffs1D cx = precompute_pillow_coeffs_1d(inW, outW, base_support, filter_fn);
+
+        // This pass writes to the tmp buffer unless we're not doing vertical pass.
+        // In that case, it writes directly to the dst.
+        uint8_t* dst_h = do_v ? tmp.buf.data() : dst.buf.data();
+
+        for (int y = 0; y < inH; ++y) {
+            for (int xx = 0; xx < outW; ++xx) {
+                const int xmin = cx.bounds_xmin[xx];
+                const int count = cx.bounds_count[xx];
+                const int32_t* k = &cx.kk[static_cast<size_t>(xx) * cx.ksize];
+
+                // Pillow uses rounding bias: 1<<(PRECISION_BITS-1).
+                int ss0 = 1 << (PRECISION_BITS - 1);
+                int ss1 = 1 << (PRECISION_BITS - 1);
+                int ss2 = 1 << (PRECISION_BITS - 1);
+
+                for (int i = 0; i < count; ++i) {
+                    const int x = xmin + i;
+                    const uint8_t* p = &img.buf[(y * inW + x) * 3];
+                    ss0 += int(p[0]) * k[i];
+                    ss1 += int(p[1]) * k[i];
+                    ss2 += int(p[2]) * k[i];
                 }
+                uint8_t* outp = &dst_h[(y * outW + xx) * 3];
+                outp[0] = clip8_from_fixed(ss0);
+                outp[1] = clip8_from_fixed(ss1);
+                outp[2] = clip8_from_fixed(ss2);
             }
         }
     }
+
+    // 2) Vertical pass from tmp (or src if do_h is false) -> dst.
+    if (do_v) {
+        // Precompute vertical coefficient tables
+        const Coeffs1D cy = precompute_pillow_coeffs_1d(inH, outH, base_support, filter_fn);
+
+        // This pass reads from the tmp buffer unless we didn't do horizontal pass.
+        // In that case, it reads directly from the source img.
+        const clip_image_u8& src_h_img = do_h ? tmp : img;
+
+        for (int yy = 0; yy < outH; ++yy) {
+            const int ymin = cy.bounds_xmin[yy];
+            const int count = cy.bounds_count[yy];
+            const int32_t* k = &cy.kk[static_cast<size_t>(yy) * cy.ksize];
+
+            for (int x = 0; x < outW; ++x) {
+                int ss0 = 1 << (PRECISION_BITS - 1);
+                int ss1 = 1 << (PRECISION_BITS - 1);
+                int ss2 = 1 << (PRECISION_BITS - 1);
+
+                for (int i = 0; i < count; ++i) {
+                    const int y = ymin + i;
+                    const uint8_t* p = &src_h_img.buf[(y * outW + x) * 3];
+                    ss0 += int(p[0]) * k[i];
+                    ss1 += int(p[1]) * k[i];
+                    ss2 += int(p[2]) * k[i];
+                }
+
+                uint8_t* outp = &dst.buf[(yy * outW + x) * 3];
+                outp[0] = clip8_from_fixed(ss0);
+                outp[1] = clip8_from_fixed(ss1);
+                outp[2] = clip8_from_fixed(ss2);
+            }
+        }
+    }
+}
+
+void bicubic_resize(const clip_image_u8& img, clip_image_u8& dst, int target_width, int target_height) {
+    resize_pillow_like(img, dst, target_width, target_height, 2.0, pillow_bicubic_filter);
+}
+
+void bilinear_resize(const clip_image_u8& img, clip_image_u8& dst, int target_width, int target_height) {
+    resize_pillow_like(img, dst, target_width, target_height, 1.0, pillow_bilinear_filter);
 }
 
 // llava-1.6 type of resize_and_pad (black by default)
@@ -301,7 +421,7 @@ clip_image_f32 normalize_and_convert_to_chw(const clip_image_u8& img, const clip
     const size_t nx = img.nx;
     const size_t ny = img.ny;
     const auto& image_mean = image_mean_std.image_mean;
-    const auto& image_std = image_mean_std.image_std; 
+    const auto& image_std = image_mean_std.image_std;
 
     clip_image_f32 res;
     res.nx = nx;
@@ -324,7 +444,7 @@ clip_image_f32 normalize_and_convert_to_chw(const clip_image_u8& img, const clip
 }
 
 std::vector<clip_image_u8> get_image_patches(
-    const clip_image_u8& image, 
+    const clip_image_u8& image,
     const std::vector<std::pair<int, int>>& image_grid_pinpoints,
     const std::pair<int, int>& size,
     int patch_size
@@ -340,7 +460,7 @@ std::vector<clip_image_u8> get_image_patches(
     int base_patch_height = size.second;
     clip_image_u8 base_patch;
     bicubic_resize(image, base_patch, base_patch_width, base_patch_height);
-    
+
     patches.push_back(base_patch);
 
     // Select best resolution for patching
