@@ -1556,50 +1556,22 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
     
     resized_image = None
     resized_video = None
-    conversation = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text"},
-            ],
-        }
-    ]
-    
+
     prompt_parts = []
-    media_content = []
     if has_image:
         resized_image = request.getfixturevalue(f"cat_image_{resolution}x{resolution}")
-        media_content.append({"type": "image"})
         prompt_parts.append("image")
     
     if has_video:
         resized_video = request.getfixturevalue("synthetic_video_32x32")
-        media_content.append({"type": "video"})
         prompt_parts.append("video")
-    
-    # For QWen-VL series models, in GenAI VLM implementation, video is placed before image in chat template, 
-    # but in Optimum, this order depends only on the image and video order in the "conversation".
-    # So just reverse here in order to keep align.
-    if (
-        has_image
-        and has_video
-        and model_id
-        in [
-            "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
-            "optimum-intel-internal-testing/tiny-random-qwen2vl",
-        ]
-    ):
-        media_content.reverse()
-    conversation[0]["content"] = media_content + conversation[0]["content"]
-    
+
     if len(prompt_parts) == 1:
         prompt = f"Describe this {prompt_parts[0]}."
     elif len(prompt_parts) == 2:
         prompt = f"Describe this {prompt_parts[0]} and {prompt_parts[1]}."
     else:
         prompt = "Describe."
-    
-    conversation[0]["content"][-1]["text"] = prompt
 
     model_path = _get_ov_model(model_id)
 
