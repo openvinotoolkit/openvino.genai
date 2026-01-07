@@ -18,7 +18,6 @@ enum class GenerationStatus {
     IGNORED = 2, // Status set when generation run into out-of-memory condition and could not be continued
     CANCEL = 3, // Status set when generation handle is cancelled. The last prompt and all generated tokens will be dropped from history, KV cache will include history but last step.
     STOP = 4, // Status set when generation handle is stopped. History will be kept, KV cache will include the last prompt and generated tokens.
-    DROPPED_BY_HANDLE OPENVINO_ENUM_DEPRECATED("Please, use `STOP` instead of `DROPPED_BY_HANDLE`.") = GenerationStatus::STOP // Status set when generation handle is dropped.
 };
 
 
