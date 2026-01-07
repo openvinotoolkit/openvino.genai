@@ -4,7 +4,7 @@
 find_package(OpenVINOGenAI REQUIRED
     PATHS
         "${CMAKE_BINARY_DIR}"  # Reuse the package from the build.
-        ${OpenVINO_DIR}  # GenAI may be installed alogside OpenVINO.
+        ${OpenVINO_DIR}  # GenAI may be installed alongside OpenVINO.
     NO_CMAKE_FIND_ROOT_PATH
 )
 

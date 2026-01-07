@@ -520,8 +520,10 @@ public:
         // Prepare micro-conditions
         // TODO: move to compute_hidden_states
         ov::Tensor rope_interpolation_scale(ov::element::f32, {3});
+        const float frame_rate =
+            merged_generation_config.frame_rate.value_or(LTX_VIDEO_DEFAULT_CONFIG.frame_rate.value());
         rope_interpolation_scale.data<float>()[0] =
-            static_cast<float>(temporal_compression_ratio) / *merged_generation_config.frame_rate;
+            static_cast<float>(temporal_compression_ratio) / frame_rate;
         rope_interpolation_scale.data<float>()[1] = spatial_compression_ratio;
         rope_interpolation_scale.data<float>()[2] = spatial_compression_ratio;
         m_transformer->set_hidden_states("rope_interpolation_scale", rope_interpolation_scale);

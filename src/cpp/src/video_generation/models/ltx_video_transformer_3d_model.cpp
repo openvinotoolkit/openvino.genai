@@ -25,8 +25,9 @@ std::pair<int64_t, int64_t> get_compression_ratio(const std::filesystem::path& c
     utils::read_json_param(data, "patch_size", patch_size);
     utils::read_json_param(data, "patch_size_t", patch_size_t);
 
-    const int64_t spatial_compression_ratio = patch_size * std::pow(2, std::reduce(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
-    const int64_t temporal_compression_ratio = patch_size_t * std::pow(2, std::reduce(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
+    const auto compression_factor = std::pow(2, std::reduce(spatio_temporal_scaling.begin(), spatio_temporal_scaling.end(), 0));
+    const int64_t spatial_compression_ratio = patch_size * compression_factor;
+    const int64_t temporal_compression_ratio = patch_size_t * compression_factor;
 
     return {spatial_compression_ratio, temporal_compression_ratio};
 }
