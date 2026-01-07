@@ -6,7 +6,7 @@ import pytest
 
 def get_models_list() -> tuple[str, ...]:
     model_ids: list[str] = [
-        "katuni4ka/tiny-random-phi3",
+        "optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM",
     ]
     if pytest.selected_model_ids:
         model_ids = [model_id for model_id in model_ids if model_id in pytest.selected_model_ids.split(' ')]
