@@ -432,6 +432,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     }
 
     {
+        // Generating candidates is only available for prompt lookup
         static ManualTimer candidates_timer("generate_candidates()");
         candidates_timer.start();
         generate_candidates();
