@@ -49,35 +49,57 @@ LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size
         "segfault on mac"
     ),
 )
-@pytest.mark.parametrize("test_struct", [
-    # prompts + generation length are longer than the eviction arena, eviction expected w/ impact to similarity
-    CacheOptTestStruct(test_id="prompts_longer_than_eviction_arena",
-                       prompt_file="long_prompts.txt", max_new_tokens=128, num_kv_blocks=500, use_cache_eviction=True,
-                       cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
-                       similarity_threshold=0.8,
-                       max_cache_usage_optimization_ratio=2.0,
-                       avg_cache_usage_optimization_ratio=1.7),
-
-    # prompts + generation length are shorter than the eviction arena, no eviction expected
-    CacheOptTestStruct(test_id="prompts_and_gen_shorter_than_eviction_arena",
-                       prompt_file="short_prompts.txt", max_new_tokens=32, num_kv_blocks=500, use_cache_eviction=True,
-                       cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
-                       similarity_threshold=0.98,
-                       max_cache_usage_optimization_ratio=0.95,  # no improvement expected
-                       avg_cache_usage_optimization_ratio=0.95),
-
-    # short prompts, long generation - eviction expected
-    CacheOptTestStruct(test_id="gen_longer_than_eviction_arena",
-                       prompt_file="short_prompts.txt", max_new_tokens=160, num_kv_blocks=500, use_cache_eviction=True,
-                       cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
-                       similarity_threshold=0.94,
-                       max_cache_usage_optimization_ratio=1.4,
-                       avg_cache_usage_optimization_ratio=1.1),
-
-    ], ids=lambda x: x.test_id)
-@pytest.mark.parametrize("apply_rotation", [True, False], ids=["with_rotation", "no_rotation"])         # rotation should improve similarity
-@pytest.mark.parametrize("use_sparse_attention", [True, False], ids=["with_sparse_attn", "no_sparse_attn"]) # sparse attn should not degrade similarity too much
-def test_cache_optimized_generation_is_similar_to_unoptimized(test_struct, apply_rotation, use_sparse_attention, model_downloader: Callable[[str], Path]):
+@pytest.mark.parametrize(
+    "test_struct",
+    [
+        # prompts + generation length are longer than the eviction arena, eviction expected w/ impact to similarity
+        CacheOptTestStruct(
+            test_id="prompts_longer_than_eviction_arena",
+            prompt_file="long_prompts.txt",
+            max_new_tokens=128,
+            num_kv_blocks=500,
+            use_cache_eviction=True,
+            cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
+            similarity_threshold=0.8,
+            max_cache_usage_optimization_ratio=2.0,
+            avg_cache_usage_optimization_ratio=1.7,
+        ),
+        # prompts + generation length are shorter than the eviction arena, no eviction expected
+        CacheOptTestStruct(
+            test_id="prompts_and_gen_shorter_than_eviction_arena",
+            prompt_file="short_prompts.txt",
+            max_new_tokens=32,
+            num_kv_blocks=500,
+            use_cache_eviction=True,
+            cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
+            similarity_threshold=0.98,
+            max_cache_usage_optimization_ratio=0.95,  # no improvement expected
+            avg_cache_usage_optimization_ratio=0.95,
+        ),
+        # short prompts, long generation - eviction expected
+        CacheOptTestStruct(
+            test_id="gen_longer_than_eviction_arena",
+            prompt_file="short_prompts.txt",
+            max_new_tokens=160,
+            num_kv_blocks=500,
+            use_cache_eviction=True,
+            cache_eviction_config=SHORT_CACHE_EVICTION_CONFIG,
+            similarity_threshold=0.94,
+            max_cache_usage_optimization_ratio=1.4,
+            avg_cache_usage_optimization_ratio=1.1,
+        ),
+    ],
+    ids=lambda x: x.test_id,
+)
+@pytest.mark.parametrize(
+    "apply_rotation", [True, False], ids=["with_rotation", "no_rotation"]
+)  # rotation should improve similarity
+@pytest.mark.parametrize(
+    "use_sparse_attention", [True, False], ids=["with_sparse_attn", "no_sparse_attn"]
+)  # sparse attn should not degrade similarity too much
+def test_cache_optimized_generation_is_similar_to_unoptimized(
+    test_struct, apply_rotation, use_sparse_attention, model_downloader: Callable[[str], Path]
+):
     import whowhatbench
 
     seqs_per_request = 32
@@ -157,11 +179,48 @@ def get_beam_search_seq_len_300() -> GenerationConfig:
 
 
 scheduler_params_list = [
-                         ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": True}, get_greedy_seq_len_300()),
-                         ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "enable_prefix_caching": True}, get_beam_search_seq_len_300()),
-                         ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": False}, get_greedy_seq_len_300()),
-                         ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "enable_prefix_caching": False}, get_beam_search_seq_len_300()),
-                         ({"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": False, "max_num_batched_tokens": 600, "use_cache_eviction": True, "cache_eviction_config": SHORT_CACHE_EVICTION_CONFIG}, get_greedy_seq_len_300())]
+    (
+        {"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": True},
+        get_greedy_seq_len_300(),
+    ),
+    (
+        {
+            "num_kv_blocks": 0,
+            "cache_size": 0,
+            "dynamic_split_fuse": False,
+            "max_num_batched_tokens": 600,
+            "enable_prefix_caching": True,
+        },
+        get_beam_search_seq_len_300(),
+    ),
+    (
+        {"num_kv_blocks": 0, "cache_size": 0, "dynamic_split_fuse": True, "enable_prefix_caching": False},
+        get_greedy_seq_len_300(),
+    ),
+    (
+        {
+            "num_kv_blocks": 0,
+            "cache_size": 0,
+            "dynamic_split_fuse": False,
+            "max_num_batched_tokens": 600,
+            "enable_prefix_caching": False,
+        },
+        get_beam_search_seq_len_300(),
+    ),
+    (
+        {
+            "num_kv_blocks": 0,
+            "cache_size": 0,
+            "dynamic_split_fuse": False,
+            "max_num_batched_tokens": 600,
+            "use_cache_eviction": True,
+            "cache_eviction_config": SHORT_CACHE_EVICTION_CONFIG,
+        },
+        get_greedy_seq_len_300(),
+    ),
+]
+
+
 @pytest.mark.parametrize("params", scheduler_params_list)
 @pytest.mark.precommit
 def test_dynamic_memory_allocation(params, model_downloader: ModelDownloaderCallable):
@@ -287,12 +346,16 @@ def test_kvcrush_vs_snapkv_baseline(subset, model_downloader: ModelDownloaderCal
         aggregation_mode=AggregationMode.NORM_SUM,
         apply_rotation=False,
         snapkv_window_size=8,
-        kvcrush_config=KVCrushConfig(budget=budget, anchor_point_mode=anchor_mode)
+        kvcrush_config=KVCrushConfig(budget=budget, anchor_point_mode=anchor_mode),
     )
     scheduler_config_kvcrush.cache_eviction_config = config
 
-    model_cb_baseline = ContinuousBatchingPipeline(models_path, scheduler_config_baseline, device, {}, get_default_llm_properties())
-    model_cb_kvcrush = ContinuousBatchingPipeline(models_path, scheduler_config_kvcrush, device, {}, get_default_llm_properties())
+    model_cb_baseline = ContinuousBatchingPipeline(
+        models_path, scheduler_config_baseline, device, {}, get_default_llm_properties()
+    )
+    model_cb_kvcrush = ContinuousBatchingPipeline(
+        models_path, scheduler_config_kvcrush, device, {}, get_default_llm_properties()
+    )
 
     model_name = "/".join(models_path.parts[-2:])
     max_new_tokens = dataset2maxlen[subset]
@@ -302,7 +365,7 @@ def test_kvcrush_vs_snapkv_baseline(subset, model_downloader: ModelDownloaderCal
     generation_config.max_new_tokens = max_new_tokens
     generation_config.apply_chat_template = False
 
-    data = datasets.load_dataset('THUDM/LongBench', subset, split='test[:32]')
+    data = datasets.load_dataset("THUDM/LongBench", subset, split="test[:32]")
     with tqdm(total=len(data)) as progress_bar:
         batch = []
         baseline_answers = []
@@ -315,15 +378,17 @@ def test_kvcrush_vs_snapkv_baseline(subset, model_downloader: ModelDownloaderCal
             kvcrush_answers.append({"answers": data_sample["answers"], "all_classes": data_sample["all_classes"]})
 
             if len(batch) == seqs_per_request or p_idx == len(data) - 1:
-                baseline_batch = model_cb_baseline.generate(
-                    batch, [generation_config] * len(batch)
-                )
-                kvcrush_batch = model_cb_kvcrush.generate(
-                    batch, [generation_config] * len(batch)
-                )
-                for i, (baseline_output, kvcrush_output) in enumerate(zip(baseline_batch, kvcrush_batch), start=p_idx-len(batch)+1):
-                    baseline_answers[i]["pred"] = post_process_pred(baseline_output.m_generation_ids[0], subset, model_name)
-                    kvcrush_answers[i]["pred"] = post_process_pred(kvcrush_output.m_generation_ids[0], subset, model_name)
+                baseline_batch = model_cb_baseline.generate(batch, [generation_config] * len(batch))
+                kvcrush_batch = model_cb_kvcrush.generate(batch, [generation_config] * len(batch))
+                for i, (baseline_output, kvcrush_output) in enumerate(
+                    zip(baseline_batch, kvcrush_batch), start=p_idx - len(batch) + 1
+                ):
+                    baseline_answers[i]["pred"] = post_process_pred(
+                        baseline_output.m_generation_ids[0], subset, model_name
+                    )
+                    kvcrush_answers[i]["pred"] = post_process_pred(
+                        kvcrush_output.m_generation_ids[0], subset, model_name
+                    )
                 batch.clear()
 
     baseline_score = evaluate(baseline_answers, subset)
@@ -332,9 +397,12 @@ def test_kvcrush_vs_snapkv_baseline(subset, model_downloader: ModelDownloaderCal
     print(f"Baseline (SnapKV) score: {baseline_score}")
     print(f"KVCrush score: {kvcrush_score}")
 
-    assert kvcrush_score >= baseline_score, f"KVCrush score ({kvcrush_score}) is worse than baseline ({baseline_score}) on {subset} dataset"
+    assert kvcrush_score >= baseline_score, (
+        f"KVCrush score ({kvcrush_score}) is worse than baseline ({baseline_score}) on {subset} dataset"
+    )
 
     del model_cb_baseline
     del model_cb_kvcrush
     import gc
+
     gc.collect()

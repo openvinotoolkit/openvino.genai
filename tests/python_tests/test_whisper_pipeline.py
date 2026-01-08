@@ -33,7 +33,7 @@ def run_gc_after_test():
 
 
 def get_whisper_models_list(
-    ov_cache_models_dir: pathlib.Path, 
+    ov_cache_models_dir: pathlib.Path,
     tiny_only: bool = False,
 ) -> list[tuple[str, pathlib.Path]]:
     model_ids = [
@@ -125,15 +125,17 @@ def save_model(model_id: str, tmp_path: pathlib.Path, stateful=True):
     # to store tokenizer config jsons with special tokens
     tokenizer.save_pretrained(tmp_path)
 
-    opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
-        model_id,
-        export=True,
-        trust_remote_code=True,
-        stateful=stateful,
-        compile=False,
-        device="CPU",
-        load_in_8bit=False,
-    ))
+    opt_model = retry_request(
+        lambda: OVModelForSpeechSeq2Seq.from_pretrained(
+            model_id,
+            export=True,
+            trust_remote_code=True,
+            stateful=stateful,
+            compile=False,
+            device="CPU",
+            load_in_8bit=False,
+        )
+    )
     opt_model.generation_config.save_pretrained(tmp_path)
     opt_model.config.save_pretrained(tmp_path)
     opt_model.save_pretrained(tmp_path)
@@ -447,12 +449,12 @@ def test_task_mode(whisper_model_tiny, sample_from_dataset):
 
 
 @pytest.mark.parametrize(
-    "sample_from_dataset", 
+    "sample_from_dataset",
     [
         *get_fixture_params_for_n_whisper_dataset_samples(n=1, language="fr"),
         *get_fixture_params_for_n_whisper_dataset_samples(n=1, language="de"),
         *get_fixture_params_for_n_whisper_dataset_samples(n=1, language="es"),
-    ], 
+    ],
     indirect=True,
 )
 @pytest.mark.precommit

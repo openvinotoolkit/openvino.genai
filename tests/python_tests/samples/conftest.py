@@ -196,10 +196,10 @@ SAMPLES_JS_DIR = Path(
 @pytest.fixture(scope="session", autouse=True)
 def setup_and_teardown(request, tmp_path_factory, ov_cache_dir: Path):
     test_data = ov_cache_dir / "test_data"
-    
+
     logger.info(f"Creating directories: {test_data}")
     test_data.mkdir(parents=True, exist_ok=True)
-    
+
     request.config.cache.set("OV_CACHE", str(ov_cache_dir))
     request.config.cache.set("TEST_DATA", str(test_data))
 

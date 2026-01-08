@@ -194,11 +194,13 @@ def _get_ov_model(model_id: str, ov_cache_models_dir: Path = None) -> Path:
             "ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3"
         )
     
+
     if ov_cache_models_dir is None:
         import pytest
+
         cache_manager = OvTestCacheManager(pytest.config)
         ov_cache_models_dir = cache_manager.get_models_dir()
-    
+
     dir_name = str(model_id).replace(os.sep, "_")
     model_dir = ov_cache_models_dir / dir_name
     

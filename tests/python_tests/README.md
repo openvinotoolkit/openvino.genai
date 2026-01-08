@@ -75,7 +75,7 @@ Models and test data are cached using pytest's built-in cache mechanism. The cac
 # Use custom cache directory
 python -m pytest tests/python_tests/ -m precommit -o cache_dir=/path/to/custom/cache
 
-# Use default cache location (~/.pytest_cache/)  
+# Use default cache location (~/.pytest_cache/)
 python -m pytest tests/python_tests/ -m precommit
 ```
 

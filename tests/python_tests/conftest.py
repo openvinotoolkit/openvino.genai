@@ -31,6 +31,7 @@ def model_downloader(ov_cache_models_dir: Path) -> ModelDownloaderCallable:
     def _download_model(model_id: str, **kwargs):
         schema = download_and_convert_model(model_id, models_dir=ov_cache_models_dir, **kwargs)
         return schema.opt_model, schema.hf_tokenizer, schema.models_path
+
     return _download_model
 
 

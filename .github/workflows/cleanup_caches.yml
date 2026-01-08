@@ -26,7 +26,7 @@ jobs:
           else
             echo "Pytest cache directory does not exist"
           fi
-          
+
       - name: Cleanup pytest cache
         run: |
           echo "Delete pytest cache files if they have not been used in over 3 days"

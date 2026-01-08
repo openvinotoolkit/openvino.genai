@@ -24,12 +24,9 @@ if sys.platform == 'darwin' or platform.machine() in ["aarch64", "arm64", "ARM64
     pytest.skip("NPU plugin is available only on Linux and Windows x86_64", allow_module_level=True)
 
 
-default_config = {
-    'NPUW_DEVICES': 'CPU',
-    'NPUW_ONLINE_PIPELINE': 'NONE'
-} | get_default_llm_properties()
+default_config = {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"} | get_default_llm_properties()
 
-static_config = { **default_config, 'STATIC_PIPELINE': 'STATEFUL' }
+static_config = {**default_config, "STATIC_PIPELINE": "STATEFUL"}
 
 # Test both, static and generic pipelines
 pipeline_configs = [default_config, static_config]
@@ -40,7 +37,7 @@ blob_with_weights = [True, False]
 def generate_with_chat_mode(model_path, device, pipeline_config, questions) -> list[str]:
     pipe = LLMPipeline(model_path, device, **pipeline_config)
     pipe.start_chat()
-    answers = [ pipe.generate(question, max_new_tokens=50, do_sample=False) for question in questions ]
+    answers = [pipe.generate(question, max_new_tokens=50, do_sample=False) for question in questions]
     pipe.finish_chat()
     return answers
 
@@ -51,19 +48,15 @@ def generate_with_chat_history(model_path, device, pipeline_config, questions) -
     for question in questions:
         chat_history.append({"role": "user", "content": question})
         decoded_results = pipe.generate(chat_history, max_new_tokens=50, do_sample=False)
-        chat_history.append({"role": "assistant", "content": decoded_results.texts[0]})                          
+        chat_history.append({"role": "assistant", "content": decoded_results.texts[0]})
     return chat_history
 
 
-prompt = 'What is OpenVINO?'
-generate_inputs = [
-    [prompt],
-    ChatHistory([{ "role": "user", "content": prompt }])
-]
-generation_configs = [
-    get_greedy(),
-    get_greedy_with_penalties()
-]
+prompt = "What is OpenVINO?"
+generate_inputs = [[prompt], ChatHistory([{"role": "user", "content": prompt}])]
+generation_configs = [get_greedy(), get_greedy_with_penalties()]
+
+
 @pytest.mark.precommit
 @pytest.mark.parametrize("generation_config", generation_configs)
 @pytest.mark.parametrize("config", pipeline_configs)
@@ -71,9 +64,9 @@ generation_configs = [
 @pytest.mark.parametrize("input", generate_inputs)
 @pytest.mark.xfail(reason="Generation result mismatch. Ticket 171117", raises=AssertionError)
 def test_generation_compare_with_stateful(
-    generation_config, 
-    config, 
-    model_id, 
+    generation_config,
+    config,
+    model_id,
     input,
     model_downloader: ModelDownloaderCallable,
 ):
@@ -103,7 +96,7 @@ def test_pipeline_from_blob(model_tmp_path, config, with_weights, model_id, mode
     ref_out = cpu_pipe.generate(prompt, max_new_tokens=30)
 
     # NB: Generate the blob
-    cfg = { "EXPORT_BLOB": "YES", "BLOB_PATH": blob_path }
+    cfg = {"EXPORT_BLOB": "YES", "BLOB_PATH": blob_path}
     cfg |= config
     if with_weights:
         cfg |= {"CACHE_MODE": "OPTIMIZE_SPEED"}
@@ -113,7 +106,7 @@ def test_pipeline_from_blob(model_tmp_path, config, with_weights, model_id, mode
     del npu_pipe
 
     # Import blob and check accuracy
-    import_cfg = {"BLOB_PATH": blob_path, "WEIGHTS_PATH": os.path.join(model_path, "openvino_model.bin") }
+    import_cfg = {"BLOB_PATH": blob_path, "WEIGHTS_PATH": os.path.join(model_path, "openvino_model.bin")}
     import_cfg |= config
     if with_weights:
         import_cfg.pop("WEIGHTS_PATH")
@@ -128,7 +121,7 @@ def test_pipeline_from_blob(model_tmp_path, config, with_weights, model_id, mode
 @pytest.mark.parametrize("with_weights", blob_with_weights)
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_pipeline_cache_dir(model_tmp_path, config, with_weights, model_id, model_downloader: ModelDownloaderCallable):
-    prompt = 'What is OpenVINO?'
+    prompt = "What is OpenVINO?"
     _, _, model_path = model_downloader(model_id)
     _, temp_path = model_tmp_path
 
@@ -152,7 +145,7 @@ def test_pipeline_cache_dir(model_tmp_path, config, with_weights, model_id, mode
     assert len(blobs) > 0
 
     # Import blob and check accuracy
-    npu_pipe = LLMPipeline(model_path, "NPU", **(config | { "CACHE_DIR": str(temp_path) }))
+    npu_pipe = LLMPipeline(model_path, "NPU", **(config | {"CACHE_DIR": str(temp_path)}))
     actual_out = npu_pipe.generate(prompt, max_new_tokens=30)
 
     # Check that blob was used from cache
@@ -164,9 +157,9 @@ def test_pipeline_cache_dir(model_tmp_path, config, with_weights, model_id, mode
     assert ref_out == actual_out
 
 
-generation_configs = [
-    get_multinomial_temperature_and_presence_penalty()
-]
+generation_configs = [get_multinomial_temperature_and_presence_penalty()]
+
+
 @pytest.mark.precommit
 @pytest.mark.parametrize("generation_config", generation_configs)
 @pytest.mark.parametrize("config", pipeline_configs)
@@ -195,17 +188,16 @@ def test_length_properties_set_no_exception(config, model_id, model_downloader: 
     pipe = LLMPipeline(model_path, "NPU", **pipeline_config)
 
 
-length_configs = [
-    { "MAX_PROMPT_LEN":   -1  },
-    { "MAX_PROMPT_LEN":   "1" },
-    { "MIN_RESPONSE_LEN": -1  },
-    { "MIN_RESPONSE_LEN": "1" }
-]
+length_configs = [{"MAX_PROMPT_LEN": -1}, {"MAX_PROMPT_LEN": "1"}, {"MIN_RESPONSE_LEN": -1}, {"MIN_RESPONSE_LEN": "1"}]
+
+
 @pytest.mark.parametrize("length_config", length_configs)
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
-def test_invalid_length_properties_raise_error(length_config, config, model_id, model_downloader: ModelDownloaderCallable):
+def test_invalid_length_properties_raise_error(
+    length_config, config, model_id, model_downloader: ModelDownloaderCallable
+):
     _, _, model_path = model_downloader(model_id)
     length_config |= config
     with pytest.raises(RuntimeError):
@@ -239,13 +231,17 @@ def test_batch_raise_error(config, model_id, model_downloader: ModelDownloaderCa
 generation_configs = [
     get_beam_search(),
     # NB: Only num_return_sequences=1 is supported!
-    get_multinomial_all_parameters()
+    get_multinomial_all_parameters(),
 ]
+
+
 @pytest.mark.parametrize("generation_config", generation_configs)
 @pytest.mark.parametrize("config", pipeline_configs)
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.precommit
-def test_unsupported_sampling_raise_error(generation_config, config, model_id, model_downloader: ModelDownloaderCallable):
+def test_unsupported_sampling_raise_error(
+    generation_config, config, model_id, model_downloader: ModelDownloaderCallable
+):
     _, _, model_path = model_downloader(model_id)
     prompt = 'What is OpenVINO?'
 
@@ -347,7 +343,7 @@ def test_chat_generation(config, model_id, model_downloader: ModelDownloaderCall
     chat_history_static = generate_with_chat_history(model_path, "NPU", config, questions)
     messages_static = chat_history_static.get_messages()
     assert messages_stateful == messages_static, f"CPU output:\n{messages_stateful}\nNPU output:\n{messages_static}"
-    
+
     answers_chat_history_static = [msg["content"] for msg in messages_static if msg["role"] == "assistant"]
     assert answers_chat_mode_static == answers_chat_history_static, (
         f"NPU chat mode output:\n{answers_chat_mode_static}\n"

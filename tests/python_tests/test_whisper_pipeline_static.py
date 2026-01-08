@@ -14,9 +14,8 @@ import pathlib
 
 # This test suite is designed specifically to validate the functionality 
 # and robustness of the WhisperStaticPipeline on NPUW:CPU.
-config = {"NPU_USE_NPUW" : "YES",
-          "NPUW_DEVICES" : "CPU",
-          "NPUW_ONLINE_PIPELINE" : "NONE"}
+config = {"NPU_USE_NPUW": "YES", "NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE"}
+
 
 def load_and_save_whisper_model(params, stateful=False, **tokenizer_kwargs):
     model_id, path = params
@@ -40,15 +39,17 @@ def load_and_save_whisper_model(params, stateful=False, **tokenizer_kwargs):
         # to store tokenizer config jsons with special tokens
         tokenizer.save_pretrained(path)
 
-        opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
-            model_id,
-            export=True,
-            trust_remote_code=True,
-            stateful=stateful,
-            compile=False,
-            device="CPU",
-            load_in_8bit=False,
-        ))
+        opt_model = retry_request(
+            lambda: OVModelForSpeechSeq2Seq.from_pretrained(
+                model_id,
+                export=True,
+                trust_remote_code=True,
+                stateful=stateful,
+                compile=False,
+                device="CPU",
+                load_in_8bit=False,
+            )
+        )
         opt_model.generation_config.save_pretrained(path)
         opt_model.config.save_pretrained(path)
         opt_model.save_pretrained(path)
@@ -80,7 +81,6 @@ def whisper_model(ov_cache_models_dir: pathlib.Path) -> Generator[tuple[str, pat
     models = get_whisper_models_list(ov_cache_models_dir)
     for model_id, model_path in models:
         yield pytest.param((model_id, model_path), id=model_id)
-
 
 
 @pytest.fixture(scope="session")

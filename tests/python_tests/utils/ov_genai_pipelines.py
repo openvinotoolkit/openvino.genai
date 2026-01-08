@@ -190,9 +190,9 @@ def convert_decoded_results_to_generation_result(
     for _ in range(num_prompts):
         generation_result = GenerationResult()
         # sequences_scores are available only for beam search case
-        generation_result.m_generation_ids = generate_outputs.texts[index: index + num_return_sequences]
+        generation_result.m_generation_ids = generate_outputs.texts[index : index + num_return_sequences]
         if is_beam_search:
-            generation_result.m_scores = generate_outputs.scores[index: index + num_return_sequences]
+            generation_result.m_scores = generate_outputs.scores[index : index + num_return_sequences]
         generation_results.append(generation_result)
         index += num_return_sequences
     return generation_results
@@ -270,10 +270,7 @@ def run_ov_pipeline(
     return generation_results
 
 
-def is_generation_available(
-    generation_config: GenerationConfig | list[GenerationConfig],
-    pipeline_type: PipelineType
-):
+def is_generation_available(generation_config: GenerationConfig | list[GenerationConfig], pipeline_type: PipelineType):
     if type(generation_config) is GenerationConfig:
         if generation_config.is_beam_search():
             if pipeline_type == PipelineType.PROMPT_LOOKUP_DECODING or pipeline_type == PipelineType.SPECULATIVE_DECODING:
@@ -299,7 +296,7 @@ def generate_and_compare(
 ) -> None:
     opt_model, hf_tokenizer, models_path = model_downloader(model)
     model_schema = OVConvertedModelSchema(model, opt_model, hf_tokenizer, models_path)
-    
+
     ov_prompts = prompts if type(prompts) is list else [prompts]
     ov_gen_config = GenerationConfig(**generation_config) if isinstance(generation_config, dict) else generation_config
 

@@ -216,7 +216,9 @@ def sanitize_model_id(model_id: str) -> str:
     return model_id.replace("/", "_")
 
 
-def download_and_convert_model(model_id: str, models_dir: Path | None = None, **tokenizer_kwargs) -> OVConvertedModelSchema:
+def download_and_convert_model(
+    model_id: str, models_dir: Path | None = None, **tokenizer_kwargs
+) -> OVConvertedModelSchema:
     return download_and_convert_model_class(model_id, OVModelForCausalLM, models_dir=models_dir, **tokenizer_kwargs)
 
 
@@ -227,16 +229,17 @@ def download_and_convert_model_class(
     **tokenizer_kwargs,
 ) -> OVConvertedModelSchema:
     from utils.constants import OvTestCacheManager
-    
+
     dir_name = sanitize_model_id(model_id)
     if model_class.__name__ not in ["OVModelForCausalLM"]:
         dir_name = f"{dir_name}_{model_class.__name__}"
-    
+
     if models_dir is None:
         import pytest
+
         cache_manager = OvTestCacheManager(pytest.config)
         models_dir = cache_manager.get_models_dir()
-    
+
     models_path = models_dir / dir_name
 
     manager = AtomicDownloadManager(models_path)
@@ -270,14 +273,15 @@ def download_gguf_model(
     models_dir: Path | None = None,
 ):
     from utils.constants import OvTestCacheManager
-    
+
     gguf_dir_name = sanitize_model_id(gguf_model_id)
-    
+
     if models_dir is None:
         import pytest
+
         cache_manager = OvTestCacheManager(pytest.config)
         models_dir = cache_manager.get_models_dir()
-    
+
     models_path_gguf = models_dir / gguf_dir_name
 
     manager = AtomicDownloadManager(models_path_gguf)
