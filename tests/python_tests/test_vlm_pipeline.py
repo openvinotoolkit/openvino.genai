@@ -1530,7 +1530,7 @@ GENAI_VS_OPTIMUM_CASES = [
     ),
 ]
 
-def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, optimum_model: OVModelForVisualCausalLM, model_path, image, video):
+def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
     class NanollavaProcessorWrapper:
         def __init__(self, processor, config, model_dtype):
             self.processor = processor
@@ -1548,7 +1548,10 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, optimum_model: OVMode
         return NanollavaProcessorWrapper(hf_model.process_images, hf_model.config, hf_model.dtype)
     
     ov_pipe = ov_pipe_model.pipeline
+
     model_id = ov_pipe_model.model_id
+    model_path = _get_ov_model(model_id)
+    optimum_model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
     
     prompt_parts = []
     if image is not None:
@@ -1612,11 +1615,7 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, optimum_model: OVMode
 )
 
 def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool):
-    model_id = ov_pipe_model.model_id
     resolution = ov_pipe_model.resolution
-
-    model_path = _get_ov_model(model_id)
-    model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
 
     resized_image = None
     resized_video = None
@@ -1625,13 +1624,17 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
     if has_video:
         resized_video = request.getfixturevalue("synthetic_video_32x32")
 
-    run_compare_genai_optimum(ov_pipe_model, model, model_path, resized_image, resized_video)
+    run_compare_genai_optimum(ov_pipe_model, resized_image, resized_video)
 
-GENAI_VS_OPTIMUM_INPUT_RESOLUTIONS = [
-    pytest.param((100, 67), id="100x77"),
-    pytest.param((1000, 667), id="1000x777"),
-    pytest.param((960, 465), id="960x465"),
+GENAI_VS_OPTIMUM_IMAGE_INPUT_RESOLUTIONS = [
+    pytest.param((100, 77), id="100x77"),
+    pytest.param((999, 666), id="999x666"),
+    pytest.param((1920, 1080), id="1920x1080"),
+    # This one is problematic for qwen2vl/2.5, triggers DefaultCPUAllocator: not enough memory errors. Disable for now.
+    # pytest.param((3999, 2667), id="3999x2667"),
 ]
+
+@pytest.mark.parametrize("image_input_resolution", GENAI_VS_OPTIMUM_IMAGE_INPUT_RESOLUTIONS)
 
 @pytest.mark.parametrize(
     "ov_pipe_model,has_image,has_video",
@@ -1639,25 +1642,16 @@ GENAI_VS_OPTIMUM_INPUT_RESOLUTIONS = [
     indirect=["ov_pipe_model"],
 )
 
-@pytest.mark.parametrize("input_resolution", GENAI_VS_OPTIMUM_INPUT_RESOLUTIONS)
-
-def test_vlm_pipeline_match_optimum_with_resize(request, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool, input_resolution):
-    print("input_resolution = ", input_resolution)
-    model_id = ov_pipe_model.model_id
-    resolution = ov_pipe_model.resolution
-
-    model_path = _get_ov_model(model_id)
-    model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
-
-    image = None
-    video = None
+def test_vlm_pipeline_match_optimum_with_resize(request, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool, image_input_resolution):
+    resized_image = None
+    resized_video = None
     if has_image:
-        image = request.getfixturevalue(f"cat_image")
-        image = image.resize(input_resolution)
+        resized_image = request.getfixturevalue("cat_image")
+        resized_image = resized_image.resize(image_input_resolution)
 
     # TODO: Resize video?
     if has_video:
-        video = request.getfixturevalue("synthetic_video_32x32")
+        resized_video = request.getfixturevalue("synthetic_video_32x32")
 
-    run_compare_genai_optimum(ov_pipe_model, model, model_path, image, video)
+    run_compare_genai_optimum(ov_pipe_model, resized_image, resized_video)
 
