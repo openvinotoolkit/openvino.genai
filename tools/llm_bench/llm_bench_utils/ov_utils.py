@@ -1044,6 +1044,7 @@ def get_genai_chunk_streamer():
                     return StreamingStatus.RUNNING  # continue generation
             else:
                 return StreamingStatus.RUNNING
+
         def end(self):
             """
             Flushes residual tokens from the buffer and puts a None value in the queue to signal the end.
