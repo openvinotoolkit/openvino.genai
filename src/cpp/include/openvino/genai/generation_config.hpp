@@ -691,9 +691,6 @@ public:
 
     std::vector<std::shared_ptr<Parser>> parsers;
 
-    OPENVINO_DEPRECATED("Please, use `is_assisting_generation()` instead of `is_speculative_decoding()`. This method will be removed in 2026.0.0 release")
-    bool is_speculative_decoding() const;
-
     void update_generation_config(const ov::AnyMap& properties);
 
     template <typename... Properties>
@@ -748,15 +745,6 @@ static constexpr ov::Property<std::string> grammar{"grammar"};
 static constexpr ov::Property<std::string> backend{"backend"};
 
 static constexpr ov::Property<bool> apply_chat_template{"apply_chat_template"};
-
-// Predefined Configs
-
-OPENVINO_DEPRECATED("Please, use individual parameters instead of predefined configs. This method will be removed in 2026.0.0 release")
-OPENVINO_GENAI_EXPORTS GenerationConfig beam_search();
-OPENVINO_DEPRECATED("Please, use individual parameters instead of predefined configs. This method will be removed in 2026.0.0 release")
-OPENVINO_GENAI_EXPORTS GenerationConfig greedy();
-OPENVINO_DEPRECATED("Please, use individual parameters instead of predefined configs. This method will be removed in 2026.0.0 release")
-OPENVINO_GENAI_EXPORTS GenerationConfig multinomial();
 
 }  // namespace genai
 }  // namespace ov
