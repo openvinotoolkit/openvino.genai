@@ -12,6 +12,10 @@
 #include "imwrite_video.hpp"
 #include "stb_image_write.h"
 
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/videoio.hpp>
+
 // ------------------------------
 // Small helpers for little-endian I/O
 // ------------------------------
@@ -354,4 +358,53 @@ void imwrite_video(const std::string& name, const ov::Tensor& video, const uint3
         std::cout << "Wrote " << out_path << " (" << F << " frames, "
                   << W << "x" << H << " @ " << fps << " fps)\n";
     }
+}
+
+
+
+#include <openvino/openvino.hpp> // for ov::Tensor + OPENVINO_ASSERT
+
+static void write_video_opencv(const std::string& path,
+                                            const ov::Tensor& video_bfhwc_rgb_u8,
+                                            int fps,
+                                            size_t batch_index = 0) {
+    OPENVINO_ASSERT(video_bfhwc_rgb_u8.get_element_type() == ov::element::u8,
+                    "Expected u8 video tensor.");
+
+    const auto shape = video.get_shape(); // [B, F, H, W, C]
+    if (shape.size() != 5) throw std::runtime_error("write_video_opencv: expected [B, F, H, W, C]");
+
+    const size_t B = shape[0], F = shape[1], H = shape[2], W = shape[3], C = shape[4];
+    if (!(C == 1 || C == 3 || C == 4)) throw std::runtime_error("write_video_opencv: C must be 1, 3, or 4");
+
+    // Codec: MJPG is reliable for AVI.
+    const int fourcc = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
+
+    cv::VideoWriter writer;
+    OPENVINO_ASSERT(writer.open(path, fourcc, static_cast<double>(fps),
+                                cv::Size(static_cast<int>(W), static_cast<int>(H)),
+                                /*isColor=*/true),
+                    "Failed to open VideoWriter for: ", path);
+
+    // Layout is contiguous BFHWC.
+    const uint8_t* base = video_bfhwc_rgb_u8.data<const uint8_t>();
+
+    const size_t bytes_per_frame = H * W * C;               // u8
+    const size_t bytes_per_batch = F * bytes_per_frame;
+
+    const uint8_t* batch_ptr = base + batch_index * bytes_per_batch;
+
+    for (size_t i = 0; i < F; ++i) {
+        const uint8_t* frame_rgb = batch_ptr + i * bytes_per_frame;
+
+        // Wrap without copy, then convert RGB->BGR for OpenCV writer.
+        cv::Mat rgb(static_cast<int>(H), static_cast<int>(W), CV_8UC3,
+                    const_cast<uint8_t*>(frame_rgb));
+
+        cv::Mat bgr;
+        cv::cvtColor(rgb, bgr, cv::COLOR_RGB2BGR);
+        writer.write(bgr);
+    }
+
+    writer.release();
 }
