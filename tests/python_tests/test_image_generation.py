@@ -9,7 +9,6 @@ import numpy as np
 import openvino as ov
 import openvino_genai as ov_genai
 
-from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
 from utils.network import retry_request
 
@@ -20,9 +19,8 @@ MODEL_NAME = "echarlaix/tiny-random-latent-consistency"
 
 
 @pytest.fixture(scope="module")
-def image_generation_model():
-    models_dir = get_ov_cache_converted_models_dir()
-    model_path = Path(models_dir) / MODEL_ID / MODEL_NAME
+def image_generation_model(ov_cache_models_dir: Path):
+    model_path = Path(ov_cache_models_dir) / MODEL_ID / MODEL_NAME
     
     manager = AtomicDownloadManager(model_path)
     
