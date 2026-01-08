@@ -668,8 +668,12 @@ def create_genai_text_embed_model(model_path, device, memory_data_collector, **k
     pooling_type = kwargs.get("emb_pooling_type")
     max_length = kwargs.get("emb_max_length")
     padding_side = kwargs.get("emb_padding_side")
+    disable_pad_to_max_length = kwargs.get("emb_disable_pad_to_max_length")
 
     config = openvino_genai.TextEmbeddingPipeline.Config()
+    config.normalize = kwargs.get("emb_normalize", False)
+    config.pad_to_max_length = not disable_pad_to_max_length
+
     if pooling_type is not None:
         if pooling_type == "mean":
             config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.MEAN
@@ -677,11 +681,10 @@ def create_genai_text_embed_model(model_path, device, memory_data_collector, **k
             config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.LAST_TOKEN
         else:
             config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.CLS
+
     if max_length is not None:
         config.max_length = max_length
 
-    config.pad_to_max_length = kwargs.get("emb_pad_to_max_length", False)
-    config.normalize = kwargs.get("emb_normalize", False)
     if padding_side:
         config.padding_side = padding_side
 
