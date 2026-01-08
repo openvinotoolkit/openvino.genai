@@ -79,7 +79,6 @@ from .py_openvino_genai import (
 from .py_openvino_genai import (
     WhisperGenerationConfig,
     WhisperPipeline,
-    ChunkStreamerBase,
     WhisperRawPerfMetrics,
     WhisperPerfMetrics
 )

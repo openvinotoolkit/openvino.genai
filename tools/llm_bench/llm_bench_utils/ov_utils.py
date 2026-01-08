@@ -22,6 +22,7 @@ from llm_bench_utils.config_class import (
 from transformers import pipeline
 import queue
 from transformers.generation.streamers import BaseStreamer
+from openvino_genai import StreamingStatus
 
 
 def build_ov_tokenizer(hf_tokenizer):
@@ -1005,7 +1006,7 @@ def get_genai_chunk_streamer():
             """
             self.text_queue.put(word)
 
-        def put(self, token_id: int) -> bool:
+        def write(self, token_id: int) -> StreamingStatus:
             """
             Processes a token and manages the decoding buffer. Adds decoded text to the queue.
 
@@ -1038,12 +1039,11 @@ def get_genai_chunk_streamer():
                 if self.get_stop_flag():
                     # When generation is stopped from streamer then end is not called, need to call it here manually.
                     self.end()
-                    return True  # True means stop  generation
+                    return StreamingStatus.STOP  # stop generation
                 else:
-                    return False  # False means continue generation
+                    return StreamingStatus.RUNNING  # continue generation
             else:
-                return False
-
+                return StreamingStatus.RUNNING
         def end(self):
             """
             Flushes residual tokens from the buffer and puts a None value in the queue to signal the end.

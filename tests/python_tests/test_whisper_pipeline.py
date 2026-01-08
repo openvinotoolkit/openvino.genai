@@ -675,9 +675,6 @@ def test_perf_metrics(model_descr, sample_from_dataset):
 
 
 @pytest.fixture(params=[
-    "DeprecatedBaseStreamer",
-    "DeprecatedChunkStreamer",
-    "DeprecatedChunkWriteStreamer",
     "Streamer",
     "streamer_callback",
     "streamer_bool_callback"
@@ -696,62 +693,6 @@ def streamer_for_test(request):
             self.container.clear()
 
 
-    class DeprecatedBaseStreamer(ov_genai.StreamerBase):
-        def __init__(self) -> None:
-            super().__init__()
-            self.tokens = []
-
-        def put(self, token: int) -> bool:
-            self.tokens.append(token)
-            return False
-
-        def end(self) -> None:
-            pass
-
-    if request.param == 'DeprecatedBaseStreamer':
-        streamer = DeprecatedBaseStreamer()
-        return streamer, ResultHandler(streamer.tokens)
-
-
-    class DeprecatedChunkStreamer(ov_genai.ChunkStreamerBase):
-        def __init__(self) -> None:
-            super().__init__()
-            self.tokens = []
-
-        def put(self, token: int) -> bool:
-            self.tokens.append(token)
-            return False
-
-        def put_chunk(self, tokens: list[int]) -> bool:
-            self.tokens += tokens
-            return False
-
-        def end(self) -> None:
-            pass
-
-    if request.param == 'DeprecatedChunkStreamer':
-        streamer = DeprecatedChunkStreamer()
-        return streamer, ResultHandler(streamer.tokens)
-
-    class DeprecatedChunkWriteStreamer(ov_genai.ChunkStreamerBase):
-        def __init__(self) -> None:
-            super().__init__()
-            self.tokens = []
-
-        def write(self, token: int | list[int]) -> ov_genai.StreamingStatus:
-            if type(token) == list:
-                self.tokens += token
-            else:
-                self.tokens.append(token)
-            return ov_genai.StreamingStatus.RUNNING
-
-        def end(self) -> None:
-            pass
-
-    if request.param == 'DeprecatedChunkWriteStreamer':
-        streamer = DeprecatedChunkWriteStreamer()
-        return streamer, ResultHandler(streamer.tokens)
-    
     class Streamer(ov_genai.StreamerBase):
         def __init__(self) -> None:
             super().__init__()
