@@ -277,9 +277,6 @@ void init_continuous_batching_pipeline(py::module_& m) {
         .def("cancel", &GenerationHandleImpl::cancel)
         .def("read", &GenerationHandleImpl::read)
         .def("read_all", &GenerationHandleImpl::read_all);
-    OPENVINO_SUPPRESS_DEPRECATED_START
-    generation_handle.def("drop", &GenerationHandleImpl::drop);
-    OPENVINO_SUPPRESS_DEPRECATED_END
 
     py::enum_<AggregationMode>(m, "AggregationMode",
                             R"(Represents the mode of per-token score aggregation when determining least important tokens for eviction from cache

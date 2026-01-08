@@ -103,15 +103,9 @@ public:
 
     bool can_read();
 
-    OPENVINO_DEPRECATED("Please, use `stop()` instead of `drop()`. Support will be removed in 2026.0.0 release.")
-    bool is_dropped();
-
     bool is_stopped();
 
     bool is_cancelled();
-
-    OPENVINO_DEPRECATED("Please, use `stop()` instead of `drop()`. Support will be removed in 2026.0.0 release.")
-    void drop();
 
     void stop();
 
