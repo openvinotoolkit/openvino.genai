@@ -1,17 +1,15 @@
-// Copyright (C) 2026 Intel Corporation
+// Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/c/vlm_pipeline.h"
 
-#include <filesystem>
-#include <memory>
-#include <string>
-#include <vector>
+#include <stdarg.h>
 
 #include "openvino/c/ov_tensor.h"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "types_c.h"
+
 
 ov_status_e ov_genai_vlm_decoded_results_create(ov_genai_vlm_decoded_results** results) {
     if (!results) {

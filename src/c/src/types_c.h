@@ -1,10 +1,8 @@
-// Copyright (C) 2026 Intel Corporation
+// Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 
-#include <cstdarg>
-#include <functional>
 #include <memory>
 #include <string>
 
