@@ -259,7 +259,6 @@ def test_incremental_integer_token_ids(hf_ov_genai_models):
     assert accumulated_message["content"] == " The answer to 2 + 1 is 3."
 
 
-@pytest.mark.parametrize("hf_ov_genai_models", ["katuni4ka/tiny-random-phi3"], indirect=True)
 @pytest.mark.parametrize(
     "hf_ov_genai_models", 
     ["katuni4ka/tiny-random-phi3"],
@@ -270,8 +269,12 @@ def test_incremental_integer_token_ids(hf_ov_genai_models):
     ["<think>", "\nOkay, ", "the user is asking", " for the ", "answer ", "to 2 + 1.", "</th", "ink>", "\n\nThe answer ", "to", "2 ", "+ ", "1 ", "is ", "\boxed{3}."],
     ["<t", "h", "ink>", "\nOkay, ", "the user is asking", " for the ", "answer ", "to 2 + 1.", "</th", "ink>", "\n\nThe answer ", "to", "2 ", "+ ", "1 ", "is ", "\boxed{3}."],
     
-    # check that if thinking opening and closing tags are passed in a single subword, it is still parsed correctly
-    ["<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \boxed{3}."]
+    # # check that if thinking opening and closing tags are passed in a single subword, it is still parsed correctly
+    ["<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \boxed{3}."],
+    
+    # check that if there is a false chunk for open/close thinking tag that accumulating reasoning content will not start/stop
+    ["<think>", "\nOkay, ", "the user is asking", " for the ", "answer ", "to 2 + 1.", "</thi", "\n\nThe answer ", "nk>", "to", "2 ", "+ ", "1 ", "is ", "\boxed{3}.", "</think>"],
+    ["<thi", "\nOkay, ", "nk>", "<think>", "the user is asking", " for the ", "answer ", "to 2 + 1.", "</think>", "\n\nThe answer ", "nk>", "to", "2 ", "+ ", "1 ", "is ", "\boxed{3}."],
 ])
 def test_incremental_phi4_reason_parser_2(hf_ov_genai_models, split_answer):
     # check that if thinking opening and closing tags are in the middle of the subword, it is still parsed correctly
@@ -290,14 +293,47 @@ def test_incremental_phi4_reason_parser_2(hf_ov_genai_models, split_answer):
     for subword in split_answer:
         streamer._write(subword)
 
-    think_content = ("".join(split_answer)).split("</think>")[0].replace("<think>", "")
+    think_content = ("".join(split_answer)).split("</think>")[0].split("<think>")[1]
     content = "".join(split_answer)
 
     msg = streamer.get_parsed_message()
+
     assert msg["reasoning_content"] == think_content
     assert msg["content"].endswith(content)  # since msg contains all accumulated content
     assert msg_manual["reasoning_content"] == think_content
     assert msg_manual["content"] == content
+
+
+@pytest.mark.parametrize(
+    "hf_ov_genai_models", 
+    ["katuni4ka/tiny-random-phi3"],
+    indirect=True
+)
+@pytest.mark.parametrize("split_answer", [
+    ["<th", "\nOkay, ", "the user is asking", " for the ", "answer ", "to 2 + 1.", "\n\nThe answer ", "to", "2 ", "+ ", "1 ", "is ", "\boxed{3}."],
+    ["<th", "\nOkay, ", "the user is asking", "ink>", " for the ", "answer ", "to 2 + 1.", "</think>", "\n\nThe answer ", "to", "2 ", "+ ", "1 ", "is ", "\boxed{3}."],
+])
+def test_incremental_phi4_reason_parser_3(hf_ov_genai_models, split_answer):
+    # check that if there is a false chunk of opening/close thinking tag that it will not start/stop the thinking.
+    hf_tokenizer, genai_tokenizer = hf_ov_genai_models
+
+    msg_manual = {}
+
+    class CustomStreamer(TextParserStreamer):
+        def write(self, message):
+            # will be accumulated automatically inside streamer
+            concatenate_dicts(msg_manual, message)
+            return StreamingStatus.RUNNING
+
+    streamer = CustomStreamer(genai_tokenizer, parsers=[Phi4ReasoningIncrementalParser()])
+
+    for subword in split_answer:
+        streamer._write(subword)
+
+    msg = streamer.get_parsed_message()
+    # since no valid thinking tags were provided
+    assert "reasoning_content" not in msg
+    assert "reasoning_content" not in msg_manual
 
 
 @pytest.mark.parametrize(
