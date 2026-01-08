@@ -62,11 +62,57 @@ ov::Tensor slice_tensor(const ov::Tensor& tensor, ov::Coordinate begin, ov::Coor
     ov::Shape tensor_shape = tensor.get_shape();
     OPENVINO_ASSERT(begin.size() == tensor_shape.size(), "Begin coordinate size must match tensor rank.");
 
+#if 1
     ov::Tensor sliced_view = ov::Tensor(tensor, begin, end);
     ov::Tensor deep_copy(sliced_view.get_element_type(), sliced_view.get_shape());
 
     sliced_view.copy_to(deep_copy);
     return deep_copy;
+#else
+    ov::Shape roi_shape;
+    for (size_t i = 0; i < begin.size(); ++i) {
+        roi_shape.push_back(end[i] - begin[i]);
+    }
+
+    ov::Tensor dst_tensor(tensor.get_element_type(), roi_shape);
+
+    const uint8_t* src_ptr = static_cast<const uint8_t*>(tensor.data());
+    uint8_t* dst_ptr = static_cast<uint8_t*>(dst_tensor.data());
+
+    size_t elem_size = tensor.get_element_type().size();
+    size_t rank = tensor_shape.size();
+
+    // Calc original Tensor's each dim srides.
+    std::vector<size_t> src_strides(rank);
+    src_strides[rank - 1] = elem_size;
+    for (int i = rank - 2; i >= 0; --i) {
+        src_strides[i] = src_strides[i + 1] * tensor_shape[i + 1];
+    }
+
+    // last dim's copy size.
+    size_t last_dim_len = roi_shape.back() * elem_size;
+
+    size_t num_rows = 1;
+    for (size_t i = 0; i < rank - 1; ++i) {
+        num_rows *= roi_shape[i];
+    }
+
+    for (size_t i = 0; i < num_rows; ++i) {
+        size_t src_offset = 0;
+        size_t temp_idx = i;
+
+        for (int d = rank - 2; d >= 0; --d) {
+            size_t coord_d = (temp_idx % roi_shape[d]) + begin[d];
+            src_offset += coord_d * src_strides[d];
+            temp_idx /= roi_shape[d];
+        }
+        src_offset += begin.back() * elem_size;
+
+        std::memcpy(dst_ptr + i * last_dim_len, src_ptr + src_offset, last_dim_len);
+    }
+
+    return dst_tensor;
+#endif
 }
 
 ov::Tensor concat_tensors(const std::vector<ov::Tensor>& tensors, size_t axis) {
