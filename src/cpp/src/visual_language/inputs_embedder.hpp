@@ -296,8 +296,10 @@ private:
          * @brief Execute the full CDPruner pipeline.
          * This method orchestrates the entire pruning workflow by calling VisionTokenPruningProcessor functions.
          * @param context PruningContext containing all necessary parameters and state
+         * @return std::optional<PruningResult> with pruned data if pruning occurred, std::nullopt otherwise
          */
-        VisionTokenPruningProcessor::PruningResult execute_pruning_pipeline(const PruningContext& context) {
+        std::optional<VisionTokenPruningProcessor::PruningResult> execute_pruning_pipeline(
+            const PruningContext& context) {
             return m_pruning_processor->execute(context, m_position_ids, m_kv_cache_state, m_prev_hist_length);
         }
     };

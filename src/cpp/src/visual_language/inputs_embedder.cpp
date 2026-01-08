@@ -19,7 +19,6 @@
 #include "visual_language/llava_next_video/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
-#include "logger.hpp"
 
 #include "utils.hpp"
 

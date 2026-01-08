@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -105,7 +105,7 @@ public:
      * Contains all necessary information about the pruning operation and its results.
      */
     struct PruningResult {
-        bool is_pruned = false;                                ///< Whether pruning was actually applied
+
         size_t original_visual_tokens = 0;                     ///< Original number of visual tokens before pruning
         size_t pruned_visual_tokens = 0;                       ///< Number of visual tokens after pruning
         ov::Tensor pruned_embeddings;                          ///< Pruned visual embeddings tensor
@@ -212,12 +212,12 @@ public:
      * @param position_ids Position IDs tensor (modified in-place)
      * @param kv_cache_state KV cache state (modified)
      * @param prev_hist_length Previous history length for KV cache
-     * @return PruningResult with pruned tensors and metadata
+     * @return std::optional<PruningResult> with pruned tensors if pruning occurred, std::nullopt otherwise
      */
-    PruningResult execute(const PruningContext& context,
-                          ov::Tensor& position_ids,
-                          utils::KVCacheState& kv_cache_state,
-                          size_t prev_hist_length);
+    std::optional<PruningResult> execute(const PruningContext& context,
+                                         ov::Tensor& position_ids,
+                                         utils::KVCacheState& kv_cache_state,
+                                         size_t prev_hist_length);
 
 private:
     /// @brief CDPruner instance for token pruning (lazy initialized)

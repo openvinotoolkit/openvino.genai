@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "vision_token_pruning_processor.hpp"
@@ -691,14 +691,14 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_1d(
     return new_position_ids;
 }
 
-VisionTokenPruningProcessor::PruningResult VisionTokenPruningProcessor::execute(const PruningContext& context,
-                                                                                ov::Tensor& position_ids,
-                                                                                utils::KVCacheState& kv_cache_state,
-                                                                                size_t prev_hist_length) {
+std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProcessor::execute(
+    const PruningContext& context,
+    ov::Tensor& position_ids,
+    utils::KVCacheState& kv_cache_state,
+    size_t prev_hist_length) {
     auto pruning_start = std::chrono::high_resolution_clock::now();
 
     PruningResult result;
-    result.is_pruned = false;
     result.original_visual_tokens = context.merged_visual_embeddings.get_shape()[0];
 
     // Retrieve current pruning configuration
@@ -734,10 +734,8 @@ VisionTokenPruningProcessor::PruningResult VisionTokenPruningProcessor::execute(
     result.pruned_embeddings = pruned_2d_tensor;
 
     if (result.original_visual_tokens == result.pruned_visual_tokens) {
-        return result;
+        return std::nullopt;
     }
-
-    result.is_pruned = true;
 
     // Step 5: Adjust position_ids to account for removed visual tokens
     adjust_position_ids(position_ids,

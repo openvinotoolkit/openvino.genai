@@ -1626,7 +1626,8 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
 # CDPruner Tests
 
 CDPRUNER_SUPPORTED_MODELS = [
-    "katuni4ka/tiny-random-qwen2vl",
+    "optimum-intel-internal-testing/tiny-random-qwen2vl",
+    "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
 ]
 
 parametrize_cdpruner_models = pytest.mark.parametrize(

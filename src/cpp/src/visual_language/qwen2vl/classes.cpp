@@ -1162,17 +1162,13 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
                                        vision_end_token_id,
                                        spatial_merge_size};
 
-        VisionTokenPruningProcessor::PruningResult pruning_result = execute_pruning_pipeline(pruning_context);
+        if (auto pruning_result = execute_pruning_pipeline(pruning_context)) {
+            merged_embeddings = pruning_result->pruned_embeddings;
+            input_ids = pruning_result->pruned_input_ids;
+            text_embeds = pruning_result->pruned_text_embeds;
 
-        // Always update visual embeddings (processed even when no pruning occurs)
-        merged_embeddings = pruning_result.pruned_embeddings;
-
-        if (pruning_result.is_pruned) {
-            input_ids = pruning_result.pruned_input_ids;
-            text_embeds = pruning_result.pruned_text_embeds;
-
-            if (pruning_result.updated_rope_delta.has_value()) {
-                m_rope_delta = pruning_result.updated_rope_delta.value();
+            if (pruning_result->updated_rope_delta.has_value()) {
+                m_rope_delta = pruning_result->updated_rope_delta.value();
             }
         }
     };
