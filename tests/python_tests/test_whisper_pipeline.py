@@ -294,7 +294,6 @@ def compare_results(hf_result, genai_result):
 
 
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
-@pytest.mark.precommit
 def test_smoke(whisper_model_tiny: tuple[str, pathlib.Path], sample_from_dataset):
     run_pipeline_with_ref(
         model_id=whisper_model_tiny[0],
@@ -303,7 +302,6 @@ def test_smoke(whisper_model_tiny: tuple[str, pathlib.Path], sample_from_dataset
     )
 
 
-@pytest.mark.precommit
 def test_whisper_config_constructor(whisper_model_tiny: tuple[str, pathlib.Path]):
     _, path = whisper_model_tiny
 
@@ -342,7 +340,6 @@ def test_whisper_config_constructor(whisper_model_tiny: tuple[str, pathlib.Path]
 
 
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
-@pytest.mark.precommit
 def test_whisper_constructors(whisper_model_tiny, sample_from_dataset):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny)
 
@@ -361,7 +358,6 @@ def test_whisper_constructors(whisper_model_tiny, sample_from_dataset):
 
 
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
-@pytest.mark.precommit
 def test_max_new_tokens(whisper_model_tiny, sample_from_dataset):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny)
 
@@ -378,7 +374,6 @@ def test_max_new_tokens(whisper_model_tiny, sample_from_dataset):
 
 
 @pytest.mark.parametrize("language", ["fr", "de"])
-@pytest.mark.precommit
 def test_language_mode(whisper_model_tiny, language):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny)
     sample = get_whisper_dataset(language, long_form=False)[0]
@@ -402,7 +397,6 @@ def test_language_mode(whisper_model_tiny, language):
 
 
 @pytest.mark.parametrize("sample_from_dataset", get_fixture_params_for_n_whisper_dataset_samples(n=1, language="fr"), indirect=True)
-@pytest.mark.precommit
 def test_task_mode(whisper_model_tiny, sample_from_dataset):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny)
 
@@ -457,7 +451,6 @@ def test_task_mode(whisper_model_tiny, sample_from_dataset):
     ],
     indirect=True,
 )
-@pytest.mark.precommit
 def test_language_autodetect(whisper_model_tiny, sample_from_dataset):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny)
 
@@ -475,7 +468,6 @@ def test_language_autodetect(whisper_model_tiny, sample_from_dataset):
 
 
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=1)], indirect=True)
-@pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_return_timestamps_short_form(whisper_model_tiny, sample_from_dataset):
     run_pipeline_with_ref(
@@ -487,7 +479,6 @@ def test_return_timestamps_short_form(whisper_model_tiny, sample_from_dataset):
 
 
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=1)], indirect=True)
-@pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_return_timestamps_max_new_tokens_short_form(whisper_model_tiny, sample_from_dataset):
     run_pipeline_with_ref(
@@ -501,7 +492,6 @@ def test_return_timestamps_max_new_tokens_short_form(whisper_model_tiny, sample_
 
 
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=10, long_form=True)], indirect=True)
-@pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_longform_audio(whisper_model_tiny, sample_from_dataset):
     _, _, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny)
@@ -527,7 +517,6 @@ def test_longform_audio(whisper_model_tiny, sample_from_dataset):
 
 
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, long_form=True)], indirect=True)
-@pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_longform_audio_with_past(whisper_model_tiny, sample_from_dataset):
     _, _, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny, stateful=True)
@@ -552,7 +541,6 @@ def test_longform_audio_with_past(whisper_model_tiny, sample_from_dataset):
     assert "".join(streamer_result) == hf_result["text"]
 
 
-@pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_shortform(whisper_model):
     samples = []
@@ -571,7 +559,6 @@ def test_shortform(whisper_model):
 
 
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, long_form=True)], indirect=True)
-@pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_beam_search(whisper_model_tiny, sample_from_dataset):
     # use only 30 seconds of audio due to beam search results wrong with enabled timestamps
@@ -588,7 +575,6 @@ def test_beam_search(whisper_model_tiny, sample_from_dataset):
     compare_results(hf_result, genai_result)
 
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
-@pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_initial_prompt_hotwords(whisper_model_tiny, sample_from_dataset):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny)
@@ -610,7 +596,6 @@ def test_initial_prompt_hotwords(whisper_model_tiny, sample_from_dataset):
 
 
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
-@pytest.mark.precommit
 def test_random_sampling(whisper_model_tiny, sample_from_dataset):
     _, _, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny)
 
@@ -648,7 +633,6 @@ def test_random_sampling(whisper_model_tiny, sample_from_dataset):
 
 
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
-@pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_perf_metrics(whisper_model_tiny, sample_from_dataset):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(whisper_model_tiny)
@@ -795,7 +779,6 @@ def streamer_for_test(request):
         return streamer_bool_callback, ResultHandler(texts)
 
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
-@pytest.mark.precommit
 def test_streamers(whisper_model_tiny, sample_from_dataset, streamer_for_test):
     _, _, _, genai_pipe = read_whisper_model(whisper_model_tiny)
 

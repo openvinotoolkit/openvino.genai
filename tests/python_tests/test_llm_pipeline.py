@@ -26,7 +26,7 @@ from utils.ov_genai_pipelines import (
     PipelineType,
     GenerationChatInputsType,
 )
-from data.models import get_models_list, get_chat_models_list
+from data.models import get_models_list, CHAT_MODELS_LIST
 
 
 def assert_hf_equals_genai(hf_reference, genai_output):
@@ -50,7 +50,6 @@ test_cases = [
 @pytest.mark.parametrize("generation_config_dict,prompt", test_cases)
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.parametrize("pipeline_type", MAIN_PIPELINE_TYPES)
-@pytest.mark.precommit
 def test_string_inputs(
     model_id, generation_config_dict, prompt, pipeline_type, model_downloader: ModelDownloaderCallable
 ):
@@ -72,7 +71,6 @@ input_tensors_list = [
 
 @pytest.mark.parametrize("inputs", input_tensors_list)
 @pytest.mark.parametrize("model_id", get_models_list())
-@pytest.mark.precommit
 def test_encoded_inputs(model_id, inputs, model_downloader: ModelDownloaderCallable):
     opt_model, hf_tokenizer, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
@@ -113,7 +111,6 @@ batched_prompts = [
 @pytest.mark.parametrize("prompts", batched_prompts)
 @pytest.mark.parametrize("model_id", get_models_list())
 @pytest.mark.parametrize("pipeline_type", MAIN_PIPELINE_TYPES)
-@pytest.mark.precommit
 def test_batch_string_inputs(model_id, generation_config_dict, prompts, pipeline_type, model_downloader):
     generate_and_compare(
         model_downloader,
@@ -124,7 +121,6 @@ def test_batch_string_inputs(model_id, generation_config_dict, prompts, pipeline
     )
 
 
-@pytest.mark.precommit
 def test_batch_size_switch(model_downloader: ModelDownloaderCallable):
     model_id = "katuni4ka/tiny-random-phi3"
     _, _, models_path = model_downloader(model_id)
@@ -135,7 +131,6 @@ def test_batch_size_switch(model_downloader: ModelDownloaderCallable):
     ov_pipe.generate(["a"], max_new_tokens=2)
 
 
-@pytest.mark.precommit
 def test_empty_encoded_inputs_throw(model_downloader: ModelDownloaderCallable):
     model_id = "katuni4ka/tiny-random-phi3"
     _, _, models_path = model_downloader(model_id)
@@ -145,8 +140,7 @@ def test_empty_encoded_inputs_throw(model_downloader: ModelDownloaderCallable):
         ov_pipe.generate(ov.Tensor(np.array([[]], dtype=np.int64)), max_new_tokens=2)
 
 
-@pytest.mark.precommit
-@pytest.mark.parametrize("model_id", get_chat_models_list())
+@pytest.mark.parametrize("model_id", CHAT_MODELS_LIST)
 def test_different_input_types_works_same_and_change_nothing(model_id, model_downloader: ModelDownloaderCallable):
     opt_model, hf_tokenizer, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
@@ -182,12 +176,11 @@ questions = ["1+1=", "What is the previous answer?", "Why is the Sun yellow?", "
 
 
 @pytest.mark.parametrize("inputs", chat_inputs)
-@pytest.mark.parametrize("model_id", get_chat_models_list())
+@pytest.mark.parametrize("model_id", CHAT_MODELS_LIST)
 @pytest.mark.parametrize("input_type", [
     GenerationChatInputsType.STRING,
     GenerationChatInputsType.ENCODED_INPUTS,
     GenerationChatInputsType.CHAT_HISTORY])
-@pytest.mark.precommit
 def test_chat_scenario(model_id, inputs, input_type, model_downloader: ModelDownloaderCallable):
     chat_history_hf = []
     chat_history_ov = ov_genai.ChatHistory() if input_type == GenerationChatInputsType.CHAT_HISTORY else []
@@ -261,9 +254,8 @@ def test_chat_scenario(model_id, inputs, input_type, model_downloader: ModelDown
         assert_hf_equals_genai(chat_history_hf, chat_history_messages_ov)
 
 
-@pytest.mark.precommit
 def test_chat_scenario_several_chats_in_series(model_downloader: ModelDownloaderCallable):
-    opt_model, hf_tokenizer, models_path = model_downloader(get_chat_models_list()[0])
+    opt_model, hf_tokenizer, models_path = model_downloader(CHAT_MODELS_LIST[0])
     ov_pipe = create_ov_pipeline(models_path)
 
     generation_config_kwargs, _ = chat_inputs[0]
@@ -296,8 +288,7 @@ def test_chat_scenario_several_chats_in_series(model_downloader: ModelDownloader
         assert_hf_equals_genai(chat_history_hf, chat_history_ov)
 
 
-@pytest.mark.precommit
-@pytest.mark.parametrize("model_id", get_chat_models_list())
+@pytest.mark.parametrize("model_id", CHAT_MODELS_LIST)
 def test_chat_scenario_several_start(model_id, model_downloader: ModelDownloaderCallable):
     opt_model, hf_tokenizer, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
@@ -311,8 +302,7 @@ def test_chat_scenario_several_start(model_id, model_downloader: ModelDownloader
     ov_pipe.finish_chat()
 
 
-@pytest.mark.precommit
-@pytest.mark.parametrize("model_id", get_chat_models_list())
+@pytest.mark.parametrize("model_id", CHAT_MODELS_LIST)
 def test_generate_works_same_before_and_after_chat(model_id, model_downloader: ModelDownloaderCallable):
     opt_model, hf_tokenizer, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
@@ -348,7 +338,6 @@ def user_defined_status_callback(subword):
     "callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)]
 )
 @pytest.mark.parametrize("model_id", get_models_list())
-@pytest.mark.precommit
 def test_callback_one_string(callback, model_id, model_downloader: ModelDownloaderCallable):
     _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
@@ -361,7 +350,6 @@ def test_callback_one_string(callback, model_id, model_downloader: ModelDownload
     "callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)]
 )
 @pytest.mark.parametrize("model_id", get_models_list())
-@pytest.mark.precommit
 def test_callback_batch_throws(callback, model_id, model_downloader: ModelDownloaderCallable):
     _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
@@ -373,7 +361,6 @@ def test_callback_batch_throws(callback, model_id, model_downloader: ModelDownlo
     "callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)]
 )
 @pytest.mark.parametrize("model_id", get_models_list())
-@pytest.mark.precommit
 def test_callback_kwargs_one_string(callback, model_id, model_downloader: ModelDownloaderCallable):
     _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
@@ -384,7 +371,6 @@ def test_callback_kwargs_one_string(callback, model_id, model_downloader: ModelD
     "callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)]
 )
 @pytest.mark.parametrize("model_id", get_models_list())
-@pytest.mark.precommit
 def test_callback_decoding_metallama(model_id, callback, model_downloader: ModelDownloaderCallable):
     # On metallama this prompt generates output which can shorten after adding new tokens.
     # Test that streamer correctly handles such cases.
@@ -400,7 +386,6 @@ def test_callback_decoding_metallama(model_id, callback, model_downloader: Model
     "callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)]
 )
 @pytest.mark.parametrize("model_id", get_models_list())
-@pytest.mark.precommit
 def test_callback_kwargs_batch_throws(callback, model_id, model_downloader: ModelDownloaderCallable):
     _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
@@ -408,7 +393,6 @@ def test_callback_kwargs_batch_throws(callback, model_id, model_downloader: Mode
         ov_pipe.generate(['1', '2'], max_new_tokens=10, streamer=callback)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_callback_terminate_by_bool(model_id, model_downloader: ModelDownloaderCallable):
     _, _, models_path = model_downloader(model_id)
@@ -432,7 +416,6 @@ def test_callback_terminate_by_bool(model_id, model_downloader: ModelDownloaderC
     assert len(ov_output.tokens[0]) < max_new_tokens
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_callback_terminate_by_status(model_id, model_downloader: ModelDownloaderCallable):
     _, _, models_path = model_downloader(model_id)
@@ -456,8 +439,7 @@ def test_callback_terminate_by_status(model_id, model_downloader: ModelDownloade
     assert len(ov_output.tokens[0]) < max_new_tokens
 
 
-@pytest.mark.parametrize("model_id", get_chat_models_list())
-@pytest.mark.precommit
+@pytest.mark.parametrize("model_id", CHAT_MODELS_LIST)
 def test_chat_scenario_callback_cancel(model_id, model_downloader: ModelDownloaderCallable):
     callback_questions = [
         '1+1=',
@@ -556,7 +538,6 @@ class PrinterStatus(ov_genai.StreamerBase):
 
 @pytest.mark.parametrize("streamer_base", [PrinterNone, PrinterBool, PrinterStatus])
 @pytest.mark.parametrize("model_id", get_models_list())
-@pytest.mark.precommit
 def test_chat_scenario_callback_cancel_second(model_id, streamer_base, model_downloader: ModelDownloaderCallable):
     _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
@@ -566,7 +547,6 @@ def test_chat_scenario_callback_cancel_second(model_id, streamer_base, model_dow
     ov_pipe.generate('table is made of', generation_config, printer)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_streamer_batch_throws(model_id, model_downloader: ModelDownloaderCallable):
     _, _, models_path = model_downloader(model_id)
@@ -576,7 +556,6 @@ def test_streamer_batch_throws(model_id, model_downloader: ModelDownloaderCallab
         ov_pipe.generate(['1', '2'], ov_pipe.get_generation_config(), printer)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_streamer_kwargs_one_string(model_id, model_downloader: ModelDownloaderCallable):
     _, _, models_path = model_downloader(model_id)
@@ -585,7 +564,6 @@ def test_streamer_kwargs_one_string(model_id, model_downloader: ModelDownloaderC
     ov_pipe.generate('table is made of', max_new_tokens=10, do_sample=False, streamer=printer)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_streamer_kwargs_batch_throws(model_id, model_downloader: ModelDownloaderCallable):
     _, _, models_path = model_downloader(model_id)
@@ -595,7 +573,6 @@ def test_streamer_kwargs_batch_throws(model_id, model_downloader: ModelDownloade
         ov_pipe.generate('', num_beams=2, streamer=printer)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)]
 )
@@ -608,7 +585,6 @@ def test_operator_with_callback_one_string(callback, model_id, model_downloader:
     ov_pipe('talbe is made of', ten_tokens, callback)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "callback", [print, user_defined_callback, user_defined_status_callback, lambda subword: print(subword)]
 )
@@ -622,7 +598,6 @@ def test_operator_with_callback_batch_throws(callback, model_id, model_downloade
 
 @pytest.mark.parametrize("streamer_base", [PrinterNone, PrinterBool, PrinterStatus])
 @pytest.mark.parametrize("model_id", get_models_list())
-@pytest.mark.precommit
 def test_operator_with_streamer_kwargs_one_string(streamer_base, model_id, model_downloader: ModelDownloaderCallable):
     _, _, models_path = model_downloader(model_id)
     ov_pipe = create_ov_pipeline(models_path)
@@ -630,7 +605,6 @@ def test_operator_with_streamer_kwargs_one_string(streamer_base, model_id, model
     ov_pipe('hi', max_new_tokens=10, do_sample=True, streamer=printer)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_operator_with_streamer_kwargs_batch_throws(model_id, model_downloader: ModelDownloaderCallable):
     _, _, models_path = model_downloader(model_id)
@@ -663,7 +637,6 @@ def load_genai_pipe_with_configs(configs: list[tuple], temp_path):
     return ov_pipe
 
 
-@pytest.mark.precommit
 def test_eos_token_is_inherited_from_default_generation_config(model_tmp_path):
     _, temp_path = model_tmp_path
     ov_pipe = load_genai_pipe_with_configs([({"eos_token_id": 37}, "config.json")], temp_path)
@@ -675,7 +648,6 @@ def test_eos_token_is_inherited_from_default_generation_config(model_tmp_path):
     assert 37 == ov_pipe.get_generation_config().eos_token_id
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_pipeline_validates_generation_config(model_id, model_downloader: ModelDownloaderCallable):
     _, _, models_path = model_downloader(model_id)
@@ -688,7 +660,6 @@ def test_pipeline_validates_generation_config(model_id, model_downloader: ModelD
 # Work with Unicode in Python API
 #
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_unicode_pybind_decoding_one_string(model_id, model_downloader: ModelDownloaderCallable):
     # On this model this prompt generates unfinished utf string.
@@ -699,7 +670,6 @@ def test_unicode_pybind_decoding_one_string(model_id, model_downloader: ModelDow
     assert "�" == res_str[-1]
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_unicode_pybind_decoding_batched(model_id, model_downloader: ModelDownloaderCallable):
     # On this model this prompt generates unfinished utf string.
@@ -710,7 +680,6 @@ def test_unicode_pybind_decoding_batched(model_id, model_downloader: ModelDownlo
     assert '�' == res_str.texts[0][-1]
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", get_models_list())
 def test_unicode_pybind_decoding_one_string_streamer(model_id, model_downloader: ModelDownloaderCallable):
     # On this model this prompt generates unfinished utf-8 string
@@ -741,7 +710,6 @@ test_cases = [
 
 
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
-@pytest.mark.precommit
 def test_perf_metrics(generation_config, prompt, model_downloader):
     import time
     start_time = time.perf_counter()
@@ -820,7 +788,6 @@ test_cases = [
 
 
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
-@pytest.mark.precommit
 def test_perf_metrics_with_structured_output(generation_config, prompt, model_downloader: ModelDownloaderCallable):
     class Person(BaseModel):
         name: str = Field(pattern=r"^[A-Z][a-z]{1,20}$")
@@ -863,7 +830,6 @@ def test_perf_metrics_with_structured_output(generation_config, prompt, model_do
 
 @pytest.mark.parametrize("pipeline_type", MAIN_PIPELINE_TYPES)
 @pytest.mark.parametrize("stop_str", {True, False})
-@pytest.mark.precommit
 def test_pipelines_generate_with_streaming(pipeline_type, stop_str, model_downloader):
     # streamer
     it_cnt = 0

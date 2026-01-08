@@ -73,10 +73,10 @@ Models and test data are cached using pytest's built-in cache mechanism. The cac
 
 ```sh
 # Use custom cache directory
-python -m pytest tests/python_tests/ -m precommit -o cache_dir=/path/to/custom/cache
+python -m pytest tests/python_tests/ -o cache_dir=/path/to/custom/cache
 
 # Use default cache location (~/.pytest_cache/)
-python -m pytest tests/python_tests/ -m precommit
+python -m pytest tests/python_tests/
 ```
 
 The model cache automatically expires after 24 hours and is organized by date and package versions. You can clear the cache manually:

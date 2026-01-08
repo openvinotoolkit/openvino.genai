@@ -33,7 +33,6 @@ def model_ids(request):
 
 
 @pytest.mark.parametrize("pipeline_type", get_gguf_pipeline_types())
-@pytest.mark.precommit
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
 def test_pipelines_with_gguf_generate(pipeline_type, model_ids, ov_cache_models_dir: Path, ov_cache_manager):
     if sys.platform == "darwin":
@@ -95,7 +94,6 @@ def test_pipelines_with_gguf_generate(pipeline_type, model_ids, ov_cache_models_
         "<|endoftext|> Why the Sky is Blue? <|im_end|>",
     ],
 )
-@pytest.mark.precommit
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
 def test_full_gguf_pipeline(
     pipeline_type, model_ids, enable_save_ov_model, prompt, ov_cache_models_dir: Path, ov_cache_manager
@@ -165,7 +163,6 @@ def test_full_gguf_pipeline(
     "model_ids", [{"gguf_model_id": "Qwen/Qwen3-0.6B-GGUF", "gguf_filename": "Qwen3-0.6B-Q8_0.gguf"}]
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 172335")
-@pytest.mark.precommit
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
 def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids, ov_cache_models_dir: Path, ov_cache_manager):
     # Temporal testing solution until transformers starts to support qwen3 in GGUF format

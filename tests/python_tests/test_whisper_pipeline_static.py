@@ -91,7 +91,6 @@ def whisper_model_tiny(ov_cache_models_dir: pathlib.Path) -> Generator[tuple[str
 
 
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_generation_compare_with_cpu(whisper_model_tiny, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(whisper_model_tiny)
 
@@ -103,7 +102,6 @@ def test_static_whisper_generation_compare_with_cpu(whisper_model_tiny, sample_f
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, language="fr"),
                                                  *get_fixture_params_for_n_whisper_dataset_samples(n=2, language="de"),
                                                  *get_fixture_params_for_n_whisper_dataset_samples(n=2, language="es")], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_autodetect(whisper_model_tiny, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(whisper_model_tiny)
 
@@ -113,7 +111,6 @@ def test_static_whisper_autodetect(whisper_model_tiny, sample_from_dataset):
 
 
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='de', n=3)], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_language_de(whisper_model_tiny, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(whisper_model_tiny)
 
@@ -123,7 +120,6 @@ def test_static_whisper_language_de(whisper_model_tiny, sample_from_dataset):
 
 
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='fr', n=3)], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_language_fr(whisper_model_tiny, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(whisper_model_tiny)
 
@@ -133,7 +129,6 @@ def test_static_whisper_language_fr(whisper_model_tiny, sample_from_dataset):
 
 
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='ru', n=3)], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_language_ru(whisper_model_tiny, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(whisper_model_tiny)
 
@@ -143,7 +138,6 @@ def test_static_whisper_language_ru(whisper_model_tiny, sample_from_dataset):
 
 
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0, "long_form": True}], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_generation_long(whisper_model_tiny, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(whisper_model_tiny)
 
@@ -153,7 +147,6 @@ def test_static_whisper_generation_long(whisper_model_tiny, sample_from_dataset)
 
 
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_stateful_generation_compare_with_cpu(whisper_model_tiny, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(whisper_model_tiny, stateful=True)
 
@@ -165,7 +158,6 @@ def test_static_whisper_stateful_generation_compare_with_cpu(whisper_model_tiny,
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, language="fr"),
                                                  *get_fixture_params_for_n_whisper_dataset_samples(n=2, language="de"),
                                                  *get_fixture_params_for_n_whisper_dataset_samples(n=2, language="es")], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_stateful_autodetect(whisper_model_tiny, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(whisper_model_tiny, stateful=True)
 
@@ -175,7 +167,6 @@ def test_static_whisper_stateful_autodetect(whisper_model_tiny, sample_from_data
 
 
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='de', n=3)], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_stateful_language_de(whisper_model_tiny, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(whisper_model_tiny, stateful=True)
 
@@ -185,7 +176,6 @@ def test_static_whisper_stateful_language_de(whisper_model_tiny, sample_from_dat
 
 
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='fr', n=3)], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_stateful_language_fr(whisper_model_tiny, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(whisper_model_tiny, stateful=True)
 
@@ -195,7 +185,6 @@ def test_static_whisper_stateful_language_fr(whisper_model_tiny, sample_from_dat
 
 
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='ru', n=3)], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_stateful_language_ru(whisper_model_tiny, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(whisper_model_tiny, stateful=True)
 
@@ -205,7 +194,6 @@ def test_static_whisper_stateful_language_ru(whisper_model_tiny, sample_from_dat
 
 
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0, "long_form": True}], indirect=True)
-@pytest.mark.precommit
 def test_static_whisper_stateful_generation_long(whisper_model_tiny, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(whisper_model_tiny, stateful=True)
 

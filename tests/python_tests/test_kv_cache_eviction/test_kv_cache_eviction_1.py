@@ -41,7 +41,6 @@ class CacheOptTestStruct:
 SHORT_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=32, max_cache_size=96, aggregation_mode=AggregationMode.NORM_SUM)
 LONGBENCH_CACHE_EVICTION_CONFIG = CacheEvictionConfig(start_size=32, recent_size=128, max_cache_size=672, aggregation_mode=AggregationMode.NORM_SUM)
 
-@pytest.mark.precommit
 @pytest.mark.skipif(
     sys.platform in ("win32", "darwin"),
     reason=(
@@ -222,7 +221,6 @@ scheduler_params_list = [
 
 
 @pytest.mark.parametrize("params", scheduler_params_list)
-@pytest.mark.precommit
 def test_dynamic_memory_allocation(params, model_downloader: ModelDownloaderCallable):
     prompts, _ = get_test_dataset()
     generate_and_compare(
@@ -243,7 +241,6 @@ class LongBenchTestData:
     avg_cache_usage_optimization_ratio: float
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("test_struct", [
     LongBenchTestData("samsum", 4, 1.6, 2.5),
     LongBenchTestData("trec", 3.2, 2.0, 3.3),
@@ -321,7 +318,6 @@ def test_optimized_generation_longbench(test_struct, model_downloader: Callable[
     assert avg_optimization_ratio >= test_struct.avg_cache_usage_optimization_ratio
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("subset", ["samsum", "trec", "qasper"])
 def test_kvcrush_vs_snapkv_baseline(subset, model_downloader: ModelDownloaderCallable):
     """Test that KVCrush performs equal or better than SnapKV baseline on LongBench datasets."""

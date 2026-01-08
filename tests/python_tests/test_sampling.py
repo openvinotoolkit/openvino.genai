@@ -13,7 +13,6 @@ from utils.constants import ModelDownloaderCallable
 from utils.ov_genai_pipelines import generate_and_compare, run_ov_pipeline, MAIN_PIPELINE_TYPES
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "generation_config,prompt",
     [
@@ -45,7 +44,6 @@ def test_basic_stop_criteria(
     generate_and_compare(model_downloader, model_id, [prompt], generation_config)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "generation_config,model_id",
     [
@@ -112,7 +110,6 @@ def test_stop_strings(
     generate_and_compare(model_downloader, model_id, prompts, generation_config, pipeline_type=pipeline_type)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "generation_config",
     [
@@ -143,7 +140,6 @@ def test_greedy(
     generate_and_compare(model_downloader, model=model_id, prompts=prompt, generation_config=generation_config)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "generation_config",
     [
@@ -183,7 +179,6 @@ def test_beam_search(
     generate_and_compare(model_downloader, model_id, prompts, generation_config)
 
 
-@pytest.mark.precommit
 @pytest.mark.xfail(
     raises=AssertionError,
     reason="Stop strings do not seem to work as expected with beam search in HF, so comparison will fail. If it changes, these cases shall be merged to the test above.",
@@ -222,7 +217,6 @@ def test_beam_search_with_stop_string(
     generate_and_compare(model_downloader, model_id, prompts, generation_config)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "generation_config",
     [
@@ -422,7 +416,6 @@ RANDOM_SAMPLING_TEST_CASES = [
 ]
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "test_struct",
     RANDOM_SAMPLING_TEST_CASES,
