@@ -23,6 +23,7 @@ TransformerConfig::TransformerConfig(const std::filesystem::path &config_path) {
     read_json_param(parsed, "n_heads", n_heads);
     read_json_param(parsed, "n_kv_heads", n_kv_heads);
     read_json_param(parsed, "n_layers", n_layers);
+    read_json_param(parsed, "num_hidden_layers", num_hidden_layers);
     read_json_param(parsed, "n_refiner_layers", n_refiner_layers);
     read_json_param(parsed, "norm_eps", norm_eps);
     read_json_param(parsed, "qk_norm", qk_norm);

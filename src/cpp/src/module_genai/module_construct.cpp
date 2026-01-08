@@ -12,6 +12,7 @@
 #include "modules/md_zimage_denoiser_loop.hpp"
 #include "modules/md_vae_decoder_tiling.hpp"
 #include "modules/md_vae_decoder.hpp"
+#include "modules/md_clip_text_encoder.hpp"
 #include "utils/yaml_utils.hpp"
 
 namespace ov {
@@ -60,6 +61,7 @@ void construct_pipeline(const PipelineModulesDesc& pipeline_modules_desc, Pipeli
         GENAI_MODULE_TYPE_CASE(TextEmbeddingModule, TextEmbeddingModule);
         GENAI_MODULE_TYPE_CASE(EmbeddingMergerModule, EmbeddingMergerModule);
         GENAI_MODULE_TYPE_CASE(LLMInferenceModule, LLMInferenceModule);
+        GENAI_MODULE_TYPE_CASE(ClipTextEncoderModule, ClipTextEncoderModule);
         GENAI_MODULE_TYPE_CASE(ZImageDenoiserLoopModule, ZImageDenoiserLoopModule);
         GENAI_MODULE_TYPE_CASE(VAEDecoderTilingModule, VAEDecoderTilingModule);
         GENAI_MODULE_TYPE_CASE(VAEDecoderModule, VAEDecoderModule);

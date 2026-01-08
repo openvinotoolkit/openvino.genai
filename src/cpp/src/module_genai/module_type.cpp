@@ -23,6 +23,7 @@ const std::unordered_map<ModuleType, std::string> ModuleTypeConverter::kTypeToSt
     {ModuleType::LLMInferenceModule, "LLMInferenceModule"},
     {ModuleType::ZImageDenoiserLoopModule, "ZImageDenoiserLoopModule"},
     {ModuleType::VAEDecoderModule, "VAEDecoderModule"},
+    {ModuleType::ClipTextEncoderModule, "ClipTextEncoderModule"},
     {ModuleType::ResultModule, "ResultModule"},
     {ModuleType::Unknown, "Unknown"}};
 

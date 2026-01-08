@@ -21,6 +21,7 @@ public:
     int in_channels {16};
     int n_heads {30};
     int n_kv_heads {30};
+    int num_hidden_layers {36};
     int n_layers {30};
     int n_refiner_layers {2};
     double norm_eps {1e-05};

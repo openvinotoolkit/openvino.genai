@@ -31,7 +31,7 @@ Run test:
 ```bash
 source ../../../../python-env/bin/activate
 pip install -r requirements.txt
-bash run_z_image_denoiser_loop.sh
+bash run_module_pipeline_z_image.sh
 ```
 
 The output image is `zimage_denoiser_loop_output.png`

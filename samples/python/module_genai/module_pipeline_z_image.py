@@ -46,8 +46,16 @@ class TransformerPipeline():
                     'type': 'ParameterModule',
                     'outputs': [
                         {
-                            'name': 'prompt_embed',
-                            'type': 'OVTensor'
+                            'name': 'prompt',
+                            'type': 'String'
+                        },
+                        {
+                            'name': 'guidance_scale',
+                            'type': 'Float'
+                        },
+                        {
+                            'name': 'max_sequence_length',
+                            'type': 'Int'
                         },
                         {
                             'name': 'num_inference_steps',
@@ -63,15 +71,46 @@ class TransformerPipeline():
                         }
                     ]
                 },
+                'clip_text_encoder': {
+                    'type': 'ClipTextEncoderModule',
+                    'device': self.device,
+                    'description': 'Encode positive prompt and negative prompt',
+                    'inputs': [
+                        {
+                            'name': 'prompt',
+                            'type': 'String',
+                            'source': "pipeline_params.prompt"
+                        },
+                        {
+                            'name': 'guidance_scale',
+                            'type': 'Float',
+                            'source': "pipeline_params.guidance_scale"
+                        },
+                        {
+                            'name': 'max_sequence_length',
+                            'type': 'Int',
+                            'source': "pipeline_params.max_sequence_length"
+                        },
+                    ],
+                    'outputs': [
+                        {
+                            'name': 'prompt_embeds',
+                            'type': 'VecOVTensor'
+                        }
+                    ],
+                    'params': {
+                        'model_path': self.model_path
+                    }
+                },
                 'denoiser_loop': {
                     'type': 'ZImageDenoiserLoopModule',
                     'device': self.device,
                     'description': 'Z-Image denoiser loop.',
                     'inputs': [
                         {
-                            'name': 'prompt_embed',
-                            'type': 'OVTensor',
-                            'source': "pipeline_params.prompt_embed"
+                            'name': 'prompt_embeds',
+                            'type': 'VecOVTensor',
+                            'source': "clip_text_encoder.prompt_embeds"
                         },
                         {
                             'name': 'num_inference_steps',
@@ -302,19 +341,28 @@ class TransformerPipeline():
                 f"Please adjust the width to a multiple of {vae_scale}."
             )
 
-        (
-            prompt_embeds,
-            negative_prompt_embeds,
-        ) = self.encode_prompt(
-            prompt=prompt,
-            negative_prompt=negative_prompt,
-            prompt_embeds=prompt_embeds,
-            negative_prompt_embeds=negative_prompt_embeds,
-            max_sequence_length=max_sequence_length,
-        )
+        # (
+        #     prompt_embeds,
+        #     negative_prompt_embeds,
+        # ) = self.encode_prompt(
+        #     prompt=prompt,
+        #     negative_prompt=negative_prompt,
+        #     prompt_embeds=prompt_embeds,
+        #     negative_prompt_embeds=negative_prompt_embeds,
+        #     max_sequence_length=max_sequence_length,
+        # )
 
+        # self.pipe.generate(
+        #     prompt_embed=Tensor(prompt_embeds[0].detach().cpu().contiguous().numpy()),
+        #     num_inference_steps=num_inference_steps,
+        #     width=width,
+        #     height=height
+        # )
+        
         self.pipe.generate(
-            prompt_embed=Tensor(prompt_embeds[0].detach().cpu().contiguous().numpy()),
+            prompt=prompt,
+            guidance_scale=0.0,
+            max_sequence_length=max_sequence_length,
             num_inference_steps=num_inference_steps,
             width=width,
             height=height
