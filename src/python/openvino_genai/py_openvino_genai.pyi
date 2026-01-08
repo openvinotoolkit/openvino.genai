@@ -1473,7 +1473,7 @@ class ImageGenerationPerfMetrics:
 class IncrementalParser:
     def __init__(self) -> None:
         ...
-    def parse(self, message: dict, delta_text: str, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
+    def parse(self, delta_message: dict, delta_text: str, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
         """
         Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.
         """
