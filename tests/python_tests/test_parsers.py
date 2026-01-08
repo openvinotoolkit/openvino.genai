@@ -49,9 +49,9 @@ def hf_ov_genai_models(request, tmp_path_factory):
 
 
 @pytest.mark.parametrize(
-    "hf_ov_genai_models",
-    ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
-    indirect=True,
+    "hf_ov_genai_models", 
+    ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],  # this tokenizer is used as a stub only
+    indirect=True
 )
 def test_several_incremental_parsers(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
@@ -179,9 +179,9 @@ def test_incremental_phi4_reason_parser_1(hf_ov_genai_models, answer):
 
 
 @pytest.mark.parametrize(
-    "hf_ov_genai_models",
-    ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
-    indirect=True,
+    "hf_ov_genai_models", 
+    ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],  # this tokenizer is used as a stub only
+    indirect=True
 )
 def test_incremental_phi4_reason_integer_token_ids(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
@@ -211,9 +211,9 @@ def test_incremental_phi4_reason_integer_token_ids(hf_ov_genai_models):
 
 
 @pytest.mark.parametrize(
-    "hf_ov_genai_models",
-    ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
-    indirect=True,
+    "hf_ov_genai_models", 
+    ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],  # this tokenizer is used as a stub only
+    indirect=True
 )
 def test_incremental_integer_token_ids(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
@@ -260,22 +260,108 @@ def test_incremental_integer_token_ids(hf_ov_genai_models):
 
 
 @pytest.mark.parametrize(
-    "hf_ov_genai_models", 
-    ["katuni4ka/tiny-random-phi3"],
-    indirect=True
+    "hf_ov_genai_models",
+    ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],
+    indirect=True,
 )
-@pytest.mark.parametrize("split_answer", [
-    ["<th", "ink>", "\nOkay, ", "the user is asking", " for the ", "answer ", "to 2 + 1.", "</think>", "\n\nThe answer ", "to", "2 ", "+ ", "1 ", "is ", "\boxed{3}."],
-    ["<think>", "\nOkay, ", "the user is asking", " for the ", "answer ", "to 2 + 1.", "</th", "ink>", "\n\nThe answer ", "to", "2 ", "+ ", "1 ", "is ", "\boxed{3}."],
-    ["<t", "h", "ink>", "\nOkay, ", "the user is asking", " for the ", "answer ", "to 2 + 1.", "</th", "ink>", "\n\nThe answer ", "to", "2 ", "+ ", "1 ", "is ", "\boxed{3}."],
-    
-    # # check that if thinking opening and closing tags are passed in a single subword, it is still parsed correctly
-    ["<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \boxed{3}."],
-    
-    # check that if there is a false chunk for open/close thinking tag that accumulating reasoning content will not start/stop
-    ["<think>", "\nOkay, ", "the user is asking", " for the ", "answer ", "to 2 + 1.", "</thi", "\n\nThe answer ", "nk>", "to", "2 ", "+ ", "1 ", "is ", "\boxed{3}.", "</think>"],
-    ["<thi", "\nOkay, ", "nk>", "<think>", "the user is asking", " for the ", "answer ", "to 2 + 1.", "</think>", "\n\nThe answer ", "nk>", "to", "2 ", "+ ", "1 ", "is ", "\boxed{3}."],
-])
+@pytest.mark.parametrize(
+    "split_answer",
+    [
+        [
+            "<th",
+            "ink>",
+            "\nOkay, ",
+            "the user is asking",
+            " for the ",
+            "answer ",
+            "to 2 + 1.",
+            "</think>",
+            "\n\nThe answer ",
+            "to",
+            "2 ",
+            "+ ",
+            "1 ",
+            "is ",
+            "\\boxed{3}.",
+        ],
+        [
+            "<think>",
+            "\nOkay, ",
+            "the user is asking",
+            " for the ",
+            "answer ",
+            "to 2 + 1.",
+            "</th",
+            "ink>",
+            "\n\nThe answer ",
+            "to",
+            "2 ",
+            "+ ",
+            "1 ",
+            "is ",
+            "\\boxed{3}.",
+        ],
+        [
+            "<t",
+            "h",
+            "ink>",
+            "\nOkay, ",
+            "the user is asking",
+            " for the ",
+            "answer ",
+            "to 2 + 1.",
+            "</th",
+            "ink>",
+            "\n\nThe answer ",
+            "to",
+            "2 ",
+            "+ ",
+            "1 ",
+            "is ",
+            "\\boxed{3}.",
+        ],
+        # # check that if thinking opening and closing tags are passed in a single subword, it is still parsed correctly
+        ["<think>\nOkay, the user is asking for the answer to 2 + 1.</think>\n\nThe answer to 2 + 1 is \\boxed{3}."],
+        # check that if there is a false chunk for open/close thinking tag that accumulating reasoning content will not start/stop
+        [
+            "<think>",
+            "\nOkay, ",
+            "the user is asking",
+            " for the ",
+            "answer ",
+            "to 2 + 1.",
+            "</thi",
+            "\n\nThe answer ",
+            "nk>",
+            "to",
+            "2 ",
+            "+ ",
+            "1 ",
+            "is ",
+            "\\boxed{3}.",
+            "</think>",
+        ],
+        [
+            "<thi",
+            "\nOkay, ",
+            "nk>",
+            "<think>",
+            "the user is asking",
+            " for the ",
+            "answer ",
+            "to 2 + 1.",
+            "</think>",
+            "\n\nThe answer ",
+            "nk>",
+            "to",
+            "2 ",
+            "+ ",
+            "1 ",
+            "is ",
+            "\\boxed{3}.",
+        ],
+    ],
+)
 def test_incremental_phi4_reason_parser_2(hf_ov_genai_models, split_answer):
     # check that if thinking opening and closing tags are in the middle of the subword, it is still parsed correctly
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
@@ -304,15 +390,44 @@ def test_incremental_phi4_reason_parser_2(hf_ov_genai_models, split_answer):
     assert msg_manual["content"] == content
 
 
+@pytest.mark.parametrize("hf_ov_genai_models", ["katuni4ka/tiny-random-phi3"], indirect=True)
 @pytest.mark.parametrize(
-    "hf_ov_genai_models", 
-    ["katuni4ka/tiny-random-phi3"],
-    indirect=True
+    "split_answer",
+    [
+        [
+            "<th",
+            "\nOkay, ",
+            "the user is asking",
+            " for the ",
+            "answer ",
+            "to 2 + 1.",
+            "\n\nThe answer ",
+            "to",
+            "2 ",
+            "+ ",
+            "1 ",
+            "is ",
+            "\\boxed{3}.",
+        ],
+        [
+            "<th",
+            "\nOkay, ",
+            "the user is asking",
+            "ink>",
+            " for the ",
+            "answer ",
+            "to 2 + 1.",
+            "</think>",
+            "\n\nThe answer ",
+            "to",
+            "2 ",
+            "+ ",
+            "1 ",
+            "is ",
+            "\\boxed{3}.",
+        ],
+    ],
 )
-@pytest.mark.parametrize("split_answer", [
-    ["<th", "\nOkay, ", "the user is asking", " for the ", "answer ", "to 2 + 1.", "\n\nThe answer ", "to", "2 ", "+ ", "1 ", "is ", "\boxed{3}."],
-    ["<th", "\nOkay, ", "the user is asking", "ink>", " for the ", "answer ", "to 2 + 1.", "</think>", "\n\nThe answer ", "to", "2 ", "+ ", "1 ", "is ", "\boxed{3}."],
-])
 def test_incremental_phi4_reason_parser_3(hf_ov_genai_models, split_answer):
     # check that if there is a false chunk of opening/close thinking tag that it will not start/stop the thinking.
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
@@ -362,9 +477,9 @@ def test_incremental_phi4_reason_parser_nostreamer(answer):
 @pytest.mark.parametrize("keep_original_content", [True, False])
 @pytest.mark.parametrize("do_reset", [False])
 @pytest.mark.parametrize(
-    "hf_ov_genai_models",
-    ["katuni4ka/tiny-random-phi3"],  # this tokenizer is used as a stub only
-    indirect=True,
+    "hf_ov_genai_models", 
+    ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"],  # this tokenizer is used as a stub only
+    indirect=True
 )
 @pytest.mark.parametrize(
     "answer",
@@ -433,7 +548,9 @@ def test_incremental_deepseek_parser():
     assert accumulated_message["reasoning_content"] == think_content
 
 
-@pytest.mark.parametrize("hf_ov_genai_models", ["katuni4ka/tiny-random-phi3"], indirect=True)
+@pytest.mark.parametrize(
+    "hf_ov_genai_models", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True
+)
 def test_custom_incremental_parser(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
 
@@ -467,7 +584,9 @@ def test_custom_incremental_parser(hf_ov_genai_models):
     assert accumulated_message["main_text"] == " world "
 
 
-@pytest.mark.parametrize("hf_ov_genai_models", ["katuni4ka/tiny-random-phi3"], indirect=True)
+@pytest.mark.parametrize(
+    "hf_ov_genai_models", ["optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"], indirect=True
+)
 def test_final_parser_llama_32_json(hf_ov_genai_models):
     hf_tokenizer, genai_tokenizer = hf_ov_genai_models
 

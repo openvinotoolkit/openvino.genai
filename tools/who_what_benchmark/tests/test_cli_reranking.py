@@ -38,6 +38,8 @@ def teardown_module():
 def test_reranking_genai(model_info, tmp_path):
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 175534")
+    if sys.platform == "win32":
+        pytest.xfail("Ticket 178790")
 
     GT_FILE = Path(tmp_dir) / "gt.csv"
     model_id = model_info[0]
@@ -66,6 +68,9 @@ def test_reranking_genai(model_info, tmp_path):
 )
 @pytest.mark.xfail(sys.platform == 'darwin', reason="Hangs. Ticket 175534", run=False)
 def test_reranking_optimum(model_info, tmp_path):
+    if sys.platform == "win32":
+        pytest.xfail("Ticket 178790")
+
     GT_FILE = Path(tmp_dir) / "gt.csv"
     model_id = model_info[0]
     MODEL_PATH = Path(tmp_dir, model_id.replace("/", "_"))
