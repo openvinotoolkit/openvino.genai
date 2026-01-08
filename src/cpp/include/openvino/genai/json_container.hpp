@@ -84,7 +84,7 @@ public:
      * @brief Concatenates JsonContainers.
      * 
      * Concatenates text fields from src into this JsonContainer. If field is not textual then it throws exception.
-     * @param other Destination JsonContainer to append to
+     * @param other Source JsonContainer to concatenate into this container
      * @throw ov::Exception if keys in both containers are not strings.
      */
     void concatenate(JsonContainer& other);

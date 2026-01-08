@@ -181,8 +181,8 @@ CallbackTypeVariant TextParserStreamer::write(std::string delta_text) {
     }
 
     // Every time we start to cycle through iterative parsers we create a new delta_message.
-    // Parsers should neither delete fields nor rewrite; they should only append or add new fields.
-    // The only field that is updated automatically is "content": delta_text is put there.
+    // Parsers should neither delete fields nor rewrite existing non-string data; they may only add fields
+    // to delta_message or set string fields whose values will be concatenated with the accumulated message.
     JsonContainer delta_message;
     // Iterate over all parsers and apply them to the message
     for (auto& parser: m_pimpl->m_parsers) {
