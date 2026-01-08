@@ -1408,132 +1408,129 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
     
     with pytest.raises(RuntimeError):
         ov_pipe.generate(image_tag(0))
-            
 
-@pytest.mark.parametrize(
-    "ov_pipe_model,has_image,has_video",
-    [
+
+GENAI_VS_OPTIMUM_CASES = [
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), True, False, id="qwen2vl/SDPA/image"
+    ),
+    pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), True, False, id="qwen2vl/PA/image"),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), False, True, id="qwen2vl/SDPA/video"
+    ),
+    pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), False, True, id="qwen2vl/PA/video"),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), True, True, id="qwen2vl/PA/image+video"
+    ),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), True, True, id="qwen2vl/PA/image+video"
+    ),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"), True, False, id="qwen2.5-vl/SDPA/image"
+    ),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+        True,
+        False,
+        id="qwen2.5-vl/PA/image",
+        marks=pytest.mark.xfail(reason="CVS-167316"),
+    ),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"), False, True, id="qwen2.5-vl/SDPA/video"
+    ),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+        False,
+        True,
+        id="qwen2.5-vl/PA/video",
+        marks=pytest.mark.xfail(reason="CVS-167316"),
+    ),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"),
+        True,
+        True,
+        id="qwen2.5-vl/SDPA/image+video",
+    ),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+        True,
+        True,
+        id="qwen2.5-vl/PA/image+video",
+        marks=pytest.mark.xfail(reason="CVS-167316"),
+    ),
+    (
         pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), True, False, id="qwen2vl/SDPA/image"
-        ),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), True, False, id="qwen2vl/PA/image"),
-        pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), False, True, id="qwen2vl/SDPA/video"
-        ),
-        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), False, True, id="qwen2vl/PA/video"),
-        pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), True, True, id="qwen2vl/PA/image+video"
-        ),
-        pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), True, True, id="qwen2vl/PA/image+video"
-        ),
-        pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"), True, False, id="qwen2.5-vl/SDPA/image"
-        ),
-        pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+            ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
             True,
             False,
-            id="qwen2.5-vl/PA/image",
-            marks=pytest.mark.xfail(reason="CVS-167316"),
-        ),
-        pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"), False, True, id="qwen2.5-vl/SDPA/video"
-        ),
-        pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
-            False,
-            True,
-            id="qwen2.5-vl/PA/video",
-            marks=pytest.mark.xfail(reason="CVS-167316"),
-        ),
-        pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"),
-            True,
-            True,
-            id="qwen2.5-vl/SDPA/image+video",
-        ),
-        pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
-            True,
-            True,
-            id="qwen2.5-vl/PA/image+video",
-            marks=pytest.mark.xfail(reason="CVS-167316"),
-        ),
-        (
-            pytest.param(
-                ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
-                True,
-                False,
-                id="gemma3/SDPA/image",
-                marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON),
-            )
-            if sys.platform == "darwin"
-            else pytest.param(
-                ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"), True, False, id="gemma3/SDPA/image"
-            )
-        ),
-        pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-gemma3", "PA"),
-            True,
-            False,
-            id="gemma3/PA/image",
-            marks=pytest.mark.xfail(reason="CVS-171180"),
-        ),
-        pytest.param(("qnguyen3/nanoLLaVA", "SDPA"), True, False, id="nanoLLaVA/SDPA/image"),
-        pytest.param(("qnguyen3/nanoLLaVA", "PA"), True, False, id="nanoLLaVA/PA/image"),
-        pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"),
-            True,
-            False,
-            id="llava-next-video/SDPA/image",
-        ),
-        pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
-            True,
-            False,
-            id="llava-next-video/PA/image",
-        ),
-        pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"),
-            False,
-            True,
-            id="llava-next-video/SDPA/video",
-        ),
-        pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
-            False,
-            True,
-            id="llava-next-video/PA/video",
-        ),
-        pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"),
-            True,
-            True,
-            id="llava-next-video/SDPA/image+video",
-        ),
-        pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
-            True,
-            True,
-            id="llava-next-video/PA/image+video",
-        ),
-        pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6", "SDPA"),
-            True,
-            False,
-            id="MiniCPM-o-2_6/SDPA/image",
-        ),
-        pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6", "PA"),
-            True,
-            False,
-            id="MiniCPM-o-2_6/PA/image",
-        ),
-    ],
-    indirect=["ov_pipe_model"],
-)
-def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool):
+            id="gemma3/SDPA/image",
+            marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON),
+        )
+        if sys.platform == "darwin"
+        else pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"), True, False, id="gemma3/SDPA/image"
+        )
+    ),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-gemma3", "PA"),
+        True,
+        False,
+        id="gemma3/PA/image",
+        marks=pytest.mark.xfail(reason="CVS-171180"),
+    ),
+    pytest.param(("qnguyen3/nanoLLaVA", "SDPA"), True, False, id="nanoLLaVA/SDPA/image"),
+    pytest.param(("qnguyen3/nanoLLaVA", "PA"), True, False, id="nanoLLaVA/PA/image"),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"),
+        True,
+        False,
+        id="llava-next-video/SDPA/image",
+    ),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
+        True,
+        False,
+        id="llava-next-video/PA/image",
+    ),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"),
+        False,
+        True,
+        id="llava-next-video/SDPA/video",
+    ),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
+        False,
+        True,
+        id="llava-next-video/PA/video",
+    ),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"),
+        True,
+        True,
+        id="llava-next-video/SDPA/image+video",
+    ),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
+        True,
+        True,
+        id="llava-next-video/PA/image+video",
+    ),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6", "SDPA"),
+        True,
+        False,
+        id="MiniCPM-o-2_6/SDPA/image",
+    ),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6", "PA"),
+        True,
+        False,
+        id="MiniCPM-o-2_6/PA/image",
+    ),
+]
+
+def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, optimum_model: OVModelForVisualCausalLM, model_path, image, video):
     class NanollavaProcessorWrapper:
         def __init__(self, processor, config, model_dtype):
             self.processor = processor
@@ -1552,18 +1549,12 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
     
     ov_pipe = ov_pipe_model.pipeline
     model_id = ov_pipe_model.model_id
-    resolution = ov_pipe_model.resolution
     
-    resized_image = None
-    resized_video = None
-
     prompt_parts = []
-    if has_image:
-        resized_image = request.getfixturevalue(f"cat_image_{resolution}x{resolution}")
+    if image is not None:
         prompt_parts.append("image")
-    
-    if has_video:
-        resized_video = request.getfixturevalue("synthetic_video_32x32")
+
+    if video is not None:
         prompt_parts.append("video")
 
     if len(prompt_parts) == 1:
@@ -1573,34 +1564,30 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
     else:
         prompt = "Describe."
 
-    model_path = _get_ov_model(model_id)
-
-    # Run the model with optimum-intel
-    model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
+    # Run the optimum_model with optimum-intel
     tokenizer = None
-    if model.config.model_type == "llava-qwen2":
+    if optimum_model.config.model_type == "llava-qwen2":
         processor = get_nanollava_processor()
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
 
         from optimum.intel.openvino.modeling_visual_language import MODEL_TYPE_TO_CLS_MAPPING
-        preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type].preprocess_inputs
-        inputs = preprocess_inputs(prompt, resized_image, processor, tokenizer, config=model.config)
+        preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[optimum_model.config.model_type].preprocess_inputs
+        inputs = preprocess_inputs(prompt, image, processor, tokenizer, config=optimum_model.config)
     else:
         processor = transformers.AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
         # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
-        if model.config.model_type == "gemma3":
+        if optimum_model.config.model_type == "gemma3":
             processor.tokenizer.add_bos_token = False
-        inputs = model.preprocess_inputs(
-            text=prompt, image=resized_image, video=resized_video, processor=processor, config=model.config
+        inputs = optimum_model.preprocess_inputs(
+            text=prompt, image=image, video=video, processor=processor, config=optimum_model.config
         )
 
     max_new_tokens = 100
-
-    output_ids = model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+    output_ids = optimum_model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
     input_ids = inputs["input_ids"] if isinstance(inputs, dict) else inputs.input_ids
     generated_ids = [output_ids[len(input_ids) :] for input_ids, output_ids in zip(input_ids, output_ids)]
 
-    if model.config.model_type == "llava-qwen2":
+    if optimum_model.config.model_type == "llava-qwen2":
         assert tokenizer is not None, "Tokenizer should be set for llava-qwen2 models."
         optimum_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True).strip()
     else:
@@ -1608,12 +1595,69 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
         optimum_text = optimum_output[0]
 
     params = {}
-    if resized_image is not None:
-        params["images"] = [openvino.Tensor(resized_image)]
-    if resized_video is not None:
-        params["videos"] = [openvino.Tensor(resized_video)]
+    if image is not None:
+        params["images"] = [openvino.Tensor(image)]
+    if video is not None:
+        params["videos"] = [openvino.Tensor(video)]
 
     genai_output = ov_pipe.generate(prompt, **params, max_new_tokens=max_new_tokens, do_sample=False)
     genai_text = genai_output.texts[0]
 
     assert optimum_text == genai_text
+
+@pytest.mark.parametrize(
+    "ov_pipe_model,has_image,has_video",
+    GENAI_VS_OPTIMUM_CASES,
+    indirect=["ov_pipe_model"],
+)
+
+def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool):
+    model_id = ov_pipe_model.model_id
+    resolution = ov_pipe_model.resolution
+
+    model_path = _get_ov_model(model_id)
+    model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
+
+    resized_image = None
+    resized_video = None
+    if has_image:
+        resized_image = request.getfixturevalue(f"cat_image_{resolution}x{resolution}")
+    if has_video:
+        resized_video = request.getfixturevalue("synthetic_video_32x32")
+
+    run_compare_genai_optimum(ov_pipe_model, model, model_path, resized_image, resized_video)
+
+GENAI_VS_OPTIMUM_INPUT_RESOLUTIONS = [
+    pytest.param((100, 67), id="100x77"),
+    pytest.param((1000, 667), id="1000x777"),
+    pytest.param((960, 465), id="960x465"),
+]
+
+@pytest.mark.parametrize(
+    "ov_pipe_model,has_image,has_video",
+    GENAI_VS_OPTIMUM_CASES,
+    indirect=["ov_pipe_model"],
+)
+
+@pytest.mark.parametrize("input_resolution", GENAI_VS_OPTIMUM_INPUT_RESOLUTIONS)
+
+def test_vlm_pipeline_match_optimum_with_resize(request, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool, input_resolution):
+    print("input_resolution = ", input_resolution)
+    model_id = ov_pipe_model.model_id
+    resolution = ov_pipe_model.resolution
+
+    model_path = _get_ov_model(model_id)
+    model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
+
+    image = None
+    video = None
+    if has_image:
+        image = request.getfixturevalue(f"cat_image")
+        image = image.resize(input_resolution)
+
+    # TODO: Resize video?
+    if has_video:
+        video = request.getfixturevalue("synthetic_video_32x32")
+
+    run_compare_genai_optimum(ov_pipe_model, model, model_path, image, video)
+
