@@ -22,7 +22,7 @@ from utils.tokenizers import delete_rt_info, model_tmp_path
 from utils.ov_genai_pipelines import (
     create_ov_pipeline,
     generate_and_compare,
-    get_main_pipeline_types,
+    MAIN_PIPELINE_TYPES,
     PipelineType,
     GenerationChatInputsType,
 )
@@ -49,7 +49,7 @@ test_cases = [
 
 @pytest.mark.parametrize("generation_config_dict,prompt", test_cases)
 @pytest.mark.parametrize("model_id", get_models_list())
-@pytest.mark.parametrize("pipeline_type", get_main_pipeline_types())
+@pytest.mark.parametrize("pipeline_type", MAIN_PIPELINE_TYPES)
 @pytest.mark.precommit
 def test_string_inputs(
     model_id, generation_config_dict, prompt, pipeline_type, model_downloader: ModelDownloaderCallable
@@ -112,7 +112,7 @@ batched_prompts = [
 @pytest.mark.parametrize("generation_config_dict", test_configs)
 @pytest.mark.parametrize("prompts", batched_prompts)
 @pytest.mark.parametrize("model_id", get_models_list())
-@pytest.mark.parametrize("pipeline_type", get_main_pipeline_types())
+@pytest.mark.parametrize("pipeline_type", MAIN_PIPELINE_TYPES)
 @pytest.mark.precommit
 def test_batch_string_inputs(model_id, generation_config_dict, prompts, pipeline_type, model_downloader):
     generate_and_compare(
@@ -861,7 +861,7 @@ def test_perf_metrics_with_structured_output(generation_config, prompt, model_do
     assert accumulated_metrics.raw_metrics.grammar_compile_times == raw_metrics.grammar_compile_times + raw_metrics_2.grammar_compile_times
 
 
-@pytest.mark.parametrize("pipeline_type", get_main_pipeline_types())
+@pytest.mark.parametrize("pipeline_type", MAIN_PIPELINE_TYPES)
 @pytest.mark.parametrize("stop_str", {True, False})
 @pytest.mark.precommit
 def test_pipelines_generate_with_streaming(pipeline_type, stop_str, model_downloader):

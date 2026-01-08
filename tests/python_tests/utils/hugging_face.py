@@ -235,9 +235,9 @@ def download_and_convert_model_class(
         dir_name = f"{dir_name}_{model_class.__name__}"
 
     if models_dir is None:
-        import pytest
-
-        cache_manager = OvTestCacheManager(pytest.config)
+        from _pytest.config import get_config
+        
+        cache_manager = OvTestCacheManager(get_config())
         models_dir = cache_manager.get_models_dir()
 
     models_path = models_dir / dir_name
@@ -277,9 +277,9 @@ def download_gguf_model(
     gguf_dir_name = sanitize_model_id(gguf_model_id)
 
     if models_dir is None:
-        import pytest
-
-        cache_manager = OvTestCacheManager(pytest.config)
+        from _pytest.config import get_config
+        
+        cache_manager = OvTestCacheManager(get_config())
         models_dir = cache_manager.get_models_dir()
 
     models_path_gguf = models_dir / gguf_dir_name

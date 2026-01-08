@@ -10,7 +10,7 @@ from typing import TypedDict
 from openvino_genai import GenerationConfig, StopCriteria
 
 from utils.constants import ModelDownloaderCallable
-from utils.ov_genai_pipelines import generate_and_compare, run_ov_pipeline, get_main_pipeline_types
+from utils.ov_genai_pipelines import generate_and_compare, run_ov_pipeline, MAIN_PIPELINE_TYPES
 
 
 @pytest.mark.precommit
@@ -101,7 +101,7 @@ def test_basic_stop_criteria(
         "multiple_stop_strings_one_no_match_and_long_exclude_from_output",
     ],
 )
-@pytest.mark.parametrize("pipeline_type", get_main_pipeline_types())
+@pytest.mark.parametrize("pipeline_type", MAIN_PIPELINE_TYPES)
 def test_stop_strings(
     generation_config,
     model_id,
