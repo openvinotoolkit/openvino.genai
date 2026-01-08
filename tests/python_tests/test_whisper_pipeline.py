@@ -20,7 +20,7 @@ from packaging.version import parse
 from utils.constants import extra_generate_kwargs
 
 from utils.network import retry_request
-from typing import Any, Generator
+from typing import Any
 
 @pytest.fixture(scope="class", autouse=True)
 def run_gc_after_test():
@@ -55,17 +55,19 @@ def get_whisper_models_list(
 
 
 @pytest.fixture(scope="session")
-def whisper_model(ov_cache_models_dir: pathlib.Path) -> Generator[tuple[str, pathlib.Path], None, None]:
+def whisper_model(ov_cache_models_dir: pathlib.Path) -> tuple[str, pathlib.Path]:
     models = get_whisper_models_list(ov_cache_models_dir)
-    for model_id, model_path in models:
-        yield pytest.param((model_id, model_path), id=model_id)
+    if models:
+        return models[0]
+    raise ValueError("No whisper models found")
 
 
 @pytest.fixture(scope="session")
-def whisper_model_tiny(ov_cache_models_dir: pathlib.Path) -> Generator[tuple[str, pathlib.Path], None, None]:
+def whisper_model_tiny(ov_cache_models_dir: pathlib.Path) -> tuple[str, pathlib.Path]:
     models = get_whisper_models_list(ov_cache_models_dir, tiny_only=True)
-    for model_id, model_path in models:
-        yield pytest.param((model_id, model_path), id=model_id)
+    if models:
+        return models[0]
+    raise ValueError("No whisper models found")
 
 
 # used whisper models are relatively small
