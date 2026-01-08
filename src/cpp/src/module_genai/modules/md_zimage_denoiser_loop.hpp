@@ -24,7 +24,8 @@ private:
     ov::Tensor run(
         const std::vector<ov::Tensor>& prompt_embeds,
         const std::vector<ov::Tensor>& negative_prompt_embeds,
-        const ImageGenerationConfig &generation_config);
+        const ImageGenerationConfig &generation_config,
+        std::optional<ov::Tensor> init_latents = std::nullopt);
     ov::Tensor prepare_latents(
         size_t batch_size,
         int num_channels,
@@ -34,7 +35,7 @@ private:
         std::shared_ptr<Generator> generator);
     ImageGenerationModelType m_model_type;
     TransformerConfig m_transformer_config;
-    std::unique_ptr<IScheduler> m_scheduler;
+    std::shared_ptr<IScheduler> m_scheduler;
     ov::InferRequest m_request;
     bool m_is_multi_prompts {false};
     int m_vae_scale_factor {8};

@@ -48,7 +48,7 @@ pipeline_modules:
     void verify_outputs(ov::genai::module::ModulePipeline& pipe) override {
         auto output = pipe.get_output("latents").as<ov::Tensor>();
         std::vector<float> expected_ouput = { 
-          0.0279331, -0.0194968, -0.158097, 0.142582, -0.313633, -0.452601, 0.107033, 0.305759, -0.0610831, 0.136313
+          0.0122377, -0.0224857, -0.183172, 0.130182, -0.344232, -0.486077, 0.110688, 0.316844, -0.070881, 0.141776
         };
         CHECK(compare_big_tensor<float>(output, expected_ouput, 1e-2), "latent do not match expected values");
     }

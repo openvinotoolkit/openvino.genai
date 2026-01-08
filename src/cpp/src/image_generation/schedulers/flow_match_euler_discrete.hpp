@@ -46,7 +46,7 @@ public:
 
     void set_begin_index(size_t begin_index) override;
 
-private:
+protected:
     Config m_config;
 
     std::vector<float> m_sigmas;
