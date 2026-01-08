@@ -27,7 +27,6 @@ ov_pipe_model
 ov_continious_batching_pipe
 """
 
-import collections
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Generator
@@ -59,7 +58,7 @@ from utils.generation_config import (
     get_multinomial_all_parameters,
     get_greedy,
 )
-from utils.constants import get_ov_cache_converted_models_dir
+from utils.constants import get_default_llm_properties, OvTestCacheManager
 from utils.atomic_download import AtomicDownloadManager
 
 import logging
@@ -183,7 +182,7 @@ def _setup_generation_config(
     return generation_config
 
 
-def _get_ov_model(model_id: str) -> str:
+def _get_ov_model(model_id: str, ov_cache_models_dir: Path = None) -> Path:
     if model_id in {"optimum-intel-internal-testing/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
         pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
     if "optimum-intel-internal-testing/tiny-random-phi3-vision" == model_id:
@@ -194,10 +193,14 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3"
         )
-
-    ov_cache_converted_dir = get_ov_cache_converted_models_dir()
+    
+    if ov_cache_models_dir is None:
+        import pytest
+        cache_manager = OvTestCacheManager(pytest.config)
+        ov_cache_models_dir = cache_manager.get_models_dir()
+    
     dir_name = str(model_id).replace(os.sep, "_")
-    model_dir = ov_cache_converted_dir / dir_name
+    model_dir = ov_cache_models_dir / dir_name
     
     manager = AtomicDownloadManager(model_dir)
     
@@ -271,7 +274,7 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
 
-    models_path = _get_ov_model(ov_model)
+    models_path = get_ov_model(ov_model)
     
     pipeline = VLMPipeline(
         models_path, 
@@ -328,12 +331,12 @@ parametrize_one_model_backends = pytest.mark.parametrize(
 
 @pytest.fixture(scope="module")
 def ov_continious_batching_pipe() -> ContinuousBatchingPipeline:
-    models_path = _get_ov_model(MODEL_IDS[0])
+    models_path = get_ov_model(MODEL_IDS[0])
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
 
 @pytest.fixture(scope="module")
 def ov_continious_batching_pipe_gemma() -> ContinuousBatchingPipeline:
-    models_path = _get_ov_model(MODEL_IDS[8])
+    models_path = get_ov_model(MODEL_IDS[8])
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
 
 
@@ -747,7 +750,7 @@ def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
 
         ov_pipe.finish_chat()
 
-    models_path = _get_ov_model(model_id)
+    models_path = get_ov_model(model_id)
     properties = {
         "DEVICE_PROPERTIES": {
             "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 4096}
@@ -908,7 +911,7 @@ def test_vlm_npu_no_exception(model_id, backend, cat_tensor, handwritten_tensor,
     if model_id in NPU_UNSUPPORTED_MODELS:
         pytest.skip(f"{model_id} is not supported")
 
-    models_path = _get_ov_model(model_id)
+    models_path = get_ov_model(model_id)
     properties = {
         "DEVICE_PROPERTIES": {
             "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048}
@@ -938,7 +941,7 @@ def image_sequence(request):
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
 def test_vlm_npu_no_image():
-    models_path = _get_ov_model(MODEL_IDS[0])
+    models_path = get_ov_model(MODEL_IDS[0])
     properties = {
         "DEVICE_PROPERTIES": {
             "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048}
@@ -1573,7 +1576,7 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
     else:
         prompt = "Describe."
 
-    model_path = _get_ov_model(model_id)
+    model_path = get_ov_model(model_id)
 
     # Run the model with optimum-intel
     model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)

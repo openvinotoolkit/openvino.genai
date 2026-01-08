@@ -3,28 +3,41 @@ import gc
 import pytest
 import shutil
 import logging
-from utils.constants import (
-    get_ov_cache_dir,
-    get_ov_cache_downloaded_models_dir,
-    get_ov_cache_converted_models_dir,
-)
+from pathlib import Path
+from utils.constants import OvTestCacheManager, ModelDownloaderCallable
+from utils.hugging_face import download_and_convert_model
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+@pytest.fixture(scope="session")
+def ov_cache_manager(pytestconfig: pytest.Config) -> OvTestCacheManager:
+    return OvTestCacheManager(pytestconfig)
+
+
+@pytest.fixture(scope="session")
+def ov_cache_models_dir(ov_cache_manager: OvTestCacheManager) -> Path:
+    return ov_cache_manager.get_models_dir()
+
+
+@pytest.fixture(scope="session")
+def ov_cache_dir(ov_cache_manager: OvTestCacheManager) -> Path:
+    return ov_cache_manager.get_cache_dir()
+
+
+@pytest.fixture(scope="session")
+def model_downloader(ov_cache_models_dir: Path) -> ModelDownloaderCallable:
+    def _download_model(model_id: str, **kwargs):
+        schema = download_and_convert_model(model_id, models_dir=ov_cache_models_dir, **kwargs)
+        return schema.opt_model, schema.hf_tokenizer, schema.models_path
+    return _download_model
+
+
 @pytest.fixture(scope="session", autouse=True)
-def setup_and_teardown():
-    """Fixture to set up and tear down the temporary directories."""
-
-    ov_cache_dir = get_ov_cache_dir()
-    ov_cache_downloaded_dir = get_ov_cache_downloaded_models_dir()
-    ov_cache_converted_dir = get_ov_cache_converted_models_dir()
-
-    logger.info(f"Creating directories: {ov_cache_downloaded_dir}, {ov_cache_converted_dir}")
-    ov_cache_downloaded_dir.mkdir(exist_ok=True, parents=True)
-    ov_cache_converted_dir.mkdir(exist_ok=True, parents=True)
+def setup_and_teardown(ov_cache_models_dir: Path, ov_cache_dir: Path):
+    logger.info(f"Creating directory: {ov_cache_models_dir}")
+    ov_cache_models_dir.mkdir(exist_ok=True, parents=True)
 
     yield
 
@@ -33,14 +46,11 @@ def setup_and_teardown():
             logger.info(f"Removing temporary directory: {ov_cache_dir}")
             shutil.rmtree(ov_cache_dir)
         else:
-            logger.info(
-                f"Skipped temporary directory cleanup because it doesn't exist: {ov_cache_dir}"
-            )
+            logger.info(f"Skipped directory cleanup because it doesn't exist: {ov_cache_dir}")
 
 
 def pytest_make_parametrize_id(config, val, argname):
     if argname in ["prompt", "prompts", "batched_prompts"]:
-        # Print only first 1000 characters of long prompts.
         if isinstance(val, list):
             return ", ".join([f"{v[:100]}" for v in val])
         else:
@@ -66,10 +76,5 @@ def pytest_configure(config: pytest.Config):
 
 @pytest.fixture(scope="module", autouse=True)
 def run_gc_after_test():
-    """
-    Fixture to run garbage collection after each test module.
-    This is a workaround to minimize memory consumption during tests 
-    and allow the use of less powerful CI runners.
-    """
     yield
     gc.collect()

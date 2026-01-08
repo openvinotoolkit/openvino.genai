@@ -46,7 +46,6 @@ def get_chat_templates():
         "AliAbdelrasheed/maqa_llama_4bit",  # jinja2.exceptions.UndefinedError: 'dict object' has no attribute 'from'
         "stephenlzc/Mistral-7B-v0.3-Chinese-Chat-uncensored",  # jinja2.exceptions.UndefinedError: 'system_message' is undefined
     }
-
     return [(k, v) for k, v in get_tokenizer_configs().items() if k not in skipped_models]
 
 
@@ -510,6 +509,7 @@ base_models_for_paired_input_test = [
     ("optimum-intel-internal-testing/tiny-random-llava-next", {"padding_side": "left"}),
 ]
 
+
 def make_model_params():
     # Parametrize over add_second_input and number_of_inputs
     params = []
@@ -523,7 +523,9 @@ def make_model_params():
         params.append((model_id, {**params_dict, "add_second_input": True, "number_of_inputs": 2}))
     return params
 
+
 MODELS_WITH_PAIR_INPUT = make_model_params()
+
 
 @pytest.mark.parametrize("hf_ov_genai_models", MODELS_WITH_PAIR_INPUT, indirect=True)
 @pytest.mark.parametrize(
@@ -546,6 +548,7 @@ def test_two_inputs_string_list_of_lists_batched(hf_ov_genai_models, input_pair)
     hf_encoded = hf_tokenizer(input_pair, return_tensors="np", padding=True)["input_ids"]
     assert np.all(ov_encoded == hf_encoded)
 
+
 @pytest.mark.parametrize("hf_ov_genai_models", MODELS_WITH_PAIR_INPUT, indirect=True)
 @pytest.mark.parametrize(
     "input_pair",
@@ -565,7 +568,6 @@ def test_two_inputs_string_list_of_lists_batched(hf_ov_genai_models, input_pair)
     ]
 )
 def test_two_inputs_string_list_of_lists(hf_ov_genai_models, input_pair):
-    # Check with inputs consisted of lists of lists consistent with HF format.
     hf_tokenizer, genai_tokenzier = hf_ov_genai_models
     ov_encoded = genai_tokenzier.encode(input_pair).input_ids.data
     hf_encoded = hf_tokenizer(input_pair, return_tensors="np")["input_ids"]

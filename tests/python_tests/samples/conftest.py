@@ -6,18 +6,11 @@ import shutil
 import logging
 import requests
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from utils.network import retry_request
-from utils.constants import (
-    get_ov_cache_dir,
-    get_ov_cache_downloaded_models_dir,
-    get_ov_cache_converted_models_dir,
-)
 from utils.atomic_download import AtomicDownloadManager
 
-
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -201,32 +194,26 @@ SAMPLES_JS_DIR = Path(
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_and_teardown(request, tmp_path_factory):
-    """Fixture to set up and tear down the temporary directories."""
-
-    ov_cache = get_ov_cache_dir(tmp_path_factory.mktemp("ov_cache"))
-    downloaded_models_dir = get_ov_cache_downloaded_models_dir()
-    converted_models_dir = get_ov_cache_converted_models_dir()
-    test_data = ov_cache / "test_data"
-
-    logger.info(f"Creating directories: {downloaded_models_dir}, {converted_models_dir}, and {test_data}")
+def setup_and_teardown(request, tmp_path_factory, ov_cache_dir: Path):
+    test_data = ov_cache_dir / "test_data"
+    
+    logger.info(f"Creating directories: {test_data}")
     test_data.mkdir(parents=True, exist_ok=True)
-
-    request.config.cache.set("OV_CACHE", str(ov_cache))
+    
+    request.config.cache.set("OV_CACHE", str(ov_cache_dir))
     request.config.cache.set("TEST_DATA", str(test_data))
 
     yield
 
     if os.environ.get("CLEANUP_CACHE", "false").lower() != "false":
-        if os.path.exists(ov_cache):
-            logger.info(f"Removing temporary directory: {ov_cache}")
-            shutil.rmtree(ov_cache)
+        if ov_cache_dir.exists():
+            logger.info(f"Removing temporary directory: {ov_cache_dir}")
+            shutil.rmtree(ov_cache_dir)
         else:
-            logger.info(f"Skipping cleanup of temporary directory: {ov_cache}")
+            logger.info(f"Skipping cleanup of temporary directory: {ov_cache_dir}")
 
 
 def download_gguf_model(model: Dict[str, Any], model_path: str) -> None:
-    """Download the GGUF model using huggingface-cli."""
     sub_env = os.environ.copy()
     model_name = model["name"]
     model_gguf_filename = model["gguf_filename"]
@@ -282,24 +269,23 @@ def optimum_cli_convert(model, model_path):
         logger.error(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
         raise
 
+
 @pytest.fixture(scope="session")
-def convert_model(request):
+def convert_model(request, ov_cache_models_dir: Path):
     """Fixture to convert the model once for the session."""
     model_id = request.param
     model = MODELS[model_id]
     model_name = model["name"]
     
     if "gguf_filename" in model:
-        downloaded_models_dir = get_ov_cache_downloaded_models_dir()
-        model_cache = downloaded_models_dir / model_id
+        model_cache = ov_cache_models_dir / model_id
         model_path = model_cache
         gguf_file_path = model_path / model["gguf_filename"]
         logger.info(f"Preparing GGUF model: {model_name}")
         download_gguf_model(model, str(model_path))
         yield str(gguf_file_path)
     elif not model["convert_args"]:
-        downloaded_models_dir = get_ov_cache_downloaded_models_dir()
-        model_cache = downloaded_models_dir / model_id
+        model_cache = ov_cache_models_dir / model_id
         model_path = model_cache / model_name
         logger.info(f"Downloading pre-converted model: {model_name}")
         manager = AtomicDownloadManager(model_path)
@@ -313,8 +299,7 @@ def convert_model(request):
         manager.execute(download_to_temp)
         yield str(model_path)
     else:
-        converted_models_dir = get_ov_cache_converted_models_dir()
-        model_cache = converted_models_dir / model_id
+        model_cache = ov_cache_models_dir / model_id
         model_path = model_cache / model_name
         logger.info(f"Preparing model: {model_name}")
         optimum_cli_convert(model, str(model_path))
@@ -325,13 +310,13 @@ def convert_model(request):
             logger.info(f"Removing cached model: {model_cache}")
             shutil.rmtree(model_cache)
 
+
 @pytest.fixture(scope="session")
-def download_model(request):
+def download_model(request, ov_cache_models_dir: Path):
     """Fixture to download the model once for the session."""
-    downloaded_models_dir = get_ov_cache_downloaded_models_dir()
     model_id = request.param
     model_name = MODELS[model_id]["name"]
-    model_cache = downloaded_models_dir / model_id
+    model_cache = ov_cache_models_dir / model_id
     model_path = model_cache / model_name
     
     logger.info(f"Preparing model: {model_name}")
@@ -427,6 +412,7 @@ def generate_test_content(request):
         if os.path.exists(file_path):
             logger.info(f"Removing test content: {file_path}")
             os.remove(file_path)
+
 
 @pytest.fixture(scope="session")
 def generate_image_generation_jsonl(request):
