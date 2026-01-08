@@ -84,7 +84,7 @@ static Coeffs1D precompute_pillow_coeffs_1d(int inSize, int outSize, double base
     const double support = base_support * filterscale;  // widen when downscaling
     const double ss = 1.0 / filterscale;
 
-    // Match Pillow’s style: ksize based on ceil(support)*2 + 1
+    // Match Pillow's style: ksize based on ceil(support)*2 + 1
     const int ksize = static_cast<int>(std::ceil(support)) * 2 + 1;
     c.ksize = ksize;
 
