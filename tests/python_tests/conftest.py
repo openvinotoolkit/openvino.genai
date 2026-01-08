@@ -4,6 +4,7 @@ import pytest
 import shutil
 import logging
 from pathlib import Path
+from utils.hugging_face import download_and_convert_model
 from utils.constants import OvTestCacheManager, ModelDownloaderCallable
 from utils.hugging_face import download_and_convert_model
 
