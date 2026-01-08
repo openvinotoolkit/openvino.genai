@@ -116,7 +116,8 @@ bool VAEDecoderTilingModule::init_post_process() {
     auto added_0_5 = std::make_shared<ov::op::v1::Add>(scaled_0_5, constant_0_5);
     auto clamped = std::make_shared<ov::op::v0::Clamp>(added_0_5, 0.0f, 1.0f);
     auto multiplied = std::make_shared<ov::op::v1::Multiply>(clamped, constant_255);
-    auto model = std::make_shared<ov::Model>(ov::NodeVector{multiplied}, ov::ParameterVector{input});
+    auto result = std::make_shared<ov::op::v0::Result>(multiplied);
+    auto model = std::make_shared<ov::Model>(ov::ResultVector{result}, ov::ParameterVector{input});
 
     ov::preprocess::PrePostProcessor ppp(model);
     ppp.output().postprocess().convert_element_type(ov::element::u8);
