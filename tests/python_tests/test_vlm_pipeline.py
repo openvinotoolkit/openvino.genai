@@ -28,9 +28,11 @@ ov_continious_batching_pipe
 """
 
 import collections
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Generator, Sequence
+from typing import Callable, Generator
+import itertools
 import openvino_tokenizers
 import openvino
 import PIL
@@ -259,11 +261,30 @@ def _get_ov_model(model_id: str) -> str:
 # On macOS, transformers<4.52 is required, but this causes gemma3 to fail
 GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transformers"
 
+def _dict_to_sorted_tuple(d):
+    if isinstance(d, dict):
+        return tuple([(key, _dict_to_sorted_tuple(value)) for key, value in sorted(d.items())])
+
+    return d
+
+def _sorted_tuple_to_dict(t):
+    if isinstance(t, tuple):
+        return {key: _sorted_tuple_to_dict(value) for key, value in t}
+
+    return t
 
 @pytest.fixture(scope="module")
 def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
-    ov_model, ov_backend, device, config, _ = request.param
+    assert len(request.param) == 3 or len(request.param) == 4
+    params = request.param
+    if len(request.param) == 3:
+        # tuple(tuple()) return empty tuple, not nested tuple
+        params += tuple([tuple()])
 
+    ov_model, ov_backend, device, config = params
+    config = _sorted_tuple_to_dict(config)
+
+    print(f"ov_pipe_model {request.param}")
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
 
@@ -285,8 +306,8 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
 
 def _parametrize_models(
-    models: str | Sequence[str],
-    backends: str | Sequence[str],
+    models: str | Sequence[str] | Sequence[tuple[str, str]],
+    backends: str | Sequence[str] | None = None,
     device: str = "CPU",
     config: dict | None = None,
     config_name: str | None = None
@@ -297,13 +318,22 @@ def _parametrize_models(
     if isinstance(backends, str):
         backends = [backends]
 
+    if backends is not None:
+        assert isinstance(models[0], str)
+        params = itertools.product(models, backends)
+    else:
+        assert isinstance(models[0], tuple)
+        params = models
+
     assert (config is None and config_name is None) or (config is not None and config_name is not None)
-    if config is None:
-        config = dict()
+    if config is not None:
+        params = [(m, b, device, _dict_to_sorted_tuple(config)) for m, b in params]
+    else:
+        params = [(m, b, device) for m, b in params]
 
     return pytest.mark.parametrize(
         "ov_pipe_model",
-        [(m, b, device, config, config_name) for m in models for b in backends],
+        params,
         ids=lambda p: f"{p[0]}/{p[1]}/{p[2]}/{config_name}",
         indirect=["ov_pipe_model"],
     )
@@ -1158,17 +1188,12 @@ MODELS_TO_TAG = IMAGE_ID_IGNORANT_MODELS_TO_TAG + [
 
 
 def model_and_tag_parametrize(
-    items: tuple[str, str, Callable[[int], str]] | None = None
+    items: Sequence[tuple[str, str]] | None = None
 ) -> Callable[[Callable], Generator]:
     if items is None:
         items = MODELS_TO_TAG
 
-    return pytest.mark.parametrize(
-        "ov_pipe_model",
-        items,
-        indirect=["ov_pipe_model"],
-        ids=[f"{item[0]}/{item[1]}" for item in items]
-    )
+    return _parametrize_models(items)
 
 
 @model_and_tag_parametrize(TAG_INSERTED_BY_TEMPLATE)
@@ -1375,32 +1400,32 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
 @pytest.mark.parametrize(
     "ov_pipe_model,has_image,has_video",
     [
-        pytest.param(("katuni4ka/tiny-random-qwen2vl","SDPA"), True, False, id="qwen2vl/SDPA/image"),
-        pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA"), True, False, id="qwen2vl/PA/image"),
-        pytest.param(("katuni4ka/tiny-random-qwen2vl","SDPA"), False, True, id="qwen2vl/SDPA/video"),
-        pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA"), False, True, id="qwen2vl/PA/video"),
-        pytest.param(("katuni4ka/tiny-random-qwen2vl", "SDPA"), True, True, id="qwen2vl/PA/image+video"),
-        pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA"), True, True, id="qwen2vl/PA/image+video"),
-        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "SDPA"), True, False, id="qwen2.5-vl/SDPA/image"),
-        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "PA"), True, False, id="qwen2.5-vl/PA/image", marks=pytest.mark.xfail(reason="CVS-167316")),
-        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "SDPA"), False, True, id="qwen2.5-vl/SDPA/video"),
-        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "PA"), False, True, id="qwen2.5-vl/PA/video", marks=pytest.mark.xfail(reason="CVS-167316")),
-        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "SDPA"), True, True, id="qwen2.5-vl/SDPA/image+video"),
-        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "PA"), True, True, id="qwen2.5-vl/PA/image+video", marks=pytest.mark.xfail(reason="CVS-167316")),
+        pytest.param(("katuni4ka/tiny-random-qwen2vl","SDPA","CPU"), True, False, id="qwen2vl/SDPA/image"),
+        pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA","CPU"), True, False, id="qwen2vl/PA/image"),
+        pytest.param(("katuni4ka/tiny-random-qwen2vl","SDPA","CPU"), False, True, id="qwen2vl/SDPA/video"),
+        pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA","CPU"), False, True, id="qwen2vl/PA/video"),
+        pytest.param(("katuni4ka/tiny-random-qwen2vl", "SDPA","CPU"), True, True, id="qwen2vl/PA/image+video"),
+        pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA","CPU"), True, True, id="qwen2vl/PA/image+video"),
+        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "SDPA","CPU"), True, False, id="qwen2.5-vl/SDPA/image"),
+        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "PA","CPU"), True, False, id="qwen2.5-vl/PA/image", marks=pytest.mark.xfail(reason="CVS-167316")),
+        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "SDPA","CPU"), False, True, id="qwen2.5-vl/SDPA/video"),
+        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "PA","CPU"), False, True, id="qwen2.5-vl/PA/video", marks=pytest.mark.xfail(reason="CVS-167316")),
+        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "SDPA","CPU"), True, True, id="qwen2.5-vl/SDPA/image+video"),
+        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "PA","CPU"), True, True, id="qwen2.5-vl/PA/image+video", marks=pytest.mark.xfail(reason="CVS-167316")),
         (
-            pytest.param(("katuni4ka/tiny-random-gemma3", "SDPA"), True, False, id="gemma3/SDPA/image", marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON))
+            pytest.param(("katuni4ka/tiny-random-gemma3", "SDPA","CPU"), True, False, id="gemma3/SDPA/image", marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON))
             if sys.platform == "darwin"
-            else pytest.param(("katuni4ka/tiny-random-gemma3",  "SDPA"), True, False, id="gemma3/SDPA/image")
+            else pytest.param(("katuni4ka/tiny-random-gemma3",  "SDPA","CPU"), True, False, id="gemma3/SDPA/image")
         ),
-        pytest.param(("katuni4ka/tiny-random-gemma3", "PA"), True, False, id="gemma3/PA/image", marks=pytest.mark.xfail(reason="CVS-171180")),
-        pytest.param(("qnguyen3/nanoLLaVA", "SDPA"), True, False, id="nanoLLaVA/SDPA/image"),
-        pytest.param(("qnguyen3/nanoLLaVA", "PA"), True, False, id="nanoLLaVA/PA/image"),
-        pytest.param(("katuni4ka/tiny-random-llava-next-video", "SDPA"), True, False, id="llava-next-video/SDPA/image"),
-        pytest.param(("katuni4ka/tiny-random-llava-next-video", "PA"), True, False, id="llava-next-video/PA/image"),
-        pytest.param(("katuni4ka/tiny-random-llava-next-video", "SDPA"), False, True, id="llava-next-video/SDPA/video"),
-        pytest.param(("katuni4ka/tiny-random-llava-next-video", "PA"), False, True, id="llava-next-video/PA/video"),
-        pytest.param(("katuni4ka/tiny-random-llava-next-video", "SDPA"), True, True, id="llava-next-video/SDPA/image+video"),
-        pytest.param(("katuni4ka/tiny-random-llava-next-video", "PA"), True, True, id="llava-next-video/PA/image+video"),
+        pytest.param(("katuni4ka/tiny-random-gemma3", "PA","CPU"), True, False, id="gemma3/PA/image", marks=pytest.mark.xfail(reason="CVS-171180")),
+        pytest.param(("qnguyen3/nanoLLaVA", "SDPA","CPU"), True, False, id="nanoLLaVA/SDPA/image"),
+        pytest.param(("qnguyen3/nanoLLaVA", "PA","CPU"), True, False, id="nanoLLaVA/PA/image"),
+        pytest.param(("katuni4ka/tiny-random-llava-next-video", "SDPA","CPU"), True, False, id="llava-next-video/SDPA/image"),
+        pytest.param(("katuni4ka/tiny-random-llava-next-video", "PA","CPU"), True, False, id="llava-next-video/PA/image"),
+        pytest.param(("katuni4ka/tiny-random-llava-next-video", "SDPA","CPU"), False, True, id="llava-next-video/SDPA/video"),
+        pytest.param(("katuni4ka/tiny-random-llava-next-video", "PA","CPU"), False, True, id="llava-next-video/PA/video"),
+        pytest.param(("katuni4ka/tiny-random-llava-next-video", "SDPA","CPU"), True, True, id="llava-next-video/SDPA/image+video"),
+        pytest.param(("katuni4ka/tiny-random-llava-next-video", "PA","CPU"), True, True, id="llava-next-video/PA/image+video"),
     ],
     indirect=["ov_pipe_model"],
 )
