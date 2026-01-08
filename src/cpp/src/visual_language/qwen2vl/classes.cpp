@@ -52,10 +52,10 @@ std::shared_ptr<ov::Node> create_bicubic_resize(std::shared_ptr<ov::Node> input,
 
     // Configure interpolation attributes for bicubic resize
     ov::op::v11::Interpolate::InterpolateAttrs attrs;
-    attrs.mode = ov::op::v11::Interpolate::InterpolateMode::CUBIC;
+    attrs.mode = ov::op::v11::Interpolate::InterpolateMode::BICUBIC_PILLOW;
     attrs.shape_calculation_mode = ov::op::v11::Interpolate::ShapeCalcMode::SIZES;
     attrs.coordinate_transformation_mode = ov::op::v11::Interpolate::CoordinateTransformMode::PYTORCH_HALF_PIXEL;
-    attrs.cube_coeff = -0.75f;  // Standard bicubic coefficient
+    attrs.cube_coeff = -0.5f;  // May be ignored for BICUBIC_PILLOW, but Pillow uses -0.5f
     attrs.nearest_mode = ov::op::v11::Interpolate::NearestMode::ROUND_PREFER_FLOOR;
     attrs.pads_begin = {0, 0};
     attrs.pads_end = {0, 0};
