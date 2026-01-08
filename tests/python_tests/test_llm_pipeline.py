@@ -704,11 +704,11 @@ test_cases = [
 ]
 @pytest.mark.parametrize("generation_config,prompt", test_cases)
 @pytest.mark.precommit
-def test_perf_metrics(generation_config, prompt):
+def test_perf_metrics(generation_config, prompt, model_downloader):
     import time
     start_time = time.perf_counter()
     model_id = 'katuni4ka/tiny-random-gemma2'
-    perf_metrics = run_perf_metrics_collection(model_id, generation_config, prompt)
+    perf_metrics = run_perf_metrics_collection(model_id, generation_config, prompt, model_downloader)
     total_time = (time.perf_counter() - start_time) * 1000
 
     # Check that load time is adequate.
@@ -816,7 +816,7 @@ def test_perf_metrics_with_structured_output(generation_config, prompt, model_do
 @pytest.mark.parametrize("pipeline_type", get_main_pipeline_types())
 @pytest.mark.parametrize("stop_str", {True, False})
 @pytest.mark.precommit
-def test_pipelines_generate_with_streaming(pipeline_type, stop_str):
+def test_pipelines_generate_with_streaming(pipeline_type, stop_str, model_downloader):
     # streamer
     it_cnt = 0
     def py_streamer(py_str: str):
