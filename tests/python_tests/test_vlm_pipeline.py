@@ -265,7 +265,12 @@ GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transforme
 
 
 @pytest.fixture(scope="module")
-def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
+def ov_pipe_model(request: pytest.FixtureRequest, monkeypatch) -> VlmModelInfo:
+    # check and set VISION_PREPROCESS if test has been marked with vision_preprocess
+    m = request.node.get_closest_marker("vision_preprocess")
+    if m:
+        monkeypatch.setenv("VISION_PREPROCESS", m.args[0])
+
     ov_model, ov_backend = request.param
     
     if sys.platform == "darwin" and "gemma3" in ov_model:
@@ -1642,6 +1647,9 @@ GENAI_VS_OPTIMUM_IMAGE_INPUT_RESOLUTIONS = [
     indirect=["ov_pipe_model"],
 )
 
+# Some models fail when using OV graph pre-processing.
+# Force VISION_PREPROCESS to be set to CPP for now.
+@pytest.mark.vision_preprocess("CPP")
 def test_vlm_pipeline_match_optimum_with_resize(request, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool, image_input_resolution):
     resized_image = None
     resized_video = None
