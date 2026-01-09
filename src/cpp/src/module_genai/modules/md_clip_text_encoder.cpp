@@ -32,10 +32,10 @@ void ClipTextEncoderModule::print_static_config() {
       - name: "negative_prompts"
         type: "VecString"         # [Optional] Support DataType: [VecString]
         source: "ParentModuleName.OutputPortName"
-    - name: "guidance_scale"
+      - name: "guidance_scale"
         type: "Float"             # [Optional] Support DataType: [Float]
         source: "ParentModuleName.OutputPortName"
-    - name: "max_sequence_length"
+      - name: "max_sequence_length"
         type: "Int"               # [Optional] Support DataType: [Int]
         source: "ParentModuleName.OutputPortName"
     outputs:
@@ -127,7 +127,7 @@ void ClipTextEncoderModule::run() {
     if (exists_input("guidance_scale")) {
         generation_config.guidance_scale = this->inputs["guidance_scale"].data.as<float>();
     } else {
-        generation_config.guidance_scale = 1.0f;
+        generation_config.guidance_scale = 0.0f;
     }
     if (exists_input("max_sequence_length")) {
         generation_config.max_sequence_length = this->inputs["max_sequence_length"].data.as<int>();

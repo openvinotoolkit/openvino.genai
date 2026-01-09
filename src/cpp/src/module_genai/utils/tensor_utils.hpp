@@ -20,4 +20,6 @@ ov::Tensor slice_tensor(const ov::Tensor& tensor, ov::Coordinate begin, ov::Coor
 ov::Tensor concat_tensors(const std::vector<ov::Tensor>& tensors, size_t axis = 0);
 
 const std::string shape_to_string(const ov::Shape& shape);
+
+float calculate_l2_norm(const ov::Tensor &tensor, size_t start_idx, size_t end_idx);
 }

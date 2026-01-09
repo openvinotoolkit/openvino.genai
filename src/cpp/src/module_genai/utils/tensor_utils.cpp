@@ -161,4 +161,14 @@ const std::string shape_to_string(const ov::Shape& shape) {
     oss << shape;
     return oss.str();
 }
+
+float calculate_l2_norm(const ov::Tensor &tensor, size_t start_idx, size_t end_idx) {
+    const float* data = tensor.data<const float>();
+    float sum = 0.0f;
+    for (size_t i = start_idx; i < end_idx; ++i) {
+        sum += data[i] * data[i];
+    }
+    return std::sqrt(sum);
+}
+
 }  // namespace ov::genai::module::tensor_utils

@@ -15,7 +15,11 @@ from PIL import Image
 import json
 
 class TransformerPipeline():
-    def __init__(self, model_path: str, device: str, enable_tiling:bool):
+    def __init__(
+        self,
+        model_path: str,
+        device: str,
+        enable_tiling:bool):
         self.model_path = model_path
         self.device = device
         core = Core()
@@ -99,7 +103,7 @@ class TransformerPipeline():
                         }
                     ],
                     'params': {
-                        'model_path': self.model_path
+                        'model_path': self.model_path,
                     }
                 },
                 'denoiser_loop': {
@@ -135,7 +139,7 @@ class TransformerPipeline():
                         }
                     ],
                     'params': {
-                        'model_path': self.model_path
+                        'model_path': self.model_path,
                     }
                 },
                 'vae': {
@@ -396,7 +400,10 @@ def main():
     parser.add_argument('--enable_tiling', action='store_true', help="Enable tiling. default false.")
     args = parser.parse_args()
 
-    pipeline = TransformerPipeline(args.model_path, args.device, args.enable_tiling)
+    pipeline = TransformerPipeline(
+        args.model_path,
+        args.device,
+        args.enable_tiling)
     images = pipeline(
         prompt=args.prompt,
         height=16*65,

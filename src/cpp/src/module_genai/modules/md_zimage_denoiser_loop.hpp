@@ -20,7 +20,7 @@ class ZImageDenoiserLoopModule : public IBaseModule {
 
 private:
     bool initialize();
-    int get_vae_scale_factor(const std::filesystem::path &model_path) const;
+    static int get_vae_scale_factor(const std::filesystem::path &model_path);
     ov::Tensor run(
         const std::vector<ov::Tensor>& prompt_embeds,
         const std::vector<ov::Tensor>& negative_prompt_embeds,
@@ -32,13 +32,15 @@ private:
         size_t width,
         size_t height,
         element::Type element_type,
-        std::shared_ptr<Generator> generator);
+        const std::shared_ptr<Generator> &generator) const;
     ImageGenerationModelType m_model_type;
     TransformerConfig m_transformer_config;
     std::shared_ptr<IScheduler> m_scheduler;
     ov::InferRequest m_request;
     bool m_is_multi_prompts {false};
     int m_vae_scale_factor {8};
+    float m_cfg_truncation;
+    bool m_cfg_normalization;
 };
 
 }

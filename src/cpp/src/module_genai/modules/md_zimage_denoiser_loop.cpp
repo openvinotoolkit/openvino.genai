@@ -7,6 +7,7 @@
 #include "image_generation/schedulers/z_image_flow_match_euler_discrete.hpp"
 #include "json_utils.hpp"
 #include "module_genai/utils/tensor_utils.hpp"
+#include "image_generation/numpy_utils.hpp"
 #include <fstream>
 
 namespace ov {
@@ -15,8 +16,8 @@ namespace module {
 
 void ZImageDenoiserLoopModule::print_static_config() {
     std::cout << R"(
-  transformer:
-    type: "TransformerModule"
+  denoiser_loop:
+    type: "ZImageDenoiserLoopModule"
     device: "GPU"
     inputs:
       - name: "prompt_embed"
@@ -48,6 +49,8 @@ void ZImageDenoiserLoopModule::print_static_config() {
         source: "ParentModuleName.OutputPortName"
       - name: "guidance_scale"                             # [optional]
         type: "Float"                                      # Support DataType: [Int]
+      - name: "init_latents"                               # [optional]
+        type: "OVTensor"                                   # Support DataType: [OVTensor]
         source: "ParentModuleName.OutputPortName"
     outputs:
       - name: "latents"
@@ -59,7 +62,7 @@ void ZImageDenoiserLoopModule::print_static_config() {
 
 ZImageDenoiserLoopModule::ZImageDenoiserLoopModule(const IBaseModuleDesc::PTR& desc,
                                                    const PipelineDesc::PTR& pipeline_desc)
-    : IBaseModule(desc, pipeline_desc) {
+    : IBaseModule(desc, pipeline_desc), m_cfg_truncation(1.0f), m_cfg_normalization(false) {
     m_model_type = to_image_generation_model_type(desc->model_type);
     if (m_model_type != ImageGenerationModelType::ZIMAGE) {
         GENAI_ERR("TransformerModule[" + desc->name + "]: Unsupported model type: " + desc->model_type);
@@ -106,7 +109,7 @@ bool ZImageDenoiserLoopModule::initialize() {
     return true;
 }
 
-int ZImageDenoiserLoopModule::get_vae_scale_factor(const std::filesystem::path &model_path) const {
+int ZImageDenoiserLoopModule::get_vae_scale_factor(const std::filesystem::path &model_path) {
     std::filesystem::path vae_config_path = model_path / "vae/config.json";
     if (!std::filesystem::exists(vae_config_path)) {
         return 8;
@@ -115,7 +118,7 @@ int ZImageDenoiserLoopModule::get_vae_scale_factor(const std::filesystem::path &
     nlohmann::json parsed = nlohmann::json::parse(vae_config);
     std::vector<int> block_out_channels;
     utils::read_json_param(parsed, "block_out_channels", block_out_channels);
-    return std::pow(2, block_out_channels.size() - 1);
+    return static_cast<int>(std::pow(2, block_out_channels.size() - 1));
 }
 
 void ZImageDenoiserLoopModule::run() {
@@ -142,36 +145,48 @@ void ZImageDenoiserLoopModule::run() {
     }
 
     ImageGenerationConfig generation_config {};
-    if (this->inputs.find("width") != this->inputs.end()) {
+    if (exists_input("width")) {
         generation_config.width = this->inputs["width"].data.as<int>();
     } else {
         generation_config.width = 512;
     }
-    if (this->inputs.find("height") != this->inputs.end()) {
+    if (exists_input("height")) {
         generation_config.height = this->inputs["height"].data.as<int>();
     } else {
         generation_config.height = 512;
     }
-    if (this->inputs.find("num_inference_steps") != this->inputs.end()) {
+    if (exists_input("num_inference_steps")) {
         generation_config.num_inference_steps = this->inputs["num_inference_steps"].data.as<int>();
     } else {
         generation_config.num_inference_steps = 10;
     }
-    if (this->inputs.find("num_images_per_prompt") != this->inputs.end()) {
+    if (exists_input("num_images_per_prompt")) {
         generation_config.num_images_per_prompt = this->inputs["num_images_per_prompt"].data.as<int>();
-    } else {
-        generation_config.num_images_per_prompt = 1;
     }
-    if (this->inputs.find("seed") != this->inputs.end()) {
+    if (exists_input("seed")) {
         int seed = this->inputs["seed"].data.as<int>();
         generation_config.generator = std::make_shared<CppStdGenerator>(seed);
     } else {
         generation_config.generator = std::make_shared<CppStdGenerator>(42);
     }
-    if (this->inputs.find("guidance_scale") != this->inputs.end()) {
-        generation_config.guidance_scale = this->inputs["guidance_scale"].data.as<float>();
+    // TODO: temporary guidance_scale is fixed to 0.0
+    generation_config.guidance_scale = 0.0f;
+    if (exists_input("cfg_truncation")) {
+        m_cfg_truncation = this->inputs["cfg_truncation"].data.as<float>();
     } else {
-        generation_config.guidance_scale = 1.0f;
+        m_cfg_truncation = 1.0f;
+    }
+    if (exists_input("cfg_normalization")) {
+        std::string cfg_normalization_str = this->inputs["cfg_normalization"].data.as<std::string>();
+        std::transform(cfg_normalization_str.begin(), cfg_normalization_str.end(), cfg_normalization_str.begin(),
+                   [](unsigned char c) { return (char)std::tolower(c); });
+        if (cfg_normalization_str == "true" || cfg_normalization_str == "1") {
+            m_cfg_normalization = true;
+        } else {
+            m_cfg_normalization = false;
+        }
+    } else {
+        m_cfg_normalization = false;
     }
     std::optional<ov::Tensor> init_latents = std::nullopt;
     if (this->inputs.find("init_latents") != this->inputs.end()) {
@@ -210,7 +225,7 @@ ov::Tensor ZImageDenoiserLoopModule::run(
             }
         }
         processed_embeds.assign(expanded_prompt_embeds.begin(), expanded_prompt_embeds.end());
-        if ((generation_config.guidance_scale - 1.0f) > 1e-4) {
+        if (generation_config.guidance_scale > 1.0f) {
             std::vector<ov::Tensor> expanded_negative_embeds;
             for (const auto& embed : negative_prompt_embeds) {
                 for (int i = 0; i < generation_config.num_images_per_prompt; ++i) {
@@ -221,6 +236,7 @@ ov::Tensor ZImageDenoiserLoopModule::run(
         }
     }
 
+    auto actual_batch_size = batch_size * generation_config.num_images_per_prompt;
     auto image_seq_len = (latents.get_shape()[2] / 2) * (latents.get_shape()[3] / 2);
     std::dynamic_pointer_cast<ZImageFlowMatchEulerDiscreteScheduler>(m_scheduler)->set_sigma_min(0.0f);
     m_scheduler->set_timesteps(
@@ -229,17 +245,77 @@ ov::Tensor ZImageDenoiserLoopModule::run(
          generation_config.strength);
     std::vector<float> timesteps = m_scheduler->get_float_timesteps();
     ov::Tensor prompt_tensor = tensor_utils::stack(processed_embeds);
+    std::vector<ov::Tensor> all_prompt_embeds;
+    ov::Tensor all_prompt_tensor;
+    if (generation_config.guidance_scale > 1.0f) {
+        all_prompt_embeds.reserve(processed_embeds.size() + processed_negative_embeds.size());
+        all_prompt_embeds.insert(all_prompt_embeds.end(), processed_embeds.begin(), processed_embeds.end());
+        all_prompt_embeds.insert(all_prompt_embeds.end(), processed_negative_embeds.begin(), processed_negative_embeds.end());
+        all_prompt_tensor = tensor_utils::stack(all_prompt_embeds);
+    }
     for (size_t i = 0; i < timesteps.size(); i++) {
         timesteps[i] = (1000.0f - timesteps[i]) / 1000.0f;
     }
     for (size_t inference_step = 0; inference_step < timesteps.size(); inference_step++) {
-        ov::Tensor unsqueezed_latents = tensor_utils::unsqueeze(latents, 2);
-        ov::Tensor timestep(ov::element::f32, {1}, &timesteps[inference_step]);
-        m_request.set_tensor("hidden_states", unsqueezed_latents);
-        m_request.set_tensor("timestep", timestep);
-        m_request.set_tensor("encoder_hidden_states", prompt_tensor);
+        float t_norm = timesteps[inference_step];
+        float current_guidance_scale = generation_config.guidance_scale;
+        if (generation_config.guidance_scale > 1.0f &&
+            (m_cfg_truncation < 1.0f || std::fabs(m_cfg_truncation - 1.0f) < 1e-6)) {
+            if (t_norm > m_cfg_truncation) {
+                current_guidance_scale = 0.0f;
+            }
+        }
+        bool apply_cfg = generation_config.guidance_scale > 1.0f && current_guidance_scale > 0.0f;
+        if (apply_cfg) {
+            ov::Tensor tmp_latents = numpy_utils::repeat(latents, 2);
+            std::vector<ov::Tensor> prompt_embeds;
+            ov::Tensor timestep(ov::element::f32, {1}, &timesteps[inference_step]);
+            timestep = numpy_utils::repeat(timestep, 2);
+            tmp_latents = tensor_utils::unsqueeze(tmp_latents, 2);
+            m_request.set_tensor("hidden_states", tmp_latents);
+            m_request.set_tensor("timestep", timestep);
+            m_request.set_tensor("encoder_hidden_states", all_prompt_tensor);
+        } else {
+            ov::Tensor unsqueezed_latents = tensor_utils::unsqueeze(latents, 2);
+            ov::Tensor timestep(ov::element::f32, {1}, &timesteps[inference_step]);
+            m_request.set_tensor("hidden_states", unsqueezed_latents);
+            m_request.set_tensor("timestep", timestep);
+            m_request.set_tensor("encoder_hidden_states", prompt_tensor);
+        }
+
         m_request.infer();
-        ov::Tensor noise_pred = m_request.get_output_tensor();
+        ov::Tensor model_output = m_request.get_output_tensor();
+        ov::Tensor noise_pred;
+        if (apply_cfg) {
+            std::vector<ov::Tensor> noise_preds;
+            for (int j = 0; j < actual_batch_size; j++) {
+                ov::Shape pred_shape = model_output.get_shape();
+                pred_shape.erase(pred_shape.begin());
+                ov::Tensor pred(model_output.get_element_type(), pred_shape);
+                float *pred_data = pred.data<float>();
+                const float *model_output_data = model_output.data<const float>();
+                for (size_t k = 0; k < pred.get_size(); k++) {
+                    float positive_pred = model_output_data[j * pred.get_size() + k];
+                    float negative_pred = model_output_data[(actual_batch_size + j) * pred.get_size() + k];
+                    pred_data[k] = positive_pred + current_guidance_scale * (positive_pred - negative_pred);
+                }
+                if (m_cfg_normalization) {
+                    float orig_positive_norm = tensor_utils::calculate_l2_norm(model_output, j * pred.get_size(), (j + 1) * pred.get_size());
+                    float new_positive_norm = tensor_utils::calculate_l2_norm(pred, 0, pred.get_size());
+                    float max_new_norm = orig_positive_norm * static_cast<float>(m_cfg_normalization);
+                    if (new_positive_norm > max_new_norm) {
+                        for (size_t k = 0; k < pred.get_size(); k++) {
+                            pred_data[k] = pred_data[k] * (max_new_norm / new_positive_norm);
+                        }
+                    }
+                }
+                noise_preds.push_back(pred);
+            }
+            noise_pred = tensor_utils::stack(noise_preds);
+        } else {
+            noise_pred = m_request.get_output_tensor();
+        }
+
         float *noise_pred_data = noise_pred.data<float>();
         for (size_t i = 0; i < noise_pred.get_size(); i++) {
             noise_pred_data[i] = -noise_pred_data[i];
@@ -257,7 +333,7 @@ ov::Tensor ZImageDenoiserLoopModule::prepare_latents(
         size_t width,
         size_t height,
         element::Type element_type,
-        std::shared_ptr<Generator> generator) {
+        const std::shared_ptr<Generator> &generator) const {
     height = 2 * (height / (m_vae_scale_factor * 2));
     width = 2 * (width / (m_vae_scale_factor * 2));
 

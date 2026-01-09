@@ -27,7 +27,7 @@ pipeline_modules:
   clip_text_encoder:
     type: "ClipTextEncoderModule"
     description: "Encode positive prompt and negative prompt"
-    device: "GPU"
+    device: "CPU"
     inputs:
       - name: "prompt"
         type: "String"
@@ -66,7 +66,7 @@ pipeline_modules:
     void verify_outputs(ov::genai::module::ModulePipeline& pipe) override {
         auto output = pipe.get_output("prompt_embeds").as<std::vector<ov::Tensor>>();
         std::vector<float> expected_embeds = { 
-          -5.8134e+02, 7.6859e-01, -3.0166e+01, 3.7192e+01, 1.3754e+04, -3.9269e+00, -8.7309e+00, 3.2020e+01, 6.0102e-01, 7.2419e+01
+          -603.058, -6.29294, -24.5433, 33.7109, 13672.3, -8.1542, -6.41789, 25.8192, 6.84497, 67.1992
         };
         CHECK(compare_big_tensor<float>(output[0], expected_embeds, 1e+01), "embedding do not match expected values");
     }
