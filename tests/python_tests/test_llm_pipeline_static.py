@@ -1,7 +1,15 @@
 # Copyright (C) 2024-2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-from openvino_genai import GenerationConfig, Tokenizer, LLMPipeline, StreamerBase, ChatHistory, TokenizedInputs
+from openvino_genai import (
+    GenerationConfig,
+    Tokenizer,
+    LLMPipeline,
+    StreamerBase,
+    ChatHistory,
+    TokenizedInputs,
+    StreamingStatus,
+)
 from pathlib import Path
 
 import openvino as ov
@@ -356,10 +364,10 @@ def test_terminate_by_sampler(
         def __init__(self):
             StreamerBase.__init__(self)
 
-        def write(self, token_id):
+        def write(self, token_id) -> StreamingStatus:
             nonlocal current_iter
             current_iter += 1
-            return current_iter == num_iters
+            return StreamingStatus.RUNNING if current_iter != num_iters else StreamingStatus.STOPPED
         def end(self):
             pass
 
