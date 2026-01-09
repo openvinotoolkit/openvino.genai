@@ -1416,23 +1416,13 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
 
 
 GENAI_VS_OPTIMUM_CASES = [
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), True, False, id="qwen2vl/SDPA/image"
-    ),
+    pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), True, False, id="qwen2vl/SDPA/image"),
     pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), True, False, id="qwen2vl/PA/image"),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), False, True, id="qwen2vl/SDPA/video"
-    ),
+    pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), False, True, id="qwen2vl/SDPA/video"),
     pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), False, True, id="qwen2vl/PA/video"),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), True, True, id="qwen2vl/PA/image+video"
-    ),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), True, True, id="qwen2vl/PA/image+video"
-    ),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"), True, False, id="qwen2.5-vl/SDPA/image"
-    ),
+    pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), True, True, id="qwen2vl/PA/image+video"),
+    pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), True, True, id="qwen2vl/PA/image+video"),
+    pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"), True, False, id="qwen2.5-vl/SDPA/image"),
     pytest.param(
         ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
         True,
@@ -1535,6 +1525,7 @@ GENAI_VS_OPTIMUM_CASES = [
     ),
 ]
 
+
 def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
     class NanollavaProcessorWrapper:
         def __init__(self, processor, config, model_dtype):
@@ -1579,6 +1570,7 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
 
         from optimum.intel.openvino.modeling_visual_language import MODEL_TYPE_TO_CLS_MAPPING
+
         preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[optimum_model.config.model_type].preprocess_inputs
         inputs = preprocess_inputs(prompt, image, processor, tokenizer, config=optimum_model.config)
     else:
@@ -1613,12 +1605,12 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
 
     assert optimum_text == genai_text
 
+
 @pytest.mark.parametrize(
     "ov_pipe_model,has_image,has_video",
     GENAI_VS_OPTIMUM_CASES,
     indirect=["ov_pipe_model"],
 )
-
 def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool):
     resolution = ov_pipe_model.resolution
 
@@ -1631,6 +1623,7 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
 
     run_compare_genai_optimum(ov_pipe_model, resized_image, resized_video)
 
+
 GENAI_VS_OPTIMUM_IMAGE_INPUT_RESOLUTIONS = [
     pytest.param((100, 77), id="100x77"),
     pytest.param((999, 666), id="999x666"),
@@ -1640,17 +1633,16 @@ GENAI_VS_OPTIMUM_IMAGE_INPUT_RESOLUTIONS = [
 ]
 
 @pytest.mark.parametrize("image_input_resolution", GENAI_VS_OPTIMUM_IMAGE_INPUT_RESOLUTIONS)
-
 @pytest.mark.parametrize(
     "ov_pipe_model,has_image,has_video",
     GENAI_VS_OPTIMUM_CASES,
     indirect=["ov_pipe_model"],
 )
-
 # Some models fail when using OV graph pre-processing.
 # Force VISION_PREPROCESS to be set to CPP for now.
 @pytest.mark.vision_preprocess("CPP")
-def test_vlm_pipeline_match_optimum_with_resize(request, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool, image_input_resolution):
+def test_vlm_pipeline_match_optimum_with_resize(
+    request, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool, image_input_resolution):
     resized_image = None
     resized_video = None
     if has_image:
