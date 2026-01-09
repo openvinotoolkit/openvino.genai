@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "visual_language/vision_registry.hpp"
@@ -107,18 +107,6 @@ void VisionRegistry::release_ref(const VisionID& id) {
         }
     }
 }
-
-// void VisionRegistry::release_refs(const std::vector<VisionID>& ids) {
-//     std::lock_guard<std::mutex> lock(m_mutex);
-//     for (const auto& id : ids) {
-//         auto it = m_entries.find(id);
-//         if (it != m_entries.end()) {
-//             if (--it->second.ref_count == 0) {
-//                 m_entries.erase(it);
-//             }
-//         }
-//     }
-// }
 
 size_t VisionRegistry::size() const {
     std::lock_guard<std::mutex> lock(m_mutex);
