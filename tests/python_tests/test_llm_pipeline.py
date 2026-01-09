@@ -563,7 +563,8 @@ class PrinterNone(ov_genai.StreamerBase):
         # differences between Python’s MRO and C++’s mechanisms.
         ov_genai.StreamerBase.__init__(self)
         self.tokenizer = tokenizer
-    def put(self, token_id):
+
+    def write(self, token_id):
         # print(self.tokenizer.decode([token_id]))  # Incorrect way to print, but easy to implement
         print(token_id)  # print only token because self.tokenizer.decode([token_id]) are not implemented yet
     def end(self):
@@ -577,7 +578,8 @@ class PrinterBool(ov_genai.StreamerBase):
         # differences between Python’s MRO and C++’s mechanisms.
         ov_genai.StreamerBase.__init__(self)
         self.tokenizer = tokenizer
-    def put(self, token_id):
+
+    def write(self, token_id):
         # print(self.tokenizer.decode([token_id]))  # Incorrect way to print, but easy to implement
         print(token_id)  # print only token because self.tokenizer.decode([token_id]) are not implemented yet
         return False
