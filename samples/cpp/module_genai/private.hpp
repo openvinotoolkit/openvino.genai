@@ -7,5 +7,5 @@
 #include <openvino/genai/module_genai/pipeline.hpp>
 #include "utils.hpp"
 
-void test_genai_module_ut_modules(int argc, char* argv[]);
-void test_genai_module_ut_pipelines(int argc, char* argv[]);
+int test_genai_module_ut_modules(int argc, char* argv[]);
+int test_genai_module_ut_pipelines(int argc, char* argv[]);
