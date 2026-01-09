@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2026 Intel Corporation
+# Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -10,7 +10,7 @@ find_package(OpenVINOGenAI REQUIRED
 )
 
 function(add_sample_executable target_name)
-    add_executable(${target_name} ${target_name}.c text2speech_sample_utils.c)
+    add_executable(${target_name} ${target_name}.c text2speech_sample_utils.c text2speech_sample_utils.h)
     set_source_files_properties(${target_name}.c text2speech_sample_utils.c PROPERTIES LANGUAGE C)
     target_link_libraries(${target_name} PRIVATE openvino::genai::c)
     set_target_properties(${target_name} PROPERTIES

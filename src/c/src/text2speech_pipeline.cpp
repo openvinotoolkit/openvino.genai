@@ -85,7 +85,7 @@ ov_status_e ov_genai_text2speech_decoded_results_get_speech_at(const ov_genai_te
         // but the data itself is owned by 'results'.
         return ov_tensor_create_from_host_ptr(et, shape, cpp_tensor.data(), speech);
     } catch (const std::exception& e) {
-        return ov_status_e::GENERAL_ERROR;
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
 }
 
