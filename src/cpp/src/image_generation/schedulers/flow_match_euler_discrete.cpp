@@ -35,12 +35,10 @@ FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(const std::file
 
 FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(const Config& scheduler_config)
     : m_config(scheduler_config) {
-    using numpy_utils::linspace;
-
     int32_t num_train_timesteps = m_config.num_train_timesteps;
     float shift = m_config.shift;
 
-    m_timesteps = linspace<float>(1.0f, static_cast<float>(num_train_timesteps), num_train_timesteps, true);
+    m_timesteps = numpy_utils::linspace<float>(1.0f, static_cast<float>(num_train_timesteps), num_train_timesteps, true);
     std::reverse(m_timesteps.begin(), m_timesteps.end());
 
     std::transform(m_timesteps.begin(),
@@ -78,8 +76,7 @@ void FlowMatchEulerDiscreteScheduler::set_timesteps(size_t num_inference_steps, 
     int32_t num_train_timesteps = m_config.num_train_timesteps;
     float shift = m_config.shift;
 
-    using numpy_utils::linspace;
-    std::vector<double> timesteps = linspace<double>(sigma_to_t(m_sigma_max), sigma_to_t(m_sigma_min), m_num_inference_steps, true);
+    std::vector<double> timesteps = numpy_utils::linspace<double>(sigma_to_t(m_sigma_max), sigma_to_t(m_sigma_min), m_num_inference_steps, true);
 
     std::vector<double> sigmas(timesteps.size());
     for (size_t i = 0; i < sigmas.size(); ++i) {
