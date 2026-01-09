@@ -355,7 +355,8 @@ def test_terminate_by_sampler(
     class TestStreamer(StreamerBase):
         def __init__(self):
             StreamerBase.__init__(self)
-        def put(self, token_id):
+
+        def write(self, token_id):
             nonlocal current_iter
             current_iter += 1
             return current_iter == num_iters
