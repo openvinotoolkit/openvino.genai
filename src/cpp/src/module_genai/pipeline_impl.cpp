@@ -4,8 +4,8 @@
 #include "pipeline_impl.hpp"
 
 #include "module.hpp"
-#include "utils/yaml_utils.hpp"
 #include "modules/md_io.hpp"
+#include "utils/yaml_utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -20,6 +20,9 @@ ModulePipelineImpl::ModulePipelineImpl(const PipelineModulesDesc& pipeline_modul
 
     // Sort pipeline
     m_modules = sort_pipeline(m_modules);
+
+    // Note: it should be called at the end of constructor
+    init_onetbb_threading();
 }
 
 ModulePipelineImpl::~ModulePipelineImpl() {}
@@ -30,18 +33,96 @@ ModulePipelineImpl::~ModulePipelineImpl() {}
 // "video": video ov::Tensor
 void ModulePipelineImpl::generate(ov::AnyMap& inputs, StreamerVariant streamer) {
     for (auto& module : m_modules) {
-        if (module->is_input_module) {
+        if (module->is_input()) {
             std::dynamic_pointer_cast<ParameterModule>(module)->run(inputs);
-        } else if (module->is_output_module) {
-            std::dynamic_pointer_cast<ResultModule>(module)->run(this->outputs);
+        } else if (module->is_output()) {
+            std::dynamic_pointer_cast<ResultModule>(module)->run(this->m_outputs);
         } else {
             module->run();
         }
     }
 }
 
+// execute generate asynchronously
+void ModulePipelineImpl::generate_async(ov::AnyMap& inputs, StreamerVariant streamer) {
+    using namespace oneapi::tbb::flow;
+
+    if (_flow_nodes.empty()) {
+        init_onetbb_threading();
+    }
+
+    m_current_inputs = &inputs;
+
+    if (_starter) {
+        _starter->try_put(continue_msg{});
+    }
+    _flow_graph.wait_for_all();
+    
+    m_current_inputs = nullptr;
+}
+
+void ModulePipelineImpl::init_onetbb_threading() {
+    using namespace oneapi::tbb::flow;
+
+    _flow_graph.reset();
+    _flow_nodes.clear();
+    _node_flow_map.clear();
+    _starter.reset();
+
+    _flow_nodes.reserve(m_modules.size());
+
+    // register all nodes execution fucntion.
+    for (auto& module : m_modules) {
+        _flow_nodes.emplace_back(std::make_unique<FlowNode>(_flow_graph, [this, module](const continue_msg&) {
+            if (module->is_input()) {
+                if (this->m_current_inputs) {
+                    std::dynamic_pointer_cast<ParameterModule>(module)->run(*(this->m_current_inputs));
+                }
+            } else if (module->is_output()) {
+                std::dynamic_pointer_cast<ResultModule>(module)->run(this->m_outputs);
+            } else {
+                module->run();
+            }
+        }));
+        _node_flow_map[module] = _flow_nodes.back().get();
+    }
+
+    // register all edges between nodes.
+    for (auto& module : m_modules) {
+        // loop all son modules
+        for (auto& output : module->outputs) {
+            for (auto& son_node : output.second.module_ptrs) {
+                if (son_node->is_output()) {
+                    continue;
+                }
+
+                auto it_son = _node_flow_map.find(son_node);
+                if (it_son == _node_flow_map.end()) {
+                    continue;
+                }
+                auto it_parent = _node_flow_map.find(module);
+                if (it_parent == _node_flow_map.end()) {
+                    continue;
+                }
+                make_edge(*it_parent->second, *it_son->second);
+            }
+        }       
+    }
+
+    // register starter node
+    _starter = std::make_unique<broadcast_node<continue_msg>>(_flow_graph);
+    for (auto& module : m_modules) {
+        if (module->is_input()) {
+            auto it = _node_flow_map.find(module);
+            if (it != _node_flow_map.end()) {
+                make_edge(*_starter, *it->second);
+            }
+        }
+    }
+}
+
 ov::Any ModulePipelineImpl::get_output(const std::string& output_name) {
-    return outputs[output_name];
+    return m_outputs[output_name];
 }
 
 void ModulePipelineImpl::start_chat(const std::string& system_message) {}

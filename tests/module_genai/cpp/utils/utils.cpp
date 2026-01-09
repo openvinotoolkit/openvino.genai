@@ -101,3 +101,7 @@ bool check_env_variable(const std::string& var_name) {
 
     return false;
 }
+
+bool check_file_exists(const std::string& path) {
+    return fs::exists(path) && fs::is_regular_file(path);
+}

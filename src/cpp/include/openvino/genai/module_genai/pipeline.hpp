@@ -30,6 +30,9 @@ public:
     // "video": video ov::Tensor
     void generate(ov::AnyMap& inputs, StreamerVariant streamer = std::monostate());
 
+    // execute generate asynchronously
+    void generate_async(ov::AnyMap& inputs, StreamerVariant streamer = std::monostate());
+
     ov::Any get_output(const std::string& output_name);
 
     void start_chat(const std::string& system_message = {});

@@ -1,10 +1,28 @@
 SCRIPT_DIR_UNIT_TEST_CPP="$(dirname "$(readlink -f "$BASH_SOURCE")")"
 cd ${SCRIPT_DIR_UNIT_TEST_CPP}
 
+source ../../../../source_ov.sh
+cd ${SCRIPT_DIR_UNIT_TEST_CPP}
+
+# if not exist libopenvino_tokenizers.so, cpy from build dir
+OV_TOKENIZERS_LIB_PATH=${SCRIPT_DIR_UNIT_TEST_CPP}/../../../build/tests/module_genai/cpp/libopenvino_tokenizers.so
+if [ ! -f ${OV_TOKENIZERS_LIB_PATH} ]; then
+    echo "libopenvino_tokenizers.so not found in build dir, copying..."
+    cp ${SCRIPT_DIR_UNIT_TEST_CPP}/../../../build/openvino_genai/libopenvino_tokenizers.so ${OV_TOKENIZERS_LIB_PATH}
+fi
+
 export DATA_DIR=${SCRIPT_DIR_UNIT_TEST_CPP}/test_data
-export MODEL_DIR=${SCRIPT_DIR_UNIT_TEST_CPP}/test_models
+# export MODEL_DIR=${SCRIPT_DIR_UNIT_TEST_CPP}/test_models
+export MODEL_DIR=${SCRIPT_DIR_UNIT_TEST_CPP}/../../../samples/cpp/module_genai/ut_pipelines/
+# export DEVICE=GPU # Specific device for testing, default is CPU
 
 app=../../../build/tests/module_genai/cpp/genai_modules_test
 
-$app
-# $app --gtest_filter="*cat_120_100_dog_120_120*"
+# All tests
+# $app
+
+# All ModuleTest
+$app --gtest_filter="ModuleTestSuite*cat_120_100_dog_120_120*"
+
+# All PipelineTest
+# $app --gtest_filter="PipelineTest*"

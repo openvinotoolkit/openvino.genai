@@ -13,3 +13,8 @@ std::vector<ov::Tensor> load_images(const std::filesystem::path& image_path);
 ov::Tensor load_video(const std::filesystem::path& input_path);
 ov::Tensor create_countdown_frames();
 }
+
+namespace TEST_DATA {
+    std::string img_cat_120_100();
+    std::string img_dog_120_120();
+};

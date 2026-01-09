@@ -8,6 +8,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #include "load_image.hpp"
+#include "utils.hpp"
 
 namespace fs = std::filesystem;
 
@@ -139,3 +140,18 @@ ov::Tensor utils::load_image(const std::filesystem::path &image_path)
         ov::Shape{1, size_t(y), size_t(x), size_t(desired_channels)},
         SharedImageAllocator{image, desired_channels, y, x});
 }
+
+namespace TEST_DATA {
+
+std::string img_cat_120_100() {
+    std::string full_path = get_data_path() + "/cat_120_100.png";
+    OPENVINO_ASSERT(check_file_exists(full_path), "File does not exist: " + full_path);
+    return full_path;
+}
+
+std::string img_dog_120_120() {
+    std::string full_path = get_data_path() + "/dog_120_120.png";
+    OPENVINO_ASSERT(check_file_exists(full_path), "File does not exist: " + full_path);
+    return full_path;
+}
+}  // namespace TEST_DATA

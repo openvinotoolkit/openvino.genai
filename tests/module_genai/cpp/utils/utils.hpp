@@ -19,3 +19,5 @@ std::string get_data_path();
 std::string get_model_path();
 
 bool check_env_variable(const std::string& var_name);
+
+bool check_file_exists(const std::string& path);

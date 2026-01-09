@@ -1,6 +1,8 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <oneapi/tbb/flow_graph.h>
+
 #include <optional>
 
 #include "module.hpp"
@@ -27,6 +29,9 @@ public:
     // "video": video ov::Tensor
     void generate(ov::AnyMap& inputs, StreamerVariant streamer = std::monostate());
 
+    // execute generate asynchronously
+    void generate_async(ov::AnyMap& inputs, StreamerVariant streamer = std::monostate());
+
     ov::Any get_output(const std::string& output_name);
 
     void start_chat(const std::string& system_message = {});
@@ -34,7 +39,16 @@ public:
     void finish_chat();
 
 private:
-    std::map<std::string, ov::Any> outputs;
+    std::map<std::string, ov::Any> m_outputs;
+
+    // Only initialize oneTBB threading for ansync generate
+    void init_onetbb_threading();
+    oneapi::tbb::flow::graph _flow_graph;  // internal flow graph for async execution
+    using FlowNode = oneapi::tbb::flow::continue_node<oneapi::tbb::flow::continue_msg>;
+    std::vector<std::unique_ptr<FlowNode>> _flow_nodes;     // cached flow nodes
+    std::unordered_map<IBaseModule::PTR, FlowNode*> _node_flow_map;  // map from logical node to flow node
+    std::unique_ptr<oneapi::tbb::flow::broadcast_node<oneapi::tbb::flow::continue_msg>> _starter;
+    ov::AnyMap* m_current_inputs = nullptr;
 };
 
 }  // namespace module

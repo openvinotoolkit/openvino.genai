@@ -17,6 +17,7 @@ if(NOT TARGET nlohmann_json)
 endif()
 
 find_package(yaml-cpp REQUIRED)
+find_package(TBB REQUIRED)
 
 if(NOT TARGET minja)
     FetchContent_Declare(
@@ -143,7 +144,7 @@ endif()
 
 target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
 
-target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::runtime openvino::threading nlohmann_json::nlohmann_json minja ${YAML_CPP_LIBRARIES})
+target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::runtime openvino::threading nlohmann_json::nlohmann_json minja ${YAML_CPP_LIBRARIES} PRIVATE TBB::tbb)
 
 target_compile_features(${TARGET_NAME_OBJ} PRIVATE cxx_std_17)
 

@@ -33,7 +33,7 @@ auto module_generate_docstring = R"(
     :rtype: dict
 )";
 
-ov::AnyMap kwargs_to_intputs(const py::kwargs& kwargs) {
+ov::AnyMap kwargs_to_inputs(const py::kwargs& kwargs) {
     ov::AnyMap params = {};
 
     for (const auto& item : kwargs) {
@@ -111,7 +111,7 @@ void call_module_generate(
     ov::genai::module::ModulePipeline& pipe,
     const py::kwargs& kwargs
 ) {
-    auto inputs = kwargs_to_intputs(kwargs);
+    auto inputs = kwargs_to_inputs(kwargs);
     {
         py::gil_scoped_release rel;
         pipe.generate(inputs);
@@ -149,6 +149,18 @@ void init_module_pipeline(py::module_& m) {
                 return call_module_generate(pipe, inputs);
             },
             (std::string("generate(**kwargs) -> None\n\n") + "Accepts arbitrary keyword arguments as AnyMap.\n\n" +
+             module_generate_docstring)
+                .c_str())
+        .def(
+            "generate_async",
+            [](ov::genai::module::ModulePipeline& pipe, const py::kwargs& inputs) -> void {
+                auto ov_inputs = kwargs_to_inputs(inputs);
+                {
+                    py::gil_scoped_release rel;
+                    pipe.generate_async(ov_inputs);
+                }
+            },
+            (std::string("generate_async(**kwargs) -> None\n\n") + "Accepts arbitrary keyword arguments as AnyMap.\n\n" +
              module_generate_docstring)
                 .c_str())
         .def(

@@ -45,6 +45,12 @@ void ModulePipeline::generate(ov::AnyMap& inputs, StreamerVariant streamer) {
     pImpl->generate(inputs, streamer);
 }
 
+// execute generate asynchronously
+void ModulePipeline::generate_async(ov::AnyMap& inputs, StreamerVariant streamer) {
+    auto* pImpl = (ModulePipelineImpl*)m_pipeline_impl;
+    pImpl->generate_async(inputs, streamer);
+}
+
 ov::Any ModulePipeline::get_output(const std::string& output_name) {
     auto* pImpl = (ModulePipelineImpl*)m_pipeline_impl;
     return pImpl->get_output(output_name);

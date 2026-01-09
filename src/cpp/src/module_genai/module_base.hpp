@@ -47,13 +47,16 @@ public:
     std::map<std::string, OutputModule> outputs;
     IBaseModuleDesc::PTR module_desc = nullptr;
     PipelineDesc::PTR pipeline_desc = nullptr;
-    bool is_input_module = false;
-    bool is_output_module = false;
+    bool is_input() const { return is_input_module; }
+    bool is_output() const { return is_output_module; }
 
 protected:
     bool exists_input(const std::string& input_name) {
         return inputs.find(input_name) != inputs.end();
     }
+
+    bool is_input_module = false;
+    bool is_output_module = false;
 };
 
 #ifndef DeclareModuleConstructor
