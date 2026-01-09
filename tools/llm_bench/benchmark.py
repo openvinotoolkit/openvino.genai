@@ -42,7 +42,7 @@ def num_infer_count_type(x):
     return x
 
 
-def get_argprser():
+def get_argparser():
     parser = argparse.ArgumentParser('LLM benchmarking tool', add_help=True, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument(
         '-m',
@@ -257,7 +257,7 @@ def main():
         stream=sys.stdout,
         **logging_kwargs
     )
-    args = get_argprser()
+    args = get_argparser()
 
     if args.tokens_len is not None and not args.streaming:
         log.error("--tokens_len requires --streaming to be set.")

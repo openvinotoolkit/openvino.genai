@@ -141,7 +141,7 @@ std::shared_ptr<op::Op> create_post_ops(const ov::Output<ov::Node>& input,
 }
 
 std::shared_ptr<op::Op> create_normalize_ops(const ov::Output<ov::Node>& input,
-                                            const TextEmbeddingPipeline::Config& config) {
+                                             const TextEmbeddingPipeline::Config& config) {
     if (config.normalize) {
         auto axis_const = std::make_shared<op::v0::Constant>(ov::element::i32, ov::Shape{1}, std::vector{1});
         return std::make_shared<op::v0::NormalizeL2>(input, axis_const, 1e-12, op::EpsMode::MAX);
@@ -167,11 +167,11 @@ std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model, const 
 }
 
 std::shared_ptr<ov::Model> create_post_model(std::shared_ptr<ov::Model> model,
-                                            const TextEmbeddingPipeline::Config& config) {
+                                             const TextEmbeddingPipeline::Config& config) {
     auto output_node = model->outputs()[0];
     auto output_shape = output_node.get_partial_shape();
-    auto input_param =
-        std::make_shared<ov::op::v0::Parameter>(output_node.get_element_type(), ov::PartialShape{1, -1, output_shape[2]});
+    auto input_param = std::make_shared<ov::op::v0::Parameter>(output_node.get_element_type(),
+                                                               ov::PartialShape{1, -1, output_shape[2]});
     set_node_name(input_param, "embedding_hidden_state");
 
     auto attention_mask = std::make_shared<ov::op::v0::Parameter>(ov::element::i64, ov::PartialShape{1, -1});
@@ -281,7 +281,9 @@ public:
             bool is_padding_on_left = m_config.padding_side.has_value() && m_config.padding_side.value() == "left";
             if (is_padding_on_left && is_seq_len_fixed &&
                 config.pooling_type != TextEmbeddingPipeline::PoolingType::MEAN) {
-                OPENVINO_THROW("Padding on left is only supported for the MEAN pooling type");
+                OPENVINO_THROW("Padding on left is only supported for the MEAN pooling type for dynamic inputs models."
+                               "In order to fix model shape, set batch_size, max_length and pad_to_max_length in the "
+                               "configuration.");
             }
 
             auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
@@ -390,19 +392,17 @@ private:
         const auto input_shape = input.get_shape();
         const size_t sequence_length = input_shape[1];
         const size_t original_mask_size = m_attention_mask.get_size();
-
-        // Create attention mask tensor matching the embedding output shape
-        ov::Tensor attention_mask_tensor{ov::element::i64, {1, sequence_length}};
         OPENVINO_ASSERT(sequence_length >= original_mask_size,
                         "Attention mask size mismatch: expected at least ",
                         original_mask_size,
                         " elements, but got ",
                         sequence_length);
 
+        // Create attention mask tensor matching the embedding output shape
+        ov::Tensor attention_mask_tensor{ov::element::i64, {1, sequence_length}};
+
         // Copy original attention mask
-        std::copy_n(m_attention_mask.data<int64_t>(),
-                    original_mask_size,
-                    attention_mask_tensor.data<int64_t>());
+        std::copy_n(m_attention_mask.data<int64_t>(), original_mask_size, attention_mask_tensor.data<int64_t>());
 
         // When prefill-chunk is enabled, the input sequence length is aligned to the chunk size.
         // For example, if the input sequence length is 3800 and the chunk size is 1024, the input
