@@ -68,6 +68,9 @@ public:
     // If `true` the pipeline will return word-level timestamps.
     bool word_timestamps = false;
 
+    // todo: remove
+    bool save_attention_weights = false;
+
     /**
      * @brief Number of attention heads used to predict timestamps.
      * Each pair represents (layer_index, head_index).

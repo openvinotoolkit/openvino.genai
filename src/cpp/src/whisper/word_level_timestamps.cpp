@@ -987,6 +987,13 @@ std::vector<WhisperWordTiming> get_word_level_timestamps(const std::vector<Tenso
     auto tokens_copy = tokens;  // to avoid modifying input tokens
     // tokens_copy.push_back(tokenizer.get_eos_token_id());
 
+    if (generation_config.save_attention_weights) {
+        save_vector_of_tensors_as_np(
+            encoder_attention_qks,
+            "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/current/"
+            "encoder_attention_qks.npy");
+    }
+
     const auto alignment_path =
         find_alignment_path(encoder_attention_qks, generation_config.alignment_heads, n_frames, tokens_copy, tokenizer);
 
