@@ -5,6 +5,7 @@
 
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
+#include "openvino/genai/chat_history.hpp"
 #include "types_c.h"
 #include <stdarg.h>
 
@@ -144,6 +145,38 @@ ov_status_e ov_genai_llm_pipeline_generate(ov_genai_llm_pipeline* pipe,
     }
     return ov_status_e::OK;
 }
+ov_status_e ov_genai_llm_pipeline_generate_with_history(ov_genai_llm_pipeline* pipe,
+                                                         const ov_genai_chat_history* history,
+                                                         const ov_genai_generation_config* config,
+                                                         const streamer_callback* streamer,
+                                                         ov_genai_decoded_results** results) {
+    if (!pipe || !(pipe->object) || !history || !(history->object) || !(streamer || results)) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        std::unique_ptr<ov_genai_decoded_results> _results = std::make_unique<ov_genai_decoded_results>();
+        _results->object = std::make_shared<ov::genai::DecodedResults>();
+        
+        if (streamer) {
+            auto callback = [streamer](std::string word) -> ov::genai::StreamingStatus {
+                return static_cast<ov::genai::StreamingStatus>((streamer->callback_func)(word.c_str(), streamer->args));
+            };
+            *(_results->object) = (config && config->object)
+                                      ? pipe->object->generate(*(history->object), *(config->object), callback)
+                                      : pipe->object->generate(*(history->object), {}, callback);
+        } else {
+            *(_results->object) = (config && config->object) ? pipe->object->generate(*(history->object), *(config->object))
+                                                             : pipe->object->generate(*(history->object));
+        }
+        if (results) {
+            *results = _results.release();
+        }
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
 ov_status_e ov_genai_llm_pipeline_start_chat(ov_genai_llm_pipeline* pipe) {
     if (!pipe || !(pipe->object)) {
         return ov_status_e::INVALID_C_PARAM;

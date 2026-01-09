@@ -35,7 +35,7 @@ class RESTAPIResponse(BaseModel):
 
 structured_id_models = [
     "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-    "katuni4ka/tiny-random-phi3",
+    "optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM",
 ]
 
 
