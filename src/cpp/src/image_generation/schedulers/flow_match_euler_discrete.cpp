@@ -31,7 +31,9 @@ FlowMatchEulerDiscreteScheduler::Config::Config(const std::filesystem::path& sch
 }
 
 FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(const std::filesystem::path& scheduler_config_path)
-    : FlowMatchEulerDiscreteScheduler(Config(scheduler_config_path)) {}
+    : FlowMatchEulerDiscreteScheduler(Config(scheduler_config_path)) {
+        std::cout << "Hello World!" << std::endl;
+    }
 
 FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(const Config& scheduler_config)
     : m_config(scheduler_config) {
