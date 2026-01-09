@@ -17,7 +17,7 @@ def _ts() -> str:
 
 
 def _log(message: str) -> None:
-    print(f"[{_ts()}] [wwb-embeddings] {message}", flush=True)
+    logger.info(f"[{_ts()}] [wwb-embeddings] {message}")
 
 
 def _require_optimum_cli() -> None:

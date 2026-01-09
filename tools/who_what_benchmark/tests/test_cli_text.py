@@ -24,7 +24,7 @@ def _ts() -> str:
 
 
 def _log(message: str) -> None:
-    print(f"[{_ts()}] [wwb-text] {message}", flush=True)
+    logger.info(f"[{_ts()}] [wwb-text] {message}")
 
 
 model_id = "facebook/opt-125m"

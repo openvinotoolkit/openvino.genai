@@ -24,7 +24,8 @@ def _ts() -> str:
 
 
 def _log(message: str) -> None:
-    print(f"[{_ts()}] [kv-cache-eviction] {message}", flush=True)
+    import logging
+    logging.getLogger(__name__).info(f"[{_ts()}] [kv-cache-eviction] {message}")
 
 
 @contextmanager

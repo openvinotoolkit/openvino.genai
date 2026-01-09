@@ -29,7 +29,7 @@ def _ts() -> str:
 
 
 def _log(message: str) -> None:
-    print(f"[{_ts()}] [wwb] {message}", flush=True)
+    logger.info(f"[{_ts()}] [wwb] {message}")
 
 
 @contextmanager

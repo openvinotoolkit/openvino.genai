@@ -20,7 +20,7 @@ def _ts() -> str:
 
 
 def _log(message: str) -> None:
-    print(f"[{_ts()}] [wwb-reranking] {message}", flush=True)
+    logger.info(f"[{_ts()}] [wwb-reranking] {message}")
 
 
 def _require_optimum_cli() -> None:
