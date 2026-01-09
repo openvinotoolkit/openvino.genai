@@ -327,7 +327,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         // Start `draft_model` generation after the first `main_model` generation is finished. There are two scenarios:
         // 1. When `main_model` generates a new token, in which case `draft_model` naturally starts its generation.
         // 2. When `main_model` does not generate a new token, which usually happens when processing a portion of prompt (we can
-        //    slice prompt on chunk when dynamic_split_fuse is enabled),
+        //    slice prompt into chunks when dynamic_split_fuse is enabled),
         //    in this case, `draft_model` can also begin processing the same portion of prompt.
         if (!m_is_validation_mode_enabled) {
             bool pause_gen_status = false;
