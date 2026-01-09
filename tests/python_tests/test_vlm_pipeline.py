@@ -1420,9 +1420,13 @@ GENAI_VS_OPTIMUM_CASES = [
     pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), True, False, id="qwen2vl/PA/image"),
     pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), False, True, id="qwen2vl/SDPA/video"),
     pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), False, True, id="qwen2vl/PA/video"),
-    pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), True, True, id="qwen2vl/PA/image+video"),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), True, True, id="qwen2vl/PA/image+video"
+    ),
     pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), True, True, id="qwen2vl/PA/image+video"),
-    pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"), True, False, id="qwen2.5-vl/SDPA/image"),
+    pytest.param(
+        ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"), True, False, id="qwen2.5-vl/SDPA/image"
+    ),
     pytest.param(
         ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
         True,
@@ -1632,6 +1636,7 @@ GENAI_VS_OPTIMUM_IMAGE_INPUT_RESOLUTIONS = [
     # pytest.param((3999, 2667), id="3999x2667"),
 ]
 
+
 @pytest.mark.parametrize("image_input_resolution", GENAI_VS_OPTIMUM_IMAGE_INPUT_RESOLUTIONS)
 @pytest.mark.parametrize(
     "ov_pipe_model,has_image,has_video",
@@ -1642,7 +1647,8 @@ GENAI_VS_OPTIMUM_IMAGE_INPUT_RESOLUTIONS = [
 # Force VISION_PREPROCESS to be set to CPP for now.
 @pytest.mark.vision_preprocess("CPP")
 def test_vlm_pipeline_match_optimum_with_resize(
-    request, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool, image_input_resolution):
+    request, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool, image_input_resolution
+):
     resized_image = None
     resized_video = None
     if has_image:
@@ -1654,4 +1660,3 @@ def test_vlm_pipeline_match_optimum_with_resize(
         resized_video = request.getfixturevalue("synthetic_video_32x32")
 
     run_compare_genai_optimum(ov_pipe_model, resized_image, resized_video)
-
