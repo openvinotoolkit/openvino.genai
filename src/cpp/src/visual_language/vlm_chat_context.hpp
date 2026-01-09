@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -10,95 +10,59 @@ namespace ov::genai {
 
 class VLMChatContext  {
 public:
-    struct VisionSequenceData {
-        std::vector<EncodedImage> encoded_images;
-        std::vector<EncodedVideo> encoded_videos;
-        std::vector<size_t> image_sequence;
-        std::vector<size_t> video_sequence;
-        std::unordered_map<VisionID, size_t> image_id_to_index;
-        std::unordered_map<VisionID, size_t> video_id_to_index;
-    };
-    
     struct ProcessedChatData {
         ChatHistory normalized_history;
         
         std::vector<EncodedImage> encoded_images;
         std::vector<EncodedVideo> encoded_videos;
-
-        // Full index sequences (indices into encoded_* vectors, in order of appearance)
         std::vector<size_t> image_sequence;
         std::vector<size_t> video_sequence;
-
-        std::vector<size_t> new_image_indices;
-        std::vector<size_t> new_video_indices;
-
+        
+        // TODO Consider using indices to encoded_images/video instead of copying
+        std::vector<EncodedImage> new_encoded_images;
+        std::vector<EncodedVideo> new_encoded_videos;
+        std::vector<size_t> new_image_sequence;
+        std::vector<size_t> new_video_sequence;
+        
         std::vector<std::pair<size_t, size_t>> vision_counts;
-        
-        bool state_changed = false;
-
-        std::vector<EncodedImage> get_new_images() const {
-            std::vector<EncodedImage> result;
-            result.reserve(new_image_indices.size());
-            for (size_t idx : new_image_indices) {
-                result.push_back(encoded_images[idx]);
-            }
-            return result;
-        }
-        
-        std::vector<EncodedVideo> get_new_videos() const {
-            std::vector<EncodedVideo> result;
-            result.reserve(new_video_indices.size());
-            for (size_t idx : new_video_indices) {
-                result.push_back(encoded_videos[idx]);
-            }
-            return result;
-        }
     };
 
     VLMChatContext(
         ChatHistory& history,
         std::shared_ptr<VisionRegistry> vision_registry,
-        InputsEmbedder& embedder // TODO Should be shared_ptr?
+        InputsEmbedder& embedder
     );
 
     ProcessedChatData process(
         const std::vector<ov::Tensor>& new_images,
-        const std::vector<ov::Tensor>& new_videos
+        const std::vector<ov::Tensor>& new_videos = {}
     );
 
     void finalize();
 
-    void rollback(size_t history_size);
-
-    // TODO Check if needed
-    size_t message_count() const;
-
-    std::shared_ptr<ChatHistoryInternalStateClass> history_state() const { return m_history_state; }
+    void rollback();
 
     bool needs_kv_cache_reset() const { return m_needs_kv_reset; }
 
 private:
     ChatHistory& m_history;
     std::shared_ptr<VisionRegistry> m_vision_registry;
-    InputsEmbedder& m_embedder;
-    std::shared_ptr<ChatHistoryInternalStateClass> m_history_state;
-    bool m_needs_kv_reset = false;
+    InputsEmbedder& m_inputs_embedder;
+    std::shared_ptr<ChatHistoryInternalState> m_history_state;
+    
     // TODO Check if needed
     size_t m_checkpoint_message_count = 0;
+    // TODO Consider renaming
+    bool m_needs_kv_reset = false;
 
-    size_t sync_with_history();
-
-    void process_new_messages(
+    void encode_visions_if_needed(const std::vector<size_t>& image_indices,
+                                  const std::vector<size_t>& video_indices);
+                
+    void fill_messages_metadata(
         size_t start_index,
-        const std::vector<VisionID>& new_image_ids,
-        const std::vector<VisionID>& new_video_ids
+        const std::vector<size_t>& new_image_indices,
+        const std::vector<size_t>& new_video_indices
     );
-
-    void ensure_visions_encoded(const std::vector<VisionID>& image_ids,
-                                const std::vector<VisionID>& video_ids);
-
-    // TODO Consider using a struct or type for reuse
-    VisionSequenceData resolve_vision_sequences();
 };
 
 } // namespace ov::genai
