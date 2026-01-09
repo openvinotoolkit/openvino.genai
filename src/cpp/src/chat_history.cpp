@@ -27,6 +27,7 @@ ChatHistory::ChatHistory(std::initializer_list<std::initializer_list<std::pair<s
     }
 }
 
+// TODO Consider calling clear() in destructor
 ChatHistory::~ChatHistory() = default;
 
 ChatHistory& ChatHistory::push_back(const JsonContainer& message) {
@@ -129,14 +130,6 @@ std::shared_ptr<ChatHistoryInternalState> ChatHistory::get_internal_state() cons
 
 void ChatHistory::set_internal_state(const std::shared_ptr<ChatHistoryInternalState>& state) {
     m_internal_state = state;
-}
-
-std::shared_ptr<ChatHistoryInternalStateClass> ChatHistory::get_internal_state_class() const {
-    return m_internal_state_class;
-}
-
-void ChatHistory::set_internal_state_class(const std::shared_ptr<ChatHistoryInternalStateClass>& state) {
-    m_internal_state_class = state;
 }
 
 } // namespace genai
