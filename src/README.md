@@ -218,11 +218,11 @@ class CustomStreamer(ov_genai.StreamerBase):
         super().__init__()
         # Initialization logic.
 
-    def write(self, token_id) -> bool:
+    def write(self, token_id) -> ov_genai.StreamingStatus:
         # Custom decoding/tokens processing logic.
 
-        # Returns a flag whether generation should be stopped, if true generation stops.
-        return False
+        # Returns a status whether generation should be stopped or continue.
+        return ov_genai.StreamingStatus.RUNNING
 
     def end(self):
         # Custom finalization logic.

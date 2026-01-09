@@ -269,11 +269,11 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_data_colle
             self.generated_tokens = []
             self.start_time = time.perf_counter()
 
-        def write(self, token_id):
+        def write(self, token_id) -> openvino_genai.StreamingStatus:
             self.token_generation_time.append(time.perf_counter() - self.start_time)
             self.generated_tokens.append(token_id)
             self.start_time = time.perf_counter()
-            return False
+            return openvino_genai.StreamingStatus.RUNNING
 
         def reset(self):
             self.token_generation_time = []
