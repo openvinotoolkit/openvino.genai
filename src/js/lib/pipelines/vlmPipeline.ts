@@ -102,7 +102,12 @@ export class VLMPipeline {
 
     const callback = (
       error: Error | null,
-      result: { texts: string[]; scores: number[]; perfMetrics: VLMPerfMetrics },
+      result: {
+        texts: string[];
+        scores: number[];
+        perfMetrics: VLMPerfMetrics;
+        parsed: Record<string, unknown>[];
+      },
     ) => {
       if (error) {
         if (rejectPromise) {
@@ -118,6 +123,7 @@ export class VLMPipeline {
           result.texts,
           result.scores,
           result.perfMetrics,
+          result.parsed,
         );
         const fullText = decodedResult.toString();
         if (resolvePromise) {
@@ -193,7 +199,7 @@ export class VLMPipeline {
     const innerGenerate = util.promisify(this.pipeline.generate.bind(this.pipeline));
     const result = await innerGenerate(prompt, images, videos, streamer, generationConfig);
 
-    return new VLMDecodedResults(result.texts, result.scores, result.perfMetrics);
+    return new VLMDecodedResults(result.texts, result.scores, result.perfMetrics, result.parsed);
   }
 
   /**

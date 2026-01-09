@@ -92,12 +92,13 @@ TEST_F(DeepSeekR1ReasoningParserTest, ReasoningContentAccumulatesAcrossCalls) {
     std::string ref_res = "First, I recognize that the question is asking for the sum of 2 and 1.\n\nI know that addition involves combining two numbers to find their total.\n\nStarting with 2, I add 1 to it.\n\n2 plus 1 equals 3.\n";
     
     JsonContainer msg;
-    
+    JsonContainer accumulated_msg;
     for (int i = 1; i < input_stream.size(); i++) {
         std::string delta_text = input_stream[i];
         delta_text = parser.parse(msg, delta_text);
+        accumulated_msg.concatenate(msg);
     }
-    ASSERT_EQ(msg["reasoning_content"], ref_res);
+    ASSERT_EQ(accumulated_msg["reasoning_content"], ref_res);
 }
 
 TEST(ParserTest, test_custom_parser) {

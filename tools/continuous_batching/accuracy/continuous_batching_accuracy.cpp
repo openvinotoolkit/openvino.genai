@@ -12,6 +12,36 @@ void print_generation_result(const ov::genai::GenerationResult& generation_resul
     }
 }
 
+ov::genai::GenerationConfig beam_search_config() {
+    ov::genai::GenerationConfig config;
+    config.num_beams = 4;
+    config.num_return_sequences = 3;
+    config.num_beam_groups = 2;
+    config.max_new_tokens = 100;
+    config.diversity_penalty = 2.0f;
+    return config;
+}
+
+ov::genai::GenerationConfig greedy_config() {
+    ov::genai::GenerationConfig config;
+    config.max_new_tokens = 30;
+    return config;
+}
+
+ov::genai::GenerationConfig multinomial_config() {
+    ov::genai::GenerationConfig config;
+    config.do_sample = true;
+    config.temperature = 0.9f;
+    config.top_p = 0.9f;
+    config.top_k = 20;
+    config.num_return_sequences = 3;
+    config.presence_penalty = 0.01f;
+    config.frequency_penalty = 0.1f;
+    config.min_new_tokens = 15;
+    config.max_new_tokens = 30;
+    return config;
+}
+
 int main(int argc, char* argv[]) try {
     // Command line options
 
@@ -61,9 +91,9 @@ int main(int argc, char* argv[]) try {
     };
 
     std::vector<ov::genai::GenerationConfig> sampling_params_examples {
-        ov::genai::beam_search(),
-        ov::genai::greedy(),
-        ov::genai::multinomial(),
+        beam_search_config(),
+        greedy_config(),
+        multinomial_config(),
     };
 
     std::vector<std::string> prompts(num_prompts);
@@ -92,7 +122,7 @@ int main(int argc, char* argv[]) try {
 
     if (use_prefix) {
         std::cout << "Running inference for prefix to compute the shared prompt's KV cache..." << std::endl;
-        std::vector<ov::genai::GenerationResult> generation_results = pipe.generate({prefix_str}, {ov::genai::greedy()});
+        std::vector<ov::genai::GenerationResult> generation_results = pipe.generate({prefix_str}, {greedy_config()});
         ov::genai::GenerationResult& generation_result = generation_results.front();
         OPENVINO_ASSERT(generation_result.m_status == ov::genai::GenerationStatus::FINISHED);
     }

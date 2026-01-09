@@ -141,14 +141,14 @@ private:
  * Derived classes must implement both the `parse()` and `reset()` methods, as these are pure virtual.
  *
  * Use `IncrementalParser` when you need to process text as it is generated (e.g., in streaming scenarios),
- * handling partial content and maintaining internal state between increments. Use `Parser` when you only
- * need to process the complete text after generation has finished.
+ * handling partial content and maintaining internal state between increments. 
+ * In case of processing complete text after generation has finished, `Parser` should be used.
  *
  * Example:
  * @code
  * class MyIncrementalParser : public ov::genai::IncrementalParser {
  * public:
- *     std::string parse(JsonContainer& message, std::string& delta_text,
+ *     std::string parse(JsonContainer& delta_message, std::string& delta_text,
  *                       const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt) override {
  *         // Implement incremental parsing logic here
  *         return delta_text; // Example: simply return the input
@@ -166,16 +166,16 @@ public:
     /**
      * @brief Parse incremental text content and return filtered text.
      *
-     * This method processes incoming text deltas and returns filtered text that should
+     * This method processes incoming delta_text and returns filtered text that should
      * be added to the content.
      *
-     * @param message JsonContainer to store parsed results and metadata
-     * @param delta_text New text chunk to be processed in this step
+     * @param delta_message JsonContainer to store parsed results and metadata
+     * @param delta_text New text chunk to be processed in this step and modified in place
      * @param delta_tokens Optional vector of new token IDs to be processed in case if more fast token-based processing is needed.
-     * @return std::string Filtered text that should be added to the content
+     * @return std::string filtered text that should be added to the 'content'
      */
     virtual std::string parse(
-        JsonContainer& message,
+        JsonContainer& delta_message,
         std::string& delta_text,
         const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
     ) = 0;
@@ -216,13 +216,13 @@ public:
      * Processes text streams containing reasoning sections marked by configurable tags.
      * Can filter out reasoning content or preserve it based on parser configuration.
      *
-     * @param message JsonContainer to store parsed results and reasoning metadata
+     * @param delta_message JsonContainer to store parsed results and reasoning metadata
      * @param delta_text New text chunk to be processed in this step
      * @param delta_tokens Optional vector of new token IDs to be processed
-     * @return std::string Filtered text with reasoning content processed according to configuration
+     * @return std::string filtered text that should be added to the 'content'
      */
     std::string parse(
-        JsonContainer& message,
+        JsonContainer& delta_message,
         std::string& delta_text,
         const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt
     ) override;

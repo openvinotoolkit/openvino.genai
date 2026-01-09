@@ -42,6 +42,7 @@ import os
 import numpy as np
 import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
+from optimum.utils.import_utils import is_transformers_version
 from openvino_genai import (
     VLMPipeline,
     GenerationConfig,
@@ -97,6 +98,7 @@ MODEL_IDS: list[str] = [
     "optimum-intel-internal-testing/tiny-random-internvl2",
     "optimum-intel-internal-testing/tiny-random-gemma3",
     "qnguyen3/nanoLLaVA",
+    "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
     *VIDEO_MODEL_IDS,
 ]
 
@@ -115,6 +117,7 @@ TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
+    "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
     "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
@@ -125,6 +128,7 @@ RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-gemma3": 32,
     "qnguyen3/nanoLLaVA": 384,
     "optimum-intel-internal-testing/tiny-random-llava-next-video": 336,
+    "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": 448,
 }
 
 
@@ -184,6 +188,13 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
     if "optimum-intel-internal-testing/tiny-random-phi3-vision" == model_id:
         pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
+    if "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6" == model_id and is_transformers_version(
+        ">", "4.51.3"
+    ):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3"
+        )
+
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
     model_dir = ov_cache_converted_dir / dir_name
@@ -215,6 +226,7 @@ def _get_ov_model(model_id: str) -> str:
                     "optimum-intel-internal-testing/tiny-random-phi3-vision",
                     "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
                     "qnguyen3/nanoLLaVA",
+                    "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
                 },
             )
         )
@@ -383,6 +395,11 @@ def synthetic_video(pytestconfig):
 @pytest.fixture(scope="module")
 def synthetic_video_32x32(synthetic_video):
     return resize_video(synthetic_video, (32, 32))
+
+
+@pytest.fixture(scope="module")
+def cat_image_448x448(cat_image):
+    return cat_image.resize((448, 448))
 
 
 @pytest.fixture(scope="module")
@@ -1501,6 +1518,18 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
             True,
             id="llava-next-video/PA/image+video",
         ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6", "SDPA"),
+            True,
+            False,
+            id="MiniCPM-o-2_6/SDPA/image",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6", "PA"),
+            True,
+            False,
+            id="MiniCPM-o-2_6/PA/image",
+        ),
     ],
     indirect=["ov_pipe_model"],
 )
@@ -1527,50 +1556,22 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
     
     resized_image = None
     resized_video = None
-    conversation = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text"},
-            ],
-        }
-    ]
-    
+
     prompt_parts = []
-    media_content = []
     if has_image:
         resized_image = request.getfixturevalue(f"cat_image_{resolution}x{resolution}")
-        media_content.append({"type": "image"})
         prompt_parts.append("image")
     
     if has_video:
         resized_video = request.getfixturevalue("synthetic_video_32x32")
-        media_content.append({"type": "video"})
         prompt_parts.append("video")
-    
-    # For QWen-VL series models, in GenAI VLM implementation, video is placed before image in chat template, 
-    # but in Optimum, this order depends only on the image and video order in the "conversation".
-    # So just reverse here in order to keep align.
-    if (
-        has_image
-        and has_video
-        and model_id
-        in [
-            "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
-            "optimum-intel-internal-testing/tiny-random-qwen2vl",
-        ]
-    ):
-        media_content.reverse()
-    conversation[0]["content"] = media_content + conversation[0]["content"]
-    
+
     if len(prompt_parts) == 1:
         prompt = f"Describe this {prompt_parts[0]}."
     elif len(prompt_parts) == 2:
         prompt = f"Describe this {prompt_parts[0]} and {prompt_parts[1]}."
     else:
         prompt = "Describe."
-    
-    conversation[0]["content"][-1]["text"] = prompt
 
     model_path = _get_ov_model(model_id)
 
@@ -1589,13 +1590,9 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
         # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
         if model.config.model_type == "gemma3":
             processor.tokenizer.add_bos_token = False
-        params = {}
-        if resized_image is not None:
-            params["images"] = [resized_image]
-        if resized_video is not None:
-            params["videos"] = [resized_video]
-        templated_prompt = processor.apply_chat_template(conversation, add_generation_prompt=True)
-        inputs = processor(text=[templated_prompt], **params, padding=True, return_tensors="pt")
+        inputs = model.preprocess_inputs(
+            text=prompt, image=resized_image, video=resized_video, processor=processor, config=model.config
+        )
 
     max_new_tokens = 100
 
