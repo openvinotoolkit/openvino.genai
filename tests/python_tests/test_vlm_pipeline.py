@@ -265,12 +265,7 @@ GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transforme
 
 
 @pytest.fixture(scope="module")
-def ov_pipe_model(request: pytest.FixtureRequest, monkeypatch) -> VlmModelInfo:
-    # check and set VISION_PREPROCESS if test has been marked with vision_preprocess
-    m = request.node.get_closest_marker("vision_preprocess")
-    if m:
-        monkeypatch.setenv("VISION_PREPROCESS", m.args[0])
-
+def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     ov_model, ov_backend = request.param
     
     if sys.platform == "darwin" and "gemma3" in ov_model:
@@ -278,11 +273,26 @@ def ov_pipe_model(request: pytest.FixtureRequest, monkeypatch) -> VlmModelInfo:
 
     models_path = _get_ov_model(ov_model)
     
-    pipeline = VLMPipeline(
-        models_path, 
-        "CPU", 
-        ATTENTION_BACKEND=ov_backend
-    )
+    # check and set VISION_PREPROCESS if test has been marked with vision_preprocess
+    m = request.node.get_closest_marker("vision_preprocess")
+    vision_preprocess_env_set = False
+    key = "VISION_PREPROCESS"
+    if m:
+        # If environment is already set, don't override it.
+        if key not in os.environ:
+            os.environ[key] = m.args[0]
+            vision_preprocess_env_set = True
+
+    try:
+        pipeline = VLMPipeline(
+            models_path,
+            "CPU",
+            ATTENTION_BACKEND=ov_backend
+        )
+    finally:
+        if vision_preprocess_env_set:
+            os.environ.pop(key, None)
+
     return VlmModelInfo(
         ov_model, 
         ov_backend, 
