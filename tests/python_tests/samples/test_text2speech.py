@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import os
@@ -37,7 +37,7 @@ class TestTextToSpeechSample:
     def test_sample_text_to_speech(self, convert_model, input_prompt):
         # Example: text2speech spt5_model_dir "Hello everyone" --speaker_embedding_file_path xvector.bin
         # Run C++ sample
-        cpp_sample = SAMPLES_CPP_DIR / 'text2speech'
+        cpp_sample = SAMPLES_CPP_DIR / "text2speech"
         cpp_command = [cpp_sample, convert_model, input_prompt, self.temp_speaker_embedding_file.name]
         cpp_result = run_sample(cpp_command)
 
@@ -47,18 +47,32 @@ class TestTextToSpeechSample:
                       "--speaker_embedding_file_path", self.temp_speaker_embedding_file.name]
         py_result = run_sample(py_command)
 
-        assert "Text successfully converted to audio file" in cpp_result.stdout, "C++ sample text2speech must be successfully completed"
-        assert "Text successfully converted to audio file" in py_result.stdout, "Python sample text2speech must be successfully completed"
-
+        assert "Text successfully converted to audio file" in cpp_result.stdout, \
+            "C++ sample text2speech must be successfully completed"
+        assert "Text successfully converted to audio file" in py_result.stdout, \
+            "Python sample text2speech must be successfully completed"
 
     @pytest.mark.speech_generation
     @pytest.mark.samples
     @pytest.mark.parametrize("convert_model", ["tiny-random-SpeechT5ForTextToSpeech"], indirect=True)
-    @pytest.mark.parametrize("input_prompt", ["Test text to speech without speaker embedding file"])
+    @pytest.mark.parametrize("input_prompt", ["Hello everyone"])
+    def test_sample_text_to_speech_c(self, convert_model, input_prompt):
+        # Run C sample
+        c_sample = SAMPLES_CPP_DIR / "text2speech_sample_c"
+        c_command = [c_sample, convert_model, input_prompt, self.temp_speaker_embedding_file.name]
+        c_result = run_sample(c_command)
+
+        assert "Text successfully converted to audio file" in c_result.stdout, \
+            "C sample text2speech must be successfully completed"
+
+    @pytest.mark.speech_generation
+    @pytest.mark.samples
+    @pytest.mark.parametrize("convert_model", ["tiny-random-SpeechT5ForTextToSpeech"], indirect=True)
+    @pytest.mark.parametrize("input_prompt", ["Test without speaker embedding"])
     def test_sample_text_to_speech_no_speaker_embedding_file(self, convert_model, input_prompt):
         # Run C++ sample
         # Example: text2speech spt5_model_dir "Hello everyone" --speaker_embedding_file_path xvector.bin
-        cpp_sample = SAMPLES_CPP_DIR / 'text2speech'
+        cpp_sample = SAMPLES_CPP_DIR / "text2speech"
         cpp_command = [cpp_sample, convert_model, input_prompt]
         cpp_result = run_sample(cpp_command)
 
@@ -67,5 +81,7 @@ class TestTextToSpeechSample:
         py_command = [sys.executable, py_script, convert_model, input_prompt]
         py_result = run_sample(py_command)
 
-        assert "Text successfully converted to audio file" in cpp_result.stdout, "C++ sample text2speech must be successfully completed"
-        assert "Text successfully converted to audio file" in py_result.stdout, "Python sample text2speech must be successfully completed"
+        assert "Text successfully converted to audio file" in cpp_result.stdout, \
+            "C++ sample text2speech must be successfully completed"
+        assert "Text successfully converted to audio file" in py_result.stdout, \
+            "Python sample text2speech must be successfully completed"
