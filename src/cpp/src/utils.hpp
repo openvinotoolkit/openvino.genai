@@ -103,6 +103,7 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
 const std::string STREAMER_ARG_NAME = "streamer";
 const std::string CONFIG_ARG_NAME = "generation_config";
 const std::string DRAFT_MODEL_ARG_NAME = "draft_model";
+const std::string EXTENSIONS_ARG_NAME = "EXTENSIONS";
 
 template<typename Config = ov::genai::GenerationConfig>
 Config from_config_json_if_exists(const std::filesystem::path& models_path, const char config_name[] = "generation_config.json") {
@@ -285,6 +286,23 @@ SchedulerConfig get_latency_oriented_scheduler_config();
 bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_npu_requested = false);
 
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties, bool is_npu_requested = false);
+
+/**
+ * @brief Extracts the "EXTENSIONS" key from the provided properties map and adds each extension path to the
+ * singleton OpenVINO core.
+ *
+ * The "EXTENSIONS" entry, if present, is expected to be an ov::Any containing a vector of extension library
+ * file paths:
+ *   - On Unix-like platforms: std::vector<std::string>
+ *   - On Windows:             std::vector<std::wstring>
+ *
+ * Each path in this vector is added to the global OpenVINO core instance as a custom extension. After processing,
+ * the "EXTENSIONS" key is removed from the @p properties map. This function is used to dynamically add custom
+ * extensions to the OpenVINO core at runtime.
+ *
+ * @param properties Properties map that may contain the "EXTENSIONS" key with a vector of extension library paths.
+ */
+void add_extensions_to_core(ov::AnyMap& properties);
 
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
 
