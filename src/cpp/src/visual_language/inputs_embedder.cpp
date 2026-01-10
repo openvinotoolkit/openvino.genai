@@ -71,7 +71,8 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
     m_vlm_config{vlm_config},
     m_vision_encoder(VisionEncoder::create(model_dir, m_vlm_config.model_type, device, device_config)),
     m_embedding(EmbeddingsModel::create(model_dir, m_vlm_config.scale_emb, device, device_config)),
-    m_tokenizer{model_dir, device_config} { }
+    m_tokenizer{model_dir, device_config},
+    m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) { }
 
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const VLMConfig& vlm_config,
@@ -95,7 +96,8 @@ InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         device,
         device_config
     )),
-    m_tokenizer(tokenizer) { }
+    m_tokenizer(tokenizer),
+    m_pruning_processor(std::make_shared<VisionTokenPruningProcessor>(device)) { }
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
     bool add_special_tokens = m_add_special_tokens_is_set ? m_add_special_tokens : !(m_is_chat_conversation || m_apply_chat_template);
@@ -412,6 +414,10 @@ void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {
 
 void InputsEmbedder::finish_chat() {
     return m_impl->finish_chat();
+}
+
+void InputsEmbedder::set_vision_token_pruning_config(size_t pruning_ratio, float relevance_weight) {
+    return m_impl->set_vision_token_pruning_config(pruning_ratio, relevance_weight);
 }
 
 NormalizedPrompt InputsEmbedder::normalize_prompt(
