@@ -36,6 +36,15 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::IInputsEmbedder::g
     return get_position_ids(inputs_embeds_size, history_size);
 }
 
+std::string InputsEmbedder::IInputsEmbedder::get_last_user_message_text(const ChatHistory& history) {
+    OPENVINO_ASSERT(!history.empty(), "ChatHistory cannot be empty");
+    auto last_message = history.last();
+    OPENVINO_ASSERT(last_message["role"].get_string() == "user", "Last message in ChatHistory must be from user");
+    // TODO Support other message structures
+    OPENVINO_ASSERT(last_message["content"].is_string(), "User messages in ChatHistory should contain key 'content' with string value");
+    return last_message["content"].get_string();
+}
+
 void InputsEmbedder::IInputsEmbedder::start_chat(const std::string& system_message) {
     m_is_chat_conversation = true;
     if (!m_kv_cache_state.get_state().empty()) {
@@ -172,12 +181,13 @@ std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::to_single_image_tensors
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
-    std::vector<EncodedImage> embeds;
+    std::vector<EncodedImage> encoded_images;
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
     for (const ov::Tensor& image : single_images) {
-        embeds.emplace_back(m_vision_encoder->encode(image));
+        encoded_images.emplace_back(m_vision_encoder->encode(image));
     }
-    return embeds;
+    OPENVINO_ASSERT(images.size() == encoded_images.size(), "Input images size and encoded images size mismatch!");
+    return encoded_images;
 }
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
@@ -396,6 +406,10 @@ ov::genai::utils::KVCacheState& InputsEmbedder::get_kv_cache_state() {
 
 Tokenizer InputsEmbedder::get_tokenizer() const {
     return m_impl->get_tokenizer();
+}
+
+std::string InputsEmbedder::get_last_user_message_text(const ChatHistory& history) {
+    return m_impl->get_last_user_message_text(history);
 }
 
 void InputsEmbedder::start_chat(const std::string& system_message) {

@@ -8,47 +8,27 @@
 
 using namespace ov::genai;
 
-namespace {
-
-} // namespace
-
 namespace ov::genai {
 class ov::genai::VLMPipeline::VLMPipelineBase {
     // Load pipeline time
     float m_load_time_ms = 0;
-public:
 
-    virtual ~VLMPipelineBase() = default;
+    GenerationConfig resolve_generation_config(const ov::AnyMap& config_map) {
+        ov::genai::OptionalGenerationConfig optional_config = utils::get_config_from_map(config_map);
+        GenerationConfig config = optional_config.value_or(get_generation_config());
+        config.update_generation_config(config_map);
+        return config;
+    }
 
-    virtual VLMDecodedResults generate(
-        const std::string& prompt,
-        const std::vector<ov::Tensor>& images,
-        GenerationConfig generation_config,
-        const StreamerVariant& streamer
-    ) = 0;
+    static std::pair<std::vector<ov::Tensor>, std::vector<ov::Tensor>> 
+    extract_images_and_videos_from_config_map(const ov::AnyMap& config_map) {
+        std::vector<ov::Tensor> images_vector = {};
+        std::vector<ov::Tensor> videos_vector = {};
 
-    virtual VLMDecodedResults generate(
-        const std::string& prompt,
-        const std::vector<ov::Tensor>& images,
-        const std::vector<ov::Tensor>& videos,
-        GenerationConfig generation_config,
-        const StreamerVariant& streamer
-    ) = 0;
-
-    VLMDecodedResults generate(
-        const std::string& prompt,
-        const ov::AnyMap& config_map
-    ) {
         auto image = config_map.find(ov::genai::image.name());
         auto images = config_map.find(ov::genai::images.name());
         auto videos = config_map.find(ov::genai::videos.name());
 
-        ov::genai::OptionalGenerationConfig config_arg = utils::get_config_from_map(config_map);
-        GenerationConfig config = (config_arg.has_value()) ? *config_arg : get_generation_config();
-        config.update_generation_config(config_map);
-
-        std::vector<ov::Tensor> images_vector = {};
-        std::vector<ov::Tensor> videos_vector = {};
         if (config_map.end() != image) {
             images_vector = {image->second.as<ov::Tensor>()};
         }
@@ -74,7 +54,59 @@ public:
             }
         }
 
+        return {images_vector, videos_vector};
+    }
+
+public:
+
+    virtual ~VLMPipelineBase() = default;
+
+    virtual VLMDecodedResults generate(
+        const std::string& prompt,
+        const std::vector<ov::Tensor>& images,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) = 0;
+
+    virtual VLMDecodedResults generate(
+        const std::string& prompt,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) = 0;
+
+    VLMDecodedResults generate(
+        const std::string& prompt,
+        const ov::AnyMap& config_map
+    ) {
+        auto [images_vector, videos_vector] = extract_images_and_videos_from_config_map(config_map);
+        GenerationConfig config = resolve_generation_config(config_map);
         return generate(prompt, images_vector, videos_vector, config, utils::get_streamer_from_map(config_map));
+    }
+
+    virtual VLMDecodedResults generate(
+        ChatHistory& history,
+        const std::vector<ov::Tensor>& images,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) = 0;
+
+    virtual VLMDecodedResults generate(
+        ChatHistory& history,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) = 0;
+
+    VLMDecodedResults generate(
+        ChatHistory& history,
+        const ov::AnyMap& config_map
+    ) {
+        auto [images_vector, videos_vector] = extract_images_and_videos_from_config_map(config_map);
+        GenerationConfig config = resolve_generation_config(config_map);
+        return generate(history, images_vector, videos_vector, config, utils::get_streamer_from_map(config_map));
     }
 
     virtual void start_chat(const std::string& system_message) = 0;
