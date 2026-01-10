@@ -120,7 +120,7 @@ Dataset filtered_dataset(const std::string& models_path, const std::string& data
         if (input_len > max_input_len || (input_len + output_len) > 2048)
             continue;
 
-        ov::genai::GenerationConfig greedy_search = ov::genai::greedy();
+        ov::genai::GenerationConfig greedy_search;
         greedy_search.max_new_tokens = std::min(max_output_len, output_len);
         greedy_search.ignore_eos = true;
 

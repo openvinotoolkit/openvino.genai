@@ -154,7 +154,7 @@ static constexpr ov::Property<std::string> prompt_2{"prompt_2"};
 static constexpr ov::Property<std::string> prompt_3{"prompt_3"};
 
 /**
- * Negative prompt for models which have negative prompt. Currently, it's used for SD, SDXL, SD3
+ * Negative prompt for models which have negative prompt. Currently, it's used for SD, SDXL, SD3, LTX-Video
  */
 static constexpr ov::Property<std::string> negative_prompt{"negative_prompt"};
 

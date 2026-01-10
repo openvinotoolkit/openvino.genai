@@ -119,15 +119,15 @@ void init_parsers(py::module_& m) {
     py::class_<IncrementalParser, ConstructableIncrementalParser, std::shared_ptr<IncrementalParser>>(m, "IncrementalParser")
         .def(py::init<>())
         .def("parse", [](IncrementalParser& self,
-                         py::dict& message,
+                         py::dict& delta_message,
                          std::string& delta_text,
                          const std::optional<std::vector<int64_t>>& delta_tokens = std::nullopt) {
-            auto msg_cpp = pyutils::py_object_to_json_container(message);
+            auto msg_cpp = pyutils::py_object_to_json_container(delta_message);
             auto res = self.parse(msg_cpp, delta_text, delta_tokens);
             auto result = pyutils::json_container_to_py_object(msg_cpp);
-            message.attr("update")(result);
+            delta_message.attr("update")(result);
             return res;
-        }, py::arg("message"), py::arg("delta_text"), py::arg("delta_tokens") = std::nullopt,
+        }, py::arg("delta_message"), py::arg("delta_text"), py::arg("delta_tokens") = std::nullopt,
            "Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.")
         .def("reset", &IncrementalParser::reset, "Reset the internal state of the parser.");
     

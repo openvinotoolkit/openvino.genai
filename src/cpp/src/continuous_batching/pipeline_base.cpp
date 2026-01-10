@@ -232,7 +232,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
              const std::vector<std::vector<ov::Tensor>>& images_vector,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) {
-    return generate(prompts, images_vector, {{}}, sampling_params, streamer);
+    // empty videos batch size should match prompt batch size
+    const std::vector<std::vector<ov::Tensor>> empty_videos_vector(prompts.size());
+    return generate(prompts, images_vector, empty_videos_vector, sampling_params, streamer);
 }
 
 std::vector<VLMDecodedResults>

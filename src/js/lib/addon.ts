@@ -5,6 +5,13 @@ import { Tensor } from "openvino-node";
 import type { ChatHistory as IChatHistory } from "./chatHistory.js";
 import type { Tokenizer as ITokenizer } from "./tokenizer.js";
 import { addon as ovAddon } from "openvino-node";
+import {
+  IReasoningParser,
+  IDeepSeekR1ReasoningParser,
+  IPhi4ReasoningParser,
+  ILlama3PythonicToolParser,
+  ILlama3JsonToolParser,
+} from "./parsers.js";
 import { GenerationConfig, StreamingStatus, VLMPipelineProperties } from "./utils.js";
 import { VLMPerfMetrics } from "./perfMetrics.js";
 
@@ -77,7 +84,12 @@ export interface VLMPipeline {
     generationConfig: GenerationConfig | undefined,
     callback: (
       err: Error | null,
-      result: { texts: string[]; scores: number[]; perfMetrics: VLMPerfMetrics },
+      result: {
+        texts: string[];
+        scores: number[];
+        perfMetrics: VLMPerfMetrics;
+        parsed: Record<string, unknown>[];
+      },
     ) => void,
   ): void;
   startChat(systemMessage: string, callback: (err: Error | null) => void): void;
@@ -93,6 +105,11 @@ interface OpenVINOGenAIAddon {
   VLMPipeline: VLMPipeline;
   ChatHistory: IChatHistory;
   Tokenizer: ITokenizer;
+  ReasoningParser: IReasoningParser;
+  DeepSeekR1ReasoningParser: IDeepSeekR1ReasoningParser;
+  Phi4ReasoningParser: IPhi4ReasoningParser;
+  Llama3PythonicToolParser: ILlama3PythonicToolParser;
+  Llama3JsonToolParser: ILlama3JsonToolParser;
   setOpenvinoAddon: (ovAddon: any) => void;
 }
 
@@ -114,6 +131,22 @@ function getGenAIAddon(): OpenVINOGenAIAddon {
 const addon = getGenAIAddon();
 addon.setOpenvinoAddon(ovAddon);
 
-export const { TextEmbeddingPipeline, LLMPipeline, VLMPipeline, ChatHistory, Tokenizer } = addon;
+export const {
+  TextEmbeddingPipeline,
+  LLMPipeline,
+  VLMPipeline,
+  ChatHistory,
+  Tokenizer,
+  ReasoningParser,
+  DeepSeekR1ReasoningParser,
+  Phi4ReasoningParser,
+  Llama3PythonicToolParser,
+  Llama3JsonToolParser,
+} = addon;
 export type ChatHistory = IChatHistory;
 export type Tokenizer = ITokenizer;
+export type ReasoningParser = IReasoningParser;
+export type DeepSeekR1ReasoningParser = IDeepSeekR1ReasoningParser;
+export type Phi4ReasoningParser = IPhi4ReasoningParser;
+export type Llama3PythonicToolParser = ILlama3PythonicToolParser;
+export type Llama3JsonToolParser = ILlama3JsonToolParser;
