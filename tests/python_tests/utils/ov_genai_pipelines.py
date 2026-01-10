@@ -18,7 +18,8 @@ from openvino_genai import (
 
 from utils.constants import get_default_llm_properties
 from utils.comparation import compare_generation_results, compare_generation_results_vs_ref
-from utils.hugging_face import OVConvertedModelSchema, download_and_convert_model, run_hugging_face
+from utils.hugging_face import OVConvertedModelSchema, run_hugging_face
+
 
 def dict_to_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
     scheduler_config = SchedulerConfig()
@@ -38,7 +39,6 @@ def dict_to_scheduler_config(scheduler_params: dict = None) -> SchedulerConfig:
     else:
         for param, value in scheduler_params.items():
             setattr(scheduler_config, param, value)
-
     return scheduler_config
 
 
@@ -158,7 +158,7 @@ def create_ov_cb_pipeline(
 
 
 def prepare_generation_config_by_pipe_type(
-    generation_config : GenerationConfig,
+    generation_config: GenerationConfig,
     pipeline_type: PipelineType = PipelineType.AUTO,
 ) -> GenerationConfig:
     if pipeline_type == PipelineType.SPECULATIVE_DECODING:
@@ -172,13 +172,14 @@ def prepare_generation_config_by_pipe_type(
 
 
 def prepare_generation_configs_by_pipe_type(
-    generation_configs : list[GenerationConfig],
+    generation_configs: list[GenerationConfig],
     pipeline_type: PipelineType = PipelineType.AUTO,
 ) -> list[GenerationConfig]:
-    return [ prepare_generation_config_by_pipe_type(generation_config, pipeline_type) for generation_config in generation_configs ]
+    return [prepare_generation_config_by_pipe_type(gc, pipeline_type) for gc in generation_configs]
 
 
-def convert_decoded_results_to_generation_result(generate_outputs: DecodedResults,
+def convert_decoded_results_to_generation_result(
+    generate_outputs: DecodedResults,
     num_prompts: int,
     num_return_sequences: int,
     is_beam_search: bool,
@@ -188,22 +189,20 @@ def convert_decoded_results_to_generation_result(generate_outputs: DecodedResult
 
     for _ in range(num_prompts):
         generation_result = GenerationResult()
-
-        generation_result.m_generation_ids = generate_outputs.texts[index : index + num_return_sequences]
         # sequences_scores are available only for beam search case
+        generation_result.m_generation_ids = generate_outputs.texts[index : index + num_return_sequences]
         if is_beam_search:
             generation_result.m_scores = generate_outputs.scores[index : index + num_return_sequences]
         generation_results.append(generation_result)
-
         index += num_return_sequences
     return generation_results
 
 
 def run_ov_pipeline(
     models_path: Path,
-    prompt : str | list[str],
-    generation_config : GenerationConfig | list[GenerationConfig],
-    pipeline_type : PipelineType = PipelineType.AUTO,
+    prompt: str | list[str],
+    generation_config: GenerationConfig | list[GenerationConfig],
+    pipeline_type: PipelineType = PipelineType.AUTO,
     streamer: StreamerWithResults | Callable | StreamerBase | None = None,
     scheduler_config: SchedulerConfig = SchedulerConfig(),
     draft_model_path: Path | None = None,
@@ -260,7 +259,7 @@ def run_ov_pipeline(
 
     # compare streaming results with generated results
     if isinstance(streamer, StreamerWithResults):
-        prompts = [ prompt ] if isinstance(prompt, str) else prompt
+        prompts = [prompt] if isinstance(prompt, str) else prompt
         compare_generation_results(
             prompts, 
             generation_results, 
@@ -271,8 +270,7 @@ def run_ov_pipeline(
     return generation_results
 
 
-def is_generation_available(generation_config: GenerationConfig | list[GenerationConfig],
-                            pipeline_type: PipelineType):
+def is_generation_available(generation_config: GenerationConfig | list[GenerationConfig], pipeline_type: PipelineType):
     if type(generation_config) is GenerationConfig:
         if generation_config.is_beam_search():
             if pipeline_type == PipelineType.PROMPT_LOOKUP_DECODING or pipeline_type == PipelineType.SPECULATIVE_DECODING:
@@ -287,16 +285,19 @@ def is_generation_available(generation_config: GenerationConfig | list[Generatio
 
 # TODO: remove `ref` after Generator property is supported by LLMPipeline / VLMPipeline
 def generate_and_compare(
-    model_schema: OVConvertedModelSchema,
-    prompts : str | list[str],
+    model_downloader,
+    model: str,
+    prompts: str | list[str],
     generation_config: list[GenerationConfig] | GenerationConfig | dict,
     pipeline_type: PipelineType = PipelineType.AUTO,
     scheduler_config: SchedulerConfig | dict = SchedulerConfig(),
-    ref : list[list[str]] | None = None,
+    ref: list[list[str]] | None = None,
     streamer: StreamerWithResults | Callable | StreamerBase | None = None
 ) -> None:
-    ov_prompts = prompts if type(prompts) is list else [prompts]
+    opt_model, hf_tokenizer, models_path = model_downloader(model)
+    model_schema = OVConvertedModelSchema(model, opt_model, hf_tokenizer, models_path)
 
+    ov_prompts = prompts if type(prompts) is list else [prompts]
     ov_gen_config = GenerationConfig(**generation_config) if isinstance(generation_config, dict) else generation_config
 
     if not is_generation_available(ov_gen_config, pipeline_type):

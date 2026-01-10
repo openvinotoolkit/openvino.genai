@@ -23,8 +23,7 @@ env:
   CMAKE_C_COMPILER_LAUNCHER: ccache
   CCACHE_MAXSIZE: 500Mi
   HF_HOME: C:/mount/caches/huggingface/win
-  OV_CACHE: C:/mount/caches/huggingface/.ov_cache/win/775cf1/
-  OPENVINO_LOG_LEVEL: 2  # Windows fails with out of memory because of too verbose logging
+  OPENVINO_LOG_LEVEL: 2
   ARTIFACTS_SHARE: '/mount/build-artifacts'
   BASE_PRODUCT_TYPE: public_windows_vs2022
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
@@ -877,7 +876,7 @@ jobs:
 
       - name: Test Samples (Python and C++)
         if: ${{ matrix.test.run_condition }}
-        run: python -m pytest -vs ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
+        run: python -m pytest -vs -o cache_dir=C:/mount/caches/pytest/win ${{ env.SRC_DIR }}/${{ matrix.test.cmd }} -m "${{ matrix.test.marker }}"
         env:
           PATH: "${{ env.INSTALL_DIR }}/runtime/bin/intel64/${{ matrix.build-type }};${{ env.INSTALL_DIR }}/runtime/3rdparty/tbb/bin;%PATH%" # Required for C++ samples
           SAMPLES_PY_DIR: "${{ env.INSTALL_DIR }}/samples/python"
@@ -940,7 +939,7 @@ jobs:
       - name: Test C++ Tools
         run: |
           . "${{ env.INSTALL_DIR }}/setupvars.ps1"
-          python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching_tools.py -m "samples"
+          python -m pytest -vs -o cache_dir=C:/mount/caches/pytest/win ${{ env.SRC_DIR }}/tests/python_tests/samples/test_continuous_batching_tools.py -m "samples"
         env:
           SAMPLES_CPP_DIR: "${{ env.INSTALL_DIR }}/samples_bin"
 

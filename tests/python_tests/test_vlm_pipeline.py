@@ -27,7 +27,6 @@ ov_pipe_model
 ov_continious_batching_pipe
 """
 
-import collections
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Generator
@@ -59,7 +58,7 @@ from utils.generation_config import (
     get_multinomial_all_parameters,
     get_greedy,
 )
-from utils.constants import get_ov_cache_converted_models_dir
+from utils.constants import get_default_llm_properties, OvTestCacheManager
 from utils.atomic_download import AtomicDownloadManager
 
 import logging
@@ -183,7 +182,7 @@ def _setup_generation_config(
     return generation_config
 
 
-def _get_ov_model(model_id: str) -> str:
+def _get_ov_model(model_id: str, ov_cache_models_dir: Path = None) -> Path:
     if model_id in {"optimum-intel-internal-testing/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
         pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
     if "optimum-intel-internal-testing/tiny-random-phi3-vision" == model_id:
@@ -194,10 +193,16 @@ def _get_ov_model(model_id: str) -> str:
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3"
         )
+    
 
-    ov_cache_converted_dir = get_ov_cache_converted_models_dir()
+    if ov_cache_models_dir is None:
+        import pytest
+
+        cache_manager = OvTestCacheManager(pytest.config)
+        ov_cache_models_dir = cache_manager.get_models_dir()
+
     dir_name = str(model_id).replace(os.sep, "_")
-    model_dir = ov_cache_converted_dir / dir_name
+    model_dir = ov_cache_models_dir / dir_name
     
     manager = AtomicDownloadManager(model_dir)
     

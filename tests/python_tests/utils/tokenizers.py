@@ -18,7 +18,6 @@ def model_tmp_path(tmpdir_factory):
 
     temp_path = tmpdir_factory.mktemp(model_id.replace("/", "_"))
 
-    # copy openvino converted model and tokenizers
     for pattern in ["*.xml", "*.bin"]:
         for src_file in models_path.glob(pattern):
             if src_file.is_file():

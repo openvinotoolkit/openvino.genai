@@ -57,9 +57,9 @@ Or to run only the `whisper` tests:
 python -m pytest tests/python_tests/samples -m whisper
 ```
 
-If the `OV_CACHE` environment variable is set, all downloaded and converted models will be saved to the specified directory. This allows the models to be reused between runs, saving time and resources. For example:
+Downloaded and converted models are automatically cached using pytest's cache mechanism in `~/.pytest_cache/ov_models/` with 24-hour expiration. The cache is organized by date and package versions to ensure compatibility. Old cache entries are automatically cleaned up. The cache expiration can be customized using the `OV_CACHE_EXPIRY_HOURS` environment variable:
 ```sh
-OV_CACHE=$HOME/ov_cache python -m pytest tests/python_tests -m samples
+OV_CACHE_EXPIRY_HOURS=48 python -m pytest tests/python_tests -m samples
 ```
 
 If the `CLEANUP_CACHE` environment variable is set, all downloaded and converted models will be removed right after the tests have stopped using them. Note that this does not affect the HuggingFace (HF) cache. For example:
@@ -67,4 +67,21 @@ If the `CLEANUP_CACHE` environment variable is set, all downloaded and converted
 CLEANUP_CACHE=1 python -m pytest tests/python_tests -m samples
 ```
 
-Test images are saved to pytest's default cache dir. It can be changed with `--override-ini cache_dir=new_path`. `-p no:cacheprovider` disables the cache.
+## Cache Configuration
+
+Models and test data are cached using pytest's built-in cache mechanism. The cache location can be customized:
+
+```sh
+# Use custom cache directory
+python -m pytest tests/python_tests/ -o cache_dir=/path/to/custom/cache
+
+# Use default cache location (~/.pytest_cache/)
+python -m pytest tests/python_tests/
+```
+
+The model cache automatically expires after 24 hours and is organized by date and package versions. You can clear the cache manually:
+
+```sh
+# Clear all pytest cache
+python -m pytest tests/python_tests/ --cache-clear
+```

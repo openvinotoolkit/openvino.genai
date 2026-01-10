@@ -18,16 +18,9 @@ from openvino import save_model
 from openvino_genai import GenerationResult, GenerationConfig, StopCriteria
 from openvino_tokenizers import convert_tokenizer
 
-from utils.constants import (
-    get_default_llm_properties,
-    extra_generate_kwargs,
-    get_ov_cache_converted_models_dir,
-    get_ov_cache_downloaded_models_dir,
-)
+from utils.constants import get_default_llm_properties, extra_generate_kwargs, OV_MODEL_FILENAME
 from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
-
-from utils.constants import OV_MODEL_FILENAME
 
 
 @dataclass(frozen=True)
@@ -44,21 +37,15 @@ def generation_config_to_hf(
 ) -> HFGenerationConfig:
     if generation_config is None:
         return
-
     kwargs = {}
     kwargs['return_dict_in_generate'] = True
-
-    # generic parameters
     kwargs['max_length'] = generation_config.max_length
-    # has higher priority than 'max_length'
     SIZE_MAX = 2**64 - 1
     if generation_config.max_new_tokens != SIZE_MAX:
         kwargs['max_new_tokens'] = generation_config.max_new_tokens
     kwargs['min_new_tokens'] = generation_config.min_new_tokens
     if generation_config.stop_strings:
         kwargs['stop_strings'] = generation_config.stop_strings
-
-    # copy default parameters
     kwargs['bos_token_id'] = default_generation_config.bos_token_id
     kwargs['pad_token_id'] = default_generation_config.pad_token_id
 
@@ -71,12 +58,9 @@ def generation_config_to_hf(
             kwargs['eos_token_id'] = generation_config.eos_token_id
         else:
             kwargs['eos_token_id'] = default_generation_config.eos_token_id
-
-    # copy penalties
     kwargs['repetition_penalty'] = generation_config.repetition_penalty
 
     if generation_config.is_beam_search():
-        # beam search case
         kwargs['num_beam_groups'] = generation_config.num_beam_groups
         kwargs['num_beams'] = generation_config.num_beams
         kwargs['length_penalty'] = generation_config.length_penalty
@@ -87,28 +71,21 @@ def generation_config_to_hf(
         if generation_config.num_beam_groups > 1:
             kwargs['diversity_penalty'] = generation_config.diversity_penalty
 
-        # in OpenVINO GenAI this parameter is called stop_criteria,
-        # while in HF it's called early_stopping.
-        # HF values True, False and "never" correspond to OV GenAI values "EARLY", "HEURISTIC" and "NEVER"
         STOP_CRITERIA_MAP = {
             StopCriteria.NEVER: "never",
             StopCriteria.EARLY: True,
             StopCriteria.HEURISTIC: False
         }
-
         kwargs['early_stopping'] = STOP_CRITERIA_MAP[generation_config.stop_criteria]
     elif generation_config.is_multinomial():
-        # mulitinomial
         kwargs['temperature'] = generation_config.temperature
         kwargs['top_k'] = generation_config.top_k
         kwargs['top_p'] = generation_config.top_p
         kwargs['do_sample'] = generation_config.do_sample
-    else:
-        # greedy
-        pass
 
     hf_generation_config = HFGenerationConfig(**kwargs)
     return hf_generation_config
+
 
 def run_hugging_face(
     opt_model: OptimizedModel,
@@ -119,7 +96,6 @@ def run_hugging_face(
     generation_results: list[GenerationResult] = []
 
     if type(generation_configs) is list:
-        # process prompt by promp as we have multiple generation configs
         for prompt, generation_config in zip(prompts, generation_configs):
             hf_generation_config = generation_config_to_hf(opt_model.generation_config, generation_config)
             inputs = {}
@@ -136,7 +112,6 @@ def run_hugging_face(
 
             generation_result = GenerationResult()
             generation_result.m_generation_ids = all_text_batch
-            # sequences_scores are available only for beam search case
             if generation_config.is_beam_search():
                 generation_result.m_scores = [score for score in generate_outputs.sequences_scores]
             generation_results.append(generation_result)
@@ -146,7 +121,6 @@ def run_hugging_face(
             processed_prompts = []
             for prompt in prompts:
                 processed_prompts.append(hf_tokenizer.apply_chat_template([{'role': 'user', 'content': prompt}], tokenize=False, add_generation_prompt=True))
-            # process all prompts as a single batch as we have a single generation config for all prompts
             inputs = hf_tokenizer(processed_prompts, return_tensors='pt', padding=True, truncation=True, add_special_tokens=False, padding_side='left')
         else:
             inputs = hf_tokenizer(prompts, return_tensors='pt', padding=True, truncation=True, padding_side='left')
@@ -165,7 +139,6 @@ def run_hugging_face(
             if generation_configs.is_beam_search():
                 scores.append(hf_encoded_outputs.sequences_scores[idx])
 
-            # if we need to move to next generation result
             if (idx + 1) // hf_generation_config.num_return_sequences != prompt_idx:
                 generation_result = GenerationResult()
                 generation_result.m_generation_ids = generation_ids
@@ -177,7 +150,6 @@ def run_hugging_face(
     return generation_results
 
 
-# download HF model or read converted model
 def get_huggingface_models(
     model_id: str | Path,
     model_class: Type[OVModel],
@@ -211,56 +183,64 @@ def get_huggingface_models(
         hf_tokenizer = retry_request(auto_tokenizer_from_pretrained)
         return opt_model, hf_tokenizer
 
+
 def convert_and_save_tokenizer(
-    hf_tokenizer : AutoTokenizer,
+    hf_tokenizer: AutoTokenizer,
     models_path: Path,
     **convert_args,
 ):
     tokenizer, detokenizer = convert_tokenizer(
         hf_tokenizer, with_detokenizer=True, **convert_args
     )
-
     from utils.constants import OV_DETOKENIZER_FILENAME, OV_TOKENIZER_FILENAME
     save_model(tokenizer, models_path / OV_TOKENIZER_FILENAME)
     save_model(detokenizer, models_path / OV_DETOKENIZER_FILENAME)
 
 
 def convert_models(
-    opt_model : OVModelForCausalLM,
-    hf_tokenizer : AutoTokenizer,
+    opt_model: OVModelForCausalLM,
+    hf_tokenizer: AutoTokenizer,
     models_path: Path,
 ) -> None:
     opt_model.save_pretrained(str(models_path))
-    # save generation config
     if opt_model.generation_config:
         opt_model.generation_config.save_pretrained(str(models_path))
     opt_model.config.save_pretrained(str(models_path))
 
-    # to store tokenizer config jsons with special tokens
     if hf_tokenizer:
         hf_tokenizer.save_pretrained(str(models_path))
-        # convert tokenizers as well
         convert_and_save_tokenizer(hf_tokenizer, models_path)
-
-
-def download_and_convert_model(model_id: str, **tokenizer_kwargs) -> OVConvertedModelSchema:
-    return download_and_convert_model_class(model_id, OVModelForCausalLM, **tokenizer_kwargs)
 
 
 def sanitize_model_id(model_id: str) -> str:
     return model_id.replace("/", "_")
 
 
+def download_and_convert_model(
+    model_id: str, models_dir: Path | None = None, **tokenizer_kwargs
+) -> OVConvertedModelSchema:
+    return download_and_convert_model_class(model_id, OVModelForCausalLM, models_dir=models_dir, **tokenizer_kwargs)
+
+
 def download_and_convert_model_class(
     model_id: str, 
     model_class: Type[OVModel], 
+    models_dir: Path | None = None,
     **tokenizer_kwargs,
 ) -> OVConvertedModelSchema:
+    from utils.constants import OvTestCacheManager
+
     dir_name = sanitize_model_id(model_id)
     if model_class.__name__ not in ["OVModelForCausalLM"]:
         dir_name = f"{dir_name}_{model_class.__name__}"
-    ov_cache_converted_dir = get_ov_cache_converted_models_dir()
-    models_path = ov_cache_converted_dir / dir_name
+
+    if models_dir is None:
+        from _pytest.config import get_config
+        
+        cache_manager = OvTestCacheManager(get_config())
+        models_dir = cache_manager.get_models_dir()
+
+    models_path = models_dir / dir_name
 
     manager = AtomicDownloadManager(models_path)
 
@@ -290,10 +270,19 @@ def download_and_convert_model_class(
 def download_gguf_model(
     gguf_model_id: str,
     gguf_filename: str,
+    models_dir: Path | None = None,
 ):
+    from utils.constants import OvTestCacheManager
+
     gguf_dir_name = sanitize_model_id(gguf_model_id)
-    ov_cache_downloaded_dir = get_ov_cache_downloaded_models_dir()
-    models_path_gguf = ov_cache_downloaded_dir / gguf_dir_name
+
+    if models_dir is None:
+        from _pytest.config import get_config
+        
+        cache_manager = OvTestCacheManager(get_config())
+        models_dir = cache_manager.get_models_dir()
+
+    models_path_gguf = models_dir / gguf_dir_name
 
     manager = AtomicDownloadManager(models_path_gguf)
 

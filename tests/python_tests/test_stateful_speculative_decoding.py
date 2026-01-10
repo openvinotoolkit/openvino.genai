@@ -149,7 +149,7 @@ def test_perf_metrics():
 def test_extended_perf_metrics():
     import time
     start_time = time.perf_counter()
-    model_id : str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    model_id: str = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
     model_path = download_and_convert_model(model_id).models_path
 
     ov_draft_model = ov_genai.draft_model(model_path, "NPU", **get_npu_llm_properties_for_test())
