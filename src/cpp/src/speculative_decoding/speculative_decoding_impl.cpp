@@ -156,13 +156,13 @@ bool ContinuousBatchingPipeline::SpeculativeDecodingImpl::has_non_finished_reque
 void print_generated_request(const ov::genai::GeneratedRequests& requests) {
     for (const auto& request : requests) {
         for (const auto& sequence : request.second) {
-            std::cout << "request_id: " << request.first << " | sequence_id: " << sequence.first << " | ";
+            // std::cout << "request_id: " << request.first << " | sequence_id: " << sequence.first << " | ";
             for (const auto& token_id : sequence.second.token_ids) {
-                std::cout << token_id << " ";
+                // std::cout << token_id << " ";
             }
-            std::cout << std::endl;
+            // std::cout << std::endl;
         }
-        std::cout << std::endl;
+        // std::cout << std::endl;
     }
 }
 

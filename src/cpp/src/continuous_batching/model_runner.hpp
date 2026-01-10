@@ -130,6 +130,7 @@ class ModelRunner {
     ov::Tensor m_cached_score_aggregation_window;
     ov::Tensor m_cached_token_type_ids;
     ov::Tensor m_cached_qq_bias;
+    ov::Tensor m_cached_kv_remap_indices_begins;
 public:
     /**
      * Constructs the ModelRunner.
@@ -255,6 +256,8 @@ public:
             {batch_size_in_sequences + 1}, ov::element::i32);
         ov::Tensor block_indices_begins = _get_or_resize_tensor(m_cached_block_indices_begins, "block_indices_begins", 
             {batch_size_in_sequences + 1}, ov::element::i32);
+        ov::Tensor kv_remap_indices_begins = _get_or_resize_tensor(m_cached_kv_remap_indices_begins, "kv_remap_indices_begins", 
+            {batch_size_in_sequences + 1}, ov::element::i32);
         ov::Tensor max_context_len = _get_or_resize_tensor(m_cached_max_context_len, "max_context_len", 
             {}, ov::element::i32);
 
@@ -307,10 +310,16 @@ public:
             * subsequence_begins_data = subsequence_begins.data<int32_t>(),
             * block_indices_begins_data = block_indices_begins.data<int32_t>(),
             * score_aggregation_window_data = score_aggregation_window.data<int32_t>();
+        int32_t * kv_remap_indices_begins_data = nullptr;
+        if (_is_hs_export() && !_is_hs_internal()) {
+            kv_remap_indices_begins_data = kv_remap_indices_begins.data<int32_t>();
+            kv_remap_indices_begins_data[0] = 0;
+        }
 
         // sub-sequence data starts with 0
         subsequence_begins_data[0] = 0;
         block_indices_begins_data[0] = 0;
+        
 
         bool matmul_gathering_is_available = false;
         size_t gathering_current_index = 0;
@@ -365,8 +374,16 @@ public:
                         auto& eagle_metadata = sequence->get_eagle_metadata();
                         auto tree_mask = eagle_metadata.tree_mask;
                         tree_mask_data = tree_mask_tensor.data<uint8_t>();
+                        auto tree_pos_ids = sequence->get_eagle_metadata().tree_position_ids;
+                        if (tree_pos_ids.size() > 0) {
+                            // std::cout << "tree position ids " << std::endl;;
+                            for (auto id : tree_pos_ids) {
+                                // std::cout << id << " ";
+                            }
+                        }
+                        // std::cout << std::endl;
+                        
                         // copy num_scheduled_tokens * num_scheduled_tokens tree mask into tree_mask_data
-                        // handle 3D later -- bell TBD
                         // tree_mask is type of std::vector<std::vector<int8_t>>
                         if (tree_mask.size() > 0) {
                             auto num_speculated_tokens = tree_mask.size();
@@ -427,7 +444,7 @@ public:
                         auto tree_pos_ids = sequence->get_eagle_metadata().tree_position_ids;
                         // suppose tree_pos_ids [0, 1, 1, 2, 2, 2, 2,...] means the first token is at position 0 in the tree,
                         // the second and third tokens are at position 1, and the rest tokens are at position 2, etc.
-                        if (!tree_pos_ids.empty()) {
+                        if (!tree_pos_ids.empty() && kv_remap_indices_begins_data) {
                             size_t tree_pos_id = tree_pos_ids[position_ids_idx];
                             position_ids_data[position_ids_idx] = group_position_id + static_cast<int64_t>(tree_pos_id);
                         } else {
@@ -485,6 +502,15 @@ public:
                 subsequence_begins_data[1] = subsequence_begins_data[0] + num_scheduled_tokens;
 
                 block_indices_begins_data[1] = block_indices_begins_data[0] + num_blocks_utilized;
+                if (kv_remap_indices_begins_data) {
+                    auto& eagle_metadata = sequence->get_eagle_metadata();
+                    if (eagle_metadata.validated_indices.size() > 0) {
+                        auto tree_indice = eagle_metadata.validated_indices;
+                        kv_remap_indices_begins_data[1] = kv_remap_indices_begins_data[0] + tree_indice.size();
+                    } else {
+                        kv_remap_indices_begins_data[1] = 0; // no need to remap kv cache for this sequence
+                    }
+                }
 
                 // apply strides to shift to a next sequence
                 if (sequence_group_type == SequenceGroupType::TOKENS) {
@@ -555,6 +581,12 @@ public:
         }
 
         _set_block_indices(sequence_groups, scheduler_output, total_num_blocks, seq_id_to_skipped_blocks_map);
+
+        if (_is_hs_export() && !_is_hs_internal()) {
+            /*auto remap_indices = _set_cache_remap_indices(sequence_groups, scheduler_output);
+            if (remap_indices.size() > 0 )
+                remap_kv_cache(remap_indices);*/
+        }
 
         if (!m_cached_block_indices_begins) {
             m_request.set_tensor("block_indices_begins", block_indices_begins);

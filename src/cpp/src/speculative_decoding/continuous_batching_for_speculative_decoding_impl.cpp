@@ -268,6 +268,8 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             // update existing sequences by the candidates
             auto& logit_processor = m_sampler->get_logit_processor(request_id);
             std::tie(min_generated_tokens, min_candidate_len) = get_prefix_len(running_sequences, candidates);
+            if (running_sequences.size() != 1)
+                std::cout << "break" << std::endl;
             OPENVINO_ASSERT(running_sequences.size() == 1);
             auto running_sequence = running_sequences[0];
             {
@@ -297,7 +299,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                         // to calculate the number of tokens that needs to do kv cache re-generate in draft model
                         num_tokens_needs_kv_update = shape[0] - 1; // remove the first dim, which is the reliable hidden state from main model
                     } else {
-                        auto tree_indice = candidate_sequence.eagle_metadata.retrieve_indices[0];
+                        auto tree_indice = candidate_sequence.eagle_metadata.validated_indices;
                         // select the hidden state according to tree indice
                         // for example, the hidden state shape is [10, hidden_size]
                         // retrieve_indices is [0,2,4,6,8], then we need to select hidden states with indice [0,2,4,6,8]
@@ -306,6 +308,8 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                         const auto& shape = hidden_state.get_shape();
                         OPENVINO_ASSERT(shape[0] >= 1, "Unexpected hidden state shape from the main model.");
                         for (const auto& indice : tree_indice) {
+                            if (indice >= shape[0])
+                                std::cout << "break" << std::endl;
                             OPENVINO_ASSERT(indice < shape[0], "Tree indice is out of range of hidden state.");
                             auto [start_coord, end_coord] = ov::genai::utils::make_roi(shape, 0, indice, indice + 1);
                             selected_hidden_states.push_back(ov::Tensor(hidden_state, start_coord, end_coord));
@@ -315,11 +319,22 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                                                                  concatenated_hidden_state);
                         // to calculate the number of tokens that needs to do kv cache re-generate in draft model
                         num_tokens_needs_kv_update = tree_indice.size() - 1;
+
+                        auto total_candidates_count = candidate_sequence.eagle_metadata.tree_position_ids.size();
+                        // update the removed token count based on tree structure
+                        result.removed_tokens_cnt = total_candidates_count - tree_indice.size() + 1;
+                        //result.inserted_tokens_cnt = 1; //  main model always update 1 bonus
                     }
                 }
                 if (eagle_mode_enabled && m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) { // update hidden states for main model in validation mode
                     // retrieve eagle metadata
-                    const auto& eagle_metadata = candidate_sequence.eagle_metadata;
+                    auto& eagle_metadata = candidate_sequence.eagle_metadata;
+                    eagle_metadata.validated_indices = running_sequence->get_eagle_metadata().validated_indices;
+                    //// std::cout << "set validated indices : ";
+                    for (const auto& idx : eagle_metadata.validated_indices) {
+                        // std::cout << idx << " ";
+                    }
+                    // std::cout << std::endl;
                     running_sequence->set_eagle_metadata(eagle_metadata);
                 }
             }
@@ -355,7 +370,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         if (!m_is_validation_mode_enabled && result.inserted_tokens_cnt != 0) {
             bool pause_gen_status = false;
             generated_len -= result.removed_tokens_cnt;
-            generated_len += result.inserted_tokens_cnt;
+            generated_len +=  eagle_mode_enabled ? 1 : result.inserted_tokens_cnt;
             if (generated_len >= max_new_tokens - 1 || generated_len != 0 && result.inserted_tokens_cnt == 0) {
                 pause_gen_status = true;
             }
@@ -415,7 +430,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             if (!sampling_params.is_assisting_generation()) {
                 // generate only one token in case of non speculative decoding
                 request->pause_generation(true);
-            } else if (request->get_num_processed_tokens() >= request->get_prompt_len() &&
+            } else if (!eagle_mode_enabled && request->get_num_processed_tokens() >= request->get_prompt_len() &&
                 (request->get_num_processed_tokens() - request->get_prompt_len() + 1) >= request->get_max_new_tokens() - 1) {
                 request->pause_generation(true);
             } else if (request->get_num_processed_tokens() == 0 && sampling_params.num_return_sequences > 1) {

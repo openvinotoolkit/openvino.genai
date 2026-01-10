@@ -41,7 +41,7 @@ int main(int argc, char* argv[]) try {
     }
 
     // Configure devices - can run main and eagle models on different devices
-    std::string main_device = "GPU.1", eagle_device = "GPU.1"; // currently only GPU is used during developing
+    std::string main_device = "GPU", eagle_device = "GPU"; // currently only GPU is used during developing
 
     // Eagle Speculative settings
     ov::genai::GenerationConfig config = ov::genai::greedy();

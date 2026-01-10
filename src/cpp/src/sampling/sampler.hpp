@@ -312,7 +312,7 @@ class Sampler::TreeSearcher : public Sampler::Searcher {
             return layer_to_nodes[current_depth];
         }
         void print_tree() {  // for debugging purposes
-            std::cout << "Eagle2 Candidate Tree (Depth: " << current_depth << ")\n";
+            // std::cout << "Eagle2 Candidate Tree (Depth: " << current_depth << ")\n";
             print_node(root, 0);
         }
 

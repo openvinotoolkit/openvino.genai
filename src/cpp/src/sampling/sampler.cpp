@@ -676,7 +676,6 @@ void Sampler::TreeSearcher::select_top_k(const ov::Tensor& logits, SamplerOutput
     }
 
     for (Beam& beam : m_beams) {
-        sampler_output.num_generated_tokens++;
         uint64_t parent_seq_id = beam.m_sequence->get_id();
 
         // here we need to map index of sequence in beam search group(s) and sequence group
@@ -847,6 +846,8 @@ void Sampler::TreeSearcher::select_top_k(const ov::Tensor& logits, SamplerOutput
         }
         // select the sequence which has the group id as m_org_group_id
         Sequence::Ptr sequence = nullptr;
+
+        // update past_generate_len to include the newly generated tokens before tree search
         for (auto& seq : m_sequence_group->get_sequences()) {
             if (seq->get_grouped_id() == m_org_group_id) {
                 sequence = seq;
@@ -854,7 +855,6 @@ void Sampler::TreeSearcher::select_top_k(const ov::Tensor& logits, SamplerOutput
             }
         }
         OPENVINO_ASSERT(sequence != nullptr, "Cannot find the sequence with the original group id");
-
         // update the continuing beam's sequence
         // roll back the beam's sequence to past_generate_len
         size_t current_generated_len = sequence->get_generated_len();
@@ -865,6 +865,10 @@ void Sampler::TreeSearcher::select_top_k(const ov::Tensor& logits, SamplerOutput
             sequence->append_token(final_candidates[t].m_token_id, 0.0f);
             logit_processor.register_new_generated_token(final_candidates[t].m_token_id);
         }
+
+        auto org_processed_tokens_num = m_sequence_group->get_num_processed_tokens();
+        auto diff = final_candidates.size() - m_parameters.eagle_tree_params.tree_depth - 1;
+        m_sequence_group->update_processed_tokens_num(org_processed_tokens_num + diff);
         sequence->set_eagle_metadata({tree_mask, retrieve_indices, position_ids});
         sequence->set_status(SequenceStatus::RUNNING);
         // drop other beams' sequences
@@ -900,7 +904,6 @@ Token Sampler::_greedy_sample(const Logits& logits, size_t top_logprobs) const {
     size_t m = std::max(size_t(1), top_logprobs); // ensure m is at least 1
     std::vector<float> top_values(m, -std::numeric_limits<float>::infinity());
     std::vector<size_t> top_indexes(m, 0);
-
     for (size_t i = 0; i < logits.m_size; ++i) {
         if (logits.m_data[i] > top_values.back()) {
             top_values.back() = logits.m_data[i];
@@ -1118,6 +1121,7 @@ size_t Sampler::validate_tree_candidates(Sequence::Ptr& sequence, const ov::Tens
         Token sampled_token = _greedy_sample(logit_vector, 0);
         int64_t pred_token = sampled_token.m_index;
         bool matched = false;
+        
         for (size_t i = 0; i < tokens_this_step.size(); ++i) {
             if (tokens_this_step[i] == pred_token) {
                 matched = true;
@@ -1146,6 +1150,8 @@ size_t Sampler::validate_tree_candidates(Sequence::Ptr& sequence, const ov::Tens
         }
         token_idx_to_end = num_tokens_to_validate - retrieve_indices[0][path_pos[0] - 1];
         validated_steps++;
+        if (validated_steps + generated_len - num_tokens_to_validate == sequence->get_sequence_group_ptr()->get_max_new_tokens())
+            break;
     }
     // prune the retrieve_indices to validated_steps, use the first retrieve_indice is enough
     auto& validate_path = retrieve_indices[0];
@@ -1162,12 +1168,17 @@ size_t Sampler::validate_tree_candidates(Sequence::Ptr& sequence, const ov::Tens
         sequence->append_token(candidate_path[i], 0.0f);
         logit_processor.register_new_generated_token(candidate_path[i]);
     }
-
+    if (bonus_token.m_index == 0) {
+        // sample an extra token if all tokens are validated
+        auto logit_vector = _get_logit_vector(sequence_group_logits, 0, token_idx_to_end);
+        logit_processor.apply(logit_vector);    
+        bonus_token = _greedy_sample(logit_vector, 0);
+    }
     sequence->append_token(bonus_token.m_index, bonus_token.m_log_prob);
     logit_processor.register_new_generated_token(bonus_token.m_index);
-
+    std::cout << "generated tokens in this step: " << sequence->get_generated_len() << std::endl;
     // update eagle meta data
-    sequence->set_eagle_metadata({{}, retrieve_indices, {}});
+    sequence->set_eagle_metadata({{}, {}, eagle_metadata.tree_position_ids, validate_path});
     return validated_steps;
 }
 
@@ -1291,7 +1302,7 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
             for (const auto& dropped_seq_id : _try_finish_generation(sequence_group)) {
                 sg_sampling_info.sampler_output.m_dropped_sequences.push_back(dropped_seq_id);
             }
-            sg_sampling_info.sampler_output.num_generated_tokens += valid_tokens + 1; // +1 for the bonus token generated during validation
+            sg_sampling_info.sampler_output.num_generated_tokens += valid_tokens; // including the bonus 1
             assisting_pipeline_info.min_generated_len = std::min(assisting_pipeline_info.min_generated_len, running_sequences[0]->get_generated_len());
         } else {
             for (size_t running_sequence_id = 0; running_sequence_id < num_running_sequences; ++running_sequence_id) {
@@ -1447,6 +1458,8 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
     }
     // Notify handle after sampling is done. 
     // For non-streaming this is effective only when the generation is finished.
+    if (num_generated_tokens_to_validate < assisting_pipeline_info.max_removed_tokens_per_request)
+        std::cout << "break" << std::endl;
     OPENVINO_ASSERT(num_generated_tokens_to_validate >= assisting_pipeline_info.max_removed_tokens_per_request);
     sequence_group->notify_handle();
     return sg_sampling_info;
@@ -1497,7 +1510,7 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
             // Call sample_from_sequence_group asynchronously
             sg_sampling_future_map[request_id] = m_thread_pool.submit(&Sampler::sample_from_sequence_group, this, sequence_group, sequence_group_logits,
                                                                       logit_processor, stop_strings, is_validation_mode_enabled);
-            sg_sampling_future_map[request_id].wait();                                                                      
+            sg_sampling_future_map[request_id].wait();
         } else {
             // we are in prompt processing phase when prompt is split into chunks and processed step by step
         }
@@ -1537,7 +1550,9 @@ SamplerOutput Sampler::sample(const std::vector<SequenceGroup::Ptr> & sequence_g
         sequence_group->finish_iteration();
         // decrease sequence_group context in case of candidates generated by draft_model were not accepted by main_model
         if (assisting_pipeline_info.max_removed_tokens_per_request) {
+            // std::cout << "prev processed tokens " << sequence_group->get_num_processed_tokens() << std::endl;
             auto min_processed_tokens = sequence_group->get_prompt_len() + assisting_pipeline_info.min_generated_len - 1;
+            // std::cout << "update processed tokens to " << min_processed_tokens << std::endl;
             sequence_group->update_processed_tokens_num(min_processed_tokens);
             auto& logit_processor = get_logit_processor(sequence_group->get_request_id());
             logit_processor.update_generated_len(min_processed_tokens);

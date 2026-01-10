@@ -890,6 +890,7 @@ ov::Tensor concat_tensors(const std::vector<ov::Tensor>& tensors, const size_t a
     }
 
     return result_tensor;
+}
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
