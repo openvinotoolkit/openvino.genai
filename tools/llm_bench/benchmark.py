@@ -42,7 +42,7 @@ def num_infer_count_type(x):
     return x
 
 
-def get_argprser():
+def get_argparser():
     parser = argparse.ArgumentParser('LLM benchmarking tool', add_help=True, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument(
         '-m',
@@ -210,6 +210,7 @@ def get_argprser():
                         help="Pooling type CLS or MEAN for encoders, LAST_TOKEN for decoders. "
                              "Different post-processing is applied depending on the padding side. Applicable only for text embeddings")
     parser.add_argument("--embedding_normalize", action="store_true", help="Normalize embeddings. Applicable only for text embeddings")
+    parser.add_argument("--embedding_disable_pad_to_max_length", action="store_true", help="Disable padding embeddings. Applicable only for text embeddings")
     parser.add_argument("--embedding_max_length", type=int, default=None,
                         help="Max length for text embeddings. Input text will be padded or truncated to specified value")
     parser.add_argument("--embedding_padding_side", choices=["left", "right"], default=None,
@@ -256,7 +257,7 @@ def main():
         stream=sys.stdout,
         **logging_kwargs
     )
-    args = get_argprser()
+    args = get_argparser()
 
     if args.tokens_len is not None and not args.streaming:
         log.error("--tokens_len requires --streaming to be set.")
