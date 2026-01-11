@@ -1211,20 +1211,39 @@ MODELS_TO_TAG = IMAGE_ID_IGNORANT_MODELS_TO_TAG + [
 
 
 def model_and_tag_parametrize(
-    items: tuple[str, str, Callable[[int], str]] | None = None
-) -> Callable[[Callable], Generator]:
+    items=None,
+    xfail: dict[tuple[str, str], str] | None = None,  # (model, tag) -> reason
+):
     if items is None:
         items = MODELS_TO_TAG
 
+    xfail = xfail or {}
+
+    params = []
+    ids = []
+    for item in items:
+        model_id, tag = item[0], item[1]
+        case_id = f"{model_id}/{tag}"
+        ids.append(case_id)
+
+        reason = xfail.get((model_id, tag))
+        if reason:
+            params.append(pytest.param(item, marks=pytest.mark.xfail(reason=reason)))
+        else:
+            params.append(item)
+
     return pytest.mark.parametrize(
         "ov_pipe_model",
-        items,
+        params,
         indirect=["ov_pipe_model"],
-        ids=[f"{item[0]}/{item[1]}" for item in items]
+        ids=ids,
     )
 
 
-@model_and_tag_parametrize(TAG_INSERTED_BY_TEMPLATE)
+@model_and_tag_parametrize(
+    TAG_INSERTED_BY_TEMPLATE,
+    xfail={("optimum-intel-internal-testing/tiny-random-llava", "PA"): "CVS-179090"}
+)
 def test_model_tags_representation(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
     ov_pipe = ov_pipe_model.pipeline
     model_id = ov_pipe_model.model_id
