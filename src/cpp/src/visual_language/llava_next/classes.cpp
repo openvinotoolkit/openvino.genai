@@ -77,6 +77,8 @@ EncodedImage VisionEncoderLLaVANext::encode(const ov::Tensor& image, const ov::A
 
 namespace {
 
+// ref:
+// https://github.com/huggingface/transformers/blob/v4.57.3/src/transformers/models/llava_next/modeling_llava_next.py#L109
 ov::Tensor unpad_image(const ov::Tensor& tensor, const ImageSize& original_size) {
     size_t original_height = original_size.height;
     size_t original_width = original_size.width;
@@ -88,43 +90,31 @@ ov::Tensor unpad_image(const ov::Tensor& tensor, const ImageSize& original_size)
     float original_aspect_ratio = static_cast<float>(original_width) / original_height;
     float current_aspect_ratio = static_cast<float>(current_width) / current_height;
 
-    ov::Tensor unpadded_tensor;
-
+    ov::Shape unpadded_tensor_shape;
+    ov::Coordinate view_begin, view_end;
     if (original_aspect_ratio > current_aspect_ratio) {
         float scale_factor = static_cast<float>(current_width) / original_width;
         size_t new_height = static_cast<size_t>(original_height * scale_factor);
         size_t padding = (current_height - new_height) / 2;
-        size_t unpadded_height_dim = new_height + 1;
-        unpadded_height_dim = std::min(unpadded_height_dim, current_height);
-        unpadded_tensor = ov::Tensor(tensor.get_element_type(), {embed_dim, unpadded_height_dim, current_width});
 
-        for (size_t e = 0; e < embed_dim; ++e) {
-            for (int h = 0; h < unpadded_height_dim; ++h) {
-                std::copy(
-                    tensor.data<float>() + (e * current_height * current_width + (padding + h) * current_width),
-                    tensor.data<float>() + (e * current_height * current_width + (padding + h) * current_width + current_width),
-                    unpadded_tensor.data<float>() + (e * unpadded_height_dim * current_width + h * current_width)
-                );
-            }
-        }
+        auto unpadded_height = current_height - padding * 2;
+        unpadded_tensor_shape = ov::Shape({embed_dim, unpadded_height, current_width});
+        view_begin = ov::Coordinate({0, padding, 0});
+        view_end = ov::Coordinate({embed_dim, current_height - padding, current_width});
     } else {
         float scale_factor = static_cast<float>(current_height) / original_height;
         size_t new_width = static_cast<size_t>(original_width * scale_factor);
         size_t padding = (current_width - new_width) / 2;
-        size_t unpadded_width_dim = new_width + 1;
-        unpadded_width_dim = std::min(unpadded_width_dim, current_width);
-        unpadded_tensor = ov::Tensor(tensor.get_element_type(), {embed_dim, current_height, unpadded_width_dim});
 
-        for (size_t e = 0; e < embed_dim; ++e) {
-            for (int h = 0; h < current_height; ++h) {
-                std::copy(
-                    tensor.data<float>() + (e * current_height * current_width + h * current_width + padding),
-                    tensor.data<float>() + (e * current_height * current_width + h * current_width + padding + unpadded_width_dim),
-                    unpadded_tensor.data<float>() + (e * current_height * unpadded_width_dim + h * unpadded_width_dim)
-                );
-            }
-        }
+        auto unpadded_width = current_width - padding * 2;
+        unpadded_tensor_shape = ov::Shape({embed_dim, current_height, unpadded_width});
+        view_begin = ov::Coordinate({0, 0, padding});
+        view_end = ov::Coordinate({embed_dim, current_height, current_width - padding});
     }
+
+    auto unpadded_tensor_view = ov::Tensor(tensor, view_begin, view_end);
+    auto unpadded_tensor = ov::Tensor(tensor.get_element_type(), unpadded_tensor_shape);
+    unpadded_tensor_view.copy_to(unpadded_tensor);
 
     return unpadded_tensor;
 }
@@ -390,9 +380,7 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& unified
     }
     
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
-    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
-    EmbeddingsRequest& req = embeddings_request_guard.get();
-    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
+    auto text_embeds = get_text_embeddings_llava_next(input_ids);
 
     if (images.empty()) {
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
@@ -406,6 +394,29 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& unified
     metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
     return utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
+}
+
+// ref:
+// https://github.com/huggingface/optimum-intel/blob/v1.27.0/optimum/intel/openvino/modeling_visual_language.py#L1423
+ov::Tensor InputsEmbedderLLaVANext::get_text_embeddings_llava_next(const ov::Tensor input_ids) {
+    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
+    EmbeddingsRequest& req = embeddings_request_guard.get();
+
+    ov::Tensor encoded_image_token =
+        m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
+    int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
+
+    auto for_inputs_embeds_ids = ov::Tensor(input_ids.get_element_type(), input_ids.get_shape());
+    input_ids.copy_to(for_inputs_embeds_ids);
+
+    // zero out values that are equal to image_token_id
+    auto* pids = for_inputs_embeds_ids.data<int64_t>();
+    for (auto i = 0; i < input_ids.get_size(); i++) {
+        pids[i] = (pids[i] == image_token_id) ? 0 : pids[i];
+    }
+
+    ov::Tensor text_embeds = m_embedding->infer(req, for_inputs_embeds_ids);
+    return text_embeds;
 }
 
 } // namespace ov::genai

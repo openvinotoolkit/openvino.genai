@@ -476,9 +476,7 @@ ov::Tensor InputsEmbedderLLaVANextVideo::get_inputs_embeds(
     // llava-next-video tokenizer always adds special tokens in pytorch
     set_add_special_tokens(true);
     ov::Tensor input_ids = get_encoded_input_ids(prompt, metrics);
-    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
-    EmbeddingsRequest& req = embeddings_request_guard.get();
-    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
+    auto text_embeds = get_text_embeddings_llava_next(input_ids);
 
     if (image_embeds.empty() && video_embeds.empty()) {
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
