@@ -284,11 +284,7 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
             vision_preprocess_env_set = True
 
     try:
-        pipeline = VLMPipeline(
-            models_path,
-            "CPU",
-            ATTENTION_BACKEND=ov_backend
-        )
+        pipeline = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=ov_backend)
     finally:
         if vision_preprocess_env_set:
             os.environ.pop(key, None)
