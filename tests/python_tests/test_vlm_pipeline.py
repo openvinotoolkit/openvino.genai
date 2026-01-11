@@ -1237,8 +1237,7 @@ def model_and_tag_parametrize(
 
 
 @model_and_tag_parametrize(
-    TAG_INSERTED_BY_TEMPLATE,
-    xfail={("optimum-intel-internal-testing/tiny-random-llava", "PA"): "CVS-179090"}
+    TAG_INSERTED_BY_TEMPLATE, xfail={("optimum-intel-internal-testing/tiny-random-llava", "PA"): "CVS-179090"}
 )
 def test_model_tags_representation(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
     ov_pipe = ov_pipe_model.pipeline
