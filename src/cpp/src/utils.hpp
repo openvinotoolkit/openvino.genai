@@ -186,11 +186,6 @@ void print_gguf_debug_info(const std::string& debug_info);
 
 void print_scheduler_config_info(const SchedulerConfig &scheduler_config);
 
-std::string print_token_id(const std::vector<int64_t>& print_ids,
-                           const std::string& prefix,
-                           const size_t& last_num,
-                           ov::genai::Tokenizer& tokenizer);
-
 struct KVDesc {
     uint32_t max_prompt_len;
     uint32_t min_response_len;
