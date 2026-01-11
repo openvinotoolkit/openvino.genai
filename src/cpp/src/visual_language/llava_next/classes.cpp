@@ -97,7 +97,7 @@ ov::Tensor unpad_image(const ov::Tensor& tensor, const ImageSize& original_size)
         size_t new_height = static_cast<size_t>(original_height * scale_factor);
         size_t padding = (current_height - new_height) / 2;
 
-        auto unpadded_height = current_height - padding * 2;
+        size_t unpadded_height = current_height - padding * 2;
         unpadded_tensor_shape = ov::Shape({embed_dim, unpadded_height, current_width});
         view_begin = ov::Coordinate({0, padding, 0});
         view_end = ov::Coordinate({embed_dim, current_height - padding, current_width});
@@ -106,7 +106,7 @@ ov::Tensor unpad_image(const ov::Tensor& tensor, const ImageSize& original_size)
         size_t new_width = static_cast<size_t>(original_width * scale_factor);
         size_t padding = (current_width - new_width) / 2;
 
-        auto unpadded_width = current_width - padding * 2;
+        size_t unpadded_width = current_width - padding * 2;
         unpadded_tensor_shape = ov::Shape({embed_dim, current_height, unpadded_width});
         view_begin = ov::Coordinate({0, 0, padding});
         view_end = ov::Coordinate({embed_dim, current_height, current_width - padding});
@@ -411,7 +411,7 @@ ov::Tensor InputsEmbedderLLaVANext::get_text_embeddings_llava_next(const ov::Ten
 
     // zero out values that are equal to image_token_id
     auto* pids = for_inputs_embeds_ids.data<int64_t>();
-    for (auto i = 0; i < input_ids.get_size(); i++) {
+    for (size_t i = 0; i < input_ids.get_size(); i++) {
         pids[i] = (pids[i] == image_token_id) ? 0 : pids[i];
     }
 
