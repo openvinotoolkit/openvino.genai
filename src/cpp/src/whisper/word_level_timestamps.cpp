@@ -6,6 +6,8 @@
 #include <fstream>
 #include <sstream>
 
+#include "debug_utils.hpp"
+
 namespace {
 
 std::vector<ov::Tensor> extract_qks_alignment_heads(const std::vector<ov::Tensor>& encoder_attention_qks,
@@ -170,7 +172,7 @@ void mean_normalize_token_axis(std::vector<ov::Tensor>& alignment_qks) {
 
 // [head_size] * [batch,seq_len,frame_len] -> [head_size] * [seq_len,frame_len]
 // Takes first batch only
-std::vector<ov::Tensor> shrink_batch_dim(const std::vector<ov::Tensor>& alignment_qks) {
+std::vector<ov::Tensor> reduce_batch_dim(const std::vector<ov::Tensor>& alignment_qks) {
     std::vector<ov::Tensor> shrunk_tensors;
     for (const auto& tensor : alignment_qks) {
         const ov::Shape& shape = tensor.get_shape();
@@ -299,114 +301,6 @@ std::vector<std::pair<size_t, size_t>> dtw_and_backtrace(const std::vector<std::
     return path;
 }
 
-void save_matrix_as_numpy(const std::vector<std::vector<float>>& matrix, const std::string& filename) {
-    if (matrix.empty() || matrix[0].empty()) {
-        return;
-    }
-
-    std::ofstream file(filename, std::ios::binary);
-    if (!file.is_open()) {
-        std::cerr << "Failed to open file: " << filename << std::endl;
-        return;
-    }
-
-    // NumPy header format
-    const uint8_t magic[] = {0x93, 'N', 'U', 'M', 'P', 'Y'};
-    const uint8_t major_version = 1;
-    const uint8_t minor_version = 0;
-
-    file.write(reinterpret_cast<const char*>(magic), sizeof(magic));
-    file.write(reinterpret_cast<const char*>(&major_version), 1);
-    file.write(reinterpret_cast<const char*>(&minor_version), 1);
-
-    // Create header dict string
-    const size_t rows = matrix.size();
-    const size_t cols = matrix[0].size();
-    std::ostringstream header;
-    header << "{'descr': '<f4', 'fortran_order': False, 'shape': (" << rows << ", " << cols << "), }";
-
-    std::string header_str = header.str();
-    // Pad to make total header size (including length field) a multiple of 64 bytes
-    size_t header_len = header_str.size();
-    size_t total_header_size = 10 + 2 + header_len;  // 6 (magic) + 2 (version) + 2 (header_len) + header
-    size_t padding = (64 - (total_header_size % 64)) % 64;
-    header_str.append(padding, ' ');
-    header_str.push_back('\n');
-    header_len = header_str.size();
-
-    // Write header length (little-endian uint16)
-    uint16_t header_len_le = static_cast<uint16_t>(header_len);
-    file.write(reinterpret_cast<const char*>(&header_len_le), 2);
-
-    // Write header
-    file.write(header_str.c_str(), header_len);
-
-    // Write data in row-major order (C order)
-    for (const auto& row : matrix) {
-        file.write(reinterpret_cast<const char*>(row.data()), row.size() * sizeof(float));
-    }
-
-    file.close();
-    std::cout << "Saved matrix [" << rows << ", " << cols << "] to " << filename << std::endl;
-}
-
-void save_vector_of_tensors_as_np(std::vector<ov::Tensor> tensors, const std::string& filename) {
-    std::ofstream file(filename, std::ios::binary);
-    if (!file.is_open()) {
-        std::cerr << "Failed to open file: " << filename << std::endl;
-        return;
-    }
-
-    // NumPy header format
-    const uint8_t magic[] = {0x93, 'N', 'U', 'M', 'P', 'Y'};
-    const uint8_t major_version = 1;
-    const uint8_t minor_version = 0;
-
-    file.write(reinterpret_cast<const char*>(magic), sizeof(magic));
-    file.write(reinterpret_cast<const char*>(&major_version), 1);
-    file.write(reinterpret_cast<const char*>(&minor_version), 1);
-
-    // Create header dict string
-    const size_t head_size = tensors.size();
-    std::ostringstream header;
-    header << "{'descr': '<f4', 'fortran_order': False, 'shape': (" << head_size << ", ";
-    const ov::Shape& first_shape = tensors[0].get_shape();
-    for (size_t i = 0; i < first_shape.size(); ++i) {
-        header << first_shape[i];
-        if (i < first_shape.size() - 1) {
-            header << ", ";
-        }
-    }
-    header << "), }";
-    std::string header_str = header.str();
-    // Pad to make total header size (including length field) a multiple of 64 bytes
-    size_t header_len = header_str.size();
-    size_t total_header_size = 10 + 2 + header_len;  // 6 (magic) + 2 (version) + 2 (header_len) + header
-    size_t padding = (64 - (total_header_size % 64)) % 64;
-    header_str.append(padding, ' ');
-    header_str.push_back('\n');
-    header_len = header_str.size();
-
-    // Write header length (little-endian uint16)
-    uint16_t header_len_le = static_cast<uint16_t>(header_len);
-    file.write(reinterpret_cast<const char*>(&header_len_le), 2);
-    // Write header
-    file.write(header_str.c_str(), header_len);
-    // Write data in row-major order (C order)
-    for (const auto& tensor : tensors) {
-        const ov::Shape& shape = tensor.get_shape();
-        size_t total_size = 1;
-        for (const auto& dim : shape) {
-            total_size *= dim;
-        }
-        const float* data = tensor.data<float>();
-        file.write(reinterpret_cast<const char*>(data), total_size * sizeof(float));
-    }
-
-    file.close();
-    std::cout << "Saved vector of tensors to " << filename << std::endl;
-}
-
 std::vector<ov::Tensor> extract_n_frames(const std::vector<ov::Tensor>& alignment_qks, const size_t n_frames) {
     std::vector<ov::Tensor> extracted_tensors;
 
@@ -437,36 +331,6 @@ std::vector<ov::Tensor> extract_n_frames(const std::vector<ov::Tensor>& alignmen
     }
 
     return extracted_tensors;
-}
-
-std::vector<std::pair<float, float>> to_timestamps(std::vector<std::pair<size_t, size_t>> path,
-                                                   const float time_per_frame) {
-    std::vector<std::pair<float, float>> timestamps;
-    if (path.empty()) {
-        return timestamps;
-    }
-
-    size_t current_token = path[0].first;
-    size_t start_frame = path[0].second;
-    size_t end_frame = path[0].second;
-
-    for (size_t i = 1; i < path.size(); ++i) {
-        const auto& [token_idx, frame_idx] = path[i];
-        if (token_idx == current_token) {
-            end_frame = frame_idx;
-        } else {
-            // Save timestamp for the completed token
-            timestamps.emplace_back(start_frame * time_per_frame, (end_frame + 1) * time_per_frame);
-            // Start new token
-            current_token = token_idx;
-            start_frame = frame_idx;
-            end_frame = frame_idx;
-        }
-    }
-    // Save timestamp for the last token
-    timestamps.emplace_back(start_frame * time_per_frame, (end_frame + 1) * time_per_frame);
-
-    return timestamps;
 }
 
 std::pair<std::vector<std::string>, std::vector<std::vector<int64_t>>> split_tokens_on_unicode(
@@ -508,25 +372,6 @@ std::vector<ov::genai::WhisperWordTiming> match_words_to_alignment_path(
     const std::vector<std::vector<int64_t>>& word_tokens,
     const std::vector<std::pair<size_t, size_t>>& alignment_path,
     const float chunk_time_offset) {
-    // std::cout << "words size: " << words.size() << std::endl;
-    // std::cout << "word_tokens size: " << word_tokens.size() << std::endl;
-
-    // std::cout << "path: ";
-    // for (auto& ts : token_timestamps) {
-    //     std::cout << "(" << ts.first << ", " << ts.second << ")\n";
-    // }
-    // std::cout << std::endl;
-
-    // std::cout << "word, tokens [\n";
-    // for (size_t i = 0; i < words.size(); ++i) {
-    //     std::cout << "  \"" << words[i] << "\", [";
-    //     for (const auto& token_id : word_tokens[i]) {
-    //         std::cout << token_id << ", ";
-    //     }
-    //     std::cout << "]\n";
-    // }
-    // std::cout << "]" << std::endl;
-
     // jumps = np.pad(np.diff(alignment.index1s), (1, 0), constant_values=1).astype(bool)
     std::vector<size_t> jumps_indicies;
     jumps_indicies.push_back(0);  // First element is always a jump
@@ -538,23 +383,11 @@ std::vector<ov::genai::WhisperWordTiming> match_words_to_alignment_path(
         }
     }
 
-    // std::cout << "jumps indices (" << jumps_indicies.size() << "): ";
-    // for (const auto& idx : jumps_indicies) {
-    //     std::cout << idx << ", ";
-    // }
-    // std::cout << std::endl;
-
     std::vector<float> jump_times;
     for (const auto& jump_idx : jumps_indicies) {
         const auto frame_idx = alignment_path[jump_idx].second;
-        jump_times.push_back(frame_idx * 0.02f);  // assuming 20ms per frame
+        jump_times.push_back(frame_idx * 0.02f);  // 20ms per frame
     }
-
-    // std::cout << "jump times (" << jump_times.size() << "): ";
-    // for (const auto& time : jump_times) {
-    //     std::cout << time << "\n";
-    // }
-    // std::cout << std::endl;
 
     // word_boundaries = np.pad(np.cumsum([len(t) for t in word_tokens[:-1]]), (1, 0))
     std::vector<size_t> word_boundaries;
@@ -563,15 +396,8 @@ std::vector<ov::genai::WhisperWordTiming> match_words_to_alignment_path(
         word_boundaries.push_back(word_boundaries.back() + word_tokens[i].size());
     }
 
-    // std::cout << "word boundaries (" << word_boundaries.size() << "): ";
-    // for (const auto& boundary : word_boundaries) {
-    //     std::cout << boundary << ", ";
-    // }
-    // std::cout << std::endl;
-
     // begin_times = jump_times[word_boundaries[:-1]]
     // end_times = jump_times[word_boundaries[1:]]
-
     std::vector<ov::genai::WhisperWordTiming> word_timestamps;
     for (size_t i = 0; i < words.size() - 1; ++i) {
         const size_t begin_idx = word_boundaries[i];
@@ -581,185 +407,56 @@ std::vector<ov::genai::WhisperWordTiming> match_words_to_alignment_path(
         word_timestamps.push_back({words[i], word_tokens[i], start_time, end_time});
     }
 
-    // size_t token_index = 0;
-    // for (size_t i = 0; i < words.size(); ++i) {
-    //     const auto& word = words[i];
-    //     const auto& tokens = word_tokens[i];
-    //     const size_t num_tokens = tokens.size();
-
-    //     if (word.find("<|") != std::string::npos) {
-    //         token_index += num_tokens;
-    //         // std::cout << "Skipping special token word: " << word << std::endl;
-    //         continue;
-    //     }
-
-    //     if (token_index + num_tokens > token_timestamps.size()) {
-    //         std::cout << "Not enough timestamps for word: " << word << std::endl;
-    //         break;
-    //     }
-
-    //     const float start_time = token_timestamps[token_index].first;
-    //     const float end_time = token_timestamps[token_index + num_tokens - 1].second;
-    //     std::cout << "Word: \"" << word << "\" | Tokens: [";
-    //     for (const auto& token_id : tokens) {
-    //         std::cout << token_id << ", ";
-    //     }
-    //     std::cout << "] | Start time: " << start_time << "s | End time: " << end_time << "s" << std::endl;
-    //     token_index += num_tokens;
-    // }
-    // std::cout << "Token index after processing: " << token_index << std::endl;
-
     return word_timestamps;
 };
-
-// [heads][batch, seq_len, frame_len] -> [heads][batch, text_tokens_seq_len, frame_len]
-std::vector<ov::Tensor> extract_text_tokens(const std::vector<ov::Tensor>& encoder_attention_qks,
-                                            ov::genai::Tokenizer& tokenizer,
-                                            const std::vector<int64_t>& tokens) {
-    // text token id = token id < tokenizer.get_eos_token_id()
-
-    std::vector<size_t> text_token_indices;
-    const int64_t eot = tokenizer.get_eos_token_id();
-
-    for (size_t i = 0; i < tokens.size(); ++i) {
-        if (tokens[i] <= eot) {
-            text_token_indices.push_back(i);
-        }
-    }
-
-    std::vector<ov::Tensor> text_token_tensors;
-    for (const auto& tensor : encoder_attention_qks) {
-        const ov::Shape& shape = tensor.get_shape();
-        const size_t batch_size = shape[0];
-        const size_t seq_len = shape[1];
-        const size_t frame_len = shape[2];
-
-        ov::Tensor text_tensor{ov::element::f32, {batch_size, text_token_indices.size(), frame_len}};
-        auto* input_data = tensor.data<float>();
-        auto* output_data = text_tensor.data<float>();
-
-        for (size_t batch = 0; batch < batch_size; ++batch) {
-            for (size_t i = 0; i < text_token_indices.size(); ++i) {
-                size_t token_idx = text_token_indices[i];
-                size_t input_offset = batch * seq_len * frame_len + token_idx * frame_len;
-                size_t output_offset = batch * text_token_indices.size() * frame_len + i * frame_len;
-
-                std::memcpy(output_data + output_offset, input_data + input_offset, frame_len * sizeof(float));
-            }
-        }
-
-        text_token_tensors.push_back(text_tensor);
-    }
-
-    return text_token_tensors;
-}
 
 std::vector<std::pair<size_t, size_t>> find_alignment_path(
     const std::vector<ov::Tensor>& encoder_attention_qks,
     const std::vector<std::pair<size_t, size_t>>& alignment_heads,
     const size_t n_frames,
+    const std::vector<int64_t>& sot_tokens,
     const std::vector<int64_t>& tokens,
     ov::genai::Tokenizer& tokenizer) {
-    // for (size_t layer = 0; layer < encoder_attention_qks.size(); ++layer) {
-    //     std::cout << "Layer " << layer
-    //               << " accumulated encoder QK shape: " << encoder_attention_qks.at(layer).get_shape().to_string()
-    //               << std::endl;
-    // }
-
-    // std::cout << "Raw tokens: ";
-    // for (const auto& token : tokens) {
-    //     std::cout << token << ", ";
-    // }
-    // std::cout << std::endl;
-
     const auto alignment_qks = extract_qks_alignment_heads(encoder_attention_qks, alignment_heads);
 
-    const auto shrunk_alignment = shrink_batch_dim(encoder_attention_qks);
-
-    // for (size_t i = 0; i < alignment_qks.size(); ++i) {
-    //     const ov::Tensor& qk_tensor = alignment_qks.at(i);
-    //     std::cout << "Alignment head " << i << " QK shape: " << qk_tensor.get_shape().to_string() << std::endl;
-    // }
+    const auto shrunk_alignment = reduce_batch_dim(encoder_attention_qks);
 
     // Extract only up to n_frames to match input feature length
     auto n_frame_alignment_qks = extract_n_frames(alignment_qks, size_t(n_frames / 2));
-    save_vector_of_tensors_as_np(n_frame_alignment_qks,
-                                 "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-                                 "genai_attention_weights.npy");
-    // const auto text_token_alignment_qks = extract_text_tokens(n_frame_alignment_qks, tokenizer, tokens);
-
-    // for (size_t i = 0; i < text_token_alignment_qks.size(); ++i) {
-    //     const ov::Tensor& qk_tensor = text_token_alignment_qks.at(i);
-    //     std::cout << "Text token alignment head " << i << " QK shape: " << qk_tensor.get_shape().to_string()
-    //               << std::endl;
-    // }
+    // save_vector_of_tensors_as_np(n_frame_alignment_qks,
+    //                              "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+    //                              "genai_attention_weights.npy");
 
     softmax_frame_axis(n_frame_alignment_qks);
-    save_vector_of_tensors_as_np(n_frame_alignment_qks,
-                                 "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-                                 "genai_attention_weights_softmax.npy");
+    // save_vector_of_tensors_as_np(n_frame_alignment_qks,
+    //                              "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+    //                              "genai_attention_weights_softmax.npy");
 
     // Apply L2 normalization along token axis (matching Python: weights / weights.norm(dim=-2, keepdim=True))
     mean_normalize_token_axis(n_frame_alignment_qks);
-    save_vector_of_tensors_as_np(n_frame_alignment_qks,
-                                 "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-                                 "genai_attention_weights_normalized.npy");
+    // save_vector_of_tensors_as_np(n_frame_alignment_qks,
+    //                              "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+    //                              "genai_attention_weights_normalized.npy");
 
     auto filtered_alignment_qks = median_filter_last_axis(n_frame_alignment_qks, 7);
-    save_vector_of_tensors_as_np(filtered_alignment_qks,
-                                 "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-                                 "genai_attention_weights_median_filter.npy");
+    // save_vector_of_tensors_as_np(filtered_alignment_qks,
+    //                              "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+    //                              "genai_attention_weights_median_filter.npy");
 
-    // for (size_t i = 0; i < filtered_alignment_qks.size(); ++i) {
-    //     const ov::Tensor& qk_tensor = filtered_alignment_qks.at(i);
-    //     std::cout << "Filtered alignment head " << i << " QK shape: " << qk_tensor.get_shape().to_string() <<
-    //     std::endl;
-    // }
-
-    // Apply softmax along frame axis (matching Python: weights.softmax(dim=-1))
-
-    // for (size_t i = 0; i < shrunk_tensors.size(); ++i) {
-    //     const ov::Tensor& qk_tensor = shrunk_tensors.at(i);
-    //     std::cout << "Shrunk alignment head " << i << " QK shape: " << qk_tensor.get_shape().to_string() <<
-    //     std::endl;
-    // }
-    const auto shrunk_tensors = shrink_batch_dim(filtered_alignment_qks);
+    const auto shrunk_tensors = reduce_batch_dim(filtered_alignment_qks);
     const auto matrix = mean_across_heads(shrunk_tensors);
-    save_matrix_as_numpy(matrix,
-                         "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-                         "genai_matrix.npy");
-
-    // save matrix for debugging as numpy file
     // save_matrix_as_numpy(matrix,
-    //                      "/home/asuvorov/projects/openvino.genai/src/cpp/src/whisper/alignment_cost_matrix.npy");
+    //                      "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+    //                      "genai_matrix.npy");
 
-    // std::cout << "DTW cost matrix shape: [" << matrix.size() << ", " << (matrix.empty() ? 0 : matrix[0].size()) <<
-    // "]"
-    //           << std::endl;
+    // matix shape: [sot_tokens.size():-1]
+    auto matrix_text_tokens_slice =
+        std::vector<std::vector<float>>(matrix.begin() + sot_tokens.size(), matrix.end() - 1);
 
-    // matix shape: [text_tokens_seq_len, frame_len]
-    // need to slice text tokens -> [4:-1, :]
-    auto matrix_text_tokens_slice = std::vector<std::vector<float>>{};
-    if (matrix.size() >= 4) {
-        matrix_text_tokens_slice = std::vector<std::vector<float>>(matrix.begin() + 3, matrix.end() - 1);
-    } else {
-        matrix_text_tokens_slice = matrix;
-    }
-
-    save_matrix_as_numpy(matrix_text_tokens_slice,
-                         "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-                         "genai_sliced_matrix.npy");
-
+    // save_matrix_as_numpy(matrix_text_tokens_slice,
+    //                      "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+    //                      "genai_sliced_matrix.npy");
     const auto alignment_path = dtw_and_backtrace(matrix_text_tokens_slice);
-
-    // std::cout << "Alignment path (" << alignment_path.size() << "): \n[";
-    // for (const auto& [token_idx, frame_idx] : alignment_path) {
-    //     std::cout << "(" << token_idx << ", " << frame_idx << "),\n";
-    // }
-    // std::cout << "]" << std::endl;
-
-    // const auto time_per_frame = 0.02f;  // 20 ms per frame
-    // const auto timestamps = to_timestamps(alignment_path, time_per_frame);
 
     return alignment_path;
 }
@@ -962,16 +659,6 @@ std::pair<std::vector<std::string>, std::vector<std::vector<int64_t>>> split_tok
         }
     }
 
-    // std::cout << "Words:\n";
-    // for (size_t i = 0; i < words.size(); ++i) {
-    //     std::cout << "  \"" << words[i] << "\", Tokens: [";
-    //     for (const auto& token_id : word_tokens[i]) {
-    //         std::cout << token_id << ", ";
-    //     }
-    //     std::cout << "]\n";
-    // }
-    // std::cout << std::endl;
-
     return {words, word_tokens};
 }
 
@@ -1026,7 +713,7 @@ std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::v
     auto encoder_qks = infer_encoder_qks(infer_tokens, decoder, hidden_state_tensor, config);
 
     const auto alignment_path =
-        find_alignment_path(encoder_qks, config.alignment_heads, n_frames, infer_tokens, tokenizer);
+        find_alignment_path(encoder_qks, config.alignment_heads, n_frames, sot_tokens, infer_tokens, tokenizer);
 
     const auto [words, word_tokens] = split_tokens_on_spaces(text_tokens, tokenizer);
 
