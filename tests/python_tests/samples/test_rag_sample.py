@@ -56,5 +56,11 @@ range of computing tasks."
         cpp_command = [cpp_sample, convert_model, "What are the main features of Intel Core Ultra processors?", document_1, document_2]
         cpp_result = run_sample(cpp_command)
 
+        # Run JS sample
+        js_sample = SAMPLES_JS_DIR / "rag/text_rerank.js"
+        js_command = ["node", js_sample, convert_model, "What are the main features of Intel Core Ultra processors?", document_1, document_2]
+        js_result = run_sample(js_command)
+
         # Compare results
         assert py_result.stdout == cpp_result.stdout, "Python and C++ results should match"
+        assert py_result.stdout == js_result.stdout, "Python and JS results should match"
