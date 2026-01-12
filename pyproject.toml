@@ -56,6 +56,19 @@ requires = [
     "openvino~=2026.0.0.0.dev",
     "pybind11-stubgen==2.5.5",
     "cmake~=3.23.0; platform_system != 'Darwin' or platform_machine == 'x86_64'",
-    "cmake~=3.24.0; platform_system == 'Darwin' and platform_machine == 'arm64'",
+    "cmake~=4.2.1; platform_system == 'Darwin' and platform_machine == 'arm64'",
 ]
 build-backend = "py_build_cmake.build"
+
+[tool.ruff]
+line-length = 120
+indent-width = 4
+target-version = "py310"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = false
+docstring-code-line-length = "dynamic"

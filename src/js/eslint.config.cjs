@@ -41,7 +41,6 @@ module.exports = defineConfig([
         {
           allow: [
             "max_new_tokens",
-            "return_decoded_results",
             "stop_strings",
             "include_stop_str_in_output",
             "max_num_batched_tokens",
@@ -59,6 +58,7 @@ module.exports = defineConfig([
             "padding_side",
             "add_second_input",
             "number_of_inputs",
+            "reasoning_content",
           ],
         },
       ],

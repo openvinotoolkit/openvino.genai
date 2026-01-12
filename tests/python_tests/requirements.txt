@@ -1,16 +1,16 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 diffusers==0.35.2
-optimum-intel==1.26.1
+optimum-intel==1.27.0
 numpy==1.26.4; platform_system == "Darwin" and platform_machine == "x86_64"
 safetensors==0.6.2; platform_system == "Darwin" and platform_machine == "x86_64"
-pytest==9.0.1
+pytest==9.0.2
 transformers==4.55.4
 hf_transfer==0.1.9
 gguf==0.17.1
 
 # rag requirements
 langchain_community==0.4.1
-langchain-core==1.0.7
+langchain-core==1.2.5
 
 # requirements for specific models
 # - Qwen/Qwen-7B
@@ -30,3 +30,7 @@ torchcodec==0.7.0; sys_platform == "linux"
 rouge==1.0.1
 # - microsoft/Phi-4-multimodal-instruct
 peft==0.17.1
+# - openbmb/MiniCPM-o-2_6
+vocos==0.1.0
+torchaudio==2.8.0
+vector-quantize-pytorch==1.27.15
