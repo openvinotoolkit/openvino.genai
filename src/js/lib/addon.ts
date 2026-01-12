@@ -1,3 +1,6 @@
+// Copyright (C) 2023-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 import { createRequire } from "module";
 import { platform } from "node:os";
 import { join, dirname, resolve } from "node:path";

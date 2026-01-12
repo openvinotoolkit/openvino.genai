@@ -1,3 +1,6 @@
+// Copyright (C) 2023-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include "include/text_rerank_pipeline/pipeline_wrapper.hpp"
 
 #include "include/helper.hpp"
