@@ -990,6 +990,10 @@ std::vector<ov::genai::WhisperWordTiming> get_word_level_timestamps(
             encoder_attention_qks,
             "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/current/"
             "encoder_attention_qks.npy");
+        // save_vector_of_tensors_as_np(
+        //     encoder_attention_qks,
+        //     "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/reference/"
+        //     "encoder_attention_qks.npy");
     }
 
     const auto alignment_path =
@@ -1065,7 +1069,13 @@ std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::v
     std::vector<int64_t> word_level_timestamps_tokens = sot_tokens;
     word_level_timestamps_tokens.push_back(config.no_timestamps_token_id);
     word_level_timestamps_tokens.insert(word_level_timestamps_tokens.end(), text_tokens.begin(), text_tokens.end());
-    word_level_timestamps_tokens.push_back(tokenizer.get_eos_token_id());
+    word_level_timestamps_tokens.push_back(config.eos_token_id);
+
+    std::cout << "Word-level timestamps tokens (" << word_level_timestamps_tokens.size() << "): [";
+    for (const auto& token : word_level_timestamps_tokens) {
+        std::cout << token << ", ";
+    }
+    std::cout << "]" << std::endl;
 
     ov::Tensor beam_idx = decoder->create_host_tensor(ov::element::i32, {batch_size});
     std::fill_n(beam_idx.data<int32_t>(), batch_size, 0);

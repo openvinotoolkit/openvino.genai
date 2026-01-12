@@ -346,8 +346,8 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
         decoder->reset_state();
         std::vector<int64_t> chunk_output_tokens = result.tokens[0];
 
-        ExtractedSegments extracted_segments;
         if (return_timestamps) {
+            ExtractedSegments extracted_segments;
             extracted_segments = ov::genai::extract_segments(chunk_output_tokens,
                                                              config,
                                                              feature_extractor.nb_max_frames,
@@ -383,9 +383,16 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
         }
 
         if (config.word_timestamps) {
+            std::vector<int64_t> text_tokens;
+            for (const auto token_id : chunk_output_tokens) {
+                if (token_id < config.eos_token_id) {
+                    text_tokens.push_back(token_id);
+                }
+            }
+
             auto word_timestamps = add_word_level_timestamps(
                 chunk_sot_tokens,
-                chunk_output_tokens,
+                text_tokens,
                 tokenizer,
                 decoder,
                 hidden_state_tensor,
