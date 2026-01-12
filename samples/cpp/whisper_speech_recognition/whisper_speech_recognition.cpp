@@ -269,9 +269,9 @@ int main(int argc, char* argv[]) try {
     //     "\n";
     // }
 
-    test_encoder_attention_qks(models_path,
-                               "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-                               "whisper/librispeech_asr_dummy_wav_samples");
+    // test_encoder_attention_qks(models_path,
+    //                            "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+    //                            "whisper/librispeech_asr_dummy_wav_samples");
 
     // test_word_level_timestamps(models_path,
     //                            "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"

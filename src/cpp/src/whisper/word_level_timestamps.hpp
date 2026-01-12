@@ -22,5 +22,6 @@ std::vector<WhisperWordTiming> get_word_level_timestamps(const std::vector<Tenso
                                                          const size_t n_frames,
                                                          const std::vector<int64_t>& tokens,
                                                          ov::genai::Tokenizer& tokenizer,
-                                                         const ov::genai::WhisperGenerationConfig& generation_config);
+                                                         const ov::genai::WhisperGenerationConfig& generation_config,
+                                                         const float chunk_time_offset);
 }  // namespace ov::genai
