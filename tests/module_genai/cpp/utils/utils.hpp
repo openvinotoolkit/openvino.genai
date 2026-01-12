@@ -5,6 +5,7 @@
 #pragma once
 
 #include <string>
+#include <openvino/runtime/tensor.hpp>
 
 bool readFileToString(const std::string &filename, std::string &content);
 
@@ -21,3 +22,5 @@ std::string get_model_path();
 bool check_env_variable(const std::string& var_name);
 
 bool check_file_exists(const std::string& path);
+
+ov::Tensor load_tensor_from_file(const std::string& meta_data_path);

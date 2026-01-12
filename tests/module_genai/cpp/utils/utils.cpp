@@ -16,6 +16,7 @@ namespace fs = std::experimental::filesystem;
 #else
 #error "Missing the <filesystem> header."
 #endif
+#include "json_utils.hpp"
 #include <fstream>
 #include <openvino/runtime/tensor.hpp>
 #include <sstream>
@@ -104,4 +105,38 @@ bool check_env_variable(const std::string& var_name) {
 
 bool check_file_exists(const std::string& path) {
     return fs::exists(path) && fs::is_regular_file(path);
+}
+
+ov::Tensor load_tensor_from_file(const std::string& meta_data_path) {
+    std::ifstream meta_data_file(meta_data_path);
+    if (!meta_data_file.is_open()) {
+        OPENVINO_THROW("Failed to open tensor meta data file: " + meta_data_path);
+    }
+    std::string dtype;
+    std::vector<size_t> shape;
+
+    nlohmann::json parsed = nlohmann::json::parse(meta_data_file);
+    ov::genai::utils::read_json_param(parsed, "dtype", dtype);
+    ov::genai::utils::read_json_param(parsed, "shape", shape);
+
+    ov::element::Type element_type;
+    if (dtype == "torch.float32") {
+        element_type = ov::element::f32;
+    } else if (dtype == "torch.int64") {
+        element_type = ov::element::i64;
+    } else {
+        OPENVINO_THROW("Unsupported data type: " + dtype);
+    }
+    ov::Shape ov_shape(shape.begin(), shape.end());
+    ov::Tensor tensor(element_type, ov_shape);
+    char *data_ptr = static_cast<char *>(tensor.data());
+
+    std::string data_file_path = meta_data_path.substr(0, meta_data_path.find_last_of('.')) + ".bin";
+    std::ifstream data_file(data_file_path, std::ios::binary);
+    if (!data_file.is_open()) {
+        OPENVINO_THROW("Failed to open tensor data file: " + data_file_path);
+    }
+    data_file.read(data_ptr, tensor.get_byte_size());
+    data_file.close();
+    return tensor;
 }

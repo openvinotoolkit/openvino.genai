@@ -22,7 +22,8 @@ app=../../../build/tests/module_genai/cpp/genai_modules_test
 # $app
 
 # All ModuleTest
-$app --gtest_filter="ModuleTestSuite*cat_120_100_dog_120_120*"
+$app --gtest_filter="ModuleTestSuite*"
+# $app --gtest_filter="ModuleTestSuite*cat_120_100_dog_120_120*"
 
 # All PipelineTest
 # $app --gtest_filter="PipelineTest*"

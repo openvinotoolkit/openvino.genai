@@ -41,6 +41,8 @@ public:
         check_outputs(pipe);
     }
 
+    static ov::Tensor ut_randn_tensor(const ov::Shape& shape, size_t seed);
+
 protected:
     std::string m_test_name;
     void set_test_name(const std::string& test_name);
@@ -74,9 +76,25 @@ protected:
         return bresult;
     }
 
-    bool compare_shape(const ov::Shape& shape1, const ov::Shape& shape2);
+    template<typename T>
+    bool compare_big_tensor(const ov::Tensor& output, const ov::Tensor& expected, const float& thr = 1e-3) {
+        if (output.get_shape() != expected.get_shape() || output.get_element_type() != expected.get_element_type()) {
+            return false;
+        }
+        size_t real_size = std::min(expected.get_size(), output.get_size());
+        bool bresult = true;
+        for (size_t i = 0; i < real_size; ++i) {
+            T val = static_cast<T>(output.data<T>()[i]);
+            T exp_val = static_cast<T>(expected.data<T>()[i]);
+            if (std::fabs(val - exp_val) > thr) {
+                bresult = false;
+                break;
+            }
+        }
+        return bresult;
+    }
 
-    ov::Tensor ut_randn_tensor(const ov::Shape& shape, size_t seed);
+    bool compare_shape(const ov::Shape& shape1, const ov::Shape& shape2);
 
     std::string check_yaml(const std::string& yaml_content);
 

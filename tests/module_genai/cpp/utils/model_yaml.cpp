@@ -21,6 +21,10 @@ std::string Qwen2_5_VL_3B_Instruct_INT4() {
     return get_model_path() + "/Qwen2.5-VL-3B-Instruct/INT4/";
 }
 
+std::string ZImage_Turbo_fp16_ov() {
+    return get_model_path() + "/Z-Image-Turbo-fp16-ov/";
+}
+
 static YAML::Node input_node(const std::string& name, const std::string& type, const std::string& source) {
     YAML::Node input_node;
     input_node["name"] = name;
