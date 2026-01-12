@@ -391,7 +391,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
             }
 
             auto word_timestamps = add_word_level_timestamps(
-                chunk_sot_tokens,
+                sot_tokens,
                 text_tokens,
                 tokenizer,
                 decoder,

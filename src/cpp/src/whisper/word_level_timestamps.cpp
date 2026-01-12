@@ -1071,12 +1071,6 @@ std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::v
     word_level_timestamps_tokens.insert(word_level_timestamps_tokens.end(), text_tokens.begin(), text_tokens.end());
     word_level_timestamps_tokens.push_back(config.eos_token_id);
 
-    std::cout << "Word-level timestamps tokens (" << word_level_timestamps_tokens.size() << "): [";
-    for (const auto& token : word_level_timestamps_tokens) {
-        std::cout << token << ", ";
-    }
-    std::cout << "]" << std::endl;
-
     ov::Tensor beam_idx = decoder->create_host_tensor(ov::element::i32, {batch_size});
     std::fill_n(beam_idx.data<int32_t>(), batch_size, 0);
 

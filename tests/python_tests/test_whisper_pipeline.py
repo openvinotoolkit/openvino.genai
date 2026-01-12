@@ -609,11 +609,11 @@ def test_word_level_timestamps(model_descr, whisper_librispeech_word_timestamps_
     for i, sample in enumerate(samples):
         result = pipe.generate(
             sample,
-            return_timestamps=False,
+            return_timestamps=True,
             word_timestamps=True,
         )
         reference = whisper_librispeech_word_timestamps_reference[str(i)]
-        assert result.texts[0] == reference["transcription"]
+        assert result.texts[0] == reference["text"]
         for res_word, ref_word in zip(result.words, reference["words"]):
             assert res_word.word == ref_word["word"]
             assert round(res_word.start_ts, 2) == round(ref_word["start_ts"], 2)

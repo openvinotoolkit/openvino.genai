@@ -1,6 +1,7 @@
 {
     "0": {
         "sample_id": 0,
+        "text": " Mr. Quilter is the apostle of the middle classes and we are glad to welcome his gospel.",
         "words": [
             {
                 "word": " Mr.",
@@ -87,11 +88,11 @@
                 "start_ts": 4.940000057220459,
                 "end_ts": 5.339999675750732
             }
-        ],
-        "transcription": " Mr. Quilter is the apostle of the middle classes and we are glad to welcome his gospel."
+        ]
     },
     "1": {
         "sample_id": 1,
+        "text": " Nor is Mr. Quilters' manner less interesting than his matter.",
         "words": [
             {
                 "word": " Nor",
@@ -143,11 +144,11 @@
                 "start_ts": 3.9599997997283936,
                 "end_ts": 4.339999675750732
             }
-        ],
-        "transcription": " Nor is Mr. Quilters' manner less interesting than his matter."
+        ]
     },
     "2": {
         "sample_id": 2,
+        "text": " He tells us that at this festive season of the year with Christmas and roast beef looming before us, similarly drawn from eating and its results occur most readily to the mind.",
         "words": [
             {
                 "word": " He",
@@ -309,11 +310,11 @@
                 "start_ts": 11.719999313354492,
                 "end_ts": 12.019999504089355
             }
-        ],
-        "transcription": " He tells us that at this festive season of the year with Christmas and roast beef looming before us, similarly drawn from eating and its results occur most readily to the mind."
+        ]
     },
     "3": {
         "sample_id": 3,
+        "text": " He has grave doubts whether Sir Frederick Layton's work is really Greek after all and can discover in it but little of Rocky Ithaca.",
         "words": [
             {
                 "word": " He",
@@ -435,11 +436,11 @@
                 "start_ts": 8.760000228881836,
                 "end_ts": 9.359999656677246
             }
-        ],
-        "transcription": " He has grave doubts whether Sir Frederick Layton's work is really Greek after all and can discover in it but little of Rocky Ithaca."
+        ]
     },
     "4": {
         "sample_id": 4,
+        "text": " Lennils, pictures are a sort of upguards and atom paintings, and Mason's exquisite idles are as national as a jingo poem. Mr. Birkut Foster's landscapes smile at one much in the same way that Mr. Carker used to flash his teeth. And Mr. John Colier gives his consider a cheerful slap on the back before he says like a shampoo or a Turkish bath. Next man!",
         "words": [
             {
                 "word": " Lennils,",
@@ -507,7 +508,7 @@
                 "end_ts": 6.759999752044678
             },
             {
-                "word": " Idols",
+                "word": " idles",
                 "start_ts": 6.759999752044678,
                 "end_ts": 7.199999809265137
             },
@@ -617,13 +618,13 @@
                 "end_ts": 16.239999771118164
             },
             {
-                "word": " Karker",
+                "word": " Carker",
                 "start_ts": 16.420000076293945,
-                "end_ts": 16.979999542236328
+                "end_ts": 16.959999084472656
             },
             {
                 "word": " used",
-                "start_ts": 16.979999542236328,
+                "start_ts": 16.959999084472656,
                 "end_ts": 17.399999618530273
             },
             {
@@ -674,66 +675,66 @@
             {
                 "word": " his",
                 "start_ts": 21.639999389648438,
-                "end_ts": 21.8799991607666
+                "end_ts": 21.899999618530273
             },
             {
-                "word": " sitter",
-                "start_ts": 21.8799991607666,
-                "end_ts": 22.18000030517578
+                "word": " consider",
+                "start_ts": 21.69999885559082,
+                "end_ts": 22.119998931884766
             },
             {
                 "word": " a",
-                "start_ts": 22.18000030517578,
-                "end_ts": 22.579999923706055
+                "start_ts": 22.119998931884766,
+                "end_ts": 22.619998931884766
             },
             {
                 "word": " cheerful",
-                "start_ts": 22.579999923706055,
-                "end_ts": 22.939998626708984
+                "start_ts": 22.619998931884766,
+                "end_ts": 22.959999084472656
             },
             {
                 "word": " slap",
-                "start_ts": 22.939998626708984,
-                "end_ts": 23.5
+                "start_ts": 22.959999084472656,
+                "end_ts": 23.51999855041504
             },
             {
                 "word": " on",
-                "start_ts": 23.5,
-                "end_ts": 23.739999771118164
+                "start_ts": 23.51999855041504,
+                "end_ts": 23.73999786376953
             },
             {
                 "word": " the",
-                "start_ts": 23.739999771118164,
+                "start_ts": 23.73999786376953,
                 "end_ts": 23.8799991607666
             },
             {
                 "word": " back",
                 "start_ts": 23.8799991607666,
-                "end_ts": 24.299999237060547
+                "end_ts": 24.419998168945312
             },
             {
                 "word": " before",
-                "start_ts": 24.299999237060547,
-                "end_ts": 24.85999870300293
+                "start_ts": 24.419998168945312,
+                "end_ts": 24.8799991607666
             },
             {
                 "word": " he",
-                "start_ts": 24.85999870300293,
+                "start_ts": 24.8799991607666,
                 "end_ts": 25.139999389648438
             },
             {
-                "word": " says,",
+                "word": " says",
                 "start_ts": 25.139999389648438,
-                "end_ts": 25.459999084472656
+                "end_ts": 25.53999900817871
             },
             {
                 "word": " like",
-                "start_ts": 25.459999084472656,
-                "end_ts": 25.799999237060547
+                "start_ts": 25.53999900817871,
+                "end_ts": 25.779998779296875
             },
             {
                 "word": " a",
-                "start_ts": 25.799999237060547,
+                "start_ts": 25.779998779296875,
                 "end_ts": 26.099998474121094
             },
             {
@@ -744,38 +745,38 @@
             {
                 "word": " or",
                 "start_ts": 26.459999084472656,
-                "end_ts": 26.760000228881836
+                "end_ts": 26.799999237060547
             },
             {
                 "word": " a",
-                "start_ts": 26.760000228881836,
-                "end_ts": 26.979999542236328
+                "start_ts": 26.799999237060547,
+                "end_ts": 26.999998092651367
             },
             {
-                "word": " turkish",
-                "start_ts": 26.979999542236328,
-                "end_ts": 27.399999618530273
+                "word": " Turkish",
+                "start_ts": 26.999998092651367,
+                "end_ts": 27.299999237060547
             },
             {
-                "word": " bath,",
-                "start_ts": 27.399999618530273,
-                "end_ts": 27.739999771118164
+                "word": " bath.",
+                "start_ts": 27.299999237060547,
+                "end_ts": 27.779998779296875
             },
             {
-                "word": " next",
-                "start_ts": 28.399999618530273,
-                "end_ts": 28.559999465942383
+                "word": " Next",
+                "start_ts": 28.31999969482422,
+                "end_ts": 28.55999755859375
             },
             {
-                "word": " man,",
-                "start_ts": 28.559999465942383,
-                "end_ts": 29.0
+                "word": " man!",
+                "start_ts": 28.55999755859375,
+                "end_ts": 28.939998626708984
             }
-        ],
-        "transcription": " Lennils, pictures are a sort of upguards and atom paintings, and Mason's exquisite Idols are as national as a jingo poem. Mr. Birkut Foster's landscapes smile at one much in the same way that Mr. Karker used to flash his teeth. And Mr. John Colier gives his sitter a cheerful slap on the back before he says, like a shampoo or a turkish bath, next man,"
+        ]
     },
     "5": {
         "sample_id": 5,
+        "text": " It is obviously unnecessary for us to point out how luminous these criticisms are, how delicate and expression.",
         "words": [
             {
                 "word": " It",
@@ -867,11 +868,11 @@
                 "start_ts": 7.779999732971191,
                 "end_ts": 8.239999771118164
             }
-        ],
-        "transcription": " It is obviously unnecessary for us to point out how luminous these criticisms are, how delicate and expression."
+        ]
     },
     "6": {
         "sample_id": 6,
+        "text": " On the general principles of art and Mr. Quilter writes with equal lucidity.",
         "words": [
             {
                 "word": " On",
@@ -938,11 +939,11 @@
                 "start_ts": 4.239999771118164,
                 "end_ts": 4.980000019073486
             }
-        ],
-        "transcription": " On the general principles of art and Mr. Quilter writes with equal lucidity."
+        ]
     },
     "7": {
         "sample_id": 7,
+        "text": " Painting he tells us is of a different quality to mathematics and finish in art is adding more effect.",
         "words": [
             {
                 "word": " Painting",
@@ -1039,11 +1040,11 @@
                 "start_ts": 8.34000015258789,
                 "end_ts": 8.779999732971191
             }
-        ],
-        "transcription": " Painting he tells us is of a different quality to mathematics and finish in art is adding more effect."
+        ]
     },
     "8": {
         "sample_id": 8,
+        "text": " As for etchings, there are two kinds, British and foreign.",
         "words": [
             {
                 "word": " As",
@@ -1095,11 +1096,11 @@
                 "start_ts": 4.259999752044678,
                 "end_ts": 4.579999923706055
             }
-        ],
-        "transcription": " As for etchings, there are two kinds, British and foreign."
+        ]
     },
     "9": {
         "sample_id": 9,
+        "text": " He laments most bitterly the divorce that has been made between decorative art and what we usually call pictures. Makes a customary appeal to the last judgment and reminds us that in the great days of art Michael Anjalo was the furnishing upholsterer.",
         "words": [
             {
                 "word": " He",
@@ -1192,23 +1193,23 @@
                 "end_ts": 7.5
             },
             {
-                "word": " pictures",
+                "word": " pictures.",
                 "start_ts": 7.5,
-                "end_ts": 8.09999942779541
+                "end_ts": 8.119999885559082
             },
             {
-                "word": " makes",
-                "start_ts": 8.09999942779541,
-                "end_ts": 9.15999984741211
+                "word": " Makes",
+                "start_ts": 9.039999961853027,
+                "end_ts": 9.199999809265137
             },
             {
                 "word": " a",
-                "start_ts": 9.15999984741211,
-                "end_ts": 9.34000015258789
+                "start_ts": 9.199999809265137,
+                "end_ts": 9.319999694824219
             },
             {
                 "word": " customary",
-                "start_ts": 9.34000015258789,
+                "start_ts": 9.319999694824219,
                 "end_ts": 10.0
             },
             {
@@ -1234,16 +1235,16 @@
             {
                 "word": " judgment",
                 "start_ts": 11.139999389648438,
-                "end_ts": 11.59999942779541
+                "end_ts": 11.579999923706055
             },
             {
                 "word": " and",
-                "start_ts": 11.59999942779541,
-                "end_ts": 11.9399995803833
+                "start_ts": 11.579999923706055,
+                "end_ts": 11.920000076293945
             },
             {
                 "word": " reminds",
-                "start_ts": 11.9399995803833,
+                "start_ts": 11.920000076293945,
                 "end_ts": 12.300000190734863
             },
             {
@@ -1269,11 +1270,11 @@
             {
                 "word": " great",
                 "start_ts": 13.299999237060547,
-                "end_ts": 13.559999465942383
+                "end_ts": 13.579999923706055
             },
             {
                 "word": " days",
-                "start_ts": 13.559999465942383,
+                "start_ts": 13.579999923706055,
                 "end_ts": 13.979999542236328
             },
             {
@@ -1289,38 +1290,38 @@
             {
                 "word": " Michael",
                 "start_ts": 14.59999942779541,
-                "end_ts": 14.920000076293945
+                "end_ts": 14.9399995803833
             },
             {
-                "word": " Angelov",
-                "start_ts": 14.920000076293945,
-                "end_ts": 15.59999942779541
+                "word": " Anjalo",
+                "start_ts": 14.9399995803833,
+                "end_ts": 15.519999504089355
             },
             {
                 "word": " was",
-                "start_ts": 15.59999942779541,
-                "end_ts": 16.020000457763672
+                "start_ts": 15.519999504089355,
+                "end_ts": 15.979999542236328
             },
             {
                 "word": " the",
-                "start_ts": 16.020000457763672,
+                "start_ts": 15.979999542236328,
                 "end_ts": 16.459999084472656
             },
             {
                 "word": " furnishing",
                 "start_ts": 16.459999084472656,
-                "end_ts": 17.059999465942383
+                "end_ts": 17.079999923706055
             },
             {
-                "word": " apostorer.",
-                "start_ts": 17.059999465942383,
-                "end_ts": 17.84000015258789
+                "word": " upholsterer.",
+                "start_ts": 17.079999923706055,
+                "end_ts": 17.899999618530273
             }
-        ],
-        "transcription": " He laments most bitterly the divorce that has been made between decorative art and what we usually call pictures makes a customary appeal to the last judgment and reminds us that in the great days of art Michael Angelov was the furnishing apostorer."
+        ]
     },
     "10": {
         "sample_id": 10,
+        "text": " Near the fire, any ornaments Fred brought home from India on the mental board.",
         "words": [
             {
                 "word": " Near",
@@ -1392,11 +1393,11 @@
                 "start_ts": 4.71999979019165,
                 "end_ts": 5.059999942779541
             }
-        ],
-        "transcription": " Near the fire, any ornaments Fred brought home from India on the mental board."
+        ]
     },
     "11": {
         "sample_id": 11,
+        "text": " In fact, he is quite severe on Mr. Ruskin, for not recognizing that a picture should denote the frailty of man. And remarks with pleasing courtesy and falseness grace that many faces are feeling.",
         "words": [
             {
                 "word": " In",
@@ -1539,40 +1540,40 @@
                 "end_ts": 11.859999656677246
             },
             {
-                "word": " graced",
+                "word": " grace",
                 "start_ts": 11.859999656677246,
-                "end_ts": 12.399999618530273
+                "end_ts": 12.279999732971191
             },
             {
                 "word": " that",
-                "start_ts": 12.399999618530273,
-                "end_ts": 13.139999389648438
+                "start_ts": 12.279999732971191,
+                "end_ts": 13.34000015258789
             },
             {
                 "word": " many",
-                "start_ts": 13.139999389648438,
+                "start_ts": 13.34000015258789,
                 "end_ts": 13.679999351501465
             },
             {
-                "word": " phases",
+                "word": " faces",
                 "start_ts": 13.679999351501465,
                 "end_ts": 14.119999885559082
             },
             {
-                "word": " of",
+                "word": " are",
                 "start_ts": 14.119999885559082,
-                "end_ts": 14.420000076293945
+                "end_ts": 14.399999618530273
             },
             {
-                "word": " feeling",
-                "start_ts": 14.420000076293945,
+                "word": " feeling.",
+                "start_ts": 14.399999618530273,
                 "end_ts": 14.739999771118164
             }
-        ],
-        "transcription": " In fact, he is quite severe on Mr. Ruskin, for not recognizing that a picture should denote the frailty of man. And remarks with pleasing courtesy and falseness graced that many phases of feeling"
+        ]
     },
     "12": {
         "sample_id": 12,
+        "text": " Only, unfortunately, his own work never does get good.",
         "words": [
             {
                 "word": " Only,",
@@ -1619,11 +1620,11 @@
                 "start_ts": 4.559999942779541,
                 "end_ts": 5.0
             }
-        ],
-        "transcription": " Only, unfortunately, his own work never does get good."
+        ]
     },
     "13": {
         "sample_id": 13,
+        "text": " Mr. Kulter has missed his chance, for he has failed even to make himself the tougher of painting.",
         "words": [
             {
                 "word": " Mr.",
@@ -1715,11 +1716,11 @@
                 "start_ts": 6.139999866485596,
                 "end_ts": 6.480000019073486
             }
-        ],
-        "transcription": " Mr. Kulter has missed his chance, for he has failed even to make himself the tougher of painting."
+        ]
     },
     "14": {
         "sample_id": 14,
+        "text": " by Harry Quilter MA.",
         "words": [
             {
                 "word": " by",
@@ -1741,11 +1742,11 @@
                 "start_ts": 1.4399999380111694,
                 "end_ts": 1.7799999713897705
             }
-        ],
-        "transcription": " by Harry Quilter MA."
+        ]
     },
     "15": {
         "sample_id": 15,
+        "text": " Because you are asleep instead of conquering, the lovely rose princess has become a fiddle without a bow. All poor shaggy sits there, a cooling dove.",
         "words": [
             {
                 "word": " Because",
@@ -1793,12 +1794,12 @@
                 "end_ts": 3.919999837875366
             },
             {
-                "word": " Rose",
+                "word": " rose",
                 "start_ts": 3.919999837875366,
                 "end_ts": 4.339999675750732
             },
             {
-                "word": " Princess",
+                "word": " princess",
                 "start_ts": 4.339999675750732,
                 "end_ts": 4.799999713897705
             },
@@ -1838,18 +1839,18 @@
                 "end_ts": 7.0
             },
             {
-                "word": " While",
+                "word": " All",
                 "start_ts": 7.480000019073486,
                 "end_ts": 7.659999847412109
             },
             {
                 "word": " poor",
                 "start_ts": 7.659999847412109,
-                "end_ts": 7.899999618530273
+                "end_ts": 7.87999963760376
             },
             {
-                "word": " Shaggy",
-                "start_ts": 7.899999618530273,
+                "word": " shaggy",
+                "start_ts": 7.87999963760376,
                 "end_ts": 8.5
             },
             {
@@ -1877,11 +1878,11 @@
                 "start_ts": 9.800000190734863,
                 "end_ts": 10.300000190734863
             }
-        ],
-        "transcription": " Because you are asleep instead of conquering, the lovely Rose Princess has become a fiddle without a bow. While poor Shaggy sits there, a cooling dove."
+        ]
     },
     "16": {
         "sample_id": 16,
+        "text": " He has gone and gone for good answered Paul Icrom who had managed to squeeze into the room beside the dragon and had witnessed the occurrences with much interest.",
         "words": [
             {
                 "word": " He",
@@ -2028,11 +2029,11 @@
                 "start_ts": 10.119999885559082,
                 "end_ts": 10.5
             }
-        ],
-        "transcription": " He has gone and gone for good answered Paul Icrom who had managed to squeeze into the room beside the dragon and had witnessed the occurrences with much interest."
+        ]
     },
     "17": {
         "sample_id": 17,
+        "text": " I have remained a prisoner only because I wished to be one. And with this, he stepped forward and burst the stout chains as easily as if they had been threads.",
         "words": [
             {
                 "word": " I",
@@ -2140,18 +2141,23 @@
                 "end_ts": 8.300000190734863
             },
             {
-                "word": " stoutchains",
+                "word": " stout",
                 "start_ts": 8.300000190734863,
+                "end_ts": 8.519999504089355
+            },
+            {
+                "word": " chains",
+                "start_ts": 8.519999504089355,
                 "end_ts": 8.880000114440918
             },
             {
                 "word": " as",
                 "start_ts": 8.880000114440918,
-                "end_ts": 9.260000228881836
+                "end_ts": 9.279999732971191
             },
             {
                 "word": " easily",
-                "start_ts": 9.260000228881836,
+                "start_ts": 9.279999732971191,
                 "end_ts": 9.559999465942383
             },
             {
@@ -2167,11 +2173,11 @@
             {
                 "word": " they",
                 "start_ts": 10.019999504089355,
-                "end_ts": 10.059999465942383
+                "end_ts": 10.079999923706055
             },
             {
                 "word": " had",
-                "start_ts": 10.059999465942383,
+                "start_ts": 10.079999923706055,
                 "end_ts": 10.279999732971191
             },
             {
@@ -2184,11 +2190,11 @@
                 "start_ts": 10.519999504089355,
                 "end_ts": 10.899999618530273
             }
-        ],
-        "transcription": " I have remained a prisoner only because I wished to be one. And with this, he stepped forward and burst the stoutchains as easily as if they had been threads."
+        ]
     },
     "18": {
         "sample_id": 18,
+        "text": " The little girl had been asleep, but she heard the raps and opened the door.",
         "words": [
             {
                 "word": " The",
@@ -2265,11 +2271,11 @@
                 "start_ts": 4.079999923706055,
                 "end_ts": 4.299999713897705
             }
-        ],
-        "transcription": " The little girl had been asleep, but she heard the raps and opened the door."
+        ]
     },
     "19": {
         "sample_id": 19,
+        "text": " The king is flooded disgrace and your friends are asking for you.",
         "words": [
             {
                 "word": " The",
@@ -2331,11 +2337,11 @@
                 "start_ts": 3.5,
                 "end_ts": 3.8399999141693115
             }
-        ],
-        "transcription": " The king is flooded disgrace and your friends are asking for you."
+        ]
     },
     "20": {
         "sample_id": 20,
+        "text": " I begged Ruggano a long ago to send him away, but he would not do so.",
         "words": [
             {
                 "word": " I",
@@ -2417,11 +2423,11 @@
                 "start_ts": 3.9800000190734863,
                 "end_ts": 4.319999694824219
             }
-        ],
-        "transcription": " I begged Ruggano a long ago to send him away, but he would not do so."
+        ]
     },
     "21": {
         "sample_id": 21,
+        "text": " I also offered to help your brother to escape, but he would not go.",
         "words": [
             {
                 "word": " I",
@@ -2493,11 +2499,11 @@
                 "start_ts": 3.259999990463257,
                 "end_ts": 3.6599998474121094
             }
-        ],
-        "transcription": " I also offered to help your brother to escape, but he would not go."
+        ]
     },
     "22": {
         "sample_id": 22,
+        "text": " It eats and sleeps very steadily, replied the new king.",
         "words": [
             {
                 "word": " It",
@@ -2549,11 +2555,11 @@
                 "start_ts": 3.259999990463257,
                 "end_ts": 3.6399998664855957
             }
-        ],
-        "transcription": " It eats and sleeps very steadily, replied the new king."
+        ]
     },
     "23": {
         "sample_id": 23,
+        "text": " I hope he doesn't work too hard since she got me.",
         "words": [
             {
                 "word": " I",
@@ -2610,11 +2616,11 @@
                 "start_ts": 3.0799999237060547,
                 "end_ts": 3.299999952316284
             }
-        ],
-        "transcription": " I hope he doesn't work too hard since she got me."
+        ]
     },
     "24": {
         "sample_id": 24,
+        "text": " He doesn't work at all.",
         "words": [
             {
                 "word": " He",
@@ -2641,11 +2647,11 @@
                 "start_ts": 1.3399999141693115,
                 "end_ts": 1.71999990940094
             }
-        ],
-        "transcription": " He doesn't work at all."
+        ]
     },
     "25": {
         "sample_id": 25,
+        "text": " In fact, there is nothing he can do in these dominions as well as our norms, whose numbers are so great that it worries us to keep them all busy.",
         "words": [
             {
                 "word": " In",
@@ -2723,18 +2729,18 @@
                 "end_ts": 4.179999828338623
             },
             {
-                "word": " nooms",
+                "word": " norms,",
                 "start_ts": 4.179999828338623,
-                "end_ts": 4.679999828338623
+                "end_ts": 4.579999923706055
             },
             {
                 "word": " whose",
-                "start_ts": 4.679999828338623,
-                "end_ts": 5.5
+                "start_ts": 5.359999656677246,
+                "end_ts": 5.519999980926514
             },
             {
                 "word": " numbers",
-                "start_ts": 5.5,
+                "start_ts": 5.519999980926514,
                 "end_ts": 5.779999732971191
             },
             {
@@ -2755,11 +2761,11 @@
             {
                 "word": " that",
                 "start_ts": 6.579999923706055,
-                "end_ts": 6.819999694824219
+                "end_ts": 6.839999675750732
             },
             {
                 "word": " it",
-                "start_ts": 6.819999694824219,
+                "start_ts": 6.839999675750732,
                 "end_ts": 6.940000057220459
             },
             {
@@ -2797,11 +2803,11 @@
                 "start_ts": 8.15999984741211,
                 "end_ts": 8.4399995803833
             }
-        ],
-        "transcription": " In fact, there is nothing he can do in these dominions as well as our nooms whose numbers are so great that it worries us to keep them all busy."
+        ]
     },
     "26": {
         "sample_id": 26,
+        "text": " Not exactly, we've turned Calico.",
         "words": [
             {
                 "word": " Not",
@@ -2828,11 +2834,11 @@
                 "start_ts": 2.259999990463257,
                 "end_ts": 2.7799999713897705
             }
-        ],
-        "transcription": " Not exactly, we've turned Calico."
+        ]
     },
     "27": {
         "sample_id": 27,
+        "text": " Where is my brother now?",
         "words": [
             {
                 "word": " Where",
@@ -2859,11 +2865,11 @@
                 "start_ts": 1.4399999380111694,
                 "end_ts": 1.8600000143051147
             }
-        ],
-        "transcription": " Where is my brother now?"
+        ]
     },
     "28": {
         "sample_id": 28,
+        "text": " in Quarage, and the metal forest.",
         "words": [
             {
                 "word": " in",
@@ -2871,23 +2877,23 @@
                 "end_ts": 0.4399999976158142
             },
             {
-                "word": " Quarage",
+                "word": " Quarage,",
                 "start_ts": 0.4399999976158142,
-                "end_ts": 0.8399999737739563
+                "end_ts": 0.85999995470047
             },
             {
                 "word": " and",
-                "start_ts": 0.8399999737739563,
-                "end_ts": 1.4800000190734863
+                "start_ts": 1.3799999952316284,
+                "end_ts": 2.259999990463257
             },
             {
                 "word": " the",
-                "start_ts": 1.4800000190734863,
-                "end_ts": 2.419999837875366
+                "start_ts": 2.259999990463257,
+                "end_ts": 2.4600000381469727
             },
             {
                 "word": " metal",
-                "start_ts": 2.419999837875366,
+                "start_ts": 2.4600000381469727,
                 "end_ts": 2.7200000286102295
             },
             {
@@ -2895,11 +2901,11 @@
                 "start_ts": 2.7200000286102295,
                 "end_ts": 3.1599998474121094
             }
-        ],
-        "transcription": " in Quarage and the metal forest."
+        ]
     },
     "29": {
         "sample_id": 29,
+        "text": " Where is that?",
         "words": [
             {
                 "word": " Where",
@@ -2916,11 +2922,11 @@
                 "start_ts": 1.0199999809265137,
                 "end_ts": 1.3199999332427979
             }
-        ],
-        "transcription": " Where is that?"
+        ]
     },
     "30": {
         "sample_id": 30,
+        "text": " The Middle Forest is in the Great Dome to Cavern, the largest and all our dominions replied Calico.",
         "words": [
             {
                 "word": " The",
@@ -3012,11 +3018,11 @@
                 "start_ts": 6.420000076293945,
                 "end_ts": 6.980000019073486
             }
-        ],
-        "transcription": " The Middle Forest is in the Great Dome to Cavern, the largest and all our dominions replied Calico."
+        ]
     },
     "31": {
         "sample_id": 31,
+        "text": " Calaccio has succeeded.",
         "words": [
             {
                 "word": " Calaccio",
@@ -3033,11 +3039,11 @@
                 "start_ts": 1.159999966621399,
                 "end_ts": 1.6399999856948853
             }
-        ],
-        "transcription": " Calaccio has succeeded."
+        ]
     },
     "32": {
         "sample_id": 32,
+        "text": " However, if we look sharp, we may be able to discover one of these secret ways.",
         "words": [
             {
                 "word": " However,",
@@ -3119,11 +3125,11 @@
                 "start_ts": 5.839999675750732,
                 "end_ts": 6.279999732971191
             }
-        ],
-        "transcription": " However, if we look sharp, we may be able to discover one of these secret ways."
+        ]
     },
     "33": {
         "sample_id": 33,
+        "text": " Oh no, I'm quite sure he didn't.",
         "words": [
             {
                 "word": " Oh",
@@ -3160,11 +3166,11 @@
                 "start_ts": 1.7599999904632568,
                 "end_ts": 2.1399998664855957
             }
-        ],
-        "transcription": " Oh no, I'm quite sure he didn't."
+        ]
     },
     "34": {
         "sample_id": 34,
+        "text": " That's funny, remarked a bit, see you thought funny.",
         "words": [
             {
                 "word": " That's",
@@ -3211,11 +3217,11 @@
                 "start_ts": 2.6399998664855957,
                 "end_ts": 2.879999876022339
             }
-        ],
-        "transcription": " That's funny, remarked a bit, see you thought funny."
+        ]
     },
     "35": {
         "sample_id": 35,
+        "text": " I don't believe and knew any magic or she'd have worked it before.",
         "words": [
             {
                 "word": " I",
@@ -3282,11 +3288,11 @@
                 "start_ts": 3.7799999713897705,
                 "end_ts": 4.119999885559082
             }
-        ],
-        "transcription": " I don't believe and knew any magic or she'd have worked it before."
+        ]
     },
     "36": {
         "sample_id": 36,
+        "text": " I do not know, confess Shaggy.",
         "words": [
             {
                 "word": " I",
@@ -3309,20 +3315,20 @@
                 "end_ts": 1.4399999380111694
             },
             {
-                "word": " confess,",
+                "word": " confess",
                 "start_ts": 1.5799999237060547,
                 "end_ts": 1.8600000143051147
             },
             {
                 "word": " Shaggy.",
-                "start_ts": 2.0799999237060547,
+                "start_ts": 1.8600000143051147,
                 "end_ts": 2.419999837875366
             }
-        ],
-        "transcription": " I do not know, confess, Shaggy."
+        ]
     },
     "37": {
         "sample_id": 37,
+        "text": " True, agreed, Calico.",
         "words": [
             {
                 "word": " True,",
@@ -3339,11 +3345,11 @@
                 "start_ts": 1.8799999952316284,
                 "end_ts": 2.359999895095825
             }
-        ],
-        "transcription": " True, agreed, Calico."
+        ]
     },
     "38": {
         "sample_id": 38,
+        "text": " Gallico went to the big gong and pounded on it just as we're good or used to do, but no one answered the summons.",
         "words": [
             {
                 "word": " Gallico",
@@ -3431,18 +3437,18 @@
                 "end_ts": 4.619999885559082
             },
             {
-                "word": " do",
+                "word": " do,",
                 "start_ts": 4.619999885559082,
                 "end_ts": 5.079999923706055
             },
             {
                 "word": " but",
-                "start_ts": 5.079999923706055,
-                "end_ts": 5.460000038146973
+                "start_ts": 5.359999656677246,
+                "end_ts": 5.519999980926514
             },
             {
                 "word": " no",
-                "start_ts": 5.460000038146973,
+                "start_ts": 5.519999980926514,
                 "end_ts": 5.639999866485596
             },
             {
@@ -3463,13 +3469,13 @@
             {
                 "word": " summons.",
                 "start_ts": 6.399999618530273,
-                "end_ts": 6.859999656677246
+                "end_ts": 6.839999675750732
             }
-        ],
-        "transcription": " Gallico went to the big gong and pounded on it just as we're good or used to do but no one answered the summons."
+        ]
     },
     "39": {
         "sample_id": 39,
+        "text": " Having returned to the royal cavern, Calico first pounded the gong and then sat in the throne, wearing regados, discarded ruby crown, and holding in his hand to scepter which regato had so often thrown at his head.",
         "words": [
             {
                 "word": " Having",
@@ -3562,9 +3568,9 @@
                 "end_ts": 6.819999694824219
             },
             {
-                "word": " reggos,",
+                "word": " regados,",
                 "start_ts": 6.819999694824219,
-                "end_ts": 7.37999963760376
+                "end_ts": 7.399999618530273
             },
             {
                 "word": " discarded",
@@ -3619,26 +3625,26 @@
             {
                 "word": " which",
                 "start_ts": 11.059999465942383,
-                "end_ts": 11.300000190734863
+                "end_ts": 11.319999694824219
             },
             {
-                "word": " reggo",
-                "start_ts": 11.300000190734863,
-                "end_ts": 11.59999942779541
+                "word": " regato",
+                "start_ts": 11.319999694824219,
+                "end_ts": 11.719999313354492
             },
             {
                 "word": " had",
-                "start_ts": 11.59999942779541,
-                "end_ts": 12.039999961853027
+                "start_ts": 11.719999313354492,
+                "end_ts": 12.079999923706055
             },
             {
                 "word": " so",
-                "start_ts": 12.039999961853027,
-                "end_ts": 12.279999732971191
+                "start_ts": 12.079999923706055,
+                "end_ts": 12.300000190734863
             },
             {
                 "word": " often",
-                "start_ts": 12.279999732971191,
+                "start_ts": 12.300000190734863,
                 "end_ts": 12.619999885559082
             },
             {
@@ -3649,11 +3655,11 @@
             {
                 "word": " at",
                 "start_ts": 13.09999942779541,
-                "end_ts": 13.479999542236328
+                "end_ts": 13.460000038146973
             },
             {
                 "word": " his",
-                "start_ts": 13.479999542236328,
+                "start_ts": 13.460000038146973,
                 "end_ts": 13.699999809265137
             },
             {
@@ -3661,11 +3667,11 @@
                 "start_ts": 13.699999809265137,
                 "end_ts": 14.019999504089355
             }
-        ],
-        "transcription": " Having returned to the royal cavern, Calico first pounded the gong and then sat in the throne, wearing reggos, discarded ruby crown, and holding in his hand to scepter which reggo had so often thrown at his head."
+        ]
     },
     "40": {
         "sample_id": 40,
+        "text": " A man said to the universe, Sir, I exist.",
         "words": [
             {
                 "word": " A",
@@ -3712,11 +3718,11 @@
                 "start_ts": 3.7200000286102295,
                 "end_ts": 4.039999961853027
             }
-        ],
-        "transcription": " A man said to the universe, Sir, I exist."
+        ]
     },
     "41": {
         "sample_id": 41,
+        "text": " Sweat covered Brianna's body, trickling into the tightling cloth that was the only garment you wore.",
         "words": [
             {
                 "word": " Sweat",
@@ -3754,18 +3760,13 @@
                 "end_ts": 3.6399998664855957
             },
             {
-                "word": " tight",
+                "word": " tightling",
                 "start_ts": 3.6399998664855957,
-                "end_ts": 3.859999895095825
-            },
-            {
-                "word": "-winged",
-                "start_ts": 3.859999895095825,
-                "end_ts": 4.239999771118164
+                "end_ts": 4.119999885559082
             },
             {
                 "word": " cloth",
-                "start_ts": 4.239999771118164,
+                "start_ts": 4.119999885559082,
                 "end_ts": 4.5
             },
             {
@@ -3791,23 +3792,23 @@
             {
                 "word": " garment",
                 "start_ts": 5.299999713897705,
-                "end_ts": 5.559999942779541
+                "end_ts": 5.579999923706055
             },
             {
-                "word": " he",
-                "start_ts": 5.559999942779541,
-                "end_ts": 5.799999713897705
+                "word": " you",
+                "start_ts": 5.579999923706055,
+                "end_ts": 5.839999675750732
             },
             {
                 "word": " wore.",
-                "start_ts": 5.799999713897705,
-                "end_ts": 6.159999847412109
+                "start_ts": 5.839999675750732,
+                "end_ts": 6.179999828338623
             }
-        ],
-        "transcription": " Sweat covered Brianna's body, trickling into the tight-winged cloth that was the only garment he wore."
+        ]
     },
     "42": {
         "sample_id": 42,
+        "text": " The cut on his chest still dripping blood. The ache of his overstrain eyes. Even the soaring arena around him with thousands of spectators, retrievalidies not worth thinking about.",
         "words": [
             {
                 "word": " The",
@@ -3954,11 +3955,11 @@
                 "start_ts": 12.4399995803833,
                 "end_ts": 12.920000076293945
             }
-        ],
-        "transcription": " The cut on his chest still dripping blood. The ache of his overstrain eyes. Even the soaring arena around him with thousands of spectators, retrievalidies not worth thinking about."
+        ]
     },
     "43": {
         "sample_id": 43,
+        "text": " His instant panic was followed by a small sharp blow, high on his chest.",
         "words": [
             {
                 "word": " His",
@@ -4030,11 +4031,11 @@
                 "start_ts": 4.539999961853027,
                 "end_ts": 4.859999656677246
             }
-        ],
-        "transcription": " His instant panic was followed by a small sharp blow, high on his chest."
+        ]
     },
     "44": {
         "sample_id": 44,
+        "text": " One minute of voice said, and the time buzzer sounded.",
         "words": [
             {
                 "word": " One",
@@ -4086,11 +4087,11 @@
                 "start_ts": 4.179999828338623,
                 "end_ts": 4.5
             }
-        ],
-        "transcription": " One minute of voice said, and the time buzzer sounded."
+        ]
     },
     "45": {
         "sample_id": 45,
+        "text": " A minute is not a very large measure of time and his body needed every fraction of it.",
         "words": [
             {
                 "word": " A",
@@ -4182,11 +4183,11 @@
                 "start_ts": 5.299999713897705,
                 "end_ts": 5.539999961853027
             }
-        ],
-        "transcription": " A minute is not a very large measure of time and his body needed every fraction of it."
+        ]
     },
     "46": {
         "sample_id": 46,
+        "text": " The buzzers were triggered as muscles into complete relaxation.",
         "words": [
             {
                 "word": " The",
@@ -4233,11 +4234,11 @@
                 "start_ts": 3.5799999237060547,
                 "end_ts": 4.159999847412109
             }
-        ],
-        "transcription": " The buzzers were triggered as muscles into complete relaxation."
+        ]
     },
     "47": {
         "sample_id": 47,
+        "text": " Only his heart and lungs worked on at a strong, measured rate.",
         "words": [
             {
                 "word": " Only",
@@ -4299,11 +4300,11 @@
                 "start_ts": 3.859999895095825,
                 "end_ts": 4.239999771118164
             }
-        ],
-        "transcription": " Only his heart and lungs worked on at a strong, measured rate."
+        ]
     },
     "48": {
         "sample_id": 48,
+        "text": " He was in reverie sliding out on the borders of consciousness.",
         "words": [
             {
                 "word": " He",
@@ -4360,11 +4361,11 @@
                 "start_ts": 3.4800000190734863,
                 "end_ts": 3.919999837875366
             }
-        ],
-        "transcription": " He was in reverie sliding out on the borders of consciousness."
+        ]
     },
     "49": {
         "sample_id": 49,
+        "text": " The contestants in the 20s needed undisturbed rest. Therefore, knights and the dormitories were as quiet as death.",
         "words": [
             {
                 "word": " The",
@@ -4456,11 +4457,11 @@
                 "start_ts": 7.87999963760376,
                 "end_ts": 8.139999389648438
             }
-        ],
-        "transcription": " The contestants in the 20s needed undisturbed rest. Therefore, knights and the dormitories were as quiet as death."
+        ]
     },
     "50": {
         "sample_id": 50,
+        "text": " Particularly so, on this last night, when only two of the little cubicles were occupied, the thousands of others standing with dark empty doors.",
         "words": [
             {
                 "word": " Particularly",
@@ -4582,11 +4583,11 @@
                 "start_ts": 9.739999771118164,
                 "end_ts": 10.179999351501465
             }
-        ],
-        "transcription": " Particularly so, on this last night, when only two of the little cubicles were occupied, the thousands of others standing with dark empty doors."
+        ]
     },
     "51": {
         "sample_id": 51,
+        "text": " The other voice snapped with a harsh urgency, clearly used to command.",
         "words": [
             {
                 "word": " The",
@@ -4648,11 +4649,11 @@
                 "start_ts": 4.199999809265137,
                 "end_ts": 4.480000019073486
             }
-        ],
-        "transcription": " The other voice snapped with a harsh urgency, clearly used to command."
+        ]
     },
     "52": {
         "sample_id": 52,
+        "text": " I'm here because the matter is of utmost importance and brand is the one I must see. Now stand aside.",
         "words": [
             {
                 "word": " I'm",
@@ -4754,11 +4755,11 @@
                 "start_ts": 6.679999828338623,
                 "end_ts": 7.179999828338623
             }
-        ],
-        "transcription": " I'm here because the matter is of utmost importance and brand is the one I must see. Now stand aside."
+        ]
     },
     "53": {
         "sample_id": 53,
+        "text": " The 20s.",
         "words": [
             {
                 "word": " The",
@@ -4770,11 +4771,11 @@
                 "start_ts": 0.7999999523162842,
                 "end_ts": 1.5199999809265137
             }
-        ],
-        "transcription": " The 20s."
+        ]
     },
     "54": {
         "sample_id": 54,
+        "text": " He must have drawn his gun because the intruder said quickly, but that away you're being a fool. Out!",
         "words": [
             {
                 "word": " He",
@@ -4871,11 +4872,11 @@
                 "start_ts": 6.920000076293945,
                 "end_ts": 7.239999771118164
             }
-        ],
-        "transcription": " He must have drawn his gun because the intruder said quickly, but that away you're being a fool. Out!"
+        ]
     },
     "55": {
         "sample_id": 55,
+        "text": " The ressalence then and still wondering, Brienne was once more asleep.",
         "words": [
             {
                 "word": " The",
@@ -4932,11 +4933,11 @@
                 "start_ts": 4.880000114440918,
                 "end_ts": 5.159999847412109
             }
-        ],
-        "transcription": " The ressalence then and still wondering, Brienne was once more asleep."
+        ]
     },
     "56": {
         "sample_id": 56,
+        "text": " 10 seconds",
         "words": [
             {
                 "word": " 10",
@@ -4944,15 +4945,15 @@
                 "end_ts": 0.8199999928474426
             },
             {
-                "word": " seconds.",
+                "word": " seconds",
                 "start_ts": 0.8199999928474426,
                 "end_ts": 1.2599999904632568
             }
-        ],
-        "transcription": " 10 seconds."
+        ]
     },
     "57": {
         "sample_id": 57,
+        "text": " He asked the handler who was needing his aching muscles.",
         "words": [
             {
                 "word": " He",
@@ -5004,11 +5005,11 @@
                 "start_ts": 2.799999952316284,
                 "end_ts": 3.0799999237060547
             }
-        ],
-        "transcription": " He asked the handler who was needing his aching muscles."
+        ]
     },
     "58": {
         "sample_id": 58,
+        "text": " A red-haired mountain of a man was an apparently inexhaustible story of energy.",
         "words": [
             {
                 "word": " A",
@@ -5080,11 +5081,11 @@
                 "start_ts": 4.980000019073486,
                 "end_ts": 5.359999656677246
             }
-        ],
-        "transcription": " A red-haired mountain of a man was an apparently inexhaustible story of energy."
+        ]
     },
     "59": {
         "sample_id": 59,
+        "text": " There could be a little art in this last and final round of fencing.",
         "words": [
             {
                 "word": " There",
@@ -5156,11 +5157,11 @@
                 "start_ts": 3.879999876022339,
                 "end_ts": 4.319999694824219
             }
-        ],
-        "transcription": " There could be a little art in this last and final round of fencing."
+        ]
     },
     "60": {
         "sample_id": 60,
+        "text": " just thrust and parry and victory to the stronger.",
         "words": [
             {
                 "word": " just",
@@ -5207,11 +5208,11 @@
                 "start_ts": 3.319999933242798,
                 "end_ts": 3.619999885559082
             }
-        ],
-        "transcription": " just thrust and parry and victory to the stronger."
+        ]
     },
     "61": {
         "sample_id": 61,
+        "text": " Every man who entered the 20s had his own training tricks.",
         "words": [
             {
                 "word": " Every",
@@ -5268,11 +5269,11 @@
                 "start_ts": 3.5999999046325684,
                 "end_ts": 4.119999885559082
             }
-        ],
-        "transcription": " Every man who entered the 20s had his own training tricks."
+        ]
     },
     "62": {
         "sample_id": 62,
+        "text": " There appeared to be an immediate association with the death trauma as if the two were inexplicably linked into one.",
         "words": [
             {
                 "word": " There",
@@ -5355,13 +5356,13 @@
                 "end_ts": 6.079999923706055
             },
             {
-                "word": " inextricably",
+                "word": " inexplicably",
                 "start_ts": 6.079999923706055,
-                "end_ts": 6.920000076293945
+                "end_ts": 6.940000057220459
             },
             {
                 "word": " linked",
-                "start_ts": 6.920000076293945,
+                "start_ts": 6.940000057220459,
                 "end_ts": 7.279999732971191
             },
             {
@@ -5374,30 +5375,30 @@
                 "start_ts": 7.539999961853027,
                 "end_ts": 7.919999599456787
             }
-        ],
-        "transcription": " There appeared to be an immediate association with the death trauma as if the two were inextricably linked into one."
+        ]
     },
     "63": {
         "sample_id": 63,
+        "text": " The strength that enables someone in a trance to hold his body stiff and unsupported except at two points, the head and heels.",
         "words": [
             {
-                "word": " Just",
+                "word": " The",
                 "start_ts": 0.0,
-                "end_ts": 0.7999999523162842
+                "end_ts": 0.8399999737739563
             },
             {
-                "word": " strengthen",
-                "start_ts": 0.7999999523162842,
-                "end_ts": 1.1200000047683716
+                "word": " strength",
+                "start_ts": 0.8399999737739563,
+                "end_ts": 1.0199999809265137
             },
             {
-                "word": " the",
-                "start_ts": 1.1200000047683716,
-                "end_ts": 1.3199999332427979
+                "word": " that",
+                "start_ts": 1.0199999809265137,
+                "end_ts": 1.2799999713897705
             },
             {
                 "word": " enables",
-                "start_ts": 1.3199999332427979,
+                "start_ts": 1.2799999713897705,
                 "end_ts": 1.5999999046325684
             },
             {
@@ -5413,11 +5414,11 @@
             {
                 "word": " a",
                 "start_ts": 2.259999990463257,
-                "end_ts": 2.419999837875366
+                "end_ts": 2.3999998569488525
             },
             {
                 "word": " trance",
-                "start_ts": 2.419999837875366,
+                "start_ts": 2.3999998569488525,
                 "end_ts": 2.819999933242798
             },
             {
@@ -5451,13 +5452,13 @@
                 "end_ts": 4.400000095367432
             },
             {
-                "word": " unsupported,",
+                "word": " unsupported",
                 "start_ts": 4.400000095367432,
-                "end_ts": 5.059999942779541
+                "end_ts": 5.079999923706055
             },
             {
                 "word": " except",
-                "start_ts": 5.339999675750732,
+                "start_ts": 5.079999923706055,
                 "end_ts": 5.519999980926514
             },
             {
@@ -5473,7 +5474,7 @@
             {
                 "word": " points,",
                 "start_ts": 6.0,
-                "end_ts": 6.420000076293945
+                "end_ts": 6.440000057220459
             },
             {
                 "word": " the",
@@ -5495,11 +5496,11 @@
                 "start_ts": 7.639999866485596,
                 "end_ts": 8.019999504089355
             }
-        ],
-        "transcription": " Just strengthen the enables someone in a trance to hold his body stiff and unsupported, except at two points, the head and heels."
+        ]
     },
     "64": {
         "sample_id": 64,
+        "text": " This is physically impossible when conscious.",
         "words": [
             {
                 "word": " This",
@@ -5531,11 +5532,11 @@
                 "start_ts": 2.5199999809265137,
                 "end_ts": 2.9600000381469727
             }
-        ],
-        "transcription": " This is physically impossible when conscious."
+        ]
     },
     "65": {
         "sample_id": 65,
+        "text": " Others had died before during the 20s, and death during the last round was in some ways easier than defeat.",
         "words": [
             {
                 "word": " Others",
@@ -5637,11 +5638,11 @@
                 "start_ts": 7.779999732971191,
                 "end_ts": 8.119999885559082
             }
-        ],
-        "transcription": " Others had died before during the 20s, and death during the last round was in some ways easier than defeat."
+        ]
     },
     "66": {
         "sample_id": 66,
+        "text": " Breathing deeply, Breon's softly spoke the other hypnotic phrases that triggered the process.",
         "words": [
             {
                 "word": " Breathing",
@@ -5654,13 +5655,13 @@
                 "end_ts": 1.5
             },
             {
-                "word": " Brianna",
+                "word": " Breon's",
                 "start_ts": 1.9799998998641968,
-                "end_ts": 2.3399999141693115
+                "end_ts": 2.559999942779541
             },
             {
                 "word": " softly",
-                "start_ts": 2.3399999141693115,
+                "start_ts": 2.559999942779541,
                 "end_ts": 2.879999876022339
             },
             {
@@ -5691,11 +5692,11 @@
             {
                 "word": " that",
                 "start_ts": 4.759999752044678,
-                "end_ts": 5.139999866485596
+                "end_ts": 5.159999847412109
             },
             {
                 "word": " triggered",
-                "start_ts": 5.139999866485596,
+                "start_ts": 5.159999847412109,
                 "end_ts": 5.380000114440918
             },
             {
@@ -5708,11 +5709,11 @@
                 "start_ts": 5.639999866485596,
                 "end_ts": 6.079999923706055
             }
-        ],
-        "transcription": " Breathing deeply, Brianna softly spoke the other hypnotic phrases that triggered the process."
+        ]
     },
     "67": {
         "sample_id": 67,
+        "text": " When the buzzer sounded, he pulled his foil from his second startled grasp and ran forward.",
         "words": [
             {
                 "word": " When",
@@ -5794,11 +5795,11 @@
                 "start_ts": 5.460000038146973,
                 "end_ts": 5.940000057220459
             }
-        ],
-        "transcription": " When the buzzer sounded, he pulled his foil from his second startled grasp and ran forward."
+        ]
     },
     "68": {
         "sample_id": 68,
+        "text": " I roll it up the maze at the sudden fear of the attack, then smile.",
         "words": [
             {
                 "word": " I",
@@ -5875,11 +5876,11 @@
                 "start_ts": 4.579999923706055,
                 "end_ts": 4.960000038146973
             }
-        ],
-        "transcription": " I roll it up the maze at the sudden fear of the attack, then smile."
+        ]
     },
     "69": {
         "sample_id": 69,
+        "text": " He said it was the last burst of energy. He knew how close they both were to exhaustion.",
         "words": [
             {
                 "word": " He",
@@ -5971,11 +5972,11 @@
                 "start_ts": 5.779999732971191,
                 "end_ts": 6.299999713897705
             }
-        ],
-        "transcription": " He said it was the last burst of energy. He knew how close they both were to exhaustion."
+        ]
     },
     "70": {
         "sample_id": 70,
+        "text": " Brianna saw something close to panic on his opponent's face when the man finally recognized his error.",
         "words": [
             {
                 "word": " Brianna",
@@ -6062,11 +6063,11 @@
                 "start_ts": 6.339999675750732,
                 "end_ts": 6.619999885559082
             }
-        ],
-        "transcription": " Brianna saw something close to panic on his opponent's face when the man finally recognized his error."
+        ]
     },
     "71": {
         "sample_id": 71,
+        "text": " A wave of despair rolled out from our old. Be insunced it and knew the fifth point was his.",
         "words": [
             {
                 "word": " A",
@@ -6109,23 +6110,23 @@
                 "end_ts": 2.559999942779541
             },
             {
-                "word": " old,",
+                "word": " old.",
                 "start_ts": 2.559999942779541,
                 "end_ts": 2.8399999141693115
             },
             {
-                "word": " pre",
+                "word": " Be",
                 "start_ts": 3.559999942779541,
-                "end_ts": 3.759999990463257
+                "end_ts": 3.7200000286102295
             },
             {
-                "word": "-insunced",
-                "start_ts": 3.759999990463257,
-                "end_ts": 4.259999752044678
+                "word": " insunced",
+                "start_ts": 3.7200000286102295,
+                "end_ts": 4.319999694824219
             },
             {
                 "word": " it",
-                "start_ts": 4.259999752044678,
+                "start_ts": 4.319999694824219,
                 "end_ts": 4.559999942779541
             },
             {
@@ -6163,11 +6164,11 @@
                 "start_ts": 6.179999828338623,
                 "end_ts": 6.679999828338623
             }
-        ],
-        "transcription": " A wave of despair rolled out from our old, pre-insunced it and knew the fifth point was his."
+        ]
     },
     "72": {
         "sample_id": 72,
+        "text": " Then the powerful twist that's for us to decide in and under the guard.",
         "words": [
             {
                 "word": " Then",
@@ -6239,7 +6240,6 @@
                 "start_ts": 4.019999980926514,
                 "end_ts": 4.299999713897705
             }
-        ],
-        "transcription": " Then the powerful twist that's for us to decide in and under the guard."
+        ]
     }
 }
