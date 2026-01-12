@@ -37,7 +37,7 @@ The user can adjust the individual sizes of the eviction sub-areas to hit the op
 Note that currently the eviction only starts after the full prompt has been processed, i.e. no eviction takes place during the prefill phase.
 This means that for longer prompt sizes the maximum cache usage may exceed the limit defined by the `CacheEvictionConfig` parameters.
 
-After the prefill phase, however, the maximum cache occupancy for each sequence currently being processed is strictly limited by the combined sizes of the 3 areas described above. 
+After the prefill phase, however, the maximum cache occupancy for each sequence currently being processed is strictly limited by the combined sizes of the 3 areas described above.
 `CacheEvictionConfig.get_max_cache_size_after_eviction()` can be queried to get this cache size limit in tokens.
 
 ### (Optional) Adaptive R-KV score aggregation
