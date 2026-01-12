@@ -1055,7 +1055,7 @@ std::vector<ov::genai::WhisperWordTiming> get_word_level_timestamps(
 namespace ov::genai {
 
 std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::vector<int64_t>& sot_tokens,
-                                                                    const std::vector<int64_t>& text_tokens,
+                                                                    const std::vector<int64_t>& input_tokens,
                                                                     ov::genai::Tokenizer& tokenizer,
                                                                     std::shared_ptr<ov::genai::WhisperDecoder> decoder,
                                                                     const ov::Tensor& hidden_state_tensor,
@@ -1066,9 +1066,16 @@ std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::v
 ) {
     const size_t batch_size = 1;
 
+    // [sot_tokens] + [no_timestamps_token] + [text_tokens] + [eos_token]
     std::vector<int64_t> tokens = sot_tokens;
     tokens.push_back(config.no_timestamps_token_id);
-    tokens.insert(tokens.end(), text_tokens.begin(), text_tokens.end());
+
+    for (const auto token_id : input_tokens) {
+        if (token_id < config.eos_token_id) {
+            tokens.push_back(token_id);
+        }
+    }
+
     tokens.push_back(config.eos_token_id);
 
     ov::Tensor beam_idx = decoder->create_host_tensor(ov::element::i32, {batch_size});
@@ -1079,11 +1086,11 @@ std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::v
     decoder->start_async(hidden_state_tensor, input_ids_tensor, beam_idx);
     decoder->wait();
 
-    const auto& accumulated_qks = decoder->get_encoder_qks();
+    const auto& encoder_qks = decoder->get_encoder_qks();
     decoder->reset_state();
 
     auto word_timestamps =
-        get_word_level_timestamps(accumulated_qks, n_frames, tokens, tokenizer, config, chunk_time_offset);
+        get_word_level_timestamps(encoder_qks, n_frames, tokens, tokenizer, config, chunk_time_offset);
 
     return word_timestamps;
 }
