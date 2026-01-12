@@ -58,7 +58,7 @@ struct Coeffs1D {
     std::vector<int32_t> kk;        // size outSize * ksize, fixed-point
 };
 
-// Pillow uses fixed point with PRECISION_BITS = (32 - 8 - 2).
+// ref: https://github.com/python-pillow/Pillow/blob/12.1.0/src/libImaging/Resample.c#L92
 static constexpr int PRECISION_BITS = (32 - 8 - 2);
 
 static inline uint8_t clip8_from_fixed(int ss) {
