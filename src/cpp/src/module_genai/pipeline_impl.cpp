@@ -6,6 +6,7 @@
 #include "module.hpp"
 #include "modules/md_io.hpp"
 #include "utils/yaml_utils.hpp"
+#include "utils/profiler.hpp"
 
 namespace ov {
 namespace genai {
@@ -32,7 +33,9 @@ ModulePipelineImpl::~ModulePipelineImpl() {}
 // "image": image ov::Tensor or std::vector<ov::Tensor>
 // "video": video ov::Tensor
 void ModulePipelineImpl::generate(ov::AnyMap& inputs, StreamerVariant streamer) {
+    PROFILE(p, "generate");
     for (auto& module : m_modules) {
+        PROFILE(pm, module->module_desc->name);
         if (module->is_input()) {
             std::dynamic_pointer_cast<ParameterModule>(module)->run(inputs);
         } else if (module->is_output()) {
@@ -45,6 +48,7 @@ void ModulePipelineImpl::generate(ov::AnyMap& inputs, StreamerVariant streamer) 
 
 // execute generate asynchronously
 void ModulePipelineImpl::generate_async(ov::AnyMap& inputs, StreamerVariant streamer) {
+    PROFILE(p, "generate_async");
     using namespace oneapi::tbb::flow;
 
     if (_flow_nodes.empty()) {
@@ -74,6 +78,7 @@ void ModulePipelineImpl::init_onetbb_threading() {
     // register all nodes execution fucntion.
     for (auto& module : m_modules) {
         _flow_nodes.emplace_back(std::make_unique<FlowNode>(_flow_graph, [this, module](const continue_msg&) {
+            PROFILE(pm, module->module_desc->name);
             if (module->is_input()) {
                 if (this->m_current_inputs) {
                     std::dynamic_pointer_cast<ParameterModule>(module)->run(*(this->m_current_inputs));

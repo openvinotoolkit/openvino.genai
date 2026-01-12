@@ -13,6 +13,7 @@ export DATA_DIR=./test_data
 export MODEL_DIR=./test_models
 export DUMP_YAML=1  # Dump config yaml to file.
 export DEVICE=GPU   # Default CPU.
+export ENABLE_PROFILE=1 # Dump profiling data. default 0.
 
 <!-- Copy libopenvino_tokenizers -->
 OV_TOKENIZERS_LIB_PATH=../../../build/openvino_genai/libopenvino_tokenizers.so
