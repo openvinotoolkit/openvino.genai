@@ -25,6 +25,7 @@ const std::unordered_map<ModuleType, std::string> ModuleTypeConverter::kTypeToSt
     {ModuleType::VAEDecoderModule, "VAEDecoderModule"},
     {ModuleType::ClipTextEncoderModule, "ClipTextEncoderModule"},
     {ModuleType::ResultModule, "ResultModule"},
+    {ModuleType::SaveImageModule, "SaveImageModule"},
     {ModuleType::Unknown, "Unknown"}};
 
 const std::unordered_map<std::string, ModuleType> ModuleTypeConverter::kStringToType =

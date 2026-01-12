@@ -41,6 +41,7 @@ namespace module {
         
         // 5. Output/Result Modules
         ResultModule = 50,
+        SaveImageModule = 51,
         
         // Default/Unknown
         Unknown = 99
