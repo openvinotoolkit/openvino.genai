@@ -97,6 +97,9 @@ ov::Tensor unpad_image(const ov::Tensor& tensor, const ImageSize& original_size)
         size_t new_height = static_cast<size_t>(original_height * scale_factor);
         size_t padding = (current_height - new_height) / 2;
 
+        OPENVINO_ASSERT(current_height > padding * 2,
+                        "current_height(" + std::to_string(current_height) + ") must be > padding(" +
+                            std::to_string(padding) + ") * 2");
         size_t unpadded_height = current_height - padding * 2;
         unpadded_tensor_shape = ov::Shape({embed_dim, unpadded_height, current_width});
         view_begin = ov::Coordinate({0, padding, 0});
@@ -106,6 +109,9 @@ ov::Tensor unpad_image(const ov::Tensor& tensor, const ImageSize& original_size)
         size_t new_width = static_cast<size_t>(original_width * scale_factor);
         size_t padding = (current_width - new_width) / 2;
 
+        OPENVINO_ASSERT(current_width > padding * 2,
+                        "current_width(" + std::to_string(current_width) + ") must be > padding(" +
+                            std::to_string(padding) + ") * 2");
         size_t unpadded_width = current_width - padding * 2;
         unpadded_tensor_shape = ov::Shape({embed_dim, current_height, unpadded_width});
         view_begin = ov::Coordinate({0, 0, padding});
