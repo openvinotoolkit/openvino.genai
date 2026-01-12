@@ -214,10 +214,6 @@ def main():
     # Transcriptions match: 50
     # Word timings match: 61
 
-    # 14900 CPU
-    # Average inference time for genai: 0.1867 seconds
-    # Average inference time for openai: 0.3045 seconds
-
 
 if "__main__" == __name__:
     main()
