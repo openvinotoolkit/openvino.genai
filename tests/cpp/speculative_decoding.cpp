@@ -4,6 +4,7 @@
 #include "gtest/gtest.h"
 
 #include "speculative_decoding/continuous_batching_for_speculative_decoding_impl.hpp"
+#include "utils.hpp"
 
 class CBForSDTest : public testing::Test, public ov::genai::ContinuousBatchingPipeline {
 protected:
@@ -14,7 +15,7 @@ protected:
         };
 
         ov::genai::GenerationHandle add_request(uint64_t request_id, const ov::Tensor& input_ids) {
-            auto sampling_params = ov::genai::greedy();
+            auto sampling_params = ov::genai::utils::get_greedy_config();
             sampling_params.num_assistant_tokens = 1;
 
             ov::genai::SequenceGroup::Ptr sequence_group = std::make_shared<ov::genai::SequenceGroup>(request_id, input_ids,
@@ -425,4 +426,3 @@ TEST_F(CBForSDTest, add_tokens__two_sequence) {
     ASSERT_EQ(after.at(0).at(1).token_ids, tokens);
     ASSERT_EQ(after.at(0).at(1).log_probs, log_probs);
 }
-

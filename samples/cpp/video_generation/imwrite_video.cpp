@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include <cstdint>
 #include <vector>
 #include <random>
@@ -361,8 +364,7 @@ void imwrite_video(const std::string& name, const ov::Tensor& video, const uint3
 }
 
 
-
-#include <openvino/openvino.hpp> // for ov::Tensor + OPENVINO_ASSERT
+#include <openvino/openvino.hpp> 
 
 static void write_video_opencv(const std::string& path,
                                             const ov::Tensor& video_bfhwc_rgb_u8,

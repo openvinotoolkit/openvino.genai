@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -529,6 +529,7 @@ public:
         m_transformer->set_hidden_states("rope_interpolation_scale", rope_interpolation_scale);
 
         // // Prepare timesteps
+        // TODO: ov::Tensor timestep(ov::element::f32, {1}); is enough
         ov::Tensor timestep(ov::element::f32, {1});
         float* timestep_data = timestep.data<float>();
 

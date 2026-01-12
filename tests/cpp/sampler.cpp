@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 #include "sampling/sampler.hpp"
 #include "openvino/genai/generation_config.hpp"
+#include "utils.hpp"
 
 
 using namespace ov::genai;
@@ -33,7 +34,7 @@ TEST(SamplerStopTokenIdsTest, multiple_stop_sequence_no_match) {
 }
 
 TEST(SamplerValidationMode, gen_phase_to_cut_whole_seq) {
-    auto sampling_config = ov::genai::greedy();
+    auto sampling_config = ov::genai::utils::get_greedy_config();
     // create sequence group with prompt [0, 1, 2, 3, 4]
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
     ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
@@ -77,7 +78,7 @@ TEST(SamplerValidationMode, gen_phase_to_cut_whole_seq) {
 }
 
 TEST(SamplerValidationMode, gen_phase_to_cut_part_seq) {
-    auto sampling_config = ov::genai::greedy();
+    auto sampling_config = ov::genai::utils::get_greedy_config();
     // create sequence group with prompt [0, 1, 2, 3, 4]
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
     ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
@@ -122,7 +123,7 @@ TEST(SamplerValidationMode, gen_phase_to_cut_part_seq) {
 }
 
 TEST(SamplerValidationMode, gen_phase) {
-    auto sampling_config = ov::genai::greedy();
+    auto sampling_config = ov::genai::utils::get_greedy_config();
     // create sequence group with prompt [0, 1, 2, 3, 4]
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
     ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
@@ -166,7 +167,7 @@ TEST(SamplerValidationMode, gen_phase) {
 }
 
 TEST(SamplerValidationMode, prompt_phase_to_cut_part_seq) {
-    auto sampling_config = ov::genai::greedy();
+    auto sampling_config = ov::genai::utils::get_greedy_config();
     // create sequence group with prompt [0, 1, 2, 3, 4]
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
     ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
@@ -212,7 +213,7 @@ TEST(SamplerValidationMode, prompt_phase_to_cut_part_seq) {
 }
 
 TEST(SamplerValidationMode, prompt_phase_to_cut_whole_seq) {
-    auto sampling_config = ov::genai::greedy();
+    auto sampling_config = ov::genai::utils::get_greedy_config();
     // create sequence group with prompt [0, 1, 2, 3, 4]
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
     ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
@@ -257,7 +258,7 @@ TEST(SamplerValidationMode, prompt_phase_to_cut_whole_seq) {
 }
 
 TEST(SamplerValidationMode, prompt_phase) {
-    auto sampling_config = ov::genai::greedy();
+    auto sampling_config = ov::genai::utils::get_greedy_config();
     // create sequence group with prompt [0, 1, 2, 3, 4]
     std::vector<int64_t> input_vector{0, 1, 2, 3, 4};
     ov::Tensor input_tensor(ov::element::i64, ov::Shape{1, 5}, input_vector.data());
