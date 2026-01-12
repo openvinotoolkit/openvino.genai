@@ -374,75 +374,31 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
             segment_offset = input_features.n_frames;
         }
 
-        std::vector<int64_t> word_level_timestamps_tokens;
-        // infer word-level timestamps
-        if (config.word_timestamps) {
-            const size_t batch_size = 1;
-
-            word_level_timestamps_tokens = sot_tokens;
-            word_level_timestamps_tokens.push_back(config.no_timestamps_token_id);
-            word_level_timestamps_tokens.insert(word_level_timestamps_tokens.end(),
-                                                extracted_segments.non_timestamp_tokens.begin(),
-                                                extracted_segments.non_timestamp_tokens.end());
-            word_level_timestamps_tokens.push_back(tokenizer.get_eos_token_id());
-
-            ov::Tensor beam_idx = decoder->create_host_tensor(ov::element::i32, {batch_size});
-            std::fill_n(beam_idx.data<int32_t>(), batch_size, 0);
-
-            const ov::Tensor input_ids_tensor{ov::element::i64,
-                                              {1, word_level_timestamps_tokens.size()},
-                                              const_cast<int64_t*>(word_level_timestamps_tokens.data())};
-
-            decoder->start_async(hidden_state_tensor, input_ids_tensor, beam_idx);
-            decoder->wait();
-        }
-
         if (cancelled) {
             break;
         }
 
+        if (streamer) {
+            streamer->end();
+        }
+
         if (config.word_timestamps) {
-            const auto& accumulated_qks = decoder->get_encoder_qks();
-            decoder->reset_state();
-
-            std::cout << "Word-level timestamps tokens (" << word_level_timestamps_tokens.size() << "): [";
-            for (size_t i = 0; i < word_level_timestamps_tokens.size(); i++) {
-                std::cout << word_level_timestamps_tokens[i];
-                if (i != word_level_timestamps_tokens.size() - 1) {
-                    std::cout << ", ";
-                }
-            }
-            std::cout << "]" << std::endl;
-
-            std::cout << "Chunk offset: " << chunk_offset << ", chunk time offset: " << chunk_time_offset << "s"
-                      << std::endl;
-            std::cout << "Segment size: "
-                      << std::min(feature_extractor.nb_max_frames, input_features.n_active_frames - chunk_offset)
-                      << std::endl;
-
-            auto word_timestamps = get_word_level_timestamps(
-                accumulated_qks,
-                model_config,
-                std::min(feature_extractor.nb_max_frames, input_features.n_active_frames - chunk_offset),
-                word_level_timestamps_tokens,
+            auto word_timestamps = add_word_level_timestamps(
+                chunk_sot_tokens,
+                chunk_output_tokens,
                 tokenizer,
+                decoder,
+                hidden_state_tensor,
                 config,
+                std::min(feature_extractor.nb_max_frames, input_features.n_active_frames - chunk_offset),
                 chunk_time_offset);
 
             // insert word timestamps into result
-            if (!word_timestamps.empty()) {
-                if (!generate_result.words.has_value()) {
-                    generate_result.words = std::vector<WhisperWordTiming>{};
-                }
-                generate_result.words->insert(generate_result.words->end(),
-                                              word_timestamps.begin(),
-                                              word_timestamps.end());
+            if (!generate_result.words.has_value()) {
+                generate_result.words = std::vector<WhisperWordTiming>{};
             }
+            generate_result.words->insert(generate_result.words->end(), word_timestamps.begin(), word_timestamps.end());
         }
-    }
-
-    if (streamer) {
-        streamer->end();
     }
 
     // if return_timestamps wasn't enabled by user
