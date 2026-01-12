@@ -31,7 +31,7 @@ Compile GenAI JavaScript bindings archive first using [the instructions](../../.
 Run `npm install` and the example will be ready to run.
 
 ### 1. Text Embedding Sample (`text_embeddings.js`)
-- **Description:** 
+- **Description:**
   Demonstrates inference of text embedding models using OpenVINO GenAI. Converts input text into vector embeddings for downstream tasks such as retrieval or semantic search.
 - **Run Command:**
   ```sh
