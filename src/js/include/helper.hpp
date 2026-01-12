@@ -4,6 +4,7 @@
 #include "openvino/core/type/element_type.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
+#include "openvino/genai/rag/text_rerank_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/openvino.hpp"
 
@@ -135,6 +136,14 @@ template <>
 Napi::Value cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(
     const Napi::Env& env,
     const std::vector<ov::genai::JsonContainer>& value);
+
+template <>
+Napi::Value cpp_to_js<std::vector<std::pair<size_t, float>>, Napi::Value>(
+    const Napi::Env& env,
+    const std::vector<std::pair<size_t, float>>& rerank_results);
+
+template <>
+Napi::Value cpp_to_js<ov::genai::JsonContainer, Napi::Value>(const Napi::Env& env, const ov::genai::JsonContainer& json_container);
 
 template <>
 Napi::Value cpp_to_js<ov::Tensor, Napi::Value>(const Napi::Env& env, const ov::Tensor& tensor);

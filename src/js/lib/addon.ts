@@ -17,6 +17,8 @@ import { VLMPerfMetrics } from "./perfMetrics.js";
 
 export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
 export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
+export type TextRerankResult = [index: number, score: number];
+export type TextRerankResults = TextRerankResult[];
 /**
  * Pooling strategy
  */
@@ -68,6 +70,39 @@ export interface TextEmbeddingPipelineWrapper {
   embedDocumentsSync(documents: string[]): EmbeddingResults;
 }
 
+/**
+ * Configuration parameters for TextRerankPipeline.
+ */
+export type TextRerankPipelineConfig = {
+  /**
+   * Number of documents to return sorted by score.
+   * @defaultValue 3
+   */
+  top_n?: number;
+  /** Maximum length of tokens passed to the embedding model. */
+  max_length?: number;
+  /** If 'true', model input tensors are padded to the maximum length. */
+  pad_to_max_length?: boolean;
+  /** Side to use for padding "left" or "right". */
+  padding_side?: "left" | "right";
+};
+
+export interface TextRerankPipeline {
+  new (): TextRerankPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    config: TextRerankPipelineConfig,
+    ovProperties: object,
+    callback: (err: Error | null) => void,
+  ): void;
+  rerank(
+    query: string,
+    documents: string[],
+    callback: (err: Error | null, value: TextRerankResults) => void,
+  ): void;
+}
+
 export interface VLMPipeline {
   new (): VLMPipeline;
   init(
@@ -100,6 +135,7 @@ export interface VLMPipeline {
 }
 
 interface OpenVINOGenAIAddon {
+  TextRerankPipeline: TextRerankPipeline;
   TextEmbeddingPipeline: TextEmbeddingPipelineWrapper;
   LLMPipeline: any;
   VLMPipeline: VLMPipeline;
@@ -133,6 +169,7 @@ addon.setOpenvinoAddon(ovAddon);
 
 export const {
   TextEmbeddingPipeline,
+  TextRerankPipeline,
   LLMPipeline,
   VLMPipeline,
   ChatHistory,

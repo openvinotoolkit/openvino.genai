@@ -526,6 +526,21 @@ Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env, co
 }
 
 template <>
+Napi::Value cpp_to_js<std::vector<std::pair<size_t, float>>, Napi::Value>(
+    const Napi::Env& env,
+    const std::vector<std::pair<size_t, float>>& rerank_results) {
+    auto js_array = Napi::Array::New(env, rerank_results.size());
+    for (size_t i = 0; i < rerank_results.size(); ++i) {
+        const auto& [index, score] = rerank_results[i];
+        auto tuple = Napi::Array::New(env, 2);
+        tuple.Set((uint32_t)0, Napi::Number::New(env, index));
+        tuple.Set((uint32_t)1, Napi::Number::New(env, score));
+        js_array[i] = tuple;
+    }
+    return js_array;
+}
+
+template <>
 Napi::Value cpp_to_js<ov::genai::JsonContainer, Napi::Value>(const Napi::Env& env, const ov::genai::JsonContainer& json_container) {
     return json_parse(env, json_container.to_json_string());
 }
