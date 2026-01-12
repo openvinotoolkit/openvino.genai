@@ -119,8 +119,8 @@ void ClipTextEncoderModule::run() {
         m_negative_prompts.insert(m_negative_prompts.begin(), single_negative_prompt);
     }
 
-    if (!m_negative_prompts.empty() && m_negative_prompts.size() != m_prompts.size()) {
-        GENAI_ERR("negative_prompts size must be 0 or equal to prompts size");
+    if (!m_prompts.empty() && !m_negative_prompts.empty() && m_negative_prompts.size() != m_prompts.size()) {
+        GENAI_ERR("Either prompts or negative_prompts size is 0, or they are both equal");
     }
 
     ImageGenerationConfig generation_config {};
@@ -137,7 +137,11 @@ void ClipTextEncoderModule::run() {
 
     auto [prompt_embeds, negative_prompt_embeds] = run(m_prompts, m_negative_prompts, generation_config);
 
-    this->outputs["prompt_embeds"].data = tensor_utils::split(prompt_embeds);
+    if (prompt_embeds) {
+        this->outputs["prompt_embeds"].data = tensor_utils::split(prompt_embeds);
+    } else {
+        this->outputs["prompt_embeds"].data = prompt_embeds;
+    }
     if (negative_prompt_embeds) {
         this->outputs["negative_prompt_embeds"].data = tensor_utils::split(negative_prompt_embeds);
     } else {
@@ -151,8 +155,10 @@ std::pair<ov::Tensor, ov::Tensor> ClipTextEncoderModule::run(
         const ImageGenerationConfig &generation_config) {
     const bool use_cfg = do_classifier_free_guidance(generation_config.guidance_scale);
     
-    ov::Tensor prompt_embed = encode_prompt(prompts, generation_config);
-    ov::Tensor negative_prompt_embed;
+    ov::Tensor prompt_embed, negative_prompt_embed;
+    if (!prompts.empty()) {
+        prompt_embed = encode_prompt(prompts, generation_config);
+    }
     if (use_cfg) {
         negative_prompt_embed = encode_prompt(negative_prompts, generation_config);
     }
