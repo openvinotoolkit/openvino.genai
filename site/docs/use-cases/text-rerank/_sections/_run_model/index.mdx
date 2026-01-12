@@ -1,5 +1,6 @@
 import CodeExampleCPP from './_code_example_cpp.mdx';
 import CodeExamplePython from './_code_example_python.mdx';
+import CodeExampleJS from './_code_example_js.mdx';
 
 ## Run Model Using OpenVINO GenAI
 
@@ -26,4 +27,14 @@ The `TextRerankPipeline` enables you to reorder candidate documents or passages 
             </TabItem>
         </Tabs>
     </TabItemCpp>
+    <TabItemJS>
+        <Tabs groupId="device">
+            <TabItem label="CPU" value="cpu">
+                <CodeExampleJS device="CPU" />
+            </TabItem>
+            <TabItem label="GPU" value="gpu">
+                <CodeExampleJS device="GPU" />
+            </TabItem>
+        </Tabs>
+    </TabItemJS>
 </LanguageTabs>
