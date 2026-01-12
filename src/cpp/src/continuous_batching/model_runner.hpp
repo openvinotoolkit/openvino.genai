@@ -1072,8 +1072,9 @@ private:
                     // Adaptive R-KV diversity calculation was not scheduled for this sequence
                     continue;
                 }
-                size_t num_diversity_values_calculated = it->second * it->second * m_block_size; // [eviction_size / block_size, eviction_size]
 
+                // [eviction_size_in_tokens / block_size, eviction_size_in_tokens]
+                size_t num_diversity_values_calculated = it->second * it->second / m_block_size;
                 IndexSpan span = {offset, offset + num_diversity_values_calculated};
                 offset += num_diversity_values_calculated;
                 running_seq_ids_and_kvcache_spans.emplace_back(global_sequence_id, span);
