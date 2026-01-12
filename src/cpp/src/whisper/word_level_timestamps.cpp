@@ -975,80 +975,25 @@ std::pair<std::vector<std::string>, std::vector<std::vector<int64_t>>> split_tok
     return {words, word_tokens};
 }
 
-std::vector<ov::genai::WhisperWordTiming> get_word_level_timestamps(
-    const std::vector<ov::Tensor>& encoder_attention_qks,
-    const size_t n_frames,
-    const std::vector<int64_t>& tokens,
-    ov::genai::Tokenizer& tokenizer,
-    const ov::genai::WhisperGenerationConfig& generation_config,
-    const float chunk_time_offset) {
-    auto tokens_copy = tokens;  // to avoid modifying input tokens
-    // tokens_copy.push_back(tokenizer.get_eos_token_id());
+std::vector<ov::Tensor> infer_encoder_qks(const std::vector<int64_t>& tokens,
+                                          std::shared_ptr<ov::genai::WhisperDecoder> decoder,
+                                          const ov::Tensor& hidden_state_tensor,
+                                          const ov::genai::WhisperGenerationConfig& config) {
+    const size_t batch_size = 1;
 
-    if (generation_config.save_attention_weights) {
-        save_vector_of_tensors_as_np(
-            encoder_attention_qks,
-            "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/current/"
-            "encoder_attention_qks.npy");
-        // save_vector_of_tensors_as_np(
-        //     encoder_attention_qks,
-        //     "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/reference/"
-        //     "encoder_attention_qks.npy");
-    }
+    ov::Tensor beam_idx = decoder->create_host_tensor(ov::element::i32, {batch_size});
+    std::fill_n(beam_idx.data<int32_t>(), batch_size, 0);
 
-    const auto alignment_path =
-        find_alignment_path(encoder_attention_qks, generation_config.alignment_heads, n_frames, tokens_copy, tokenizer);
+    const ov::Tensor input_ids_tensor{ov::element::i64, {1, tokens.size()}, const_cast<int64_t*>(tokens.data())};
 
-    std::vector<int64_t> text_tokens;
-    const int64_t eot = tokenizer.get_eos_token_id();
-    for (const auto& token : tokens_copy) {
-        if (token <= eot) {
-            text_tokens.push_back(token);
-        }
-    }
+    decoder->start_async(hidden_state_tensor, input_ids_tensor, beam_idx);
+    decoder->wait();
 
-    // std::cout << "text_tokens (" << text_tokens.size() << "):\n[";
-    // for (const auto& token : text_tokens) {
-    //     std::cout << token << ", ";
-    // }
-    // std::cout << "]" << std::endl;
+    const auto& encoder_qks = decoder->get_encoder_qks();
+    decoder->reset_state();
 
-    const auto [words, word_tokens] = split_tokens_on_spaces(text_tokens, tokenizer);
-
-    // for (size_t i = 0; i < words.size(); ++i) {
-    //     std::cout << "Word " << i << ": \"" << words[i] << "\", Tokens: [";
-    //     for (const auto& token_id : word_tokens[i]) {
-    //         std::cout << token_id << ", ";
-    //     }
-    //     std::cout << "]" << std::endl;
-    // }
-
-    auto words_timestamps = match_words_to_alignment_path(words, word_tokens, alignment_path, chunk_time_offset);
-
-    // for (auto& word_timing : words_timestamps) {
-    //     std::cout << word_timing.word << " " << word_timing.start_ts << " - " << word_timing.end_ts << "s" <<
-    //     std::endl;
-    // }
-    // std::cout << std::endl;
-
-    truncate_long_words_at_sentence_boundaries(words_timestamps);
-
-    auto merged_timestamps = merge_punctuations(words_timestamps);
-
-    // the "hack" part of OpenAI code is missing: https://github.com/openai/whisper/blob/main/whisper/timing.py#L346
-    // It is intended to adjust word timings at sentence boundaries based on median word duration.
-    // # GenAI:     That's     0.00 - 1.04 | OpenAI:  That's     0.60 - 1.04
-    // # GenAI:     funny,     1.04 - 1.34 | OpenAI:  funny,     1.04 - 1.34
-    // # GenAI:     remarked   1.72 - 1.96 | OpenAI:  remarked   1.72 - 1.96
-    // # GenAI:     a          1.96 - 2.04 | OpenAI:  a          1.96 - 2.04
-    // # GenAI:     bit,       2.04 - 2.20 | OpenAI:  bit,       2.04 - 2.20
-    // # GenAI:     see        2.38 - 2.38 | OpenAI:  see        2.38 - 2.38
-    // # GenAI:     you        2.38 - 2.50 | OpenAI:  you        2.38 - 2.50
-    // # GenAI:     thought    2.50 - 2.64 | OpenAI:  thought    2.50 - 2.64
-    // # GenAI:     funny.     2.64 - 2.86 | OpenAI:  funny.     2.64 - 2.86
-
-    return merged_timestamps;
-};
+    return encoder_qks;
+}
 
 }  // namespace
 
@@ -1064,34 +1009,33 @@ std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::v
                                                                     const float chunk_time_offset
                                                                     // todo: add raw_perf_metrics
 ) {
-    const size_t batch_size = 1;
-
-    // [sot_tokens] + [no_timestamps_token] + [text_tokens] + [eos_token]
-    std::vector<int64_t> tokens = sot_tokens;
-    tokens.push_back(config.no_timestamps_token_id);
-
-    for (const auto token_id : input_tokens) {
-        if (token_id < config.eos_token_id) {
-            tokens.push_back(token_id);
+    // [text_tokens] + [eos_token]
+    std::vector<int64_t> text_tokens;
+    for (const auto& token : input_tokens) {
+        if (token < config.eos_token_id) {
+            text_tokens.push_back(token);
         }
     }
+    text_tokens.push_back(config.eos_token_id);
 
-    tokens.push_back(config.eos_token_id);
+    // [sot_tokens] + [no_timestamps_token] + [text_tokens] + [eos_token]
+    std::vector<int64_t> infer_tokens = sot_tokens;
+    infer_tokens.push_back(config.no_timestamps_token_id);
+    infer_tokens.insert(infer_tokens.end(), text_tokens.begin(), text_tokens.end());
 
-    ov::Tensor beam_idx = decoder->create_host_tensor(ov::element::i32, {batch_size});
-    std::fill_n(beam_idx.data<int32_t>(), batch_size, 0);
+    auto encoder_qks = infer_encoder_qks(infer_tokens, decoder, hidden_state_tensor, config);
 
-    const ov::Tensor input_ids_tensor{ov::element::i64, {1, tokens.size()}, const_cast<int64_t*>(tokens.data())};
+    const auto alignment_path =
+        find_alignment_path(encoder_qks, config.alignment_heads, n_frames, infer_tokens, tokenizer);
 
-    decoder->start_async(hidden_state_tensor, input_ids_tensor, beam_idx);
-    decoder->wait();
+    const auto [words, word_tokens] = split_tokens_on_spaces(text_tokens, tokenizer);
 
-    const auto& encoder_qks = decoder->get_encoder_qks();
-    decoder->reset_state();
+    auto words_timestamps = match_words_to_alignment_path(words, word_tokens, alignment_path, chunk_time_offset);
 
-    auto word_timestamps =
-        get_word_level_timestamps(encoder_qks, n_frames, tokens, tokenizer, config, chunk_time_offset);
+    truncate_long_words_at_sentence_boundaries(words_timestamps);
 
-    return word_timestamps;
+    auto merged_timestamps = merge_punctuations(words_timestamps);
+
+    return merged_timestamps;
 }
 }  // namespace ov::genai
