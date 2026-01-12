@@ -28,7 +28,6 @@ ov::genai::OptionalWhisperGenerationConfig get_config_from_map(const ov::AnyMap&
     }
 }
 
-// todo: complete function
 void erase_whisper_generation_config_keys(ov::AnyMap& config_map) {
     config_map.erase("word_timestamps");
 }
@@ -94,14 +93,14 @@ public:
         ov::genai::utils::print_compiled_model_properties(compiled_model, "whisper encoder model");
         m_encoder = init_model(compiled_model);
 
-        const bool enable_encoder_attention_qk_accumulation = m_generation_config.word_timestamps;
+        const bool decompose_cross_attention_spda_ops = m_generation_config.word_timestamps;
         m_decoder =
             WhisperDecoder::from_path(models_path,
                                       device,
                                       properties_copy,
                                       m_encoder.get_compiled_model().output("last_hidden_state").get_partial_shape(),
                                       m_model_config,
-                                      enable_encoder_attention_qk_accumulation);
+                                      decompose_cross_attention_spda_ops);
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {

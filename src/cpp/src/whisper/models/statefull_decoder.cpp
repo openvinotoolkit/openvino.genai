@@ -24,8 +24,6 @@ void decompose_scaled_dot_product_attention(std::shared_ptr<ov::Model> model) {
 }
 
 /**
- * It's not reliable in generale case to extract encoder attn just by node Softmax type
- * Whisper only has Softmax for encoder attention weights output as only encoder attention sdpa block were decomposed
  * todo: mark encoder attention softmax nodes during decomposition to avoid such hacks
  */
 void add_encoder_attention_qk_outputs(std::shared_ptr<ov::Model> model) {
@@ -66,6 +64,7 @@ void add_qk_scaled_scores_outputs(std::shared_ptr<ov::Model> model) {
         if (op->get_type_info().name != std::string("Add")) {
             continue;
         }
+
         bool should_skip_op = true;
 
         for (const auto& output : op->outputs()) {
@@ -75,6 +74,8 @@ void add_qk_scaled_scores_outputs(std::shared_ptr<ov::Model> model) {
                     break;
                 }
             }
+
+            // output found
             if (!should_skip_op) {
                 break;
             }
@@ -97,25 +98,19 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
                                                  const ov::AnyMap& properties,
                                                  const ov::PartialShape& lhs_shape,
                                                  const ov::genai::WhisperConfig& model_config,
-                                                 const bool enable_encoder_attention_qk_accumulation)
+                                                 const bool decompose_cross_attention_spda)
     : m_model_config(model_config),
-      m_encoder_attention_qk_accumulation_enabled(enable_encoder_attention_qk_accumulation) {
+      m_decompose_cross_attention_spda_ops(decompose_cross_attention_spda) {
     ov::Core core = utils::singleton_core();
 
     auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
 
-    if (m_encoder_attention_qk_accumulation_enabled) {
+    if (m_decompose_cross_attention_spda_ops) {
         auto start_time = std::chrono::steady_clock::now();
         decompose_scaled_dot_product_attention(model);
 
         add_encoder_attention_qk_outputs(model);
         add_qk_scaled_scores_outputs(model);
-        ov::save_model(model, models_path / "decomposed" / "openvino_decoder_model.xml");
-        // std::cout << "[WhisperStatefullDecoder] SDPA decomposition took: "
-        //           << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
-        //                                                                    start_time)
-        //                  .count()
-        //           << " ms" << std::endl;
     }
 
     m_has_cache_position = utils::has_input(model, "cache_position");
@@ -173,9 +168,6 @@ void WhisperStatefullDecoder::_set_cache_position_tensor(const size_t seq_len) {
 
 Tensor WhisperStatefullDecoder::wait() {
     m_request.wait();
-    if (m_encoder_attention_qk_accumulation_enabled) {
-        _accumulate_encoder_qks();
-    }
     return m_request.get_tensor("logits");
 }
 
@@ -187,9 +179,7 @@ void WhisperStatefullDecoder::reset_state() {
 
     Shape encoder_hidden_states_shape{m_request.get_tensor("encoder_hidden_states").get_shape()};
     encoder_hidden_states_shape[0] = 0;
-
     m_request.set_tensor("encoder_hidden_states", create_host_tensor(ov::element::f32, encoder_hidden_states_shape));
-    m_encoder_qks.clear();
 };
 
 ov::Tensor WhisperStatefullDecoder::create_host_tensor(const element::Type element_type, const Shape& shape) {
@@ -200,91 +190,26 @@ ov::Tensor WhisperStatefullDecoder::create_host_tensor(const element::Type eleme
     }
 }
 
-std::vector<Tensor> WhisperStatefullDecoder::get_encoder_qks() const {
-    if (!m_encoder_attention_qk_accumulation_enabled) {
-        OPENVINO_THROW("Encoder attention QK accumulation is not enabled");
+std::vector<Tensor> WhisperStatefullDecoder::get_encoder_qks() {
+    if (!m_decompose_cross_attention_spda_ops) {
+        OPENVINO_THROW("Encoder attention heads are not decomposed. Cannot get encoder QKs.");
     }
-    return m_encoder_qks;
-}
 
-// todo: accumulate only alignment heads QKs
-void WhisperStatefullDecoder::_accumulate_encoder_qks() {
+    std::vector<Tensor> encoder_qks;
+
     const size_t decoder_layers = m_model_config.decoder_layers;
-
-    // std::cout << "[WhisperStatefullDecoder] Accumulating encoder QKs for " << decoder_layers << " layers." <<
-    // std::endl; std::cout << "[WhisperStatefullDecoder] Attention shape: "
-    //   << m_request.get_tensor("encoder_attn_qk_0").get_shape().to_string() << std::endl;
-    //   << m_request.get_tensor("qk_scaled_scores_0").get_shape().to_string() << std::endl;
 
     for (size_t layer = 0; layer < decoder_layers; layer++) {
         // [batch, head_num, seq_len, frame_len]
         // todo: check if softmaxed scores can be accumulated
-        // const Tensor encoder_qk_tensor = m_request.get_tensor("encoder_attn_qk_" + std::to_string(layer));
         const Tensor encoder_qk_tensor = m_request.get_tensor("qk_scaled_scores_" + std::to_string(layer));
+        Tensor copy{encoder_qk_tensor.get_element_type(), encoder_qk_tensor.get_shape()};
+        encoder_qk_tensor.copy_to(copy);
 
-        if (m_encoder_qks.size() <= layer) {
-            Tensor copy{encoder_qk_tensor.get_element_type(), encoder_qk_tensor.get_shape()};
-            encoder_qk_tensor.copy_to(copy);
-            m_encoder_qks.push_back(copy);
-        } else {
-            const Tensor& accumulated_tensor = m_encoder_qks.at(layer);
-
-            const Shape accumulated_shape = accumulated_tensor.get_shape();
-
-            const Shape& iteration_shape = encoder_qk_tensor.get_shape();
-            OPENVINO_ASSERT(accumulated_shape[0] == iteration_shape[0],
-                            "Batch size mismatch during encoder QK accumulation");
-            OPENVINO_ASSERT(accumulated_shape[1] == iteration_shape[1],
-                            "Head num mismatch during encoder QK accumulation");
-            OPENVINO_ASSERT(accumulated_shape[3] == iteration_shape[3],
-                            "Frame len mismatch during encoder QK accumulation");
-
-            Shape new_shape{accumulated_shape};
-            // set new seq_len
-            new_shape[2] += iteration_shape[2];
-
-            // copy to new tensor
-            // todo: create host tensor
-            Tensor new_accumulated_tensor{ov::element::f32, new_shape};
-            auto new_data = new_accumulated_tensor.data<float>();
-            auto accumulated_data = accumulated_tensor.data<float>();
-            auto iteration_data = encoder_qk_tensor.data<float>();
-
-            const size_t batch_size = accumulated_shape[0];
-            const size_t head_num = accumulated_shape[1];
-            const size_t frame_len = accumulated_shape[3];
-
-            // accumulated shape [batch_size, head_num, acc_seq_len, frame_len]
-            // iteration shape   [batch_size, head_num, iter_seq_len, frame_len]
-            // new shape         [batch_size, head_num, acc_seq_len + iter_seq_len, frame_len]
-
-            for (size_t batch = 0; batch < batch_size; batch++) {
-                const size_t accumulated_batch_offset = batch * head_num * accumulated_shape[2] * frame_len;
-                const size_t iteration_batch_offset = batch * head_num * iteration_shape[2] * frame_len;
-                const size_t new_batch_offset = batch * head_num * new_shape[2] * frame_len;
-
-                for (size_t head = 0; head < head_num; head++) {
-                    const size_t accumulated_offset =
-                        accumulated_batch_offset + head * accumulated_shape[2] * frame_len;
-                    const size_t iteration_offset = iteration_batch_offset + head * iteration_shape[2] * frame_len;
-                    const size_t new_offset = new_batch_offset + head * new_shape[2] * frame_len;
-
-                    // copy accumulated
-                    std::memcpy(new_data + new_offset,
-                                accumulated_data + accumulated_offset,
-                                accumulated_shape[2] * frame_len * sizeof(float));
-
-                    // copy iteration
-                    std::memcpy(new_data + new_offset + accumulated_shape[2] * frame_len,
-                                iteration_data + iteration_offset,
-                                iteration_shape[2] * frame_len * sizeof(float));
-                }
-            }
-
-            // Replace the old accumulated tensor with the new one
-            m_encoder_qks[layer] = new_accumulated_tensor;
-        }
+        encoder_qks.push_back(copy);
     }
+
+    return encoder_qks;
 }
 
 }  // namespace ov::genai

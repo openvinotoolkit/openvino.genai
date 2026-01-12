@@ -400,7 +400,6 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                 std::min(feature_extractor.nb_max_frames, input_features.n_active_frames - chunk_offset),
                 chunk_time_offset);
 
-            // insert word timestamps into result
             if (!generate_result.words.has_value()) {
                 generate_result.words = std::vector<WhisperWordTiming>{};
             }

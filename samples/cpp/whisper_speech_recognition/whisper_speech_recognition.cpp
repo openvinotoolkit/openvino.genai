@@ -181,12 +181,6 @@ void test_word_level_timestamps(const std::filesystem::path& models_path,
             const auto& ref_word_info = reference["words"][j];
             const bool word_match = word_info.word == ref_word_info["word"];
 
-            std::cout << "Sample " << i << ", Word " << j << ": '" << word_info.word << "' [" << word_info.start_ts
-                      << ", " << word_info.end_ts << "]\n";
-            std::cout << "Reference: '" << ref_word_info["word"].get<std::string>() << "' ["
-                      << ref_word_info["start_ts"].get<double>() << ", " << ref_word_info["end_ts"].get<double>()
-                      << "]\n";
-
             const bool start_ts_close =
                 std::abs(word_info.start_ts - ref_word_info["start_ts"].get<double>()) < WORD_TS_ACCURACY;
             const bool end_ts_close =
@@ -276,9 +270,9 @@ int main(int argc, char* argv[]) try {
     //     "\n";
     // }
 
-    // test_encoder_attention_qks(models_path,
-    //                            "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-    //                            "whisper/librispeech_asr_dummy_wav_samples");
+    test_encoder_attention_qks(models_path,
+                               "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+                               "whisper/librispeech_asr_dummy_wav_samples");
 
     test_word_level_timestamps(models_path,
                                "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"

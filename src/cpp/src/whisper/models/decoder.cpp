@@ -15,7 +15,7 @@ std::shared_ptr<WhisperDecoder> WhisperDecoder::from_path(const std::filesystem:
                                                           const ov::AnyMap& properties,
                                                           const ov::PartialShape& lhs_shape,
                                                           const ov::genai::WhisperConfig& model_config,
-                                                          const bool enable_encoder_attention_qk_accumulation) {
+                                                          const bool decompose_cross_attention_spda_ops) {
     bool has_decoder_with_past = std::filesystem::exists(models_path / "openvino_decoder_with_past_model.xml");
 
     if (has_decoder_with_past) {
@@ -31,7 +31,7 @@ std::shared_ptr<WhisperDecoder> WhisperDecoder::from_path(const std::filesystem:
                                                      properties,
                                                      lhs_shape,
                                                      model_config,
-                                                     enable_encoder_attention_qk_accumulation);
+                                                     decompose_cross_attention_spda_ops);
 }
 
 std::pair<int64_t, float> WhisperDecoder::detect_language(const ov::Tensor& encoder_hidden_state,

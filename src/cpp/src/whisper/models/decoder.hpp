@@ -31,7 +31,7 @@ public:
 
     virtual ov::Tensor create_host_tensor(const element::Type element_type, const Shape& shape);
 
-    virtual std::vector<Tensor> get_encoder_qks() const {
+    virtual std::vector<Tensor> get_encoder_qks() {
         OPENVINO_THROW("Not implemented");
     }
 
