@@ -19,10 +19,10 @@ export MODEL_DIR=${SCRIPT_DIR_UNIT_TEST_CPP}/../../../samples/cpp/module_genai/u
 app=../../../build/tests/module_genai/cpp/genai_modules_test
 
 # All tests
-# $app
+$app
 
 # All ModuleTest
-$app --gtest_filter="ModuleTestSuite*"
+# $app --gtest_filter="PipelineTest.GenerateAsync*"
 # $app --gtest_filter="ModuleTestSuite*cat_120_100_dog_120_120*"
 
 # All PipelineTest

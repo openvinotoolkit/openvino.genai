@@ -334,7 +334,7 @@ TEST_P(ModulePipelineValidatorTest, ValidateConfigString) {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    PipelineTest,
+    PipelineTestSuite,
     ModulePipelineValidatorTest,
     ::testing::ValuesIn(kValidatorTestCases),
     ModulePipelineValidatorTest::get_test_case_name

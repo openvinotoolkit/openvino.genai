@@ -14,7 +14,7 @@
 #include "../utils/ut_modules_base.hpp"
 #include "../utils/model_yaml.hpp"
 
-TEST(PipelineTest, GenerateAsync) {
+TEST(PipelineAccuracyCompareTest, GenerateAsync) {
     std::string device = TEST_MODEL::get_device();
     std::string qwen2_5_vl_model_path = TEST_MODEL::Qwen2_5_VL_3B_Instruct_INT4();
     std::string test_img_cat = TEST_DATA::img_cat_120_100();
