@@ -180,18 +180,6 @@ std::pair<ov::genai::EncodedResults, bool> decode(std::shared_ptr<ov::genai::Whi
     const auto& sequences = sequence_group->get_finished_sequences();
     const auto& sequence = sequences[0];
 
-    // // infer eot token for word level timestamps
-    // ov::Tensor generated_ids(ov::element::i64, {1, 1});
-    // int64_t* input_ids_data = generated_ids.data<int64_t>();
-    // input_ids_data[0] = 50257;
-
-    // beam_idx.data<int32_t>()[0] = 0;
-
-    // decoder->start_async(encoder_hidden_state, generated_ids, beam_idx);
-    // decoder->wait();
-
-    // stream_generated_tokens();
-
     const float score = sampling_params.is_beam_search() ? sequence->get_beam_search_score(sampling_params)
                                                          : sequence->get_cumulative_log_prob();
 
@@ -279,9 +267,9 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                        Tokenizer& tokenizer) {
     size_t max_new_tokens = config.get_max_new_tokens();
 
-    WhisperGenerateResult generate_result;
-    RawPerfMetrics& raw_metrics = generate_result.perf_metrics.raw_metrics;
-    generate_result.perf_metrics.num_input_tokens = 0;
+    WhisperGenerateResult result;
+    RawPerfMetrics& raw_metrics = result.perf_metrics.raw_metrics;
+    result.perf_metrics.num_input_tokens = 0;
     raw_metrics.m_new_token_times.reserve(max_new_tokens);
     raw_metrics.m_batch_sizes.reserve(max_new_tokens);
     raw_metrics.m_token_infer_durations.reserve(max_new_tokens);
@@ -290,14 +278,14 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
     const auto infer_start = std::chrono::steady_clock::now();
     auto input_features = feature_extractor.extract(raw_speech);
     const auto infer_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
-    generate_result.perf_metrics.whisper_raw_metrics.features_extraction_durations.emplace_back(infer_ms);
+    result.perf_metrics.whisper_raw_metrics.features_extraction_durations.emplace_back(infer_ms);
 
     const bool is_shortform = input_features.n_frames <= feature_extractor.nb_max_frames;
     // long-form audio processing requires timestamps to be enabled
     const bool return_timestamps = config.return_timestamps || !is_shortform;
 
     std::vector<int64_t> sot_tokens;
-    std::vector<int64_t>& output_tokens = generate_result.output_tokens;
+    std::vector<int64_t>& output_tokens = result.output_tokens;
     std::vector<Segment> segments;
 
     // 0.02 by default
@@ -334,25 +322,24 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
 
         SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, chunk_sot_tokens, config, 1);
 
-        auto [result, cancelled] = decode(decoder,
-                                          chunk_sot_tokens,
-                                          hidden_state_tensor,
-                                          streamer,
-                                          sampler,
-                                          sequence_group,
-                                          return_timestamps,
-                                          config,
-                                          raw_metrics);
+        auto [chunk_result, cancelled] = decode(decoder,
+                                                chunk_sot_tokens,
+                                                hidden_state_tensor,
+                                                streamer,
+                                                sampler,
+                                                sequence_group,
+                                                return_timestamps,
+                                                config,
+                                                raw_metrics);
         decoder->reset_state();
-        std::vector<int64_t> chunk_output_tokens = result.tokens[0];
+        std::vector<int64_t> chunk_output_tokens = chunk_result.tokens[0];
 
         if (return_timestamps) {
-            ExtractedSegments extracted_segments;
-            extracted_segments = ov::genai::extract_segments(chunk_output_tokens,
-                                                             config,
-                                                             feature_extractor.nb_max_frames,
-                                                             time_precision,
-                                                             chunk_time_offset);
+            ExtractedSegments extracted_segments = ov::genai::extract_segments(chunk_output_tokens,
+                                                                               config,
+                                                                               feature_extractor.nb_max_frames,
+                                                                               time_precision,
+                                                                               chunk_time_offset);
 
             utils::filter_non_segment_metrics(raw_metrics, output_tokens.size(), extracted_segments.segment_ranges);
 
@@ -393,21 +380,21 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                 std::min(feature_extractor.nb_max_frames, input_features.n_active_frames - chunk_offset),
                 chunk_time_offset);
 
-            if (!generate_result.words.has_value()) {
-                generate_result.words = std::vector<WhisperWordTiming>{};
+            if (!result.words.has_value()) {
+                result.words = std::vector<WhisperWordTiming>{};
             }
-            generate_result.words->insert(generate_result.words->end(), word_timestamps.begin(), word_timestamps.end());
+            result.words->insert(result.words->end(), word_timestamps.begin(), word_timestamps.end());
         }
     }
 
     // if return_timestamps wasn't enabled by user
     if (!config.return_timestamps) {
-        return generate_result;
+        return result;
     }
 
-    generate_result.segments = segments;
+    result.segments = segments;
 
-    return generate_result;
+    return result;
 }
 }  // namespace genai
 }  // namespace ov

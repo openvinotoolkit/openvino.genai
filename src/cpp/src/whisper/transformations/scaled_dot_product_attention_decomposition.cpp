@@ -60,25 +60,6 @@ bool can_move_scale_after_matmul(const ov::Output<ov::Node>& query,
     return false;
 }
 
-/**
- * Extracts the decoder attention layer index from the ScaledDotProductAttention node name.
- * For example, for a node name like
- * __module.model.decoder.layers.0.encoder_attn/aten::scaled_dot_product_attention/ScaledDotProductAttention
- * it will extract and return 0.
- */
-std::string extract_encoder_attn_layer_index(const std::string& node_name) {
-    // Extract layer index from pattern: "layers.N." where N is the index
-    size_t layer_pos = node_name.find("layers.");
-    OPENVINO_ASSERT(layer_pos != std::string::npos, "Expected 'layers.' in node name");
-
-    size_t index_start = layer_pos + 7;  // skip "layers."
-    size_t index_end = node_name.find('.', index_start);
-    OPENVINO_ASSERT(index_end != std::string::npos, "Expected '.' after layer index in node name");
-
-    std::string layer_index = node_name.substr(index_start, index_end - index_start);
-    return layer_index;
-}
-
 }  // namespace
 
 namespace ov::genai {
