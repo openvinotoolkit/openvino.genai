@@ -66,10 +66,9 @@ public:
     bool return_timestamps = false;
 
     // If `true` the pipeline will return word-level timestamps.
+    // When enabled ov::genai::word_timestamps(true) property should be passed to WhisperPipeline constructor:
+    // WhisperPipeline("model_path", "CPU", ov::genai::word_timestamps(true));
     bool word_timestamps = false;
-
-    // todo: remove
-    bool save_attention_weights = false;
 
     /**
      * @brief Number of attention heads used to predict timestamps.

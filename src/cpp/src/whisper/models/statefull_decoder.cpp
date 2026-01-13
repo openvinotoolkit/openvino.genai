@@ -23,21 +23,6 @@ void decompose_scaled_dot_product_attention(std::shared_ptr<ov::Model> model) {
     manager.run_passes(model);
 }
 
-/**
- * todo: mark encoder attention softmax nodes during decomposition to avoid such hacks
- */
-void add_encoder_attention_qk_outputs(std::shared_ptr<ov::Model> model) {
-    size_t idx = 0;
-    for (auto& op : model->get_ordered_ops()) {
-        if (op->get_type_info().name != std::string("Softmax")) {
-            continue;
-        }
-
-        model->add_output(op->output(0)).add_names({"encoder_attn_qk_" + std::to_string(idx)});
-        idx++;
-    }
-}
-
 void add_qk_scaled_scores_outputs(std::shared_ptr<ov::Model> model) {
     // <layer id="278" name="Add_21002" type="Add" version="opset1">
     //     <data auto_broadcast="numpy" />
@@ -108,8 +93,6 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
     if (m_decompose_cross_attention_spda_ops) {
         auto start_time = std::chrono::steady_clock::now();
         decompose_scaled_dot_product_attention(model);
-
-        add_encoder_attention_qk_outputs(model);
         add_qk_scaled_scores_outputs(model);
     }
 
@@ -193,7 +176,7 @@ ov::Tensor WhisperStatefullDecoder::create_host_tensor(const element::Type eleme
 std::vector<Tensor> WhisperStatefullDecoder::get_alignments_heads_qks(
     const std::vector<std::pair<size_t, size_t>>& alignment_heads) {
     if (!m_decompose_cross_attention_spda_ops) {
-        OPENVINO_THROW("Encoder attention heads are not decomposed. Cannot get encoder QKs.");
+        OPENVINO_THROW("Encoder attention heads are not decomposed. Cannot get encoder attention QKs.");
     }
 
     // [layers] * [batch, num_heads, seq_len, frame_len] -> [layers] * [batch, seq_len, frame_len]

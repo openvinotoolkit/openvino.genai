@@ -25,16 +25,8 @@ if(NOT TARGET dr_libs)
     FetchContent_MakeAvailable(dr_libs)
 endif()
 
-# include nlohmann_json
-if(NOT TARGET nlohmann_json::nlohmann_json)
-    FetchContent_Declare(nlohmann_json
-        URL https://github.com/nlohmann/json/releases/download/v3.11.2/json.tar.xz
-        URL_HASH SHA256=cae9f3f1f5f0b2e8f4d2a4f6b8e6c3c5e4b8f4e6c3c5e4b8f4e6c3c5e4b8f4e6)
-    FetchContent_MakeAvailable(nlohmann_json)
-endif()
-
 add_executable(whisper_speech_recognition whisper_speech_recognition.cpp audio_utils.cpp)
-target_link_libraries(whisper_speech_recognition PRIVATE openvino::genai nlohmann_json::nlohmann_json)
+target_link_libraries(whisper_speech_recognition PRIVATE openvino::genai)
 target_include_directories(whisper_speech_recognition PRIVATE "$<BUILD_INTERFACE:${dr_libs_SOURCE_DIR}>")
 set_target_properties(whisper_speech_recognition PROPERTIES
     # Ensure out of box LC_RPATH on macOS with SIP
