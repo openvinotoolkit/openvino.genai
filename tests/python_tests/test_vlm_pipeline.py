@@ -700,7 +700,7 @@ def test_vlm_pipeline_chat(
     ov_pipe.finish_chat()
 
 
-@parametrize_one_model_backends
+@parametrize_all_models
 def test_vlm_pipeline_start_chat_vs_chat_history(
     ov_pipe_model: VlmModelInfo,
     iteration_images: list[list[PIL.Image]],
@@ -719,11 +719,14 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
     history = ChatHistory()
     for prompt, images in prompts_with_images:
         history.append({"role": "user", "content": prompt})
+        messages_before = history.get_messages()
         res = ov_pipe.generate(
             history,
             images=images,
             generation_config=generation_config,
         )
+        messages_after = history.get_messages()
+        assert messages_before == messages_after, "ChatHistory messages should not be mutated after generate."
         answer = res.texts[0]
         history.append({"role": "assistant", "content": answer})
         answers_chat_history.append(answer)
