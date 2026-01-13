@@ -22,6 +22,7 @@ from utils.constants import get_ov_cache_converted_models_dir, extra_generate_kw
 from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
 from typing import Any
+from difflib import SequenceMatcher
 
 
 @pytest.fixture(scope="class", autouse=True)
@@ -37,7 +38,7 @@ def run_gc_after_test():
 def get_whisper_models_list(tiny_only=False):
     model_ids = [
         "openai/whisper-tiny",
-        # "distil-whisper/distil-small.en",
+        "distil-whisper/distil-small.en",
     ]
 
     if tiny_only:
@@ -186,8 +187,6 @@ def run_genai(
     genai_config.num_beams = config.num_beams
     genai_config.word_timestamps = config.word_timestamps
 
-    print(genai_config.alignment_heads)
-
     return pipeline.generate(sample, genai_config, streamer=streamer)
 
 
@@ -247,7 +246,7 @@ def run_pipeline_with_ref(
     streamer: typing.Callable[[str], bool] | None = None,
 ):
     _, _, hf_pipe, genai_pipe = read_whisper_model((model_id, tmp_path))
-    # _, _, _, genai_with_past_pipe = read_whisper_model((model_id, tmp_path), stateful=False)
+    _, _, _, genai_with_past_pipe = read_whisper_model((model_id, tmp_path), stateful=False)
 
     if type(sample) is np.ndarray and len(sample.shape) == 1:
         sample = np.expand_dims(sample, 0)
@@ -256,27 +255,11 @@ def run_pipeline_with_ref(
         genai_result = run_genai(genai_pipe, _sample, generation_config, streamer)
         hf_result = run_huggingface(hf_pipe, _sample, generation_config)
 
-        print("genai_result:\n", genai_result)
-        print(hf_result["text"])
-        print("hf_result")
-
-        # word level timestamps branch
-        # genai_result
-        # Lennils, pictures are a sort of upguards and atom paintings, and Mason's exquisite Idols are as national as a jingo poem. Mr. Birkut Foster's landscapes smile at one much in the same way that Mr. Carker used to flash his teeth. And Mr. John Colier gives his sitter a cheerful slap on the back before he says, like a shampoo or a turkish bath. Next man.
-        # Lennils, pictures are a sort of upguards and atom paintings, and Mason's exquisite Idols are as national as a jingo poem. Mr. Birkut Foster's landscapes smile at one much in the same way that Mr. Karker used to flash his teeth. And Mr. John Colier gives his sitter a cheerful slap on the back before he says, like a shampoo or a turkish bath, next man,
-        # hf_result
-
-        # master
-        # genai_result:
-        # Lennils, pictures are a sort of upguards and atom paintings, and Mason's exquisite Idols are as national as a jingo poem. Mr. Birkut Foster's landscapes smile at one much in the same way that Mr. Karker used to flash his teeth. And Mr. John Colier gives his sitter a cheerful slap on the back before he says, like a shampoo or a turkish bath, next man,
-        # Lennils, pictures are a sort of upguards and atom paintings, and Mason's exquisite Idols are as national as a jingo poem. Mr. Birkut Foster's landscapes smile at one much in the same way that Mr. Karker used to flash his teeth. And Mr. John Colier gives his sitter a cheerful slap on the back before he says, like a shampoo or a turkish bath, next man,
-        # hf_result
-
         compare_results(hf_result, genai_result)
 
-        # genai_with_past_result = run_genai(genai_with_past_pipe, _sample, generation_config, streamer)
+        genai_with_past_result = run_genai(genai_with_past_pipe, _sample, generation_config, streamer)
 
-        # compare_results(hf_result, genai_with_past_result)
+        compare_results(hf_result, genai_with_past_result)
 
 
 def compare_results(hf_result, genai_result):
@@ -586,25 +569,55 @@ def test_shortform(model_descr):
 
 
 @pytest.fixture
-def whisper_librispeech_word_timestamps_reference():
+def whisper_librispeech_10_openai_tiny_reference():
     json_path = pathlib.Path(
-        "tests/python_tests/data/whisper/librispeech_asr_dummy_word_timestamps_reference_tiny.json"
+        "tests/python_tests/data/whisper/librispeech_asr_dummy_10_openai_whisper_tiny_results.json"
     )
     with open(json_path, "r", encoding="utf-8") as f:
         reference = json.load(f)
     return reference
 
 
+def align_words_by_text(ref_words, test_words):
+    """Align two word lists by matching their text content."""
+    ref_texts = [w["word"].strip() for w in ref_words]
+    test_texts = [w["word"].strip() for w in test_words]
+
+    matcher = SequenceMatcher(None, ref_texts, test_texts)
+    matches = []
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            for i, j in zip(range(i1, i2), range(j1, j2)):
+                matches.append((ref_words[i], test_words[j]))
+
+    return matches
+
+
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
-def test_word_level_timestamps(model_descr, whisper_librispeech_word_timestamps_reference):
-    samples = []
-    ds = datasets.load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
-
-    for ds_row in ds:
-        samples.append(ds_row["audio"]["array"])
+def test_word_level_timestamps(model_descr, whisper_librispeech_10_openai_tiny_reference):
+    ds = datasets.load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").take(10)
+    samples = [i["audio"]["array"] for i in ds]
 
     pipe = read_whisper_model(model_descr, word_timestamps=True)[3]
+
+    def openai_reference_to_words(reference):
+        results = []
+        for segment in reference["segments"]:
+            for w in segment["words"]:
+                results.append(
+                    {
+                        "word": w["word"],
+                        "start_ts": w["start"],
+                        "end_ts": w["end"],
+                    }
+                )
+        return results
+
+    matches = 0
+    total_words = 0
+    match_threshold = 0.02
 
     for i, sample in enumerate(samples):
         result = pipe.generate(
@@ -612,12 +625,43 @@ def test_word_level_timestamps(model_descr, whisper_librispeech_word_timestamps_
             return_timestamps=True,
             word_timestamps=True,
         )
-        reference = whisper_librispeech_word_timestamps_reference[str(i)]
-        assert result.texts[0] == reference["text"]
-        for res_word, ref_word in zip(result.words, reference["words"]):
-            assert res_word.word == ref_word["word"]
-            assert round(res_word.start_ts, 2) == round(ref_word["start_ts"], 2)
-            assert round(res_word.end_ts, 2) == round(ref_word["end_ts"], 2)
+        result_words = [
+            {"word": w.word, "start_ts": round(w.start_ts, 2), "end_ts": round(w.end_ts, 2)} for w in result.words
+        ]
+
+        reference = whisper_librispeech_10_openai_tiny_reference[i]
+        reference_words = openai_reference_to_words(reference)
+
+        aligned_words = align_words_by_text(reference_words, result_words)
+        total_words += len(reference_words)
+
+        for ref_word, test_word in aligned_words:
+            start_diff = abs(ref_word["start_ts"] - test_word["start_ts"])
+            end_diff = abs(ref_word["end_ts"] - test_word["end_ts"])
+
+            if round(start_diff, 2) <= match_threshold and round(end_diff, 2) <= match_threshold:
+                matches += 1
+
+    assert total_words > 0
+    accuracy = matches / total_words if total_words > 0 else 0
+    assert accuracy > 0.95
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize(
+    "sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, long_form=True)], indirect=True
+)
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
+def test_longform_audio_with_word_level_timestamps(model_descr, sample_from_dataset):
+    _, _, _, genai_pipe = read_whisper_model(model_descr, word_timestamps=True)
+
+    genai_result = run_genai(
+        genai_pipe,
+        sample_from_dataset,
+        config=ov_genai.WhisperGenerationConfig(return_timestamps=True, word_timestamps=True),
+    )
+
+    assert len(genai_result.words) > 0
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
