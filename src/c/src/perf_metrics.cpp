@@ -17,6 +17,7 @@ ov_genai_perf_metrics* ov_genai_perf_metrics_create() {
     metrics->object = std::make_shared<ov::genai::PerfMetrics>();
     return metrics;
 }
+
 void ov_genai_perf_metrics_free(ov_genai_perf_metrics* metrics) {
     if (metrics)
         delete metrics;
@@ -33,6 +34,7 @@ ov_status_e ov_genai_perf_metrics_get_load_time(const ov_genai_perf_metrics* met
     }
     return ov_status_e::OK;
 }
+
 ov_status_e ov_genai_perf_metrics_get_num_generation_tokens(const ov_genai_perf_metrics* metrics,
                                                             size_t* num_generated_tokens) {
     if (!metrics || !(metrics->object) || !num_generated_tokens) {
@@ -45,6 +47,7 @@ ov_status_e ov_genai_perf_metrics_get_num_generation_tokens(const ov_genai_perf_
     }
     return ov_status_e::OK;
 }
+
 ov_status_e ov_genai_perf_metrics_get_num_input_tokens(const ov_genai_perf_metrics* metrics, size_t* num_input_tokens) {
     if (!metrics || !(metrics->object) || !num_input_tokens) {
         return ov_status_e::INVALID_C_PARAM;
@@ -56,6 +59,7 @@ ov_status_e ov_genai_perf_metrics_get_num_input_tokens(const ov_genai_perf_metri
     }
     return ov_status_e::OK;
 }
+
 ov_status_e ov_genai_perf_metrics_get_ttft(const ov_genai_perf_metrics* metrics, float* mean, float* std) {
     if (!metrics || !(metrics->object) || !mean || !std) {
         return ov_status_e::INVALID_C_PARAM;
@@ -69,6 +73,7 @@ ov_status_e ov_genai_perf_metrics_get_ttft(const ov_genai_perf_metrics* metrics,
     }
     return ov_status_e::OK;
 }
+
 ov_status_e ov_genai_perf_metrics_get_tpot(const ov_genai_perf_metrics* metrics, float* mean, float* std) {
     if (!metrics || !(metrics->object) || !mean || !std) {
         return ov_status_e::INVALID_C_PARAM;
@@ -96,6 +101,7 @@ ov_status_e ov_genai_perf_metrics_get_ipot(const ov_genai_perf_metrics* metrics,
     }
     return ov_status_e::OK;
 }
+
 ov_status_e ov_genai_perf_metrics_get_throughput(const ov_genai_perf_metrics* metrics, float* mean, float* std) {
     if (!metrics || !(metrics->object) || !mean || !std) {
         return ov_status_e::INVALID_C_PARAM;
@@ -139,6 +145,7 @@ ov_status_e ov_genai_perf_metrics_get_generate_duration(const ov_genai_perf_metr
     }
     return ov_status_e::OK;
 }
+
 ov_status_e ov_genai_perf_metrics_get_tokenization_duration(const ov_genai_perf_metrics* metrics,
                                                             float* mean,
                                                             float* std) {
@@ -154,6 +161,7 @@ ov_status_e ov_genai_perf_metrics_get_tokenization_duration(const ov_genai_perf_
     }
     return ov_status_e::OK;
 }
+
 ov_status_e ov_genai_perf_metrics_get_detokenization_duration(const ov_genai_perf_metrics* metrics,
                                                               float* mean,
                                                               float* std) {
@@ -169,6 +177,7 @@ ov_status_e ov_genai_perf_metrics_get_detokenization_duration(const ov_genai_per
     }
     return ov_status_e::OK;
 }
+
 ov_status_e ov_genai_perf_metrics_add_in_place(ov_genai_perf_metrics* left, const ov_genai_perf_metrics* right) {
     if (!left || !(left->object) || !right || !(right->object)) {
         return ov_status_e::INVALID_C_PARAM;

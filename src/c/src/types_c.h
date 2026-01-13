@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstdarg>
 #include <memory>
 #include <string>
 
@@ -67,6 +68,7 @@
 struct ov_genai_generation_config_opaque {
     std::shared_ptr<ov::genai::GenerationConfig> object;
 };
+typedef struct ov_genai_generation_config_opaque ov_genai_generation_config;
 
 /**
  * @struct ov_genai_llm_pipeline_opaque
@@ -75,6 +77,8 @@ struct ov_genai_generation_config_opaque {
 struct ov_genai_llm_pipeline_opaque {
     std::shared_ptr<ov::genai::LLMPipeline> object;
 };
+typedef struct ov_genai_llm_pipeline_opaque ov_genai_llm_pipeline;
+
 /**
  * @struct ov_genai_perf_metrics_opaque
  * @brief This is an interface of ov::genai::PerfMetrics
@@ -82,6 +86,8 @@ struct ov_genai_llm_pipeline_opaque {
 struct ov_genai_perf_metrics_opaque {
     std::shared_ptr<ov::genai::PerfMetrics> object;
 };
+typedef struct ov_genai_perf_metrics_opaque ov_genai_perf_metrics;
+
 /**
  * @struct ov_genai_decoded_results_opaque
  * @brief This is an interface of ov::genai::DecodedResults
@@ -89,6 +95,7 @@ struct ov_genai_perf_metrics_opaque {
 struct ov_genai_decoded_results_opaque {
     std::shared_ptr<ov::genai::DecodedResults> object;
 };
+typedef struct ov_genai_decoded_results_opaque ov_genai_decoded_results;
 
 /**
  * @struct ov_genai_whisper_decoded_result_chunk_opaque
@@ -97,6 +104,7 @@ struct ov_genai_decoded_results_opaque {
 struct ov_genai_whisper_decoded_result_chunk_opaque {
     std::shared_ptr<ov::genai::WhisperDecodedResultChunk> object;
 };
+typedef struct ov_genai_whisper_decoded_result_chunk_opaque ov_genai_whisper_decoded_result_chunk;
 
 /**
  * @struct ov_genai_whisper_decoded_results_opaque
@@ -105,6 +113,7 @@ struct ov_genai_whisper_decoded_result_chunk_opaque {
 struct ov_genai_whisper_decoded_results_opaque {
     std::shared_ptr<ov::genai::WhisperDecodedResults> object;
 };
+typedef struct ov_genai_whisper_decoded_results_opaque ov_genai_whisper_decoded_results;
 
 /**
  * @struct ov_genai_whisper_generation_config_opaque
@@ -113,6 +122,7 @@ struct ov_genai_whisper_decoded_results_opaque {
 struct ov_genai_whisper_generation_config_opaque {
     std::shared_ptr<ov::genai::WhisperGenerationConfig> object;
 };
+typedef struct ov_genai_whisper_generation_config_opaque ov_genai_whisper_generation_config;
 
 /**
  * @struct ov_genai_whisper_pipeline_opaque
@@ -121,6 +131,7 @@ struct ov_genai_whisper_generation_config_opaque {
 struct ov_genai_whisper_pipeline_opaque {
     std::shared_ptr<ov::genai::WhisperPipeline> object;
 };
+typedef struct ov_genai_whisper_pipeline_opaque ov_genai_whisper_pipeline;
 
 /**
  * @struct ov_genai_vlm_decoded_results_opaque
@@ -129,6 +140,7 @@ struct ov_genai_whisper_pipeline_opaque {
 struct ov_genai_vlm_decoded_results_opaque {
     std::shared_ptr<ov::genai::VLMDecodedResults> object;
 };
+typedef struct ov_genai_vlm_decoded_results_opaque ov_genai_vlm_decoded_results;
 
 /**
  * @struct ov_genai_vlm_pipeline_opaque
@@ -137,6 +149,7 @@ struct ov_genai_vlm_decoded_results_opaque {
 struct ov_genai_vlm_pipeline_opaque {
     std::shared_ptr<ov::genai::VLMPipeline> object;
 };
+typedef struct ov_genai_vlm_pipeline_opaque ov_genai_vlm_pipeline;
 
 /**
  * @struct ov_genai_chat_history_opaque
@@ -145,6 +158,7 @@ struct ov_genai_vlm_pipeline_opaque {
 struct ov_genai_chat_history_opaque {
     std::shared_ptr<ov::genai::ChatHistory> object;
 };
+typedef struct ov_genai_chat_history_opaque ov_genai_chat_history;
 
 /**
  * @struct ov_genai_json_container_opaque
@@ -153,6 +167,7 @@ struct ov_genai_chat_history_opaque {
 struct ov_genai_json_container_opaque {
     std::shared_ptr<ov::genai::JsonContainer> object;
 };
+typedef struct ov_genai_json_container_opaque ov_genai_json_container;
 
 /**
  * @struct ov_genai_speech_generation_config_opaque
@@ -161,6 +176,7 @@ struct ov_genai_json_container_opaque {
 struct ov_genai_speech_generation_config_opaque {
     std::shared_ptr<ov::genai::SpeechGenerationConfig> object;
 };
+typedef struct ov_genai_speech_generation_config_opaque ov_genai_speech_generation_config;
 
 /**
  * @struct ov_genai_text2speech_decoded_results_opaque
@@ -169,6 +185,7 @@ struct ov_genai_speech_generation_config_opaque {
 struct ov_genai_text2speech_decoded_results_opaque {
     std::shared_ptr<ov::genai::Text2SpeechDecodedResults> object;
 };
+typedef struct ov_genai_text2speech_decoded_results_opaque ov_genai_text2speech_decoded_results;
 
 /**
  * @struct ov_genai_text2speech_pipeline_opaque
@@ -177,3 +194,4 @@ struct ov_genai_text2speech_decoded_results_opaque {
 struct ov_genai_text2speech_pipeline_opaque {
     std::shared_ptr<ov::genai::Text2SpeechPipeline> object;
 };
+typedef struct ov_genai_text2speech_pipeline_opaque ov_genai_text2speech_pipeline;

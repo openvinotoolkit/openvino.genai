@@ -3,7 +3,8 @@
 
 #include "openvino/genai/c/vlm_pipeline.h"
 
-#include <stdarg.h>
+#include <cstdarg>
+#include <filesystem>
 
 #include "openvino/c/ov_tensor.h"
 #include "openvino/genai/generation_config.hpp"
@@ -37,9 +38,10 @@ ov_status_e ov_genai_vlm_decoded_results_get_perf_metrics(const ov_genai_vlm_dec
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
-        std::unique_ptr<ov_genai_perf_metrics> _metrics = std::make_unique<ov_genai_perf_metrics>();
-        _metrics->object = std::make_shared<ov::genai::VLMPerfMetrics>(results->object->perf_metrics);
-        *metrics = _metrics.release();
+        // Robust allocation for opaque C struct on Windows/MSVC
+        auto _metrics_ptr = std::unique_ptr<ov_genai_perf_metrics>(new ov_genai_perf_metrics{});
+        _metrics_ptr->object = std::make_shared<ov::genai::VLMPerfMetrics>(results->object->perf_metrics);
+        *metrics = _metrics_ptr.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }
@@ -55,7 +57,7 @@ void ov_genai_vlm_decoded_results_perf_metrics_free(ov_genai_perf_metrics* metri
 ov_status_e ov_genai_vlm_decoded_results_get_string(const ov_genai_vlm_decoded_results* results,
                                                     char* output,
                                                     size_t* output_size) {
-    if (!results || !(results->object) || !(output_size)) {
+    if (!results || !(results->object) || !output_size) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
@@ -138,9 +140,10 @@ ov_status_e ov_genai_vlm_pipeline_generate(ov_genai_vlm_pipeline* pipe,
     std::vector<ov::Tensor> rgbs_cpp;
     rgbs_cpp.reserve(num_images);
     for (size_t i = 0; i < num_images; ++i) {
-        const ov_tensor* ct = rgbs[i];
+        const ov_tensor_t* ct = rgbs[i];
 
-        auto et = ov::element::Type_t::u8;
+        ov_element_type_e et;
+        ov_tensor_get_element_type(ct, &et);
 
         ov_shape_t shape_c{};
         ov_tensor_get_shape(ct, &shape_c);
@@ -150,19 +153,18 @@ ov_status_e ov_genai_vlm_pipeline_generate(ov_genai_vlm_pipeline* pipe,
         ov_shape_free(&shape_c);
 
         void* data_ptr = nullptr;
-        ov_tensor_data(const_cast<ov_tensor*>(ct), &data_ptr);
+        ov_tensor_data(const_cast<ov_tensor_t*>(ct), &data_ptr);
         if (!data_ptr) {
             return ov_status_e::INVALID_C_PARAM;
         }
 
-        rgbs_cpp.emplace_back(ov::element::Type(et), ov::Shape(dims), data_ptr);
+        rgbs_cpp.emplace_back(ov::element::Type(static_cast<ov::element::Type_t>(et)), ov::Shape(dims), data_ptr);
     }
 
     try {
         std::unique_ptr<ov_genai_vlm_decoded_results> _results = std::make_unique<ov_genai_vlm_decoded_results>();
         _results->object = std::make_shared<ov::genai::VLMDecodedResults>();
         std::string input_str(text_inputs);
-        ov::genai::StringInputs input = {input_str};
 
         if (streamer) {
             auto callback = [streamer](std::string word) -> ov::genai::StreamingStatus {
@@ -172,15 +174,26 @@ ov_status_e ov_genai_vlm_pipeline_generate(ov_genai_vlm_pipeline* pipe,
                 *(_results->object) = (config && config->object)
                                           ? pipe->object->generate(input_str, rgbs_cpp, *(config->object), callback)
                                           : pipe->object->generate(input_str, rgbs_cpp, {}, callback);
-            }
-            if (num_images == 0) {
+            } else {
                 *(_results->object) = (config && config->object)
                                           ? pipe->object->generate(input_str,
                                                                    ov::genai::generation_config(*(config->object)),
                                                                    ov::genai::streamer(callback))
                                           : pipe->object->generate(input_str, ov::genai::streamer(callback));
             }
+        } else {
+            if (num_images > 0) {
+                *(_results->object) = (config && config->object)
+                                          ? pipe->object->generate(input_str, rgbs_cpp, *(config->object))
+                                          : pipe->object->generate(input_str, rgbs_cpp, {});
+            } else {
+                *(_results->object) =
+                    (config && config->object)
+                        ? pipe->object->generate(input_str, ov::genai::generation_config(*(config->object)))
+                        : pipe->object->generate(input_str);
+            }
         }
+
         if (results) {
             *results = _results.release();
         }

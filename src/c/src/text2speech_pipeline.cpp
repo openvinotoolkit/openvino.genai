@@ -1,9 +1,9 @@
 // Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
-//
 
 #include "openvino/genai/c/text2speech_pipeline.h"
 
+#include <cstdarg>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -12,6 +12,21 @@
 #include "openvino/c/ov_tensor.h"
 #include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
 #include "types_c.h"
+
+// Explicit mapping helper to convert C++ element type to C enum
+static ov_element_type_e cpp_element_type_to_c(const ov::element::Type& t) {
+    if (t == ov::element::f32)
+        return OV_ELEMENT_TYPE_FP32;
+    if (t == ov::element::f16)
+        return OV_ELEMENT_TYPE_FP16;
+    if (t == ov::element::i32)
+        return OV_ELEMENT_TYPE_I32;
+    if (t == ov::element::i64)
+        return OV_ELEMENT_TYPE_I64;
+    if (t == ov::element::u8)
+        return OV_ELEMENT_TYPE_U8;
+    return OV_ELEMENT_TYPE_UNDEFINED;
+}
 
 ov_status_e ov_genai_text2speech_decoded_results_create(ov_genai_text2speech_decoded_results** results) {
     if (!results) {
@@ -40,9 +55,10 @@ ov_status_e ov_genai_text2speech_decoded_results_get_perf_metrics(const ov_genai
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
-        std::unique_ptr<ov_genai_perf_metrics> _metrics = std::make_unique<ov_genai_perf_metrics>();
-        _metrics->object = std::make_shared<ov::genai::SpeechGenerationPerfMetrics>(results->object->perf_metrics);
-        *metrics = _metrics.release();
+        // Robust allocation for opaque C struct on Windows/MSVC
+        auto _metrics_ptr = std::unique_ptr<ov_genai_perf_metrics>(new ov_genai_perf_metrics{});
+        _metrics_ptr->object = std::make_shared<ov::genai::SpeechGenerationPerfMetrics>(results->object->perf_metrics);
+        *metrics = _metrics_ptr.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }
@@ -73,7 +89,7 @@ ov_status_e ov_genai_text2speech_decoded_results_get_speech_at(const ov_genai_te
             return ov_status_e::OUT_OF_BOUNDS;
         }
         ov::Tensor cpp_tensor = results->object->speeches.at(index);
-        ov_element_type_e et = (ov_element_type_e)cpp_tensor.get_element_type();
+        ov_element_type_e et = cpp_element_type_to_c(cpp_tensor.get_element_type());
 
         ov::Shape cpp_shape = cpp_tensor.get_shape();
         std::vector<int64_t> dims(cpp_shape.begin(), cpp_shape.end());
@@ -157,7 +173,8 @@ ov_status_e ov_genai_text2speech_pipeline_generate(ov_genai_text2speech_pipeline
             ov_element_type_e et;
             ov_tensor_get_element_type(speaker_embedding, &et);
 
-            speaker_embedding_cpp = ov::Tensor(ov::element::Type((ov::element::Type_t)et), ov::Shape(dims), data_ptr);
+            speaker_embedding_cpp =
+                ov::Tensor(ov::element::Type(static_cast<ov::element::Type_t>(et)), ov::Shape(dims), data_ptr);
         }
 
         ov::AnyMap property = {};

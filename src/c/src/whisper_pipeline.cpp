@@ -3,13 +3,13 @@
 
 #include "openvino/genai/c/whisper_pipeline.h"
 
-#include <stdarg.h>
-
+#include <cstdarg>
 #include <filesystem>
 
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "types_c.h"
+
 
 // WhisperDecodedResultChunk implementation
 ov_status_e ov_genai_whisper_decoded_result_chunk_create(ov_genai_whisper_decoded_result_chunk** chunk) {
@@ -111,9 +111,10 @@ ov_status_e ov_genai_whisper_decoded_results_get_perf_metrics(const ov_genai_whi
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
-        std::unique_ptr<ov_genai_perf_metrics> _metrics = std::make_unique<ov_genai_perf_metrics>();
-        _metrics->object = std::make_shared<ov::genai::PerfMetrics>(results->object->perf_metrics);
-        *metrics = _metrics.release();
+        // Robust allocation for opaque C struct on Windows/MSVC
+        auto _metrics_ptr = std::unique_ptr<ov_genai_perf_metrics>(new ov_genai_perf_metrics{});
+        _metrics_ptr->object = std::make_shared<ov::genai::PerfMetrics>(results->object->perf_metrics);
+        *metrics = _metrics_ptr.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }
