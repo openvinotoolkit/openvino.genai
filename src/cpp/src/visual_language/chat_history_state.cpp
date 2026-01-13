@@ -9,7 +9,7 @@ ChatHistoryInternalState::ChatHistoryInternalState(std::shared_ptr<VisionRegistr
     : m_vision_registry(vision_registry) {}
 
 ChatHistoryInternalState::~ChatHistoryInternalState() {
-    release_refs_from(0, 0);
+    reset();
 }
 
 void ChatHistoryInternalState::set_vision_registry(std::shared_ptr<VisionRegistry> vision_registry) {
@@ -80,7 +80,6 @@ std::vector<EncodedVideo> ChatHistoryInternalState::get_encoded_videos(const std
     return result;
 }
 
-// TODO Consider moving to VLMChatContext
 ChatHistoryInternalState::ResolvedVisions ChatHistoryInternalState::resolve_visions_with_sequence(
     std::optional<const std::vector<size_t>> image_sequence,
     std::optional<const std::vector<size_t>> video_sequence
@@ -160,7 +159,7 @@ ChatHistory ChatHistoryInternalState::build_normalized_history(const ChatHistory
                     ") doesn't match history size (", history.size(), ")");
     
     ChatHistory normalized_history;
-    // TODO Consider adding copy constructor with tools and extra context
+
     normalized_history.set_tools(history.get_tools());
     normalized_history.set_extra_context(history.get_extra_context());
 
@@ -197,9 +196,7 @@ const size_t ChatHistoryInternalState::find_matching_history_length(const ChatHi
     size_t matching_history_length = 0;
     
     for (size_t i = 0; i < std::min(m_messages_metadata.size(), history.size()); ++i) {
-        std::string current_json = history[i].to_json_string();
-        // TODO Consider passing JsonContainer
-        if (!m_messages_metadata[i].matches(current_json)) {
+        if (m_messages_metadata[i].original_message_json != history[i].to_json_string()) {
             break;
         }
         matching_history_length = i + 1;
@@ -226,8 +223,6 @@ void ChatHistoryInternalState::truncate_to(size_t size) {
     m_video_index_to_id.resize(new_video_base_index);
     
     m_messages_metadata.resize(size);
-
-    m_kv_cache_valid_messages = 0;
 }
 
 void ChatHistoryInternalState::reset() {
@@ -235,7 +230,6 @@ void ChatHistoryInternalState::reset() {
     m_image_index_to_id.clear();
     m_video_index_to_id.clear();
     m_messages_metadata.clear();
-    m_kv_cache_valid_messages = 0;
 }
 
 void ChatHistoryInternalState::release_refs_from(size_t image_index, size_t video_index) {

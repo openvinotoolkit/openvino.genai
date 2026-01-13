@@ -22,10 +22,6 @@ struct MessageMetadata {
     std::vector<size_t> image_sequence;
     std::vector<size_t> video_sequence;
     
-    bool matches(const std::string& message_json) const {
-        return original_message_json == message_json;
-    }
-    
     std::pair<size_t, size_t> get_vision_count() const {
         return {video_sequence.size(), image_sequence.size()};
     }
@@ -40,7 +36,6 @@ public:
         std::vector<size_t> video_sequence;  // Indices into encoded_videos
     };
 
-    // TODO Check constructors and destructors
     ChatHistoryInternalState() = default;
     explicit ChatHistoryInternalState(std::shared_ptr<VisionRegistry> registry);
     ~ChatHistoryInternalState();
@@ -83,11 +78,7 @@ public:
 
     void truncate_to(size_t size);
 
-    // TODO Check if needed
     void reset();
-
-    size_t get_kv_cache_valid_messages() const { return m_kv_cache_valid_messages; }
-    void set_kv_cache_valid_messages(size_t count) { m_kv_cache_valid_messages = count; }
 
     static std::shared_ptr<ChatHistoryInternalState> get_or_create(
         ChatHistory& history,
@@ -101,9 +92,6 @@ private:
     std::vector<VisionID> m_video_index_to_id;
 
     std::vector<MessageMetadata> m_messages_metadata;
-
-    // TODO Consider renaming to m_valid_messages_count
-    size_t m_kv_cache_valid_messages = 0;
 
     void release_refs_from(size_t image_index, size_t video_index);
 };
