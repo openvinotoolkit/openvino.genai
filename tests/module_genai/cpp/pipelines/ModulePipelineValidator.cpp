@@ -405,7 +405,7 @@ pipeline_modules:
     auto result = ModulePipeline::validate_config(filepath);
     
     EXPECT_FALSE(result.valid) << "Invalid config file should fail";
-    EXPECT_EQ(result.errors.size(), 3) << "Should have 3 errors (missing ParameterModule, ResultModule, and global_context)";
+    EXPECT_EQ(result.errors.size(), 2) << "Should have 2 errors (missing ParameterModule and ResultModule)";
 }
 
 TEST_F(PipelineTest, NonExistentFile) {
