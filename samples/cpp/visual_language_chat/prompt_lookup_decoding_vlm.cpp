@@ -24,6 +24,7 @@ int main(int argc, char* argv[]) try {
 
     std::string device = "CPU";
 
+    // Currently only for ATTENTION_BACKEND="PA", PLD is enabled.
     ov::genai::VLMPipeline pipe(
         model_path,
         device,
