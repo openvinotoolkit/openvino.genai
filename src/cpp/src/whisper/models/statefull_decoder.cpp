@@ -23,27 +23,7 @@ void decompose_scaled_dot_product_attention(std::shared_ptr<ov::Model> model) {
     manager.run_passes(model);
 }
 
-void add_qk_scaled_scores_outputs(std::shared_ptr<ov::Model> model) {
-    // <layer id="278" name="Add_21002" type="Add" version="opset1">
-    //     <data auto_broadcast="numpy" />
-    //     <input>
-    //         <port id="0" precision="FP32">
-    //             <dim>-1</dim>
-    //             <dim>6</dim>
-    //             <dim>-1</dim>
-    //             <dim>-1</dim>
-    //         </port>
-    //         <port id="1" precision="FP32" />
-    //     </input>
-    //     <output>
-    //         <port id="2" precision="FP32" names="qk_scaled_scores">
-    //             <dim>-1</dim>
-    //             <dim>6</dim>
-    //             <dim>-1</dim>
-    //             <dim>-1</dim>
-    //         </port>
-    //     </output>
-    // </layer>
+void add_cross_attention_qk_scaled_scores_outputs(std::shared_ptr<ov::Model> model) {
     size_t idx = 0;
     for (auto& op : model->get_ordered_ops()) {
         if (op->get_type_info().name != std::string("Add")) {
@@ -54,13 +34,13 @@ void add_qk_scaled_scores_outputs(std::shared_ptr<ov::Model> model) {
 
         for (const auto& output : op->outputs()) {
             for (const auto& name : output.get_names()) {
-                if (name.find("qk_scaled_scores") != std::string::npos) {
+                if (name.find("cross_attention_qk_scaled_scores") != std::string::npos) {
                     should_skip_op = false;
                     break;
                 }
             }
 
-            // output found
+            // output found, exit outp
             if (!should_skip_op) {
                 break;
             }
@@ -70,7 +50,7 @@ void add_qk_scaled_scores_outputs(std::shared_ptr<ov::Model> model) {
             continue;
         }
 
-        model->add_output(op->output(0)).add_names({"qk_scaled_scores_" + std::to_string(idx)});
+        model->add_output(op->output(0)).add_names({"cross_attention_qk_scaled_scores_" + std::to_string(idx)});
         idx++;
     }
 }
@@ -82,10 +62,8 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
                                                  const std::string& device,
                                                  const ov::AnyMap& properties,
                                                  const ov::PartialShape& lhs_shape,
-                                                 const ov::genai::WhisperConfig& model_config,
                                                  const bool decompose_cross_attention_spda)
-    : m_model_config(model_config),
-      m_decompose_cross_attention_spda_ops(decompose_cross_attention_spda) {
+    : m_decompose_cross_attention_spda_ops(decompose_cross_attention_spda) {
     ov::Core core = utils::singleton_core();
 
     auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
@@ -93,13 +71,12 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
     if (m_decompose_cross_attention_spda_ops) {
         auto start_time = std::chrono::steady_clock::now();
         decompose_scaled_dot_product_attention(model);
-        add_qk_scaled_scores_outputs(model);
+        add_cross_attention_qk_scaled_scores_outputs(model);
     }
 
     m_has_cache_position = utils::has_input(model, "cache_position");
 
     ov::CompiledModel compiled_model;
-    // todo: check if applicable for NPU
     if (device == "NPU") {
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(model);
 
@@ -182,7 +159,8 @@ std::vector<Tensor> WhisperStatefullDecoder::get_alignments_heads_qks(
     // [layers] * [batch, num_heads, seq_len, frame_len] -> [layers] * [batch, seq_len, frame_len]
     std::vector<ov::Tensor> alignment_qks;
     for (const auto& [layer_idx, head_idx] : alignment_heads) {
-        const Tensor alignment_tensor = m_request.get_tensor("qk_scaled_scores_" + std::to_string(layer_idx));
+        const Tensor alignment_tensor =
+            m_request.get_tensor("cross_attention_qk_scaled_scores_" + std::to_string(layer_idx));
 
         // [batch, num_heads, seq_len, frame_len]
         const ov::Shape& alignment_shape = alignment_tensor.get_shape();

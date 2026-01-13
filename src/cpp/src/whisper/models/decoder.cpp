@@ -14,7 +14,6 @@ std::shared_ptr<WhisperDecoder> WhisperDecoder::from_path(const std::filesystem:
                                                           const std::string& device,
                                                           const ov::AnyMap& properties,
                                                           const ov::PartialShape& lhs_shape,
-                                                          const ov::genai::WhisperConfig& model_config,
                                                           const bool decompose_cross_attention_spda_ops) {
     bool has_decoder_with_past = std::filesystem::exists(models_path / "openvino_decoder_with_past_model.xml");
 
@@ -30,7 +29,6 @@ std::shared_ptr<WhisperDecoder> WhisperDecoder::from_path(const std::filesystem:
                                                      device,
                                                      properties,
                                                      lhs_shape,
-                                                     model_config,
                                                      decompose_cross_attention_spda_ops);
 }
 

@@ -215,7 +215,7 @@ std::shared_ptr<ov::Node> WhisperScaledDotProductAttentionDecomposition::decompo
         scaled_atten = register_new_node<v1::Add>(scaled_atten, atten_mask);
     }
 
-    scaled_atten.add_names({"qk_scaled_scores"});
+    scaled_atten.add_names({"cross_attention_qk_scaled_scores"});
 
     if (has_sink) {
         auto minus_two = register_new_node(v0::Constant::create(element::i32, Shape{1}, {-2}));

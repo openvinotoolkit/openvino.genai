@@ -16,8 +16,7 @@ public:
                                                      const std::string& device,
                                                      const ov::AnyMap& properties,
                                                      const ov::PartialShape& lhs_shape,
-                                                     const ov::genai::WhisperConfig& model_config,
-                                                     const bool enable_encoder_attention_qk_accumulation);
+                                                     const bool decompose_cross_attention_spda_ops);
 
     std::pair<int64_t, float> detect_language(const Tensor& encoder_hidden_state, const int64_t decoder_start_token_id);
 

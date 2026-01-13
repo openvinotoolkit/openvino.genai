@@ -71,7 +71,7 @@ public:
     bool word_timestamps = false;
 
     /**
-     * @brief Number of attention heads used to predict timestamps.
+     * @brief Encoder attention alignment heads used for word-level timestamps prediction.
      * Each pair represents (layer_index, head_index).
      */
     std::vector<std::pair<size_t, size_t>> alignment_heads;

@@ -26,7 +26,6 @@ WhisperConfig::WhisperConfig(const std::filesystem::path& json_path) {
     nlohmann::json data = nlohmann::json::parse(f);
 
     read_json_param(data, "max_source_positions", max_source_positions);
-    read_json_param(data, "decoder_layers", decoder_layers);
 }
 
 }  // namespace genai

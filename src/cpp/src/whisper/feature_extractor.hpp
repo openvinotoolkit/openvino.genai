@@ -13,7 +13,11 @@ namespace genai {
 
 struct WhisperFeatures {
     size_t feature_size;
+
+    // total frames extracted from the audio including padding
     size_t n_frames;
+
+    // active frames corresponding to the original audio length
     size_t n_active_frames;
 
     // flattened 2d array with shape [feature_size, n_frames]

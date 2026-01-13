@@ -362,9 +362,6 @@ WhisperFeatures mel_spectrogram_convert_audio(const std::vector<float>& raw_spee
     features.n_frames = (padded_raw_speech.size() - n_fft) / hop_length;
     // this aligns with openai number of frames calculation
     features.n_active_frames = (raw_speech.size()) / hop_length;
-    // todo: remove, focus on word level timestamps accuracy for now
-    // features.n_frames = (raw_speech.size()) / hop_length;
-    // features.n_frames = (raw_speech.size() - n_fft) / hop_length;
     features.data.resize(features.feature_size * features.n_frames);
 
     {

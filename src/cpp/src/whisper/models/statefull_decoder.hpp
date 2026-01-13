@@ -14,7 +14,6 @@ public:
                             const std::string& device,
                             const ov::AnyMap& properties,
                             const ov::PartialShape& lhs_shape,
-                            const ov::genai::WhisperConfig& model_config,
                             const bool decompose_cross_attention_spda_ops);
 
     void start_async(const Tensor& encoder_hidden_state, const Tensor& input_ids, const Tensor& beam_idx) override;
@@ -30,7 +29,6 @@ public:
 
 private:
     ov::InferRequest m_request;
-    ov::genai::WhisperConfig m_model_config;
     bool m_has_cache_position = true;
     void _set_cache_position_tensor(const size_t seq_len);
 
