@@ -97,7 +97,7 @@ WhisperScaledDotProductAttentionDecomposition::WhisperScaledDotProductAttentionD
 
         const std::string& node_name = node->get_friendly_name();
         if (node_name.find("encoder_attn") == std::string::npos) {
-            // This pass is only for decoder attention layers
+            // This pass is only for encoder-decoder cross-attention layers
             return false;
         }
 

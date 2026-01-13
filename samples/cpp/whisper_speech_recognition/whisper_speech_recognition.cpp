@@ -280,11 +280,11 @@ int main(int argc, char* argv[]) try {
     //                            "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
     //                            "whisper/librispeech_asr_dummy_wav_samples");
 
-    test_word_level_timestamps(models_path,
-                               "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-                               "whisper/librispeech_asr_dummy_wav_samples",
-                               "/home/asuvorov/projects/openvino.genai/tests/python_tests/data/whisper/"
-                               "librispeech_asr_dummy_word_timestamps_reference_tiny.json");
+    // test_word_level_timestamps(models_path,
+    //                            "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+    //                            "whisper/librispeech_asr_dummy_wav_samples",
+    //                            "/home/asuvorov/projects/openvino.genai/tests/python_tests/data/whisper/"
+    //                            "librispeech_asr_dummy_word_timestamps_reference_tiny.json");
 
 } catch (const std::exception& error) {
     try {

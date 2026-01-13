@@ -186,6 +186,8 @@ def run_genai(
     genai_config.top_p = config.top_p
     genai_config.num_beams = config.num_beams
     genai_config.word_timestamps = config.word_timestamps
+    if config.alignment_heads:
+        genai_config.alignment_heads = config.alignment_heads
 
     return pipeline.generate(sample, genai_config, streamer=streamer)
 
@@ -647,7 +649,7 @@ def test_word_level_timestamps(model_descr, whisper_librispeech_10_openai_tiny_r
     assert accuracy > 0.95
 
 
-@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("model_descr", get_whisper_models_list())
 @pytest.mark.parametrize(
     "sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, long_form=True)], indirect=True
 )
@@ -655,10 +657,15 @@ def test_word_level_timestamps(model_descr, whisper_librispeech_10_openai_tiny_r
 def test_longform_audio_with_word_level_timestamps(model_descr, sample_from_dataset):
     _, _, _, genai_pipe = read_whisper_model(model_descr, word_timestamps=True)
 
+    config = ov_genai.WhisperGenerationConfig(return_timestamps=True, word_timestamps=True)
+
+    if model_descr[0] == "distil-whisper/distil-small.en":
+        config.alignment_heads = [[2, 2], [3, 0], [3, 2], [3, 3], [3, 4], [3, 5]]
+
     genai_result = run_genai(
         genai_pipe,
         sample_from_dataset,
-        config=ov_genai.WhisperGenerationConfig(return_timestamps=True, word_timestamps=True),
+        config=config,
     )
 
     assert len(genai_result.words) > 0

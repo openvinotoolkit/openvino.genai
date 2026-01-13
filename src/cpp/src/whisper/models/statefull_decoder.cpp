@@ -98,10 +98,8 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
                                                  const ov::AnyMap& properties,
                                                  const ov::PartialShape& lhs_shape,
                                                  const ov::genai::WhisperConfig& model_config,
-                                                 const std::vector<std::pair<size_t, size_t>>& alignment_heads,
                                                  const bool decompose_cross_attention_spda)
     : m_model_config(model_config),
-      m_alignment_heads(alignment_heads),
       m_decompose_cross_attention_spda_ops(decompose_cross_attention_spda) {
     ov::Core core = utils::singleton_core();
 
@@ -192,14 +190,15 @@ ov::Tensor WhisperStatefullDecoder::create_host_tensor(const element::Type eleme
     }
 }
 
-std::vector<Tensor> WhisperStatefullDecoder::get_alignments_heads_qks() {
+std::vector<Tensor> WhisperStatefullDecoder::get_alignments_heads_qks(
+    const std::vector<std::pair<size_t, size_t>>& alignment_heads) {
     if (!m_decompose_cross_attention_spda_ops) {
         OPENVINO_THROW("Encoder attention heads are not decomposed. Cannot get encoder QKs.");
     }
 
     // [layers] * [batch, num_heads, seq_len, frame_len] -> [layers] * [batch, seq_len, frame_len]
     std::vector<ov::Tensor> alignment_qks;
-    for (const auto& [layer_idx, head_idx] : m_alignment_heads) {
+    for (const auto& [layer_idx, head_idx] : alignment_heads) {
         const Tensor alignment_tensor = m_request.get_tensor("qk_scaled_scores_" + std::to_string(layer_idx));
 
         // [batch, num_heads, seq_len, frame_len]

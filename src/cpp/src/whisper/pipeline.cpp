@@ -100,7 +100,6 @@ public:
                                       properties_copy,
                                       m_encoder.get_compiled_model().output("last_hidden_state").get_partial_shape(),
                                       m_model_config,
-                                      m_generation_config.alignment_heads,
                                       decompose_cross_attention_spda_ops);
 
         // If eos_token_id was not provided, take value

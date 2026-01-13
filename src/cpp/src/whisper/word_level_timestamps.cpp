@@ -550,7 +550,8 @@ std::pair<std::vector<std::string>, std::vector<std::vector<int64_t>>> split_tok
 
 std::vector<ov::Tensor> infer_alignments_heads_qks(const std::vector<int64_t>& tokens,
                                                    std::shared_ptr<ov::genai::WhisperDecoder> decoder,
-                                                   const ov::Tensor& hidden_state_tensor) {
+                                                   const ov::Tensor& hidden_state_tensor,
+                                                   const std::vector<std::pair<size_t, size_t>>& alignment_heads) {
     const size_t batch_size = 1;
 
     ov::Tensor beam_idx = decoder->create_host_tensor(ov::element::i32, {batch_size});
@@ -563,7 +564,7 @@ std::vector<ov::Tensor> infer_alignments_heads_qks(const std::vector<int64_t>& t
     decoder->start_async(hidden_state_tensor, input_ids_tensor, beam_idx);
     decoder->wait();
 
-    const auto& alignment_heads_qks = decoder->get_alignments_heads_qks();
+    const auto& alignment_heads_qks = decoder->get_alignments_heads_qks(alignment_heads);
     decoder->reset_state();
 
     return alignment_heads_qks;
@@ -597,7 +598,8 @@ std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::v
     infer_tokens.push_back(config.no_timestamps_token_id);
     infer_tokens.insert(infer_tokens.end(), text_tokens.begin(), text_tokens.end());
 
-    auto alignment_heads_qks = infer_alignments_heads_qks(infer_tokens, decoder, hidden_state_tensor);
+    auto alignment_heads_qks =
+        infer_alignments_heads_qks(infer_tokens, decoder, hidden_state_tensor, config.alignment_heads);
 
     const auto alignment_path = find_alignment_path(alignment_heads_qks, n_active_frames, sot_tokens);
 
