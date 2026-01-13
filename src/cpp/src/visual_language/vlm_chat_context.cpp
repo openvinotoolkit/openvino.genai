@@ -14,7 +14,7 @@ VLMChatContext::VLMChatContext(
     m_inputs_embedder(embedder)
 {
     m_history_state = ChatHistoryInternalState::get_or_create(history, vision_registry);
-    m_checkpoint_message_count = m_history_state->get_messages_metadata().size();
+    m_initial_messages_metadata_count = m_history_state->get_messages_metadata().size();
 }
 
 VLMChatContext::ProcessedChatData VLMChatContext::process(
@@ -28,12 +28,10 @@ VLMChatContext::ProcessedChatData VLMChatContext::process(
     ProcessedChatData result;
     
     const size_t matching_history_length = m_history_state->find_matching_history_length(m_history);
+    const bool history_modified = matching_history_length < m_initial_messages_metadata_count;
 
-    // TODO Check if needed
-    bool messages_metadata_modified = false;
-    if (matching_history_length < m_checkpoint_message_count) {
+    if (history_modified) {
         m_history_state->truncate_to(matching_history_length);
-        messages_metadata_modified = true;
     }
     
     std::vector<size_t> new_image_indices = m_history_state->register_images(new_images);
@@ -65,19 +63,13 @@ VLMChatContext::ProcessedChatData VLMChatContext::process(
     
     result.vision_counts = m_history_state->build_vision_counts();
     
-    m_needs_kv_reset = (m_history_state->get_kv_cache_valid_messages() == 0) || // new history
-                       (m_history.size() < m_history_state->get_kv_cache_valid_messages()) || // user history truncated
-                        messages_metadata_modified;
+    result.needs_kv_cache_reset = m_initial_messages_metadata_count == 0 || history_modified;
     
     return result;
 }
 
-void VLMChatContext::finalize() {
-    m_history_state->set_kv_cache_valid_messages(m_history.size());
-}
-
 void VLMChatContext::rollback() {
-     m_history_state->truncate_to(m_checkpoint_message_count);
+     m_history_state->truncate_to(m_initial_messages_metadata_count);
 }
 
 void VLMChatContext::encode_visions_if_needed(
@@ -136,7 +128,6 @@ void VLMChatContext::fill_messages_metadata(
             metadata.provided_video_indices = new_video_indices;
         }
         
-        // TODO Consider moving getting of encoded images from history state to VLMChatContext
         std::vector<EncodedImage> encoded_images = m_history_state->get_encoded_images(metadata.provided_image_indices);
         std::vector<EncodedVideo> encoded_videos = m_history_state->get_encoded_videos(metadata.provided_video_indices);
         

@@ -18,13 +18,14 @@ public:
         std::vector<size_t> image_sequence;
         std::vector<size_t> video_sequence;
         
-        // TODO Consider using indices to encoded_images/video instead of copying
         std::vector<EncodedImage> new_encoded_images;
         std::vector<EncodedVideo> new_encoded_videos;
         std::vector<size_t> new_image_sequence;
         std::vector<size_t> new_video_sequence;
         
         std::vector<std::pair<size_t, size_t>> vision_counts;
+
+        bool needs_kv_cache_reset = false;
     };
 
     VLMChatContext(
@@ -38,11 +39,7 @@ public:
         const std::vector<ov::Tensor>& new_videos = {}
     );
 
-    void finalize();
-
     void rollback();
-
-    bool needs_kv_cache_reset() const { return m_needs_kv_reset; }
 
 private:
     ChatHistory& m_history;
@@ -50,10 +47,7 @@ private:
     InputsEmbedder& m_inputs_embedder;
     std::shared_ptr<ChatHistoryInternalState> m_history_state;
     
-    // TODO Check if needed
-    size_t m_checkpoint_message_count = 0;
-    // TODO Consider renaming
-    bool m_needs_kv_reset = false;
+    size_t m_initial_messages_metadata_count = 0;
 
     void encode_visions_if_needed(const std::vector<size_t>& image_indices,
                                   const std::vector<size_t>& video_indices);
