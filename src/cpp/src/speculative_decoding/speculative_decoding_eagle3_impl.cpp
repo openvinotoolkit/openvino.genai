@@ -204,7 +204,6 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     // move the FC layer from draft model to main model
     shift_fc_from_draft_to_main(main_model, draft_model);
     hidden_state_transform(draft_model, { -1 });
-    ov::serialize(main_model, "debug_main_eagle3_model.xml");
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
     m_main_pipeline = std::make_shared<ContinuousBatchingForEagle3DecodingImpl>(main_model,
