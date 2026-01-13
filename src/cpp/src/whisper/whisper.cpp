@@ -335,11 +335,11 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
         std::vector<int64_t> chunk_output_tokens = chunk_result.tokens[0];
 
         if (return_timestamps) {
-            ExtractedSegments extracted_segments = ov::genai::extract_segments(chunk_output_tokens,
-                                                                               config,
-                                                                               feature_extractor.nb_max_frames,
-                                                                               time_precision,
-                                                                               chunk_time_offset);
+            auto extracted_segments = ov::genai::extract_segments(chunk_output_tokens,
+                                                                  config,
+                                                                  feature_extractor.nb_max_frames,
+                                                                  time_precision,
+                                                                  chunk_time_offset);
 
             utils::filter_non_segment_metrics(raw_metrics, output_tokens.size(), extracted_segments.segment_ranges);
 
@@ -370,15 +370,17 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
         }
 
         if (config.word_timestamps) {
-            auto word_timestamps = add_word_level_timestamps(
-                sot_tokens,
-                chunk_output_tokens,
-                tokenizer,
-                decoder,
-                hidden_state_tensor,
-                config,
-                std::min(feature_extractor.nb_max_frames, input_features.n_active_frames - chunk_offset),
-                chunk_time_offset);
+            const auto n_active_frames =
+                std::min(feature_extractor.nb_max_frames, input_features.n_active_frames - chunk_offset);
+
+            const auto word_timestamps = add_word_level_timestamps(sot_tokens,
+                                                                   chunk_output_tokens,
+                                                                   tokenizer,
+                                                                   decoder,
+                                                                   hidden_state_tensor,
+                                                                   config,
+                                                                   n_active_frames,
+                                                                   chunk_time_offset);
 
             if (!result.words.has_value()) {
                 result.words = std::vector<WhisperWordTiming>{};

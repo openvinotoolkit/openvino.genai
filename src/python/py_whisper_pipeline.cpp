@@ -128,9 +128,11 @@ auto whisper_generation_config_docstring = R"(
     :type return_timestamps: bool
 
     :param word_timestamps: If `true` the pipeline will return word-level timestamps.
+                            When enabled word_timestamps=True property should be passed to WhisperPipeline constructor:
+                            WhisperPipeline("model_path", "CPU", word_timestamps=True);
     :type word_timestamps: bool
 
-    :param alignment_heads: Number of attention heads used to predict timestamps. Each pair represents (layer_index, head_index).
+    :param alignment_heads: Encoder attention alignment heads used for word-level timestamps prediction. Each pair represents (layer_index, head_index).
     :type alignment_heads: list[tuple[int, int]]
 
     :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
