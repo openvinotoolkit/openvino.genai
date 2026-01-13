@@ -488,9 +488,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
         m_inputs_embedder->update_chat_history(results[0].texts[0], encoded_results[0].m_status);
 
-        if (encoded_results[0].m_status != ov::genai::GenerationStatus::CANCEL) {
-            chat_context.finalize();
-        } else {
+        if (encoded_results[0].m_status == ov::genai::GenerationStatus::CANCEL) {
             chat_context.rollback();
         }
 

@@ -14,8 +14,7 @@
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/pipeline_base.hpp"
 #include "visual_language/continuous_batching_adapter.hpp"
-// TODO Check if needed
-#include "visual_language/chat_history_state.hpp"
+
 #include "visual_language/vision_registry.hpp"
 #include "visual_language/vlm_chat_context.hpp"
 
@@ -334,7 +333,6 @@ public:
         auto& raw_counters = perf_metrics.raw_metrics;
         
         m_is_chat_conversation = true;
-        // m_use_full_chat_history = true;
         
         setup_generation_config(generation_config);
         
@@ -347,7 +345,7 @@ public:
         try {
             auto processed_chat_data = chat_context.process(images, videos);
 
-            bool use_full_history = chat_context.needs_kv_cache_reset() || m_use_full_chat_history;
+            bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history;
 
             if (use_full_history) {
                 m_language.reset_state();
@@ -398,12 +396,10 @@ public:
 
             std::string decoded_text = decoded.texts.at(0);
             
-            // TODO Consider moving this to finalize method
+            // TODO Consider moving update_chat_history to chat_context (e.g. finilize(status)) as decoded_text seems to be not used
             m_inputs_embedder->update_chat_history(decoded_text, generation_finish_info.streaming_finish_status);
 
-            if (generation_finish_info.streaming_finish_status != ov::genai::GenerationStatus::CANCEL) {
-                chat_context.finalize();
-            } else {
+            if (generation_finish_info.streaming_finish_status == ov::genai::GenerationStatus::CANCEL) {
                 chat_context.rollback();
             }
 
