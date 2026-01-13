@@ -1,0 +1,93 @@
+global_context:
+  model_type: zimage
+pipeline_modules:
+  clip_text_encoder:
+    description: Encode positive prompt and negative prompt
+    device: GPU
+    inputs:
+    - name: prompt
+      source: pipeline_params.prompt
+      type: String
+    - name: guidance_scale
+      source: pipeline_params.guidance_scale
+      type: Float
+    - name: max_sequence_length
+      source: pipeline_params.max_sequence_length
+      type: Int
+    outputs:
+    - name: prompt_embeds
+      type: VecOVTensor
+    params:
+      model_path: ../../cpp/module_genai/ut_pipelines/Z-Image-Turbo-fp16-ov/
+    type: ClipTextEncoderModule
+  denoiser_loop:
+    description: Z-Image denoiser loop.
+    device: GPU
+    inputs:
+    - name: prompt_embeds
+      source: clip_text_encoder.prompt_embeds
+      type: VecOVTensor
+    - name: num_inference_steps
+      source: pipeline_params.num_inference_steps
+      type: Int
+    - name: width
+      source: pipeline_params.width
+      type: Int
+    - name: height
+      source: pipeline_params.height
+      type: Int
+    outputs:
+    - name: latents
+      type: OVTensor
+    params:
+      model_path: ../../cpp/module_genai/ut_pipelines/Z-Image-Turbo-fp16-ov/
+    type: ZImageDenoiserLoopModule
+  pipeline_params:
+    outputs:
+    - name: prompt
+      type: String
+    - name: guidance_scale
+      type: Float
+    - name: max_sequence_length
+      type: Int
+    - name: num_inference_steps
+      type: Int
+    - name: width
+      type: Int
+    - name: height
+      type: Int
+    type: ParameterModule
+  pipeline_result:
+    inputs:
+    - name: image
+      source: vae.image
+      type: OVTensor
+    type: ResultModule
+  vae:
+    device: GPU
+    inputs:
+    - name: latent
+      source: denoiser_loop.latents
+      type: OVTensor
+    outputs:
+    - name: image
+      type: OVTensor
+    params:
+      model_path: ../../cpp/module_genai/ut_pipelines/Z-Image-Turbo-fp16-ov/
+      sub_module_name: vae_decoder_submodule
+      tile_overlap_factor: '0.25'
+    type: VAEDecoderTilingModule
+sub_modules:
+- name: vae_decoder_submodule
+  vae_decoder:
+    device: GPU
+    inputs:
+    - name: latents
+      type: OVTensor
+    outputs:
+    - name: image
+      type: OVTensor
+    params:
+      enable_postprocess: 'false'
+      model_path: ../../cpp/module_genai/ut_pipelines/Z-Image-Turbo-fp16-ov/
+    type: VAEDecoderModule
