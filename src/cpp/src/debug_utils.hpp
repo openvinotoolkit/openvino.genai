@@ -5,6 +5,12 @@
 
 #include <fstream>
 #include <iostream>
+#include <filesystem>
+#include <sstream>
+#include <vector>
+#include <iterator>
+#include <algorithm>
+
 #include <openvino/runtime/tensor.hpp>
 #include <string>
 
@@ -119,7 +125,7 @@ inline void read_tensor(const std::string& file_name, ov::Tensor tensor, bool as
 
 /// @brief Read an npy file created in Python:
 /// with open('ndarray.npy', 'wb') as file:
-///     np.save(file, ndarray)
+///     np.save(file, ndarray.ascontiguousarray())
 inline ov::Tensor from_npy(const std::filesystem::path& npy) {
     std::ifstream fstream{npy, std::ios::binary};
     fstream.seekg(0, std::ios_base::end);
@@ -213,4 +219,32 @@ inline std::string print_token_id(const std::vector<int64_t>& print_ids,
         ss << print_ids[id] << "[" << tokenizer.decode(std::vector<int64_t>{print_ids[id]}) << "],";
     }
     return ss.str();
+}
+
+inline float max_diff(const ov::Tensor& lhs, const ov::Tensor& rhs) {
+    OPENVINO_ASSERT(lhs.get_shape() == rhs.get_shape());
+    float max_diff = 0.0f;
+    for (size_t idx = 0; idx < lhs.get_size(); ++idx) {
+        OPENVINO_SUPPRESS_DEPRECATED_START
+        max_diff = std::max(
+            max_diff,
+            std::abs(lhs.data<const float>()[idx] - rhs.data<const float>()[idx])
+        );
+        OPENVINO_SUPPRESS_DEPRECATED_END
+    }
+    return max_diff;
+}
+
+#define print(x) std::cerr << #x << x << '\n';
+
+namespace std {
+inline ostream& operator<<(ostream& os, const vector<float>& floats) {
+    os << "<float>[" << floats.size();
+    if (floats.empty()) {
+        return os << ']';
+    }
+    os << "]: ";
+    copy(floats.begin(), floats.end(), ostream_iterator<float>(os, " "));
+    return os;
+}
 }
