@@ -17,6 +17,7 @@ public:
                                                      const ov::AnyMap& properties,
                                                      const ov::PartialShape& lhs_shape,
                                                      const ov::genai::WhisperConfig& model_config,
+                                                     const std::vector<std::pair<size_t, size_t>>& alignment_heads,
                                                      const bool enable_encoder_attention_qk_accumulation);
 
     std::pair<int64_t, float> detect_language(const Tensor& encoder_hidden_state, const int64_t decoder_start_token_id);
@@ -31,7 +32,7 @@ public:
 
     virtual ov::Tensor create_host_tensor(const element::Type element_type, const Shape& shape);
 
-    virtual std::vector<Tensor> get_encoder_qks() {
+    virtual std::vector<Tensor> get_alignments_heads_qks() {
         OPENVINO_THROW("Not implemented");
     }
 

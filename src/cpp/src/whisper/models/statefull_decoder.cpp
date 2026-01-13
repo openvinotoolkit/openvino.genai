@@ -98,8 +98,10 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
                                                  const ov::AnyMap& properties,
                                                  const ov::PartialShape& lhs_shape,
                                                  const ov::genai::WhisperConfig& model_config,
+                                                 const std::vector<std::pair<size_t, size_t>>& alignment_heads,
                                                  const bool decompose_cross_attention_spda)
     : m_model_config(model_config),
+      m_alignment_heads(alignment_heads),
       m_decompose_cross_attention_spda_ops(decompose_cross_attention_spda) {
     ov::Core core = utils::singleton_core();
 
@@ -190,26 +192,41 @@ ov::Tensor WhisperStatefullDecoder::create_host_tensor(const element::Type eleme
     }
 }
 
-std::vector<Tensor> WhisperStatefullDecoder::get_encoder_qks() {
+std::vector<Tensor> WhisperStatefullDecoder::get_alignments_heads_qks() {
     if (!m_decompose_cross_attention_spda_ops) {
         OPENVINO_THROW("Encoder attention heads are not decomposed. Cannot get encoder QKs.");
     }
 
-    std::vector<Tensor> encoder_qks;
+    std::vector<ov::Tensor> alignment_qks;
+    for (const auto& [layer_idx, head_idx] : m_alignment_heads) {
+        const Tensor alignment_tensor = m_request.get_tensor("qk_scaled_scores_" + std::to_string(layer_idx));
 
-    const size_t decoder_layers = m_model_config.decoder_layers;
-
-    for (size_t layer = 0; layer < decoder_layers; layer++) {
         // [batch, head_num, seq_len, frame_len]
-        // todo: check if softmaxed scores can be accumulated
-        const Tensor encoder_qk_tensor = m_request.get_tensor("qk_scaled_scores_" + std::to_string(layer));
-        Tensor copy{encoder_qk_tensor.get_element_type(), encoder_qk_tensor.get_shape()};
-        encoder_qk_tensor.copy_to(copy);
+        const ov::Shape& alignment_shape = alignment_tensor.get_shape();
 
-        encoder_qks.push_back(copy);
+        // [batch, seq_len, frame_len]
+        ov::Tensor head_tensor{ov::element::f32, {alignment_shape[0], alignment_shape[2], alignment_shape[3]}};
+        auto* alignment_data = alignment_tensor.data<float>();
+        auto* head_data = head_tensor.data<float>();
+        const size_t batch_size = alignment_shape[0];
+        const size_t head_num = alignment_shape[1];
+        const size_t seq_len = alignment_shape[2];
+        const size_t frame_len = alignment_shape[3];
+
+        for (size_t batch = 0; batch < batch_size; ++batch) {
+            const size_t batch_offset = batch * head_num * seq_len * frame_len;
+            const size_t head_offset = head_idx * seq_len * frame_len;
+            const size_t head_batch_offset = batch * seq_len * frame_len;
+
+            std::memcpy(head_data + head_batch_offset,
+                        alignment_data + batch_offset + head_offset,
+                        seq_len * frame_len * sizeof(float));
+        }
+
+        alignment_qks.push_back(head_tensor);
     }
 
-    return encoder_qks;
+    return alignment_qks;
 }
 
 }  // namespace ov::genai

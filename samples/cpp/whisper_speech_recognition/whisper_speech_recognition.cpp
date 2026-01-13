@@ -255,37 +255,36 @@ int main(int argc, char* argv[]) try {
     // 'task' and 'language' parameters are supported for multilingual models only
     config.language = "<|en|>";  // can switch to <|zh|> for Chinese language
     config.task = "transcribe";
-    config.return_timestamps = false;
+    config.return_timestamps = true;
     config.word_timestamps = true;
 
     // Pipeline expects normalized audio with Sample Rate of 16kHz
     ov::genai::RawSpeechInput raw_speech = utils::audio::read_wav(wav_file_path);
-    // auto result = pipeline.generate(raw_speech, config);
+    auto result = pipeline.generate(raw_speech, config);
 
-    // std::cout << result << "\n";
+    std::cout << result << "\n";
 
     std::cout << std::fixed << std::setprecision(2);
-    // for (auto& chunk : *result.chunks) {
-    //     std::cout << "timestamps: [" << chunk.start_ts << ", " << chunk.end_ts << "] text: " << chunk.text <<
-    //     "\n";
-    // }
+    for (auto& chunk : *result.chunks) {
+        std::cout << "timestamps: [" << chunk.start_ts << ", " << chunk.end_ts << "] text: " << chunk.text << "\n";
+    }
 
-    test_encoder_attention_qks(models_path,
-                               "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-                               "whisper/librispeech_asr_dummy_wav_samples");
+    if (result.words) {
+        std::cout << "Word-level timestamps:\n";
+        for (const auto& word_info : *result.words) {
+            std::cout << "  " << word_info.word << "  " << word_info.start_ts << " - " << word_info.end_ts << "\n";
+        }
+    }
+
+    // test_encoder_attention_qks(models_path,
+    //                            "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
+    //                            "whisper/librispeech_asr_dummy_wav_samples");
 
     test_word_level_timestamps(models_path,
                                "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
                                "whisper/librispeech_asr_dummy_wav_samples",
                                "/home/asuvorov/projects/openvino.genai/tests/python_tests/data/whisper/"
                                "librispeech_asr_dummy_word_timestamps_reference_tiny.json");
-
-    // if (result.words) {
-    //     std::cout << "Word-level timestamps:\n";
-    //     for (const auto& word_info : *result.words) {
-    //         std::cout << "  " << word_info.word << "  " << word_info.start_ts << " - " << word_info.end_ts << "\n";
-    //     }
-    // }
 
 } catch (const std::exception& error) {
     try {
