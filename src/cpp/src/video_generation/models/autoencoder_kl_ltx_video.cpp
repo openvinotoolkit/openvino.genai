@@ -142,12 +142,12 @@ AutoencoderKLLTXVideo& AutoencoderKLLTXVideo::reshape(int64_t batch_size,
         get_config().patch_size *
         std::pow(
             2,
-            std::reduce(get_config().spatio_temporal_scaling.begin(), get_config().spatio_temporal_scaling.end(), 0));
+            std::accumulate(get_config().spatio_temporal_scaling.begin(), get_config().spatio_temporal_scaling.end(), 0));
     int64_t temporal_compression_ratio =
         get_config().patch_size_t *
         std::pow(
             2,
-            std::reduce(get_config().spatio_temporal_scaling.begin(), get_config().spatio_temporal_scaling.end(), 0));
+            std::accumulate(get_config().spatio_temporal_scaling.begin(), get_config().spatio_temporal_scaling.end(), 0));
 
     num_frames = ((num_frames - 1) / temporal_compression_ratio + 1) / m_transformer_patch_size_t;
     height /= (spatial_compression_ratio * m_transformer_patch_size);
