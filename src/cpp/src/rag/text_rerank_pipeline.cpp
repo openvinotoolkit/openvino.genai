@@ -23,6 +23,8 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
 
     properties_copy.erase(top_n.name());
     properties_copy.erase(max_length.name());
+    properties_copy.erase(pad_to_max_length.name());
+    properties_copy.erase(padding_side.name());
 
     return properties_copy;
 }
@@ -138,6 +140,8 @@ using utils::read_anymap_param;
 TextRerankPipeline::Config::Config(const ov::AnyMap& properties) {
     read_anymap_param(properties, ov::genai::top_n.name(), top_n);
     read_anymap_param(properties, ov::genai::max_length.name(), max_length);
+    read_anymap_param(properties, ov::genai::padding_side.name(), padding_side);
+    read_anymap_param(properties, ov::genai::pad_to_max_length.name(), pad_to_max_length);
 };
 
 class TextRerankPipeline::TextRerankPipelineImpl {
@@ -152,6 +156,14 @@ public:
 
         if (m_config.max_length) {
             m_tokenization_params.insert({max_length.name(), *m_config.max_length});
+        }
+
+        if (m_config.pad_to_max_length) {
+            m_tokenization_params.insert({pad_to_max_length.name(), *m_config.pad_to_max_length});
+        }
+
+        if (m_config.padding_side) {
+            m_tokenization_params.insert({padding_side.name(), *m_config.padding_side});
         }
 
         // qwen3 tokenizer doesn't support add_second_input(true)

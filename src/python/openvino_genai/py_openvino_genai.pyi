@@ -1001,6 +1001,18 @@ class GenerationConfig:
     def presence_penalty(self, arg0: typing.SupportsFloat) -> None:
         ...
     @property
+    def pruning_ratio(self) -> int:
+        ...
+    @pruning_ratio.setter
+    def pruning_ratio(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def relevance_weight(self) -> float:
+        ...
+    @relevance_weight.setter
+    def relevance_weight(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
     def repetition_penalty(self) -> float:
         ...
     @repetition_penalty.setter
@@ -1473,7 +1485,7 @@ class ImageGenerationPerfMetrics:
 class IncrementalParser:
     def __init__(self) -> None:
         ...
-    def parse(self, message: dict, delta_text: str, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
+    def parse(self, delta_message: dict, delta_text: str, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
         """
         Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.
         """
@@ -3072,7 +3084,7 @@ class T5EncoderModel:
         """
     def get_output_tensor(self, idx: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
         ...
-    def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool, max_sequence_length: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
+    def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool, max_sequence_length: typing.SupportsInt, **kwargs) -> openvino._pyopenvino.Tensor:
         ...
     def reshape(self, batch_size: typing.SupportsInt, max_sequence_length: typing.SupportsInt) -> T5EncoderModel:
         ...
@@ -3448,7 +3460,13 @@ class TextRerankPipeline:
                 Number of documents to return sorted by score.
             max_length (int, optional):
                 Maximum length of tokens passed to the embedding model.
+            pad_to_max_length (bool, optional):
+                If 'True', model input tensors are padded to the maximum length.
+            padding_side (str, optional):
+                Side to use for padding "left" or "right"
         """
+        pad_to_max_length: bool | None
+        padding_side: str | None
         @typing.overload
         def __init__(self) -> None:
             ...

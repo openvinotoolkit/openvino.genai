@@ -232,7 +232,9 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
              const std::vector<std::vector<ov::Tensor>>& images_vector,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) {
-    return generate(prompts, images_vector, {{}}, sampling_params, streamer);
+    // empty videos batch size should match prompt batch size
+    const std::vector<std::vector<ov::Tensor>> empty_videos_vector(prompts.size());
+    return generate(prompts, images_vector, empty_videos_vector, sampling_params, streamer);
 }
 
 std::vector<VLMDecodedResults>
@@ -256,6 +258,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     std::vector<EncodedImage> encoded_images = {};
     std::vector<EncodedVideo> encoded_videos = {};
     bool recalculate_merged_embeddings = images_vector.size() > 0 || videos_vector.size() > 0;
+
+    const auto& generation_config = sampling_params[0];
+    // Set visual token pruning configuration
+    m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
+                                                       generation_config.relevance_weight);
 
     if (m_is_chat_conversation) {
         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
