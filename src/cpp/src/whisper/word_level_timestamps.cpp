@@ -10,8 +10,8 @@
 
 namespace {
 
-std::vector<ov::Tensor> extract_qks_alignment_heads(const std::vector<ov::Tensor>& encoder_attention_qks,
-                                                    const std::vector<std::pair<size_t, size_t>>& alignment_heads) {
+std::vector<ov::Tensor> extract_alignment_heads(const std::vector<ov::Tensor>& encoder_attention_qks,
+                                                const std::vector<std::pair<size_t, size_t>>& alignment_heads) {
     std::vector<ov::Tensor> alignment_qks;
     for (size_t i = 0; i < alignment_heads.size(); ++i) {
         const auto& [layer_idx, head_idx] = alignment_heads[i];
@@ -171,7 +171,6 @@ void mean_normalize_token_axis(std::vector<ov::Tensor>& alignment_qks) {
 }
 
 // [head_size] * [batch,seq_len,frame_len] -> [head_size] * [seq_len,frame_len]
-// Takes first batch only
 std::vector<ov::Tensor> reduce_batch_dim(const std::vector<ov::Tensor>& alignment_qks) {
     std::vector<ov::Tensor> shrunk_tensors;
     for (const auto& tensor : alignment_qks) {
@@ -183,7 +182,6 @@ std::vector<ov::Tensor> reduce_batch_dim(const std::vector<ov::Tensor>& alignmen
         auto* input_data = tensor.data<float>();
         auto* output_data = shrunk_tensor.data<float>();
 
-        // Copy first batch only
         std::memcpy(output_data, input_data, seq_len * frame_len * sizeof(float));
 
         shrunk_tensors.push_back(shrunk_tensor);
@@ -417,69 +415,35 @@ std::vector<std::pair<size_t, size_t>> find_alignment_path(
     const std::vector<int64_t>& sot_tokens,
     const std::vector<int64_t>& tokens,
     ov::genai::Tokenizer& tokenizer) {
-    const auto alignment_qks = extract_qks_alignment_heads(encoder_attention_qks, alignment_heads);
+    // Not all layers/heads are used for alignment, model size specific
+    const auto alignment_qks = extract_alignment_heads(encoder_attention_qks, alignment_heads);
 
     const auto shrunk_alignment = reduce_batch_dim(encoder_attention_qks);
 
     // Extract only up to n_frames to match input feature length
     auto n_frame_alignment_qks = extract_n_frames(alignment_qks, size_t(n_frames / 2));
-    // save_vector_of_tensors_as_np(n_frame_alignment_qks,
-    //                              "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-    //                              "genai_attention_weights.npy");
 
     softmax_frame_axis(n_frame_alignment_qks);
-    // save_vector_of_tensors_as_np(n_frame_alignment_qks,
-    //                              "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-    //                              "genai_attention_weights_softmax.npy");
 
     // Apply L2 normalization along token axis (matching Python: weights / weights.norm(dim=-2, keepdim=True))
     mean_normalize_token_axis(n_frame_alignment_qks);
-    // save_vector_of_tensors_as_np(n_frame_alignment_qks,
-    //                              "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-    //                              "genai_attention_weights_normalized.npy");
 
     auto filtered_alignment_qks = median_filter_last_axis(n_frame_alignment_qks, 7);
-    // save_vector_of_tensors_as_np(filtered_alignment_qks,
-    //                              "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-    //                              "genai_attention_weights_median_filter.npy");
 
     const auto shrunk_tensors = reduce_batch_dim(filtered_alignment_qks);
     const auto matrix = mean_across_heads(shrunk_tensors);
-    // save_matrix_as_numpy(matrix,
-    //                      "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-    //                      "genai_matrix.npy");
 
     // matix shape: [sot_tokens.size():-1]
     auto matrix_text_tokens_slice =
         std::vector<std::vector<float>>(matrix.begin() + sot_tokens.size(), matrix.end() - 1);
 
-    // save_matrix_as_numpy(matrix_text_tokens_slice,
-    //                      "/home/asuvorov/projects/openvino.genai/.vscode/tasks/word_level_timestamps/data/"
-    //                      "genai_sliced_matrix.npy");
     const auto alignment_path = dtw_and_backtrace(matrix_text_tokens_slice);
 
     return alignment_path;
 }
 
+// https://github.com/openai/whisper/blob/v20250625/whisper/timing.py#L307
 void truncate_long_words_at_sentence_boundaries(std::vector<ov::genai::WhisperWordTiming>& words) {
-    // word_durations = np.array([t.end - t.start for t in alignment])
-    // word_durations = word_durations[word_durations.nonzero()]
-    // median_duration = np.median(word_durations) if len(word_durations) > 0 else 0.0
-    // median_duration = min(0.7, float(median_duration))
-    // max_duration = median_duration * 2
-
-    // # hack: truncate long words at sentence boundaries.
-    // # a better segmentation algorithm based on VAD should be able to replace this.
-    // if len(word_durations) > 0:
-    //     sentence_end_marks = ".。!！?？"
-    //     # ensure words at sentence boundaries are not longer than twice the median word duration.
-    //     for i in range(1, len(alignment)):
-    //         if alignment[i].end - alignment[i].start > max_duration:
-    //             if alignment[i].word in sentence_end_marks:
-    //                 alignment[i].end = alignment[i].start + max_duration
-    //             elif alignment[i - 1].word in sentence_end_marks:
-    //                 alignment[i].start = alignment[i].end - max_duration
-
     std::vector<float> word_durations;
     for (const auto& word : words) {
         float duration = word.end_ts - word.start_ts;
@@ -519,40 +483,8 @@ void truncate_long_words_at_sentence_boundaries(std::vector<ov::genai::WhisperWo
     }
 }
 
+// https://github.com/openai/whisper/blob/v20250625/whisper/timing.py#L245
 std::vector<ov::genai::WhisperWordTiming> merge_punctuations(std::vector<ov::genai::WhisperWordTiming>& words) {
-    // prepend_punctuations: str = "\"'“¿([{-",
-    // append_punctuations: str = "\"'.。,，!！?？:：”)]}、",
-    // # merge prepended punctuations
-    // i = len(alignment) - 2
-    // j = len(alignment) - 1
-    // while i >= 0:
-    //     previous = alignment[i]
-    //     following = alignment[j]
-    //     if previous.word.startswith(" ") and previous.word.strip() in prepended:
-    //         # prepend it to the following word
-    //         following.word = previous.word + following.word
-    //         following.tokens = previous.tokens + following.tokens
-    //         previous.word = ""
-    //         previous.tokens = []
-    //     else:
-    //         j = i
-    //     i -= 1
-
-    // # merge appended punctuations
-    // i = 0
-    // j = 1
-    // while j < len(alignment):
-    //     previous = alignment[i]
-    //     following = alignment[j]
-    //     if not previous.word.endswith(" ") and following.word in appended:
-    //         # append it to the previous word
-    //         previous.word = previous.word + following.word
-    //         previous.tokens = previous.tokens + following.tokens
-    //         following.word = ""
-    //         following.tokens = []
-    //     else:
-    //         i = j
-    //     j += 1
     const std::string prepend_punctuations = "\"'“¿([{-";
     const std::string append_punctuations = "\"'.。,，!！?？:：”)]}、";
 
@@ -626,6 +558,7 @@ std::string trim(const std::string& text) {
     return result;
 }
 
+// https://github.com/openai/whisper/blob/v20250625/whisper/tokenizer.py#L311
 std::pair<std::vector<std::string>, std::vector<std::vector<int64_t>>> split_tokens_on_spaces(
     const std::vector<int64_t>& tokens,
     ov::genai::Tokenizer& tokenizer) {
@@ -643,9 +576,6 @@ std::pair<std::vector<std::string>, std::vector<std::vector<int64_t>>> split_tok
         const bool is_special = subword_tokens.size() && subword_tokens[0] >= eot;
         const bool with_space = !subword.empty() && std::isspace(subword[0]);
 
-        // punctuation = subword.strip() in string.punctuation
-        // python is_punct: r"""!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~"""
-        // const bool is_punctuation = !subword.empty() && std::ispunct(subword[0]);
         const std::string trimmed_subword = trim(subword);
         const bool is_punctuation =
             !trimmed_subword.empty() && trimmed_subword.size() == 1 && std::ispunct(trimmed_subword[0]);
