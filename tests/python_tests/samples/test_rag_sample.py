@@ -37,7 +37,7 @@ class TestTextEmbeddingPipeline:
 class TestTextRerankPipeline:
     @pytest.mark.rag
     @pytest.mark.samples
-    @pytest.mark.parametrize("convert_model", ["ms-marco-TinyBERT-L2-v2"], indirect=True)
+    @pytest.mark.parametrize("convert_model", ["bge-reranker-base"], indirect=True)
     def test_sample_text_rerank_pipeline(self, convert_model):
         # Run Python sample
         py_script = SAMPLES_PY_DIR / "rag/text_rerank.py"

@@ -137,6 +137,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "BAAI/bge-small-en-v1.5",
         "convert_args": ["--trust-remote-code"]
     },
+    "bge-reranker-base": {
+        "name": "BAAI/bge-reranker-base",
+        "convert_args": ["--trust-remote-code", '--weight-format', 'fp16']
+    },
     "ms-marco-TinyBERT-L2-v2": {
         "name": "cross-encoder/ms-marco-TinyBERT-L2-v2",
         "convert_args": ["--trust-remote-code", "--task", "text-classification"],
