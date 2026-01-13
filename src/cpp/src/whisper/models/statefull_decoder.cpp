@@ -197,11 +197,12 @@ std::vector<Tensor> WhisperStatefullDecoder::get_alignments_heads_qks() {
         OPENVINO_THROW("Encoder attention heads are not decomposed. Cannot get encoder QKs.");
     }
 
+    // [layers] * [batch, num_heads, seq_len, frame_len] -> [layers] * [batch, seq_len, frame_len]
     std::vector<ov::Tensor> alignment_qks;
     for (const auto& [layer_idx, head_idx] : m_alignment_heads) {
         const Tensor alignment_tensor = m_request.get_tensor("qk_scaled_scores_" + std::to_string(layer_idx));
 
-        // [batch, head_num, seq_len, frame_len]
+        // [batch, num_heads, seq_len, frame_len]
         const ov::Shape& alignment_shape = alignment_tensor.get_shape();
 
         // [batch, seq_len, frame_len]
@@ -209,12 +210,12 @@ std::vector<Tensor> WhisperStatefullDecoder::get_alignments_heads_qks() {
         auto* alignment_data = alignment_tensor.data<float>();
         auto* head_data = head_tensor.data<float>();
         const size_t batch_size = alignment_shape[0];
-        const size_t head_num = alignment_shape[1];
+        const size_t num_heads = alignment_shape[1];
         const size_t seq_len = alignment_shape[2];
         const size_t frame_len = alignment_shape[3];
 
         for (size_t batch = 0; batch < batch_size; ++batch) {
-            const size_t batch_offset = batch * head_num * seq_len * frame_len;
+            const size_t batch_offset = batch * num_heads * seq_len * frame_len;
             const size_t head_offset = head_idx * seq_len * frame_len;
             const size_t head_batch_offset = batch * seq_len * frame_len;
 

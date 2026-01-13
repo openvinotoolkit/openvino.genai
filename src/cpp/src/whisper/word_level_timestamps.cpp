@@ -10,42 +10,6 @@
 
 namespace {
 
-std::vector<ov::Tensor> extract_alignment_heads(const std::vector<ov::Tensor>& encoder_attention_qks,
-                                                const std::vector<std::pair<size_t, size_t>>& alignment_heads) {
-    std::vector<ov::Tensor> alignment_qks;
-    for (size_t i = 0; i < alignment_heads.size(); ++i) {
-        const auto& [layer_idx, head_idx] = alignment_heads[i];
-
-        ov::Tensor alignemnt_tensor = encoder_attention_qks.at(layer_idx);
-
-        // [batch, head_num, seq_len, frame_len]
-        const ov::Shape& alignment_shape = alignemnt_tensor.get_shape();
-
-        // [batch, seq_len, frame_len]
-        ov::Tensor head_tensor{ov::element::f32, {alignment_shape[0], alignment_shape[2], alignment_shape[3]}};
-        auto* alignment_data = alignemnt_tensor.data<float>();
-        auto* head_data = head_tensor.data<float>();
-        const size_t batch_size = alignment_shape[0];
-        const size_t head_num = alignment_shape[1];
-        const size_t seq_len = alignment_shape[2];
-        const size_t frame_len = alignment_shape[3];
-
-        for (size_t batch = 0; batch < batch_size; ++batch) {
-            const size_t batch_offset = batch * head_num * seq_len * frame_len;
-            const size_t head_offset = head_idx * seq_len * frame_len;
-            const size_t head_batch_offset = batch * seq_len * frame_len;
-
-            std::memcpy(head_data + head_batch_offset,
-                        alignment_data + batch_offset + head_offset,
-                        seq_len * frame_len * sizeof(float));
-        }
-
-        alignment_qks.push_back(head_tensor);
-    }
-
-    return alignment_qks;
-}
-
 std::vector<ov::Tensor> median_filter_last_axis(const std::vector<ov::Tensor>& alignment_qks,
                                                 const size_t filter_width = 7) {
     std::vector<ov::Tensor> filtered_tensors;
@@ -98,7 +62,7 @@ void softmax_frame_axis(std::vector<ov::Tensor>& alignment_qks) {
 
         for (size_t batch = 0; batch < batch_size; ++batch) {
             for (size_t seq = 0; seq < seq_len; ++seq) {
-                // Find max for numerical stability
+                // Find max
                 float max_val = -std::numeric_limits<float>::infinity();
                 for (size_t frame = 0; frame < frame_len; ++frame) {
                     size_t index = batch * seq_len * frame_len + seq * frame_len + frame;
@@ -172,21 +136,21 @@ void mean_normalize_token_axis(std::vector<ov::Tensor>& alignment_qks) {
 
 // [head_size] * [batch,seq_len,frame_len] -> [head_size] * [seq_len,frame_len]
 std::vector<ov::Tensor> reduce_batch_dim(const std::vector<ov::Tensor>& alignment_qks) {
-    std::vector<ov::Tensor> shrunk_tensors;
+    std::vector<ov::Tensor> result;
     for (const auto& tensor : alignment_qks) {
         const ov::Shape& shape = tensor.get_shape();
         const size_t seq_len = shape[1];
         const size_t frame_len = shape[2];
 
-        ov::Tensor shrunk_tensor{ov::element::f32, {seq_len, frame_len}};
+        ov::Tensor reduced_batch_tensor{ov::element::f32, {seq_len, frame_len}};
         auto* input_data = tensor.data<float>();
-        auto* output_data = shrunk_tensor.data<float>();
+        auto* output_data = reduced_batch_tensor.data<float>();
 
         std::memcpy(output_data, input_data, seq_len * frame_len * sizeof(float));
 
-        shrunk_tensors.push_back(shrunk_tensor);
+        result.push_back(reduced_batch_tensor);
     }
-    return shrunk_tensors;
+    return result;
 }
 
 // [head_size] * [seq_len,frame_len] -> [seq_len,frame_len]
@@ -299,6 +263,7 @@ std::vector<std::pair<size_t, size_t>> dtw_and_backtrace(const std::vector<std::
     return path;
 }
 
+// [head_size] * [batch,seq_len,frame_len] -> [head_size] * [batch,seq_len,n_frames]
 std::vector<ov::Tensor> extract_n_frames(const std::vector<ov::Tensor>& alignment_qks, const size_t n_frames) {
     std::vector<ov::Tensor> extracted_tensors;
 
@@ -409,22 +374,20 @@ std::vector<ov::genai::WhisperWordTiming> match_words_to_alignment_path(
 };
 
 std::vector<std::pair<size_t, size_t>> find_alignment_path(const std::vector<ov::Tensor>& alignment_heads_qks,
-                                                           const size_t n_frames,
-                                                           const std::vector<int64_t>& sot_tokens,
-                                                           const std::vector<int64_t>& tokens,
-                                                           ov::genai::Tokenizer& tokenizer) {
-    // Extract only up to n_frames to match input feature length
-    auto n_frame_alignment_qks = extract_n_frames(alignment_heads_qks, size_t(n_frames / 2));
+                                                           const size_t n_active_frames,
+                                                           const std::vector<int64_t>& sot_tokens) {
+    // Extract only up to n_frames to match input audio length
+    auto n_frames_alignment_qks = extract_n_frames(alignment_heads_qks, size_t(n_active_frames / 2));
 
-    softmax_frame_axis(n_frame_alignment_qks);
+    softmax_frame_axis(n_frames_alignment_qks);
 
     // Apply L2 normalization along token axis (matching Python: weights / weights.norm(dim=-2, keepdim=True))
-    mean_normalize_token_axis(n_frame_alignment_qks);
+    mean_normalize_token_axis(n_frames_alignment_qks);
 
-    auto filtered_alignment_qks = median_filter_last_axis(n_frame_alignment_qks, 7);
+    auto filtered_alignment_qks = median_filter_last_axis(n_frames_alignment_qks, 7);
 
-    const auto shrunk_tensors = reduce_batch_dim(filtered_alignment_qks);
-    const auto matrix = mean_across_heads(shrunk_tensors);
+    const auto reduced_batch_tensor = reduce_batch_dim(filtered_alignment_qks);
+    const auto matrix = mean_across_heads(reduced_batch_tensor);
 
     // matix shape: [sot_tokens.size():-1]
     auto matrix_text_tokens_slice =
@@ -616,7 +579,7 @@ std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::v
                                                                     std::shared_ptr<ov::genai::WhisperDecoder> decoder,
                                                                     const ov::Tensor& hidden_state_tensor,
                                                                     const ov::genai::WhisperGenerationConfig& config,
-                                                                    const size_t n_frames,
+                                                                    const size_t n_active_frames,
                                                                     const float chunk_time_offset
                                                                     // todo: add raw_perf_metrics
 ) {
@@ -636,7 +599,7 @@ std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::v
 
     auto alignment_heads_qks = infer_alignments_heads_qks(infer_tokens, decoder, hidden_state_tensor);
 
-    const auto alignment_path = find_alignment_path(alignment_heads_qks, n_frames, sot_tokens, infer_tokens, tokenizer);
+    const auto alignment_path = find_alignment_path(alignment_heads_qks, n_active_frames, sot_tokens);
 
     const auto [words, word_tokens] = split_tokens_on_spaces(text_tokens, tokenizer);
 
