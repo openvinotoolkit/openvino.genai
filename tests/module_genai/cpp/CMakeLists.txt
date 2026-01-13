@@ -27,9 +27,9 @@ else()
     message(FATAL_ERROR "OpenCV not found! Check your installation and environment.")
 endif()
 
-file(GLOB src_modules "./modules/*.cpp")
-file(GLOB src_pipelines "./pipelines/*.cpp")
-file(GLOB src_utils "./utils/*.cpp")
+file(GLOB src_modules CONFIGURE_DEPENDS "./modules/*.cpp")
+file(GLOB src_pipelines CONFIGURE_DEPENDS "./pipelines/*.cpp")
+file(GLOB src_utils CONFIGURE_DEPENDS "./utils/*.cpp")
 
 set(TEST_TARGET_NAME "genai_modules_test")
 

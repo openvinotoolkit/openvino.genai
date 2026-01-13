@@ -3,7 +3,11 @@
 
 #pragma once
 
+#include <filesystem>
+#include <fstream>
 #include <optional>
+#include <string>
+#include <vector>
 
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
@@ -38,6 +42,19 @@ public:
     void start_chat(const std::string& system_message = {});
 
     void finish_chat();
+
+    // Validation result structure
+    struct ValidationResult {
+        bool valid = false;
+        std::vector<std::string> errors;
+        std::vector<std::string> warnings;
+    };
+
+    // Validate YAML config file
+    static ValidationResult validate_config(const std::filesystem::path& config_yaml_path);
+
+    // Validate YAML config content string
+    static ValidationResult validate_config_string(const std::string& config_yaml_content);
 
 private:
     void* m_pipeline_impl = nullptr;
