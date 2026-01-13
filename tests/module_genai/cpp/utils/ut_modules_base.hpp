@@ -36,7 +36,11 @@ public:
         ov::genai::module::ModulePipeline pipe(yaml_content);
 
         ov::AnyMap inputs = prepare_inputs();
-        pipe.generate(inputs);
+        if (m_async) {
+            pipe.generate_async(inputs);
+        } else {
+            pipe.generate(inputs);
+        }
 
         check_outputs(pipe);
     }
@@ -51,6 +55,8 @@ protected:
         set_test_name(::testing::UnitTest::GetInstance()->current_test_info()->test_suite_name() + std::string("_") + \
                       ::testing::UnitTest::GetInstance()->current_test_info()->name());
 #endif
+
+    bool m_async = false;
 
     virtual std::string get_yaml_content() = 0;
     virtual ov::AnyMap prepare_inputs() = 0;

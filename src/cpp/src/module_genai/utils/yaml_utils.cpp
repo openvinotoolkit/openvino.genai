@@ -73,6 +73,9 @@ IBaseModuleDesc::PTR parse_module(const YAML::Node& node) {
     if (node["description"])
         desc->description = node["description"].as<std::string>();
 
+    if (node["thread_mode"])
+        desc->thread_mode = ThreadModeConverter::fromString(node["thread_mode"].as<std::string>());
+
     if (node["inputs"] && node["inputs"].IsSequence()) {
         for (const auto& input_node : node["inputs"]) {
             desc->inputs.push_back(parse_input_port(input_node, true));

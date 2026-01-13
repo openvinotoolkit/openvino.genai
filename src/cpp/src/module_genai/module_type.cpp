@@ -26,10 +26,27 @@ const std::unordered_map<ModuleType, std::string> ModuleTypeConverter::kTypeToSt
     {ModuleType::ClipTextEncoderModule, "ClipTextEncoderModule"},
     {ModuleType::ResultModule, "ResultModule"},
     {ModuleType::SaveImageModule, "SaveImageModule"},
-    {ModuleType::Unknown, "Unknown"}};
+    {ModuleType::Unknown, "Unknown"},
+
+    {ModuleType::FakeModuleA, "FakeModuleA"},
+    {ModuleType::FakeModuleB, "FakeModuleB"},
+    {ModuleType::FakeModuleC, "FakeModuleC"},
+    {ModuleType::FakeModuleD, "FakeModuleD"},
+};
 
 const std::unordered_map<std::string, ModuleType> ModuleTypeConverter::kStringToType =
     ModuleTypeConverter::create_string_to_type_map();
+
+const std::unordered_map<ThreadMode, std::string> ThreadModeConverter::kModeToString = {
+    {ThreadMode::AUTO, "AUTO"},
+    {ThreadMode::AUTO, "auto"},
+    {ThreadMode::SYNC, "SYNC"},
+    {ThreadMode::SYNC, "sync"},
+    {ThreadMode::ASYNC, "ASYNC"},
+    {ThreadMode::ASYNC, "async"},
+};
+const std::unordered_map<std::string, ThreadMode> ThreadModeConverter::kStringToMode =
+    ThreadModeConverter::create_string_to_mode_map();
 
 }  // namespace module
 }  // namespace genai

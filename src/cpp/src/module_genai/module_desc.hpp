@@ -50,6 +50,7 @@ public:
     std::vector<OutputPort> outputs;
     std::string device;
     std::string description;
+    ThreadMode thread_mode = ThreadMode::AUTO;
     std::unordered_map<std::string, std::string> params;
     std::string model_type;
 

@@ -2,18 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "module.hpp"
+#include "modules/md_clip_text_encoder.hpp"
+#include "modules/md_embedding_merger.hpp"
+#include "modules/md_fake.hpp"
 #include "modules/md_img_preprocess.hpp"
 #include "modules/md_io.hpp"
-#include "modules/md_text_encoder.hpp"
-#include "modules/md_vision_encoder.hpp"
-#include "modules/md_text_embedding.hpp"
-#include "modules/md_embedding_merger.hpp"
 #include "modules/md_llm_inference.hpp"
-#include "modules/md_zimage_denoiser_loop.hpp"
-#include "modules/md_vae_decoder_tiling.hpp"
-#include "modules/md_vae_decoder.hpp"
-#include "modules/md_clip_text_encoder.hpp"
 #include "modules/md_save_image.hpp"
+#include "modules/md_text_embedding.hpp"
+#include "modules/md_text_encoder.hpp"
+#include "modules/md_vae_decoder.hpp"
+#include "modules/md_vae_decoder_tiling.hpp"
+#include "modules/md_vision_encoder.hpp"
+#include "modules/md_zimage_denoiser_loop.hpp"
 #include "utils/yaml_utils.hpp"
 
 namespace ov {
@@ -68,6 +69,10 @@ void construct_pipeline(const PipelineModulesDesc& pipeline_modules_desc, Pipeli
         GENAI_MODULE_TYPE_CASE(VAEDecoderModule, VAEDecoderModule);
         GENAI_MODULE_TYPE_CASE(SaveImageModule, SaveImageModule);
 
+        GENAI_MODULE_TYPE_CASE(FakeModuleA, FakeModuleA);
+        GENAI_MODULE_TYPE_CASE(FakeModuleB, FakeModuleB);
+        GENAI_MODULE_TYPE_CASE(FakeModuleC, FakeModuleC);
+        GENAI_MODULE_TYPE_CASE(FakeModuleD, FakeModuleD);
 #undef GENAI_MODULE_TYPE_CASES
         default:
             break;

@@ -44,8 +44,51 @@ namespace module {
         SaveImageModule = 51,
         
         // Default/Unknown
-        Unknown = 99
+        Unknown = 99,
+
+        FakeModuleA = 10000,
+        FakeModuleB = 10001,
+        FakeModuleC = 10002,
+        FakeModuleD = 10003,
     };
+
+    enum class ThreadMode : int {
+        AUTO = 0,   // define AUTO
+        SYNC = 1,
+        ASYNC = 2
+    };
+
+    struct ThreadModeConverter {
+    private:
+        static const std::unordered_map<ThreadMode, std::string> kModeToString;
+        static const std::unordered_map<std::string, ThreadMode> kStringToMode;
+        static std::unordered_map<std::string, ThreadMode> create_string_to_mode_map() {
+            std::unordered_map<std::string, ThreadMode> map;
+            for (const auto& pair : kModeToString) {
+                map[pair.second] = pair.first;
+            }
+            return map;
+        }
+        public:
+        static std::string toString(ThreadMode mode) {
+            auto it = kModeToString.find(mode);
+            if (it != kModeToString.end()) {
+                return it->second;
+            }
+            throw std::runtime_error("Unknown ThreadMode value: " + std::to_string(static_cast<int>(mode)));
+        }
+        static ThreadMode fromString(const std::string& str) {
+            auto it = kStringToMode.find(str);
+            if (it != kStringToMode.end()) {
+                return it->second;
+            }
+            throw std::runtime_error("Unknown ThreadMode string: " + str);
+        }
+    };
+
+    inline std::ostream& operator<<(std::ostream& os, ThreadMode mode) {
+        return os << ThreadModeConverter::toString(mode);
+    }
 
     struct ModuleTypeConverter {
     private:

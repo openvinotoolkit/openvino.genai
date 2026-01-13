@@ -86,25 +86,6 @@ bool VAEDecoderTilingModule::init_tile_params(const std::filesystem::path& model
     return true;
 }
 
-bool VAEDecoderTilingModule::init_sub_pipeline(const std::string& sub_pipeline_name) {
-    bool found = false;
-    for (auto& sub_module : pipeline_desc->sub_pipeline_descs) {
-        if (sub_module.first == sub_pipeline_name) {
-            m_sub_pipeline_impl = std::make_shared<ModulePipelineImpl>(sub_module.second, pipeline_desc);
-            OPENVINO_ASSERT(
-                m_sub_pipeline_impl != nullptr,
-                "VAEDecoderTilingModule[" + module_desc->name + "]: Failed to create sub-pipeline instance");
-            found = true;
-            break;
-        }
-    }
-
-    OPENVINO_ASSERT(found,
-                    "VAEDecoderTilingModule[" + module_desc->name + "]: sub_pipeline_name '" + sub_pipeline_name +
-                        "' not found in pipeline_desc");
-    return true;
-}
-
 bool VAEDecoderTilingModule::init_post_process() {
     std::string device = module_desc->device.empty() ? "CPU" : module_desc->device;
 
@@ -147,7 +128,9 @@ bool VAEDecoderTilingModule::initialize() {
         GENAI_ERR("VAEDecoderTilingModule[" + module_desc->name + "]: 'sub_module_name' not found in params");
         return false;
     }
-    if (!init_sub_pipeline(it_sub_module_name->second)) {
+
+    m_sub_pipeline_impl = init_sub_pipeline(it_sub_module_name->second, pipeline_desc, module_desc);
+    if (!m_sub_pipeline_impl) {
         return false;
     }
 

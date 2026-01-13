@@ -24,7 +24,6 @@ private:
     bool init_tile_params(const std::filesystem::path& model_path);
 
     std::shared_ptr<ModulePipelineImpl> m_sub_pipeline_impl = nullptr;
-    bool init_sub_pipeline(const std::string& sub_pipeline_name);
 
     ov::InferRequest pp_infer_request;
     bool init_post_process();
