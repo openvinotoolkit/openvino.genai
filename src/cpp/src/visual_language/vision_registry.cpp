@@ -26,25 +26,31 @@ VisionRegistry::VisionEntry& VisionRegistry::VisionEntry::operator=(VisionEntry&
     return *this;
 }
 
+// Hash tensor using FNV-1a algorithm.
+// See: https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
 VisionID VisionRegistry::compute_hash(const ov::Tensor& tensor) {
-    size_t hash = 0;
+    // FNV-1a parameters (64-bit)
+    constexpr uint64_t FNV_OFFSET_BASIS = 0xcbf29ce484222325;
+    constexpr uint64_t FNV_PRIME = 0x100000001b3;
+    
+    uint64_t hash = FNV_OFFSET_BASIS;
     
     // Hash shape
     for (auto dim : tensor.get_shape()) {
-        hash ^= std::hash<size_t>{}(dim) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+        hash ^= dim;
+        hash *= FNV_PRIME;
     }
     
     // Hash element type
-    hash ^= std::hash<int>{}(static_cast<int>(tensor.get_element_type().hash())) + 
-            0x9e3779b9 + (hash << 6) + (hash >> 2);
+    hash ^= static_cast<uint64_t>(tensor.get_element_type().hash());
+    hash *= FNV_PRIME;
     
-    // Sample content (every 1KB for large tensors)
-    const size_t byte_size = tensor.get_byte_size();
-    const size_t stride = std::max(size_t(1), byte_size / 1024);
+    // Hash tensor content
     const uint8_t* data = tensor.data<uint8_t>();
-    
-    for (size_t i = 0; i < byte_size; i += stride) {
-        hash ^= std::hash<uint8_t>{}(data[i]) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
+    const size_t byte_size = tensor.get_byte_size();
+    for (size_t i = 0; i < byte_size; ++i) {
+        hash ^= data[i];
+        hash *= FNV_PRIME;
     }
     
     return std::to_string(hash);
@@ -60,7 +66,7 @@ VisionID VisionRegistry::register_vision(const ov::Tensor& tensor, VisionType ty
         tensor.copy_to(owned_tensor);
         m_entries.emplace(id, VisionEntry(type, std::move(owned_tensor)));
     }
-    m_entries[id].ref_count++;
+    m_entries.at(id).ref_count++;
     return id;
 }
 

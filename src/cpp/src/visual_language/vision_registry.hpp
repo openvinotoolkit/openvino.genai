@@ -23,9 +23,9 @@ public:
     VisionRegistry& operator=(const VisionRegistry&) = delete;
     VisionRegistry(VisionRegistry&&) = delete;
     VisionRegistry& operator=(VisionRegistry&&) = delete;
-    // TODO Check if destructor needed
+    
+    ~VisionRegistry() = default;
 
-    // TODO Consider using one method for adding to registry, e.g. `add(const ov::Tensor& data, VisionType type);`
     VisionID register_image(const ov::Tensor& image);
     VisionID register_video(const ov::Tensor& video);
 
@@ -57,14 +57,14 @@ private:
         std::optional<EncodedVideo> encoded_video;
         std::atomic<size_t> ref_count{0};
         
-        // TODO Check if all needed + destructor
-        VisionEntry() = default;
         VisionEntry(VisionType t, ov::Tensor tensor);
         VisionEntry(VisionEntry&& other) noexcept;
         VisionEntry& operator=(VisionEntry&& other) noexcept;
         
         VisionEntry(const VisionEntry&) = delete;
         VisionEntry& operator=(const VisionEntry&) = delete;
+
+        ~VisionEntry() = default;
     };
 
     std::unordered_map<VisionID, VisionEntry> m_entries;
