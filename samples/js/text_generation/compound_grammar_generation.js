@@ -1,35 +1,35 @@
 import { z } from 'zod';
-import { LLMPipeline, StructuredOutputConfig as SOC, StreamingStatus } from 'openvino-genai-node';
-import { serialize_json } from './helper.js';
+import { ChatHistory, LLMPipeline, StructuredOutputConfig as SOC, StreamingStatus } from 'openvino-genai-node';
+import { serialize_json, toJSONSchema } from './helper.js';
 
 function streamer(subword) {
     process.stdout.write(subword);
     return StreamingStatus.RUNNING;
 }
 
-const bookingFlightTickets = {
-    name: "booking_flight_tickets",
+const bookFlightTicket = {
+    name: "book_flight_ticket",
     schema: z.object({
         origin_airport_code: z.string().describe("The name of Departure airport code"),
         destination_airport_code: z.string().describe("The name of Destination airport code"),
         departure_date: z.string().describe("The date of outbound flight"),
         return_date: z.string().describe("The date of return flight"),
-    }),
+    }).describe("booking flights"),
 };
 
-const bookingHotels = {
-    name: "booking_hotels",
+const bookHotel = {
+    name: "book_hotel",
     schema: z.object({
         destination: z.string().describe("The name of the city"),
         check_in_date: z.string().describe("The date of check in"),
         checkout_date: z.string().describe("The date of check out"),
-    }),
+    }).describe("booking hotel"),
 };
 
 // Helper functions
 function toolToDict(tool, withDescription = true) {
-    const deleteDescription = (schema) => delete schema.jsonSchema['description'];
-    const jsonSchema = z.toJSONSchema(
+    const deleteDescription = (ctx) => delete ctx.jsonSchema['description'];
+    const jsonSchema = toJSONSchema(
         tool.schema,
         withDescription
             ? undefined
@@ -46,11 +46,6 @@ function toolToDict(tool, withDescription = true) {
     };
 }
 
-/** Generate part of the system prompt with available tools */
-function generateSystemPromptTools(...tools) {
-    return `<|tool|>${serialize_json(tools.map(toolToDict))}</|tool|>`;
-}
-
 function toolsToArraySchema(...tools) {
     return serialize_json({
         type: "array",
@@ -60,6 +55,38 @@ function toolsToArraySchema(...tools) {
     });
 }
 
+class CustomToolCallParser {
+    parse(msg) {
+        if (!msg.content) {
+            msg.content = "";
+        }
+        const content = msg.content;
+
+        const startTag = "functools";
+        const startIndex = content.indexOf(startTag);
+        if (startIndex === -1) {
+            return;
+        }
+
+        const jsonPart = content.slice(startIndex + startTag.length);
+        try {
+            const toolCalls = JSON.parse(jsonPart);
+            msg.tool_calls = toolCalls;
+            return;
+        } catch {
+            return;
+        }
+    }
+}
+
+function printToolCall(answer) {
+    for (const toolCall of answer.parsed[0].tool_calls) {
+        const args = Object.keys(toolCall["arguments"])
+            .map((key) => `${key}="${toolCall["arguments"][key]}"`);
+        console.log(`${toolCall["name"]}(${args.join(", ")})`);
+    }
+}
+
 // System message
 let sysMessage = `You are a helpful AI assistant.
 You can answer yes or no to questions, or you can choose to call one or more of the provided functions.
@@ -67,7 +94,7 @@ You can answer yes or no to questions, or you can choose to call one or more of 
 Use the following rule to decide when to call a function:
     * if the response can be generated from your internal knowledge, do so, but use only yes or no as the response
     * if you need external information that can be obtained by calling one or more of the provided functions, generate function calls
-    
+
 If you decide to call functions:
     * prefix function calls with functools marker (no closing marker required)
     * all function calls should be generated in a single JSON list formatted as functools[{"name": [function name], "arguments": [function arguments as JSON]}, ...]
@@ -75,7 +102,6 @@ If you decide to call functions:
     * respect the argument type formatting. E.g., if the type is number and format is float, write value 7 as 7.0
     * make sure you pick the right functions that match the user intent
 `;
-sysMessage += generateSystemPromptTools(bookingFlightTickets, bookingHotels);
 
 async function main() {
     const modelDir = process.argv[2];
@@ -86,7 +112,9 @@ async function main() {
 
     const pipe = await LLMPipeline(modelDir, "CPU");
     const tokenizer = await pipe.getTokenizer();
-    const chatHistory = [{ role: "system", content: sysMessage }];
+    const chatHistory = new ChatHistory([{ role: "system", content: sysMessage }]);
+    const tools = [bookFlightTicket, bookHotel].map((tool) => toolToDict(tool, true));
+    chatHistory.setTools(tools);
 
     const generationConfig = {
         return_decoded_results: true,
@@ -104,12 +132,12 @@ async function main() {
     const yesOrNo = SOC.Union(SOC.Regex("yes"), SOC.Regex("no"));
     generationConfig.structured_output_config = new SOC({ structural_tags_config: yesOrNo });
     process.stdout.write("Assistant: ");
-    const answer = await pipe.generate(modelInput, generationConfig, streamer);
-    chatHistory.push({ role: "assistant", content: answer.texts[0] });
+    const answer1 = await pipe.generate(modelInput, generationConfig, streamer);
+    chatHistory.push({ role: "assistant", content: answer1.texts[0] });
     console.log();
 
     const userText2 =
-        "book flight ticket from Beijing to Paris(using airport code) in 2025-12-04 to 2025-12-10 , "
+        "book flight ticket from Beijing to Paris(using airport code) in 2025-12-04 to 2025-12-10, "
         + "then book hotel from 2025-12-04 to 2025-12-10 in Paris";
     console.log("User: ", userText2);
     chatHistory.push({ role: "user", content: userText2 });
@@ -117,14 +145,18 @@ async function main() {
 
     const startToolCallTag = SOC.ConstString("functools");
     const toolsJson = SOC.JSONSchema(
-        toolsToArraySchema(bookingFlightTickets, bookingHotels)
+        toolsToArraySchema(bookFlightTicket, bookHotel)
     );
     const toolCall = SOC.Concat(startToolCallTag, toolsJson);
 
     generationConfig.structured_output_config.structural_tags_config = toolCall;
+    generationConfig.parsers = [new CustomToolCallParser()];
 
     process.stdout.write("Assistant: ");
-    await pipe.generate(modelInput2, generationConfig, streamer);
+    const answer2 = await pipe.generate(modelInput2, generationConfig);
+    console.log("\n\nThe following tool calls were generated:")
+    printToolCall(answer2)
+    console.log();
 }
 
 main();

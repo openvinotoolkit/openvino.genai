@@ -40,6 +40,10 @@ public:
         const ov::AnyMap properties);
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
+
+private:
+    bool use_ov_vision_preprocess = true; // default use ov vision preprocessing, control by env VISION_PREPROCESS=CPP to use CPU vision preprocessing
+
 };
 
 class InputsEmbedderPhi3V : public InputsEmbedder::IInputsEmbedder {
@@ -67,7 +71,7 @@ public:
 
     void finish_chat() override;
 
-    NormlizedPrompt normalize_prompt(
+    NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images

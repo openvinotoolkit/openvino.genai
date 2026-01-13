@@ -21,7 +21,7 @@ TextStreamer::TextStreamer(const Tokenizer& tokenizer,
                            std::function<ov::genai::CallbackTypeVariant(std::string)> callback,
                            const ov::AnyMap& detokenization_params) {
     m_tokenizer = tokenizer;
-    m_subword_callback = callback;
+    m_subword_callback = std::move(callback);
     m_additional_detokenization_params = detokenization_params;
 }
 
@@ -141,18 +141,21 @@ std::vector<std::shared_ptr<IncrementalParser>> m_parsers;
 JsonContainer m_parsed_message;
 
 TextParserStreamerImpl(std::vector<std::shared_ptr<IncrementalParser>> parsers) : m_parsers{parsers} {}
+
 };
 
 TextParserStreamer::TextParserStreamer(const Tokenizer& tokenizer, std::vector<std::shared_ptr<IncrementalParser>> parsers) 
     : TextStreamer(tokenizer, [this](std::string s) -> CallbackTypeVariant {
                 return this->write(s);
-    }), m_pimpl{std::make_unique<TextParserStreamerImpl>(parsers)} {}
+    }), m_pimpl{std::make_unique<TextParserStreamerImpl>(parsers)} {
+        m_pimpl->m_parsed_message["content"] = "";
+    }
 
-CallbackTypeVariant TextParserStreamer::write(std::string message) {
+CallbackTypeVariant TextParserStreamer::write(std::string delta_text) {
     // When 'write' is called with string, it means new chunk of tokens is decoded into text
 
     auto flushed_tokens = std::vector<int64_t>();
-    if (message.back() == '\n') {
+    if (delta_text.back() == '\n') {
         // Flush all tokens
         flushed_tokens.assign(m_tokens_cache.begin(), m_tokens_cache.end());
     } else if (m_decoded_lengths.size() >= delay_n_tokens) {
@@ -177,13 +180,19 @@ CallbackTypeVariant TextParserStreamer::write(std::string message) {
         }
     }
 
+    // Every time we start to cycle through iterative parsers we create a new delta_message.
+    // Parsers should neither delete fields nor rewrite existing non-string data; they may only add fields
+    // to delta_message or set string fields whose values will be concatenated with the accumulated message.
+    JsonContainer delta_message;
     // Iterate over all parsers and apply them to the message
     for (auto& parser: m_pimpl->m_parsers) {
-        message = parser->parse(m_pimpl->m_parsed_message, message, flushed_tokens);
+        delta_text = parser->parse(delta_message, delta_text, flushed_tokens);
         // Message can be modified inside parser, if parser for example extracted tool calling from message content
-        m_pimpl->m_parsed_message["content"] = m_pimpl->m_parsed_message["content"].get_string() + message;
     }
-    return write(m_pimpl->m_parsed_message);
+    delta_message["content"] = delta_text;
+    
+    m_pimpl->m_parsed_message.concatenate(delta_message);
+    return write(delta_message);
 }
 
 JsonContainer TextParserStreamer::get_parsed_message() const {
@@ -192,6 +201,7 @@ JsonContainer TextParserStreamer::get_parsed_message() const {
 
 void TextParserStreamer::reset() {
     m_pimpl->m_parsed_message = JsonContainer();
+    m_pimpl->m_parsed_message["content"] = "";
     for (auto& parser : m_pimpl->m_parsers) {
         parser->reset();
     }

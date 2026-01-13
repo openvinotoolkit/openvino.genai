@@ -44,6 +44,7 @@ class Sequence {
     LogProbs m_generated_log_probs;
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
+    ov::Tensor m_hidden_state = ov::Tensor();
     SequenceStatus m_status = SequenceStatus::RUNNING;
     GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
     float m_cumulative_log_prob = 0.0f;
@@ -53,6 +54,8 @@ class Sequence {
     std::vector<std::vector<float>> m_generated_ids_embeds;
     SequenceGroupType m_type;
     size_t m_hidden_size;
+    std::vector<ov::Tensor> m_position_ids_list;
+    int64_t m_rope_delta;
 
     // Embeddings hash calculation params
     static constexpr size_t m_embeddings_hash_max_num_values = 10; // max number of values used for embeddings hash calculation
@@ -66,12 +69,19 @@ class Sequence {
 
     Sequence(const Sequence& seq, const uint64_t id) :
         m_generated_ids(seq.m_generated_ids),
+        m_generated_log_probs(seq.m_generated_log_probs),
         m_grouped_id(id),
+        m_hidden_state(seq.m_hidden_state),
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob),
         m_sequence_group(seq.m_sequence_group),
         m_type(seq.m_type),
-        m_hidden_size(seq.m_hidden_size) {
+        m_hidden_size(seq.m_hidden_size),
+        m_prefix_hashes(seq.m_prefix_hashes),
+        m_generated_ids_embeds(seq.m_generated_ids_embeds),
+        m_position_ids_list(seq.m_position_ids_list),
+        m_rope_delta(seq.m_rope_delta)
+         {
         OPENVINO_ASSERT(seq.m_id != m_id);
     }
 
@@ -132,6 +142,14 @@ public:
         m_cumulative_log_prob += log_prob;
         m_generated_log_probs.push_back(log_prob);
         m_generated_ids.push_back(token_id);
+    }
+
+    void update_hidden_state(const ov::Tensor& tensor) {
+        m_hidden_state = tensor;
+    }
+
+    ov::Tensor get_hidden_state() const {
+        return m_hidden_state;
     }
 
     // removes n last tokens and updates cumulative log prob
@@ -222,12 +240,71 @@ public:
         }
     }
 
+    void append_position_ids(const ov::Tensor& position_ids) {
+        size_t seq_len_shape_idx = position_ids.get_shape().size() == 3 ? 2 : 1;
+        size_t position_ids_len = position_ids.get_shape()[seq_len_shape_idx];
+        if (position_ids_len == 1) {
+            m_position_ids_list.push_back(position_ids);
+            return;
+        }
+        ov::Shape position_ids_elem_shape = position_ids.get_shape();
+        position_ids_elem_shape[seq_len_shape_idx] = 1;
+
+        for (size_t idx = 0; idx < position_ids_len; idx ++) {
+
+            ov::Tensor position_ids_elem(position_ids.get_element_type(), position_ids_elem_shape);
+            const auto [begin, end] = get_position_ids_elem_coordinates(position_ids_elem.get_shape(), idx, true);
+
+            ov::Tensor src_roi(position_ids, begin, end);
+            src_roi.copy_to(position_ids_elem);
+            m_position_ids_list.push_back(position_ids_elem);
+        }
+    }
+
+    void set_rope_delta(int64_t rope_delta) {
+        m_rope_delta = rope_delta;
+    }
+
+    const std::vector<ov::Tensor>& get_position_ids_list() const {
+        OPENVINO_ASSERT(m_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        return m_position_ids_list;
+    }
+
+    const int64_t get_rope_delta() const {
+        OPENVINO_ASSERT(m_type == ov::genai::SequenceGroupType::EMBEDDINGS);
+        return m_rope_delta;
+    }
+
     std::shared_ptr<SequenceGroup> get_sequence_group_ptr() const;
 
     // Each KV block can be uniquely identified by
     // the tokens within the block and the tokens in the prefix before the block.
     // hash(prefix tokens + block tokens) <--> KV Block
     size_t get_hash(size_t content_length = 0);
+
+    static std::pair<ov::Coordinate, ov::Coordinate> get_position_ids_elem_coordinates(const ov::Shape& position_ids_elem_shape, size_t idx, bool need_batch_dimention) {
+
+        ov::Coordinate begin;
+        ov::Coordinate end;
+        if (position_ids_elem_shape.size() == 3) {
+            begin = ov::Coordinate{0, 0, idx};
+            end = ov::Coordinate{3, 1, idx + 1};
+        }
+        else if (position_ids_elem_shape.size() == 2) {
+            if (need_batch_dimention) {
+                begin = ov::Coordinate{0, idx};
+                end = ov::Coordinate{1, idx + 1};
+            }
+            else {
+                begin = ov::Coordinate{idx};
+                end = ov::Coordinate{idx + 1};
+            }
+        }
+        else {
+            OPENVINO_THROW("Unexpected rank of position ids element. Expected rank 2 or 3, got: " + std::to_string(position_ids_elem_shape.size()));
+        }
+        return {begin, end};
+    }
 };
 
 // contains a list of Sequences in generic case (beam search or parallel sampling)
@@ -249,7 +326,7 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     SequenceGroupType m_sequence_group_type;
 
     uint64_t m_next_sequence_id = 0;
- 
+
     // amount of processed tokens, e.g. prompt can be processed using multiple consequence inferences
     // so, we need to track which part of the prompt we have already processed
     size_t m_num_processed_tokens = 0;
@@ -286,13 +363,19 @@ public:
     using Ptr = std::shared_ptr<SequenceGroup>;
     using CPtr = std::shared_ptr<const SequenceGroup>;
 
+    // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
     SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
-        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params, block_size, std::nullopt) {
+        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, const_cast<int64_t*>(input_ids.data())), sampling_params, block_size, std::nullopt) {
     }
 
-    SequenceGroup(uint64_t request_id, const ov::Tensor input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size, const std::optional<ov::Tensor>& token_type_ids = std::nullopt)
+    SequenceGroup(uint64_t request_id,
+                  const ov::Tensor& input_ids,
+                  const ov::genai::GenerationConfig& sampling_params,
+                  std::size_t block_size,
+                  const std::optional<ov::Tensor>& token_type_ids = std::nullopt,
+                  const std::optional<ov::Tensor>& position_ids = std::nullopt,
+                  const std::optional<int64_t>& rope_delta = std::nullopt)
         : SequenceGroup(request_id, sampling_params, block_size) {
-        
         size_t prompt_len;
         size_t hidden_size = 0;
         if (input_ids.get_shape().size() > 1) {
@@ -331,8 +414,17 @@ public:
         }
         m_prompt_log_probs.reserve(prompt_len);
 
+        auto sequence = Sequence::create(m_next_sequence_id++, m_sequence_group_type, hidden_size);
+
+        if (position_ids.has_value()) {
+            sequence->append_position_ids(*position_ids);
+        }
+        if (rope_delta.has_value()) {
+            sequence->set_rope_delta(*rope_delta);
+        }
+
         // create a single sequence
-        add_sequence(Sequence::create(m_next_sequence_id++, m_sequence_group_type, hidden_size));
+        add_sequence(sequence);
     }
 
     void add_sequence(const Sequence::Ptr & sequence) {
@@ -421,7 +513,7 @@ public:
         return *it;
     }
 
-    // must be used only after sequence group generation loop has finished (either by lenght or OOM)
+    // must be used only after sequence group generation loop has finished (either by length or OOM)
     // or stopped / cancelled via streamer / generation_stream->stop() / generation_stream->cancel()
     std::vector<Sequence::CPtr> get_finished_sequences() const {
         std::vector<Sequence::CPtr> finished_seqs;
@@ -562,10 +654,10 @@ public:
         m_num_validation_tokens = k;
     }
 
-    size_t get_num_tokens_to_validate() {
+    size_t get_num_tokens_to_validate() const {
         return m_num_validation_tokens;
     }
-    
+
     void set_stream_window_size(size_t k) {
         m_stream_window_size = k;
     }
@@ -781,7 +873,7 @@ public:
         }
     }
 
-    
+
     // Special notification path for max_new_tokens == 0 where we don't expect to return any new tokens, but only process prompt
     void notify_handle_echo_only() {
         // This method is called after scheduling and before sampling,

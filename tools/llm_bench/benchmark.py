@@ -43,12 +43,18 @@ def num_infer_count_type(x):
 
 
 def get_argprser():
-    parser = argparse.ArgumentParser('LLM benchmarking tool', add_help=True, formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('-m', '--model', help='model folder including IR files or Pytorch files or path to GGUF model', required=TabError)
+    parser = argparse.ArgumentParser('LLM benchmarking tool', add_help=True, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument(
+        '-m',
+        '--model',
+        help='model folder including IR files or PyTorch files or path to GGUF model',
+        required=True,
+        default=argparse.SUPPRESS
+    )
     parser.add_argument('-d', '--device', default='cpu', help='inference device')
     parser.add_argument('-r', '--report', help='report csv')
     parser.add_argument('-rj', '--report_json', help='report json')
-    parser.add_argument('-f', '--framework', default='ov', help='framework')
+    parser.add_argument('-f', '--framework', default='ov', choices={"ov", "pt"}, help='inference framework, ov: OpenVINO, pt: PyTorch')
     parser.add_argument('-p', '--prompt', default=None, help='one prompt')
     parser.add_argument('-pf', '--prompt_file', nargs='+', default=None,
                         help='Prompt file(s) in jsonl format. Multiple prompt files should be separated with space(s).')
@@ -72,6 +78,7 @@ def get_argprser():
         'if the value equals 0 (default), execute the warm-up iteration(0th iteration).',
     )
     parser.add_argument('-i', '--images', default=None, help='test images for vision tasks. Can be directory or path to single image')
+    parser.add_argument('-v', '--video', default=None, help='test video for vision tasks. Can be directory or path to single video')
     parser.add_argument('-s', '--seed', type=int, default=42, required=False, help='specific random seed to generate fix result. Default 42.')
     parser.add_argument(
         '-lc',
@@ -155,7 +162,7 @@ def get_argprser():
         help="Path to LoRA adapters for using OpenVINO GenAI optimized pipelines with LoRA for benchmarking")
     parser.add_argument('--lora_alphas', nargs='*', help='Alphas params for LoRA adapters.', required=False, default=[])
     parser.add_argument("--lora_mode", choices=["auto", "fuse", "static", "static_rank", "dynamic"], help="LoRA adapters loading mode")
-    parser.add_argument("--empty_lora", action="store_true", help="Inference without lora")
+    parser.add_argument("--empty_lora", action="store_true", help="Inference with empty LoRA config")
     parser.add_argument(
         "--use_cb",
         action="store_true",
@@ -173,7 +180,7 @@ def get_argprser():
     parser.add_argument("--assistant_confidence_threshold", required=False, default=None,
                         help="Config option assistant_confidence_threshold for Speculative decoding", type=float)
     parser.add_argument("--max_ngram_size", required=False, default=None,
-                        help="Config option assistant_confidence_threshold for Prompt Lookup decoding", type=int)
+                        help="Config option max_ngram_size for Prompt Lookup decoding", type=int)
     parser.add_argument(
         '--end_token_stopping',
         action='store_true',
@@ -188,7 +195,7 @@ def get_argprser():
     parser.add_argument(
         "--static_reshape",
         action="store_true",
-        help="Reshape image generation pipeline to specific width & height at pipline creation time. Applicable for Image Generation.")
+        help="Reshape image generation pipeline to specific width & height at pipeline creation time. Applicable for Image Generation.")
     parser.add_argument('-mi', '--mask_image', default=None,
                         help='Mask image for Inpainting pipelines. Can be directory or path to single image. Applicable for Image Generation.')
     parser.add_argument('-t', '--task', default=None,
@@ -223,15 +230,17 @@ def get_argprser():
                         help="Path to .bin or .pt file with speaker embeddings for text to speech scenarios")
     parser.add_argument("--vocoder_path", type=str, default=None,
                         help="Path to vocoder  for text to speech scenarios")
+    parser.add_argument("-vf", "--video_frames", type=int, default=None,
+                        help="controller of video frames to process (required frame number if positive or decimation factor if negative)")
     return parser.parse_args()
 
 
 CASE_TO_BENCH = {
-    'text_gen': bench_text.run_text_generation_benchmark,
-    'image_gen': bench_image.run_image_generation_benchmark,
-    'code_gen': bench_text.run_text_generation_benchmark,
-    'ldm_super_resolution': bench_ldm_sr.run_ldm_super_resolution_benchmark,
-    'speech_to_text': bench_speech.run_speech_2_txt_benchmark,
+    "text_gen": bench_text.run_text_generation_benchmark,
+    "image_gen": bench_image.run_image_generation_benchmark,
+    "code_gen": bench_text.run_text_generation_benchmark,
+    "ldm_super_resolution": bench_ldm_sr.run_ldm_super_resolution_benchmark,
+    "speech_to_text": bench_speech.run_speech_2_txt_benchmark,
     "visual_text_gen": bench_vlm.run_visual_language_generation_benchmark,
     "text_embed": bench_text_embed.run_text_embddings_benchmark,
     "text_to_speech": bench_text_to_speech.run_text_2_speech_benchmark,
@@ -310,6 +319,7 @@ def main():
         else:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case'].task](
                 model_path, framework, args.device, model_args, args.num_iters, memory_data_collector)
+
         if args.report is not None or args.report_json is not None:
             model_precision = ''
             if framework == 'ov':

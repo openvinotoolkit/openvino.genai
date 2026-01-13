@@ -17,12 +17,13 @@
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/vision_encoder.hpp"
+#include "visual_language/vision_token_pruning_processor.hpp"
 
 namespace ov::genai {
 struct VLMPerfMetrics;
 const static std::regex UNIVERSAL_PATTERN{R"(<ov_genai_image_(\d+)>)"};
 
-struct NormlizedPrompt {
+struct NormalizedPrompt {
     std::string unified_prompt;
     std::vector<size_t> images_sequence;
     std::vector<size_t> videos_sequence;
@@ -44,15 +45,26 @@ public:
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
 
     ov::Tensor get_inputs_embeds(const std::string& prompt,
-                            const std::vector<ov::genai::EncodedImage>& images,
-                            const std::vector<ov::genai::EncodedVideo>& videos,
-                            ov::genai::VLMPerfMetrics& metrics,
-                            bool recalculate_merged_embeddings = true,
-                            const std::vector<size_t>& image_sequence = {},
-                            const std::vector<size_t>& videos_sequence = {});
+                                 const std::vector<ov::genai::EncodedImage>& images,
+                                 const std::vector<ov::genai::EncodedVideo>& videos,
+                                 ov::genai::VLMPerfMetrics& metrics,
+                                 bool recalculate_merged_embeddings = true,
+                                 const std::vector<size_t>& image_sequence = {},
+                                 const std::vector<size_t>& videos_sequence = {},
+                                 const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
     // compute input embedding and token_type_ids
     std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
+
+    std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(
+        const std::string& prompt,
+        const std::vector<ov::genai::EncodedImage>& images,
+        const std::vector<ov::genai::EncodedVideo>& videos,
+        ov::genai::VLMPerfMetrics& metrics,
+        bool recalculate_merged_embeddings = true,
+        const std::vector<size_t>& image_sequence = {},
+        const std::vector<size_t>& videos_sequence = {},
+        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
     bool has_token_type_ids() const;
 
@@ -62,6 +74,12 @@ public:
 
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
+
+    void set_position_ids(const ov::Tensor& position_ids);
+
+    void set_rope_delta(int64_t rope_delta);
+
+    std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta);
 
     // returns embedding model which converts token_id(s) to embedding vectors
     EmbeddingsModel::Ptr get_embedding_model() const;
@@ -84,19 +102,20 @@ public:
     // finishes chat and clears a chat history
     void finish_chat();
 
-    virtual NormlizedPrompt normalize_prompt(
+    // set CDPruner setting
+    virtual void set_vision_token_pruning_config(size_t pruning_ratio, float relevance_weight);
+    virtual NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images
     ) const;
 
-    virtual NormlizedPrompt normalize_prompt(
+    virtual NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_image_id,
         size_t base_video_id,
         const std::vector<EncodedImage>& images,
         const std::vector<EncodedVideo>& videos) const;
-
 
 private:
     class IInputsEmbedder {
@@ -111,6 +130,8 @@ private:
         EmbeddingsModel::Ptr m_embedding;
         // A tokenizer encoding a prompt.
         Tokenizer m_tokenizer;
+        // Vision token processor for post-processing visual features (pruning, etc.)
+        std::shared_ptr<VisionTokenPruningProcessor> m_pruning_processor;
         // True if chat mode is activated to save conversation
         // history between generate() calls.
         bool m_is_chat_conversation = false;
@@ -127,6 +148,9 @@ private:
         bool m_add_special_tokens = true;
         // True, if m_add_special_tokens was set, otherwise default behaviour is used
         bool m_add_special_tokens_is_set = false;
+        // position ids
+        ov::Tensor m_position_ids;
+        int64_t m_rope_delta = 0;
         virtual ~IInputsEmbedder() = default;
 
     public:
@@ -138,9 +162,19 @@ private:
                                              ov::genai::VLMPerfMetrics& metrics,
                                              bool recalculate_merged_embeddings = true,
                                              const std::vector<size_t>& image_sequence = {},
-                                             const std::vector<size_t>& videos_sequence = {});
+                                             const std::vector<size_t>& videos_sequence = {},
+                                             const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
         virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
+        virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(
+            const std::string& prompt,
+            const std::vector<ov::genai::EncodedImage>& images,
+            const std::vector<ov::genai::EncodedVideo>& videos,
+            ov::genai::VLMPerfMetrics& metrics,
+            bool recalculate_merged_embeddings = true,
+            const std::vector<size_t>& image_sequence = {},
+            const std::vector<size_t>& videos_sequence = {},
+            const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
         virtual bool has_token_type_ids() const;
 
@@ -149,6 +183,16 @@ private:
         virtual std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos);
 
         virtual std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
+        
+        void set_position_ids(const ov::Tensor& position_ids) {
+            m_position_ids = position_ids;
+        }
+
+        void set_rope_delta(int64_t rope_delta) {
+            m_rope_delta = rope_delta;
+        }
+
+        virtual std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta);
 
         EmbeddingsModel::Ptr get_embedding_model() const {
             return m_embedding;
@@ -156,6 +200,15 @@ private:
 
         Tokenizer get_tokenizer() const {
             return m_tokenizer;
+        }
+
+        virtual void set_vision_token_pruning_config(size_t pruning_ratio, float relevance_weight) {
+            if (!m_pruning_processor)
+                return;
+            auto config = m_pruning_processor->get_config();
+            config.pruning_ratio = pruning_ratio;
+            config.relevance_weight = relevance_weight;
+            m_pruning_processor->set_config(config);
         }
 
         utils::KVCacheState& get_kv_cache_state() {
@@ -177,13 +230,12 @@ private:
 
         virtual void finish_chat();
 
-        virtual NormlizedPrompt normalize_prompt(
+        virtual NormalizedPrompt normalize_prompt(
             const std::string& prompt,
             size_t base_id,
             const std::vector<EncodedImage>& images
         ) const = 0;
-
-        virtual NormlizedPrompt normalize_prompt(
+        virtual NormalizedPrompt normalize_prompt(
             const std::string& prompt,
             size_t base_image_id,
             size_t base_video_id,
@@ -226,6 +278,30 @@ private:
         * @return A vector of tensors where each tensor represents a single image with a shape of [1, H, W, C].
         */
         std::vector<ov::Tensor> to_single_image_tensors(const std::vector<ov::Tensor>& images);
+
+        /**
+         * @brief Check if CDPruner is available and enabled.
+         * @return true if CDPruner processor exists, is available, and enabled (pruning_ratio > 0)
+         */
+        bool is_cdpruner_active() const {
+            if (!m_pruning_processor) {
+                return false;
+            }
+            auto current_pruning_config = m_pruning_processor->get_config();
+            bool pruner_enabled = current_pruning_config.pruning_ratio > 0;
+            return m_pruning_processor->is_available() && pruner_enabled;
+        }
+
+        /**
+         * @brief Execute the full CDPruner pipeline.
+         * This method orchestrates the entire pruning workflow by calling VisionTokenPruningProcessor functions.
+         * @param context PruningContext containing all necessary parameters and state
+         * @return std::optional<PruningResult> with pruned data if pruning occurred, std::nullopt otherwise
+         */
+        std::optional<VisionTokenPruningProcessor::PruningResult> execute_pruning_pipeline(
+            const PruningContext& context) {
+            return m_pruning_processor->execute(context, m_position_ids, m_kv_cache_state, m_prev_hist_length);
+        }
     };
 
     std::shared_ptr<IInputsEmbedder> m_impl;

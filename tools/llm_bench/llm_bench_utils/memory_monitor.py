@@ -111,7 +111,7 @@ class MemoryMonitor:
         """
         Start memory monitoring.
 
-        :param at_exit_fn: A callable to execute at program exit. Useful fot providing logs saving routine, e.g.
+        :param at_exit_fn: A callable to execute at program exit. Useful for providing logs saving routine, e.g.
             ```
                 at_exit_fn = lambda: memory_monitor.save_memory_logs(*memory_monitor.get_data(), save_dir)
                 memory_monitor.start(at_exit_fn=at_exit_fn)
@@ -247,10 +247,10 @@ class MemoryMonitor:
 
     @staticmethod
     def get_rss_memory(include_child_processes=True):
-        bytes_used = psutil.Process().memory_info().rss
+        this_process = psutil.Process()
+        bytes_used = this_process.memory_info().rss
         if include_child_processes:
-            for child_process in psutil.Process().children(recursive=True):
-                bytes_used += psutil.Process(child_process.pid).memory_info().rss
+            return sum((proc.memory_info().rss for proc in this_process.children(recursive=True)), start=bytes_used)
         return bytes_used
 
     def _monitor_memory(self):

@@ -17,9 +17,10 @@ import numpy as np
 import pathlib
 import importlib.metadata as metadata
 from packaging.version import parse
-from utils.constants import get_ov_cache_models_dir, extra_generate_kwargs
+from utils.constants import get_ov_cache_converted_models_dir, extra_generate_kwargs
 
 from utils.network import retry_request
+from utils.atomic_download import AtomicDownloadManager
 from typing import Any
 
 @pytest.fixture(scope="class", autouse=True)
@@ -48,7 +49,7 @@ def get_whisper_models_list(tiny_only=False):
             if model_id in pytest.selected_model_ids.split(" ")
         ]
 
-    prefix = get_ov_cache_models_dir()
+    prefix = get_ov_cache_converted_models_dir()
     return [(model_id, prefix / model_id.split("/")[1]) for model_id in model_ids]
 
 
@@ -60,7 +61,8 @@ def read_whisper_model(params, stateful=True):
     if not stateful:
         path = pathlib.Path(f"{path}_with_past")
 
-    if not (path / "openvino_encoder_model.xml").exists():
+    manager = AtomicDownloadManager(path)
+    if not manager.is_complete() and not (path / "openvino_encoder_model.xml").exists():
         save_model(model_id=model_id, tmp_path=path, stateful=stateful)
 
     opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
@@ -94,34 +96,38 @@ def read_whisper_model(params, stateful=True):
 
 
 def save_model(model_id: str, tmp_path: pathlib.Path, stateful=True):
-    tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
-    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
-        tokenizer,
-        with_detokenizer=True,
-        clean_up_tokenization_spaces=False,
-    )
+    manager = AtomicDownloadManager(tmp_path)
 
-    openvino.save_model(ov_tokenizer, tmp_path / "openvino_tokenizer.xml")
-    openvino.save_model(ov_detokenizer, tmp_path / "openvino_detokenizer.xml")
+    def save_to_temp(temp_path: pathlib.Path) -> None:
+        tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_id, trust_remote_code=True))
+        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
+            tokenizer,
+            with_detokenizer=True,
+            clean_up_tokenization_spaces=False,
+        )
 
-    # to store tokenizer config jsons with special tokens
-    tokenizer.save_pretrained(tmp_path)
+        openvino.save_model(ov_tokenizer, temp_path / "openvino_tokenizer.xml")
+        openvino.save_model(ov_detokenizer, temp_path / "openvino_detokenizer.xml")
 
-    opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
-        model_id,
-        export=True,
-        trust_remote_code=True,
-        stateful=stateful,
-        compile=False,
-        device="CPU",
-        load_in_8bit=False,
-    ))
-    opt_model.generation_config.save_pretrained(tmp_path)
-    opt_model.config.save_pretrained(tmp_path)
-    opt_model.save_pretrained(tmp_path)
+        tokenizer.save_pretrained(temp_path)
 
-    processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_id, trust_remote_code=True))
-    processor.save_pretrained(tmp_path)
+        opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
+            model_id,
+            export=True,
+            trust_remote_code=True,
+            stateful=stateful,
+            compile=False,
+            device="CPU",
+            load_in_8bit=False,
+        ))
+        opt_model.generation_config.save_pretrained(temp_path)
+        opt_model.config.save_pretrained(temp_path)
+        opt_model.save_pretrained(temp_path)
+
+        processor = retry_request(lambda: WhisperProcessor.from_pretrained(model_id, trust_remote_code=True))
+        processor.save_pretrained(temp_path)
+
+    manager.execute(save_to_temp)
 
 
 def run_huggingface(
@@ -275,7 +281,6 @@ def compare_results(hf_result, genai_result):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
-@pytest.mark.precommit
 def test_smoke(model_descr, sample_from_dataset):
     run_pipeline_with_ref(
         model_id=model_descr[0],
@@ -285,7 +290,6 @@ def test_smoke(model_descr, sample_from_dataset):
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
-@pytest.mark.precommit
 def test_whisper_config_constructor(model_descr):
     model_id, path = model_descr
 
@@ -325,7 +329,6 @@ def test_whisper_config_constructor(model_descr):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
-@pytest.mark.precommit
 def test_whisper_constructors(model_descr, sample_from_dataset):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
 
@@ -345,7 +348,6 @@ def test_whisper_constructors(model_descr, sample_from_dataset):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"sample_id": 0}], indirect=True)
-@pytest.mark.precommit
 def test_max_new_tokens(model_descr, sample_from_dataset):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
 
@@ -363,7 +365,6 @@ def test_max_new_tokens(model_descr, sample_from_dataset):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("language", ["fr", "de"])
-@pytest.mark.precommit
 def test_language_mode(model_descr, language):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
     sample = get_whisper_dataset(language, long_form=False)[0]
@@ -388,7 +389,6 @@ def test_language_mode(model_descr, language):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", get_fixture_params_for_n_whisper_dataset_samples(n=1, language="fr"), indirect=True)
-@pytest.mark.precommit
 def test_task_mode(model_descr, sample_from_dataset):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
 
@@ -438,7 +438,6 @@ def test_task_mode(model_descr, sample_from_dataset):
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=1, language="fr"),
                                                  *get_fixture_params_for_n_whisper_dataset_samples(n=1, language="de"),
                                                  *get_fixture_params_for_n_whisper_dataset_samples(n=1, language="es")], indirect=True)
-@pytest.mark.precommit
 def test_language_autodetect(model_descr, sample_from_dataset):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
 
@@ -457,7 +456,6 @@ def test_language_autodetect(model_descr, sample_from_dataset):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=1)], indirect=True)
-@pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_return_timestamps_short_form(model_descr, sample_from_dataset):
     run_pipeline_with_ref(
@@ -469,8 +467,20 @@ def test_return_timestamps_short_form(model_descr, sample_from_dataset):
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 1}], indirect=True)
+@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
+def test_return_timestamps_on_cut_sample(model_descr, sample_from_dataset):
+    sample_from_dataset = sample_from_dataset[:30 * 16000]
+
+    run_pipeline_with_ref(
+        model_id=model_descr[0],
+        tmp_path=model_descr[1],
+        sample=sample_from_dataset,
+        generation_config=ov_genai.WhisperGenerationConfig(return_timestamps=True),
+    )
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=1)], indirect=True)
-@pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_return_timestamps_max_new_tokens_short_form(model_descr, sample_from_dataset):
     run_pipeline_with_ref(
@@ -485,7 +495,6 @@ def test_return_timestamps_max_new_tokens_short_form(model_descr, sample_from_da
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list())
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=10, long_form=True)], indirect=True)
-@pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_longform_audio(model_descr, sample_from_dataset):
     _, _, hf_pipe, genai_pipe = read_whisper_model(model_descr)
@@ -512,7 +521,6 @@ def test_longform_audio(model_descr, sample_from_dataset):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list())
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, long_form=True)], indirect=True)
-@pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_longform_audio_with_past(model_descr, sample_from_dataset):
     _, _, hf_pipe, genai_pipe = read_whisper_model(model_descr, stateful=True)
@@ -538,7 +546,6 @@ def test_longform_audio_with_past(model_descr, sample_from_dataset):
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list())
-@pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_shortform(model_descr):
     samples = []
@@ -558,7 +565,6 @@ def test_shortform(model_descr):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, long_form=True)], indirect=True)
-@pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_beam_search(model_descr, sample_from_dataset):
     # use only 30 seconds of audio due to beam search results wrong with enabled timestamps
@@ -576,7 +582,6 @@ def test_beam_search(model_descr, sample_from_dataset):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
-@pytest.mark.precommit
 def test_initial_prompt_hotwords(model_descr, sample_from_dataset):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
 
@@ -598,7 +603,6 @@ def test_initial_prompt_hotwords(model_descr, sample_from_dataset):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
-@pytest.mark.precommit
 def test_random_sampling(model_descr, sample_from_dataset):
     _, _, hf_pipe, genai_pipe = read_whisper_model(model_descr)
 
@@ -637,7 +641,6 @@ def test_random_sampling(model_descr, sample_from_dataset):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
-@pytest.mark.precommit
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_perf_metrics(model_descr, sample_from_dataset):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
@@ -785,7 +788,6 @@ def streamer_for_test(request):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
-@pytest.mark.precommit
 def test_streamers(model_descr, sample_from_dataset, streamer_for_test):
     _, _, _, genai_pipe = read_whisper_model(model_descr)
 

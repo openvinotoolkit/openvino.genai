@@ -14,6 +14,7 @@ from PIL import Image
 from whowhatbench.model_loaders import load_model
 from whowhatbench import EVALUATOR_REGISTRY
 from whowhatbench.visualtext_evaluator import fix_phi3_v_eos_token_id
+from whowhatbench.utils import get_json_config
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -62,10 +63,11 @@ def parse_args():
     parser.add_argument(
         "--model-type",
         type=str,
-        choices=["text", "text-to-image", "visual-text", "image-to-image", "image-inpainting", "text-embedding", "text-reranking"],
+        choices=["text", "text-to-image", "visual-text", "visual-video-text", "image-to-image", "image-inpainting", "text-embedding", "text-reranking"],
         default="text",
         help="Indicated the model type: 'text' - for causal text generation, 'text-to-image' - for image generation, "
-        "visual-text - for Visual Language Models, image-to-image - for image generation based on image and prompt "
+        "visual-text - for Visual Language Models with image inputs, visual-video-text - for Visual Language Models with video inputs, "
+        "image-to-image - for image generation based on image and prompt "
         "image-inpainting - for image generation based on image, mask and prompt, text-reranking - for reranking a list of texts based on relevance to query",
     )
     parser.add_argument(
@@ -126,7 +128,7 @@ def parse_args():
         "--ov-config",
         type=str,
         default=None,
-        help="Path to the JSON file that contains OpenVINO Runtime configuration.",
+        help="Path to the JSON file that contains OpenVINO Runtime configuration. Or a JSON string of the configuration.",
     )
     parser.add_argument(
         "--language",
@@ -150,7 +152,7 @@ def parse_args():
         type=str,
         default=None,
         help="Path to the JSON file that contains SchedulerConfig for Continuous Batching Pipeline"
-        "of OpenVINO GenAI API.",
+        "of OpenVINO GenAI API. Or a JSON string of SchedulerConfig.",
     )
     parser.add_argument(
         "--llamacpp",
@@ -185,7 +187,7 @@ def parse_args():
         type=str,
         nargs='*',
         default=None,
-        help="LoRA adapters.",
+        help="LoRA adapters. Supported for Text Generation and Image Generation pipelines.",
     )
     parser.add_argument(
         "--alphas",
@@ -220,6 +222,11 @@ def parse_args():
         default=None,
         help="Side to use for padding 'left' or 'right'. Applicable only for text embeddings")
     parser.add_argument(
+        "--embeds_batch_size",
+        type=int,
+        default=None,
+        help="Batch size value. Applicable only for text embeddings")
+    parser.add_argument(
         "--rag-config",
         type=str,
         default=None,
@@ -232,13 +239,49 @@ def parse_args():
         "If the base/target model is a local path, gguf-file should be just the filename (e.g., 'model.gguf'). "
         "If the base/target model is a HuggingFace model ID, gguf-file should be a relative path.",
     )
+    parser.add_argument(
+        "--draft-model",
+        default=None,
+        help="Path to draft model folder including IR files for Speculative decoding generation.",
+    )
+    parser.add_argument(
+        "--draft-device",
+        type=str,
+        default=None,
+        help="Inference device for Speculative decoding of draft model, e.g. 'CPU', 'GPU'.",
+    )
+    parser.add_argument(
+        "--draft-cb-config",
+        type=str,
+        default=None,
+        help="Path to file with Continuous Batching Scheduler settings or dict for Speculative decoding of draft model",
+    )
+    parser.add_argument(
+        "--num-assistant-tokens",
+        type=int,
+        default=None,
+        help="Config option num_assistant_tokens for Speculative decoding and Prompt Lookup decoding.",
+    )
+    parser.add_argument(
+        "--assistant-confidence-threshold",
+        type=float,
+        default=None,
+        help="Config option assistant_confidence_threshold for Speculative decoding.",
+    )
+    parser.add_argument(
+        "--video-frames-num",
+        type=int,
+        default=None,
+        help="The number of frames that will be taken from video for input, the frames will be taken evenly across the entire length, "
+             "applicable for Visual Language Models with video inputs",
+    )
 
     return parser.parse_args()
 
 
 def check_args(args):
     if args.base_model is None and args.gt_data is None:
-        raise ValueError("Wether --base-model or --gt-data should be provided")
+        raise ValueError("Whether --base-model or --gt-data should be provided")
     if args.target_model is None and args.gt_data is None and args.target_data:
         raise ValueError(
             "Whether --target-model, --target-data or --gt-data should be provided")
@@ -387,11 +430,26 @@ def diff_strings(a: str, b: str, *, use_loguru_colors: bool = False) -> str:
     return "".join(output)
 
 
-def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False):
-    return model.generate(question, do_sample=False, max_new_tokens=max_new_tokens, apply_chat_template=use_chat_template)
+def genai_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, empty_adapters=False,
+                   num_assistant_tokens=0, assistant_confidence_threshold=0.0):
+    kwargs = {}
+    if empty_adapters:
+        import openvino_genai
+        kwargs["adapters"] = openvino_genai.AdapterConfig()
+
+    return model.generate(
+        question,
+        do_sample=False,
+        max_new_tokens=max_new_tokens,
+        apply_chat_template=use_chat_template,
+        num_assistant_tokens=num_assistant_tokens,
+        assistant_confidence_threshold=assistant_confidence_threshold,
+        **kwargs,
+    )
 
 
-def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False):
+def llamacpp_gen_text(model, tokenizer, question, max_new_tokens, skip_question, use_chat_template=False, num_assistant_tokens=0,
+                      assistant_confidence_threshold=0.0):
     if use_chat_template:
         output = model.create_chat_completion(messages=[{"role": "user", "content": question}], max_tokens=max_new_tokens, temperature=0.0)
         text = output["choices"][0]["message"]["content"]
@@ -459,15 +517,22 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
     return image
 
 
-def genai_gen_visual_text(model, prompt, image, processor, tokenizer, max_new_tokens, crop_question):
-    image_data = ov.Tensor(np.array(image)[None])
+def genai_gen_visual_text(model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question):
+    kwargs = {
+        "do_sample": False,
+        "max_new_tokens": max_new_tokens
+    }
+    if image is not None:
+        kwargs['image'] = ov.Tensor(np.array(image)[None])
+    if video is not None:
+        kwargs['videos'] = [ov.Tensor(np.array(video))]
+
     out = model.generate(
         prompt,
         **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
-        image=image_data,
-        do_sample=False,
-        max_new_tokens=max_new_tokens
+        **kwargs
     )
+
     return out.texts[0]
 
 
@@ -518,6 +583,14 @@ def create_evaluator(base_model, args):
                 gen_answer_fn=gen_answer_fn,
                 use_chat_template=use_chat_template,
                 long_prompt=args.long_prompt,
+                num_assistant_tokens=(
+                    int(args.num_assistant_tokens)
+                    if args.num_assistant_tokens is not None else 0
+                ),
+                assistant_confidence_threshold=(
+                    float(args.assistant_confidence_threshold)
+                    if args.assistant_confidence_threshold is not None else 0.0
+                ),
             )
         elif task == "text-to-image":
             return EvaluatorCLS(
@@ -532,7 +605,7 @@ def create_evaluator(base_model, args):
                 is_genai=args.genai,
                 seed=args.seed,
             )
-        elif task == "visual-text":
+        elif task == "visual-text" or task == "visual-video-text":
             processor, config = load_processor(args)
             tokenizer = processor.tokenizer if hasattr(processor, "tokenizer") else load_tokenizer(args)
             if config and is_model_with_automatic_crop(config) and args.hf:
@@ -549,6 +622,8 @@ def create_evaluator(base_model, args):
                 gen_answer_fn=genai_gen_visual_text if args.genai else None,
                 processor=processor,
                 crop_question=crop_question,
+                task_type=task,
+                frames_num=args.video_frames_num
             )
         elif task == "image-to-image":
             return EvaluatorCLS(
@@ -583,6 +658,7 @@ def create_evaluator(base_model, args):
                 pooling_type=args.embeds_pooling_type,
                 normalize=args.embeds_normalize,
                 padding_side=args.embeds_padding_side,
+                batch_size=args.embeds_batch_size,
             )
         elif task == "text-reranking":
             return EvaluatorCLS(
@@ -656,21 +732,6 @@ def print_embeds_results(evaluator):
         logger.info("## Similarity:\n%s\n", e["similarity"])
 
 
-def read_cb_config(path):
-    import json
-
-    try:
-        with open(path, 'r') as f:
-            config = json.load(f)
-        return config
-    except FileNotFoundError:
-        logger.error(f"Configuration file not found at: {path}")
-        return {}
-    except json.JSONDecodeError:
-        logger.error(f"Invalid JSON format in configuration file: {path}")
-        return {}
-
-
 def print_rag_results(evaluator):
     metric_of_interest = "similarity"
     worst_examples = evaluator.worst_examples(
@@ -703,10 +764,10 @@ def main():
 
     kwargs = {}
     if args.cb_config:
-        kwargs["cb_config"] = read_cb_config(args.cb_config)
+        kwargs["cb_config"] = get_json_config(args.cb_config)
+        logger.info(f"cb_config: {kwargs['cb_config']}")
     if args.from_onnx:
         kwargs["from_onnx"] = args.from_onnx
-        kwargs["use_cache"] = False
     if args.gguf_file:
         kwargs["gguf_file"] = args.gguf_file
     if args.adapters is not None:
@@ -716,9 +777,20 @@ def main():
         else:
             kwargs["alphas"] = [1.0] * len(args.adapters)
     kwargs["empty_adapters"] = args.empty_adapters
-    kwargs["embeds_pooling"] = args.embeds_pooling_type
-    kwargs["embeds_normalize"] = args.embeds_normalize
-    kwargs["embeds_padding_side"] = args.embeds_padding_side
+    if args.model_type == "text-embedding":
+        kwargs["embeds_pooling"] = args.embeds_pooling_type
+        kwargs["embeds_normalize"] = args.embeds_normalize
+        kwargs["embeds_padding_side"] = args.embeds_padding_side
+        kwargs["embeds_batch_size"] = args.embeds_batch_size
+
+    if args.draft_model is not None:
+        kwargs["draft_model"] = args.draft_model
+        kwargs["draft_device"] = args.draft_device
+        draft_cb_config = None
+        if args.draft_cb_config is not None:
+            draft_cb_config = get_json_config(args.draft_cb_config)
+            logger.info(f"draft_cb_config: {draft_cb_config}")
+        kwargs["draft_cb_config"] = draft_cb_config
 
     if args.gt_data and os.path.exists(args.gt_data):
         evaluator = create_evaluator(None, args)
@@ -774,7 +846,7 @@ def main():
             evaluator.dump_predictions(os.path.join(args.output, "target.csv"))
 
     if args.verbose and (args.target_model or args.target_data):
-        if args.model_type == "text" or args.model_type == "visual-text":
+        if args.model_type in ["text", "visual-text", "visual-video-text"]:
             print_text_results(evaluator)
         elif "text-to-image" in args.model_type or "image-to-image" in args.model_type:
             print_image_results(evaluator)

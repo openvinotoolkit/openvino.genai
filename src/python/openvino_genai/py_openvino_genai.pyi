@@ -526,6 +526,9 @@ class ContinuousBatchingPipeline:
     @typing.overload
     def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
+    @typing.overload
+    def generate(self, prompts: collections.abc.Sequence[str], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
+        ...
     def get_config(self) -> GenerationConfig:
         ...
     def get_metrics(self) -> PipelineMetrics:
@@ -996,6 +999,18 @@ class GenerationConfig:
         ...
     @presence_penalty.setter
     def presence_penalty(self, arg0: typing.SupportsFloat) -> None:
+        ...
+    @property
+    def pruning_ratio(self) -> int:
+        ...
+    @pruning_ratio.setter
+    def pruning_ratio(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def relevance_weight(self) -> float:
+        ...
+    @relevance_weight.setter
+    def relevance_weight(self, arg0: typing.SupportsFloat) -> None:
         ...
     @property
     def repetition_penalty(self) -> float:
@@ -1470,7 +1485,7 @@ class ImageGenerationPerfMetrics:
 class IncrementalParser:
     def __init__(self) -> None:
         ...
-    def parse(self, message: dict, delta_text: str, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
+    def parse(self, delta_message: dict, delta_text: str, delta_tokens: collections.abc.Sequence[typing.SupportsInt] | None = None) -> str:
         """
         Parse is called every time new text delta is decoded. Returns a string with any additional text to append to the current output.
         """
@@ -1587,7 +1602,7 @@ class KVCrushAnchorPointMode:
                       :param KVCrushAnchorPointMode.ZEROS: Vector of all zeros will be used as anchor point
                       :param KVCrushAnchorPointMode.ONES: Vector of all ones will be used as anchor point
                       :param KVCrushAnchorPointMode.MEAN: Mean of indicator feature vector to be used as anchor point
-                      :param KVCrushAnchorPointMode.ALTERNATE: Alternating 0s and 1s will be used as anchor point
+                      :param KVCrushAnchorPointMode.ALTERNATING: Alternating 0s and 1s will be used as anchor point
     
     Members:
     
@@ -1599,14 +1614,14 @@ class KVCrushAnchorPointMode:
     
       MEAN
     
-      ALTERNATE
+      ALTERNATING
     """
-    ALTERNATE: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ALTERNATE: 4>
+    ALTERNATING: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ALTERNATING: 4>
     MEAN: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.MEAN: 3>
     ONES: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ONES: 2>
     RANDOM: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.RANDOM: 0>
     ZEROS: typing.ClassVar[KVCrushAnchorPointMode]  # value = <KVCrushAnchorPointMode.ZEROS: 1>
-    __members__: typing.ClassVar[dict[str, KVCrushAnchorPointMode]]  # value = {'RANDOM': <KVCrushAnchorPointMode.RANDOM: 0>, 'ZEROS': <KVCrushAnchorPointMode.ZEROS: 1>, 'ONES': <KVCrushAnchorPointMode.ONES: 2>, 'MEAN': <KVCrushAnchorPointMode.MEAN: 3>, 'ALTERNATE': <KVCrushAnchorPointMode.ALTERNATE: 4>}
+    __members__: typing.ClassVar[dict[str, KVCrushAnchorPointMode]]  # value = {'RANDOM': <KVCrushAnchorPointMode.RANDOM: 0>, 'ZEROS': <KVCrushAnchorPointMode.ZEROS: 1>, 'ONES': <KVCrushAnchorPointMode.ONES: 2>, 'MEAN': <KVCrushAnchorPointMode.MEAN: 3>, 'ALTERNATING': <KVCrushAnchorPointMode.ALTERNATING: 4>}
     def __eq__(self, other: typing.Any) -> bool:
         ...
     def __getstate__(self) -> int:
@@ -3069,7 +3084,7 @@ class T5EncoderModel:
         """
     def get_output_tensor(self, idx: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
         ...
-    def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool, max_sequence_length: typing.SupportsInt) -> openvino._pyopenvino.Tensor:
+    def infer(self, pos_prompt: str, neg_prompt: str, do_classifier_free_guidance: bool, max_sequence_length: typing.SupportsInt, **kwargs) -> openvino._pyopenvino.Tensor:
         ...
     def reshape(self, batch_size: typing.SupportsInt, max_sequence_length: typing.SupportsInt) -> T5EncoderModel:
         ...
@@ -3445,7 +3460,13 @@ class TextRerankPipeline:
                 Number of documents to return sorted by score.
             max_length (int, optional):
                 Maximum length of tokens passed to the embedding model.
+            pad_to_max_length (bool, optional):
+                If 'True', model input tensors are padded to the maximum length.
+            padding_side (str, optional):
+                Side to use for padding "left" or "right"
         """
+        pad_to_max_length: bool | None
+        padding_side: str | None
         @typing.overload
         def __init__(self) -> None:
             ...
@@ -3804,8 +3825,8 @@ class VLMPipeline:
             MiniCPM-V-2_6: <image>./</image>\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
-            Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
-            Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
+            Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
+            Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
             gemma-3-4b-it: <start_of_image>
             Model's native video tag can be used to refer to a video:
             LLaVa-NeXT-Video: <video>
@@ -3814,6 +3835,9 @@ class VLMPipeline:
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
+        
+            :param videos: list of frames
+            :type videos: list[ov.Tensor]
         
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
@@ -3849,8 +3873,8 @@ class VLMPipeline:
             MiniCPM-V-2_6: <image>./</image>\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
-            Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
-            Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
+            Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
+            Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
             gemma-3-4b-it: <start_of_image>
             Model's native video tag can be used to refer to a video:
             LLaVa-NeXT-Video: <video>
@@ -3859,6 +3883,57 @@ class VLMPipeline:
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
+        
+            :param videos: list of frames
+            :type videos: list[ov.Tensor]
+        
+            :param generation_config: generation_config
+            :type generation_config: GenerationConfig or a dict
+        
+            :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
+            :type : Callable[[str], bool], ov.genai.StreamerBase
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
+            :type : dict
+        
+            :return: return results in decoded form
+            :rtype: VLMDecodedResults
+        """
+    @typing.overload
+    def generate(self, prompt: str, videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
+        """
+            Generates sequences for VLMs.
+        
+            :param prompt: input prompt
+            :type prompt: str
+            The prompt can contain <ov_genai_image_i> with i replaced with
+            an actual zero based index to refer to an image. Reference to
+            images used in previous prompts isn't implemented.
+            A model's native image tag can be used instead of
+            <ov_genai_image_i>. These tags are:
+            InternVL2: <image>\\n
+            llava-1.5-7b-hf: <image>
+            LLaVA-NeXT: <image>
+            LLaVa-NeXT-Video: <image>
+            nanoLLaVA: <image>\\n
+            nanoLLaVA-1.5: <image>\\n
+            MiniCPM-o-2_6: <image>./</image>\\n
+            MiniCPM-V-2_6: <image>./</image>\\n
+            Phi-3-vision: <|image_i|>\\n - the index starts with one
+            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
+            Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
+            Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
+            gemma-3-4b-it: <start_of_image>
+            Model's native video tag can be used to refer to a video:
+            LLaVa-NeXT-Video: <video>
+            If the prompt doesn't contain image or video tags, but images or videos are
+            provided, the tags are prepended to the prompt.
+        
+            :param images: image or list of images
+            :type images: list[ov.Tensor] or ov.Tensor
+        
+            :param videos: list of frames
+            :type videos: list[ov.Tensor]
         
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
@@ -3894,8 +3969,8 @@ class VLMPipeline:
             MiniCPM-V-2_6: <image>./</image>\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
-            Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
-            Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
+            Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
+            Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
             gemma-3-4b-it: <start_of_image>
             Model's native video tag can be used to refer to a video:
             LLaVa-NeXT-Video: <video>
@@ -3904,6 +3979,9 @@ class VLMPipeline:
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
+        
+            :param videos: list of frames
+            :type videos: list[ov.Tensor]
         
             :param generation_config: generation_config
             :type generation_config: GenerationConfig or a dict
@@ -3938,8 +4016,8 @@ class VLMPipeline:
             MiniCPM-V-2_6: <image>./</image>\\n
             Phi-3-vision: <|image_i|>\\n - the index starts with one
             Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
-            Qwen2-VL: <|vision_start|><|image_pad|><|vision_end|>
-            Qwen2.5-VL: <|vision_start|><|image_pad|><|vision_end|>
+            Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
+            Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
             gemma-3-4b-it: <start_of_image>
             Model's native video tag can be used to refer to a video:
             LLaVa-NeXT-Video: <video>

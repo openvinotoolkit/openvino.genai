@@ -99,8 +99,9 @@ struct AutoSafetensor: public safetensors_File {
 // The memory block will be deallocated when the last Constant is destroyed.
 ConstantMap safetensor_to_constant_map(const ov::Tensor& safetensor) {
     AutoSafetensor safe_tensors_file{};
-
-    OPENVINO_ASSERT(safetensors_file_init(safetensor.data<char>(), safetensor.get_byte_size(), &safe_tensors_file) == nullptr,
+    // Intentionally discard const qualifier used as read only in safetensors_file_init
+    auto safetensor_data = const_cast<char*>(safetensor.data<char>());
+    OPENVINO_ASSERT(safetensors_file_init(safetensor_data, safetensor.get_byte_size(), &safe_tensors_file) == nullptr,
         "Cannot parse safetensor as a Safetensors file format. Safetensors file format is supported only"
     );
 
@@ -121,7 +122,7 @@ ConstantMap safetensor_to_constant_map(const ov::Tensor& safetensor) {
 }
 
 // Reads a file with a given filename expecting Safetensors file format.
-// The file data is mmaped to tensor.
+// The file data is mapped to tensor.
 ConstantMap read_safetensors(const std::filesystem::path& filename) {
     auto safetensor = ov::read_tensor_data(filename);
 
@@ -762,7 +763,7 @@ public:
                 // Bypass result
                 size_t parameter_index = std::distance(parameters.begin(), std::find(parameters.begin(), parameters.end(), parameter));
                 rwb.bypass.emplace_back(parameter_index, result_index);
-                result.reset();     // enough under the assumption there are no other refernces to that result
+                result.reset();     // enough under the assumption there are no other references to that result
             } else {
                 // Normal output
                 request_results.push_back(result);
@@ -887,7 +888,7 @@ public:
             fusers.insert(signature, results, parameters);
         }
 
-        // Newly created constants in the next line are not mmaped unlike original weights, so it will inflate required memory
+        // Newly created constants in the next line are not mapped unlike original weights, so it will inflate required memory
         // eventually allocating up to 2x of the base model size.
         // 2X is due to usually applied compression in the base model that is not retained in the current version of this code.
         // But even if the compression is used, then still a copy of all weights that affected by the LoRA adapters are allocated in memory.
@@ -1063,7 +1064,7 @@ private:
 
 
 /// @brief Adapter that derived from another adapter by applying Derivation function.
-/// Two objects instanciated from the same Derivation type are equal when both origins and derivations are equal (while comparing with operator==).
+/// Two objects instantiated from the same Derivation type are equal when both origins and derivations are equal (while comparing with operator==).
 /// The derivation is postponed to the first call of get_tensors(), giving a way to compare Adapters without applying the derivation.
 /// It is supposed that Derivation works always in the same way and don't have a side effect.
 template <typename Derivation>

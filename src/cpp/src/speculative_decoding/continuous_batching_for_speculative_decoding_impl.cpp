@@ -63,10 +63,35 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::get_ge
         for (const auto& sequence : request->get_running_sequences()) {
             const auto& sequence_id = sequence->get_grouped_id();
             OPENVINO_ASSERT(!generated_request.count(sequence_id));
-            generated_request.insert({{sequence_id, { sequence->get_generated_ids(), sequence->get_generated_log_probs() } }});
+            generated_request.insert({{sequence_id, { sequence->get_generated_ids(), sequence->get_generated_log_probs(), sequence->get_hidden_state() } }});
         }
     }
     return result;
+}
+
+ov::Tensor truncate_hidden_state_from_end(const ov::Tensor& hidden_state, size_t tokens_to_remove) {
+    if (hidden_state.get_size() == 0 || tokens_to_remove == 0) {
+        return hidden_state;
+    }
+
+    auto shape = hidden_state.get_shape();
+    if (shape.size() < 2) {
+        return hidden_state;
+    }
+
+    size_t seq_len_dim = 0;
+    size_t current_seq_len = shape[seq_len_dim];
+
+    if (tokens_to_remove >= current_seq_len) {
+        ov::Shape new_shape = shape;
+        new_shape[seq_len_dim] = 0;
+        return ov::Tensor(hidden_state.get_element_type(), new_shape);
+    }
+
+    size_t new_seq_len = current_seq_len - tokens_to_remove;
+
+    auto [start_coord, end_coord] = ov::genai::utils::make_roi(shape, seq_len_dim, 0, new_seq_len);
+    return ov::Tensor(hidden_state, start_coord, end_coord);
 }
 
 // { min_len_of_prefix, min_length_of_candidate }
@@ -227,6 +252,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         std::vector<Sequence::Ptr> running_sequences = request->get_running_sequences();
         OPENVINO_ASSERT(running_sequences.size() > 0);
         size_t min_generated_tokens, min_candidate_len;
+        int num_tokens_needs_kv_update = -1;
         if (running_sequences.front()->get_generated_len() == 0 && !request->get_num_tokens_to_validate()) {
             m_sampler->create_logit_processor(request_id, request->get_sampling_parameters(), request->get_prompt_ids());
             auto& logit_processor = m_sampler->get_logit_processor(request_id);
@@ -234,6 +260,10 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             min_generated_tokens = result.inserted_tokens_cnt;
             running_sequences = request->get_running_sequences();
             min_candidate_len = result.inserted_tokens_cnt;
+            if (eagle_mode_enabled && !m_is_validation_mode_enabled) {
+                m_model_runner->set_initial_hidden_state(request_id,
+                                                     candidates.begin()->second.hidden_states);
+            }
         } else {
             // update existing sequences by the candidates
             auto& logit_processor = m_sampler->get_logit_processor(request_id);
@@ -252,6 +282,18 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                 candidate_token_ids.resize(min_candidate_len);
                 candidate_token_log_probs.resize(min_candidate_len);
                 result.inserted_tokens_cnt = insert_tokens_to_sequence(running_sequence, candidate_token_ids, candidate_token_log_probs, logit_processor, is_update_logit_processor);
+                // handle hidden states for eagle mode
+                if (eagle_mode_enabled && !m_is_validation_mode_enabled && result.inserted_tokens_cnt > 0) { // update hidden states for draft model
+                    // at least there should be one bonus token from main
+                    auto& hidden_state = candidate_sequence.hidden_states;
+                    ov::Tensor pruned_hidden_state = truncate_hidden_state_from_end(hidden_state, result.removed_tokens_cnt);
+                    const auto& shape = pruned_hidden_state.get_shape();
+                    OPENVINO_ASSERT(shape[0] >= 1, "Unexpected hidden state shape from the main model.");
+                    m_model_runner->set_initial_hidden_state(request_id,
+                                                            pruned_hidden_state);
+                    // to calculate the number of tokens that needs to do kv cache re-generate in draft model
+                    num_tokens_needs_kv_update = shape[0] - 1; // remove the first dim, which is the reliable hidden state from main model
+                }
             }
             // we should update a logit processor just for draft model to generate the same tokens
             // logit processors of main model will be updated in sampler while validation mode
@@ -266,13 +308,27 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                      updated_context_len = min_candidate_len + prompt_len,
                      max_new_tokens = request->get_max_new_tokens();
         size_t generated_len = request->get_context_len() >= request->get_prompt_len() ? request->get_context_len() - request->get_prompt_len() + 1 : 0;
-        if (generated_len > 0 && result.removed_tokens_cnt > 0) {
-            request->update_processed_tokens_num(num_processed_tokens - result.removed_tokens_cnt + 1);
+        if (num_tokens_needs_kv_update > 0) {
+            if (generated_len > 0) {
+                // in eagle3 speculative mode, to rewind the processed tokens num to the stable kv position
+                request->update_processed_tokens_num(num_processed_tokens - result.removed_tokens_cnt + 1 - num_tokens_needs_kv_update);
+            }
+        } else { // fast draft or main model for eagle speculative
+            if (generated_len > 0 && result.removed_tokens_cnt > 0) {
+                request->update_processed_tokens_num(num_processed_tokens - result.removed_tokens_cnt + 1);
+            }
         }
-        if (result.inserted_tokens_cnt > 0 && result.removed_tokens_cnt == 0) {
+        if (num_tokens_needs_kv_update < 0 && result.inserted_tokens_cnt > 0 && result.removed_tokens_cnt == 0) {
             request->set_num_validated_tokens(result.inserted_tokens_cnt);
+        } else if (num_tokens_needs_kv_update >= 0) {
+            request->set_num_validated_tokens(num_tokens_needs_kv_update);  // in generation stage
         }
         // to pause `draft_model` generation in case of `generated_len >= max_new_tokens - 1` to generate last token by `main_model`
+        // Start `draft_model` generation after the first `main_model` generation is finished. There are two scenarios:
+        // 1. When `main_model` generates a new token, in which case `draft_model` naturally starts its generation.
+        // 2. When `main_model` does not generate a new token, which usually happens when processing a portion of prompt (we can
+        //    slice prompt into chunks when dynamic_split_fuse is enabled),
+        //    in this case, `draft_model` can also begin processing the same portion of prompt.
         if (!m_is_validation_mode_enabled) {
             bool pause_gen_status = false;
             generated_len -= result.removed_tokens_cnt;
@@ -328,6 +384,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             raw_perf_metrics.m_batch_sizes.emplace_back(num_generated_tokens);
         }
 
+        if (eagle_mode_enabled)
+            m_model_runner->enable_hidden_state_import(false);
         to_generate = false;
         for (auto& request : m_requests) {
             const auto& sampling_params = request->get_sampling_parameters();
@@ -351,5 +409,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
             to_generate |= request->can_generate_tokens();
         }
     }
+    if (eagle_mode_enabled)
+        m_model_runner->enable_hidden_state_import(true);
 }
 }

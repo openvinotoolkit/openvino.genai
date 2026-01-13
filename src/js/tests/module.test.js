@@ -1,4 +1,4 @@
-import { LLMPipeline } from "../dist/index.js";
+import { ChatHistory, LLMPipeline } from "../dist/index.js";
 
 import assert from "node:assert/strict";
 import { describe, it, before, after } from "node:test";
@@ -48,15 +48,15 @@ describe("LLMPipeline methods", async () => {
     await pipeline.finishChat();
   });
 
-  await it("should generate non empty string", async () => {
+  await it("should generate non empty result", async () => {
     const result = await pipeline.generate(
       "Type something in English",
       { temperature: "0", max_new_tokens: "4" },
       () => {},
     );
 
-    assert.ok(result.length > 0);
-    assert.strictEqual(typeof result, "string");
+    assert.ok(result.texts.length > 0);
+    assert.strictEqual(typeof result.texts[0], "string");
   });
 
   it("should include tokenizer", async () => {
@@ -109,11 +109,11 @@ describe("generation parameters validation", () => {
     await pipeline.finishChat();
   });
 
-  it("should throw an error if temperature is not a number", async () => {
-    await assert.rejects(async () => await pipeline.generate(), {
-      name: "Error",
-      message: "Prompt must be a string or string[]",
-    });
+  it("should throw an error if no arguments passed to generate", async () => {
+    await assert.rejects(
+      async () => await pipeline.generate(),
+      /Passed argument must be a string, ChatHistory or an array of strings./,
+    );
   });
 
   it("should throw an error if generationCallback is not a function", async () => {
@@ -144,12 +144,6 @@ describe("generation parameters validation", () => {
     assert.ok(true);
   });
 
-  it("should return a string as generation result", async () => {
-    const reply = await pipeline.generate("prompt", { max_new_tokens: 1 });
-
-    assert.strictEqual(typeof reply, "string");
-  });
-
   it("should call generationCallback with string chunk", async () => {
     await pipeline.generate("prompt", { max_new_tokens: 1 }, (chunk) => {
       assert.strictEqual(typeof chunk, "string");
@@ -163,7 +157,8 @@ describe("generation parameters validation", () => {
       include_stop_str_in_output: true,
     };
     const result = await pipeline.generate("continue: 1 2 3", generationConfig);
-    assert.strictEqual(typeof result, "string");
+    assert.strictEqual(result.texts.length, 1);
+    assert.ok(result.texts[0].length > 0);
   });
 });
 
@@ -179,26 +174,6 @@ describe("LLMPipeline.generate()", () => {
     await pipeline.finishChat();
   });
 
-  it("generate(prompt, config) return_decoded_results", async () => {
-    const config = {
-      max_new_tokens: 5,
-      return_decoded_results: true,
-    };
-    const reply = await pipeline.generate("prompt", config);
-    assert.strictEqual(typeof reply, "object");
-    assert.ok(Array.isArray(reply.texts));
-    assert.ok(reply.texts.every((text) => typeof text === "string"));
-    assert.ok(reply.perfMetrics !== undefined);
-
-    const configStr = {
-      max_new_tokens: 5,
-      return_decoded_results: false,
-    };
-    const replyStr = await pipeline.generate("prompt", configStr);
-    assert.strictEqual(typeof replyStr, "string");
-    assert.strictEqual(replyStr, reply.toString());
-  });
-
   it("DecodedResults.perfMetrics", async (t) => {
     if (os.platform() === "darwin") {
       t.skip("Skipping perfMetrics test on macOS. Ticket - 173286");
@@ -207,7 +182,6 @@ describe("LLMPipeline.generate()", () => {
 
     const config = {
       max_new_tokens: 20,
-      return_decoded_results: true,
     };
     const prompt = "The Sky is blue because";
     const start = hrtime.bigint();
@@ -295,7 +269,6 @@ describe("LLMPipeline.generate()", () => {
   it("test perfMetrics.add()", async () => {
     const config = {
       max_new_tokens: 5,
-      return_decoded_results: true,
     };
     const res1 = await pipeline.generate("prompt1", config);
     const res2 = await pipeline.generate("prompt2", config);
@@ -355,5 +328,64 @@ describe("stream()", () => {
       }
     }
     assert.equal(chunks.length, 5);
+  });
+
+  it("stream() with array of strings", async () => {
+    assert.throws(() => {
+      pipeline.stream(["prompt1", "prompt2", "prompt3"]);
+    }, /Streaming is not supported for array of inputs/);
+  });
+});
+
+describe("LLMPipeline with chat history", () => {
+  let pipeline = null;
+  // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
+  const chatHistory = new ChatHistory();
+
+  before(async () => {
+    pipeline = await LLMPipeline(MODEL_PATH, "CPU", { ATTENTION_BACKEND: "SDPA" });
+  });
+
+  it("generate(chatHistory, config)", async () => {
+    chatHistory.setMessages([
+      { role: "user", content: "Hello!" },
+      { role: "assistant", content: "Hi! How can I help you?" },
+      { role: "user", content: "Tell me a joke." },
+    ]);
+    const config = {
+      max_new_tokens: 10,
+    };
+    const reply = await pipeline.generate(chatHistory, config);
+    // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
+    chatHistory.push({ role: "assistant", content: reply.toString() });
+    assert.ok(Array.isArray(reply.texts));
+    assert.equal(reply.texts.length, 1);
+    assert.ok(typeof reply.texts[0] === "string");
+    console.log("Reply:", reply.toString());
+  });
+
+  it("generate(chatHistory, config) with invalid chat history", async () => {
+    const chatHistory = [1, "assistant", null];
+    const config = {
+      max_new_tokens: 10,
+    };
+    await assert.rejects(async () => {
+      await pipeline.generate(chatHistory, config);
+    }, /An incorrect input value has been passed./);
+  });
+
+  it("stream(chatHistory, config)", async () => {
+    chatHistory.push({ role: "user", content: "Tell me another joke." });
+    const config = {
+      max_new_tokens: 10,
+    };
+    const streamer = await pipeline.stream(chatHistory, config);
+    const chunks = [];
+    for await (const chunk of streamer) {
+      chunks.push(chunk);
+    }
+    assert.ok(chunks.length > 0);
+    // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
+    chatHistory.push({ role: "assistant", content: chunks.join("") });
   });
 });

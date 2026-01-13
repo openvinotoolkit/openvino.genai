@@ -29,6 +29,7 @@ ov_continious_batching_pipe
 
 import collections
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Generator
 import openvino_tokenizers
 import openvino
@@ -41,6 +42,7 @@ import os
 import numpy as np
 import transformers
 from optimum.intel.openvino import OVModelForVisualCausalLM
+from optimum.utils.import_utils import is_transformers_version
 from openvino_genai import (
     VLMPipeline,
     GenerationConfig,
@@ -57,7 +59,8 @@ from utils.generation_config import (
     get_multinomial_all_parameters,
     get_greedy,
 )
-from utils.constants import get_ov_cache_models_dir
+from utils.constants import get_ov_cache_converted_models_dir
+from utils.atomic_download import AtomicDownloadManager
 
 import logging
 logger = logging.getLogger(__name__)
@@ -80,21 +83,22 @@ PROMPTS: list[str] = [
 
 
 VIDEO_MODEL_IDS = [
-    "katuni4ka/tiny-random-llava-next-video",
+    "optimum-intel-internal-testing/tiny-random-llava-next-video",
+    "optimum-intel-internal-testing/tiny-random-qwen2vl",
+    "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
 ]
 
 
 MODEL_IDS: list[str] = [
-    "katuni4ka/tiny-random-minicpmv-2_6",
-    "katuni4ka/tiny-random-phi3-vision",
-    "katuni4ka/tiny-random-phi-4-multimodal",
-    "katuni4ka/tiny-random-llava",
-    "katuni4ka/tiny-random-llava-next",
-    "katuni4ka/tiny-random-internvl2",
-    "katuni4ka/tiny-random-qwen2vl",
-    "katuni4ka/tiny-random-qwen2.5-vl",
-    "katuni4ka/tiny-random-gemma3",
+    "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
+    "optimum-intel-internal-testing/tiny-random-phi3-vision",
+    "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
+    "optimum-intel-internal-testing/tiny-random-llava",
+    "optimum-intel-internal-testing/tiny-random-llava-next",
+    "optimum-intel-internal-testing/tiny-random-internvl2",
+    "optimum-intel-internal-testing/tiny-random-gemma3",
     "qnguyen3/nanoLLaVA",
+    "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
     *VIDEO_MODEL_IDS,
 ]
 
@@ -106,28 +110,30 @@ ADD_REQUEST_MODEL_IDS = [
 
 
 TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
-    "katuni4ka/tiny-random-llava": lambda idx: "<image>",
-    "katuni4ka/tiny-random-llava-next": lambda idx: "<image>",
-    "katuni4ka/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
-    "katuni4ka/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
-    "katuni4ka/tiny-random-gemma3": lambda idx: "<start_of_image>",
-    "katuni4ka/tiny-random-internvl2": lambda idx: "<image>\n",
-    "katuni4ka/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
-    "katuni4ka/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
-    "katuni4ka/tiny-random-llava-next-video": lambda idx: "<image>\n",
+    "optimum-intel-internal-testing/tiny-random-llava": lambda idx: "<image>",
+    "optimum-intel-internal-testing/tiny-random-llava-next": lambda idx: "<image>",
+    "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
+    "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
+    "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
+    "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
+    "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
+    "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": lambda idx: "<image>./</image>\n",
+    "optimum-intel-internal-testing/tiny-random-phi3-vision": lambda idx: f"<|image_{idx + 1}|>\n",
+    "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<image>\n",
     "qnguyen3/nanoLLaVA": lambda idx: "<image>\n",
 }
 
 
 RESOLUTION_BY_MODEL: dict[str, int | None] = {
-    "katuni4ka/tiny-random-gemma3": 32,
+    "optimum-intel-internal-testing/tiny-random-gemma3": 32,
     "qnguyen3/nanoLLaVA": 384,
-    "katuni4ka/tiny-random-llava-next-video": 336,
+    "optimum-intel-internal-testing/tiny-random-llava-next-video": 336,
+    "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": 448,
 }
 
 
 RESOLUTION_BY_VIDEO_MODEL: dict[str, int | None] = {
-    "katuni4ka/tiny-random-llava-next-video": 32,
+    "optimum-intel-internal-testing/tiny-random-llava-next-video": 32,
 }
 
 
@@ -152,8 +158,8 @@ TEST_IMAGE_URLS = {
 
 
 NPU_UNSUPPORTED_MODELS = {
-    "katuni4ka/tiny-random-internvl2",
-    "katuni4ka/tiny-random-gemma3",
+    "optimum-intel-internal-testing/tiny-random-internvl2",
+    "optimum-intel-internal-testing/tiny-random-gemma3",
 }
 
 
@@ -178,64 +184,79 @@ def _setup_generation_config(
 
 
 def _get_ov_model(model_id: str) -> str:
-    if model_id in {"katuni4ka/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
+    if model_id in {"optimum-intel-internal-testing/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
         pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
-    if "katuni4ka/tiny-random-phi3-vision" == model_id:
+    if "optimum-intel-internal-testing/tiny-random-phi3-vision" == model_id:
         pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
-    ov_cache_models_dir = get_ov_cache_models_dir()
-    dir_name = str(model_id).replace(os.sep, "_")
-    model_dir = ov_cache_models_dir / dir_name
-    if (model_dir / "openvino_language_model.xml").exists():
-        return model_dir
-    align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
-    processor = retry_request(
-        lambda: transformers.AutoProcessor.from_pretrained(
-            model_id,
-            trust_remote_code=True,
-            **align_with_optimum_cli,
+    if "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6" == model_id and is_transformers_version(
+        ">", "4.51.3"
+    ):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3"
         )
-    )
-    model = retry_request(
-        lambda: OVModelForVisualCausalLM.from_pretrained(
-            model_id,
-            compile=False,
-            device="CPU",
-            export=True,
-            load_in_8bit=False,
-            trust_remote_code=model_id in {
-                "katuni4ka/tiny-random-minicpmv-2_6",
-                "katuni4ka/tiny-random-internvl2",
-                "katuni4ka/tiny-random-phi3-vision",
-                "katuni4ka/tiny-random-phi-4-multimodal",
-                "qnguyen3/nanoLLaVA",
-            },
-        )
-    )
-    if model.config.model_type == "llava-qwen2":
-        tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    # For tiny-random-internvl2 processor is actually tokenizer
-    elif isinstance(processor, transformers.Qwen2TokenizerFast):
-        tokenizer = processor
-        processor = transformers.AutoImageProcessor.from_pretrained(
-            model_id, trust_remote_code=True
-        )
-    else:
-        tokenizer = processor.tokenizer
-        if tokenizer.chat_template is None:
-            tokenizer.chat_template = processor.chat_template
-    tokenizer.save_pretrained(model_dir)
-    ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
-        tokenizer, with_detokenizer=True
-    )
-    openvino.save_model(ov_tokenizer, model_dir / "openvino_tokenizer.xml")
-    openvino.save_model(ov_detokenizer, model_dir / "openvino_detokenizer.xml")
 
-    if tokenizer.chat_template is not None and model.config.model_type == "phi3_v":
-        # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
-        processor.chat_template = tokenizer.chat_template
-    processor.audio_tokenizer = None
-    processor.save_pretrained(model_dir)
-    model.save_pretrained(model_dir)
+    ov_cache_converted_dir = get_ov_cache_converted_models_dir()
+    dir_name = str(model_id).replace(os.sep, "_")
+    model_dir = ov_cache_converted_dir / dir_name
+    
+    manager = AtomicDownloadManager(model_dir)
+    
+    if manager.is_complete() or (model_dir / "openvino_language_model.xml").exists():
+        return model_dir
+    
+    def convert_to_temp(temp_dir: Path) -> None:
+        align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
+        processor = retry_request(
+            lambda: transformers.AutoProcessor.from_pretrained(
+                model_id,
+                trust_remote_code=True,
+                **align_with_optimum_cli,
+            )
+        )
+        model = retry_request(
+            lambda: OVModelForVisualCausalLM.from_pretrained(
+                model_id,
+                compile=False,
+                device="CPU",
+                export=True,
+                load_in_8bit=False,
+                trust_remote_code=model_id in {
+                    "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
+                    "optimum-intel-internal-testing/tiny-random-internvl2",
+                    "optimum-intel-internal-testing/tiny-random-phi3-vision",
+                    "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
+                    "qnguyen3/nanoLLaVA",
+                    "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6",
+                },
+            )
+        )
+        if model.config.model_type == "llava-qwen2":
+            tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+        # For tiny-random-internvl2 processor is actually tokenizer
+        elif isinstance(processor, transformers.Qwen2TokenizerFast):
+            tokenizer = processor
+            processor = transformers.AutoImageProcessor.from_pretrained(
+                model_id, trust_remote_code=True
+            )
+        else:
+            tokenizer = processor.tokenizer
+            if tokenizer.chat_template is None:
+                tokenizer.chat_template = processor.chat_template
+        tokenizer.save_pretrained(temp_dir)
+        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
+            tokenizer, with_detokenizer=True
+        )
+        openvino.save_model(ov_tokenizer, temp_dir / "openvino_tokenizer.xml")
+        openvino.save_model(ov_detokenizer, temp_dir / "openvino_detokenizer.xml")
+
+        if tokenizer.chat_template is not None and model.config.model_type == "phi3_v":
+            # It seems that tiny-random-phi3-vision is saved incorrectly. That line works this around.
+            processor.chat_template = tokenizer.chat_template
+        processor.audio_tokenizer = None
+        processor.save_pretrained(temp_dir)
+        model.save_pretrained(temp_dir)
+    
+    manager.execute(convert_to_temp)
     return model_dir
 
 
@@ -304,12 +325,13 @@ parametrize_one_model_backends = pytest.mark.parametrize(
     ids=lambda p: f"{p[0]}/{p[1]}",
     indirect=["ov_pipe_model"],
 )
-    
+
 @pytest.fixture(scope="module")
 def ov_continious_batching_pipe() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[0])
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
-    
+
+
 @pytest.fixture(scope="module")
 def ov_continious_batching_pipe_gemma() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[8])
@@ -377,6 +399,11 @@ def synthetic_video_32x32(synthetic_video):
 
 
 @pytest.fixture(scope="module")
+def cat_image_448x448(cat_image):
+    return cat_image.resize((448, 448))
+
+
+@pytest.fixture(scope="module")
 def cat_image_384x384(cat_image):
     return cat_image.resize((384, 384))
 
@@ -420,12 +447,11 @@ def test_images(request: pytest.FixtureRequest):
     return [request.getfixturevalue(image) for image in request.param]
 
 
-@pytest.mark.precommit
 @parametrize_all_models
 def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Tensor]):
     ov_pipe = ov_pipe_model.pipeline
     result_from_streamer = []
-    
+
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
         result_from_streamer.append(word)
@@ -442,7 +468,22 @@ def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Te
     assert res.texts[0] == "".join(result_from_streamer)
 
 
-@pytest.mark.precommit
+@parametrize_one_model_sdpa
+def test_vlm_readonly_image_tensor(ov_pipe_model: VlmModelInfo, cat_image_32x32):
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=5)
+
+    image_array = np.array(cat_image_32x32, dtype=np.uint8)
+    image_array.flags.writeable = False
+
+    readonly_image_tensor = openvino.Tensor(image_array)
+    ov_pipe.generate(
+        PROMPTS[0],
+        images=[readonly_image_tensor],
+        generation_config=generation_config,
+    )
+
+
 @pytest.mark.parametrize(
     "config", 
     [
@@ -506,7 +547,6 @@ def test_vlm_continuous_batching_generate_vs_add_request(
             )
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "config", 
     [
@@ -607,8 +647,8 @@ def iteration_images(request) -> list[list[PIL.Image]]:
         id="Image + video on first iteration, image on third iteration"
     ),
     pytest.param(
-        [[["cat_tensor", "car_tensor", "handwritten_tensor"], []], [["synthetic_video_32x32_tensor"], ["synthetic_video_32x32_tensor"]]],
-        id="3 images + video on first iteration, video on second iteration"
+        [[["cat_tensor", "car_tensor", "handwritten_tensor"], []], [["synthetic_video_32x32_tensor", "synthetic_video_32x32_tensor"], ["synthetic_video_32x32_tensor"]]],
+        id="3 images + 2 videos on first iteration, video on second iteration"
     ),
 ])
 def iteration_images_and_videos(request):
@@ -618,7 +658,6 @@ def iteration_images_and_videos(request):
     return params
 
 
-@pytest.mark.precommit
 @parametrize_all_models
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 def test_vlm_pipeline_chat(
@@ -679,7 +718,6 @@ def iteration_images_npu(request):
     return [[request.getfixturevalue(image) for image in bundle] for bundle in request.param]
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", MODEL_IDS)
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
@@ -721,7 +759,6 @@ def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
     run_chat(npu_pipe, system_message, iteration_images_npu)
 
 
-@pytest.mark.precommit
 @parametrize_all_models_with_video
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 def test_vlm_pipeline_chat_with_video(
@@ -771,7 +808,6 @@ def test_vlm_pipeline_chat_with_video(
     ov_pipe.finish_chat()
 
 
-@pytest.mark.precommit
 @parametrize_one_model_backends
 def test_vlm_get_tokenizer(ov_pipe_model: VlmModelInfo):
     ov_pipe = ov_pipe_model.pipeline
@@ -779,7 +815,6 @@ def test_vlm_get_tokenizer(ov_pipe_model: VlmModelInfo):
     tokenizer.encode("")
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
     "config",
     [
@@ -797,7 +832,6 @@ def test_sampling(
     ov_pipe.generate(PROMPTS[0], image=cat_tensor, generation_config=config)
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("backend", ATTENTION_BACKEND)
 def test_perf_metrics(
     backend: str, 
@@ -809,7 +843,7 @@ def test_perf_metrics(
     max_new_tokens = DEFAULT_MAX_NEW_TOKENS
 
     # Using non-cached model to get more accurate load time
-    model_path = _get_ov_model("katuni4ka/tiny-random-minicpmv-2_6")
+    model_path = _get_ov_model("optimum-intel-internal-testing/tiny-random-minicpmv-2_6")
     start_time = perf_counter_ns()
     pipe = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
     start_generate = perf_counter_ns()
@@ -865,7 +899,6 @@ def test_perf_metrics(
     assert np.allclose(std_dur, np.std(raw_dur))
 
 
-@pytest.mark.precommit
 @pytest.mark.parametrize("model_id", MODEL_IDS)
 @pytest.mark.parametrize("backend", ATTENTION_BACKEND)
 @pytest.mark.skipif(
@@ -901,7 +934,6 @@ def image_sequence(request):
     return [request.getfixturevalue(image) for image in request.param]
 
 
-@pytest.mark.precommit
 @pytest.mark.skipif(
     sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
     reason="NPU plugin is available only on Linux and Windows x86_64",
@@ -923,7 +955,6 @@ def test_vlm_npu_no_image():
     )
 
 
-@pytest.mark.precommit
 @parametrize_all_models
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     request: pytest.FixtureRequest,
@@ -961,7 +992,7 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     results_with_cancel += ov_pipe.generate(
         callback_questions[0], **images_and_videos, generation_config=generation_config
     ).texts[0]
-    # doesn't add to results_with_cancel as it should be complitely removed from the history
+    # doesn't add to results_with_cancel as it should be completely removed from the history
     ov_pipe.generate(
         callback_questions[1],
         images=image_sequence,
@@ -998,7 +1029,6 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     assert results_with_cancel == results
 
 
-@pytest.mark.precommit
 @parametrize_one_model_backends
 def test_start_chat_clears_history(
     ov_pipe_model: VlmModelInfo,
@@ -1025,7 +1055,6 @@ def test_start_chat_clears_history(
     assert results_first_generate == results_second_generate
 
 
-@pytest.mark.precommit
 def test_start_chat_clears_history_cb_api(
     ov_continious_batching_pipe: ContinuousBatchingPipeline, 
     image_sequence: list[openvino.Tensor]
@@ -1051,7 +1080,6 @@ def test_start_chat_clears_history_cb_api(
     assert results_first_generate == results_second_generate
 
 
-@pytest.mark.precommit
 @parametrize_all_models
 def test_vlm_pipeline_chat_streamer_cancel_first_generate(
     request: pytest.FixtureRequest,
@@ -1147,24 +1175,24 @@ def conversation_requests(
 
 
 TAG_INSERTED_BY_TEMPLATE = [
-    ("katuni4ka/tiny-random-llava", "PA"),
-    ("katuni4ka/tiny-random-llava-next", "PA"),
-    ("katuni4ka/tiny-random-qwen2vl", "PA"),
-    ("katuni4ka/tiny-random-qwen2.5-vl", "PA"),
-    ("katuni4ka/tiny-random-gemma3", "SDPA"),
+    ("optimum-intel-internal-testing/tiny-random-llava", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-llava-next", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
     ("qnguyen3/nanoLLaVA", "PA"),
-    ("katuni4ka/tiny-random-llava-next-video", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
 ]
 
 
 IMAGE_ID_IGNORANT_MODELS_TO_TAG = TAG_INSERTED_BY_TEMPLATE + [
-    ("katuni4ka/tiny-random-internvl2", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-internvl2", "PA"),
 ]
 
 
 MODELS_TO_TAG = IMAGE_ID_IGNORANT_MODELS_TO_TAG + [
-    ("katuni4ka/tiny-random-minicpmv-2_6", "PA"),
-    ("katuni4ka/tiny-random-phi3-vision", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-minicpmv-2_6", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-phi3-vision", "PA"),
 ]
 
 
@@ -1182,7 +1210,6 @@ def model_and_tag_parametrize(
     )
 
 
-@pytest.mark.precommit
 @model_and_tag_parametrize(TAG_INSERTED_BY_TEMPLATE)
 def test_model_tags_representation(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
     ov_pipe = ov_pipe_model.pipeline
@@ -1235,7 +1262,6 @@ def test_model_tags_representation(ov_pipe_model: VlmModelInfo, cat_tensor: open
     retry(workaround_inconsistent_inference)
 
 
-@pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_prepend_native(
     ov_pipe_model: VlmModelInfo, 
@@ -1264,7 +1290,6 @@ def test_model_tags_prepend_native(
     retry(workaround_inconsistent_inference)
 
 
-@pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_prepend_universal(
     ov_pipe_model: VlmModelInfo, 
@@ -1297,7 +1322,6 @@ def test_model_tags_prepend_universal(
 def cat_image_384x384(cat_image):
     return cat_image.resize((384, 384))
 
-@pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_append(
     ov_pipe_model: VlmModelInfo, 
@@ -1338,7 +1362,6 @@ def test_model_tags_append(
     retry(workaround_inconsistent_inference)
 
 
-@pytest.mark.precommit
 @model_and_tag_parametrize(IMAGE_ID_IGNORANT_MODELS_TO_TAG)
 def test_model_tags_same_reference(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
     ov_pipe = ov_pipe_model.pipeline
@@ -1358,7 +1381,6 @@ def test_model_tags_same_reference(ov_pipe_model: VlmModelInfo, cat_tensor: open
     retry(workaround_inconsistent_inference)
 
 
-@pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_older(ov_pipe_model: VlmModelInfo, car_tensor: openvino.Tensor):
     ov_pipe = ov_pipe_model.pipeline
@@ -1372,7 +1394,6 @@ def test_model_tags_older(ov_pipe_model: VlmModelInfo, car_tensor: openvino.Tens
     ov_pipe.finish_chat()
         
         
-@pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_missing_universal(ov_pipe_model: VlmModelInfo):
     ov_pipe = ov_pipe_model.pipeline
@@ -1381,7 +1402,6 @@ def test_model_tags_missing_universal(ov_pipe_model: VlmModelInfo):
         ov_pipe.generate("<ov_genai_image_0>")
         
         
-@pytest.mark.precommit
 @model_and_tag_parametrize()
 def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
     ov_pipe = ov_pipe_model.pipeline
@@ -1391,29 +1411,130 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
         ov_pipe.generate(image_tag(0))
             
 
-@pytest.mark.precommit
 @pytest.mark.parametrize(
-    "ov_pipe_model",
+    "ov_pipe_model,has_image,has_video",
     [
-        pytest.param(("katuni4ka/tiny-random-qwen2vl","SDPA")),
-        pytest.param(("katuni4ka/tiny-random-qwen2vl", "PA")),
-        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "SDPA")),
-        pytest.param(("katuni4ka/tiny-random-qwen2.5-vl", "PA"), marks=pytest.mark.xfail(reason="CVS-167316")),
-        (
-            pytest.param(("katuni4ka/tiny-random-gemma3", "SDPA"), marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON)) 
-            if sys.platform == "darwin" 
-            else pytest.param(("katuni4ka/tiny-random-gemma3",  "SDPA"))
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), True, False, id="qwen2vl/SDPA/image"
         ),
-        pytest.param(("katuni4ka/tiny-random-gemma3", "PA"), marks=pytest.mark.xfail(reason="CVS-171180")),
-        pytest.param(("qnguyen3/nanoLLaVA", "SDPA")),
-        pytest.param(("qnguyen3/nanoLLaVA", "PA")),
-        pytest.param(("katuni4ka/tiny-random-llava-next-video", "SDPA")),
-        pytest.param(("katuni4ka/tiny-random-llava-next-video", "PA")),
+        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), True, False, id="qwen2vl/PA/image"),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), False, True, id="qwen2vl/SDPA/video"
+        ),
+        pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), False, True, id="qwen2vl/PA/video"),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), True, True, id="qwen2vl/PA/image+video"
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), True, True, id="qwen2vl/PA/image+video"
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"), True, False, id="qwen2.5-vl/SDPA/image"
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+            True,
+            False,
+            id="qwen2.5-vl/PA/image",
+            marks=pytest.mark.xfail(reason="CVS-167316"),
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"), False, True, id="qwen2.5-vl/SDPA/video"
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+            False,
+            True,
+            id="qwen2.5-vl/PA/video",
+            marks=pytest.mark.xfail(reason="CVS-167316"),
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"),
+            True,
+            True,
+            id="qwen2.5-vl/SDPA/image+video",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+            True,
+            True,
+            id="qwen2.5-vl/PA/image+video",
+            marks=pytest.mark.xfail(reason="CVS-167316"),
+        ),
+        (
+            pytest.param(
+                ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
+                True,
+                False,
+                id="gemma3/SDPA/image",
+                marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON),
+            )
+            if sys.platform == "darwin"
+            else pytest.param(
+                ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"), True, False, id="gemma3/SDPA/image"
+            )
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-gemma3", "PA"),
+            True,
+            False,
+            id="gemma3/PA/image",
+            marks=pytest.mark.xfail(reason="CVS-171180"),
+        ),
+        pytest.param(("qnguyen3/nanoLLaVA", "SDPA"), True, False, id="nanoLLaVA/SDPA/image"),
+        pytest.param(("qnguyen3/nanoLLaVA", "PA"), True, False, id="nanoLLaVA/PA/image"),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"),
+            True,
+            False,
+            id="llava-next-video/SDPA/image",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
+            True,
+            False,
+            id="llava-next-video/PA/image",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"),
+            False,
+            True,
+            id="llava-next-video/SDPA/video",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
+            False,
+            True,
+            id="llava-next-video/PA/video",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"),
+            True,
+            True,
+            id="llava-next-video/SDPA/image+video",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
+            True,
+            True,
+            id="llava-next-video/PA/image+video",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6", "SDPA"),
+            True,
+            False,
+            id="MiniCPM-o-2_6/SDPA/image",
+        ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6", "PA"),
+            True,
+            False,
+            id="MiniCPM-o-2_6/PA/image",
+        ),
     ],
-    ids=lambda p: f"{p[0]}/{p[1]}",
     indirect=["ov_pipe_model"],
 )
-def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelInfo):
+def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool):
     class NanollavaProcessorWrapper:
         def __init__(self, processor, config, model_dtype):
             self.processor = processor
@@ -1434,32 +1555,24 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
     model_id = ov_pipe_model.model_id
     resolution = ov_pipe_model.resolution
     
-
-    prompt = "Describe this image."
     resized_image = None
     resized_video = None
-    conversation = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text"},
-            ],
-        }
-    ]
-    is_video_model = ov_pipe_model.model_id in VIDEO_MODEL_IDS
-    if is_video_model:
-        prompt = "Describe this video."
+
+    prompt_parts = []
+    if has_image:
+        resized_image = request.getfixturevalue(f"cat_image_{resolution}x{resolution}")
+        prompt_parts.append("image")
+    
+    if has_video:
         resized_video = request.getfixturevalue("synthetic_video_32x32")
-        conversation[0]["content"] = [{"type": "video"}] + conversation[0]["content"]
+        prompt_parts.append("video")
 
-    resized_image = request.getfixturevalue(f"cat_image_{resolution}x{resolution}")
-    if is_video_model:
-        prompt = "Describe this image and video."
+    if len(prompt_parts) == 1:
+        prompt = f"Describe this {prompt_parts[0]}."
+    elif len(prompt_parts) == 2:
+        prompt = f"Describe this {prompt_parts[0]} and {prompt_parts[1]}."
     else:
-        prompt = "Describe this image."
-    conversation[0]["content"] = [{"type": "image"}] + conversation[0]["content"]
-
-    conversation[0]["content"][-1]["text"] = prompt
+        prompt = "Describe."
 
     model_path = _get_ov_model(model_id)
 
@@ -1478,13 +1591,9 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
         # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
         if model.config.model_type == "gemma3":
             processor.tokenizer.add_bos_token = False
-        params = {}
-        if resized_image is not None:
-            params["images"] = [resized_image]
-        if resized_video is not None:
-            params["videos"] = [resized_video]
-        templated_prompt = processor.apply_chat_template(conversation, add_generation_prompt=True)
-        inputs = processor(text=[templated_prompt], **params, padding=True, return_tensors="pt")
+        inputs = model.preprocess_inputs(
+            text=prompt, image=resized_image, video=resized_video, processor=processor, config=model.config
+        )
 
     max_new_tokens = 100
 
@@ -1509,3 +1618,144 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
     genai_text = genai_output.texts[0]
 
     assert optimum_text == genai_text
+
+
+# CDPruner Tests
+
+CDPRUNER_SUPPORTED_MODELS = [
+    "optimum-intel-internal-testing/tiny-random-qwen2vl",
+    "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
+]
+
+parametrize_cdpruner_models = pytest.mark.parametrize(
+    "ov_pipe_model",
+    [(m, b) for m in CDPRUNER_SUPPORTED_MODELS for b in ATTENTION_BACKEND],
+    ids=lambda p: f"{p[0]}/{p[1]}",
+    indirect=["ov_pipe_model"],
+)
+
+
+@parametrize_cdpruner_models
+@pytest.mark.parametrize("pruning_ratio", [0, 30, 50, 80])
+def test_cdpruner_functionality(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, pruning_ratio: int):
+    """Test CDPruner functionality with different pruning ratios."""
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+    generation_config.pruning_ratio = pruning_ratio
+
+    result = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+
+    # Verify result is non-empty
+    assert result.texts[0].strip() != "", f"Result with {pruning_ratio}% pruning should not be empty"
+
+    # Verify perf metrics are available
+    assert result.perf_metrics is not None, "Performance metrics should be available"
+
+
+@parametrize_cdpruner_models
+def test_cdpruner_with_multiple_images(
+    ov_pipe_model: VlmModelInfo,
+    cat_tensor: openvino.Tensor,
+    car_tensor: openvino.Tensor,
+    handwritten_tensor: openvino.Tensor,
+):
+    """Test CDPruner with multiple images."""
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=25, do_sample=False)
+
+    images = [cat_tensor, car_tensor, handwritten_tensor]
+
+    # Test with 30% pruning
+    generation_config.pruning_ratio = 30
+    result = ov_pipe.generate("Describe these images.", images=images, generation_config=generation_config)
+
+    assert result.texts[0].strip() != "", "Result with multiple images should not be empty"
+    assert result.perf_metrics is not None
+
+
+@parametrize_cdpruner_models
+def test_cdpruner_chat_mode(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, car_tensor: openvino.Tensor):
+    """Test CDPruner in chat mode."""
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+
+    # Enable pruning
+    generation_config.pruning_ratio = 25
+
+    # Start chat
+    ov_pipe.start_chat("You are a helpful assistant.")
+
+    # First turn with image
+    result1 = ov_pipe.generate("What is in this image?", images=[cat_tensor], generation_config=generation_config)
+    assert result1.texts[0].strip() != "", "First turn result should not be empty"
+
+    # Second turn with different image
+    result2 = ov_pipe.generate("Now describe this one.", images=[car_tensor], generation_config=generation_config)
+    assert result2.texts[0].strip() != "", "Second turn result should not be empty"
+
+    # Third turn without image
+    result3 = ov_pipe.generate("What did you see in total?", generation_config=generation_config)
+    assert result3.texts[0].strip() != "", "Third turn result should not be empty"
+
+    ov_pipe.finish_chat()
+
+
+@parametrize_cdpruner_models
+@pytest.mark.parametrize("relevance_weight", [0.0, 0.2, 0.8, 1.0])
+def test_cdpruner_with_relevance_weight(
+    ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, relevance_weight: float
+):
+    """Test CDPruner with different relevance weights."""
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+    generation_config.pruning_ratio = 30
+    generation_config.relevance_weight = relevance_weight
+    result = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+
+    assert result.texts[0].strip() != "", f"Result with relevance_weight={relevance_weight} should not be empty"
+
+
+@parametrize_cdpruner_models
+def test_cdpruner_disable_after_enable(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
+    """Test disabling CDPruner after enabling it."""
+    ov_pipe = ov_pipe_model.pipeline
+
+    # Enable pruning
+    config_with_pruning = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+    config_with_pruning.pruning_ratio = 40
+    result_with_pruning = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=config_with_pruning)
+
+    # Disable pruning
+    config_no_pruning = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+    config_no_pruning.pruning_ratio = 0
+    result_without_pruning = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=config_no_pruning)
+
+    assert result_with_pruning.texts[0].strip() != "", "Result with pruning should not be empty"
+    assert result_without_pruning.texts[0].strip() != "", "Result without pruning should not be empty"
+
+
+@pytest.fixture(scope="module")
+def ov_continuous_batching_pipe_qwen2vl() -> ContinuousBatchingPipeline:
+    """Fixture for Qwen2VL continuous batching pipeline."""
+    model_path = _get_ov_model(CDPRUNER_SUPPORTED_MODELS[0])
+    return ContinuousBatchingPipeline(model_path, SchedulerConfig(), "CPU")
+
+
+def test_cdpruner_continuous_batching(
+    ov_continuous_batching_pipe_qwen2vl: ContinuousBatchingPipeline,
+    cat_tensor: openvino.Tensor,
+    car_tensor: openvino.Tensor,
+):
+    """Test CDPruner with continuous batching pipeline."""
+    # Enable pruning via GenerationConfig
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 20
+    generation_config.do_sample = False
+    generation_config.pruning_ratio = 25
+
+    # Test batch with different images
+    results = ov_continuous_batching_pipe_qwen2vl.generate(
+        [PROMPTS[0]], images=[[car_tensor]], generation_config=[generation_config]
+    )
+
+    assert results[0].texts[0].strip() != "", "Result should not be empty"

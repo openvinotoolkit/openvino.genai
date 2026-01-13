@@ -7,13 +7,13 @@
 
 #include "image_generation/diffusion_pipeline.hpp"
 #include "image_generation/numpy_utils.hpp"
+#include "image_generation/threaded_callback.hpp"
+
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
 #include "openvino/genai/image_generation/clip_text_model.hpp"
 #include "utils.hpp"
 
-namespace {
-
-ov::Tensor pack_latents(const ov::Tensor latents, size_t batch_size, size_t num_channels_latents, size_t height, size_t width) {
+inline ov::Tensor pack_latents(const ov::Tensor latents, size_t batch_size, size_t num_channels_latents, size_t height, size_t width) {
     size_t h_half = height / 2, w_half = width / 2;
 
     // Reshape to (batch_size, (height // 2) * (width // 2), num_channels_latents * 4)
@@ -45,7 +45,7 @@ ov::Tensor pack_latents(const ov::Tensor latents, size_t batch_size, size_t num_
     return permuted_latents;
 }
 
-ov::Tensor unpack_latents(const ov::Tensor& latents, size_t height, size_t width, size_t vae_scale_factor) {
+inline ov::Tensor unpack_latents(const ov::Tensor& latents, size_t height, size_t width, size_t vae_scale_factor) {
     ov::Shape latents_shape = latents.get_shape();
     size_t batch_size = latents_shape[0], channels = latents_shape[2];
 
@@ -86,7 +86,7 @@ ov::Tensor unpack_latents(const ov::Tensor& latents, size_t height, size_t width
     return permuted_latents;
 }
 
-ov::Tensor prepare_latent_image_ids(size_t batch_size, size_t height, size_t width) {
+inline ov::Tensor prepare_latent_image_ids(size_t batch_size, size_t height, size_t width) {
     ov::Tensor latent_image_ids(ov::element::f32, {height * width, 3});
     auto* data = latent_image_ids.data<float>();
 
@@ -101,8 +101,6 @@ ov::Tensor prepare_latent_image_ids(size_t batch_size, size_t height, size_t wid
 
     return latent_image_ids;
 }
-
-}  // namespace
 
 namespace ov {
 namespace genai {
@@ -466,13 +464,6 @@ public:
         m_custom_generation_config = m_generation_config;
         m_custom_generation_config.update_generation_config(properties);
 
-        // Use callback if defined
-        std::function<bool(size_t, size_t, ov::Tensor&)> callback = nullptr;
-        auto callback_iter = properties.find(ov::genai::callback.name());
-        if (callback_iter != properties.end()) {
-            callback = callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>();
-        }
-
         const size_t vae_scale_factor = m_vae->get_vae_scale_factor();
         const auto& transformer_config = m_transformer->get_config();
 
@@ -484,6 +475,14 @@ public:
         check_inputs(m_custom_generation_config, initial_image);
 
         set_lora_adapters(m_custom_generation_config.adapters);
+
+        // use callback if defined
+        std::shared_ptr<ThreadedCallbackWrapper> callback_ptr = nullptr;
+        auto callback_iter = properties.find(ov::genai::callback.name());
+        if (callback_iter != properties.end()) {
+            callback_ptr = std::make_shared<ThreadedCallbackWrapper>(callback_iter->second.as<std::function<bool(size_t, size_t, ov::Tensor&)>>());
+            callback_ptr->start();
+        }
 
         compute_hidden_states(positive_prompt, m_custom_generation_config);
 
@@ -525,7 +524,8 @@ public:
                 blend_latents(latents, image_latent, mask, noise, inference_step);
             }
 
-            if (callback && callback(inference_step, timesteps.size(), latents)) {
+            if (callback_ptr && callback_ptr->has_callback() && callback_ptr->write(inference_step, timesteps.size(), latents) == CallbackStatus::STOP) {
+                callback_ptr->end();
                 auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
                 m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
 
@@ -538,6 +538,10 @@ public:
 
             auto step_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - step_start);
             m_perf_metrics.raw_metrics.iteration_durations.emplace_back(MicroSeconds(step_ms));
+        }
+
+        if (callback_ptr != nullptr) {
+            callback_ptr->end();
         }
 
         latents = unpack_latents(latents, m_custom_generation_config.height, m_custom_generation_config.width, vae_scale_factor);
@@ -628,7 +632,7 @@ protected:
 
         if ((m_pipeline_type == PipelineType::IMAGE_2_IMAGE || m_pipeline_type == PipelineType::INPAINTING) && initial_image) {
             OPENVINO_ASSERT(generation_config.strength >= 0.0f && generation_config.strength <= 1.0f,
-                "'Strength' generation parameter must be withion [0, 1] range");
+                "'Strength' generation parameter must be within [0, 1] range");
         } else {
             OPENVINO_ASSERT(generation_config.strength == 1.0f, "'Strength' generation parameter must be 1.0f for Text 2 image pipeline");
             OPENVINO_ASSERT(!initial_image, "Internal error: initial_image must be empty for Text 2 image pipeline");
