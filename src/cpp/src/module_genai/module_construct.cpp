@@ -15,6 +15,7 @@
 #include "modules/md_vae_decoder_tiling.hpp"
 #include "modules/md_vision_encoder.hpp"
 #include "modules/md_zimage_denoiser_loop.hpp"
+#include "modules/md_random_latent_image.hpp"
 #include "utils/yaml_utils.hpp"
 
 namespace ov {
@@ -68,6 +69,7 @@ void construct_pipeline(const PipelineModulesDesc& pipeline_modules_desc, Pipeli
         GENAI_MODULE_TYPE_CASE(VAEDecoderTilingModule, VAEDecoderTilingModule);
         GENAI_MODULE_TYPE_CASE(VAEDecoderModule, VAEDecoderModule);
         GENAI_MODULE_TYPE_CASE(SaveImageModule, SaveImageModule);
+        GENAI_MODULE_TYPE_CASE(RandomLatentImageModule, RandomLatentImageModule);
 
         GENAI_MODULE_TYPE_CASE(FakeModuleA, FakeModuleA);
         GENAI_MODULE_TYPE_CASE(FakeModuleB, FakeModuleB);

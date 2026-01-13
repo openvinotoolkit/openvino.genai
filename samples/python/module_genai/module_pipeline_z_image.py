@@ -106,21 +106,11 @@ class TransformerPipeline():
                         'model_path': self.model_path,
                     }
                 },
-                'denoiser_loop': {
-                    'type': 'ZImageDenoiserLoopModule',
+                'latent_image': {
+                    'type': 'RandomLatentImageModule',
                     'device': self.device,
-                    'description': 'Z-Image denoiser loop.',
+                    'description': 'Generate initial latent image.',
                     'inputs': [
-                        {
-                            'name': 'prompt_embeds',
-                            'type': 'VecOVTensor',
-                            'source': "clip_text_encoder.prompt_embeds"
-                        },
-                        {
-                            'name': 'num_inference_steps',
-                            'type': 'Int',
-                            'source': "pipeline_params.num_inference_steps"
-                        },
                         {
                             'name': 'width',
                             'type': 'Int',
@@ -130,6 +120,37 @@ class TransformerPipeline():
                             'name': 'height',
                             'type': 'Int',
                             'source': "pipeline_params.height"
+                        }
+                    ],
+                    'outputs': [
+                        {
+                            'name': 'latents',
+                            'type': 'OVTensor'
+                        }
+                    ],
+                    'params': {
+                        'model_path': self.model_path,
+                    }
+                },
+                'denoiser_loop': {
+                    'type': 'ZImageDenoiserLoopModule',
+                    'device': self.device,
+                    'description': 'Z-Image denoiser loop.',
+                    'inputs': [
+                        {
+                            'name': 'latents',
+                            'type': 'OVTensor',
+                            'source': 'latent_image.latents',
+                        },
+                        {
+                            'name': 'prompt_embeds',
+                            'type': 'VecOVTensor',
+                            'source': "clip_text_encoder.prompt_embeds"
+                        },
+                        {
+                            'name': 'num_inference_steps',
+                            'type': 'Int',
+                            'source': "pipeline_params.num_inference_steps"
                         }
                     ],
                     'outputs': [

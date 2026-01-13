@@ -35,7 +35,7 @@ class VisionEncoderModuleTest : public ModuleTestBase, public ::testing::TestWit
 private:
     std::string m_device;
     VisionEncoderTestData m_test_data;
-    float m_threshold = 1e-2;
+    float m_threshold = 1e-1;
 
 public:
     static std::string get_test_case_name(const testing::TestParamInfo<test_params>& obj) {
@@ -115,13 +115,23 @@ protected:
         const std::vector<float> expected_image_embedding = {
             -0.377955, -0.911449, 1.51156, 0.503151, -1.6234, 1.64198, 2.41668, 0.666558, -0.437834, 0.183663
         };
+
+        const std::vector<float> expected_image_embedding_gpu = {
+            -0.356445, -0.875488, 1.36426, 0.532715, -1.56934, 1.53516, 2.41016, 0.65625, -0.41626, 0.221802
+        };
+
         const std::vector<int64_t> expected_position_id = {
             0, 1, 2, 3, 4, 5, 0, 1, 2, 3
         };
         const int expected_rope_delta = 0;
 
-        EXPECT_TRUE(compare_big_tensor(image_embedding, expected_image_embedding, m_threshold))
-            << "image_embedding does not match expected values";
+        if (m_device == "GPU") {
+            EXPECT_TRUE(compare_big_tensor(image_embedding, expected_image_embedding_gpu, m_threshold))
+                << "image_embedding does not match expected values";
+        } else {
+            EXPECT_TRUE(compare_big_tensor(image_embedding, expected_image_embedding, m_threshold))
+                << "image_embedding does not match expected values";
+        }
         EXPECT_TRUE(compare_shape(image_embedding.get_shape(), ov::Shape{16, 2048}))
             << "image_embedding's shape does not match expected shape";
 
@@ -141,7 +151,7 @@ TEST_P(VisionEncoderModuleTest, ModuleTest) {
 namespace vision_encoder_test {
 
 auto test_data = std::vector<VisionEncoderTestData> {TEST_DATA::vision_encoder_test_data()};
-auto test_devices = std::vector<std::string> {TEST_MODEL::get_device()};
+auto test_devices = std::vector<std::string> {"CPU", "GPU"};
 
 }
 

@@ -7,13 +7,10 @@
 #include "../utils/load_image.hpp"
 
 struct ZImageDenoiserLoopTestData {
+    ov::Tensor latents;
     ov::Tensor prompt_embed;
     ov::Tensor init_latents;
     int num_inference_steps;
-    int width;
-    int height;
-    int num_images_per_prompt;
-    int seed;
     float guidance_scale;
 };
 
@@ -21,12 +18,9 @@ namespace TEST_DATA {
 
 ZImageDenoiserLoopTestData z_image_denoiser_loop_test_data() {
     ZImageDenoiserLoopTestData data;
+    data.latents = ModuleTestBase::ut_randn_tensor(ov::Shape{1, 16, 16, 16}, 42);
     data.prompt_embed = ModuleTestBase::ut_randn_tensor(ov::Shape{101, 2560}, 42);
     data.num_inference_steps = 2;
-    data.width = 128;
-    data.height = 128;
-    data.num_images_per_prompt = 1;
-    data.seed = 42;
     data.guidance_scale = 0.0f;
     return data;
 }
@@ -63,34 +57,18 @@ protected:
         denoiser_loop["type"] = "ZImageDenoiserLoopModule";
         denoiser_loop["device"] = m_device;
         YAML::Node inputs;
+        YAML::Node input_latents;
+        input_latents["name"] = "latents";
+        input_latents["type"] = "OVTensor";
+        inputs.push_back(input_latents);
         YAML::Node prompt_embed;
         prompt_embed["name"] = "prompt_embed";
         prompt_embed["type"] = "OVTensor";
         inputs.push_back(prompt_embed);
-        // YAML::Node init_latents;
-        // init_latents["name"] = "init_latents";
-        // init_latents["type"] = "OVTensor";
-        // inputs.push_back(init_latents);
         YAML::Node num_inference_steps;
         num_inference_steps["name"] = "num_inference_steps";
         num_inference_steps["type"] = "Int";
         inputs.push_back(num_inference_steps);
-        YAML::Node width;
-        width["name"] = "width";
-        width["type"] = "Int";
-        inputs.push_back(width);
-        YAML::Node height;
-        height["name"] = "height";
-        height["type"] = "Int";
-        inputs.push_back(height);
-        YAML::Node num_images_per_prompt;
-        num_images_per_prompt["name"] = "num_images_per_prompt";
-        num_images_per_prompt["type"] = "Int";
-        inputs.push_back(num_images_per_prompt);
-        YAML::Node seed;
-        seed["name"] = "seed";
-        seed["type"] = "Int";
-        inputs.push_back(seed);
         YAML::Node guidance_scale;
         guidance_scale["name"] = "guidance_scale";
         guidance_scale["type"] = "Float";
@@ -111,12 +89,9 @@ protected:
 
     ov::AnyMap prepare_inputs() override {
         ov::AnyMap inputs;
+        inputs["latents"] = m_test_data.latents;
         inputs["prompt_embed"] = m_test_data.prompt_embed;
         inputs["num_inference_steps"] = m_test_data.num_inference_steps;
-        inputs["width"] = m_test_data.width;
-        inputs["height"] = m_test_data.height;
-        inputs["num_images_per_prompt"] = m_test_data.num_images_per_prompt;
-        inputs["seed"] = m_test_data.seed;
         inputs["guidance_scale"] = m_test_data.guidance_scale;
         return inputs;
     }
@@ -124,7 +99,7 @@ protected:
     void check_outputs(ov::genai::module::ModulePipeline& pipe) override {
         auto latents = pipe.get_output("latents").as<ov::Tensor>();
         std::vector<float> expected_latents = {
-            0.0122377, -0.0224857, -0.183172, 0.130182, -0.344232, -0.486077, 0.110688, 0.316844, -0.070881, 0.141776
+            0.515862, -0.0482551, 0.392357, 0.0667839, 0.445243, -0.077749, 0.373029, 0.0833834, 0.390022, 0.0221919
         };
 
         EXPECT_TRUE(compare_shape(latents.get_shape(), ov::Shape{1, 16, 16, 16}))

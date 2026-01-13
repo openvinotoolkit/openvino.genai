@@ -20,6 +20,9 @@ void ZImageDenoiserLoopModule::print_static_config() {
     type: "ZImageDenoiserLoopModule"
     device: "GPU"
     inputs:
+      - name: "latents"                                    
+        type: "OVTensor"                                   # Support DataType: [OVTensor]
+        source: "ParentModuleName.OutputPortName"
       - name: "prompt_embed"
         type: "OVTensor"                                   # Support DataType: [OVTensor]
         source: "ParentModuleName.OutputPortName"
@@ -32,25 +35,11 @@ void ZImageDenoiserLoopModule::print_static_config() {
       - name: "prompt_embeds_negative"
         type: "VecOVTensor"                                # Support DataType: [VecOVTensor]
         source: "ParentModuleName.OutputPortName"
-      - name: "width"                                      # [optional]
-        type: "Int"                                        # Support DataType: [Int]
-        source: "ParentModuleName.OutputPortName"
-      - name: "height"                                     # [optional]
-        type: "Int"                                        # Support DataType: [Int]
-        source: "ParentModuleName.OutputPortName"
       - name: "num_inference_steps"                        # [optional]
-        type: "Int"                                        # Support DataType: [Int]
-        source: "ParentModuleName.OutputPortName"
-      - name: "num_images_per_prompt"                      # [optional]
-        type: "Int"                                        # Support DataType: [Int]
-        source: "ParentModuleName.OutputPortName"
-      - name: "seed"                                       # [optional]
         type: "Int"                                        # Support DataType: [Int]
         source: "ParentModuleName.OutputPortName"
       - name: "guidance_scale"                             # [optional]
         type: "Float"                                      # Support DataType: [Int]
-      - name: "init_latents"                               # [optional]
-        type: "OVTensor"                                   # Support DataType: [OVTensor]
         source: "ParentModuleName.OutputPortName"
     outputs:
       - name: "latents"
@@ -85,9 +74,6 @@ bool ZImageDenoiserLoopModule::initialize() {
 
     std::filesystem::path model_path = module_desc->get_full_path(it_path->second);
 
-    m_transformer_config = utils::from_config_json_if_exists<TransformerConfig>(
-        model_path, "transformer/config.json");
-
     if (m_model_type == ImageGenerationModelType::ZIMAGE) {
         m_scheduler = std::make_shared<ZImageFlowMatchEulerDiscreteScheduler>(model_path / "scheduler/scheduler_config.json");
     } else {
@@ -105,20 +91,7 @@ bool ZImageDenoiserLoopModule::initialize() {
         module_desc->device.empty() ? "CPU" : module_desc->device,
         ov::AnyMap{});
     m_request = compiled_model.create_infer_request();
-    m_vae_scale_factor = get_vae_scale_factor(model_path);
     return true;
-}
-
-int ZImageDenoiserLoopModule::get_vae_scale_factor(const std::filesystem::path &model_path) {
-    std::filesystem::path vae_config_path = model_path / "vae/config.json";
-    if (!std::filesystem::exists(vae_config_path)) {
-        return 8;
-    }
-    std::ifstream vae_config(vae_config_path);
-    nlohmann::json parsed = nlohmann::json::parse(vae_config);
-    std::vector<int> block_out_channels;
-    utils::read_json_param(parsed, "block_out_channels", block_out_channels);
-    return static_cast<int>(std::pow(2, block_out_channels.size() - 1));
 }
 
 void ZImageDenoiserLoopModule::run() {
@@ -126,6 +99,12 @@ void ZImageDenoiserLoopModule::run() {
     prepare_inputs();
     std::vector<ov::Tensor> prompt_embeds;
     std::vector<ov::Tensor> negative_prompt_embeds;
+    ov::Tensor latents;
+    if (this->inputs.find("latents") != this->inputs.end()) {
+        latents = this->inputs["latents"].data.as<ov::Tensor>();
+    } else {
+        OPENVINO_THROW("input latents should not be empty");
+    }
     if (this->inputs.find("prompt_embed") != this->inputs.end()) {
         prompt_embeds.push_back(this->inputs["prompt_embed"].data.as<ov::Tensor>());
         m_is_multi_prompts = false;
@@ -145,29 +124,10 @@ void ZImageDenoiserLoopModule::run() {
     }
 
     ImageGenerationConfig generation_config {};
-    if (exists_input("width")) {
-        generation_config.width = this->inputs["width"].data.as<int>();
-    } else {
-        generation_config.width = 512;
-    }
-    if (exists_input("height")) {
-        generation_config.height = this->inputs["height"].data.as<int>();
-    } else {
-        generation_config.height = 512;
-    }
     if (exists_input("num_inference_steps")) {
         generation_config.num_inference_steps = this->inputs["num_inference_steps"].data.as<int>();
     } else {
         generation_config.num_inference_steps = 10;
-    }
-    if (exists_input("num_images_per_prompt")) {
-        generation_config.num_images_per_prompt = this->inputs["num_images_per_prompt"].data.as<int>();
-    }
-    if (exists_input("seed")) {
-        int seed = this->inputs["seed"].data.as<int>();
-        generation_config.generator = std::make_shared<CppStdGenerator>(seed);
-    } else {
-        generation_config.generator = std::make_shared<CppStdGenerator>(42);
     }
     // TODO: temporary guidance_scale is fixed to 0.0
     generation_config.guidance_scale = 0.0f;
@@ -188,32 +148,16 @@ void ZImageDenoiserLoopModule::run() {
     } else {
         m_cfg_normalization = false;
     }
-    std::optional<ov::Tensor> init_latents = std::nullopt;
-    if (this->inputs.find("init_latents") != this->inputs.end()) {
-        init_latents = this->inputs["init_latents"].data.as<ov::Tensor>();
-    }
-    this->outputs["latents"].data = run(prompt_embeds, negative_prompt_embeds, generation_config, init_latents);
+    this->outputs["latents"].data = run(latents, prompt_embeds, negative_prompt_embeds, generation_config);
 }
 
 ov::Tensor ZImageDenoiserLoopModule::run(
+        ov::Tensor latents,
         const std::vector<ov::Tensor>& prompt_embeds,
         const std::vector<ov::Tensor>& negative_prompt_embeds,
-        const ImageGenerationConfig &generation_config,
-        std::optional<ov::Tensor> init_latents) {
+        const ImageGenerationConfig &generation_config) {
     // TODO: Add multi image support and negative prompt support
     size_t batch_size = prompt_embeds.size();
-    int num_channels_latents = m_transformer_config.in_channels;
-    ov::Tensor latents;
-    if (!init_latents.has_value()) {
-        latents = prepare_latents(
-        batch_size * generation_config.num_images_per_prompt, 
-        num_channels_latents, 
-        generation_config.width, 
-        generation_config.height, 
-        element::f32, generation_config.generator);
-    } else {
-        latents = init_latents.value();
-    }
     
     std::vector<ov::Tensor> processed_embeds = prompt_embeds;
     std::vector<ov::Tensor> processed_negative_embeds = negative_prompt_embeds;
@@ -324,24 +268,6 @@ ov::Tensor ZImageDenoiserLoopModule::run(
             noise_pred, latents, inference_step, generation_config.generator);
         latents = scheduler_step_result["latent"];
     }
-    return latents;
-}
-
-ov::Tensor ZImageDenoiserLoopModule::prepare_latents(
-        size_t batch_size,
-        int num_channels,
-        size_t width,
-        size_t height,
-        element::Type element_type,
-        const std::shared_ptr<Generator> &generator) const {
-    height = 2 * (height / (m_vae_scale_factor * 2));
-    width = 2 * (width / (m_vae_scale_factor * 2));
-
-    ov::Shape latent_shape = {static_cast<size_t>(batch_size),
-                                        static_cast<size_t>(num_channels),
-                                        static_cast<size_t>(height),
-                                        static_cast<size_t>(width)};            
-    ov::Tensor latents = generator->randn_tensor(latent_shape);
     return latents;
 }
 
