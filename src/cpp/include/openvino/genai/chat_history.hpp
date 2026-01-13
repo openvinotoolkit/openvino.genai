@@ -73,7 +73,7 @@ private:
     JsonContainer m_messages = JsonContainer::array();
     JsonContainer m_tools = JsonContainer::array();
     JsonContainer m_extra_context = JsonContainer::object();
-    // TODO Consider using unique_pointer
+
     std::shared_ptr<ChatHistoryInternalState> m_internal_state;
 };
 

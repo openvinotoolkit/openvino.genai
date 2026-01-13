@@ -27,7 +27,6 @@ ChatHistory::ChatHistory(std::initializer_list<std::initializer_list<std::pair<s
     }
 }
 
-// TODO Consider calling clear() in destructor
 ChatHistory::~ChatHistory() = default;
 
 ChatHistory& ChatHistory::push_back(const JsonContainer& message) {
