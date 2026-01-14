@@ -69,7 +69,6 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
     auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
 
     if (m_decompose_cross_attention_spda_ops) {
-        auto start_time = std::chrono::steady_clock::now();
         decompose_scaled_dot_product_attention(model);
         add_cross_attention_qk_scaled_scores_outputs(model);
     }
