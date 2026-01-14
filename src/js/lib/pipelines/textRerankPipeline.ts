@@ -35,7 +35,7 @@ export class TextRerankPipeline {
    * @param modelPath - Path to the directory containing model xml/bin files and tokenizer.
    * @param options - Pipeline initialization options.
    */
-  constructor(modelPath: string, options: TextRerankPipelineOptions = {}) {
+  constructor(modelPath: string, options: TextRerankPipelineOptions) {
     this.modelPath = modelPath;
     this.device = options.device || "CPU";
     this.config = options.config || {};
