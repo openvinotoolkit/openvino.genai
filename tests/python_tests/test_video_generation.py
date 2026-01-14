@@ -42,7 +42,7 @@ def video_generation_model() -> str:
 class TestVideoGenerationConfig:
     def test_config_default_values(self):
         config = ov_genai.VideoGenerationConfig()
-        assert config.num_inference_steps > 0
+        assert config.num_inference_steps == -1  # sentinel value, replaced by pipeline
         assert config.guidance_scale >= 1.0
 
     def test_config_video_specific_fields(self):
