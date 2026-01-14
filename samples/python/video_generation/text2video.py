@@ -51,7 +51,9 @@ def main():
     parser = argparse.ArgumentParser(description="Generate video from text prompt using OpenVINO GenAI")
     parser.add_argument("model_dir", help="Path to the model directory")
     parser.add_argument("prompt", help="Text prompt for video generation")
-    parser.add_argument("--device", default="CPU", choices=["CPU", "GPU"], help="Device to run inference on (default: CPU)")
+    parser.add_argument(
+        "--device", default="CPU", choices=["CPU", "GPU"], help="Device to run inference on (default: CPU)"
+    )
     parser.add_argument("--output", default="genai_video.avi", help="Output video filename (default: genai_video.avi)")
     args = parser.parse_args()
 
