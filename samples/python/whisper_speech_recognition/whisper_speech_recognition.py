@@ -11,10 +11,12 @@ def read_wav(filepath):
     raw_speech, samplerate = librosa.load(filepath, sr=16000)
     return raw_speech.tolist()
 
+
 def get_config_for_cache():
     config_cache = dict()
     config_cache["CACHE_DIR"] = "whisper_cache"
     return config_cache
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -24,10 +26,12 @@ def main():
     args = parser.parse_args()
 
     ov_config = dict()
-    if args.device == "NPU" or "GPU" in args.device: # need to handle cases like "GPU", "GPU.0" and "GPU.1"
+    if args.device == "NPU" or "GPU" in args.device:  # need to handle cases like "GPU", "GPU.0" and "GPU.1"
         # Cache compiled models on disk for GPU and NPU to save time on the
         # next run. It's not beneficial for CPU.
         ov_config = get_config_for_cache()
+    # todo: remove word_timestamps
+    ov_config["word_timestamps"] = True
 
     pipe = openvino_genai.WhisperPipeline(args.model_dir, args.device, **ov_config)
 
@@ -36,6 +40,7 @@ def main():
     config.language = "<|en|>"  # can switch to <|zh|> for Chinese language
     config.task = "transcribe"
     config.return_timestamps = True
+    config.word_timestamps = True
 
     # Pipeline expects normalized audio with Sample Rate of 16kHz
     raw_speech = read_wav(args.wav_file_path)
@@ -46,6 +51,10 @@ def main():
     if result.chunks:
         for chunk in result.chunks:
             print(f"timestamps: [{chunk.start_ts:.2f}, {chunk.end_ts:.2f}] text: {chunk.text}")
+
+    if result.words:
+        for word in result.words:
+            print(f"timestamps: [{word.start_ts:.2f}, {word.end_ts:.2f}] word: {word.word}")
 
 
 if "__main__" == __name__:

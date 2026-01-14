@@ -27,6 +27,7 @@ int main(int argc, char* argv[]) try {
         ov_config = get_config_for_cache();
     }
 
+    // todo: remove word_timestamps
     ov::genai::WhisperPipeline pipeline(models_path, device, ov::genai::word_timestamps(true));
 
     ov::genai::WhisperGenerationConfig config = pipeline.get_generation_config();
