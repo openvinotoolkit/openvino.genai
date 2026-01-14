@@ -5,6 +5,7 @@
 
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <numeric>
 
 #include <openvino/op/convert.hpp>
 #include <openvino/op/maximum.hpp>
