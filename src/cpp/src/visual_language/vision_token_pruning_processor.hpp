@@ -105,7 +105,6 @@ public:
      * Contains all necessary information about the pruning operation and its results.
      */
     struct PruningResult {
-
         size_t original_visual_tokens = 0;                     ///< Original number of visual tokens before pruning
         size_t pruned_visual_tokens = 0;                       ///< Number of visual tokens after pruning
         ov::Tensor pruned_embeddings;                          ///< Pruned visual embeddings tensor
@@ -207,17 +206,20 @@ public:
      * - Position IDs adjustment
      * - Input IDs and embeddings regeneration
      * - KV cache update
+     * - Updating prev_hist_length if in chat mode
      *
      * @param context PruningContext containing input data
      * @param position_ids Position IDs tensor (modified in-place)
      * @param kv_cache_state KV cache state (modified)
-     * @param prev_hist_length Previous history length for KV cache
+     * @param is_chat_conversation Whether in chat mode
+     * @param prev_hist_length_inout Previous history length (modified in-place if chat + pruning occurred)
      * @return std::optional<PruningResult> with pruned tensors if pruning occurred, std::nullopt otherwise
      */
     std::optional<PruningResult> execute(const PruningContext& context,
                                          ov::Tensor& position_ids,
                                          utils::KVCacheState& kv_cache_state,
-                                         size_t prev_hist_length);
+                                         bool is_chat_conversation,
+                                         size_t& prev_hist_length_inout);
 
 private:
     /// @brief CDPruner instance for token pruning (lazy initialized)
