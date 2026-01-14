@@ -82,7 +82,7 @@ bool InputsEmbedder::IInputsEmbedder::clean_historical_vision_tokens(ov::Tensor&
     // Track which positions to keep
     std::vector<bool> keep_mask(input_ids_vec.size(), true);
 
-    // Step 1: Mark historical vision_pad tokens for removal (keep only the last expected_count)
+    // Step 1: Mark historical vision_pad tokens for removal
     size_t num_pads_to_skip = vision_pad_count - expected_count;
     size_t pads_skipped = 0;
 
@@ -96,57 +96,49 @@ bool InputsEmbedder::IInputsEmbedder::clean_historical_vision_tokens(ov::Tensor&
     }
 
     // Step 2: Mark orphaned vision_start/vision_end tokens for removal
-    // Build intermediate sequence to check vision marker validity
-    std::vector<int64_t> intermediate_ids;
-    std::vector<size_t> intermediate_to_original_idx;
+    std::vector<size_t> vision_start_positions;
 
     for (size_t i = 0; i < input_ids_vec.size(); ++i) {
-        if (keep_mask[i]) {
-            intermediate_ids.push_back(input_ids_vec[i]);
-            intermediate_to_original_idx.push_back(i);
-        }
-    }
+        if (!keep_mask[i])
+            continue;
 
-    // Check for orphaned vision_start tokens (no pads between start and end)
-    for (size_t i = 0; i < intermediate_ids.size(); ++i) {
-        if (intermediate_ids[i] == vision_start_token_id) {
-            bool has_pads = false;
-            for (size_t j = i + 1; j < intermediate_ids.size() && intermediate_ids[j] != vision_end_token_id; ++j) {
-                if (intermediate_ids[j] == vision_pad_token_id) {
-                    has_pads = true;
+        if (input_ids_vec[i] == vision_start_token_id) {
+            vision_start_positions.push_back(i);
+        } else if (input_ids_vec[i] == vision_end_token_id) {
+            bool found_valid_match = false;
+
+            while (!vision_start_positions.empty()) {
+                size_t start_pos = vision_start_positions.back();
+                vision_start_positions.pop_back();
+
+                bool has_pads = false;
+                for (size_t j = start_pos + 1; j < i; ++j) {
+                    if (keep_mask[j] && input_ids_vec[j] == vision_pad_token_id) {
+                        has_pads = true;
+                        break;
+                    }
+                }
+
+                if (has_pads) {
+                    found_valid_match = true;
                     break;
+                } else {
+                    keep_mask[start_pos] = false;
                 }
             }
-            if (!has_pads) {
-                keep_mask[intermediate_to_original_idx[i]] = false;
+
+            if (!found_valid_match) {
+                // No valid start found, mark this end for removal
+                keep_mask[i] = false;
             }
         }
     }
 
-    // Check for orphaned vision_end tokens (no matching start)
-    std::vector<bool> intermediate_keep(intermediate_ids.size(), true);
-    for (size_t i = 0; i < intermediate_ids.size(); ++i) {
-        if (intermediate_ids[i] == vision_start_token_id && !keep_mask[intermediate_to_original_idx[i]]) {
-            intermediate_keep[i] = false;
-        }
+    // Mark any remaining unmatched vision_start tokens
+    for (size_t pos : vision_start_positions) {
+        keep_mask[pos] = false;
     }
 
-    for (size_t i = 0; i < intermediate_ids.size(); ++i) {
-        if (intermediate_ids[i] == vision_end_token_id) {
-            bool has_matching_start = false;
-            for (int j = static_cast<int>(i) - 1; j >= 0; --j) {
-                if (intermediate_ids[j] == vision_start_token_id && intermediate_keep[j]) {
-                    has_matching_start = true;
-                    break;
-                }
-            }
-            if (!has_matching_start) {
-                keep_mask[intermediate_to_original_idx[i]] = false;
-            }
-        }
-    }
-
-    // Build final cleaned sequence
     std::vector<int64_t> final_cleaned_ids;
     final_cleaned_ids.reserve(input_ids_vec.size());
 
@@ -157,7 +149,7 @@ bool InputsEmbedder::IInputsEmbedder::clean_historical_vision_tokens(ov::Tensor&
     }
 
     if (final_cleaned_ids.size() == input_ids_vec.size()) {
-        return false;  // No tokens were removed
+        return false;
     }
 
     // Update input_ids tensor
@@ -166,17 +158,29 @@ bool InputsEmbedder::IInputsEmbedder::clean_historical_vision_tokens(ov::Tensor&
 
     // Update kv_cache_state by removing tokens at the same positions
     std::vector<int64_t>& kv_cache = m_kv_cache_state.get_state();
-    std::vector<int64_t> new_kv_cache;
-    new_kv_cache.reserve(final_cleaned_ids.size());
 
-    size_t min_size = std::min(keep_mask.size(), kv_cache.size());
-    for (size_t i = 0; i < min_size; ++i) {
+    // In chat mode, keep_mask corresponds to input_ids (history + new turn)
+    // while kv_cache contains accumulated history tokens
+    if (kv_cache.size() < m_prev_hist_length) {
+        OPENVINO_THROW("KV cache size (",
+                       kv_cache.size(),
+                       ") should not be less than previous history length (",
+                       m_prev_hist_length,
+                       ").");
+    }
+
+    std::vector<int64_t> new_kv_cache;
+    new_kv_cache.reserve(kv_cache.size());
+
+    // Process tokens that exist in kv_cache using keep_mask
+    size_t sync_size = std::min(keep_mask.size(), kv_cache.size());
+    for (size_t i = 0; i < sync_size; ++i) {
         if (keep_mask[i]) {
             new_kv_cache.push_back(kv_cache[i]);
         }
     }
 
-    // If kv_cache is longer than input_ids (shouldn't happen, but handle gracefully)
+    // Handle case where kv_cache is longer (shouldn't normally happen, but be defensive)
     if (kv_cache.size() > keep_mask.size()) {
         new_kv_cache.insert(new_kv_cache.end(), kv_cache.begin() + keep_mask.size(), kv_cache.end());
     }
