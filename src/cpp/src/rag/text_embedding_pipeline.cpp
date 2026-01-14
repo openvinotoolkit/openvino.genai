@@ -282,7 +282,7 @@ public:
             if (is_padding_on_left && is_seq_len_fixed &&
                 config.pooling_type != TextEmbeddingPipeline::PoolingType::MEAN) {
                 OPENVINO_THROW("Padding on left is only supported for the MEAN pooling type for dynamic inputs models."
-                               "In order to fix model shape, set batch_size, max_length and pad_to_max_length in the "
+                               " In order to fix model shape, set batch_size, max_length and pad_to_max_length in the "
                                "configuration.");
             }
 
