@@ -79,63 +79,109 @@ bool InputsEmbedder::IInputsEmbedder::clean_historical_vision_tokens(ov::Tensor&
         return false;
     }
 
-    // Keep only the last expected_count vision_pads
-    size_t num_pads_to_skip = vision_pad_count - expected_count;
+    // Track which positions to keep
+    std::vector<bool> keep_mask(input_ids_vec.size(), true);
 
-    std::vector<int64_t> cleaned_ids;
+    // Step 1: Mark historical vision_pad tokens for removal (keep only the last expected_count)
+    size_t num_pads_to_skip = vision_pad_count - expected_count;
     size_t pads_skipped = 0;
 
-    for (int64_t token : input_ids_vec) {
-        if (token == vision_pad_token_id) {
+    for (size_t i = 0; i < input_ids_vec.size(); ++i) {
+        if (input_ids_vec[i] == vision_pad_token_id) {
             if (pads_skipped < num_pads_to_skip) {
+                keep_mask[i] = false;
                 pads_skipped++;
-            } else {
-                cleaned_ids.push_back(token);
             }
-        } else {
-            cleaned_ids.push_back(token);
         }
     }
 
-    // Remove orphaned vision_start/vision_end tokens
-    std::vector<int64_t> final_cleaned_ids;
-    for (size_t i = 0; i < cleaned_ids.size(); ++i) {
-        if (cleaned_ids[i] == vision_start_token_id) {
+    // Step 2: Mark orphaned vision_start/vision_end tokens for removal
+    // Build intermediate sequence to check vision marker validity
+    std::vector<int64_t> intermediate_ids;
+    std::vector<size_t> intermediate_to_original_idx;
+
+    for (size_t i = 0; i < input_ids_vec.size(); ++i) {
+        if (keep_mask[i]) {
+            intermediate_ids.push_back(input_ids_vec[i]);
+            intermediate_to_original_idx.push_back(i);
+        }
+    }
+
+    // Check for orphaned vision_start tokens (no pads between start and end)
+    for (size_t i = 0; i < intermediate_ids.size(); ++i) {
+        if (intermediate_ids[i] == vision_start_token_id) {
             bool has_pads = false;
-            for (size_t j = i + 1; j < cleaned_ids.size() && cleaned_ids[j] != vision_end_token_id; ++j) {
-                if (cleaned_ids[j] == vision_pad_token_id) {
+            for (size_t j = i + 1; j < intermediate_ids.size() && intermediate_ids[j] != vision_end_token_id; ++j) {
+                if (intermediate_ids[j] == vision_pad_token_id) {
                     has_pads = true;
                     break;
                 }
             }
-            if (has_pads) {
-                final_cleaned_ids.push_back(cleaned_ids[i]);
+            if (!has_pads) {
+                keep_mask[intermediate_to_original_idx[i]] = false;
             }
-        } else if (cleaned_ids[i] == vision_end_token_id) {
+        }
+    }
+
+    // Check for orphaned vision_end tokens (no matching start)
+    std::vector<bool> intermediate_keep(intermediate_ids.size(), true);
+    for (size_t i = 0; i < intermediate_ids.size(); ++i) {
+        if (intermediate_ids[i] == vision_start_token_id && !keep_mask[intermediate_to_original_idx[i]]) {
+            intermediate_keep[i] = false;
+        }
+    }
+
+    for (size_t i = 0; i < intermediate_ids.size(); ++i) {
+        if (intermediate_ids[i] == vision_end_token_id) {
             bool has_matching_start = false;
-            for (auto j = final_cleaned_ids.size() - 1; j >= 0; --j) {
-                if (final_cleaned_ids[j] == vision_start_token_id) {
+            for (int j = static_cast<int>(i) - 1; j >= 0; --j) {
+                if (intermediate_ids[j] == vision_start_token_id && intermediate_keep[j]) {
                     has_matching_start = true;
                     break;
                 }
             }
-            if (has_matching_start) {
-                final_cleaned_ids.push_back(cleaned_ids[i]);
+            if (!has_matching_start) {
+                keep_mask[intermediate_to_original_idx[i]] = false;
             }
-        } else {
-            final_cleaned_ids.push_back(cleaned_ids[i]);
         }
     }
 
+    // Build final cleaned sequence
+    std::vector<int64_t> final_cleaned_ids;
+    final_cleaned_ids.reserve(input_ids_vec.size());
+
+    for (size_t i = 0; i < input_ids_vec.size(); ++i) {
+        if (keep_mask[i]) {
+            final_cleaned_ids.push_back(input_ids_vec[i]);
+        }
+    }
+
+    if (final_cleaned_ids.size() == input_ids_vec.size()) {
+        return false;  // No tokens were removed
+    }
+
+    // Update input_ids tensor
     input_ids = ov::Tensor(ov::element::i64, {1, final_cleaned_ids.size()});
     std::copy(final_cleaned_ids.begin(), final_cleaned_ids.end(), input_ids.data<int64_t>());
 
-    // Remove the same tokens from kv_cache_state
+    // Update kv_cache_state by removing tokens at the same positions
     std::vector<int64_t>& kv_cache = m_kv_cache_state.get_state();
-    size_t tokens_removed = input_ids_vec.size() - final_cleaned_ids.size();
-    if (kv_cache.size() >= tokens_removed) {
-        kv_cache.erase(kv_cache.end() - tokens_removed, kv_cache.end());
+    std::vector<int64_t> new_kv_cache;
+    new_kv_cache.reserve(final_cleaned_ids.size());
+
+    size_t min_size = std::min(keep_mask.size(), kv_cache.size());
+    for (size_t i = 0; i < min_size; ++i) {
+        if (keep_mask[i]) {
+            new_kv_cache.push_back(kv_cache[i]);
+        }
     }
+
+    // If kv_cache is longer than input_ids (shouldn't happen, but handle gracefully)
+    if (kv_cache.size() > keep_mask.size()) {
+        new_kv_cache.insert(new_kv_cache.end(), kv_cache.begin() + keep_mask.size(), kv_cache.end());
+    }
+
+    kv_cache = std::move(new_kv_cache);
 
     return true;
 }
