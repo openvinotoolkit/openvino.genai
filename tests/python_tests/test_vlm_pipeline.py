@@ -63,6 +63,7 @@ from utils.constants import get_ov_cache_converted_models_dir
 from utils.atomic_download import AtomicDownloadManager
 
 import logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -75,11 +76,7 @@ class VlmModelInfo:
     pipeline: VLMPipeline
 
 
-PROMPTS: list[str] = [
-    "What is in the image?",
-    "What is special about this image?",
-    "Describe the image"
-]
+PROMPTS: list[str] = ["What is in the image?", "What is special about this image?", "Describe the image"]
 
 
 VIDEO_MODEL_IDS = [
@@ -103,10 +100,7 @@ MODEL_IDS: list[str] = [
 ]
 
 
-ADD_REQUEST_MODEL_IDS = [
-    MODEL_IDS[0],
-    *VIDEO_MODEL_IDS
-]
+ADD_REQUEST_MODEL_IDS = [MODEL_IDS[0], *VIDEO_MODEL_IDS]
 
 
 TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
@@ -151,9 +145,9 @@ RETRY_BASE_DELAY_SEC = 0.1
 RETRY_MAX_DELAY_SEC = 2.0
 
 TEST_IMAGE_URLS = {
-    'cat': 'https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11',
-    'car': 'https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg',
-    'handwritten': 'https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350'
+    "cat": "https://github.com/openvinotoolkit/openvino_notebooks/assets/29454499/d5fbbd1a-d484-415c-88cb-9986625b7b11",
+    "car": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/transformers/tasks/car.jpg",
+    "handwritten": "https://github.com/user-attachments/assets/8c9ae017-7837-4abc-ae92-c1054c9ec350",
 }
 
 
@@ -164,8 +158,8 @@ NPU_UNSUPPORTED_MODELS = {
 
 
 def _setup_generation_config(
-    pipeline: VLMPipeline, 
-    max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS, 
+    pipeline: VLMPipeline,
+    max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS,
     ignore_eos: bool = False,
     set_eos_token: bool = True,
     do_sample: bool = True,
@@ -173,19 +167,21 @@ def _setup_generation_config(
     generation_config = pipeline.get_generation_config()
     generation_config.max_new_tokens = max_new_tokens
     generation_config.do_sample = do_sample
-    
+
     if set_eos_token:
         generation_config.set_eos_token_id(pipeline.get_tokenizer().get_eos_token_id())
-    
+
     if ignore_eos:
-        generation_config.ignore_eos = True        
-    
+        generation_config.ignore_eos = True
+
     return generation_config
 
 
 def _get_ov_model(model_id: str) -> str:
     if model_id in {"optimum-intel-internal-testing/tiny-random-phi-4-multimodal", "qnguyen3/nanoLLaVA"}:
-        pytest.skip("ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4")
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Maximum required is 4.53.3, got: 4.55.4"
+        )
     if "optimum-intel-internal-testing/tiny-random-phi3-vision" == model_id:
         pytest.xfail("AttributeError: 'DynamicCache' object has no attribute 'get_usable_length'. Ticket CVS-175110")
     if "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6" == model_id and is_transformers_version(
@@ -198,12 +194,12 @@ def _get_ov_model(model_id: str) -> str:
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
     dir_name = str(model_id).replace(os.sep, "_")
     model_dir = ov_cache_converted_dir / dir_name
-    
+
     manager = AtomicDownloadManager(model_dir)
-    
+
     if manager.is_complete() or (model_dir / "openvino_language_model.xml").exists():
         return model_dir
-    
+
     def convert_to_temp(temp_dir: Path) -> None:
         align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
         processor = retry_request(
@@ -220,7 +216,8 @@ def _get_ov_model(model_id: str) -> str:
                 device="CPU",
                 export=True,
                 load_in_8bit=False,
-                trust_remote_code=model_id in {
+                trust_remote_code=model_id
+                in {
                     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6",
                     "optimum-intel-internal-testing/tiny-random-internvl2",
                     "optimum-intel-internal-testing/tiny-random-phi3-vision",
@@ -235,17 +232,13 @@ def _get_ov_model(model_id: str) -> str:
         # For tiny-random-internvl2 processor is actually tokenizer
         elif isinstance(processor, transformers.Qwen2TokenizerFast):
             tokenizer = processor
-            processor = transformers.AutoImageProcessor.from_pretrained(
-                model_id, trust_remote_code=True
-            )
+            processor = transformers.AutoImageProcessor.from_pretrained(model_id, trust_remote_code=True)
         else:
             tokenizer = processor.tokenizer
             if tokenizer.chat_template is None:
                 tokenizer.chat_template = processor.chat_template
         tokenizer.save_pretrained(temp_dir)
-        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(
-            tokenizer, with_detokenizer=True
-        )
+        ov_tokenizer, ov_detokenizer = openvino_tokenizers.convert_tokenizer(tokenizer, with_detokenizer=True)
         openvino.save_model(ov_tokenizer, temp_dir / "openvino_tokenizer.xml")
         openvino.save_model(ov_detokenizer, temp_dir / "openvino_detokenizer.xml")
 
@@ -255,7 +248,7 @@ def _get_ov_model(model_id: str) -> str:
         processor.audio_tokenizer = None
         processor.save_pretrained(temp_dir)
         model.save_pretrained(temp_dir)
-    
+
     manager.execute(convert_to_temp)
     return model_dir
 
@@ -267,23 +260,19 @@ GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transforme
 @pytest.fixture(scope="module")
 def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     ov_model, ov_backend = request.param
-    
+
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
 
     models_path = _get_ov_model(ov_model)
-    
-    pipeline = VLMPipeline(
-        models_path, 
-        "CPU", 
-        ATTENTION_BACKEND=ov_backend
-    )
+
+    pipeline = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=ov_backend)
     return VlmModelInfo(
-        ov_model, 
-        ov_backend, 
-        TAG_GENERATOR_BY_MODEL.get(ov_model, lambda idx: ""), 
-        RESOLUTION_BY_MODEL.get(ov_model, DEFAULT_RESOLUTION), 
-        pipeline
+        ov_model,
+        ov_backend,
+        TAG_GENERATOR_BY_MODEL.get(ov_model, lambda idx: ""),
+        RESOLUTION_BY_MODEL.get(ov_model, DEFAULT_RESOLUTION),
+        pipeline,
     )
 
 
@@ -326,6 +315,7 @@ parametrize_one_model_backends = pytest.mark.parametrize(
     indirect=["ov_pipe_model"],
 )
 
+
 @pytest.fixture(scope="module")
 def ov_continious_batching_pipe() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[0])
@@ -355,12 +345,14 @@ def from_cache_or_download(pytestconfig: pytest.Config, link: str, file_name: st
             image = download_image(link)
             image.save(image_path)
         return image
+
     return retry(implementation, PIL.UnidentifiedImageError)
 
 
 @pytest.fixture(scope="module")
 def cat_image(pytestconfig: pytest.Config):
-    return from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['cat'], "cat.jpg")
+    return from_cache_or_download(pytestconfig, TEST_IMAGE_URLS["cat"], "cat.jpg")
+
 
 def resize_video(video, shape):
     video_resized = []
@@ -369,6 +361,7 @@ def resize_video(video, shape):
         resized = pil_image.resize(shape)
         video_resized.append(np.array(resized))
     return np.array(video_resized)
+
 
 @pytest.fixture(scope="module")
 def synthetic_video(pytestconfig):
@@ -388,10 +381,11 @@ def synthetic_video(pytestconfig):
         for x in range(0, width):
             for y in range(0, height):
                 # shift previous frame
-                new_frame[y, x] = frames[i-1][y, (x - shift + width) % width]
+                new_frame[y, x] = frames[i - 1][y, (x - shift + width) % width]
         frames.append(new_frame)
 
     return frames
+
 
 @pytest.fixture(scope="module")
 def synthetic_video_32x32(synthetic_video):
@@ -425,9 +419,9 @@ def cat_tensor(cat_image) -> openvino.Tensor:
 
 @pytest.fixture(scope="module")
 def car_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
-    return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['car'], "car.jpg"))
+    return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS["car"], "car.jpg"))
 
- 
+
 @pytest.fixture(scope="module")
 def synthetic_video_32x32_tensor(synthetic_video_32x32):
     return openvino.Tensor(synthetic_video_32x32)
@@ -435,14 +429,17 @@ def synthetic_video_32x32_tensor(synthetic_video_32x32):
 
 @pytest.fixture(scope="module")
 def handwritten_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
-    return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['handwritten'], "handwritten.png"))
+    return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS["handwritten"], "handwritten.png"))
 
 
-@pytest.fixture(scope="function", params=[
-    pytest.param([], id="no_images"),
-    pytest.param(["cat_tensor"], id="single_image"),
-    pytest.param(["cat_tensor", "handwritten_tensor", "car_tensor"], id="multiple_images"),
-])
+@pytest.fixture(
+    scope="function",
+    params=[
+        pytest.param([], id="no_images"),
+        pytest.param(["cat_tensor"], id="single_image"),
+        pytest.param(["cat_tensor", "handwritten_tensor", "car_tensor"], id="multiple_images"),
+    ],
+)
 def test_images(request: pytest.FixtureRequest):
     return [request.getfixturevalue(image) for image in request.param]
 
@@ -485,25 +482,25 @@ def test_vlm_readonly_image_tensor(ov_pipe_model: VlmModelInfo, cat_image_32x32)
 
 
 @pytest.mark.parametrize(
-    "config", 
+    "config",
     [
         pytest.param(get_greedy(), id="greedy"),
         pytest.param(get_beam_search(), id="beam_search"),
-    ]
+    ],
 )
 @parametrize_one_model_pa
 def test_vlm_continuous_batching_generate_vs_add_request(
     ov_pipe_model: VlmModelInfo,
     ov_continious_batching_pipe: ContinuousBatchingPipeline,
-    config: GenerationConfig, 
+    config: GenerationConfig,
     request: pytest.FixtureRequest,
-    cat_tensor: openvino.Tensor
-):    
+    cat_tensor: openvino.Tensor,
+):
     ov_pipe = ov_pipe_model.pipeline
     generation_config = config
     generation_config.max_new_tokens = DEFAULT_MAX_NEW_TOKENS
     image_links_list = [[], [cat_tensor]]
-    
+
     if ov_pipe_model.model_id in VIDEO_MODEL_IDS:
         synthetic_video_32x32_tensor = request.getfixturevalue("synthetic_video_32x32_tensor")
         images_list = [[], [cat_tensor], [cat_tensor]]
@@ -517,9 +514,9 @@ def test_vlm_continuous_batching_generate_vs_add_request(
         videos = videos_list[idx]
         res_generate.append(
             ov_pipe.generate(
-                PROMPTS[0], 
-                images=images, 
-                videos=videos, 
+                PROMPTS[0],
+                images=images,
+                videos=videos,
                 generation_config=generation_config,
             )
         )
@@ -529,9 +526,10 @@ def test_vlm_continuous_batching_generate_vs_add_request(
     for idx, images in enumerate(images_list):
         videos = videos_list[idx]
         handle = ov_continious_batching_pipe.add_request(
-            idx, PROMPTS[0], 
-            images=images, 
-            videos=videos, 
+            idx,
+            PROMPTS[0],
+            images=images,
+            videos=videos,
             generation_config=generation_config,
         )
         while handle.get_status() != GenerationStatus.FINISHED:
@@ -548,15 +546,15 @@ def test_vlm_continuous_batching_generate_vs_add_request(
 
 
 @pytest.mark.parametrize(
-    "config", 
+    "config",
     [
         pytest.param(get_greedy(), id="greedy"),
         pytest.param(get_beam_search(), id="beam_search"),
-    ]
+    ],
 )
 def test_vlm_continuous_batching_generate_vs_add_request_for_gemma(
     ov_continious_batching_pipe_gemma: ContinuousBatchingPipeline,
-    config: GenerationConfig, 
+    config: GenerationConfig,
     cat_tensor: openvino.Tensor,
 ):
     ov_cb_pipe = ov_continious_batching_pipe_gemma
@@ -564,9 +562,7 @@ def test_vlm_continuous_batching_generate_vs_add_request_for_gemma(
     tokenizer = ov_cb_pipe.get_tokenizer()
 
     for idx, images in enumerate(image_links_list):
-        handle = ov_cb_pipe.add_request(
-            idx, PROMPTS[0], images, config
-        )
+        handle = ov_cb_pipe.add_request(idx, PROMPTS[0], images, config)
         while handle.get_status() != GenerationStatus.FINISHED:
             ov_cb_pipe.step()
         outputs = handle.read_all()
@@ -581,17 +577,17 @@ def test_vlm_continuous_batching_generate_vs_add_request_for_gemma(
 
 
 @pytest.mark.parametrize(
-    "config", 
+    "config",
     [
         pytest.param(get_greedy(), id="greedy"),
         pytest.param(get_beam_search(), id="beam_search"),
-    ]
+    ],
 )
 @parametrize_one_model_sdpa
 def test_vlm_continuous_batching_vs_stateful(
     ov_pipe_model: VlmModelInfo,
     ov_continious_batching_pipe: ContinuousBatchingPipeline,
-    config: GenerationConfig, 
+    config: GenerationConfig,
     cat_tensor: openvino.Tensor,
 ):
     ov_pipe = ov_pipe_model.pipeline
@@ -602,55 +598,55 @@ def test_vlm_continuous_batching_vs_stateful(
     res_cb = []
     for images in image_links_list:
         res_cb.append(
-            ov_continious_batching_pipe.generate(
-                [PROMPTS[0]], images=[images], generation_config=[generation_config]
-            )
+            ov_continious_batching_pipe.generate([PROMPTS[0]], images=[images], generation_config=[generation_config])
         )
 
     for idx, images in enumerate(image_links_list):
-        res_stateful = ov_pipe.generate(
-            PROMPTS[0], images=images, generation_config=generation_config
-        )
+        res_stateful = ov_pipe.generate(PROMPTS[0], images=images, generation_config=generation_config)
         for out_idx, text in enumerate(res_stateful.texts):
             assert text == res_cb[idx][0].texts[out_idx]
-            assert (
-                abs(res_stateful.scores[out_idx] - res_cb[idx][0].scores[out_idx]) < DEFAULT_SCORE_EPSILON
-            )
+            assert abs(res_stateful.scores[out_idx] - res_cb[idx][0].scores[out_idx]) < DEFAULT_SCORE_EPSILON
 
 
-@pytest.fixture(scope="module", params=[
-    pytest.param([[], []], id="generation with text input only"),
-    pytest.param(
-        [[], ["cat_tensor", "car_tensor", "handwritten_tensor"], []],
-        id="combination of generations with text input and text + image input, empty image first"
-    ),
-    pytest.param(
-        [["cat_tensor", "car_tensor", "handwritten_tensor"], ["cat_tensor"]],
-        id="generation with text + image input"
-    ),
-    pytest.param(
-        [["cat_tensor", "car_tensor", "handwritten_tensor"], [], ["cat_tensor"]],
-        id="combination of generations with text input and text + image input, image input first"
-    ),
-])
+@pytest.fixture(
+    scope="module",
+    params=[
+        pytest.param([[], []], id="generation with text input only"),
+        pytest.param(
+            [[], ["cat_tensor", "car_tensor", "handwritten_tensor"], []],
+            id="combination of generations with text input and text + image input, empty image first",
+        ),
+        pytest.param(
+            [["cat_tensor", "car_tensor", "handwritten_tensor"], ["cat_tensor"]],
+            id="generation with text + image input",
+        ),
+        pytest.param(
+            [["cat_tensor", "car_tensor", "handwritten_tensor"], [], ["cat_tensor"]],
+            id="combination of generations with text input and text + image input, image input first",
+        ),
+    ],
+)
 def iteration_images(request) -> list[list[PIL.Image]]:
     return [[request.getfixturevalue(image) for image in bundle] for bundle in request.param]
 
 
-@pytest.fixture(scope="module", params=[
-    pytest.param(
-        [[[], [], []], [[], [ "synthetic_video_32x32_tensor"], []]],
-        id="Video on second iteration"
-    ),
-    pytest.param(
-        [[["cat_tensor"], [], []], [["synthetic_video_32x32_tensor"], [], ["synthetic_video_32x32_tensor"]]],
-        id="Image + video on first iteration, image on third iteration"
-    ),
-    pytest.param(
-        [[["cat_tensor", "car_tensor", "handwritten_tensor"], []], [["synthetic_video_32x32_tensor", "synthetic_video_32x32_tensor"], ["synthetic_video_32x32_tensor"]]],
-        id="3 images + 2 videos on first iteration, video on second iteration"
-    ),
-])
+@pytest.fixture(
+    scope="module",
+    params=[
+        pytest.param([[[], [], []], [[], ["synthetic_video_32x32_tensor"], []]], id="Video on second iteration"),
+        pytest.param(
+            [[["cat_tensor"], [], []], [["synthetic_video_32x32_tensor"], [], ["synthetic_video_32x32_tensor"]]],
+            id="Image + video on first iteration, image on third iteration",
+        ),
+        pytest.param(
+            [
+                [["cat_tensor", "car_tensor", "handwritten_tensor"], []],
+                [["synthetic_video_32x32_tensor", "synthetic_video_32x32_tensor"], ["synthetic_video_32x32_tensor"]],
+            ],
+            id="3 images + 2 videos on first iteration, video on second iteration",
+        ),
+    ],
+)
 def iteration_images_and_videos(request):
     params = []
     for param in request.param:
@@ -661,16 +657,17 @@ def iteration_images_and_videos(request):
 @parametrize_all_models
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 def test_vlm_pipeline_chat(
-    ov_pipe_model: VlmModelInfo, 
-    system_message: str, 
+    ov_pipe_model: VlmModelInfo,
+    system_message: str,
     iteration_images: list[list[PIL.Image]],
 ):
     ov_pipe = ov_pipe_model.pipeline
+
     def streamer(word: str) -> bool:
         nonlocal result_from_streamer
         result_from_streamer.append(word)
         return False
-    
+
     generation_config = _setup_generation_config(ov_pipe)
 
     ov_pipe.start_chat(system_message)
@@ -699,21 +696,21 @@ def test_vlm_pipeline_chat(
     ov_pipe.finish_chat()
 
 
-@pytest.fixture(scope="module", params=[
-    pytest.param([[], []], id="generation with text input only"),
-    pytest.param(
-        [[], ["cat_tensor"], ["car_tensor"], ["handwritten_tensor"], []],
-        id="combination of generations with text input and text + image input, empty image first"
-    ),
-    pytest.param(
-        [["cat_tensor"], ["car_tensor"], ["handwritten_tensor"]],
-        id="generation with text + image input"
-    ),
-    pytest.param(
-        [["cat_tensor"], ["car_tensor"], [], ["handwritten_tensor"]],
-        id="combination of generations with text input and text + image input, image input first"
-    ),
-])
+@pytest.fixture(
+    scope="module",
+    params=[
+        pytest.param([[], []], id="generation with text input only"),
+        pytest.param(
+            [[], ["cat_tensor"], ["car_tensor"], ["handwritten_tensor"], []],
+            id="combination of generations with text input and text + image input, empty image first",
+        ),
+        pytest.param([["cat_tensor"], ["car_tensor"], ["handwritten_tensor"]], id="generation with text + image input"),
+        pytest.param(
+            [["cat_tensor"], ["car_tensor"], [], ["handwritten_tensor"]],
+            id="combination of generations with text input and text + image input, image input first",
+        ),
+    ],
+)
 def iteration_images_npu(request):
     return [[request.getfixturevalue(image) for image in bundle] for bundle in request.param]
 
@@ -726,6 +723,7 @@ def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
 
     def run_chat(ov_pipe, system_message, iteration_images):
         result_from_streamer = []
+
         def streamer(word: str) -> bool:
             result_from_streamer.append(word)
             return False
@@ -750,9 +748,7 @@ def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
 
     models_path = _get_ov_model(model_id)
     properties = {
-        "DEVICE_PROPERTIES": {
-            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 4096}
-        }
+        "DEVICE_PROPERTIES": {"NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 4096}}
     }
     npu_pipe = VLMPipeline(models_path, "NPU", config=properties)
 
@@ -762,8 +758,8 @@ def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
 @parametrize_all_models_with_video
 @pytest.mark.parametrize("system_message", ["", "You are a helpful assistant."])
 def test_vlm_pipeline_chat_with_video(
-    ov_pipe_model: VlmModelInfo, 
-    system_message: str, 
+    ov_pipe_model: VlmModelInfo,
+    system_message: str,
     iteration_images_and_videos,
 ):
     def streamer(word: str) -> bool:
@@ -825,7 +821,7 @@ def test_vlm_get_tokenizer(ov_pipe_model: VlmModelInfo):
 @parametrize_one_model_backends
 def test_sampling(
     ov_pipe_model: VlmModelInfo,
-    config, 
+    config,
     cat_tensor: openvino.Tensor,
 ):
     ov_pipe = ov_pipe_model.pipeline
@@ -834,8 +830,8 @@ def test_sampling(
 
 @pytest.mark.parametrize("backend", ATTENTION_BACKEND)
 def test_perf_metrics(
-    backend: str, 
-    cat_tensor: openvino.Tensor, 
+    backend: str,
+    cat_tensor: openvino.Tensor,
 ):
     import numpy as np
     from time import perf_counter_ns
@@ -848,7 +844,7 @@ def test_perf_metrics(
     pipe = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
     start_generate = perf_counter_ns()
     load_time = (start_generate - start_time) / 1_000_000.0
-    
+
     result = pipe.generate(
         PROMPTS[0],
         images=[cat_tensor],
@@ -886,9 +882,7 @@ def test_perf_metrics(
     assert 0 <= perf_metrics.get_generate_duration().std < squared_generate_time
     assert 0 <= perf_metrics.get_tokenization_duration().std < squared_generate_time
     assert 0 <= perf_metrics.get_detokenization_duration().std < squared_generate_time
-    assert (
-        0 <= perf_metrics.get_prepare_embeddings_duration().std < squared_generate_time
-    )
+    assert 0 <= perf_metrics.get_prepare_embeddings_duration().std < squared_generate_time
 
     # assert that calculating statistics manually from the raw counters we get the same results as from PerfMetrics
     vlm_raw_metrics = perf_metrics.vlm_raw_metrics
@@ -911,9 +905,7 @@ def test_vlm_npu_no_exception(model_id, backend, cat_tensor, handwritten_tensor,
 
     models_path = _get_ov_model(model_id)
     properties = {
-        "DEVICE_PROPERTIES": {
-            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048}
-        }
+        "DEVICE_PROPERTIES": {"NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048}}
     }
 
     ov_pipe = VLMPipeline(models_path, "NPU", ATTENTION_BACKEND=backend, config=properties)
@@ -921,15 +913,16 @@ def test_vlm_npu_no_exception(model_id, backend, cat_tensor, handwritten_tensor,
     generation_config = _setup_generation_config(ov_pipe)
 
     for image in cat_tensor, handwritten_tensor, car_tensor:
-        ov_pipe.generate(
-            PROMPTS[0], images=[image], generation_config=generation_config
-        )
+        ov_pipe.generate(PROMPTS[0], images=[image], generation_config=generation_config)
 
 
-@pytest.fixture(scope="module", params=[
-    pytest.param(["cat_tensor"], id="cat_tensor - one image"), 
-    pytest.param([], id="empty"),
-])
+@pytest.fixture(
+    scope="module",
+    params=[
+        pytest.param(["cat_tensor"], id="cat_tensor - one image"),
+        pytest.param([], id="empty"),
+    ],
+)
 def image_sequence(request):
     return [request.getfixturevalue(image) for image in request.param]
 
@@ -941,25 +934,19 @@ def image_sequence(request):
 def test_vlm_npu_no_image():
     models_path = _get_ov_model(MODEL_IDS[0])
     properties = {
-        "DEVICE_PROPERTIES": {
-            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048}
-        }
+        "DEVICE_PROPERTIES": {"NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048}}
     }
 
     ov_pipe = VLMPipeline(models_path, "NPU", config=properties)
 
     generation_config = _setup_generation_config(ov_pipe)
 
-    ov_pipe.generate(
-        PROMPTS[0], generation_config=generation_config
-    )
+    ov_pipe.generate(PROMPTS[0], generation_config=generation_config)
 
 
 @parametrize_all_models
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(
-    request: pytest.FixtureRequest,
-    ov_pipe_model: VlmModelInfo, 
-    image_sequence: list[openvino.Tensor]
+    request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, image_sequence: list[openvino.Tensor]
 ):
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
@@ -974,11 +961,7 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     def streamer(subword):
         nonlocal current_iter
         current_iter += 1
-        return (
-            StreamingStatus.CANCEL
-            if current_iter == num_iters
-            else StreamingStatus.RUNNING
-        )
+        return StreamingStatus.CANCEL if current_iter == num_iters else StreamingStatus.RUNNING
 
     generation_config = _setup_generation_config(ov_pipe, ignore_eos=True, do_sample=False)
 
@@ -1006,24 +989,24 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(
 
     results = ""
     ov_pipe.start_chat()
-    results += ov_pipe.generate(
-        callback_questions[0], **images_and_videos, generation_config=generation_config
-    ).texts[0]
-    results += ov_pipe.generate(
-        callback_questions[2], **images_and_videos, generation_config=generation_config
-    ).texts[0]
+    results += ov_pipe.generate(callback_questions[0], **images_and_videos, generation_config=generation_config).texts[
+        0
+    ]
+    results += ov_pipe.generate(callback_questions[2], **images_and_videos, generation_config=generation_config).texts[
+        0
+    ]
     ov_pipe.finish_chat()
 
     assert results_with_cancel == results
 
     results = ""
     ov_pipe.start_chat()
-    results += ov_pipe.generate(
-        callback_questions[0], **images_and_videos, generation_config=generation_config
-    ).texts[0]
-    results += ov_pipe.generate(
-        callback_questions[2], **images_and_videos, generation_config=generation_config
-    ).texts[0]
+    results += ov_pipe.generate(callback_questions[0], **images_and_videos, generation_config=generation_config).texts[
+        0
+    ]
+    results += ov_pipe.generate(callback_questions[2], **images_and_videos, generation_config=generation_config).texts[
+        0
+    ]
     ov_pipe.finish_chat()
 
     assert results_with_cancel == results
@@ -1032,12 +1015,10 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(
 @parametrize_one_model_backends
 def test_start_chat_clears_history(
     ov_pipe_model: VlmModelInfo,
-    image_sequence: list[openvino.Tensor], 
+    image_sequence: list[openvino.Tensor],
 ):
     ov_pipe = ov_pipe_model.pipeline
-    callback_questions = [
-        "Why is the Sun yellow?"
-    ]
+    callback_questions = ["Why is the Sun yellow?"]
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = DEFAULT_MAX_NEW_TOKENS
 
@@ -1056,12 +1037,9 @@ def test_start_chat_clears_history(
 
 
 def test_start_chat_clears_history_cb_api(
-    ov_continious_batching_pipe: ContinuousBatchingPipeline, 
-    image_sequence: list[openvino.Tensor]
+    ov_continious_batching_pipe: ContinuousBatchingPipeline, image_sequence: list[openvino.Tensor]
 ):
-    callback_questions = [
-        "Why is the Sun yellow?"
-    ]
+    callback_questions = ["Why is the Sun yellow?"]
     generation_config = GenerationConfig(max_new_tokens=DEFAULT_MAX_NEW_TOKENS)
 
     results_first_generate = ""
@@ -1083,12 +1061,12 @@ def test_start_chat_clears_history_cb_api(
 @parametrize_all_models
 def test_vlm_pipeline_chat_streamer_cancel_first_generate(
     request: pytest.FixtureRequest,
-    ov_pipe_model: VlmModelInfo, 
-    image_sequence: list[openvino.Tensor], 
-):    
+    ov_pipe_model: VlmModelInfo,
+    image_sequence: list[openvino.Tensor],
+):
     if "phi" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "SDPA":
         pytest.skip("SDPA is failing for phi models on VLM model reusing")
-    
+
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
         "Why is the Sun yellow?",
@@ -1105,15 +1083,9 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(
 
         current_iter += 1
         streamer_generation_result += subword
-        return (
-            StreamingStatus.CANCEL
-            if current_iter == num_iters
-            else StreamingStatus.RUNNING
-        )
+        return StreamingStatus.CANCEL if current_iter == num_iters else StreamingStatus.RUNNING
 
-    generation_config = _setup_generation_config(
-        ov_pipe, ignore_eos=True, do_sample=False
-    )
+    generation_config = _setup_generation_config(ov_pipe, ignore_eos=True, do_sample=False)
 
     images_and_videos = {"images": image_sequence}
     if ov_pipe_model.model_id in VIDEO_MODEL_IDS:
@@ -1164,9 +1136,7 @@ def generate(vlm: VLMPipeline, requests):
 
 @pytest.fixture(scope="module")
 def conversation_requests(
-    cat_tensor: openvino.Tensor, 
-    car_tensor: openvino.Tensor, 
-    handwritten_tensor: openvino.Tensor
+    cat_tensor: openvino.Tensor, car_tensor: openvino.Tensor, handwritten_tensor: openvino.Tensor
 ) -> list[tuple[str, list[openvino.Tensor]]]:
     return [
         ("Describe", [cat_tensor]),
@@ -1197,16 +1167,13 @@ MODELS_TO_TAG = IMAGE_ID_IGNORANT_MODELS_TO_TAG + [
 
 
 def model_and_tag_parametrize(
-    items: tuple[str, str, Callable[[int], str]] | None = None
+    items: tuple[str, str, Callable[[int], str]] | None = None,
 ) -> Callable[[Callable], Generator]:
     if items is None:
         items = MODELS_TO_TAG
 
     return pytest.mark.parametrize(
-        "ov_pipe_model",
-        items,
-        indirect=["ov_pipe_model"],
-        ids=[f"{item[0]}/{item[1]}" for item in items]
+        "ov_pipe_model", items, indirect=["ov_pipe_model"], ids=[f"{item[0]}/{item[1]}" for item in items]
     )
 
 
@@ -1214,7 +1181,7 @@ def model_and_tag_parametrize(
 def test_model_tags_representation(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
     ov_pipe = ov_pipe_model.pipeline
     model_id = ov_pipe_model.model_id
-    
+
     generation_config = _setup_generation_config(ov_pipe, set_eos_token=False)
     ov_pipe.set_generation_config(generation_config)
     prompt = "Describe"
@@ -1222,14 +1189,8 @@ def test_model_tags_representation(ov_pipe_model: VlmModelInfo, cat_tensor: open
     align_with_optimum_cli = {"padding_side": "left", "truncation_side": "left"}
     if model_id == "qnguyen3/nanoLLaVA":
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-        messages = [
-            {"role": "user", "content": f'<image>\n{prompt}'}
-        ]
-        templated_prompt = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True
-        )
+        messages = [{"role": "user", "content": f"<image>\n{prompt}"}]
+        templated_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     else:
         processor = retry_request(
             lambda: transformers.AutoProcessor.from_pretrained(
@@ -1250,6 +1211,7 @@ def test_model_tags_representation(ov_pipe_model: VlmModelInfo, cat_tensor: open
             ],
             add_generation_prompt=True,
         )
+
     def workaround_inconsistent_inference():
         __tracebackhide__ = True
         automatic_tags = ov_pipe.generate(prompt, images=[cat_tensor], do_sample=False)
@@ -1264,12 +1226,11 @@ def test_model_tags_representation(ov_pipe_model: VlmModelInfo, cat_tensor: open
 
 @model_and_tag_parametrize()
 def test_model_tags_prepend_native(
-    ov_pipe_model: VlmModelInfo, 
-    conversation_requests: list[tuple[str, list[openvino.Tensor]]]
+    ov_pipe_model: VlmModelInfo, conversation_requests: list[tuple[str, list[openvino.Tensor]]]
 ):
     ov_pipe = ov_pipe_model.pipeline
     tag = ov_pipe_model.image_tag
-    
+
     def workaround_inconsistent_inference():
         __tracebackhide__ = True
         answers = generate(ov_pipe, conversation_requests)
@@ -1292,11 +1253,10 @@ def test_model_tags_prepend_native(
 
 @model_and_tag_parametrize()
 def test_model_tags_prepend_universal(
-    ov_pipe_model: VlmModelInfo, 
-    conversation_requests: list[tuple[str, list[openvino.Tensor]]]
+    ov_pipe_model: VlmModelInfo, conversation_requests: list[tuple[str, list[openvino.Tensor]]]
 ):
     ov_pipe = ov_pipe_model.pipeline
-    
+
     def workaround_inconsistent_inference():
         __tracebackhide__ = True
         answers = generate(ov_pipe, conversation_requests)
@@ -1310,7 +1270,7 @@ def test_model_tags_prepend_universal(
         universal_tags1 = ov_pipe.generate(
             "<ov_genai_image_1><ov_genai_image_2>" + conversation_requests[1][0],
             images=conversation_requests[1][1],
-            do_sample=False
+            do_sample=False,
         )
         assert universal_tags1.texts == answers[1].texts
         assert universal_tags1.scores == answers[1].scores
@@ -1318,18 +1278,17 @@ def test_model_tags_prepend_universal(
 
     retry(workaround_inconsistent_inference)
 
+
 @pytest.fixture(scope="module")
 def cat_image_384x384(cat_image):
     return cat_image.resize((384, 384))
 
+
 @model_and_tag_parametrize()
-def test_model_tags_append(
-    ov_pipe_model: VlmModelInfo, 
-    conversation_requests: list[tuple[str, list[openvino.Tensor]]]
-):
+def test_model_tags_append(ov_pipe_model: VlmModelInfo, conversation_requests: list[tuple[str, list[openvino.Tensor]]]):
     ov_pipe = ov_pipe_model.pipeline
     tag = ov_pipe_model.image_tag
-    
+
     generation_config = _setup_generation_config(ov_pipe, set_eos_token=False)
     ov_pipe.set_generation_config(generation_config)
 
@@ -1353,7 +1312,7 @@ def test_model_tags_append(
         universal_tags1 = ov_pipe.generate(
             conversation_requests[1][0] + "<ov_genai_image_1><ov_genai_image_2>",
             images=conversation_requests[1][1],
-            do_sample=False
+            do_sample=False,
         )
         assert universal_tags1.texts == native_tags1.texts
         assert universal_tags1.scores == native_tags1.scores
@@ -1365,10 +1324,10 @@ def test_model_tags_append(
 @model_and_tag_parametrize(IMAGE_ID_IGNORANT_MODELS_TO_TAG)
 def test_model_tags_same_reference(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
     ov_pipe = ov_pipe_model.pipeline
-    
+
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=2, set_eos_token=False)
     ov_pipe.set_generation_config(generation_config)
-    
+
     def workaround_inconsistent_inference():
         __tracebackhide__ = True
         one_image = ov_pipe.generate("<ov_genai_image_0>" * 2, images=[cat_tensor], do_sample=False)
@@ -1384,7 +1343,7 @@ def test_model_tags_same_reference(ov_pipe_model: VlmModelInfo, cat_tensor: open
 @model_and_tag_parametrize()
 def test_model_tags_older(ov_pipe_model: VlmModelInfo, car_tensor: openvino.Tensor):
     ov_pipe = ov_pipe_model.pipeline
-    
+
     generation_config = _setup_generation_config(ov_pipe, set_eos_token=False)
     ov_pipe.set_generation_config(generation_config)
     ov_pipe.start_chat()
@@ -1392,24 +1351,24 @@ def test_model_tags_older(ov_pipe_model: VlmModelInfo, car_tensor: openvino.Tens
     with pytest.raises(RuntimeError):
         ov_pipe.generate("<ov_genai_image_0>", images=[car_tensor])
     ov_pipe.finish_chat()
-        
-        
+
+
 @model_and_tag_parametrize()
 def test_model_tags_missing_universal(ov_pipe_model: VlmModelInfo):
     ov_pipe = ov_pipe_model.pipeline
-    
+
     with pytest.raises(RuntimeError):
         ov_pipe.generate("<ov_genai_image_0>")
-        
-        
+
+
 @model_and_tag_parametrize()
 def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
     ov_pipe = ov_pipe_model.pipeline
     image_tag = ov_pipe_model.image_tag
-    
+
     with pytest.raises(RuntimeError):
         ov_pipe.generate(image_tag(0))
-            
+
 
 @pytest.mark.parametrize(
     "ov_pipe_model,has_image,has_video",
@@ -1546,15 +1505,14 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
 
     def get_nanollava_processor():
         hf_model = transformers.AutoModelForCausalLM.from_pretrained(
-            model_id,
-            device_map='auto',
-            trust_remote_code=True)
+            model_id, device_map="auto", trust_remote_code=True
+        )
         return NanollavaProcessorWrapper(hf_model.process_images, hf_model.config, hf_model.dtype)
-    
+
     ov_pipe = ov_pipe_model.pipeline
     model_id = ov_pipe_model.model_id
     resolution = ov_pipe_model.resolution
-    
+
     resized_image = None
     resized_video = None
 
@@ -1562,7 +1520,7 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
     if has_image:
         resized_image = request.getfixturevalue(f"cat_image_{resolution}x{resolution}")
         prompt_parts.append("image")
-    
+
     if has_video:
         resized_video = request.getfixturevalue("synthetic_video_32x32")
         prompt_parts.append("video")
@@ -1584,6 +1542,7 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
         tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
 
         from optimum.intel.openvino.modeling_visual_language import MODEL_TYPE_TO_CLS_MAPPING
+
         preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[model.config.model_type].preprocess_inputs
         inputs = preprocess_inputs(prompt, resized_image, processor, tokenizer, config=model.config)
     else:
@@ -1605,7 +1564,9 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
         assert tokenizer is not None, "Tokenizer should be set for llava-qwen2 models."
         optimum_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True).strip()
     else:
-        optimum_output = processor.batch_decode(generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+        optimum_output = processor.batch_decode(
+            generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=True
+        )
         optimum_text = optimum_output[0]
 
     params = {}
@@ -1674,6 +1635,7 @@ def test_cdpruner_with_multiple_images(
 
 
 @parametrize_cdpruner_models
+@pytest.mark.xfail(condition=(sys.platform == "win32"), reason="Ticket - 179274")
 def test_cdpruner_chat_mode(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, car_tensor: openvino.Tensor):
     """Test CDPruner in chat mode."""
     ov_pipe = ov_pipe_model.pipeline
