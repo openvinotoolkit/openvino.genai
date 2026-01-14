@@ -364,26 +364,26 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
     [
         # Chunk disabled
         (TextEmbeddingPipeline.Config(
-            batch_size = 1,
-            max_length = 192,
-            normalize = False,
-            pad_to_max_length = False,
+            batch_size=1,
+            max_length=192,
+            normalize=False,
+            pad_to_max_length=False,
             pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
             padding_side="right"
         ), 0, 2e-4, "embed_documents"),
         (TextEmbeddingPipeline.Config(
-            batch_size = 1,
-            max_length = 192,
-            normalize = False,
-            pad_to_max_length = False,
+            batch_size=1,
+            max_length=192,
+            normalize=False,
+            pad_to_max_length=False,
             pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
             padding_side="right"
         ), 0, 2e-4, "embed_documents"),
         (TextEmbeddingPipeline.Config(
-            batch_size = 1,
-            max_length = 192,
-            normalize = False,
-            pad_to_max_length = False,
+            batch_size=1,
+            max_length=192,
+            normalize=False,
+            pad_to_max_length=False,
             pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
             padding_side="right"
         ), 0, 2e-4, "embed_documents"),
@@ -391,104 +391,104 @@ def test_qwen3_embedding(emb_model, dataset_documents, config):
         # Chunk enabled
         # 33 tokens handled by a chunk of 128
         (TextEmbeddingPipeline.Config(
-            batch_size = 1,
-            max_length = 192,
-            normalize = False,
-            pad_to_max_length = False,
+            batch_size=1,
+            max_length=192,
+            normalize=False,
+            pad_to_max_length=False,
             pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
             padding_side="right"
         ), 128, 2e-4, "embed_documents"),
         (TextEmbeddingPipeline.Config(
-            batch_size = 1,
-            max_length = 192,
-            normalize = False,
-            pad_to_max_length = False,
+            batch_size=1,
+            max_length=192,
+            normalize=False,
+            pad_to_max_length=False,
             pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
             padding_side="right"
         ), 128, 2e-4, "embed_documents"),
         (TextEmbeddingPipeline.Config(
-            batch_size = 1,
-            max_length = 192,
-            normalize = False,
-            pad_to_max_length = False,
+            batch_size=1,
+            max_length=192,
+            normalize=False,
+            pad_to_max_length=False,
             pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
             padding_side="right"
         ), 128, 2e-4, "embed_documents"),
 
         # 33 tokens handled by 3 chunks of 16
         (TextEmbeddingPipeline.Config(
-            batch_size = 1,
-            max_length = 180,
-            normalize = False,
-            pad_to_max_length = False,
+            batch_size=1,
+            max_length=180,
+            normalize=False,
+            pad_to_max_length=False,
             pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
             padding_side="right"
         ), 16, 6e-3, "embed_documents"),
         (TextEmbeddingPipeline.Config(
-            batch_size = 1,
-            max_length = 180,
-            normalize = False,
-            pad_to_max_length = False,
+            batch_size=1,
+            max_length=180,
+            normalize=False,
+            pad_to_max_length=False,
             pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
             padding_side="right"
         ), 16, 6e-3, "embed_documents"),
         (TextEmbeddingPipeline.Config(
-            batch_size = 1,
-            max_length = 180,
-            normalize = False,
-            pad_to_max_length = False,
+            batch_size=1,
+            max_length=180,
+            normalize=False,
+            pad_to_max_length=False,
             pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
             padding_side="right"
         ), 16, 6e-3, "embed_documents"),
 
         # normalize = True, 33 tokens handled by 3 chunks of 16
         (TextEmbeddingPipeline.Config(
-            batch_size = 1,
-            max_length = 192,
-            normalize = True,
-            pad_to_max_length = False,
+            batch_size=1,
+            max_length=192,
+            normalize=True,
+            pad_to_max_length=False,
             pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
             padding_side="right"
         ), 16, 7e-5, "embed_documents"),
         (TextEmbeddingPipeline.Config(
-            batch_size = 1,
-            max_length = 192,
-            normalize = True,
-            pad_to_max_length = False,
+            batch_size=1,
+            max_length=192,
+            normalize=True,
+            pad_to_max_length=False,
             pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
             padding_side="right"
         ), 16, 7e-5, "embed_documents"),
         (TextEmbeddingPipeline.Config(
-            batch_size = 1,
-            max_length = 192,
-            normalize = True,
-            pad_to_max_length = False,
+            batch_size=1,
+            max_length=192,
+            normalize=True,
+            pad_to_max_length=False,
             pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
             padding_side="right"
         ), 16, 7e-5, "embed_documents"),
 
         # embed_query
         (TextEmbeddingPipeline.Config(
-            batch_size = 1,
-            max_length = 192,
-            normalize = False,
-            pad_to_max_length = False,
+            batch_size=1,
+            max_length=192,
+            normalize=False,
+            pad_to_max_length=False,
             pooling_type=TextEmbeddingPipeline.PoolingType.CLS,
             padding_side="right"
         ), 16, 6e-3, "embed_query"),
         (TextEmbeddingPipeline.Config(
-            batch_size = 1,
-            max_length = 192,
-            normalize = False,
-            pad_to_max_length = False,
+            batch_size=1,
+            max_length=192,
+            normalize=False,
+            pad_to_max_length=False,
             pooling_type=TextEmbeddingPipeline.PoolingType.LAST_TOKEN,
             padding_side="right"
         ), 16, 6e-3, "embed_query"),
         (TextEmbeddingPipeline.Config(
-            batch_size = 1,
-            max_length = 192,
-            normalize = False,
-            pad_to_max_length = False,
+            batch_size=1,
+            max_length=192,
+            normalize=False,
+            pad_to_max_length=False,
             pooling_type=TextEmbeddingPipeline.PoolingType.MEAN,
             padding_side="right"
         ), 16, 6e-3, "embed_query"),
