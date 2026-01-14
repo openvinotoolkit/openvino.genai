@@ -14,7 +14,7 @@ struct MessageMetadata {
     // TODO Consider using full serialized message json
     std::string normalized_content;
     
-    // Global indices of images/videos provided with this message (input order)
+    // Global indices provided with corresponding message (input order)
     std::vector<size_t> provided_image_indices;
     std::vector<size_t> provided_video_indices;
 
@@ -30,6 +30,7 @@ struct MessageMetadata {
 class ChatHistoryInternalState {
 public:
     struct ResolvedVisions {
+        // TODO Check if references used
         std::vector<EncodedImage> encoded_images;
         std::vector<EncodedVideo> encoded_videos;
         std::vector<size_t> image_sequence;  // Indices into encoded_images
@@ -59,6 +60,9 @@ public:
 
     VisionID get_image_vision_id(size_t index) const { return m_image_index_to_id.at(index); }
     VisionID get_video_vision_id(size_t index) const { return m_video_index_to_id.at(index); }
+
+    size_t get_base_image_index() const { return m_image_index_to_id.size(); }
+    size_t get_base_video_index() const { return m_video_index_to_id.size(); }
 
     std::vector<EncodedImage> get_encoded_images(const std::vector<size_t>& indices) const;
     std::vector<EncodedVideo> get_encoded_videos(const std::vector<size_t>& indices) const;
