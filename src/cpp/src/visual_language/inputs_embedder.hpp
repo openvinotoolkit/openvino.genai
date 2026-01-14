@@ -302,6 +302,26 @@ private:
             const PruningContext& context) {
             return m_pruning_processor->execute(context, m_position_ids, m_kv_cache_state, m_prev_hist_length);
         }
+
+        /**
+         * @brief Helper to clean historical vision tokens from input_ids in chat mode.
+         *
+         * In subsequent chat turns, input_ids may contain historical vision tokens from previous turns
+         * that no longer have corresponding embeddings (due to pruning). This helper removes excess tokens
+         * and updates kv_cache accordingly.
+         *
+         * @param input_ids Input token IDs to clean (modified in-place)
+         * @param vision_pad_token_id Token ID for vision padding
+         * @param vision_start_token_id Token ID for vision start marker
+         * @param vision_end_token_id Token ID for vision end marker
+         * @param expected_count Expected number of vision_pad tokens for current turn
+         * @return true if tokens were removed, false otherwise
+         */
+        bool clean_historical_vision_tokens(ov::Tensor& input_ids,
+                                            int64_t vision_pad_token_id,
+                                            int64_t vision_start_token_id,
+                                            int64_t vision_end_token_id,
+                                            size_t expected_count);
     };
 
     std::shared_ptr<IInputsEmbedder> m_impl;

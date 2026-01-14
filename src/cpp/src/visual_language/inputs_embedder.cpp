@@ -63,6 +63,83 @@ void InputsEmbedder::IInputsEmbedder::finish_chat() {
     m_kv_cache_state.reset_state();
 }
 
+bool InputsEmbedder::IInputsEmbedder::clean_historical_vision_tokens(ov::Tensor& input_ids,
+                                                                     int64_t vision_pad_token_id,
+                                                                     int64_t vision_start_token_id,
+                                                                     int64_t vision_end_token_id,
+                                                                     size_t expected_count) {
+    if (!m_is_chat_conversation || m_prev_hist_length == 0) {
+        return false;
+    }
+
+    std::vector<int64_t> input_ids_vec(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_shape()[1]);
+    size_t vision_pad_count = std::count(input_ids_vec.begin(), input_ids_vec.end(), vision_pad_token_id);
+
+    if (vision_pad_count <= expected_count) {
+        return false;
+    }
+
+    // Keep only the last expected_count vision_pads
+    size_t num_pads_to_skip = vision_pad_count - expected_count;
+
+    std::vector<int64_t> cleaned_ids;
+    size_t pads_skipped = 0;
+
+    for (int64_t token : input_ids_vec) {
+        if (token == vision_pad_token_id) {
+            if (pads_skipped < num_pads_to_skip) {
+                pads_skipped++;
+            } else {
+                cleaned_ids.push_back(token);
+            }
+        } else {
+            cleaned_ids.push_back(token);
+        }
+    }
+
+    // Remove orphaned vision_start/vision_end tokens
+    std::vector<int64_t> final_cleaned_ids;
+    for (size_t i = 0; i < cleaned_ids.size(); ++i) {
+        if (cleaned_ids[i] == vision_start_token_id) {
+            bool has_pads = false;
+            for (size_t j = i + 1; j < cleaned_ids.size() && cleaned_ids[j] != vision_end_token_id; ++j) {
+                if (cleaned_ids[j] == vision_pad_token_id) {
+                    has_pads = true;
+                    break;
+                }
+            }
+            if (has_pads) {
+                final_cleaned_ids.push_back(cleaned_ids[i]);
+            }
+        } else if (cleaned_ids[i] == vision_end_token_id) {
+            bool has_matching_start = false;
+            for (int j = final_cleaned_ids.size() - 1; j >= 0; --j) {
+                if (final_cleaned_ids[j] == vision_start_token_id) {
+                    has_matching_start = true;
+                    break;
+                }
+            }
+            if (has_matching_start) {
+                final_cleaned_ids.push_back(cleaned_ids[i]);
+            }
+        } else {
+            final_cleaned_ids.push_back(cleaned_ids[i]);
+        }
+    }
+
+    input_ids = ov::Tensor(ov::element::i64, {1, final_cleaned_ids.size()});
+    std::copy(final_cleaned_ids.begin(), final_cleaned_ids.end(), input_ids.data<int64_t>());
+
+    // Remove the same tokens from kv_cache_state
+    std::vector<int64_t>& kv_cache = m_kv_cache_state.get_state();
+    size_t tokens_removed = input_ids_vec.size() - final_cleaned_ids.size();
+    if (kv_cache.size() >= tokens_removed) {
+        kv_cache.erase(kv_cache.end() - tokens_removed, kv_cache.end());
+    }
+
+    return true;
+}
+
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
@@ -131,6 +208,13 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::update_history(const ov::Tensor& new
     ov::Tensor encoded_inputs;
     if (m_is_chat_conversation) {
         ov::genai::align_kv_cache_and_history(new_chat_tokens, m_kv_cache_state);
+
+        // Sync m_prev_hist_length after align to prevent state mismatch when pruning is enabled.
+        size_t kv_cache_after_align = m_kv_cache_state.get_state().size();
+        if (m_prev_hist_length > kv_cache_after_align) {
+            m_prev_hist_length = kv_cache_after_align;
+        }
+
         encoded_inputs = get_chat_encoded_input(new_chat_tokens, m_kv_cache_state).input_ids;
     } else {
         encoded_inputs = new_chat_tokens;
@@ -144,7 +228,6 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_encoded_input_ids(const std::str
     auto new_input_ids = update_history(new_chat_tokens);
     m_prev_hist_length = m_kv_cache_state.get_state().size();
     m_kv_cache_state.add_inputs(new_input_ids);
-
     return new_input_ids;
 }
 
