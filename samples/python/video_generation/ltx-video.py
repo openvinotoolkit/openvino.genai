@@ -64,7 +64,7 @@ def main():
     if not args.skip_diffusers:
         if LTXPipeline is None:
             raise ImportError("diffusers package is required when not using --skip-diffusers")
-        
+
         print("\nGenerating with Diffusers...")
         diffusers_pipeline = LTXPipeline.from_pretrained("Lightricks/LTX-Video", torch_dtype=torch.float32)
         diffusers_video = generate_with_diffusers(diffusers_pipeline, prompt, negative_prompt, frame_rate)
