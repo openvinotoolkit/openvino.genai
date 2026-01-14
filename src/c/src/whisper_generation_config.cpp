@@ -4,6 +4,9 @@
 #include "openvino/genai/c/whisper_generation_config.h"
 
 #include <filesystem>
+#include <memory>
+#include <string>
+#include <vector>
 
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "types_c.h"

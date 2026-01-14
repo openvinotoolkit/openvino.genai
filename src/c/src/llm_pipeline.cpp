@@ -11,7 +11,6 @@
 #include "openvino/genai/llm_pipeline.hpp"
 #include "types_c.h"
 
-
 ov_status_e ov_genai_decoded_results_create(ov_genai_decoded_results** results) {
     if (!results) {
         return ov_status_e::INVALID_C_PARAM;

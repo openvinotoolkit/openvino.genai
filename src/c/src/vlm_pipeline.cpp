@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/c/vlm_pipeline.h"
@@ -10,7 +10,6 @@
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "types_c.h"
-
 
 ov_status_e ov_genai_vlm_decoded_results_create(ov_genai_vlm_decoded_results** results) {
     if (!results) {
@@ -166,32 +165,23 @@ ov_status_e ov_genai_vlm_pipeline_generate(ov_genai_vlm_pipeline* pipe,
         _results->object = std::make_shared<ov::genai::VLMDecodedResults>();
         std::string input_str(text_inputs);
 
+        ov::genai::StreamerVariant streamer_cpp = ov::genai::StreamerVariant{};
         if (streamer) {
-            auto callback = [streamer](std::string word) -> ov::genai::StreamingStatus {
+            streamer_cpp = [streamer](std::string word) -> ov::genai::StreamingStatus {
                 return static_cast<ov::genai::StreamingStatus>((streamer->callback_func)(word.c_str(), streamer->args));
             };
-            if (num_images > 0) {
-                *(_results->object) = (config && config->object)
-                                          ? pipe->object->generate(input_str, rgbs_cpp, *(config->object), callback)
-                                          : pipe->object->generate(input_str, rgbs_cpp, {}, callback);
-            } else {
-                *(_results->object) = (config && config->object)
-                                          ? pipe->object->generate(input_str,
-                                                                   ov::genai::generation_config(*(config->object)),
-                                                                   ov::genai::streamer(callback))
-                                          : pipe->object->generate(input_str, ov::genai::streamer(callback));
-            }
+        }
+
+        ov::genai::GenerationConfig generation_config =
+            (config && config->object) ? *(config->object) : ov::genai::GenerationConfig{};
+
+        if (num_images > 0) {
+            *(_results->object) = pipe->object->generate(input_str, rgbs_cpp, generation_config, streamer_cpp);
         } else {
-            if (num_images > 0) {
-                *(_results->object) = (config && config->object)
-                                          ? pipe->object->generate(input_str, rgbs_cpp, *(config->object))
-                                          : pipe->object->generate(input_str, rgbs_cpp, {});
-            } else {
-                *(_results->object) =
-                    (config && config->object)
-                        ? pipe->object->generate(input_str, ov::genai::generation_config(*(config->object)))
-                        : pipe->object->generate(input_str);
-            }
+            // Using property-based generate for cases without images to maintain flexibility
+            *(_results->object) = pipe->object->generate(input_str,
+                                                         ov::genai::generation_config(generation_config),
+                                                         ov::genai::streamer(streamer_cpp));
         }
 
         if (results) {

@@ -10,7 +10,6 @@
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "types_c.h"
 
-
 // WhisperDecodedResultChunk implementation
 ov_status_e ov_genai_whisper_decoded_result_chunk_create(ov_genai_whisper_decoded_result_chunk** chunk) {
     if (!chunk) {
