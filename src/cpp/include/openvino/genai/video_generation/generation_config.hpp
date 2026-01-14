@@ -36,7 +36,7 @@ struct VideoGenerationConfig {
     float guidance_scale = 7.5f;
     int64_t height = -1;
     int64_t width = -1;
-    int64_t num_inference_steps = 50;
+    int64_t num_inference_steps = -1;
 
     /**
      * Max sequence length for T5 encoder / tokenizer used in SD3 / FLUX models

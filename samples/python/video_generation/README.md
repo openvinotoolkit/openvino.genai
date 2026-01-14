@@ -49,7 +49,7 @@ Install [../../deployment-requirements.txt](../../deployment-requirements.txt) t
 pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
 ```
 
-### 1. Text to Video Sample (`text2video.py`)
+### Text to Video Sample (`text2video.py`)
 
 - **Description:**
   Basic video generation using a text-to-video model. This sample demonstrates how to generate videos from text prompts using the OpenVINO GenAI Text2VideoPipeline. The LTX-Video model is recommended for this sample.
@@ -99,41 +99,6 @@ video = pipe.generate(
    callback=callback
 )
 ```
-
-### 2. LTX-Video Validation Sample (`ltx-video.py`)
-
-- **Description:**
-  Compares OpenVINO GenAI output with Diffusers reference implementation to validate correctness. This sample generates videos using both OpenVINO GenAI and the original Diffusers pipeline, then computes the maximum pixel difference between them.
-
-- **Main Feature:** Validate OpenVINO GenAI output quality against reference implementation.
-
-- **Run Command:**
-  ```bash
-  python ltx-video.py model_dir [--skip-diffusers]
-  ```
-
-  Example:
-  ```bash
-  python ltx-video.py ./ltx_video_ov/INT8
-  ```
-
-The sample outputs two video files: `genai_video.mp4` (OpenVINO GenAI) and `diffusers_video.mp4` (reference), along with the maximum pixel difference.
-
-> [!NOTE]
-> OpenVINO GenAI is written in C++ and uses `CppStdGenerator` random generator in Video Generation pipelines, while Diffusers library uses `torch.Generator` underhood.
-> To have the same results with HuggingFace, pass manually created `torch.Generator(device='cpu').manual_seed(seed)` to Diffusers generation pipelines and `openvino_genai.TorchGenerator(seed)` to OpenVINO GenAI pipelines as value for `generator` kwarg.
-
-### 3. Video Similarity Utility (`video_similarity.py`)
-
-- **Description:**
-  Utility script to compare two videos using X-CLIP embeddings. This is useful for validating video generation quality by computing semantic similarity between generated and reference videos.
-
-- **Main Feature:** Compute semantic similarity between videos.
-
-- **Run Command:**
-  ```bash
-  python video_similarity.py left_video.mp4 right_video.mp4
-  ```
 
 ## Troubleshooting
 
