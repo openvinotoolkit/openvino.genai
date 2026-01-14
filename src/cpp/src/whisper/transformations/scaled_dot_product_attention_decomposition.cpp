@@ -111,14 +111,7 @@ std::shared_ptr<ov::Node> WhisperScaledDotProductAttentionDecomposition::decompo
                                                       const int64_t idx) -> std::shared_ptr<ov::Node> {
         const auto dim_to_extract_const = v0::Constant::create(element::i32, Shape{}, {idx});
         const auto gather = std::make_shared<v8::Gather>(shape_of, dim_to_extract_const, zero_i);
-        // When dim_to_extract is static but the whole shape is dynamic,
-        // ConstantFolding can't fold ShapeOf->Gather subgraph in this case.
-        // So it's better to explicitly extract the needed dimension.
 
-        // todo: address this if. Expose devapi or sdpa decompose pass
-        // if (auto constant = get_constant_from_source(gather)) {
-        //     return register_new_node(constant);
-        // }
         register_new_node(dim_to_extract_const);
         return register_new_node(gather);
     };

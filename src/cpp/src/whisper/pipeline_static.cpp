@@ -1122,7 +1122,6 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
 
     OPENVINO_ASSERT(!config.initial_prompt.has_value(), "'initial_prompt' parameter is not supported on NPU device.");
     OPENVINO_ASSERT(!config.hotwords.has_value(), "'hotwords' parameter is not supported on NPU device.");
-    // todo: check on NPU device
     OPENVINO_ASSERT(!config.word_timestamps, "'word_timestamps' parameter is not supported on NPU device.");
 
     size_t max_new_tokens = config.get_max_new_tokens();

@@ -40,7 +40,7 @@ void add_cross_attention_qk_scaled_scores_outputs(std::shared_ptr<ov::Model> mod
                 }
             }
 
-            // output found, exit outp
+            // output found, exit outputs loop
             if (!should_skip_op) {
                 break;
             }

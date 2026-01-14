@@ -300,7 +300,7 @@ std::pair<std::vector<std::string>, std::vector<std::vector<int64_t>>> split_tok
     const std::vector<int64_t>& tokens,
     ov::genai::Tokenizer& tokenizer) {
     const std::string decoded_full = tokenizer.decode(tokens, ov::genai::skip_special_tokens(false));
-    const std::string replacement_char = u8"\uFFFD";  // todo: check replacement char correctness
+    const std::string replacement_char = u8"\uFFFD";
 
     std::vector<std::string> words;
     std::vector<std::vector<int64_t>> word_tokens;
