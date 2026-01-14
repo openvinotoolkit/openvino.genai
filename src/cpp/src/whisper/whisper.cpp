@@ -307,7 +307,7 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
                                                 feature_extractor.nb_max_frames,
                                                 raw_metrics);
 
-        // prepare init_tokens just once for whole input
+        // prepare sot_tokens just once for whole input
         if (sot_tokens.empty()) {
             sot_tokens = prepare_sot_tokens(hidden_state_tensor, decoder, config, raw_metrics);
         }
@@ -365,10 +365,6 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
             break;
         }
 
-        if (streamer) {
-            streamer->end();
-        }
-
         if (config.word_timestamps) {
             const auto n_active_frames =
                 std::min(feature_extractor.nb_max_frames, input_features.n_active_frames - chunk_offset);
@@ -387,6 +383,10 @@ WhisperGenerateResult whisper_generate(const ov::genai::WhisperGenerationConfig&
             }
             result.words->insert(result.words->end(), word_timestamps.begin(), word_timestamps.end());
         }
+    }
+
+    if (streamer) {
+        streamer->end();
     }
 
     // if return_timestamps wasn't enabled by user
