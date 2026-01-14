@@ -52,10 +52,7 @@ FlowMatchEulerDiscreteScheduler::Config::Config(const std::filesystem::path& sch
     read_json_param(data, "max_shift", max_shift);
     read_json_param(data, "base_image_seq_len", base_image_seq_len);
     read_json_param(data, "max_image_seq_len", max_image_seq_len);
-    auto shift_terminal_iter = data.find("shift_terminal");
-    if (shift_terminal_iter != data.end() && !shift_terminal_iter->is_null()) {
-        shift_terminal = *shift_terminal_iter;
-    }
+    read_json_param(data, "shift_terminal", shift_terminal);
 }
 
 FlowMatchEulerDiscreteScheduler::FlowMatchEulerDiscreteScheduler(const std::filesystem::path& scheduler_config_path)
