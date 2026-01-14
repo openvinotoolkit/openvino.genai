@@ -721,20 +721,13 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
 void add_extensions_to_core(ov::AnyMap& properties) {
     auto it = properties.find(EXTENSIONS_ARG_NAME);
     if (it != properties.end()) {
-        if (it->second.is<std::vector<std::string>>()) {
-            auto extensions = it->second.as<std::vector<std::string>>();
-            for (const auto& extension : extensions) {
-                singleton_core().add_extension(extension);
-            }
-        } else if (it->second.is<std::vector<std::wstring>>()) {
-            auto extensions = it->second.as<std::vector<std::wstring>>();
-            for (const auto& extension : extensions) {
-                singleton_core().add_extension(extension);
-            }
-        } else {
-            auto extensions = it->second.as<std::vector<std::filesystem::path>>();
-            for (const auto& extension : extensions) {
-                singleton_core().add_extension(extension);
+        auto extensions =
+            it->second.as<std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>>();
+        for (const auto& extension : extensions) {
+            if (std::holds_alternative<std::filesystem::path>(extension)) {
+                singleton_core().add_extension(std::get<std::filesystem::path>(extension));
+            } else {
+                singleton_core().add_extension(std::get<std::shared_ptr<ov::Extension>>(extension));
             }
         }
         properties.erase(it);

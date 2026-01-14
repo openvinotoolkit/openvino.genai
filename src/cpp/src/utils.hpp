@@ -103,7 +103,7 @@ void read_anymap_param(const ov::AnyMap& config_map, const std::string& name, T&
 const std::string STREAMER_ARG_NAME = "streamer";
 const std::string CONFIG_ARG_NAME = "generation_config";
 const std::string DRAFT_MODEL_ARG_NAME = "draft_model";
-const std::string EXTENSIONS_ARG_NAME = "EXTENSIONS";
+const std::string EXTENSIONS_ARG_NAME = "extensions";
 
 template<typename Config = ov::genai::GenerationConfig>
 Config from_config_json_if_exists(const std::filesystem::path& models_path, const char config_name[] = "generation_config.json") {
@@ -321,6 +321,46 @@ std::pair<ov::AnyMap, std::optional<std::filesystem::path>> extract_export_prope
 ov::CompiledModel import_model(const std::filesystem::path& blob_path,
                                const std::string& device,
                                const ov::AnyMap& properties);
+
+/**
+ * @brief Wrap paths and Extensions into ov::AnyMap compatible pair. ov::Core::add_extension() is called for each item
+ * inpipeline constructor.
+ */
+template <typename T,
+          typename = std::enable_if_t<
+              std::is_same_v<std::decay_t<T>,
+                             std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>>>>
+std::pair<std::string, ov::Any> extensions(T&& vector) {
+    return {EXTENSIONS_ARG_NAME, ov::Any(std::forward<T>(vector))};
+}
+
+/**
+ * @brief A helper allowing extensions({"path"}) instead of explicit std::variant.
+ */
+inline std::pair<std::string, ov::Any> extensions(const std::vector<std::filesystem::path>& paths) {
+    return extensions(
+        std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>{paths.begin(), paths.end()});
+}
+
+/**
+ * @brief A helper allowing extensions({extensions}) instead of explicit std::variant.
+ */
+inline std::pair<std::string, ov::Any> extensions(const std::vector<std::shared_ptr<ov::Extension>>& extens) {
+    return extensions(
+        std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>{extens.begin(), extens.end()});
+}
+
+/**
+ * @brief A helper allowing extensions(list{"path"}) instead of explicit std::variant.
+ */
+template <class T, class = std::enable_if_t<std::is_constructible<std::filesystem::path, const T&>::value>>
+inline std::pair<std::string, ov::Any> extensions(std::initializer_list<T> paths) {
+    std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>> paths_var;
+    for (const auto& path : paths){
+        paths_var.emplace_back(std::filesystem::path{path});
+    }
+    return extensions(std::move(paths_var));
+}
 
 /**
  * @brief Exports a compiled model to a blob file for later use with import_model.
