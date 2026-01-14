@@ -9,6 +9,8 @@
 
 #include "visual_language/vision_encoder.hpp"
 #include "visual_language/inputs_embedder.hpp"
+#include "circular_buffer_queue.hpp"
+#include "visual_language/cdpruner/cdpruner.hpp"
 
 namespace ov::genai {
 

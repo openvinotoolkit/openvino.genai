@@ -4,6 +4,7 @@
 #include <optional>
 
 #include "indicators/progress_bar.hpp"
+#include <openvino/runtime/tensor.hpp>
 
 bool progress_bar(size_t step, size_t num_steps, ov::Tensor& /* latent */) {
     using namespace indicators;
@@ -21,7 +22,7 @@ bool progress_bar(size_t step, size_t num_steps, ov::Tensor& /* latent */) {
     }
 
     std::stringstream stream;
-    stream << "Image generation step " << (step + 1) << " / " << num_steps;
+    stream << "Generation step " << (step + 1) << " / " << num_steps;
 
     bar->set_option(option::PostfixText{stream.str()});
     bar->set_progress((100 * (step + 1)) / num_steps);
