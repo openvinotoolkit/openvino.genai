@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <map>
 
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
@@ -17,14 +18,17 @@ namespace genai {
 
 namespace module {
 
+// ConfigModelsMap: key is model name, value is pair of model IR as string and shared_ptr<ov::Model>
+using ConfigModelsMap = std::map<std::string, std::map<std::string, std::shared_ptr<ov::Model>>>;
+
 class OPENVINO_GENAI_EXPORTS ModulePipeline {
 
 public:
     // config_yaml_path: yaml file.
-    ModulePipeline(const std::filesystem::path& config_yaml_path);
+    ModulePipeline(const std::filesystem::path& config_yaml_path, ConfigModelsMap models_map = {});
 
     // config_yaml_content: yaml content string.
-    ModulePipeline(const std::string& config_yaml_content);
+    ModulePipeline(const std::string& config_yaml_content, ConfigModelsMap models_map = {});
 
     ~ModulePipeline();
 

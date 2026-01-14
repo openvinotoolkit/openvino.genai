@@ -4,6 +4,7 @@
 #include "module_genai/module_base.hpp"
 
 #include <filesystem>
+#include "logger.hpp"
 
 namespace ov {
 namespace genai {
@@ -21,6 +22,8 @@ IBaseModule::IBaseModule(const IBaseModuleDesc::PTR& desc, const PipelineDesc::P
     for (auto& output : desc->outputs) {
         this->outputs[output.name] = OutputModule();
     }
+
+    init_ov_model();
 }
 
 void IBaseModule::prepare_inputs() {
@@ -34,6 +37,51 @@ void IBaseModule::prepare_inputs() {
 
 const std::string& IBaseModule::get_module_name() const {
     return module_desc->name;
+}
+
+bool IBaseModule::exists_input(const std::string& input_name) {
+    return inputs.find(input_name) != inputs.end();
+}
+
+std::string IBaseModule::get_param(const std::string& param_item) {
+    const auto& params = module_desc->params;
+    auto it_models_path = params.find(param_item);
+    OPENVINO_ASSERT(it_models_path != params.end(),
+                    "Module[" + module_desc->name + "]: '" + param_item + "' not found in params");
+    return it_models_path->second;
+}
+
+std::string IBaseModule::get_optional_param(const std::string& param_item) {
+    const auto& params = module_desc->params;
+    auto it_models_path = params.find(param_item);
+    if (it_models_path == params.end()) {
+        return std::string();
+    }
+    return it_models_path->second;
+}
+
+void IBaseModule::init_ov_model() {
+    if (m_ov_model == nullptr) {
+        m_ov_model = get_ov_model_from_cfg_models_map("ov_model", false);
+    }
+}
+
+std::shared_ptr<ov::Model> IBaseModule::get_ov_model_from_cfg_models_map(const std::string& param_name, bool required) {
+    const auto& models_map = pipeline_desc->getConfigModelsMap();
+    auto it = models_map.find(module_desc->name);
+    if (it == models_map.end()) {
+        OPENVINO_ASSERT(!required, "Module[" + module_desc->name + "] is not found in models_map");
+        return nullptr;
+    }
+
+    auto param_it = it->second.find(param_name);
+    if (param_it == it->second.end()) {
+        OPENVINO_ASSERT(
+            !required,
+            "Module[" + module_desc->name + "]: ov::Model with name '" + param_name + "' not found in models_map");
+    }
+
+    return param_it->second;
 }
 
 std::string IBaseModuleDesc::get_full_path(const std::string& fn) {

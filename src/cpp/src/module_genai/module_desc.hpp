@@ -48,7 +48,7 @@ public:
     ModuleType type = ModuleType::Unknown;
     std::vector<InputPort> inputs;
     std::vector<OutputPort> outputs;
-    std::string device;
+    std::string device = "CPU"; // default CPU
     std::string description;
     ThreadMode thread_mode = ThreadMode::AUTO;
     std::unordered_map<std::string, std::string> params;
@@ -82,10 +82,20 @@ public:
     // sub-pipeline name -> sub-pipeline desc
     std::vector<std::pair<std::string, PipelineModulesDesc>> sub_pipeline_descs;
 
+    void setConfigModelsMap(const ConfigModelsMap& models_map) {
+        m_models_map = models_map;
+    }
+    const ConfigModelsMap& getConfigModelsMap() const {
+        return m_models_map;
+    }
+
     using PTR = std::shared_ptr<PipelineDesc>;
     static PTR create() {
         return std::shared_ptr<PipelineDesc>(new PipelineDesc());
     }
+
+private:
+    ConfigModelsMap m_models_map;
 };
 
 }  // namespace module

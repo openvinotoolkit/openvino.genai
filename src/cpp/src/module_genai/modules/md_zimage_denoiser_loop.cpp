@@ -123,7 +123,7 @@ void ZImageDenoiserLoopModule::run() {
         // empty negative prompt embeds
     }
 
-    ImageGenerationConfig generation_config {};
+    ImageGenerationConfig generation_config{};
     if (exists_input("num_inference_steps")) {
         generation_config.num_inference_steps = this->inputs["num_inference_steps"].data.as<int>();
     } else {
@@ -138,8 +138,12 @@ void ZImageDenoiserLoopModule::run() {
     }
     if (exists_input("cfg_normalization")) {
         std::string cfg_normalization_str = this->inputs["cfg_normalization"].data.as<std::string>();
-        std::transform(cfg_normalization_str.begin(), cfg_normalization_str.end(), cfg_normalization_str.begin(),
-                   [](unsigned char c) { return (char)std::tolower(c); });
+        std::transform(cfg_normalization_str.begin(),
+                       cfg_normalization_str.end(),
+                       cfg_normalization_str.begin(),
+                       [](unsigned char c) {
+                           return (char)std::tolower(c);
+                       });
         if (cfg_normalization_str == "true" || cfg_normalization_str == "1") {
             m_cfg_normalization = true;
         } else {

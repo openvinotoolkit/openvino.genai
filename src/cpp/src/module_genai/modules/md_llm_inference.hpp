@@ -23,8 +23,9 @@ class LLMInferenceModule : public IBaseModule {
     DeclareModuleConstructor(LLMInferenceModule);
 
 private:
+    std::shared_ptr<ov::Model> m_ov_model_embed = nullptr;
     bool initialize();
-    bool load_generation_config(const std::string& config_path);
+    bool load_generation_config(const std::filesystem::path& config_path);
 
     // Pipeline instances (only one will be initialized based on model type)
     std::shared_ptr<ov::genai::VLMPipeline::VLMContinuousBatchingAdapter> m_cb_pipeline;

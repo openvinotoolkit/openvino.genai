@@ -33,7 +33,7 @@ public:
             std::cout << "Saved YAML content to " << filename << std::endl;
         }
 
-        ov::genai::module::ModulePipeline pipe(yaml_content);
+        ov::genai::module::ModulePipeline pipe(yaml_content, m_models_map);
 
         ov::AnyMap inputs = prepare_inputs();
         if (m_async) {
@@ -48,6 +48,7 @@ public:
     static ov::Tensor ut_randn_tensor(const ov::Shape& shape, size_t seed);
 
 protected:
+    ov::genai::module::ConfigModelsMap m_models_map = {};
     std::string m_test_name;
     void set_test_name(const std::string& test_name);
 #ifndef REGISTER_TEST_NAME

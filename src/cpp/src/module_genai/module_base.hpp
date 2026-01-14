@@ -51,12 +51,21 @@ public:
     bool is_output() const { return is_output_module; }
 
 protected:
-    bool exists_input(const std::string& input_name) {
-        return inputs.find(input_name) != inputs.end();
-    }
+    // Check if exist input in inputs map.
+    bool exists_input(const std::string& input_name);
+
+    // Get param value from module_desc->params.
+    // Return empty string if param not found.
+    std::string get_param(const std::string& param_item);
+    std::string get_optional_param(const std::string& param_item);
 
     bool is_input_module = false;
     bool is_output_module = false;
+
+    std::shared_ptr<ov::Model> m_ov_model = nullptr;
+    // Initialize ov::Model from config models_map with param_name: "ov_model"
+    void init_ov_model();
+    std::shared_ptr<ov::Model> get_ov_model_from_cfg_models_map(const std::string& param_name, bool required = false);
 };
 
 #ifndef DeclareModuleConstructor

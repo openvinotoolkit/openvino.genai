@@ -18,15 +18,19 @@ namespace genai {
 namespace module {
 
 // config_yaml_path: yaml file.
-ModulePipeline::ModulePipeline(const std::filesystem::path& config_yaml_path) {
+ModulePipeline::ModulePipeline(const std::filesystem::path& config_yaml_path, ConfigModelsMap models_map) {
     auto pipeline_desc = utils::load_config(config_yaml_path);
+    pipeline_desc->setConfigModelsMap(models_map);
+
     ModulePipelineImpl* pImpl = new ModulePipelineImpl(pipeline_desc->main_pipeline_desc, pipeline_desc);
     OPENVINO_ASSERT(pImpl != NULL, "Create ModulePipelineImpl return null.");
     m_pipeline_impl = (ModulePipelineImpl*)pImpl;
 }
 
-ModulePipeline::ModulePipeline(const std::string& config_yaml_content) {
+ModulePipeline::ModulePipeline(const std::string& config_yaml_content, ConfigModelsMap models_map) {
     auto pipeline_desc = utils::load_config_from_string(config_yaml_content);
+    pipeline_desc->setConfigModelsMap(models_map);
+
     ModulePipelineImpl* pImpl = new ModulePipelineImpl(pipeline_desc->main_pipeline_desc, pipeline_desc);
     OPENVINO_ASSERT(pImpl != NULL, "Create ModulePipelineImpl return null.");
     m_pipeline_impl = (ModulePipelineImpl*)pImpl;

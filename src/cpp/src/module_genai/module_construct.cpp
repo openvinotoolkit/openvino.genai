@@ -47,7 +47,9 @@ void module_connect(PipelineModuleInstance& pipeline_instance) {
     }
 }
 
-void construct_pipeline(const PipelineModulesDesc& pipeline_modules_desc, PipelineModuleInstance& pipeline_instance, const PipelineDesc::PTR& pipeline_desc) {
+void construct_pipeline(const PipelineModulesDesc& pipeline_modules_desc,
+                        PipelineModuleInstance& pipeline_instance,
+                        const PipelineDesc::PTR& pipeline_desc) {
     for (auto& module_desc : pipeline_modules_desc) {
         IBaseModule::PTR module_ptr = nullptr;
         switch (module_desc.second->type) {

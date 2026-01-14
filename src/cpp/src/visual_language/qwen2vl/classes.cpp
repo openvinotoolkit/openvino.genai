@@ -25,6 +25,9 @@
 
 namespace ov::genai {
 
+std::shared_ptr<ov::Model> g_llm_model;
+std::shared_ptr<ov::Model> g_model_vision_embeddings_merger;
+
 namespace {
 
 // Chat template hardcodes char sequence instead of referring to tag values, so NATIVE_TAG is hardcoded as well.
@@ -952,7 +955,7 @@ InputsEmbedderQwen2VL::InputsEmbedderQwen2VL(
     const std::string& device,
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {
-    auto model = utils::singleton_core().read_model(
+    auto model = g_model_vision_embeddings_merger ? g_model_vision_embeddings_merger : utils::singleton_core().read_model(
         utils::get_model_weights_pair(models_map, "vision_embeddings_merger").first,
         utils::get_model_weights_pair(models_map, "vision_embeddings_merger").second);
     utils::request_vl_sdpa_transformations(model);
