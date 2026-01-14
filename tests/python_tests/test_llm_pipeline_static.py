@@ -367,7 +367,7 @@ def test_terminate_by_sampler(
         def write(self, token_id) -> StreamingStatus:
             nonlocal current_iter
             current_iter += 1
-            return StreamingStatus.RUNNING if current_iter != num_iters else StreamingStatus.STOPPED
+            return StreamingStatus.RUNNING if current_iter != num_iters else StreamingStatus.STOP
         def end(self):
             pass
 
