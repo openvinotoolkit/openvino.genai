@@ -210,29 +210,65 @@ def get_argparser():
                         help="Pooling type CLS or MEAN for encoders, LAST_TOKEN for decoders. "
                              "Different post-processing is applied depending on the padding side. Applicable only for text embeddings")
     parser.add_argument("--embedding_normalize", action="store_true", help="Normalize embeddings. Applicable only for text embeddings")
-    parser.add_argument("--embedding_disable_pad_to_max_length", action="store_true", help="Disable padding embeddings. Applicable only for text embeddings")
-    parser.add_argument("--embedding_max_length", type=int, default=None,
-                        help="Max length for text embeddings. Input text will be padded or truncated to specified value")
-    parser.add_argument("--embedding_padding_side", choices=["left", "right"], default=None,
-                        help="Side to use for padding 'left' or 'right'. Applicable only for text embeddings")
-    parser.add_argument("--reranking_max_length", type=int, default=None,
-                        help="Max length for text reranking. Input text will be padded or truncated to specified value")
-    parser.add_argument("--reranking_top_n", type=int, default=3,
-                        help="Number of top results to return for text reranking")
-    parser.add_argument("--texts", nargs='+', default=None,
-                        help="List of candidates for reranking based on their relevance to a prompt(query). Applicable for Text Rerank pipeline.")
-    parser.add_argument('--texts_file', nargs='+', default=None,
-                        help='Texts file(s) in jsonl format with candidates for reranking based on relevance to a prompt(query). '
-                        'Multiple files should be separated with space(s). Applicable for Text Rerank pipeline.')
-    parser.add_argument("--apply_chat_template", action="store_true",
-                        help="Apply chat template for LLM. By default chat template is not applied. It's better to use with --disable_prompt_permutation,"
-                             " otherwise the prompt will be modified after applying the chat template, so the structure of chat template will not be kept.")
-    parser.add_argument("--speaker_embeddings", type=str, default=None,
-                        help="Path to .bin or .pt file with speaker embeddings for text to speech scenarios")
-    parser.add_argument("--vocoder_path", type=str, default=None,
-                        help="Path to vocoder  for text to speech scenarios")
-    parser.add_argument("-vf", "--video_frames", type=int, default=None,
-                        help="controller of video frames to process (required frame number if positive or decimation factor if negative)")
+    parser.add_argument(
+        "--embedding_disable_pad_to_max_length",
+        action="store_true",
+        help="Disable padding embeddings. Applicable only for text embeddings",
+    )
+    parser.add_argument(
+        "--embedding_max_length",
+        type=int,
+        default=None,
+        help="Max length for text embeddings. Input text will be padded or truncated to specified value",
+    )
+    parser.add_argument(
+        "--embedding_padding_side",
+        choices=["left", "right"],
+        default=None,
+        help="Side to use for padding 'left' or 'right'. Applicable only for text embeddings",
+    )
+    parser.add_argument(
+        "--reranking_max_length",
+        type=int,
+        default=None,
+        help="Max length for text reranking. Input text will be padded or truncated to specified value",
+    )
+    parser.add_argument(
+        "--reranking_top_n", type=int, default=3, help="Number of top results to return for text reranking"
+    )
+    parser.add_argument(
+        "--texts",
+        nargs="+",
+        default=None,
+        help="List of candidates for reranking based on their relevance to a prompt(query). Applicable for Text Rerank pipeline.",
+    )
+    parser.add_argument(
+        "--texts_file",
+        nargs="+",
+        default=None,
+        help="Texts file(s) in jsonl format with candidates for reranking based on relevance to a prompt(query). "
+        "Multiple files should be separated with space(s). Applicable for Text Rerank pipeline.",
+    )
+    parser.add_argument(
+        "--apply_chat_template",
+        action="store_true",
+        help="Apply chat template for LLM. By default chat template is not applied. It's better to use with --disable_prompt_permutation,"
+        " otherwise the prompt will be modified after applying the chat template, so the structure of chat template will not be kept.",
+    )
+    parser.add_argument(
+        "--speaker_embeddings",
+        type=str,
+        default=None,
+        help="Path to .bin or .pt file with speaker embeddings for text to speech scenarios",
+    )
+    parser.add_argument("--vocoder_path", type=str, default=None, help="Path to vocoder  for text to speech scenarios")
+    parser.add_argument(
+        "-vf",
+        "--video_frames",
+        type=int,
+        default=None,
+        help="controller of video frames to process (required frame number if positive or decimation factor if negative)",
+    )
     return parser.parse_args()
 
 
