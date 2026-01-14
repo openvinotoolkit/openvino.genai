@@ -146,9 +146,6 @@ Napi::Value cpp_to_js<std::vector<std::pair<size_t, float>>, Napi::Value>(
     const std::vector<std::pair<size_t, float>>& rerank_results);
 
 template <>
-Napi::Value cpp_to_js<ov::genai::JsonContainer, Napi::Value>(const Napi::Env& env, const ov::genai::JsonContainer& json_container);
-
-template <>
 Napi::Value cpp_to_js<ov::Tensor, Napi::Value>(const Napi::Env& env, const ov::Tensor& tensor);
 
 template <>
