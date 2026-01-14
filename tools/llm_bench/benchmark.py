@@ -79,7 +79,7 @@ def get_argprser():
     )
     parser.add_argument(
         "-i", "--images", default=None, help="test images for vision tasks. Can be directory or path to single image"
-    )    
+    )
     parser.add_argument(
         "-v", "--video", default=None, help="test video for vision tasks. Can be directory or path to single video"
     )
@@ -94,12 +94,12 @@ def get_argprser():
     parser.add_argument(
         "-lc",
         "--load_config",
-         default=None,
-         required=False,
+        default=None,
+        required=False,
         help="path to JSON file to load customized configurations.\n"
         'Example for OpenVINO: {"INFERENCE_NUM_THREADS":32,"PERFORMANCE_HINT":"LATENCY"}.\n'
         'Example for Pytorch: {"PREC_BF16":true}. Pytorch currently only supports bf16 settings.\n',
-     )
+    )
     parser.add_argument(
         "-mc",
         "--memory_consumption",
@@ -136,8 +136,8 @@ def get_argprser():
     )
     parser.add_argument(
         "--pruning_ratio",
-         type=int,
-         default=0,
+        type=int,
+        default=0,
         help="Percentage of visual tokens to prune "
         'Only supports PA model. To switch to PA mode, please, set {"ATTENTION_BACKEND": "PA"} in --load_config.',
     )
@@ -170,7 +170,7 @@ def get_argprser():
         "--subsequent",
         action="store_true",
         help="if the value is True, input prompts are processed in subsequent manner"
-        "if the value is False (default), input prompts are processed in interleave manner"
+        "if the value is False (default), input prompts are processed in interleave manner",
     )
     parser.add_argument("-od", "--output_dir", help="Save the input text and generated text, images to files")
     parser.add_argument(
