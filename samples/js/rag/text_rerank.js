@@ -11,7 +11,7 @@ async function main() {
     const query = process.argv[3];
     const documents = process.argv.slice(4);
 
-    const usageCommand = `Usage: node ${basename(process.argv[1])} <MODEL_DIR> '<QUERY>' '<DOC 1>' '<DOC 2>' ...`;
+    const usageCommand = `Usage: node ${basename(process.argv[1])} <MODEL_DIR> "<QUERY>" "<TEXT 1>" ["<TEXT 2>" ...]`;
     if (!modelPath) {
         console.error('Please specify path to model directory');
         console.error(usageCommand);

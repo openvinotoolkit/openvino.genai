@@ -1,6 +1,6 @@
 # Retrieval Augmented Generation Sample
 
-This example showcases inference of Text Embedding and Text Rerank Models. The application has limited configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `TextEmbeddingPipeline` and `TextRerankPipeline` and uses text as an input source.
+This example showcases inference of Text Embedding and Text Rerank Models. The application has limited configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `TextEmbeddingPipeline` and `TextRerankPipeline` uses text as an input source.
 
 ## Download and Convert the Model and Tokenizers
 
