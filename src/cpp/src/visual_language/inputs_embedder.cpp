@@ -113,7 +113,7 @@ bool InputsEmbedder::IInputsEmbedder::clean_historical_vision_tokens(ov::Tensor&
             }
         } else if (cleaned_ids[i] == vision_end_token_id) {
             bool has_matching_start = false;
-            for (int j = final_cleaned_ids.size() - 1; j >= 0; --j) {
+            for (auto j = final_cleaned_ids.size() - 1; j >= 0; --j) {
                 if (final_cleaned_ids[j] == vision_start_token_id) {
                     has_matching_start = true;
                     break;
@@ -228,6 +228,7 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_encoded_input_ids(const std::str
     auto new_input_ids = update_history(new_chat_tokens);
     m_prev_hist_length = m_kv_cache_state.get_state().size();
     m_kv_cache_state.add_inputs(new_input_ids);
+
     return new_input_ids;
 }
 

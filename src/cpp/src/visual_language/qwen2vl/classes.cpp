@@ -7,7 +7,6 @@
 #include "visual_language/clip.hpp"
 
 #include "utils.hpp"
-#include "logger.hpp"
 #include "openvino/op/interpolate.hpp"
 #include "openvino/op/add.hpp"
 #include "openvino/op/clamp.hpp"
@@ -1149,7 +1148,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
 
     // If we removed historical vision tokens, we should not use history_vision_count
     // because those historical tokens are no longer in input_ids
-    std::vector<std::pair<std::size_t, std::size_t>> effective_history_vision_count =
+    std::vector<std::pair<std::size_t, std::size_t>> adjusted_history_vision_count =
         removed_historical_vision ? std::vector<std::pair<std::size_t, std::size_t>>() : history_vision_count;
 
     m_position_ids = create_position_ids(input_ids,
@@ -1160,7 +1159,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
                                          videos_sequence,
                                          0,
                                          vision_start_token_id,
-                                         effective_history_vision_count);
+                                         adjusted_history_vision_count);
 
     int64_t position_ids_max_element = *std::max_element(m_position_ids.data<int64_t>(), m_position_ids.data<int64_t>() + m_position_ids.get_size());
     m_rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(input_ids.get_shape().at(1));
