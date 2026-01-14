@@ -143,7 +143,10 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
     std::stringstream ss;
     ss << "Loading and unpacking model from: " << model_path;
     ov::genai::utils::print_gguf_debug_info(ss.str());
-    auto [config, consts, qtypes] = load_gguf(model_path);
+
+    // TODO1: finished
+    // dequant to FP16 - when saving OV model, load with FP16 weights
+    auto [config, consts, qtypes] = load_gguf(model_path, enable_save_ov_model);
     auto load_finish_time = std::chrono::high_resolution_clock::now();
 
     ss.str("");

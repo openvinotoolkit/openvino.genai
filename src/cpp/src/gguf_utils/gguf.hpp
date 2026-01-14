@@ -39,6 +39,6 @@ void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
 std::tuple<std::map<std::string, GGUFMetaData>,
            std::unordered_map<std::string, ov::Tensor>,
            std::unordered_map<std::string, gguf_tensor_type>>
-load_gguf(const std::string& file);
+load_gguf(const std::string& file, bool dequantize_to_fp16 = false);
 
-GGUFLoad get_gguf_data(const std::string& file);
+GGUFLoad get_gguf_data(const std::string& file, bool dequantize_to_fp16 = false);

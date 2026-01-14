@@ -265,7 +265,8 @@ std::unordered_map<std::string, GGUFMetaData> load_metadata(gguf_ctx* ctx) {
 
 void load_arrays(gguf_ctx* ctx,
                  std::unordered_map<std::string, ov::Tensor>& array_map,
-                 std::unordered_map<std::string, gguf_tensor_type>& qtype_map) {
+                 std::unordered_map<std::string, gguf_tensor_type>& qtype_map,
+                 bool dequantize_to_fp16) {
     gguf_tensor tensor;
 
     auto check_insert = [](const auto& inserted) {
@@ -275,10 +276,28 @@ void load_arrays(gguf_ctx* ctx,
                         "'. This can happen when loading quantized tensors.");
     };
 
+    int quantized_count = 0;
+    int dequantized_count = 0;
+
     while (gguf_get_tensor(ctx, &tensor)) {
-        if (tensor.type == GGUF_TYPE_Q4_0 || tensor.type == GGUF_TYPE_Q4_1 || tensor.type == GGUF_TYPE_Q8_0 ||
-            tensor.type == GGUF_TYPE_Q4_K || tensor.type == GGUF_TYPE_Q6_K) {
+        // Q4_K and Q6_K special handling: dequantize to FP16 when requested
+        // test only with qwen2.5-1.5b-instruct-q4_k_m.gguf
+        if ((tensor.type == GGUF_TYPE_Q4_K || tensor.type == GGUF_TYPE_Q6_K) && dequantize_to_fp16) {
+            std::string name(tensor.name, tensor.namelen);
+            ov::Tensor fp16_tensor = extract_tensor_data(&tensor);
+            check_insert(array_map.emplace(name, fp16_tensor));
+
+            constexpr std::string_view weight_suffix = ".weight";
+            const std::string name_prefix = name.substr(0, name.length() - weight_suffix.length());
+            qtype_map.emplace(name_prefix + ".qtype", GGUF_TYPE_F16);
+            dequantized_count++;
+        }
+        // Other quantized types: keep quantized format (exclude Q4_K/Q6_K if dequantizing)
+        else if (tensor.type == GGUF_TYPE_Q4_0 || tensor.type == GGUF_TYPE_Q4_1 || tensor.type == GGUF_TYPE_Q8_0 ||
+                 (tensor.type == GGUF_TYPE_Q4_K && !dequantize_to_fp16) ||
+                 (tensor.type == GGUF_TYPE_Q6_K && !dequantize_to_fp16)) {
             gguf_load_quantized(array_map, qtype_map, tensor);
+            quantized_count++;
         } else {
             std::string name(tensor.name, tensor.namelen);
             ov::Tensor loaded_array = extract_tensor_data(&tensor);
@@ -288,6 +307,12 @@ void load_arrays(gguf_ctx* ctx,
             const std::string name_prefix = name.substr(0, name.length() - weight_suffix.length());
             qtype_map.emplace(name_prefix + ".qtype", static_cast<gguf_tensor_type>(tensor.type));
         }
+    }
+
+    if (dequantize_to_fp16) {
+        std::cout << "[DEBUG] Dequantized " << dequantized_count << " tensors to FP16" << std::endl;
+    } else {
+        std::cout << "[DEBUG] Loaded " << quantized_count << " quantized tensors" << std::endl;
     }
 }
 
@@ -319,7 +344,7 @@ std::vector<std::string> get_all_files(std::string file, int total_num) {
     return files;
 }
 
-GGUFLoad get_gguf_data(const std::string& file) {
+GGUFLoad get_gguf_data(const std::string& file, bool dequantize_to_fp16) {
     std::unordered_map<std::string, ov::Tensor> arrays;
     std::unordered_map<std::string, gguf_tensor_type> qtype;
 
@@ -336,7 +361,7 @@ GGUFLoad get_gguf_data(const std::string& file) {
 
     if (it == metadata.end())  // single GGUF file
     {
-        load_arrays(ctx.get(), arrays, qtype);
+        load_arrays(ctx.get(), arrays, qtype, dequantize_to_fp16);
         return {metadata, arrays, qtype};
     } else  // multi GGUF files
     {
@@ -351,9 +376,9 @@ GGUFLoad get_gguf_data(const std::string& file) {
 
             auto metadata_tmp = load_metadata(ctx_i.get());
 
-            load_arrays(ctx_i.get(), arrays, qtype);
+            load_arrays(ctx_i.get(), arrays, qtype, dequantize_to_fp16);
         }
-        load_arrays(ctx.get(), arrays, qtype);
+        load_arrays(ctx.get(), arrays, qtype, dequantize_to_fp16);
         return {metadata, arrays, qtype};
     }
 }
@@ -570,12 +595,16 @@ std::unordered_map<std::string, gguf_tensor_type> get_qtype_map(
 std::tuple<std::map<std::string, GGUFMetaData>,
            std::unordered_map<std::string, ov::Tensor>,
            std::unordered_map<std::string, gguf_tensor_type>>
-load_gguf(const std::string& file) {
-    auto [metadata, weights, qtype] = get_gguf_data(file);
+load_gguf(const std::string& file, bool dequantize_to_fp16) {
+    std::cout << "[DEBUG] load_gguf called with dequantize_to_fp16=" << (dequantize_to_fp16 ? "true" : "false") << std::endl;
+    
+    auto [metadata, weights, qtype] = get_gguf_data(file, dequantize_to_fp16);
 
     auto config = config_from_meta(metadata);
     auto consts = consts_from_weights(config, weights);
     auto qtypes = get_qtype_map(config, qtype);
 
+    std::cout << "[DEBUG] load_gguf completed, loaded " << weights.size() << " tensors" << std::endl;
+    
     return {config, consts, qtypes};
 }

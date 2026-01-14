@@ -9,9 +9,18 @@ int main(int argc, char* argv[]) try {
 
     std::string models_path = argv[1];
     std::string prompt = argv[2];
-    std::string device = "CPU";  // GPU can be used as well
-
-    ov::genai::LLMPipeline pipe(models_path, device);
+    std::string device = "GPU";  // CPU can be used as well
+    ov::AnyMap pipe_config = {};
+    
+    // Enable save_ov_model for GGUF files to test WA-style dequantization
+    if (models_path.size() >= 5 && models_path.substr(models_path.size() - 5) == ".gguf") {
+        pipe_config["enable_save_ov_model"] = true;
+        std::cout << "[TEST] enable_save_ov_model is set to true for GGUF model" << std::endl;
+    } else {
+        std::cout << "[TEST] Not a GGUF model, enable_save_ov_model disabled" << std::endl;
+    }
+    
+    ov::genai::LLMPipeline pipe(models_path, device, pipe_config);
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
     std::string result = pipe.generate(prompt, config);
