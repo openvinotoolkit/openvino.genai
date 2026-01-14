@@ -4,6 +4,7 @@
 #include "openvino/genai/video_generation/ltx_video_transformer_3d_model.hpp"
 
 #include <fstream>
+#include <numeric>
 
 #include "json_utils.hpp"
 #include "utils.hpp"
