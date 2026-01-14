@@ -5,6 +5,7 @@
 
 #include <fstream>
 #include <memory>
+#include <numeric>
 
 #include "openvino/runtime/core.hpp"
 #include "openvino/core/preprocess/pre_post_process.hpp"
