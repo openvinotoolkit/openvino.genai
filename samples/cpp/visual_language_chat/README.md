@@ -59,6 +59,8 @@ benchmark_vlm [OPTIONS]
 - `-mt, --max_new_tokens` (default: `20`): Maximal number of new tokens.
 - `-n, --num_iter` (default: `3`): Number of iterations.
 - `-d, --device` (default: `"CPU"`): Device to run the model on.
+- `-pr, --pruning_ratio` (default: `"disable"`): Percentage of visual tokens to prune (valid range: 0-100), puning is disabled by default.
+- `-rw, --relevance_weight` (default: `"0.5"`):  (float, 0–1): Balances diversity and detail in token pruning. 0 = no relevance; higher = more conservative pruning.
 
 ### Output:
 
