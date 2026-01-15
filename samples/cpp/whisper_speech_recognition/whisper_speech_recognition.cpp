@@ -20,8 +20,7 @@ int main(int argc, char* argv[]) try {
     std::string device = (argc == 4) ? argv[3] : "CPU";  // Default to CPU if no device is provided
 
     ov::AnyMap ov_config;
-    if (device == "NPU" ||
-        device.find("GPU") != std::string::npos) {  // need to handle cases like "GPU", "GPU.0" and "GPU.1"
+    if (device == "NPU" || device.find("GPU") != std::string::npos) {  // need to handle cases like "GPU", "GPU.0" and "GPU.1"
         // Cache compiled models on disk for GPU and NPU to save time on the
         // next run. It's not beneficial for CPU.
         ov_config = get_config_for_cache();
