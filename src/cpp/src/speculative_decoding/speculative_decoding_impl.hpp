@@ -150,6 +150,7 @@ protected:
     bool is_requests_empty();
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
     std::pair<ov::genai::SchedulerConfig, ov::genai::SchedulerConfig> init_speculative_models(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc);
+    std::map<uint64_t, GenerationHandle>& draft_generations() { return m_draft_generations; }
 public:
     template<class Impl>
     friend std::vector<EncodedGenerationResult> generate_common(
@@ -192,7 +193,6 @@ public:
     const Tokenizer& tokenizer() const { return m_tokenizer; }
 
     std::mutex& draft_generations_mutex() { return m_draft_generations_mutex; }
-    std::map<uint64_t, GenerationHandle>& draft_generations() { return m_draft_generations; }
 };
 
 }  // namespace ov::genai

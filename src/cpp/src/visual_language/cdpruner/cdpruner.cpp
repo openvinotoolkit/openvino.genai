@@ -288,7 +288,7 @@ ov::Tensor CDPruner::apply_pruning(const std::vector<ov::Tensor>& visual_feature
         global_offset += visual_feature.get_shape()[1];
     }
 
-    m_last_selected_tokens = aggregated_selected;
+    m_last_selected_tokens = std::move(aggregated_selected);
     // Calculate actual total tokens by summing each frame's pruned tokens
     // (frames may have different sizes after pruning)
     const auto& first_pruned_feature = pruned_features_list[0];
