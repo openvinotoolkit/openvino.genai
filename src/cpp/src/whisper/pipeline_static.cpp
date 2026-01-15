@@ -316,15 +316,6 @@ std::pair<ov::genai::EncodedResults, bool> full_decode(ov::Tensor& encoder_hidde
     sampler.sample({sequence_group}, logits);
     stream_generated_tokens(streamer, handle, return_timestamps);
 
-    auto read = handle->read();
-
-    auto generated_ids = read.begin()->second.generated_ids;
-    std::cout << "sequence->get_generated_ids(): " << generated_ids.size() << std::endl;
-    for (const auto& id : generated_ids) {
-        std::cout << id << " ";
-    }
-    std::cout << std::endl;
-
     prepare_decoder_with_past(models.decoder_with_past, models.decoder, init_ids.size());
 
     while (!sequence_group->has_finished() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
