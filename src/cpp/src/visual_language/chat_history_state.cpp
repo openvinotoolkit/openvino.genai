@@ -88,35 +88,37 @@ ChatHistoryInternalState::ResolvedVisions ChatHistoryInternalState::resolve_visi
     
     ResolvedVisions result;
     
-    std::vector<size_t> _image_sequence = image_sequence.value_or(build_full_image_sequence());
-    std::vector<size_t> _video_sequence = video_sequence.value_or(build_full_video_sequence());
+    std::vector<size_t> global_image_sequence = image_sequence.value_or(build_full_image_sequence());
+    std::vector<size_t> global_video_sequence = video_sequence.value_or(build_full_video_sequence());
     
-    std::unordered_map<VisionID, size_t> image_id_to_local_index;
-    for (size_t global_idx : _image_sequence) {
+    std::unordered_map<VisionID, size_t> image_id_to_dedup_index;
+    for (size_t global_idx : global_image_sequence) {
         VisionID id = m_image_index_to_id.at(global_idx);
         
-        auto it = image_id_to_local_index.find(id);
-        if (it == image_id_to_local_index.end()) {
-            size_t local_idx = result.encoded_images.size();
-            image_id_to_local_index[id] = local_idx;
+        auto it = image_id_to_dedup_index.find(id);
+        if (it == image_id_to_dedup_index.end()) {
+            size_t dedup_idx = result.encoded_images.size();
+            image_id_to_dedup_index[id] = dedup_idx;
             result.encoded_images.push_back(vision_registry->get_encoded_image(id));
-            result.image_sequence.push_back(local_idx);
+            result.image_sequence.push_back(dedup_idx);
         } else {
+            result.encoded_images.push_back(vision_registry->get_encoded_image(id));
             result.image_sequence.push_back(it->second);
         }
     }
     
-    std::unordered_map<VisionID, size_t> video_id_to_local_index;
-    for (size_t global_idx : _video_sequence) {
+    std::unordered_map<VisionID, size_t> video_id_to_dedup_index;
+    for (size_t global_idx : global_video_sequence) {
         VisionID id = m_video_index_to_id.at(global_idx);
         
-        auto it = video_id_to_local_index.find(id);
-        if (it == video_id_to_local_index.end()) {
-            size_t local_idx = result.encoded_videos.size();
-            video_id_to_local_index[id] = local_idx;
+        auto it = video_id_to_dedup_index.find(id);
+        if (it == video_id_to_dedup_index.end()) {
+            size_t dedup_idx = result.encoded_videos.size();
+            video_id_to_dedup_index[id] = dedup_idx;
             result.encoded_videos.push_back(vision_registry->get_encoded_video(id));
-            result.video_sequence.push_back(local_idx);
+            result.video_sequence.push_back(dedup_idx);
         } else {
+            result.encoded_videos.push_back(vision_registry->get_encoded_video(id));
             result.video_sequence.push_back(it->second);
         }
     }
@@ -189,6 +191,7 @@ std::shared_ptr<ChatHistoryInternalState> ChatHistoryInternalState::get_or_creat
     } else if (vision_registry && !state->get_vision_registry()) {
         state->set_vision_registry(vision_registry);
     }
+    state->detect_chat_history_format(history);
     return state;
 }
 
@@ -196,7 +199,7 @@ const size_t ChatHistoryInternalState::find_matching_history_length(const ChatHi
     size_t matching_history_length = 0;
     
     for (size_t i = 0; i < std::min(m_messages_metadata.size(), history.size()); ++i) {
-        if (m_messages_metadata[i].original_message_json != history[i].to_json_string()) {
+        if (m_messages_metadata[i].original_message != history[i]) {
             break;
         }
         matching_history_length = i + 1;
@@ -230,6 +233,7 @@ void ChatHistoryInternalState::reset() {
     m_image_index_to_id.clear();
     m_video_index_to_id.clear();
     m_messages_metadata.clear();
+    m_chat_history_format = ChatHistoryFormat::UNKNOWN;
 }
 
 void ChatHistoryInternalState::release_refs_from(size_t image_index, size_t video_index) {
@@ -243,6 +247,53 @@ void ChatHistoryInternalState::release_refs_from(size_t image_index, size_t vide
     for (size_t i = video_index; i < m_video_index_to_id.size(); ++i) {
         vision_registry->release_ref(m_video_index_to_id[i]);
     }
+}
+
+/**
+ * @brief Detects chat history format based on the last user message
+ * and verifies different formats are not mixed within the history.
+ */
+void ChatHistoryInternalState::detect_chat_history_format(const ChatHistory& history) {
+    const ChatHistoryFormat current_format = m_chat_history_format;
+    ChatHistoryFormat detected_format = ChatHistoryFormat::UNKNOWN;
+
+    const auto& last_user_message = history.last();
+    OPENVINO_ASSERT(last_user_message["role"].get_string() == "user");
+
+    if (!last_user_message.contains("content")) {
+        OPENVINO_THROW("Unknown chat history format: user message does not contain 'content' field.");
+    }
+
+    if (last_user_message["content"].is_string()) {
+        detected_format = ChatHistoryFormat::STRING_CONTENT;
+    }
+
+    if (last_user_message["content"].is_array()) {
+        for (size_t i = 0; i < last_user_message["content"].size(); ++i) {
+            const auto& item = last_user_message["content"][i];
+            if (item.is_object() && item.contains("type")) {
+                std::string type = item["type"].get_string();
+                if ((type == "text" && item.contains("text") && item["text"].is_string()) ||
+                     type == "image" || type == "video"
+                ) {
+                    detected_format = ChatHistoryFormat::MULTIPART_CONTENT;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (detected_format == ChatHistoryFormat::UNKNOWN) {
+        OPENVINO_THROW("Unknown chat history format. Supported formats schemas are "
+                       "`{role: user, content: string}` and "
+                       "`{role: user, content: [{type: text/image/video, ...}, ...]}`.");
+    }
+
+    if (current_format != detected_format) {
+        OPENVINO_THROW("Mixed chat history formats detected.");
+    }
+
+    m_chat_history_format = detected_format;
 }
 
 } // namespace ov::genai

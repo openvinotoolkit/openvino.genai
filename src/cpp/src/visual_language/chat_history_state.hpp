@@ -8,10 +8,35 @@
 
 namespace ov::genai {
 
+/**
+ * @brief Format of chat history user messages.
+ * 
+ * STRING_CONTENT: User message content is a string, e.g.:
+ *  ```
+ *  {"role": "user", "content": "What's in this image?"}
+ *  ```
+ * 
+ * MULTIPART_CONTENT: User message content is an array of typed objects (OpenAI-like), e.g.:
+ *  ```
+ *  {"role": "user", "content": [
+ *    {"type": "text", "text": "Describe this:"},
+ *    {"type": "image"},
+ *    {"type": "video"}
+ *  ]}
+ *  ```
+ */
+enum ChatHistoryFormat {
+    UNKNOWN,
+    STRING_CONTENT,
+    MULTIPART_CONTENT,
+};
+
 struct MessageMetadata {
-    std::string original_message_json;
+    // Original message for change detection
+    JsonContainer original_message;
     
-    // TODO Consider using full serialized message json
+    // Contains vision placeholders after prompt normalization.
+    // Empty for system/assistant messages.
     std::string normalized_content;
     
     // Global indices provided with corresponding message (input order)
@@ -84,13 +109,17 @@ public:
 
     void reset();
 
+    ChatHistoryFormat get_chat_history_format() { return m_chat_history_format; }
+
     static std::shared_ptr<ChatHistoryInternalState> get_or_create(
-        ChatHistory& history,
+        ov::genai::ChatHistory& history,
         std::shared_ptr<VisionRegistry> vision_registry = nullptr
     );
 
 private:
     std::weak_ptr<VisionRegistry> m_vision_registry;
+
+    ChatHistoryFormat m_chat_history_format = ChatHistoryFormat::UNKNOWN;
 
     std::vector<VisionID> m_image_index_to_id;
     std::vector<VisionID> m_video_index_to_id;
@@ -98,6 +127,8 @@ private:
     std::vector<MessageMetadata> m_messages_metadata;
 
     void release_refs_from(size_t image_index, size_t video_index);
+
+    void detect_chat_history_format(const ov::genai::ChatHistory& history);
 };
 
 } // namespace ov::genai
