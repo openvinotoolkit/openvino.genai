@@ -37,7 +37,7 @@ using ov::genai::MicroSeconds;
 
 namespace {
 
-constexpr size_t MAX_PROMPT_LEN = 444;
+constexpr size_t MAX_PROMPT_LEN = 4;
 
 template <typename T>
 void fill_tensor(ov::Tensor tensor, T fill_val) {
@@ -1071,7 +1071,10 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
 
     const size_t max_sequence_length = 448;
 
-    reshape_to_static(decoder_model, MAX_PROMPT_LEN, MAX_PROMPT_LEN, last_hidden_state_shape);
+    // When word_timestamps is enabled decoder can recieve tokens decoded from entire audio chunk which is 448
+    const size_t decoder_max_prompt_len = m_generation_config.word_timestamps ? max_sequence_length : MAX_PROMPT_LEN;
+
+    reshape_to_static(decoder_model, decoder_max_prompt_len, decoder_max_prompt_len, last_hidden_state_shape);
     reshape_to_static(decoder_with_past_model, 1, max_sequence_length, last_hidden_state_shape, true /*with_past*/);
 
     // Replace KV-tensors for the entire cache to tensors only for new token
