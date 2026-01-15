@@ -7,11 +7,10 @@ from transformers import AutoTokenizer
 from openvino_genai import (
     Tokenizer,
     VLLMParserWrapper,
-    IncrementalParser,
-    Parser,
     TextParserStreamer,
 )
 import json
+
 
 def compare_dicts(dict1, dict2, skip_keys: Optional[list[str]] = None):
     if dict1.keys() != dict2.keys():
@@ -42,3 +41,21 @@ def test_final_parser_llama_32_json():
     message = {"content": model_output}
     wrapper.parse(message)  # modifies message in place
     assert compare_dicts(message, json.loads(res_vllm), skip_keys=["id"])
+
+
+def test_final_parser_deepseek():
+    model_output = "This is a reasoning section</think>This is the rest"
+    from vllm.reasoning.deepseek_r1_reasoning_parser import DeepSeekR1ReasoningParser
+
+    parser = DeepSeekR1ReasoningParser(AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-V3.1"))
+    reasoning, content = parser.extract_reasoning(model_output, None)
+    message_vllm = {
+        "content": content,
+        "reasoning": reasoning,
+    }
+
+    wrapper = VLLMParserWrapper(parser)
+    message = {"content": model_output}
+    wrapper.parse(message)  # modifies message in place
+
+    assert compare_dicts(message, message_vllm, skip_keys=["id"])

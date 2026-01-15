@@ -95,21 +95,28 @@ public:
     void parse(JsonContainer& message) override {
         py::gil_scoped_acquire acquire;
         // Check if method exists
-        std::vector<std::string> parser_names = {"extract_tool_calls"};
+        std::vector<std::string> parser_names = {
+            "extract_tool_calls",
+            "extract_reasoning"
+        };
+        JsonContainer new_message;
         for (const auto& name : parser_names) {
             if (!py::hasattr(m_py_parser, name.c_str())) {
                 continue;
             }
             py::object parsed = m_py_parser.attr(name.c_str())(message["content"].as_string(), py::none());
-            if (!py::hasattr(parsed, "json")) {
-                continue;
+
+            if (py::isinstance<py::tuple>(parsed) && py::len(parsed) == 2) {
+                auto msg_str_1 = parsed.attr("__getitem__")(0).cast<std::string>();
+                auto msg_str_2 = parsed.attr("__getitem__")(1).cast<std::string>();
+                new_message["reasoning"] = msg_str_1;
+                new_message["content"] = msg_str_2;
+            } else if (py::hasattr(parsed, "json")) {
+                new_message = JsonContainer::from_json_string(parsed.attr("json")().cast<std::string>());
             }
-            auto msg_str = parsed.attr("json")().cast<std::string>();
-            auto new_message = JsonContainer::from_json_string(msg_str);
+
             final_message.concatenate(new_message);
         }
-        std::cout << "during parse" << std::endl;
-        std::cout << final_message.to_json_string() << std::endl;
         message = final_message;
         
         // call python 
