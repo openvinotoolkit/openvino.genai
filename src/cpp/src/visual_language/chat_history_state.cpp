@@ -26,6 +26,10 @@ void ChatHistoryInternalState::add_message_metadata(MessageMetadata metadata) {
     m_messages_metadata.push_back(std::move(metadata));
 }
 
+/**
+ * @brief Registers images with VisionRegistry and assigns a sequential global index,
+ * that is used in image sequences to reference the images.
+ */
 std::vector<size_t> ChatHistoryInternalState::register_images(const std::vector<ov::Tensor>& images) {
     auto vision_registry = get_vision_registry();
     
@@ -41,6 +45,9 @@ std::vector<size_t> ChatHistoryInternalState::register_images(const std::vector<
     return indices;
 }
 
+/**
+ * @brief Video variant of `register_images()`.
+ */
 std::vector<size_t> ChatHistoryInternalState::register_videos(const std::vector<ov::Tensor>& videos) {
     auto vision_registry = get_vision_registry();
     
@@ -80,6 +87,18 @@ std::vector<EncodedVideo> ChatHistoryInternalState::get_encoded_videos(const std
     return result;
 }
 
+/**
+ * @brief Converts global vision indices to encoded vision data with corresponding
+ * deduplicated index sequences.
+ * 
+ * Takes optional sequences of global image/video indices to get sliced 
+ * encoded vision data and sequences (e.g. for last message).
+ * If sequences are not provided, full sequences are built from all messages.
+ * 
+ * @note Duplicate VisionIDs in the sequence will result in duplicate encoded data,
+ *       but sequence indices will reference the first occurrence (deduplicated).
+ * @todo Return deduplicated encoded data once it is supported in `get_input_embeds()` for all models.
+ */
 ChatHistoryInternalState::ResolvedVisions ChatHistoryInternalState::resolve_visions_with_sequence(
     std::optional<const std::vector<size_t>> image_sequence,
     std::optional<const std::vector<size_t>> video_sequence
