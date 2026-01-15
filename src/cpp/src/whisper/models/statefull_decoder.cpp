@@ -6,6 +6,7 @@
 #include "openvino/op/softmax.hpp"
 #include "openvino/pass/manager.hpp"
 #include "utils.hpp"
+#include "whisper/alignment_heads.hpp"
 #include "whisper/transformations/scaled_dot_product_attention_decomposition.hpp"
 
 namespace {
@@ -155,38 +156,7 @@ std::vector<Tensor> WhisperStatefullDecoder::get_alignments_heads_qks(
         OPENVINO_THROW("Encoder attention heads are not decomposed. Cannot get encoder attention QKs.");
     }
 
-    // [layers] * [batch, num_heads, seq_len, frame_len] -> [layers] * [batch, seq_len, frame_len]
-    std::vector<ov::Tensor> alignment_qks;
-    for (const auto& [layer_idx, head_idx] : alignment_heads) {
-        const Tensor alignment_tensor =
-            m_request.get_tensor("cross_attention_qk_scaled_scores_" + std::to_string(layer_idx));
-
-        // [batch, num_heads, seq_len, frame_len]
-        const ov::Shape& alignment_shape = alignment_tensor.get_shape();
-
-        // [batch, seq_len, frame_len]
-        ov::Tensor head_tensor{ov::element::f32, {alignment_shape[0], alignment_shape[2], alignment_shape[3]}};
-        auto* alignment_data = alignment_tensor.data<float>();
-        auto* head_data = head_tensor.data<float>();
-        const size_t batch_size = alignment_shape[0];
-        const size_t num_heads = alignment_shape[1];
-        const size_t seq_len = alignment_shape[2];
-        const size_t frame_len = alignment_shape[3];
-
-        for (size_t batch = 0; batch < batch_size; ++batch) {
-            const size_t batch_offset = batch * num_heads * seq_len * frame_len;
-            const size_t head_offset = head_idx * seq_len * frame_len;
-            const size_t head_batch_offset = batch * seq_len * frame_len;
-
-            std::memcpy(head_data + head_batch_offset,
-                        alignment_data + batch_offset + head_offset,
-                        seq_len * frame_len * sizeof(float));
-        }
-
-        alignment_qks.push_back(head_tensor);
-    }
-
-    return alignment_qks;
+    return ov::genai::get_whisper_alignments_heads_qks(m_request, alignment_heads);
 }
 
 }  // namespace ov::genai

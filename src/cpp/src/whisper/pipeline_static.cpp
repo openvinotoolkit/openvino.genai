@@ -30,11 +30,14 @@
 #include "openvino/op/shape_of.hpp"
 #include "openvino/opsets/opset13.hpp"
 
+#include "whisper/transformations/scaled_dot_product_attention_decomposition.hpp"
+#include "whisper/word_level_timestamps.hpp"
+
 using ov::genai::MicroSeconds;
 
 namespace {
 
-constexpr size_t MAX_PROMPT_LEN = 4;
+constexpr size_t MAX_PROMPT_LEN = 444;
 
 template <typename T>
 void fill_tensor(ov::Tensor tensor, T fill_val) {
@@ -249,18 +252,12 @@ int64_t detect_language(ov::Tensor& encoder_hidden_state,
     return output_token;
 }
 
-std::vector<int64_t> prepare_init_ids(ov::Tensor& encoder_hidden_state,
+std::vector<int64_t> prepare_sot_tokens(ov::Tensor& encoder_hidden_state,
                                       ov::InferRequest& decoder,
                                       const ov::genai::WhisperGenerationConfig& config,
-                                      const bool return_timestamps,
                                       ov::genai::RawPerfMetrics& raw_metrics) {
     if (!config.is_multilingual) {
-        if (return_timestamps) {
-            return std::vector<int64_t>{config.decoder_start_token_id};
-        } else {
-            return std::vector<int64_t>{config.decoder_start_token_id,
-                                        config.no_timestamps_token_id};
-        }
+        return std::vector<int64_t>{config.decoder_start_token_id};
     }
 
     int64_t language_token_id = 0;
@@ -278,16 +275,7 @@ std::vector<int64_t> prepare_init_ids(ov::Tensor& encoder_hidden_state,
         task_token_id = config.translate_token_id;
     }
 
-    if (return_timestamps) {
-        return std::vector<int64_t>{config.decoder_start_token_id,
-                                    language_token_id,
-                                    task_token_id};
-    }
-
-    return std::vector<int64_t>{config.decoder_start_token_id,
-                                language_token_id,
-                                task_token_id,
-                                config.no_timestamps_token_id};
+    return std::vector<int64_t>{config.decoder_start_token_id, language_token_id, task_token_id};
 }
 
 void stream_generated_tokens(const std::shared_ptr<ov::genai::StreamerBase> streamer_ptr,
@@ -327,6 +315,15 @@ std::pair<ov::genai::EncodedResults, bool> full_decode(ov::Tensor& encoder_hidde
 
     sampler.sample({sequence_group}, logits);
     stream_generated_tokens(streamer, handle, return_timestamps);
+
+    auto read = handle->read();
+
+    auto generated_ids = read.begin()->second.generated_ids;
+    std::cout << "sequence->get_generated_ids(): " << generated_ids.size() << std::endl;
+    for (const auto& id : generated_ids) {
+        std::cout << id << " ";
+    }
+    std::cout << std::endl;
 
     prepare_decoder_with_past(models.decoder_with_past, models.decoder, init_ids.size());
 
@@ -1030,6 +1027,49 @@ std::shared_ptr<ov::Model> prepare_decoder_with_past_model(std::shared_ptr<ov::M
     return decoder_with_past_model;
 }
 
+void decompose_scaled_dot_product_attention(std::shared_ptr<ov::Model> model) {
+    ov::pass::Manager manager;
+    manager.register_pass<ov::genai::WhisperScaledDotProductAttentionDecomposition>();
+    auto result = manager.run_passes(model);
+}
+
+void add_cross_attention_qk_scaled_scores_outputs(std::shared_ptr<ov::Model> model) {
+    size_t idx = 0;
+    for (auto& op : model->get_ordered_ops()) {
+        if (op->get_type_info().name != std::string("Add")) {
+            continue;
+        }
+
+        bool should_skip_op = true;
+
+        for (const auto& output : op->outputs()) {
+            for (const auto& name : output.get_names()) {
+                if (name.find("cross_attention_qk_scaled_scores") != std::string::npos) {
+                    should_skip_op = false;
+                    break;
+                }
+            }
+
+            // output found, exit outputs loop
+            if (!should_skip_op) {
+                break;
+            }
+        }
+
+        if (should_skip_op) {
+            continue;
+        }
+
+        model->add_output(op->output(0)).add_names({"cross_attention_qk_scaled_scores_" + std::to_string(idx)});
+        idx++;
+    }
+}
+
+void erase_whisper_generation_config_keys(ov::AnyMap& config_map) {
+    config_map.erase("word_timestamps");
+}
+
+
 }  // namespace
 
 namespace ov {
@@ -1039,9 +1079,12 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
                                                               const ov::AnyMap& properties)
     : WhisperPipelineImplBase{models_path}
     , m_sampler(m_tokenizer) {
+    ov::AnyMap properties_copy = properties;
+    m_generation_config.update_generation_config(properties_copy);
+    erase_whisper_generation_config_keys(properties_copy);
     ov::Core core = utils::singleton_core();
 
-    auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, properties);
+    auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, properties_copy);
     reshape_to_static_encoder(encoder_model, m_feature_extractor.feature_size);
     auto last_hidden_state_shape = get_encoder_hidden_state_shape(encoder_model);
 
@@ -1049,10 +1092,10 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     std::shared_ptr<ov::Model> decoder_with_past_model;
 
     if (std::filesystem::exists(models_path / "openvino_decoder_with_past_model.xml") ) {
-        decoder_model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
-        decoder_with_past_model = core.read_model(models_path / "openvino_decoder_with_past_model.xml", {}, properties);
+        decoder_model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties_copy);
+        decoder_with_past_model = core.read_model(models_path / "openvino_decoder_with_past_model.xml", {}, properties_copy);
     } else {
-        auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
+        auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties_copy);
         ov::pass::StatefulToStateless().run_on_model(model);
 
         decoder_model = prepare_decoder_model(model);
@@ -1083,6 +1126,11 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     preprocess_encoder(encoder_model);
     preprocess_decoder(decoder_model);
     preprocess_decoder(decoder_with_past_model);
+
+    if (m_generation_config.word_timestamps) {
+        decompose_scaled_dot_product_attention(decoder_model);
+        add_cross_attention_qk_scaled_scores_outputs(decoder_model);
+    }
 
     ov::CompiledModel compiled_model;
     compiled_model = core.compile_model(encoder_model, "NPU", properties);
@@ -1122,7 +1170,6 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
 
     OPENVINO_ASSERT(!config.initial_prompt.has_value(), "'initial_prompt' parameter is not supported on NPU device.");
     OPENVINO_ASSERT(!config.hotwords.has_value(), "'hotwords' parameter is not supported on NPU device.");
-    OPENVINO_ASSERT(!config.word_timestamps, "'word_timestamps' parameter is not supported on NPU device.");
 
     size_t max_new_tokens = config.get_max_new_tokens();
 
@@ -1143,7 +1190,8 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
     // long-form audio processing requires timestamps to be enabled
     const bool return_timestamps = config.return_timestamps || !is_shortform;
 
-    std::vector<int64_t> init_ids;
+    WhisperDecodedResults result;
+    std::vector<int64_t> sot_tokens;
     std::vector<int64_t> output_tokens;
     std::vector<Segment> segments;
 
@@ -1169,17 +1217,23 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
                                                 m_feature_extractor.nb_max_frames,
                                                 raw_metrics);
 
-        // prepare init_ids just once for whole input
-        if (init_ids.empty()) {
-            init_ids = prepare_init_ids(hidden_state_tensor, m_models.decoder, config, return_timestamps, raw_metrics);
+        // prepare sot_tokens just once for whole input
+        if (sot_tokens.empty()) {
+            sot_tokens = prepare_sot_tokens(hidden_state_tensor, m_models.decoder, config, raw_metrics);
         }
 
-        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, init_ids, config, 1);
+        std::vector<int64_t> chunk_sot_tokens = sot_tokens;
+        
+        if (!return_timestamps) {
+            chunk_sot_tokens.push_back(config.no_timestamps_token_id);
+        }
+
+        SequenceGroup::Ptr sequence_group = std::make_shared<SequenceGroup>(0, chunk_sot_tokens, config, 1);
 
         auto [results, cancelled] = full_decode(hidden_state_tensor,
                                                 config,
                                                 m_models,
-                                                init_ids,
+                                                chunk_sot_tokens,
                                                 return_timestamps,
                                                 raw_metrics,
                                                 streamer_ptr,
@@ -1217,6 +1271,25 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
         if (cancelled) {
             break;
         }
+
+        if (config.word_timestamps) {
+            const auto n_active_frames =
+                std::min(m_feature_extractor.nb_max_frames, input_features.n_active_frames - chunk_offset);
+
+            const auto word_timestamps = add_word_level_timestamps(sot_tokens,
+                                                                   chunk_output_tokens,
+                                                                   m_tokenizer,
+                                                                   m_models.decoder,
+                                                                   hidden_state_tensor,
+                                                                   config,
+                                                                   n_active_frames,
+                                                                   chunk_time_offset);
+
+            if (!result.words.has_value()) {
+                result.words = std::vector<WhisperWordTiming>{};
+            }
+            result.words->insert(result.words->end(), word_timestamps.begin(), word_timestamps.end());
+        }
     }
 
     if (streamer_ptr) {
@@ -1224,7 +1297,8 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
     }
 
     auto decode_start_time = std::chrono::steady_clock::now();
-    WhisperDecodedResults result{std::vector{m_tokenizer.decode(output_tokens)}, std::vector{1.f}};
+    result.texts = std::vector{m_tokenizer.decode(output_tokens)};
+    result.scores = std::vector{1.f};
     result.perf_metrics = perf_metrics;
     result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - decode_start_time));

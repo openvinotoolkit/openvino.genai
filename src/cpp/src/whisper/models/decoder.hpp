@@ -26,14 +26,14 @@ public:
 
     virtual void reset_state() = 0;
 
-    virtual ~WhisperDecoder();
-
     virtual ov::Tensor create_host_tensor(const element::Type element_type, const Shape& shape);
 
     virtual std::vector<Tensor> get_alignments_heads_qks(
         const std::vector<std::pair<size_t, size_t>>& alignment_heads) {
         OPENVINO_THROW("Not implemented");
     }
+
+    virtual ~WhisperDecoder();
 
 protected:
     void _set_encoder_hidden_states_tensor(const Tensor& encoder_hidden_state,

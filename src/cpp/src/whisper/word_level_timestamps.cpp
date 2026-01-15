@@ -7,6 +7,8 @@
 #include <sstream>
 
 #include "debug_utils.hpp"
+#include "openvino/openvino.hpp"
+#include "whisper/alignment_heads.hpp"
 
 namespace {
 
@@ -570,6 +572,31 @@ std::vector<ov::Tensor> infer_alignments_heads_qks(const std::vector<int64_t>& t
     return alignment_heads_qks;
 }
 
+std::vector<ov::Tensor> infer_alignments_heads_qks(const std::vector<int64_t>& tokens,
+                                                   ov::InferRequest& decoder,
+                                                   const ov::Tensor& hidden_state_tensor,
+                                                   const std::vector<std::pair<size_t, size_t>>& alignment_heads) {
+    hidden_state_tensor.copy_to(decoder.get_tensor("encoder_hidden_states"));
+    // NB: input_ids format: [token1, token2, pad, pad]
+    auto padded_input_ids = decoder.get_tensor("input_ids");
+    std::cout << "Padded input ids shape: " << padded_input_ids.get_shape().to_string() << std::endl;
+    OPENVINO_ASSERT(padded_input_ids.get_size() >= tokens.size());
+    OPENVINO_ASSERT(padded_input_ids.get_element_type() == ov::element::i64);
+    std::fill_n(padded_input_ids.data<int64_t>(), padded_input_ids.get_size(), 0u);
+    std::copy_n(&tokens[0], tokens.size(), padded_input_ids.data<int64_t>());
+
+    // NB: attention_mask format: [1, 1, 0, 0]
+    auto padded_attention_mask = decoder.get_tensor("attention_mask");
+    OPENVINO_ASSERT(padded_attention_mask.get_size() >= tokens.size());
+    auto* padded_mask_data = padded_attention_mask.data<int64_t>();
+    std::fill_n(padded_mask_data, padded_attention_mask.get_size(), 0u);
+    std::fill_n(padded_mask_data, tokens.size(), 1u);
+
+    decoder.infer();
+
+    return ov::genai::get_whisper_alignments_heads_qks(decoder, alignment_heads);
+}
+
 }  // namespace
 
 namespace ov::genai {
@@ -578,6 +605,46 @@ std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::v
                                                                     const std::vector<int64_t>& input_tokens,
                                                                     ov::genai::Tokenizer& tokenizer,
                                                                     std::shared_ptr<ov::genai::WhisperDecoder> decoder,
+                                                                    const ov::Tensor& hidden_state_tensor,
+                                                                    const ov::genai::WhisperGenerationConfig& config,
+                                                                    const size_t n_active_frames,
+                                                                    const float chunk_time_offset
+                                                                    // todo: add raw_perf_metrics
+) {
+    // [text_tokens] + [eos_token]
+    std::vector<int64_t> text_tokens;
+    for (const auto& token : input_tokens) {
+        if (token < config.eos_token_id) {
+            text_tokens.push_back(token);
+        }
+    }
+    text_tokens.push_back(config.eos_token_id);
+
+    // [sot_tokens] + [no_timestamps_token] + [text_tokens] + [eos_token]
+    std::vector<int64_t> infer_tokens = sot_tokens;
+    infer_tokens.push_back(config.no_timestamps_token_id);
+    infer_tokens.insert(infer_tokens.end(), text_tokens.begin(), text_tokens.end());
+
+    auto alignment_heads_qks =
+        infer_alignments_heads_qks(infer_tokens, decoder, hidden_state_tensor, config.alignment_heads);
+
+    const auto alignment_path = find_alignment_path(alignment_heads_qks, n_active_frames, sot_tokens);
+
+    const auto [words, word_tokens] = split_tokens_on_spaces(text_tokens, tokenizer);
+
+    auto words_timestamps = match_words_to_alignment_path(words, word_tokens, alignment_path, chunk_time_offset);
+
+    truncate_long_words_at_sentence_boundaries(words_timestamps);
+
+    auto merged_timestamps = merge_punctuations(words_timestamps);
+
+    return merged_timestamps;
+}
+
+std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::vector<int64_t>& sot_tokens,
+                                                                    const std::vector<int64_t>& input_tokens,
+                                                                    ov::genai::Tokenizer& tokenizer,
+                                                                    ov::InferRequest& decoder,
                                                                     const ov::Tensor& hidden_state_tensor,
                                                                     const ov::genai::WhisperGenerationConfig& config,
                                                                     const size_t n_active_frames,

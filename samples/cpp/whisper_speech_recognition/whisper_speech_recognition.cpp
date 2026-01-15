@@ -17,18 +17,29 @@ int main(int argc, char* argv[]) try {
 
     std::filesystem::path models_path = argv[1];
     std::string wav_file_path = argv[2];
-    std::string device = (argc == 4) ? argv[3] : "CPU";  // Default to CPU if no device is provided
+    std::string device = (argc == 4) ? argv[3] : "NPU";  // Default to CPU if no device is provided
 
     ov::AnyMap ov_config;
-    if (device == "NPU" ||
-        device.find("GPU") != std::string::npos) {  // need to handle cases like "GPU", "GPU.0" and "GPU.1"
-        // Cache compiled models on disk for GPU and NPU to save time on the
-        // next run. It's not beneficial for CPU.
-        ov_config = get_config_for_cache();
-    }
+    // if (device == "NPU" ||
+    //     device.find("GPU") != std::string::npos) {  // need to handle cases like "GPU", "GPU.0" and "GPU.1"
+    //     // Cache compiled models on disk for GPU and NPU to save time on the
+    //     // next run. It's not beneficial for CPU.
+    //     ov_config = get_config_for_cache();
+    // }
+
+    // config = {"NPU_USE_NPUW" : "YES",
+    //       "NPUW_DEVICES" : "CPU",
+    //       "NPUW_ONLINE_PIPELINE" : "NONE",
+    //       "STATIC_PIPELINE": True}
+
+    ov_config.insert({"NPU_USE_NPUW", "YES"});
+    ov_config.insert({"NPUW_DEVICES", "CPU"});
+    ov_config.insert({"STATIC_PIPELINE", true});
+    ov_config.insert({"NPUW_ONLINE_PIPELINE", "NONE"});
+    ov_config.insert({ov::genai::word_timestamps.name(), true});
 
     // todo: remove word_timestamps
-    ov::genai::WhisperPipeline pipeline(models_path, device, ov::genai::word_timestamps(true));
+    ov::genai::WhisperPipeline pipeline(models_path, device, ov_config);
 
     ov::genai::WhisperGenerationConfig config = pipeline.get_generation_config();
     // 'task' and 'language' parameters are supported for multilingual models only
