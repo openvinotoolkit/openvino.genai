@@ -155,6 +155,13 @@ def parse_args():
         "of OpenVINO GenAI API. Or a JSON string of SchedulerConfig.",
     )
     parser.add_argument(
+        "--generate-config",
+        type=str,
+        default=None,
+        help="Path to the JSON file that contains GenerateConfig for generating"
+        "of OpenVINO GenAI API.",
+    )
+    parser.add_argument(
         "--llamacpp",
         action="store_true",
         help="Use llama-cpp-python to instantiate the model.",
@@ -517,7 +524,7 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
     return image
 
 
-def genai_gen_visual_text(model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question):
+def genai_gen_visual_text(model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question, generation_config=None):
     kwargs = {
         "do_sample": False,
         "max_new_tokens": max_new_tokens
@@ -526,6 +533,13 @@ def genai_gen_visual_text(model, prompt, image, video, processor, tokenizer, max
         kwargs['image'] = ov.Tensor(np.array(image)[None])
     if video is not None:
         kwargs['videos'] = [ov.Tensor(np.array(video))]
+
+    if generation_config is not None:
+        import openvino_genai
+        gen_config = openvino_genai.GenerationConfig()
+        if 'pruning_ratio' in generation_config:
+            gen_config.pruning_ratio = int(generation_config.get('pruning_ratio'))
+        kwargs['generation_config'] = gen_config
 
     out = model.generate(
         prompt,
@@ -554,6 +568,10 @@ def create_evaluator(base_model, args):
     # task = TasksManager.infer_task_from_model(config._name_or_path)
     # TODO: Add logic to auto detect task based on model_id (TaskManager does not work for locally saved models)
     task = args.model_type
+
+    gen_config = None
+    if args.generate_config is not None:
+        gen_config = get_json_config(args.generate_config)
 
     try:
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
@@ -623,7 +641,9 @@ def create_evaluator(base_model, args):
                 processor=processor,
                 crop_question=crop_question,
                 task_type=task,
-                frames_num=args.video_frames_num
+                frames_num=args.video_frames_num,
+                generation_config=gen_config,
+                seqs_per_request=getattr(args, "seqs_per_request", 1)  # Default to 1 if not set; make configurable to avoid magic number
             )
         elif task == "image-to-image":
             return EvaluatorCLS(

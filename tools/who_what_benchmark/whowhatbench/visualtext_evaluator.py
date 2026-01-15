@@ -110,7 +110,7 @@ class VisualTextEvaluator(TextEvaluator):
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
         def default_gen_answer(
-            model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question
+            model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question, generation_config
         ):
 
             from optimum.intel.openvino.modeling_visual_language import \
@@ -173,6 +173,7 @@ class VisualTextEvaluator(TextEvaluator):
                     self.tokenizer,
                     self.max_new_tokens,
                     self._crop_question,
+                    self.generation_config,
                 )
             )
 
