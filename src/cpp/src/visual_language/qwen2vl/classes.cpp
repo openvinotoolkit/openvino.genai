@@ -1088,6 +1088,14 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
                                                     const std::vector<size_t>& images_sequence,
                                                     const std::vector<size_t>& videos_sequence,
                                                     const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
+    // Clear previous pruning state at the start of new turn
+    m_last_image_pads_removed = 0;
+    m_last_video_pads_removed = 0;
+    
+    // Save the KV cache state before encoding to determine history boundary
+    size_t kv_cache_size_before = m_kv_cache_state.get_state().size();
+    size_t prev_hist_length_before = m_prev_hist_length;
+    
     std::vector<std::array<size_t, 3>> images_grid_thw;
     images_grid_thw.reserve(images.size());
     for (const auto& encoded_image : images) {
@@ -1109,34 +1117,6 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
 
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
 
-    // [CDPruner] Clean historical vision tokens that no longer have embeddings (pruned in previous turns)
-    bool removed_historical_image_tokens = false;
-    bool removed_historical_video_tokens = false;
-
-    if (is_cdpruner_active() && m_is_chat_conversation) {
-        // Clean historical image tokens
-        if (!images.empty()) {
-            size_t expected_image_embeds = calc_vec_tokens_num(images_grid_thw);
-            removed_historical_image_tokens = clean_historical_vision_tokens(input_ids,
-                                                                             m_vision_token_ids["image_pad"],
-                                                                             m_vision_token_ids["vision_start"],
-                                                                             m_vision_token_ids["vision_end"],
-                                                                             expected_image_embeds);
-        }
-
-        // Clean historical video tokens
-        if (!videos.empty()) {
-            size_t expected_video_embeds = calc_vec_tokens_num(video_grid_thw);
-            removed_historical_video_tokens = clean_historical_vision_tokens(input_ids,
-                                                                             m_vision_token_ids["video_pad"],
-                                                                             m_vision_token_ids["vision_start"],
-                                                                             m_vision_token_ids["vision_end"],
-                                                                             expected_video_embeds);
-        }
-    }
-
-    bool removed_historical_vision = removed_historical_image_tokens || removed_historical_video_tokens;
-
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
     ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
@@ -1146,11 +1126,6 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
     int64_t image_pad_token_id = m_vision_token_ids["image_pad"];
     int64_t video_pad_token_id = m_vision_token_ids["video_pad"];
 
-    // If we removed historical vision tokens, we should not use history_vision_count
-    // because those historical tokens are no longer in input_ids
-    std::vector<std::pair<std::size_t, std::size_t>> adjusted_history_vision_count =
-        removed_historical_vision ? std::vector<std::pair<std::size_t, std::size_t>>() : history_vision_count;
-
     m_position_ids = create_position_ids(input_ids,
                                          images_grid_thw,
                                          images_sequence,
@@ -1159,7 +1134,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
                                          videos_sequence,
                                          0,
                                          vision_start_token_id,
-                                         adjusted_history_vision_count);
+                                         history_vision_count);
 
     int64_t position_ids_max_element = *std::max_element(m_position_ids.data<int64_t>(), m_position_ids.data<int64_t>() + m_position_ids.get_size());
     m_rope_delta = position_ids_max_element + 1 - static_cast<int64_t>(input_ids.get_shape().at(1));
@@ -1217,11 +1192,53 @@ ov::Tensor InputsEmbedderQwen2VL::get_inputs_embeds(const std::string& unified_p
 
     // Apply pruning to images
     if (!images.empty() && is_cdpruner_active()) {
-        apply_pruning(images.size(),
-                      images_grid_thw,
-                      images_sequence,
-                      merged_image_embeddings_tensor,
-                      image_pad_token_id);
+        // Determine if we're in chat mode
+        // Note: In chat mode, input_ids ONLY contains current turn (history is in kv_cache)
+        bool is_chat_mode = (kv_cache_size_before > 0);
+        
+        if (is_chat_mode) {
+            // Count image pads before pruning
+            size_t before_size = input_ids.get_shape()[1];
+            const int64_t* ids_before = input_ids.data<const int64_t>();
+            size_t pads_before = std::count(ids_before, ids_before + before_size, image_pad_token_id);
+            
+            // Chat mode: Apply pruning directly to current turn input_ids
+            apply_pruning(images.size(),
+                          images_grid_thw,
+                          images_sequence,
+                          merged_image_embeddings_tensor,
+                          image_pad_token_id);
+            
+            // Count image pads after pruning
+            size_t after_size = input_ids.get_shape()[1];
+            const int64_t* ids_after = input_ids.data<const int64_t>();
+            size_t pads_after = std::count(ids_after, ids_after + after_size, image_pad_token_id);
+            
+            // Save pruning counts for history update
+            m_last_image_pads_removed = pads_before - pads_after;
+            m_last_video_pads_removed = 0;
+        } else {
+            // Count image pads before pruning
+            size_t before_size = input_ids.get_shape()[1];
+            const int64_t* ids_before = input_ids.data<const int64_t>();
+            size_t pads_before = std::count(ids_before, ids_before + before_size, image_pad_token_id);
+            
+            // First turn: Apply pruning to entire input
+            apply_pruning(images.size(),
+                          images_grid_thw,
+                          images_sequence,
+                          merged_image_embeddings_tensor,
+                          image_pad_token_id);
+            
+            // Count image pads after pruning
+            size_t after_size = input_ids.get_shape()[1];
+            const int64_t* ids_after = input_ids.data<const int64_t>();
+            size_t pads_after = std::count(ids_after, ids_after + after_size, image_pad_token_id);
+            
+            // Save pruning counts for history update
+            m_last_image_pads_removed = pads_before - pads_after;
+            m_last_video_pads_removed = 0;
+        }
     }
 
     // TODO: Apply pruning to videos when video pruning is supported
@@ -1305,6 +1322,14 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderQwen2VL::get_generat
         std::iota(pos_data, pos_data + inputs_embeds_size, new_pos_id);
     }
     return {position_ids, rope_delta};
+}
+
+std::optional<std::pair<size_t, size_t>> InputsEmbedderQwen2VL::get_removed_pads_count() const {
+    if (m_last_image_pads_removed == 0 && m_last_video_pads_removed == 0) {
+        return std::nullopt;
+    }
+    
+    return std::make_pair(m_last_image_pads_removed, m_last_video_pads_removed);
 }
 
 void InputsEmbedderQwen2VL::start_chat(const std::string& system_message) {

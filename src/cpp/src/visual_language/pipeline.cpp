@@ -334,6 +334,51 @@ public:
 
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation) {
+            // Check if pruning occurred and get removed pad counts for history synchronization
+            if (auto removed_pads = m_inputs_embedder->get_removed_pads_count()) {
+                auto [removed_image_pads, removed_video_pads] = removed_pads.value();
+                
+                // Get the last user message from history
+                const auto& messages = m_history.get_messages();
+                std::string original_prompt = messages[messages.size()-1]["content"].get_string();
+                
+                // Remove N image_pad tokens from the original prompt
+                std::string pruned_prompt = original_prompt;
+                if (removed_image_pads > 0) {
+                    const std::string image_pad_token = "<|image_pad|>";
+                    size_t removed_count = 0;
+                    size_t pos = 0;
+                    
+                    while (removed_count < removed_image_pads && pos < pruned_prompt.length()) {
+                        pos = pruned_prompt.find(image_pad_token, pos);
+                        if (pos == std::string::npos) {
+                            break;
+                        }
+                        pruned_prompt.erase(pos, image_pad_token.length());
+                        removed_count++;
+                    }
+                }
+                
+                // Remove N video_pad tokens from the original prompt
+                if (removed_video_pads > 0) {
+                    const std::string video_pad_token = "<|video_pad|>";
+                    size_t removed_count = 0;
+                    size_t pos = 0;
+                    
+                    while (removed_count < removed_video_pads && pos < pruned_prompt.length()) {
+                        pos = pruned_prompt.find(video_pad_token, pos);
+                        if (pos == std::string::npos) {
+                            break;
+                        }
+                        pruned_prompt.erase(pos, video_pad_token.length());
+                        removed_count++;
+                    }
+                }
+                
+                m_history.pop_back();
+                m_history.push_back({{"role", "user"}, {"content", pruned_prompt}});
+            }
+            
             m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status);
 
             if (finish_info.streaming_finish_status != ov::genai::GenerationStatus::CANCEL) {

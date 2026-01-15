@@ -96,6 +96,10 @@ public:
     // adds currently generated text to chat history
     void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
 
+    // Get removed pad counts after vision token pruning for history synchronization
+    // Returns pair of (removed_image_pads, removed_video_pads), or nullopt if no pruning occurred
+    std::optional<std::pair<size_t, size_t>> get_removed_pads_count() const;
+
     // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
     void set_apply_chat_template_status(bool apply_chat_template);
 
@@ -228,6 +232,12 @@ private:
 
         virtual void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
 
+        // Get removed pad counts after vision token pruning for history synchronization
+        // Returns pair of (removed_image_pads, removed_video_pads), or nullopt if no pruning occurred
+        virtual std::optional<std::pair<size_t, size_t>> get_removed_pads_count() const {
+            return std::nullopt;
+        }
+
         virtual void finish_chat();
 
         virtual NormalizedPrompt normalize_prompt(
@@ -307,25 +317,6 @@ private:
                                                 m_prev_hist_length);
         }
 
-        /**
-         * @brief Helper to clean historical vision tokens from input_ids in chat mode.
-         *
-         * In subsequent chat turns, input_ids may contain historical vision tokens from previous turns
-         * that no longer have corresponding embeddings (due to pruning). This helper removes excess tokens
-         * and updates kv_cache accordingly.
-         *
-         * @param input_ids Input token IDs to clean (modified in-place)
-         * @param vision_pad_token_id Token ID for vision padding
-         * @param vision_start_token_id Token ID for vision start marker
-         * @param vision_end_token_id Token ID for vision end marker
-         * @param expected_count Expected number of vision_pad tokens for current turn
-         * @return true if tokens were removed, false otherwise
-         */
-        bool clean_historical_vision_tokens(ov::Tensor& input_ids,
-                                            int64_t vision_pad_token_id,
-                                            int64_t vision_start_token_id,
-                                            int64_t vision_end_token_id,
-                                            size_t expected_count);
     };
 
     std::shared_ptr<IInputsEmbedder> m_impl;

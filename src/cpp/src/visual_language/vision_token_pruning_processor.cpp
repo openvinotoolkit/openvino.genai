@@ -796,16 +796,30 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     auto& kv_history = kv_cache_state.get_state();
     OPENVINO_ASSERT(kv_history.size() >= context.input_ids.get_size(),
                     "KV cache history does not contain expected original prompt length");
-    OPENVINO_ASSERT(kv_history.size() >= prev_hist_length_inout,
-                    "KV cache history is shorter than recorded previous history length");
-    kv_history.resize(prev_hist_length_inout);
-    kv_cache_state.add_inputs(result.pruned_input_ids);
+    // In chat mode, calculate the correct history boundary that includes generated tokens
+    // History boundary = current kv_cache size - current input size
+    GENAI_DEBUG("KV cache before resize: size=%zu, prev_hist_length=%zu, input_size=%zu",
+                kv_history.size(),
+                prev_hist_length_inout,
+                context.input_ids.get_size());
 
-    // Step 11: Update prev_hist_length for chat mode
     if (is_chat_conversation) {
-        prev_hist_length_inout = kv_cache_state.get_state().size();
+        size_t history_boundary_with_generated = kv_history.size() - context.input_ids.get_size();
+        // Chat mode: preserve complete history (input + generated tokens)
+        kv_history.resize(history_boundary_with_generated);
+    } else {
+        // First turn: clear kv_cache
+        kv_history.resize(prev_hist_length_inout);
     }
 
+    kv_cache_state.add_inputs(result.pruned_input_ids);
+
+    // Step 11: Update prev_hist_length for next iteration
+    prev_hist_length_inout = kv_cache_state.get_state().size();
+
+    GENAI_DEBUG("[CDPruner] KV cache after update: size=%zu, prev_hist_length=%zu",
+                kv_cache_state.get_state().size(),
+                prev_hist_length_inout);
     auto pruning_end = std::chrono::high_resolution_clock::now();
     auto pruning_duration = std::chrono::duration_cast<std::chrono::milliseconds>(pruning_end - pruning_start).count();
 

@@ -63,133 +63,6 @@ void InputsEmbedder::IInputsEmbedder::finish_chat() {
     m_kv_cache_state.reset_state();
 }
 
-bool InputsEmbedder::IInputsEmbedder::clean_historical_vision_tokens(ov::Tensor& input_ids,
-                                                                     int64_t vision_pad_token_id,
-                                                                     int64_t vision_start_token_id,
-                                                                     int64_t vision_end_token_id,
-                                                                     size_t expected_count) {
-    if (!m_is_chat_conversation || m_prev_hist_length == 0) {
-        return false;
-    }
-
-    std::vector<int64_t> input_ids_vec(input_ids.data<int64_t>(), input_ids.data<int64_t>() + input_ids.get_shape()[1]);
-    size_t vision_pad_count = std::count(input_ids_vec.begin(), input_ids_vec.end(), vision_pad_token_id);
-
-    if (vision_pad_count <= expected_count) {
-        return false;
-    }
-
-    // Track which positions to keep
-    std::vector<bool> keep_mask(input_ids_vec.size(), true);
-
-    // Step 1: Mark historical vision_pad tokens for removal
-    size_t num_pads_to_skip = vision_pad_count - expected_count;
-    size_t pads_skipped = 0;
-
-    for (size_t i = 0; i < input_ids_vec.size(); ++i) {
-        if (input_ids_vec[i] == vision_pad_token_id) {
-            if (pads_skipped < num_pads_to_skip) {
-                keep_mask[i] = false;
-                pads_skipped++;
-            }
-        }
-    }
-
-    // Step 2: Mark orphaned vision_start/vision_end tokens for removal
-    std::vector<size_t> vision_start_positions;
-
-    for (size_t i = 0; i < input_ids_vec.size(); ++i) {
-        if (!keep_mask[i])
-            continue;
-
-        if (input_ids_vec[i] == vision_start_token_id) {
-            vision_start_positions.push_back(i);
-        } else if (input_ids_vec[i] == vision_end_token_id) {
-            bool found_valid_match = false;
-
-            while (!vision_start_positions.empty()) {
-                size_t start_pos = vision_start_positions.back();
-                vision_start_positions.pop_back();
-
-                bool has_pads = false;
-                for (size_t j = start_pos + 1; j < i; ++j) {
-                    if (keep_mask[j] && input_ids_vec[j] == vision_pad_token_id) {
-                        has_pads = true;
-                        break;
-                    }
-                }
-
-                if (has_pads) {
-                    found_valid_match = true;
-                    break;
-                } else {
-                    keep_mask[start_pos] = false;
-                }
-            }
-
-            if (!found_valid_match) {
-                // No valid start found, mark this end for removal
-                keep_mask[i] = false;
-            }
-        }
-    }
-
-    // Mark any remaining unmatched vision_start tokens
-    for (size_t pos : vision_start_positions) {
-        keep_mask[pos] = false;
-    }
-
-    std::vector<int64_t> final_cleaned_ids;
-    final_cleaned_ids.reserve(input_ids_vec.size());
-
-    for (size_t i = 0; i < input_ids_vec.size(); ++i) {
-        if (keep_mask[i]) {
-            final_cleaned_ids.push_back(input_ids_vec[i]);
-        }
-    }
-
-    if (final_cleaned_ids.size() == input_ids_vec.size()) {
-        return false;
-    }
-
-    // Update input_ids tensor
-    input_ids = ov::Tensor(ov::element::i64, {1, final_cleaned_ids.size()});
-    std::copy(final_cleaned_ids.begin(), final_cleaned_ids.end(), input_ids.data<int64_t>());
-
-    // Update kv_cache_state by removing tokens at the same positions
-    std::vector<int64_t>& kv_cache = m_kv_cache_state.get_state();
-
-    // In chat mode, keep_mask corresponds to input_ids (history + new turn)
-    // while kv_cache contains accumulated history tokens
-    if (kv_cache.size() < m_prev_hist_length) {
-        OPENVINO_THROW("KV cache size (",
-                       kv_cache.size(),
-                       ") should not be less than previous history length (",
-                       m_prev_hist_length,
-                       ").");
-    }
-
-    std::vector<int64_t> new_kv_cache;
-    new_kv_cache.reserve(kv_cache.size());
-
-    // Process tokens that exist in kv_cache using keep_mask
-    size_t sync_size = std::min(keep_mask.size(), kv_cache.size());
-    for (size_t i = 0; i < sync_size; ++i) {
-        if (keep_mask[i]) {
-            new_kv_cache.push_back(kv_cache[i]);
-        }
-    }
-
-    // Handle case where kv_cache is longer (shouldn't normally happen, but be defensive)
-    if (kv_cache.size() > keep_mask.size()) {
-        new_kv_cache.insert(new_kv_cache.end(), kv_cache.begin() + keep_mask.size(), kv_cache.end());
-    }
-
-    kv_cache = std::move(new_kv_cache);
-
-    return true;
-}
-
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
         const VLMConfig& vlm_config,
         const std::filesystem::path& model_dir,
@@ -258,13 +131,6 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::update_history(const ov::Tensor& new
     ov::Tensor encoded_inputs;
     if (m_is_chat_conversation) {
         ov::genai::align_kv_cache_and_history(new_chat_tokens, m_kv_cache_state);
-
-        // Sync m_prev_hist_length after align to prevent state mismatch when pruning is enabled.
-        size_t kv_cache_after_align = m_kv_cache_state.get_state().size();
-        if (m_prev_hist_length > kv_cache_after_align) {
-            m_prev_hist_length = kv_cache_after_align;
-        }
-
         encoded_inputs = get_chat_encoded_input(new_chat_tokens, m_kv_cache_state).input_ids;
     } else {
         encoded_inputs = new_chat_tokens;
@@ -540,6 +406,10 @@ void InputsEmbedder::start_chat(const std::string& system_message) {
 
 void InputsEmbedder::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
     return m_impl->update_chat_history(decoded_results, generation_finish_status);
+}
+
+std::optional<std::pair<size_t, size_t>> InputsEmbedder::get_removed_pads_count() const {
+    return m_impl->get_removed_pads_count();
 }
 
 void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {
