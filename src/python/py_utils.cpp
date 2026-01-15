@@ -20,6 +20,7 @@
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
+#include "openvino/runtime/core.hpp"
 
 namespace py = pybind11;
 namespace ov::genai::pybind::utils {
@@ -162,6 +163,17 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                 }
             }
             return parsers;
+        } else if (property_name == "extensions") {
+            auto property_list = py_obj.cast<py::list>();
+            std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>> extensions;
+            for (const auto& item : property_list) {
+                if (py::isinstance<py::str>(item)) {
+                    extensions.push_back(std::filesystem::path(item.cast<py::str>()));
+                } else if (py::isinstance<ov::Extension>(item)) {
+                    extensions.push_back(item.cast<std::shared_ptr<ov::Extension>>());
+                }
+            }
+            return extensions;
         } else {
             auto _list = py_obj.cast<py::list>();
             enum class PY_TYPE : int { UNKNOWN = 0, STR, INT, FLOAT, BOOL, PARTIAL_SHAPE, TENSOR, DICT};

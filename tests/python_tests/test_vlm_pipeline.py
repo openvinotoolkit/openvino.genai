@@ -1762,9 +1762,9 @@ def test_cdpruner_continuous_batching(
 
 
 def test_vlm_pipeline_add_extension():
-    models_path = _get_ov_model(MODEL_IDS[3])
+    models_path = _get_ov_model(MODEL_IDS[0])
 
-    properties = {"EXTENSIONS": ["fake_path"]}
+    properties = {"extensions": ["fake_path"]}
 
     with pytest.raises(RuntimeError) as exc_info:
         VLMPipeline(models_path, "CPU", config=properties)

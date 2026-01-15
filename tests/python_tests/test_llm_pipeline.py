@@ -911,7 +911,7 @@ def test_llm_pipeline_add_extension():
     model_id = "katuni4ka/tiny-random-phi3"
     models_path = download_and_convert_model(model_id).models_path
 
-    properties = {"EXTENSIONS": ["fake_path"]}
+    properties = {"extensions": ["fake_path"]}
 
     with pytest.raises(RuntimeError) as exc_info:
         ov_genai.LLMPipeline(models_path, "CPU", **properties)

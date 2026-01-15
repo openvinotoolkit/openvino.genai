@@ -743,7 +743,7 @@ def test_continuous_batching_add_extension():
 
     scheduler_config = SchedulerConfig()
 
-    properties = {"EXTENSIONS": ["fake_path"]}
+    properties = {"extensions": ["fake_path"]}
 
     with pytest.raises(RuntimeError) as exc_info:
         ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties)
