@@ -158,8 +158,7 @@ def parse_args():
         "--generate-config",
         type=str,
         default=None,
-        help="Path to the JSON file that contains GenerateConfig for generating"
-        "of OpenVINO GenAI API.",
+        help="Path to the JSON file that contains GenerateConfig for generatingof OpenVINO GenAI API.",
     )
     parser.add_argument(
         "--llamacpp",
@@ -537,9 +536,9 @@ def genai_gen_visual_text(model, prompt, image, video, processor, tokenizer, max
     if generation_config is not None:
         import openvino_genai
         gen_config = openvino_genai.GenerationConfig()
-        if 'pruning_ratio' in generation_config:
-            gen_config.pruning_ratio = int(generation_config.get('pruning_ratio'))
-        kwargs['generation_config'] = gen_config
+        if "pruning_ratio" in generation_config:
+            gen_config.pruning_ratio = int(generation_config.get("pruning_ratio"))
+        kwargs["generation_config"] = gen_config
 
     out = model.generate(
         prompt,
@@ -643,7 +642,9 @@ def create_evaluator(base_model, args):
                 task_type=task,
                 frames_num=args.video_frames_num,
                 generation_config=gen_config,
-                seqs_per_request=getattr(args, "seqs_per_request", 1)  # Default to 1 if not set; make configurable to avoid magic number
+                seqs_per_request=getattr(
+                    args, "seqs_per_request", 1
+                ),  # Default to 1 if not set; make configurable to avoid magic number
             )
         elif task == "image-to-image":
             return EvaluatorCLS(
