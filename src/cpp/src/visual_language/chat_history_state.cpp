@@ -308,7 +308,7 @@ void ChatHistoryInternalState::detect_chat_history_format(const ChatHistory& his
                        "`{role: user, content: [{type: text/image/video, ...}, ...]}`.");
     }
 
-    if (current_format != detected_format) {
+    if (current_format != ChatHistoryFormat::UNKNOWN && current_format != detected_format) {
         OPENVINO_THROW("Mixed chat history formats detected.");
     }
 
