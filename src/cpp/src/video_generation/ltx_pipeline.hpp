@@ -487,12 +487,12 @@ public:
         size_t num_channels_latents = transformer_config.in_channels;
         size_t spatial_compression_ratio =
             m_vae->get_config().patch_size * std::pow(2,
-                                                      std::reduce(m_vae->get_config().spatio_temporal_scaling.begin(),
+                                                      std::accumulate(m_vae->get_config().spatio_temporal_scaling.begin(),
                                                                   m_vae->get_config().spatio_temporal_scaling.end(),
                                                                   0));
         size_t temporal_compression_ratio =
             m_vae->get_config().patch_size_t * std::pow(2,
-                                                        std::reduce(m_vae->get_config().spatio_temporal_scaling.begin(),
+                                                        std::accumulate(m_vae->get_config().spatio_temporal_scaling.begin(),
                                                                     m_vae->get_config().spatio_temporal_scaling.end(),
                                                                     0));
         size_t transformer_spatial_patch_size = transformer_config.patch_size;
