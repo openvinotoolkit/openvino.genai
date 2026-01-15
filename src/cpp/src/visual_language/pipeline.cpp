@@ -363,10 +363,10 @@ public:
 
             ov::genai::utils::GenerationFinishInfo generation_finish_info;
 
-            const auto& images_for_embed = use_full_history 
+            const auto& images_embeds = use_full_history 
                 ? processed_chat_data.encoded_images 
                 : processed_chat_data.new_encoded_images;
-            const auto& videos_for_embed = use_full_history 
+            const auto& videos_embeds = use_full_history 
                 ? processed_chat_data.encoded_videos 
                 : processed_chat_data.new_encoded_videos;
             const auto& image_seq = use_full_history 
@@ -378,8 +378,8 @@ public:
             
             generation_finish_info = prepare_inputs_and_generate(
                 templated_history,
-                images_for_embed,
-                videos_for_embed,
+                images_embeds,
+                videos_embeds,
                 image_seq,
                 video_seq,
                 generation_config,
