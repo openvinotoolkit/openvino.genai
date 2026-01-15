@@ -59,7 +59,7 @@ public:
     AutoencoderKLLTXVideo& reshape(int64_t batch_size, int64_t num_frames, int64_t height, int64_t width);
 
 private:
-    void merge_vae_image_post_processing() const;
+    void merge_vae_video_post_processing() const;
 
     Config m_config;
     ov::InferRequest m_encoder_request, m_decoder_request;
