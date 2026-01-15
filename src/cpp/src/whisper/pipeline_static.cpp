@@ -1071,7 +1071,7 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
 
     const size_t max_sequence_length = 448;
 
-    // When word_timestamps is enabled decoder can recieve tokens decoded from entire audio chunk which is 448
+    // When word_timestamps is enabled decoder can receive tokens decoded from entire audio chunk which is 448
     const size_t decoder_max_prompt_len = m_generation_config.word_timestamps ? max_sequence_length : MAX_PROMPT_LEN;
 
     reshape_to_static(decoder_model, decoder_max_prompt_len, decoder_max_prompt_len, last_hidden_state_shape);
