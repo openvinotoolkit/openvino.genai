@@ -24,7 +24,7 @@ def main():
     args = parser.parse_args()
 
     ov_config = dict()
-    if args.device == "NPU" or "GPU" in args.device:  # need to handle cases like "GPU", "GPU.0" and "GPU.1"
+    if args.device == "NPU" or "GPU" in args.device: # need to handle cases like "GPU", "GPU.0" and "GPU.1"
         # Cache compiled models on disk for GPU and NPU to save time on the
         # next run. It's not beneficial for CPU.
         ov_config = get_config_for_cache()
