@@ -53,7 +53,7 @@ def main():
         help="Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, "
         "a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.",
     )
-    
+
     args = parser.parse_args()
 
     if args.prompt is not None and args.prompt_file is not None:
