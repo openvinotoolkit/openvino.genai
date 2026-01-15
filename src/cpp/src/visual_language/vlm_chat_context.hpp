@@ -8,6 +8,7 @@
 
 namespace ov::genai {
 
+// TODO Add description
 class VLMChatContext  {
 public:
     struct ProcessedChatData {
@@ -48,15 +49,25 @@ private:
     std::shared_ptr<ChatHistoryInternalState> m_history_state;
     
     size_t m_initial_messages_metadata_count = 0;
+    size_t m_initial_base_image_index = 0;
+    size_t m_initial_base_video_index = 0;
 
-    void encode_visions_if_needed(const std::vector<size_t>& image_indices,
-                                  const std::vector<size_t>& video_indices);
+    void encode_visions_if_needed(
+        const std::vector<size_t>& image_indices,
+        const std::vector<size_t>& video_indices
+    );
                 
     void fill_messages_metadata(
         size_t start_index,
         const std::vector<size_t>& new_image_indices,
         const std::vector<size_t>& new_video_indices
     );
+
+    std::string multipart_message_to_string(
+        const JsonContainer& message,
+        size_t base_image_index,
+        size_t base_video_index
+    ) const;
 };
 
 } // namespace ov::genai
