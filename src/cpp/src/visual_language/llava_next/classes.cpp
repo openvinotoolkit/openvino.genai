@@ -418,7 +418,8 @@ ov::Tensor InputsEmbedderLLaVANext::get_text_embeddings_llava_next(const ov::Ten
     // zero out values that are equal to image_token_id
     auto* pids = for_inputs_embeds_ids.data<int64_t>();
     for (size_t i = 0; i < input_ids.get_size(); i++) {
-        pids[i] = (pids[i] == image_token_id) ? 0 : pids[i];
+        int64_t val = pids[i];
+        pids[i] = (val == image_token_id) ? 0 : val;
     }
 
     ov::Tensor text_embeds = m_embedding->infer(req, for_inputs_embeds_ids);
