@@ -537,7 +537,9 @@ def genai_gen_visual_text(model, prompt, image, video, processor, tokenizer, max
         import openvino_genai
         gen_config = openvino_genai.GenerationConfig()
         if "pruning_ratio" in generation_config:
-            gen_config.pruning_ratio = int(generation_config.get("pruning_ratio"))
+            pruning_ratio = generation_config.get("pruning_ratio")
+            if pruning_ratio >= 0 and pruning_ratio <= 100:
+                gen_config.pruning_ratio = int(pruning_ratio)
         kwargs["generation_config"] = gen_config
 
     out = model.generate(
