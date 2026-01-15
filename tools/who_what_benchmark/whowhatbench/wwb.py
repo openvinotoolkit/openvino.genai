@@ -155,10 +155,10 @@ def parse_args():
         "of OpenVINO GenAI API. Or a JSON string of SchedulerConfig.",
     )
     parser.add_argument(
-        "--generate-config",
+        "--generation-config",
         type=str,
         default=None,
-        help="Path to the JSON file that contains GenerateConfig for generatingof OpenVINO GenAI API.",
+        help="Path to the JSON file that contains GenerateConfig for generating of OpenVINO GenAI API, or a JSON string of the configuration.",
     )
     parser.add_argument(
         "--llamacpp",

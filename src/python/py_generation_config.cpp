@@ -431,7 +431,6 @@ void init_generation_config(py::module_& m) {
         .def_readwrite("top_p", &GenerationConfig::top_p)
         .def_readwrite("top_k", &GenerationConfig::top_k)
         .def_readwrite("do_sample", &GenerationConfig::do_sample)
-        .def_readwrite("pruning_ratio", &GenerationConfig::pruning_ratio)
         .def_readwrite("repetition_penalty", &GenerationConfig::repetition_penalty)
         .def_readwrite("eos_token_id", &GenerationConfig::eos_token_id)
         .def_readwrite("presence_penalty", &GenerationConfig::presence_penalty)
