@@ -1070,20 +1070,10 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
                                                               const ov::AnyMap& properties)
     : WhisperPipelineImplBase{models_path}
     , m_sampler(m_tokenizer) {
-    
-    if (properties.find("word_timestamps") != properties.end()) {
-        std::cout << "Word level timestamps passed to ctor with value: " << properties.at("word_timestamps").as<bool>() << std::endl;
-    }
-    
     ov::AnyMap properties_copy = properties;
     m_generation_config.update_generation_config(properties_copy);
     erase_whisper_generation_config_keys(properties_copy);
-
-    if (properties_copy.find("word_timestamps") != properties_copy.end()) {
-        std::cout << "Word level timestamps passed to plugin with value: " << properties_copy.at("word_timestamps").as<bool>() << std::endl;
-    } else {
-        std::cout << "Word level timestamps not passed to plugin" << std::endl;
-    }
+    
     ov::Core core = utils::singleton_core();
 
     auto encoder_model = core.read_model(models_path / "openvino_encoder_model.xml", {}, properties_copy);
