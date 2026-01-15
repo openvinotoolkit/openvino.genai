@@ -1018,44 +1018,6 @@ std::shared_ptr<ov::Model> prepare_decoder_with_past_model(std::shared_ptr<ov::M
     return decoder_with_past_model;
 }
 
-void decompose_scaled_dot_product_attention(std::shared_ptr<ov::Model> model) {
-    ov::pass::Manager manager;
-    manager.register_pass<ov::genai::WhisperScaledDotProductAttentionDecomposition>();
-    auto result = manager.run_passes(model);
-}
-
-void add_cross_attention_qk_scaled_scores_outputs(std::shared_ptr<ov::Model> model) {
-    size_t idx = 0;
-    for (auto& op : model->get_ordered_ops()) {
-        if (op->get_type_info().name != std::string("Add")) {
-            continue;
-        }
-
-        bool should_skip_op = true;
-
-        for (const auto& output : op->outputs()) {
-            for (const auto& name : output.get_names()) {
-                if (name.find("cross_attention_qk_scaled_scores") != std::string::npos) {
-                    should_skip_op = false;
-                    break;
-                }
-            }
-
-            // output found, exit outputs loop
-            if (!should_skip_op) {
-                break;
-            }
-        }
-
-        if (should_skip_op) {
-            continue;
-        }
-
-        model->add_output(op->output(0)).add_names({"cross_attention_qk_scaled_scores_" + std::to_string(idx)});
-        idx++;
-    }
-}
-
 void erase_whisper_generation_config_keys(ov::AnyMap& config_map) {
     config_map.erase("word_timestamps");
 }
@@ -1120,8 +1082,8 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     preprocess_decoder(decoder_with_past_model);
 
     if (m_generation_config.word_timestamps) {
-        decompose_scaled_dot_product_attention(decoder_model);
-        add_cross_attention_qk_scaled_scores_outputs(decoder_model);
+        ov::genai::decompose_scaled_dot_product_attention_for_whisper(decoder_model);
+        ov::genai::add_cross_attention_qk_scaled_scores_outputs_for_whisper(decoder_model);
     }
 
     ov::CompiledModel compiled_model;

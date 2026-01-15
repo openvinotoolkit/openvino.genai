@@ -203,7 +203,6 @@ ov::genai::WhisperPipeline::WhisperPipeline(const std::filesystem::path& models_
             m_impl = std::make_unique<StaticWhisperPipeline>(models_path, properties_copy);
         }
     } else {
-        std::cout << "WhisperStatefulPipeline is used." << std::endl;
         m_impl = std::make_unique<WhisperPipelineStatefulImpl>(models_path, device, properties);
     }
     auto stop_time = std::chrono::steady_clock::now();

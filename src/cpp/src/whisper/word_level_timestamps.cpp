@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "word_level_timestamps.hpp"
@@ -9,6 +9,7 @@
 #include "debug_utils.hpp"
 #include "openvino/openvino.hpp"
 #include "whisper/alignment_heads.hpp"
+#include "whisper/transformations/scaled_dot_product_attention_decomposition.hpp"
 
 namespace {
 
@@ -679,5 +680,43 @@ std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::v
     auto merged_timestamps = merge_punctuations(words_timestamps);
 
     return merged_timestamps;
+}
+
+void decompose_scaled_dot_product_attention_for_whisper(std::shared_ptr<ov::Model> model) {
+    ov::pass::Manager manager;
+    manager.register_pass<ov::genai::WhisperScaledDotProductAttentionDecomposition>();
+    auto result = manager.run_passes(model);
+}
+
+void add_cross_attention_qk_scaled_scores_outputs_for_whisper(std::shared_ptr<ov::Model> model) {
+    size_t idx = 0;
+    for (auto& op : model->get_ordered_ops()) {
+        if (op->get_type_info().name != std::string("Add")) {
+            continue;
+        }
+
+        bool should_skip_op = true;
+
+        for (const auto& output : op->outputs()) {
+            for (const auto& name : output.get_names()) {
+                if (name.find("cross_attention_qk_scaled_scores") != std::string::npos) {
+                    should_skip_op = false;
+                    break;
+                }
+            }
+
+            // output found, exit outputs loop
+            if (!should_skip_op) {
+                break;
+            }
+        }
+
+        if (should_skip_op) {
+            continue;
+        }
+
+        model->add_output(op->output(0)).add_names({"cross_attention_qk_scaled_scores_" + std::to_string(idx)});
+        idx++;
+    }
 }
 }  // namespace ov::genai

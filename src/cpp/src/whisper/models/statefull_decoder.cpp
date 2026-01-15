@@ -7,7 +7,7 @@
 #include "openvino/pass/manager.hpp"
 #include "utils.hpp"
 #include "whisper/alignment_heads.hpp"
-#include "whisper/transformations/scaled_dot_product_attention_decomposition.hpp"
+#include "whisper/word_level_timestamps.hpp"
 
 namespace {
 void reshape_hidden_states_to_static(std::shared_ptr<ov::Model> model, const ov::PartialShape& lhstates_shape) {
@@ -17,45 +17,6 @@ void reshape_hidden_states_to_static(std::shared_ptr<ov::Model> model, const ov:
     std::map<std::string, ov::PartialShape> name_to_shape{{"encoder_hidden_states", new_shape}};
     model->reshape(name_to_shape);
 }
-
-void decompose_scaled_dot_product_attention(std::shared_ptr<ov::Model> model) {
-    ov::pass::Manager manager;
-    manager.register_pass<ov::genai::WhisperScaledDotProductAttentionDecomposition>();
-    manager.run_passes(model);
-}
-
-void add_cross_attention_qk_scaled_scores_outputs(std::shared_ptr<ov::Model> model) {
-    size_t idx = 0;
-    for (auto& op : model->get_ordered_ops()) {
-        if (op->get_type_info().name != std::string("Add")) {
-            continue;
-        }
-
-        bool should_skip_op = true;
-
-        for (const auto& output : op->outputs()) {
-            for (const auto& name : output.get_names()) {
-                if (name.find("cross_attention_qk_scaled_scores") != std::string::npos) {
-                    should_skip_op = false;
-                    break;
-                }
-            }
-
-            // output found, exit outputs loop
-            if (!should_skip_op) {
-                break;
-            }
-        }
-
-        if (should_skip_op) {
-            continue;
-        }
-
-        model->add_output(op->output(0)).add_names({"cross_attention_qk_scaled_scores_" + std::to_string(idx)});
-        idx++;
-    }
-}
-
 }  // namespace
 
 namespace ov::genai {
@@ -70,8 +31,8 @@ WhisperStatefullDecoder::WhisperStatefullDecoder(const std::filesystem::path& mo
     auto model = core.read_model(models_path / "openvino_decoder_model.xml", {}, properties);
 
     if (m_decompose_cross_attention_spda_ops) {
-        decompose_scaled_dot_product_attention(model);
-        add_cross_attention_qk_scaled_scores_outputs(model);
+        ov::genai::decompose_scaled_dot_product_attention_for_whisper(model);
+        ov::genai::add_cross_attention_qk_scaled_scores_outputs_for_whisper(model);
     }
 
     m_has_cache_position = utils::has_input(model, "cache_position");
