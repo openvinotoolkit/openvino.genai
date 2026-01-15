@@ -4,6 +4,7 @@
 #include "openvino/genai/c/vlm_pipeline.h"
 
 #include <cstdarg>
+#include <cstring>
 #include <filesystem>
 
 #include "openvino/c/ov_tensor.h"

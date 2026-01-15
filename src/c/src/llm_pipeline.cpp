@@ -4,6 +4,7 @@
 #include "openvino/genai/c/llm_pipeline.h"
 
 #include <cstdarg>
+#include <cstring>
 #include <filesystem>
 
 #include "openvino/genai/chat_history.hpp"

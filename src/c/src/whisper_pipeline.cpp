@@ -4,6 +4,7 @@
 #include "openvino/genai/c/whisper_pipeline.h"
 
 #include <cstdarg>
+#include <cstring>
 #include <filesystem>
 
 #include "openvino/genai/whisper_generation_config.hpp"
