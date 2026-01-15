@@ -8,7 +8,7 @@
 
 namespace ov::genai {
 
-using VisionID = std::string;
+using VisionID = uint64_t;
 
 enum class VisionType {
     IMAGE,
@@ -68,9 +68,11 @@ private:
     };
 
     std::unordered_map<VisionID, VisionEntry> m_entries;
+
     mutable std::mutex m_mutex;
 
     VisionID register_vision(const ov::Tensor& tensor, VisionType type);
+    
     static VisionID compute_hash(const ov::Tensor& tensor);
 };
 

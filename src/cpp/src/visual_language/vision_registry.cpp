@@ -48,12 +48,13 @@ VisionID VisionRegistry::compute_hash(const ov::Tensor& tensor) {
     // Hash tensor content
     const uint8_t* data = tensor.data<uint8_t>();
     const size_t byte_size = tensor.get_byte_size();
+    // TODO Consider using sampling strategy for performance optimization
     for (size_t i = 0; i < byte_size; ++i) {
         hash ^= data[i];
         hash *= FNV_PRIME;
     }
     
-    return std::to_string(hash);
+    return hash;
 }
 
 VisionID VisionRegistry::register_vision(const ov::Tensor& tensor, VisionType type) {
