@@ -1135,15 +1135,15 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
     }
 
     ov::CompiledModel compiled_model;
-    compiled_model = core.compile_model(encoder_model, "NPU", properties);
+    compiled_model = core.compile_model(encoder_model, "NPU", properties_copy);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Static Whisper encoder model");
     m_models.encoder = compiled_model.create_infer_request();
 
-    compiled_model = core.compile_model(decoder_with_past_model, "NPU", properties);
+    compiled_model = core.compile_model(decoder_with_past_model, "NPU", properties_copy);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Static Whisper decoder with past model");
     m_models.decoder_with_past = compiled_model.create_infer_request();
 
-    compiled_model = core.compile_model(decoder_model, "NPU", properties);
+    compiled_model = core.compile_model(decoder_model, "NPU", properties_copy);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "Static Whisper decoder model");
     m_models.decoder = compiled_model.create_infer_request();
 
