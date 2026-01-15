@@ -12,18 +12,20 @@ if [ ! -f ${OV_TOKENIZERS_LIB_PATH} ]; then
 fi
 
 export DATA_DIR=${SCRIPT_DIR_UNIT_TEST_CPP}/test_data
-# export MODEL_DIR=${SCRIPT_DIR_UNIT_TEST_CPP}/test_models
-export MODEL_DIR=${SCRIPT_DIR_UNIT_TEST_CPP}/../../../samples/cpp/module_genai/ut_pipelines/
-# export DEVICE=GPU # Specific device for testing, default is CPU
+export MODEL_DIR=${SCRIPT_DIR_UNIT_TEST_CPP}/test_models
+
+# export DEVICE=GPU             # Specific device for testing, default is CPU
+# export ENABLE_PROFILE=1       # Dump profiling data. default 0.
+# export DUMP_YAML=1            # Dump pipeline to YAML file. default 0.
+# export OPENVINO_LOG_LEVEL=2   # Set OpenVINO log level.
 
 app=../../../build/tests/module_genai/cpp/genai_modules_test
 
 # All tests
 $app
 
-# All ModuleTest
-# $app --gtest_filter="PipelineTest.GenerateAsync*"
-# $app --gtest_filter="ModuleTestSuite*cat_120_100_dog_120_120*"
+# All ModuleTest examples
+# $app --gtest_filter="ModuleTest*"
 
-# All PipelineTest
+# All PipelineTest examples
 # $app --gtest_filter="PipelineTest*"
