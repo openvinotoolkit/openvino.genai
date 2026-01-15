@@ -42,9 +42,18 @@ def main():
     parser.add_argument("-n", "--num_iter", type=int, default=2, help="Number of iterations")
     parser.add_argument("-mt", "--max_new_tokens", type=int, default=20, help="Maximal number of new tokens")
     parser.add_argument("-d", "--device", type=str, default="CPU", help="Device")
-    parser.add_argument("--pruning_ratio", type=int, help="Percentage of visual tokens to prune (valid range: 0-100), puning is disabled by default.")
-    parser.add_argument("--relevance_weight", type=float, help="Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.")
-
+    parser.add_argument(
+        "--pruning_ratio",
+        type=int,
+        help="Percentage of visual tokens to prune (valid range: 0-100), puning is disabled by default.",
+    )
+    parser.add_argument(
+        "--relevance_weight",
+        type=float,
+        help="Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, " \
+        "a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.",
+    )    
+    
     args = parser.parse_args()
 
     if args.prompt is not None and args.prompt_file is not None:
