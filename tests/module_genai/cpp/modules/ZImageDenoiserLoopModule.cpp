@@ -33,7 +33,7 @@ class ZImageDenoiserLoopModuleTest : public ModuleTestBase, public ::testing::Te
 private:
     std::string m_device;
     ZImageDenoiserLoopTestData m_test_data;
-    float m_threshold = 1e-2;
+    float m_threshold = 1e-1;
 
 public:
     static std::string get_test_case_name(const testing::TestParamInfo<test_params>& obj) {

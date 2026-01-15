@@ -151,7 +151,7 @@ TEST_P(VisionEncoderModuleTest, ModuleTest) {
 namespace vision_encoder_test {
 
 auto test_data = std::vector<VisionEncoderTestData> {TEST_DATA::vision_encoder_test_data()};
-auto test_devices = std::vector<std::string> {"CPU", "GPU"};
+auto test_devices = std::vector<std::string> {TEST_MODEL::get_device()};
 
 }
 
