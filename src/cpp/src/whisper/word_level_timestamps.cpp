@@ -146,10 +146,8 @@ std::vector<ov::Tensor> reduce_batch_dim(const std::vector<ov::Tensor>& alignmen
         const size_t frame_len = shape[2];
 
         ov::Tensor reduced_batch_tensor{ov::element::f32, {seq_len, frame_len}};
-        auto* input_data = tensor.data<float>();
-        auto* output_data = reduced_batch_tensor.data<float>();
-
-        std::memcpy(output_data, input_data, seq_len * frame_len * sizeof(float));
+        ov::Tensor source_view{tensor, {0, 0, 0}, {1, seq_len, frame_len}};
+        source_view.copy_to(reduced_batch_tensor);
 
         result.push_back(reduced_batch_tensor);
     }
@@ -276,9 +274,7 @@ std::vector<ov::Tensor> extract_n_frames(const std::vector<ov::Tensor>& alignmen
         const size_t seq_len = shape[1];
         const size_t frame_len = shape[2];
 
-        if (n_frames > frame_len) {
-            throw std::runtime_error("Requested n_frames exceeds tensor frame length.");
-        }
+        OPENVINO_ASSERT(n_frames <= frame_len, "Requested n_frames exceeds tensor frame length: ", frame_len);
 
         ov::Tensor extracted_tensor{ov::element::f32, {batch_size, seq_len, n_frames}};
         auto* input_data = tensor.data<float>();
@@ -533,11 +529,11 @@ std::pair<std::vector<std::string>, std::vector<std::vector<int64_t>>> split_tok
         const std::vector<int64_t>& subword_tokens = subword_tokens_list[i];
 
         const bool is_special = subword_tokens.size() && subword_tokens[0] >= eot;
-        const bool with_space = !subword.empty() && std::isspace(subword[0]);
+        const bool with_space = !subword.empty() && std::isspace(static_cast<unsigned char>(subword[0]));
 
         const std::string trimmed_subword = trim(subword);
-        const bool is_punctuation =
-            !trimmed_subword.empty() && trimmed_subword.size() == 1 && std::ispunct(trimmed_subword[0]);
+        const bool is_punctuation = !trimmed_subword.empty() && trimmed_subword.size() == 1 &&
+                                    std::ispunct(static_cast<unsigned char>(trimmed_subword[0]));
 
         if (words.empty() || is_special || with_space || is_punctuation) {
             words.push_back(subword);
@@ -580,7 +576,6 @@ std::vector<ov::Tensor> infer_alignments_heads_qks(const std::vector<int64_t>& t
     hidden_state_tensor.copy_to(decoder.get_tensor("encoder_hidden_states"));
     // NB: input_ids format: [token1, token2, pad, pad]
     auto padded_input_ids = decoder.get_tensor("input_ids");
-    std::cout << "Padded input ids shape: " << padded_input_ids.get_shape().to_string() << std::endl;
     OPENVINO_ASSERT(padded_input_ids.get_size() >= tokens.size());
     OPENVINO_ASSERT(padded_input_ids.get_element_type() == ov::element::i64);
     std::fill_n(padded_input_ids.data<int64_t>(), padded_input_ids.get_size(), 0u);
