@@ -27,5 +27,5 @@ TEST(TestAddExtensions, test_add_extensions_to_core) {
 
     EXPECT_THROW(add_extensions_to_core(properties1), ov::Exception);
     EXPECT_THROW(add_extensions_to_core(properties2), ov::Exception);
-    add_extensions_to_core(properties3);
+    EXPECT_NO_THROW(add_extensions_to_core(properties3));
 }

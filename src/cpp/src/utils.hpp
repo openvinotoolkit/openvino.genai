@@ -288,19 +288,19 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties, bool is_npu_requested = false);
 
 /**
- * @brief Extracts the "EXTENSIONS" key from the provided properties map and adds each extension path to the
+ * @brief Extracts the "extensions" key from the provided properties map and adds each extension to the
  * singleton OpenVINO core.
  *
- * The "EXTENSIONS" entry, if present, is expected to be an ov::Any containing a vector of extension library
- * file paths:
- *   - On Unix-like platforms: std::vector<std::string>
- *   - On Windows:             std::vector<std::wstring>
+ * The "extensions" entry, if present, is expected to be an ov::Any containing a
+ * std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>, where each element is either:
+ *   - a std::filesystem::path pointing to an extension library file, or
+ *   - a std::shared_ptr<ov::Extension> representing an already constructed OpenVINO extension.
  *
- * Each path in this vector is added to the global OpenVINO core instance as a custom extension. After processing,
- * the "EXTENSIONS" key is removed from the @p properties map. This function is used to dynamically add custom
+ * Each element in this vector is added to the global OpenVINO core instance as a custom extension. After processing,
+ * the "extensions" key is removed from the @p properties map. This function is used to dynamically add custom
  * extensions to the OpenVINO core at runtime.
  *
- * @param properties Properties map that may contain the "EXTENSIONS" key with a vector of extension library paths.
+ * @param properties Properties map that may contain the "EXTENSIONS" key with a vector of extension specifications.
  */
 void add_extensions_to_core(ov::AnyMap& properties);
 
@@ -324,7 +324,7 @@ ov::CompiledModel import_model(const std::filesystem::path& blob_path,
 
 /**
  * @brief Wrap paths and Extensions into ov::AnyMap compatible pair. ov::Core::add_extension() is called for each item
- * inpipeline constructor.
+ * in pipeline constructor.
  */
 template <typename T,
           typename = std::enable_if_t<
