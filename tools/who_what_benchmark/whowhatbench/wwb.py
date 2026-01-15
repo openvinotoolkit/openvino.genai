@@ -569,8 +569,8 @@ def create_evaluator(base_model, args):
     task = args.model_type
 
     gen_config = None
-    if args.generate_config is not None:
-        gen_config = get_json_config(args.generate_config)
+    if args.generation_config is not None:
+        gen_config = get_json_config(args.generation_config)
 
     try:
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
