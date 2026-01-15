@@ -45,8 +45,8 @@ def main():
     res = pipe.generate([args.prompt], config, streamer)
     print()
     perf_metrics = res.perf_metrics
-    print(f"Performance metrics:" )
-    print(f"  Generate time: {perf_metrics.get_generate_duration().mean:.2f} ms" )
+    print(f"Performance metrics:")
+    print(f"  Generate time: {perf_metrics.get_generate_duration().mean:.2f} ms")
     print(f"  TTFT: {perf_metrics.get_ttft().mean:.2f} ms")
     print(f"  TPOT: {perf_metrics.get_tpot().mean:.2f} ± {perf_metrics.get_tpot().std:.2f} ms/token")
     print(f"  Throughput: {(1000.0 / perf_metrics.get_tpot().mean):.2f} token/s")
