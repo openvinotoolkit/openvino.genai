@@ -77,39 +77,28 @@ def get_argprser():
         'if the value is greater than 0, the average numbers exclude the first(0th) iteration,\n'
         'if the value equals 0 (default), execute the warm-up iteration(0th iteration).',
     )
+    parser.add_argument('-i', '--images', default=None, help='test images for vision tasks. Can be directory or path to single image')
+    parser.add_argument('-v', '--video', default=None, help='test video for vision tasks. Can be directory or path to single video')
+    parser.add_argument('-s', '--seed', type=int, default=42, required=False, help='specific random seed to generate fix result. Default 42.')
     parser.add_argument(
-        "-i", "--images", default=None, help="test images for vision tasks. Can be directory or path to single image"
-    )
-    parser.add_argument(
-        "-v", "--video", default=None, help="test video for vision tasks. Can be directory or path to single video"
-    )
-    parser.add_argument(
-        "-s",
-        "--seed",
-        type=int,
-        default=42,
-        required=False,
-        help="specific random seed to generate fix result. Default 42.",
-    )
-    parser.add_argument(
-        "-lc",
-        "--load_config",
+        '-lc',
+        '--load_config',
         default=None,
         required=False,
-        help="path to JSON file to load customized configurations.\n"
-        'Example for OpenVINO: {"INFERENCE_NUM_THREADS":32,"PERFORMANCE_HINT":"LATENCY"}.\n'
-        'Example for Pytorch: {"PREC_BF16":true}. Pytorch currently only supports bf16 settings.\n',
+        help='path to JSON file to load customized configurations.\n'
+        'Example for OpenVINO: {\"INFERENCE_NUM_THREADS\":32,\"PERFORMANCE_HINT\":\"LATENCY\"}.\n'
+        'Example for Pytorch: {\"PREC_BF16\":true}. Pytorch currently only supports bf16 settings.\n',
     )
     parser.add_argument(
-        "-mc",
-        "--memory_consumption",
+        '-mc',
+        '--memory_consumption',
         default=0,
         required=False,
         type=int,
-        help="Enables memory usage information collection mode. If the value is 1, output the maximum memory consumption in warm-up iterations."
-        " If the value is 2, output the maximum memory consumption in all iterations.\nIt is not recommended to run memory consumption and"
-        " performance benchmarking at the same time. Effect on performance can be reduced by specifying a longer --memory_consumption_delay,"
-        " but the impact is still expected. ",
+        help='Enables memory usage information collection mode. If the value is 1, output the maximum memory consumption in warm-up iterations.'
+        ' If the value is 2, output the maximum memory consumption in all iterations.\nIt is not recommended to run memory consumption and'
+        ' performance benchmarking at the same time. Effect on performance can be reduced by specifying a longer --memory_consumption_delay,'
+        ' but the impact is still expected. '
     )
     parser.add_argument(
         "--memory_consumption_delay",
@@ -120,73 +109,66 @@ def get_argprser():
         "It is not recommended to run memory consumption and performance benchmarking in the same time",
     )
     parser.add_argument(
-        "-mc_dir",
-        "--memory_consumption_dir",
+        '-mc_dir',
+        '--memory_consumption_dir',
         default=None,
         required=False,
         type=str,
-        help="Path to store memory consamption logs and chart.",
+        help='Path to store memory consamption logs and chart.',
     )
-    parser.add_argument("-bs", "--batch_size", type=int, default=1, required=False, help="Batch size value")
+    parser.add_argument('-bs', '--batch_size', type=int, default=1, required=False, help='Batch size value')
+    parser.add_argument('--num_beams', type=int, default=1, help='Number of beams in the decoding strategy, activates beam_search if greater than 1')
     parser.add_argument(
-        "--num_beams",
-        type=int,
-        default=1,
-        help="Number of beams in the decoding strategy, activates beam_search if greater than 1",
-    )
-    parser.add_argument(
-        "--pruning_ratio",
+        '--pruning_ratio',
         type=int,
         default=0,
-        help="Percentage of visual tokens to prune "
-        'Only supports PA model. To switch to PA mode, please, set {"ATTENTION_BACKEND": "PA"} in --load_config.',
+        help='Percentage of visual tokens to prune '
+            'Only supports PA model. To switch to PA mode, please, set {"ATTENTION_BACKEND": "PA"} in --load_config.'
     )
-    parser.add_argument("--relevance_weight", type=float, help="Relevance weight for the model")
+    parser.add_argument('--relevance_weight', type=float, help='Relevance weight for the model')
     parser.add_argument(
-        "--torch_compile_backend",
+        '--torch_compile_backend',
         default=None,
         required=False,
-        help="Enables running the torch.compile() with specified backend: pytorch or openvino (default)",
+        help='Enables running the torch.compile() with specified backend: pytorch or openvino (default)',
     )
     parser.add_argument(
-        "--torch_compile_dynamic",
-        action="store_true",
-        help="Enables dynamic shape tracking for torch.compile()",
+        '--torch_compile_dynamic',
+        action='store_true',
+        help='Enables dynamic shape tracking for torch.compile()',
     )
     parser.add_argument(
-        "--torch_compile_options",
+        '--torch_compile_options',
         default=None,
         required=False,
-        help="Options for torch.compile() in JSON format",
+        help='Options for torch.compile() in JSON format',
     )
     parser.add_argument(
-        "--torch_compile_input_module",
+        '--torch_compile_input_module',
         default=None,
         required=False,
-        help="Specifies the module to decorate with torch.compile(). By default, parent module will be decorated.",
+        help='Specifies the module to decorate with torch.compile(). By default, parent module will be decorated.',
     )
-    parser.add_argument("--convert_tokenizer", action="store_true", help="Convert tokenizer to OpenVINO format")
     parser.add_argument(
-        "--subsequent",
-        action="store_true",
-        help="if the value is True, input prompts are processed in subsequent manner"
-        "if the value is False (default), input prompts are processed in interleave manner",
+        '--convert_tokenizer', action='store_true', help='Convert tokenizer to OpenVINO format'
     )
-    parser.add_argument("-od", "--output_dir", help="Save the input text and generated text, images to files")
     parser.add_argument(
-        "--genai",
-        action="store_true",
-        help="[DEPRECATED] Use OpenVINO GenAI optimized pipelines for benchmarking. Enabled by default",
+        '--subsequent',
+        action='store_true',
+        help='if the value is True, input prompts are processed in subsequent manner'
+        'if the value is False (default), input prompts are processed in interleave manner'
     )
+    parser.add_argument('-od', '--output_dir', help='Save the input text and generated text, images to files')
+    parser.add_argument("--genai", action="store_true", help="[DEPRECATED] Use OpenVINO GenAI optimized pipelines for benchmarking. Enabled by default")
     parser.add_argument("--optimum", action="store_true", help="Use Optimum Intel pipelines for benchmarking")
     parser.add_argument("--from_onnx", action="store_true", help="Allow initialize Optimum OpenVINO model using ONNX")
     parser.add_argument(
         "--lora",
-        nargs="*",
+        nargs='*',
         required=False,
         default=None,
         help="Path to LoRA adapters for using OpenVINO GenAI optimized pipelines with LoRA for benchmarking")
-    parser.add_argument("--lora_alphas", nargs="*", help="Alphas params for LoRA adapters.", required=False, default=[])
+    parser.add_argument('--lora_alphas', nargs='*', help='Alphas params for LoRA adapters.', required=False, default=[])
     parser.add_argument("--lora_mode", choices=["auto", "fuse", "static", "static_rank", "dynamic"], help="LoRA adapters loading mode")
     parser.add_argument("--empty_lora", action="store_true", help="Inference with empty LoRA config")
     parser.add_argument(
