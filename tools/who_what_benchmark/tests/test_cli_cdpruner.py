@@ -52,7 +52,7 @@ def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path,
     gen_config = get_json_config(generation_config_string)
     pruning_ratio = gen_config.get("pruning_ratio")
     if pruning_ratio > 0 and pruning_ratio < 100:
-        pruner_info = "[INFO]    Pruning Ratio: " +  pruning_ratio
+        pruner_info = "[INFO]    Pruning Ratio: " + pruning_ratio
     elif pruning_ratio == 100:
         pruner_info = "Original visual tokens and pruned visual tokens are the same!"
 
