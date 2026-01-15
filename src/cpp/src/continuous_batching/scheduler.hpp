@@ -80,10 +80,10 @@ public:
         // map of src -> dst blocks copies, which need to be performed by CacheManager
         std::map<size_t, std::list<size_t>> block_copy_map;
         // reference logic to handle kv cache remap for tree speculative decoding
-        _set_cache_remap_indices(sequence_groups, scheduler_output);
+        // _set_cache_remap_indices(sequence_groups, scheduler_output);
 
         // free some blocks taken by non-confirmed candidates in SD / prompt look-up
-        clean_empty_blocks(sequence_groups);
+        // clean_empty_blocks(sequence_groups);
 
         if (m_block_manager->get_total_number_of_kv_blocks() == 0) {
             _initialize_cache(sequence_groups);
@@ -172,6 +172,10 @@ public:
                     size_t dst_slot_idx = (dst_idx) % block_size;
                     auto src_index = block_table_for_sequence[src_block_idx]->get_index();
                     auto dst_index = block_table_for_sequence[dst_block_idx]->get_index();
+                    std::cout << "remap seq_group_id " << seq_group_id << " src idx " << src_idx << " to dst idx " << dst_idx << std::endl;
+                    std::cout << "src block info: block idx " << src_block_idx << " slot idx " << src_slot_idx << std::endl;
+                    std::cout << "dst block info: block idx " << dst_block_idx << " slot idx " << dst_slot_idx << std::endl;
+                    std::cout << "src physical block index: " << src_index << ", dst physical block index: " << dst_index << std::endl;
                     m_cache_manager->copy_slots(src_index, src_slot_idx, dst_index, dst_slot_idx);
                 }
                 // get the dst block indexes and token offset

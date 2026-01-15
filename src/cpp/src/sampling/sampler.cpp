@@ -794,6 +794,7 @@ void Sampler::TreeSearcher::select_top_k(const ov::Tensor& logits, SamplerOutput
         m_beams = child_beams;
     } else { // at this point, we already have the full candidate tree
         // 1. 获取topk candidates
+        //m_eagle2_candidate_graph->print_tree();
         auto final_candidates = m_eagle2_candidate_graph->get_top_k_candidates();
         std::sort(final_candidates.begin(), final_candidates.end(), [](const auto& a, const auto& b) {
             return a.m_tree_layer < b.m_tree_layer;
@@ -1176,7 +1177,8 @@ size_t Sampler::validate_tree_candidates(Sequence::Ptr& sequence, const ov::Tens
     }
     sequence->append_token(bonus_token.m_index, bonus_token.m_log_prob);
     logit_processor.register_new_generated_token(bonus_token.m_index);
-    std::cout << "generated tokens in this step: " << sequence->get_generated_len() << std::endl;
+    //std::cout << "accepted tokens in this step : " << validate_path.size() - 1 << std::endl;
+    //std::cout << "bonus token : " << bonus_token.m_index << std::endl;
     // update eagle meta data
     sequence->set_eagle_metadata({{}, {}, eagle_metadata.tree_position_ids, validate_path});
     return validated_steps;

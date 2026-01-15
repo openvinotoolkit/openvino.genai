@@ -330,11 +330,11 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
                     // retrieve eagle metadata
                     auto& eagle_metadata = candidate_sequence.eagle_metadata;
                     eagle_metadata.validated_indices = running_sequence->get_eagle_metadata().validated_indices;
-                    //// std::cout << "set validated indices : ";
+                    //std::cout << "set validated indices : ";
                     for (const auto& idx : eagle_metadata.validated_indices) {
-                        // std::cout << idx << " ";
+                        //std::cout << idx << " ";
                     }
-                    // std::cout << std::endl;
+                    //std::cout << std::endl;
                     running_sequence->set_eagle_metadata(eagle_metadata);
                 }
             }
