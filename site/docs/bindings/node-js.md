@@ -30,7 +30,6 @@ Node.js bindings currently support:
 - `TextEmbeddingPipeline`: Generate text embeddings for semantic search and RAG applications
 - `TextRerankPipeline`: Rerank documents by semantic relevance for RAG applications
   - Configurable top-n results
-  - Cross-encoder based reranking
 - `Tokenizer`: Fast tokenization / detokenization and chat prompt formatting
   - Encode strings into token id and attention mask tensors
   - Decode token sequences
