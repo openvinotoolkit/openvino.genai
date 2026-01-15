@@ -146,8 +146,10 @@ std::vector<ov::Tensor> reduce_batch_dim(const std::vector<ov::Tensor>& alignmen
         const size_t frame_len = shape[2];
 
         ov::Tensor reduced_batch_tensor{ov::element::f32, {seq_len, frame_len}};
-        ov::Tensor source_view{tensor, {0, 0, 0}, {1, seq_len, frame_len}};
-        source_view.copy_to(reduced_batch_tensor);
+        const auto* input_data = tensor.data<float>();
+        auto* output_data = reduced_batch_tensor.data<float>();
+
+        std::memcpy(output_data, input_data, seq_len * frame_len * sizeof(float));
 
         result.push_back(reduced_batch_tensor);
     }
