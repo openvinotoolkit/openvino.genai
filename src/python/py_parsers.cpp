@@ -82,6 +82,40 @@ public:
     }
 };
 
+class VLLMParserWrapper: public Parser {
+// Wraps a Python parser to be used as a C++ Parser
+// from vllm.entrypoints.openai.tool_parsers.llama_tool_parser
+
+public:
+    py::object m_py_parser;
+    VLLMParserWrapper(py::object py_parser)
+        : m_py_parser(py_parser) {}
+
+    JsonContainer final_message;
+    void parse(JsonContainer& message) override {
+        py::gil_scoped_acquire acquire;
+        // Check if method exists
+        std::vector<std::string> parser_names = {"extract_tool_calls"};
+        for (const auto& name : parser_names) {
+            if (!py::hasattr(m_py_parser, name.c_str())) {
+                continue;
+            }
+            py::object parsed = m_py_parser.attr(name.c_str())(message["content"].as_string(), py::none());
+            if (!py::hasattr(parsed, "json")) {
+                continue;
+            }
+            auto msg_str = parsed.attr("json")().cast<std::string>();
+            auto new_message = JsonContainer::from_json_string(msg_str);
+            final_message.concatenate(new_message);
+        }
+        std::cout << "during parse" << std::endl;
+        std::cout << final_message.to_json_string() << std::endl;
+        message = final_message;
+        
+        // call python 
+    }
+};
+
 } // namespace
 
 void init_parsers(py::module_& m) {
@@ -143,4 +177,7 @@ void init_parsers(py::module_& m) {
 
     py::class_<DeepSeekR1ReasoningIncrementalParser, std::shared_ptr<DeepSeekR1ReasoningIncrementalParser>, IncrementalParser>(m, "DeepSeekR1ReasoningIncrementalParser")
         .def(py::init<>());
+
+    py::class_<VLLMParserWrapper, std::shared_ptr<VLLMParserWrapper>, Parser>(m, "VLLMParserWrapper")
+        .def(py::init<py::object>(), py::arg("py_parser"), "Wraps a Python VLLM parser to be used as a C++ Parser.");
 }
