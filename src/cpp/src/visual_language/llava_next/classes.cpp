@@ -404,7 +404,7 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& unified
 
 // ref:
 // https://github.com/huggingface/optimum-intel/blob/v1.27.0/optimum/intel/openvino/modeling_visual_language.py#L1423
-ov::Tensor InputsEmbedderLLaVANext::get_text_embeddings_llava_next(const ov::Tensor input_ids) {
+ov::Tensor InputsEmbedderLLaVANext::get_text_embeddings_llava_next(const ov::Tensor& input_ids) {
     CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
     EmbeddingsRequest& req = embeddings_request_guard.get();
 
