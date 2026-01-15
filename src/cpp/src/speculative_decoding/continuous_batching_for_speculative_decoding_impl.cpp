@@ -98,7 +98,8 @@ ov::Tensor truncate_hidden_state_from_end(const ov::Tensor& hidden_state, size_t
 std::pair<size_t, size_t>
 get_prefix_len(
     const std::vector<Sequence::Ptr>& running_sequences,
-    const GeneratedSequences& candidates) {
+    const GeneratedSequences& candidates,
+    bool tree_mode_enabled = false) {
     size_t min_generated_tokens = std::numeric_limits<size_t>::max(),
            min_candidate_len = std::numeric_limits<size_t>::max();
     for (const auto& running_sequence : running_sequences) {
@@ -123,7 +124,20 @@ get_prefix_len(
                 break;
             }
         }
-
+        // adjust the len of prefix in tree mode
+        // handle situation of token match but position mismatch
+        if (tree_mode_enabled) {
+            auto eagle_metadata = running_sequence->get_eagle_metadata();
+            const auto& position_ids = eagle_metadata.tree_position_ids;
+            const auto prev_generated_len = running_sequence->get_generated_len() - position_ids.size();
+            auto prefix_len_from_last_generated = sequence_prefix_len - prev_generated_len;
+            for (size_t i = 0; i < prefix_len_from_last_generated; ++i) {
+                if (position_ids[i] != i) {
+                    sequence_prefix_len = prev_generated_len + i;
+                    break;
+                }
+            }
+        }
         min_generated_tokens = std::min(sequence_prefix_len, min_generated_tokens);
         min_candidate_len = std::min(candidate_sequence_gen_len, min_candidate_len);
     }
@@ -267,7 +281,7 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         } else {
             // update existing sequences by the candidates
             auto& logit_processor = m_sampler->get_logit_processor(request_id);
-            std::tie(min_generated_tokens, min_candidate_len) = get_prefix_len(running_sequences, candidates);
+            std::tie(min_generated_tokens, min_candidate_len) = get_prefix_len(running_sequences, candidates, eagle_mode_enabled && !m_is_validation_mode_enabled);
             if (running_sequences.size() != 1)
                 std::cout << "break" << std::endl;
             OPENVINO_ASSERT(running_sequences.size() == 1);
