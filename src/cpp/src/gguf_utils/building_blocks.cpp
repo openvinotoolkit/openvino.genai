@@ -567,7 +567,14 @@ ov::Output<ov::Node> make_int8_weights(
     // Reshape weight to (num_heads, -1, group_size)
     ov::Shape orig_shape = weight.get_shape();
     orig_shape[1] *= sizeof(uint32_t) / sizeof(uint8_t);
-    size_t num_groups = orig_shape[1] / group_size;
+    
+    // Infer group_size from scales shape if possible (for channel-wise quantization)
+    size_t num_groups = scales.get_shape()[1];
+    size_t inferred_group_size = orig_shape[1] / num_groups;
+    if (inferred_group_size != group_size) {
+        // Use inferred group_size for channel-wise quantization
+        group_size = inferred_group_size;
+    }
 
     // Expand dimensions for scales and biases
     auto scale_shape = scales.get_shape();
@@ -636,6 +643,14 @@ ov::Output<ov::Node> make_int4_weights(
     // Retrieve scales and biases
     ov::Tensor scales = get_tensor(consts, key + ".scales");
     ov::Tensor biases = get_tensor(consts, key + ".biases");
+    
+    // Infer group_size from scales shape if possible (for flexible block sizes)
+    size_t num_groups = scales.get_shape()[1];
+    size_t inferred_group_size = orig_weight_shape[1] / num_groups;
+    if (inferred_group_size != group_size) {
+        // Use inferred group_size for different quantization granularity
+        group_size = inferred_group_size;
+    }
 
     // Expand dimensions for scales and biases
     ov::Shape scale_bias_shape = scales.get_shape();
