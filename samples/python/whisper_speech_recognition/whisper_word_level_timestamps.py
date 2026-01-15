@@ -26,11 +26,18 @@ def get_openai_lib_pipe(model_size="tiny"):
 
 
 def get_genai_pipe(models_path: Path, device: str = "CPU"):
+    config = {
+        # need to pass word_timestamps=True to ctor kwargs to run model transformations before complilation
+        "word_timestamps": True,
+    }
+
+    if device == "NPU":
+        config["STATIC_PIPELINE"] = True
+
     pipeline = openvino_genai.WhisperPipeline(
         models_path,
         device=device,
-        # need to pass word_timestamps=True to ctor kwargs to run model transformations before complilation
-        word_timestamps=True,
+        **config,
     )
 
     generate_options = {
