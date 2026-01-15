@@ -574,9 +574,7 @@ def test_shortform(model_descr):
 
 @pytest.fixture
 def whisper_librispeech_10_openai_tiny_reference():
-    json_path = pathlib.Path(
-        "tests/python_tests/data/whisper/librispeech_asr_dummy_10_openai_whisper_tiny_results.json"
-    )
+    json_path = pathlib.Path(__file__).parent / "data/whisper/librispeech_asr_dummy_10_openai_whisper_tiny_results.json"
     with open(json_path, "r", encoding="utf-8") as f:
         reference = json.load(f)
     return reference
@@ -657,7 +655,7 @@ def test_word_level_timestamps(model_descr, whisper_librispeech_10_openai_tiny_r
 )
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_longform_audio_with_word_level_timestamps(model_descr, sample_from_dataset):
-    _, _, _, genai_pipe = read_whisper_model(model_descr, word_timestamps=True)
+    genai_pipe = read_whisper_model(model_descr, word_timestamps=True)[3]
 
     config = ov_genai.WhisperGenerationConfig(return_timestamps=True, word_timestamps=True)
 
