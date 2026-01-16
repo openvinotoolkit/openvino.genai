@@ -189,7 +189,9 @@ ov::Tensor ClipTextEncoderModule::encode_prompt(
 
     size_t idx = m_encoder_config.num_hidden_layers;
     ov::Tensor prompt_embed = m_request.get_output_tensor(idx);
-    return prompt_embed;
+    ov::Tensor prompt_embed_out = ov::Tensor(prompt_embed.get_element_type(), prompt_embed.get_shape());
+    prompt_embed.copy_to(prompt_embed_out);
+    return prompt_embed_out;
 }
 
 }  // namespace module
