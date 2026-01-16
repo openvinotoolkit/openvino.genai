@@ -39,9 +39,23 @@ std::vector<ov::Tensor> median_filter_last_axis(const std::vector<ov::Tensor>& a
                             window.push_back(input_data[index]);
                         }
                     }
-                    std::nth_element(window.begin(), window.begin() + window.size() / 2, window.end());
+
+                    float median;
+                    size_t mid = window.size() / 2;
+                    if (window.size() % 2 == 0) {
+                        // Even size: average of two middle elements
+                        std::nth_element(window.begin(), window.begin() + mid, window.end());
+                        float upper = window[mid];
+                        // Find the max element in the lower partition (the other middle element)
+                        float lower = *std::max_element(window.begin(), window.begin() + mid);
+                        median = (lower + upper) / 2.0f;
+                    } else {
+                        std::nth_element(window.begin(), window.begin() + mid, window.end());
+                        median = window[mid];
+                    }
+
                     size_t output_index = batch * seq_len * frame_len + seq * frame_len + frame;
-                    output_data[output_index] = window[window.size() / 2];
+                    output_data[output_index] = median;
                 }
             }
         }
