@@ -60,8 +60,9 @@ ModelTypeInfo read_model_type(const std::filesystem::path& models_path) {
 
 bool has_input(const std::shared_ptr<Model>& model, const std::string& name) {
     const auto& inputs = model->inputs();
-    return std::any_of(inputs.begin(), inputs.end(), 
-        [&name](const auto& input) { return input.get_any_name() == name; });
+    return std::any_of(inputs.begin(), inputs.end(), [name](const auto& input) {
+        return input.get_any_name() == name;
+    });
 }
 
 std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model) {

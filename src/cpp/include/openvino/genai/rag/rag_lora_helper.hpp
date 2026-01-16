@@ -253,7 +253,6 @@ inline AdapterController setup_lora_with_fallbacks(
                    "Last error: ", last_error);
 }
 
-
 }  // namespace rag
 }  // namespace genai
 }  // namespace ov
