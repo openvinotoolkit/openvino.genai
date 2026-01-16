@@ -167,9 +167,7 @@ inline RagModelArchitecture detect_architecture(const std::filesystem::path& mod
 
     return RagModelArchitecture::UNKNOWN;
 }
-
    
-
 }  // anonymous namespace
 
 /**
