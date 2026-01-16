@@ -307,15 +307,15 @@ void ChatHistoryInternalState::detect_chat_history_format(const ChatHistory& his
         }
     }
 
-    if (detected_format == ChatHistoryFormat::UNKNOWN) {
-        OPENVINO_THROW("Unknown chat history format. Supported formats schemas are "
-                       "`{role: user, content: string}` and "
-                       "`{role: user, content: [{type: text/image/video, ...}, ...]}`.");
-    }
+    OPENVINO_ASSERT(detected_format != ChatHistoryFormat::UNKNOWN,
+        "Unknown chat history format. Supported formats schemas are "
+        "`{role: user, content: string}` and "
+        "`{role: user, content: [{type: text/image/video, ...}, ...]}`.");
 
-    if (m_chat_history_format != ChatHistoryFormat::UNKNOWN && m_chat_history_format != detected_format) {
-        OPENVINO_THROW("Mixed chat history formats detected.");
-    }
+
+    OPENVINO_ASSERT(m_chat_history_format == ChatHistoryFormat::UNKNOWN ||
+                    m_chat_history_format == detected_format,
+                    "Mixed chat history formats detected.");
 
     m_chat_history_format = detected_format;
 }
