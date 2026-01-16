@@ -266,7 +266,8 @@ public:
         // Previously this was a local variable which caused state tensors
         // to be destroyed after compilation.
         // ============================================
-        m_compiled_model = core.compile_model(model, device, *filtered_properties);
+        const ov::AnyMap& compile_props = *filtered_properties;
+        m_compiled_model = core.compile_model(model, device, compile_props);
 
         utils::print_compiled_model_properties(m_compiled_model, "text embedding model");
         m_request = m_compiled_model.create_infer_request();

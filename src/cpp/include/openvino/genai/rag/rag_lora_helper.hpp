@@ -166,8 +166,7 @@ inline RagModelArchitecture detect_architecture(const std::filesystem::path& mod
     if (contains_ci(dir_name, "qwen3")) return RagModelArchitecture::QWEN3;
 
     return RagModelArchitecture::UNKNOWN;
-}
-   
+}   
 }  // anonymous namespace
 
 /**

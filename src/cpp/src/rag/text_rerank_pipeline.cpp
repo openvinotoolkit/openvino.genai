@@ -152,7 +152,7 @@ TextRerankPipeline::Config::Config(const ov::AnyMap& properties) {
     read_anymap_param(properties, ov::genai::max_length.name(), max_length);
     read_anymap_param(properties, ov::genai::padding_side.name(), padding_side);
     read_anymap_param(properties, ov::genai::pad_to_max_length.name(), pad_to_max_length);
-    read_anymap_param(properties, ::lora_tensor_prefix.name(),lora_tensor_prefix);
+    read_anymap_param(properties, ::lora_tensor_prefix.name(), lora_tensor_prefix);
 };
 
 void TextRerankPipeline::Config::validate() const {
@@ -223,7 +223,8 @@ public:
         // CRITICAL: Store CompiledModel as member
         // This is required for LoRA state tensors to work correctly.
         // ============================================
-        m_compiled_model = core.compile_model(model, device, *filtered_properties);
+        const ov::AnyMap& compile_props = *filtered_properties;
+        m_compiled_model = core.compile_model(model, device, compile_props);
 
         utils::print_compiled_model_properties(m_compiled_model, "text rerank model");
         m_request = m_compiled_model.create_infer_request();
