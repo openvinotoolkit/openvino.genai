@@ -26,6 +26,30 @@ VisionRegistry::VisionEntry& VisionRegistry::VisionEntry::operator=(VisionEntry&
     return *this;
 }
 
+namespace {
+
+constexpr size_t MIN_SAMPLE_BYTES = 64 * 1024;
+constexpr size_t MAX_SAMPLE_BYTES = 256 * 1024;
+constexpr double SAMPLE_RATIO = 0.0625; // 1 / 16
+constexpr size_t HASH_CHUNK_SIZE = sizeof(uint64_t);  // 8 bytes
+
+size_t calculate_hash_stride(size_t byte_size) {
+    if (byte_size <= MIN_SAMPLE_BYTES) {
+        return 1;
+    }
+
+    size_t target_size = static_cast<size_t>(byte_size * SAMPLE_RATIO);
+    target_size = std::clamp(target_size, MIN_SAMPLE_BYTES, MAX_SAMPLE_BYTES);
+ 
+    size_t stride = byte_size / target_size;
+    
+    // Align to 8-byte chunks for uint64_t access
+    stride = stride & ~(HASH_CHUNK_SIZE - 1);
+    return std::max(HASH_CHUNK_SIZE, stride);
+}
+
+} // namespace
+
 // Hash tensor using FNV-1a algorithm.
 // See: https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
 VisionID VisionRegistry::compute_hash(const ov::Tensor& tensor) {
@@ -34,9 +58,11 @@ VisionID VisionRegistry::compute_hash(const ov::Tensor& tensor) {
     constexpr uint64_t FNV_PRIME = 0x100000001b3;
     
     uint64_t hash = FNV_OFFSET_BASIS;
-    
+
+    const auto& shape = tensor.get_shape();
+
     // Hash shape
-    for (auto dim : tensor.get_shape()) {
+    for (const auto dim : shape) {
         hash ^= dim;
         hash *= FNV_PRIME;
     }
@@ -48,10 +74,36 @@ VisionID VisionRegistry::compute_hash(const ov::Tensor& tensor) {
     // Hash tensor content
     const uint8_t* data = tensor.data<uint8_t>();
     const size_t byte_size = tensor.get_byte_size();
-    // TODO Consider using sampling strategy for performance optimization
-    for (size_t i = 0; i < byte_size; ++i) {
-        hash ^= data[i];
-        hash *= FNV_PRIME;
+    const uint64_t* data64 = reinterpret_cast<const uint64_t*>(data);
+    
+    const size_t num_frames = shape.size() == 4 ? shape[0] : 1;
+    const size_t frame_size_bytes = byte_size / num_frames;
+    const size_t frame_chunks = frame_size_bytes / HASH_CHUNK_SIZE;
+    
+    const size_t frame_stride = calculate_hash_stride(frame_size_bytes);
+    
+    for (size_t frame_idx = 0; frame_idx < num_frames; ++frame_idx) {
+        const uint64_t* frame_data = data64 + (frame_idx * frame_chunks);
+        
+        for (size_t i = 0; i < frame_chunks; i += frame_stride) {
+            hash ^= frame_data[i];
+            hash *= FNV_PRIME;
+        }
+        
+        // Hash last chunk if strided loop didn't processed it
+        if (frame_stride > 1 && frame_chunks > 0 && (frame_chunks - 1) % frame_stride != 0) {
+            hash ^= frame_data[frame_chunks - 1];
+            hash *= FNV_PRIME;
+        }
+        
+        // Hash remaining bytes
+        const size_t frame_offset = frame_idx * frame_size_bytes;
+        const size_t remaining_start = frame_offset + frame_chunks * HASH_CHUNK_SIZE;
+        const size_t remaining_end = frame_offset + frame_size_bytes;
+        for (size_t i = remaining_start; i < remaining_end; ++i) {
+            hash ^= data[i];
+            hash *= FNV_PRIME;
+        }
     }
     
     return hash;
@@ -100,18 +152,16 @@ std::vector<VisionID> VisionRegistry::register_videos(const std::vector<ov::Tens
 void VisionRegistry::add_ref(const VisionID& id) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_entries.find(id);
-    if (it != m_entries.end()) {
-        it->second.ref_count++;
-    }
+    OPENVINO_ASSERT(it != m_entries.end(), "Vision ID not found in VisionRegistry: ", id);
+    it->second.ref_count++;
 }
 
 void VisionRegistry::release_ref(const VisionID& id) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_entries.find(id);
-    if (it != m_entries.end()) {
-        if (--it->second.ref_count == 0) {
-            m_entries.erase(it);
-        }
+    OPENVINO_ASSERT(it != m_entries.end(), "Vision ID not found in VisionRegistry: ", id);
+    if (--it->second.ref_count == 0) {
+        m_entries.erase(it);
     }
 }
 

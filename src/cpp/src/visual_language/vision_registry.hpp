@@ -72,7 +72,7 @@ private:
     mutable std::mutex m_mutex;
 
     VisionID register_vision(const ov::Tensor& tensor, VisionType type);
-    
+
     static VisionID compute_hash(const ov::Tensor& tensor);
 };
 
