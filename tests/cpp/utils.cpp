@@ -23,7 +23,7 @@ TEST(TestIsContainer, test_is_container) {
 TEST(TestAddExtensions, test_add_extensions_to_core) {
     ov::AnyMap properties1 = {extensions({"/home/path1.so", "/home/path2.so"})};
     ov::AnyMap properties2 = {extensions(std::vector<std::filesystem::path>{"/home/path1.so", "/home/path2.so"})};
-    ov::AnyMap properties3 = {extensions(std::vector<std::shared_ptr<ov::Extension>>{nullptr, nullptr})};
+    ov::AnyMap properties3 = {extensions(std::vector<std::shared_ptr<ov::Extension>>{})};
 
     EXPECT_THROW(add_extensions_to_core(properties1), ov::Exception);
     EXPECT_THROW(add_extensions_to_core(properties2), ov::Exception);

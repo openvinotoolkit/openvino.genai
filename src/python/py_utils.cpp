@@ -168,7 +168,7 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
             std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>> extensions;
             for (const auto& item : property_list) {
                 if (py::isinstance<py::str>(item)) {
-                    extensions.push_back(std::filesystem::path(item.cast<py::str>()));
+                    extensions.push_back(std::filesystem::path(item.cast<std::string>()));
                 } else if (py::isinstance<ov::Extension>(item)) {
                     extensions.push_back(item.cast<std::shared_ptr<ov::Extension>>());
                 }

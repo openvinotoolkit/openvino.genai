@@ -300,7 +300,7 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
  * the "extensions" key is removed from the @p properties map. This function is used to dynamically add custom
  * extensions to the OpenVINO core at runtime.
  *
- * @param properties Properties map that may contain the "EXTENSIONS" key with a vector of extension specifications.
+ * @param properties Properties map that may contain the "extensions" key with a vector of extension specifications.
  */
 void add_extensions_to_core(ov::AnyMap& properties);
 
@@ -351,7 +351,7 @@ inline std::pair<std::string, ov::Any> extensions(const std::vector<std::shared_
 }
 
 /**
- * @brief A helper allowing extensions(list{"path"}) instead of explicit std::variant.
+ * @brief A helper allowing extensions(initializer_list{"path"}) instead of explicit std::variant.
  */
 template <class T, class = std::enable_if_t<std::is_constructible<std::filesystem::path, const T&>::value>>
 inline std::pair<std::string, ov::Any> extensions(std::initializer_list<T> paths) {
