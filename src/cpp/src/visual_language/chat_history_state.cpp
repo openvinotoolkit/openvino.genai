@@ -201,12 +201,12 @@ std::shared_ptr<ChatHistoryInternalState> ChatHistoryInternalState::get_or_creat
     std::shared_ptr<VisionRegistry> vision_registry
 ) {
     auto state = std::dynamic_pointer_cast<ChatHistoryInternalState>(
-        history.get_internal_state()
+        history._get_internal_state()
     );
     
     if (!state) {
         state = std::make_shared<ChatHistoryInternalState>(vision_registry);
-        history.set_internal_state(state);
+        history._set_internal_state(state);
     } else if (vision_registry && !state->get_vision_registry()) {
         state->set_vision_registry(vision_registry);
     }

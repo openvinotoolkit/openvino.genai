@@ -55,7 +55,6 @@ struct MessageMetadata {
 class ChatHistoryInternalState {
 public:
     struct ResolvedVisions {
-        // TODO Check if references used
         std::vector<EncodedImage> encoded_images;
         std::vector<EncodedVideo> encoded_videos;
         std::vector<size_t> image_sequence;  // Indices into encoded_images
@@ -121,6 +120,7 @@ private:
 
     ChatHistoryFormat m_chat_history_format = ChatHistoryFormat::UNKNOWN;
 
+    // Global index to VisionID mapping
     std::vector<VisionID> m_image_index_to_id;
     std::vector<VisionID> m_video_index_to_id;
 
