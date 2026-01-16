@@ -45,7 +45,7 @@ def main():
     parser.add_argument(
         "--pruning_ratio",
         type=int,
-        help="Percentage of visual tokens to prune (valid range: 0-100), puning is disabled by default.",
+        help="Percentage of visual tokens to prune (valid range: 0-100), pruning is disabled by default.",
     )
     parser.add_argument(
         "--relevance_weight",
