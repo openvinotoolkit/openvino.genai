@@ -154,11 +154,5 @@ private:
  */
 static constexpr ov::Property<size_t> top_n{"top_n"};
 
-// Note: The following properties are already defined elsewhere and should be used from there:
-
-// - max_length: defined in generation_config.hpp
-// - pad_to_max_length: defined in tokenizer.hpp
-// - padding_side: defined in tokenizer.hpp
-
 }  // namespace genai
 }  // namespace ov
