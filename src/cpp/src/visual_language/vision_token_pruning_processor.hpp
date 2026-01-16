@@ -101,6 +101,21 @@ public:
     std::vector<std::vector<size_t>> get_last_selected_tokens() const;
 
     /**
+     * @brief Get updated prompt with modified vision tokens based on keep_flags
+     * @param original_prompt The original prompt string
+     * @param vision_start_token Vision start token string
+     * @param vision_end_token Vision end token string
+     * @param image_pad_token Image pad token string
+     * @param video_pad_token Video pad token string
+     * @return Updated prompt if modifications were made, otherwise returns original_prompt unchanged
+     */
+    std::string get_updated_prompt(const std::string& original_prompt,
+                                   const std::string& vision_start_token,
+                                   const std::string& vision_end_token,
+                                   const std::string& image_pad_token,
+                                   const std::string& video_pad_token) const;
+
+    /**
      * @brief Result structure for CDPruner visual token pruning pipeline.
      * Contains all necessary information about the pruning operation and its results.
      */
@@ -227,6 +242,8 @@ private:
     /// @brief Configuration storage (used before pruner is created; pruner becomes source of truth after creation)
     /// Device is stored in m_config.device
     cdpruner::Config m_config;
+    /// @brief Cache of last keep_flags for prompt synchronization
+    std::vector<std::vector<bool>> m_last_keep_flags;
 };
 
 }  // namespace ov::genai

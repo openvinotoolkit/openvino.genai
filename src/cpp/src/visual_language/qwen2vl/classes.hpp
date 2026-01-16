@@ -73,9 +73,9 @@ public:
 
     std::pair<ov::Tensor, std::optional<int64_t>> get_generation_phase_position_ids(const size_t inputs_embeds_size, const size_t history_size, int64_t rope_delta) override;
 
-    std::optional<std::pair<size_t, size_t>> get_removed_pads_count() const override;
-
     void start_chat(const std::string& system_message) override;
+
+    std::optional<std::string> get_last_updated_prompt(const std::string& original_prompt) const override;
 
     void finish_chat() override;
 
@@ -106,10 +106,6 @@ protected:
     ov::Tensor m_merged_video_embeddings;
     std::map<std::string, int64_t> m_vision_token_ids;
     size_t m_merge_length;
-
-    // Store pruning info for history update
-    size_t m_last_image_pads_removed = 0;
-    size_t m_last_video_pads_removed = 0;
 
     bool m_with_cu_seqlens_input = false;
 

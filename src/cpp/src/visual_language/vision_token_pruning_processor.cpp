@@ -81,6 +81,86 @@ std::vector<std::vector<size_t>> VisionTokenPruningProcessor::get_last_selected_
     }
 }
 
+std::string VisionTokenPruningProcessor::get_updated_prompt(const std::string& original_prompt,
+                                                            const std::string& vision_start_token,
+                                                            const std::string& vision_end_token,
+                                                            const std::string& image_pad_token,
+                                                            const std::string& video_pad_token) const {
+    if (m_last_keep_flags.empty()) {
+        return original_prompt;
+    }
+
+    const auto& keep_flags = m_last_keep_flags;
+    std::string result;
+    result.reserve(original_prompt.size());
+
+    size_t pos = 0;
+    bool inside_vision_region = false;
+    size_t region_idx = 0;
+    size_t pad_idx = 0;
+    const size_t region_count = keep_flags.size();
+    size_t total_pads_processed = 0;
+    size_t total_pads_kept = 0;
+
+    while (pos < original_prompt.size()) {
+        // Check for vision_start_token
+        if (original_prompt.compare(pos, vision_start_token.size(), vision_start_token) == 0) {
+            result.append(vision_start_token);
+            pos += vision_start_token.size();
+            inside_vision_region = true;
+            pad_idx = 0;
+            continue;
+        }
+
+        // Check for vision_end_token
+        if (original_prompt.compare(pos, vision_end_token.size(), vision_end_token) == 0) {
+            result.append(vision_end_token);
+            pos += vision_end_token.size();
+            inside_vision_region = false;
+            region_idx++;
+            continue;
+        }
+
+        // Inside vision region: check for pad tokens
+        if (inside_vision_region) {
+            // Check for image_pad_token
+            if (original_prompt.compare(pos, image_pad_token.size(), image_pad_token) == 0) {
+                if (region_idx < region_count && pad_idx < keep_flags[region_idx].size()) {
+                    total_pads_processed++;
+                    if (keep_flags[region_idx][pad_idx]) {
+                        result.append(image_pad_token);
+                        total_pads_kept++;
+                    }
+                    pad_idx++;
+                }
+                pos += image_pad_token.size();
+                continue;
+            }
+
+            // Check for video_pad_token
+            if (original_prompt.compare(pos, video_pad_token.size(), video_pad_token) == 0) {
+                if (region_idx < region_count && pad_idx < keep_flags[region_idx].size()) {
+                    total_pads_processed++;
+                    if (keep_flags[region_idx][pad_idx]) {
+                        result.append(video_pad_token);
+                        total_pads_kept++;
+                    }
+                    pad_idx++;
+                }
+                pos += video_pad_token.size();
+                continue;
+            }
+        }
+
+        // Regular character
+        result.push_back(original_prompt[pos]);
+        pos++;
+    }
+
+    GENAI_DEBUG("Prompt update: processed %zu pad tokens, kept %zu", total_pads_processed, total_pads_kept);
+    return result;
+}
+
 // Extract text features by averaging instruction token embeddings
 ov::Tensor VisionTokenPruningProcessor::extract_text_features(const ov::Tensor& text_embeds,
                                                               const ov::Tensor& input_ids,
@@ -771,7 +851,10 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     OPENVINO_ASSERT(result.keep_flags_per_region.size() == context.visions_sequence.size(),
                     "Kept visual token mask count mismatch with vision regions");
 
-    // Step 7: Generate pruned input_ids with visual tokens removed
+    // Step 7: Cache keep_flags for prompt synchronization
+    m_last_keep_flags = result.keep_flags_per_region;
+
+    // Step 8: Generate pruned input_ids with visual tokens removed
     result.pruned_input_ids = generate_pruned_input_ids(context.input_ids,
                                                         result.keep_flags_per_region,
                                                         context.vision_pad_token_id,

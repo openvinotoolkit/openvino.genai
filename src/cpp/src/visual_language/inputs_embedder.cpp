@@ -404,12 +404,13 @@ void InputsEmbedder::start_chat(const std::string& system_message) {
     return m_impl->start_chat(system_message);
 }
 
-void InputsEmbedder::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
-    return m_impl->update_chat_history(decoded_results, generation_finish_status);
-}
-
-std::optional<std::pair<size_t, size_t>> InputsEmbedder::get_removed_pads_count() const {
-    return m_impl->get_removed_pads_count();
+std::optional<std::string> InputsEmbedder::update_chat_history(
+    const std::string& decoded_results,
+    const ov::genai::GenerationStatus generation_finish_status,
+    const std::string& original_prompt) {
+    auto updated_prompt = m_impl->get_last_updated_prompt(original_prompt);
+    m_impl->update_chat_history(decoded_results, generation_finish_status);
+    return updated_prompt;
 }
 
 void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {
