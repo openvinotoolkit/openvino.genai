@@ -13,7 +13,7 @@
 #include "imwrite_video.hpp"
 
 void save_video(const std::string& filename,
-                const ov::Tensor& video_tensor,   // [B, F, H, W, C], u8
+                const ov::Tensor& video_tensor,  // [B, F, H, W, C], u8
                 int fps,
                 bool input_is_rgb) {
     const ov::Shape shape = video_tensor.get_shape();
@@ -30,16 +30,16 @@ void save_video(const std::string& filename,
         std::string out = filename;
         if (B != 1) {
             std::filesystem::path p(filename);
-            std::string ext  = p.has_extension() ? p.extension().string() : ".avi";
-            out = (p.parent_path() / ( p.stem().string() + "_b" + std::to_string(b) + ext)).string();
+            std::string ext = p.has_extension() ? p.extension().string() : ".avi";
+            out = (p.parent_path() / (p.stem().string() + "_b" + std::to_string(b) + ext)).string();
         }
 
-        const int fourcc = cv::VideoWriter::fourcc('M','J','P','G');
+        const int fourcc = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
         cv::VideoWriter writer(out, fourcc, static_cast<double>(fps), cv::Size(W, H), true);
         if (!writer.isOpened())
             throw std::runtime_error("VideoWriter failed to open: " + out);
 
-        const size_t frame_bytes  = H * W * C;
+        const size_t frame_bytes = H * W * C;
         const size_t batch_stride = F * frame_bytes;
         const uint8_t* batch_ptr = video_data + b * batch_stride;
 
@@ -47,26 +47,32 @@ void save_video(const std::string& filename,
             const uint8_t* frame_ptr = batch_ptr + f * frame_bytes;
 
             cv::Mat src;
-            if (C == 1) src = cv::Mat(H, W, CV_8UC1, const_cast<uint8_t*>(frame_ptr));
-            if (C == 3) src = cv::Mat(H, W, CV_8UC3, const_cast<uint8_t*>(frame_ptr));
-            if (C == 4) src = cv::Mat(H, W, CV_8UC4, const_cast<uint8_t*>(frame_ptr));
+            if (C == 1)
+                src = cv::Mat(H, W, CV_8UC1, const_cast<uint8_t*>(frame_ptr));
+            if (C == 3)
+                src = cv::Mat(H, W, CV_8UC3, const_cast<uint8_t*>(frame_ptr));
+            if (C == 4)
+                src = cv::Mat(H, W, CV_8UC4, const_cast<uint8_t*>(frame_ptr));
 
             cv::Mat bgr;
             if (C == 1) {
                 cv::cvtColor(src, bgr, cv::COLOR_GRAY2BGR);
             } else if (C == 3) {
-                if (input_is_rgb) cv::cvtColor(src, bgr, cv::COLOR_RGB2BGR);
-                else bgr = src;
-            } else { // C == 4
-                if (input_is_rgb) cv::cvtColor(src, bgr, cv::COLOR_RGBA2BGR);
-                else cv::cvtColor(src, bgr, cv::COLOR_BGRA2BGR);
+                if (input_is_rgb)
+                    cv::cvtColor(src, bgr, cv::COLOR_RGB2BGR);
+                else
+                    bgr = src;
+            } else {  // C == 4
+                if (input_is_rgb)
+                    cv::cvtColor(src, bgr, cv::COLOR_RGBA2BGR);
+                else
+                    cv::cvtColor(src, bgr, cv::COLOR_BGRA2BGR);
             }
 
             writer.write(bgr);
         }
 
         writer.release();
-        std::cout << "Wrote " << out << " (" << F << " frames, " << W << "x" << H
-                  << " @ " << fps << " fps)\n";
+        std::cout << "Wrote " << out << " (" << F << " frames, " << W << "x" << H << " @ " << fps << " fps)\n";
     }
 }
