@@ -15,7 +15,7 @@ import json
 def compare_dicts(dict1, dict2, skip_keys: Optional[list[str]] = None):
     if dict1.keys() != dict2.keys():
         return False
-    
+
     for key in dict1:
         if skip_keys and key in skip_keys:
             continue
@@ -27,11 +27,9 @@ def compare_dicts(dict1, dict2, skip_keys: Optional[list[str]] = None):
 
     return True
 
+
 def test_final_parser_llama_32_json():
-    model_output = (
-        'Here is the result: {"name": "getOpenIncidentsTool", '
-        '"parameters": {}} Would you like to know more?'
-    )
+    model_output = 'Here is the result: {"name": "getOpenIncidentsTool", "parameters": {}} Would you like to know more?'
     from vllm.entrypoints.openai.tool_parsers.llama_tool_parser import Llama3JsonToolParser
 
     parser = Llama3JsonToolParser(AutoTokenizer.from_pretrained("gpt2"))
