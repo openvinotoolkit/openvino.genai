@@ -50,6 +50,8 @@ def read_video(path: str, num_frames: int = 8) -> Tensor:
         if idx in indices:
             frames.append(np.array(frame))
         idx += 1
+
+    cap.release()
     assert idx == total_num_frames, "Frame count mismatch: expected {}, got {}".format(total_num_frames, idx)
 
     return Tensor(frames)
