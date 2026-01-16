@@ -128,7 +128,7 @@ private:
 
     std::vector<MessageMetadata> m_messages_metadata;
 
-    size_t m_last_user_message_index = -1;
+    size_t m_last_user_message_index;
 
     void release_refs_from(size_t image_index, size_t video_index);
 
