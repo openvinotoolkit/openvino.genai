@@ -200,10 +200,7 @@ std::shared_ptr<ChatHistoryInternalState> ChatHistoryInternalState::get_or_creat
     ChatHistory& history,
     std::shared_ptr<VisionRegistry> vision_registry
 ) {
-    auto state = std::dynamic_pointer_cast<ChatHistoryInternalState>(
-        history._get_internal_state()
-    );
-    
+    auto state = history._get_internal_state();
     if (!state) {
         state = std::make_shared<ChatHistoryInternalState>(vision_registry);
         history._set_internal_state(state);
@@ -283,15 +280,13 @@ size_t ChatHistoryInternalState::find_last_user_message_index(const ov::genai::C
  * and verifies different formats are not mixed within the history.
  */
 void ChatHistoryInternalState::detect_chat_history_format(const ChatHistory& history) {
-    const ChatHistoryFormat current_format = m_chat_history_format;
     ChatHistoryFormat detected_format = ChatHistoryFormat::UNKNOWN;
 
     m_last_user_message_index = find_last_user_message_index(history);
     const auto& last_user_message = history[m_last_user_message_index];
 
-    if (!last_user_message.contains("content")) {
-        OPENVINO_THROW("Unknown chat history format: user message does not contain 'content' field.");
-    }
+    OPENVINO_ASSERT(last_user_message.contains("content"),
+        "Unknown chat history format: user message does not contain 'content' field.");
 
     if (last_user_message["content"].is_string()) {
         detected_format = ChatHistoryFormat::STRING_CONTENT;
@@ -318,7 +313,7 @@ void ChatHistoryInternalState::detect_chat_history_format(const ChatHistory& his
                        "`{role: user, content: [{type: text/image/video, ...}, ...]}`.");
     }
 
-    if (current_format != ChatHistoryFormat::UNKNOWN && current_format != detected_format) {
+    if (m_chat_history_format != ChatHistoryFormat::UNKNOWN && m_chat_history_format != detected_format) {
         OPENVINO_THROW("Mixed chat history formats detected.");
     }
 
