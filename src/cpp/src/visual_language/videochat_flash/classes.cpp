@@ -548,6 +548,25 @@ VisionEncoderVideoChat_Flash::VisionEncoderVideoChat_Flash(
     const std::filesystem::path& model_dir,
     const std::string& device,
     const ov::AnyMap properties) : VisionEncoder(model_dir, device, properties) {
+    auto model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
+    std::map<std::string, ov::PartialShape> input_shapes;
+    // static x shape may cause output change
+    // ov::Shape x_shape = { 1, 3, 4, 224, 224 };
+    // ov::PartialShape x_shape = { -1, 3, -1, 224, 224 };
+    // input_shapes["hidden_states"] = x_shape;
+    // accelerate model by using static rope shape
+    ov::Shape pos_embed_shape = { 1, 1025, 1408 };
+    input_shapes["rotary_pos_emb"] = pos_embed_shape;
+    model->reshape(input_shapes);
+    auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
+    ov::genai::utils::print_compiled_model_properties(compiled_model, "VLM vision embeddings model");
+
+    m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+        compiled_model.get_property(ov::optimal_number_of_infer_requests),
+        [&compiled_model]() -> ov::InferRequest {
+            return compiled_model.create_infer_request();
+        });
+
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
     auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {});
     m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
@@ -655,7 +674,6 @@ EncodedImage VisionEncoderVideoChat_Flash::encode(const ov::Tensor& image, const
     // flatten vision features
     auto final_features = videochat_flash_utils::efficient_flatten(proj_features);
     encoded_feature.images_features_projection = final_features;
-    std::cout << "finish encode." << std::endl;
     return encoded_feature;
 }
 
