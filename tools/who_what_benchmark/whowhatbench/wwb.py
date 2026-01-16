@@ -21,6 +21,20 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def ratio_type(value):
+    ivalue = int(value)
+    if ivalue < 0 or ivalue > 100:
+        raise argparse.ArgumentTypeError(f"pruning_ratio must be between 0 and 100, got {value}")
+    return ivalue
+
+
+def weight_0_1(value):
+    fvalue = float(value)
+    if not 0.0 <= fvalue <= 1.0:
+        raise argparse.ArgumentTypeError(f"relevance_weight must be between 0 and 1, got {value}")
+    return fvalue
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         prog="WWB CLI",
@@ -277,13 +291,13 @@ def parse_args():
     )
     parser.add_argument(
         "--pruning_ratio",
-        type=int,
+        type=ratio_type,
         default=None,
         help="Percentage of visual tokens to prune (valid range: 0-100), pruning is disabled by default.",
     )
     parser.add_argument(
         "--relevance_weight",
-        type=float,
+        type=weight_0_1,
         default=None,
         help="Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, a value of 0 disables "
         "relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.",
