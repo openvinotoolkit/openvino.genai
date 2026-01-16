@@ -82,6 +82,7 @@ class CustomToolCallParser(Parser):
 
     Custom parser should be inherited from Parser and implement 'parse' method.
     """
+
     def parse(self, msg: dict):
         if "content" not in msg:
             msg["content"] = ""
@@ -92,7 +93,7 @@ class CustomToolCallParser(Parser):
         if start_index == -1:
             return
 
-        json_part = content[start_index + len(start_tag):]
+        json_part = content[start_index + len(start_tag) :]
         try:
             tool_calls = json.loads(json_part)
             msg["tool_calls"] = tool_calls
@@ -103,7 +104,9 @@ class CustomToolCallParser(Parser):
 
 def print_tool_call(answer: DecodedResults):
     for tool_call in answer.parsed[0]["tool_calls"]:
-        print(f"""{tool_call["name"]}({", ".join(f'{key}="{value}"' for key, value in tool_call["arguments"].items())})""")
+        print(
+            f"""{tool_call["name"]}({", ".join(f'{key}="{value}"' for key, value in tool_call["arguments"].items())})"""
+        )
 
 
 # modified system message from:
@@ -171,7 +174,7 @@ def main():
 
     print("Assistant: ", end="")
     answer = pipe.generate(chat_history, generation_config, parsers=[CustomToolCallParser()])
-    
+
     print("\n\nThe following tool calls were generated:")
     print_tool_call(answer)
 
