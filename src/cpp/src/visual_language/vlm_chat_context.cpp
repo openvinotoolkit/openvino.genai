@@ -39,7 +39,6 @@ VLMChatContext::ProcessedChatData VLMChatContext::process(
     std::vector<size_t> new_image_indices = m_history_state->register_images(new_images);
     std::vector<size_t> new_video_indices = m_history_state->register_videos(new_videos);
     
-    // TODO Consider encoding only new visions
     encode_visions_if_needed(new_image_indices, new_video_indices);
     
     fill_messages_metadata(matching_history_length, new_image_indices, new_video_indices);
@@ -84,7 +83,7 @@ void VLMChatContext::encode_visions_if_needed(
         VisionID id = m_history_state->get_image_vision_id(idx);
         if (!m_vision_registry->has_encoded_image(id)) {
             const ov::Tensor& original = m_vision_registry->get_original(id);
-            auto encoded = m_inputs_embedder.encode_images({original});
+            const auto encoded = m_inputs_embedder.encode_images({original});
             m_vision_registry->set_encoded_image(id, std::move(encoded[0]));
         }
     }
@@ -93,7 +92,7 @@ void VLMChatContext::encode_visions_if_needed(
         VisionID id = m_history_state->get_video_vision_id(idx);
         if (!m_vision_registry->has_encoded_video(id)) {
             const ov::Tensor& original = m_vision_registry->get_original(id);
-            auto encoded = m_inputs_embedder.encode_videos({original});
+            const auto encoded = m_inputs_embedder.encode_videos({original});
             m_vision_registry->set_encoded_video(id, std::move(encoded[0]));
         }
     }

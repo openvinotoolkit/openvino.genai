@@ -8,7 +8,16 @@
 
 namespace ov::genai {
 
-// TODO Add description
+/**
+ * @brief Processes chat history with vision inputs for a single generation call and
+ * prepares `ProcessedChatData` for further model inputs processing.
+ * 
+ * Handles:
+ * - Vision registration/encoding via VisionRegistry
+ * - Chat history synchronization and incremental updates
+ * - Chat history content normalization
+ * - Vision sequence resolution
+ */
 class VLMChatContext  {
 public:
     struct ProcessedChatData {
