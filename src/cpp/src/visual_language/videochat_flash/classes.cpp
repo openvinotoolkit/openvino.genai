@@ -499,6 +499,48 @@ ov::Tensor get_3d_sincos_pos_embed(int embed_dim, int grid_size, int t_size, boo
     return pos_tensor;
 }
 
+ov::Tensor concatenate_tensors(const std::vector<ov::Tensor>& tensors) {
+    if (tensors.empty()) return ov::Tensor();
+
+    ov::Shape single_shape = tensors[0].get_shape();
+    auto type = tensors[0].get_element_type();
+
+    ov::Shape final_shape = single_shape;
+    final_shape[0] = tensors.size();
+
+    ov::Tensor merged_tensor(type, final_shape);
+    uint8_t* dst_ptr = static_cast<uint8_t*>(merged_tensor.data());
+
+    for (const auto& t : tensors) {
+        size_t byte_size = t.get_byte_size();
+        std::memcpy(dst_ptr, t.data(), byte_size);
+        dst_ptr += byte_size;
+    }
+
+    return merged_tensor;
+}
+
+ov::Tensor cyclic_vit_infer(ov::Tensor& transpose_features, ov::InferRequest& vision_embeddings, ov::Tensor& m_pos_emb) {
+    ov::Shape full_shape = transpose_features.get_shape();
+    size_t N = full_shape[0];
+    size_t single_sample_size = transpose_features.get_size() / N;
+    float* src_ptr = transpose_features.data<float>();
+    std::vector<ov::Tensor> results_list;
+    for (size_t i = 0; i < N; ++i) {
+        ov::Shape single_shape = {1, full_shape[1], full_shape[2], full_shape[3], full_shape[4]};
+        ov::Tensor single_input(transpose_features.get_element_type(), single_shape, src_ptr + (i * single_sample_size));
+        vision_embeddings.set_tensor("hidden_states", single_input);
+        vision_embeddings.set_tensor("rotary_pos_emb", m_pos_emb);
+        vision_embeddings.infer();
+        ov::Tensor out_tensor = vision_embeddings.get_output_tensor();
+        ov::Tensor copy_tensor(out_tensor.get_element_type(), out_tensor.get_shape());
+        out_tensor.copy_to(copy_tensor);
+        results_list.push_back(copy_tensor);
+    }
+    ov::Tensor final_processed_embeds = concatenate_tensors(results_list);
+    return final_processed_embeds;
+}
+
 }  // namespace videochat_flash_utils
 
 
@@ -583,10 +625,17 @@ EncodedImage VisionEncoderVideoChat_Flash::encode(const ov::Tensor& image, const
     // video embedding
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& vision_embeddings = infer_request_guard.get();
-    vision_embeddings.set_tensor("hidden_states", transpose_features);
-    vision_embeddings.set_tensor("rotary_pos_emb", m_pos_emb);
-    vision_embeddings.infer();
-    ov::Tensor processed_vision_embeds = vision_embeddings.get_output_tensor();
+    bool use_batch_vit = false;
+    utils::read_anymap_param(config_map, "use_batch_vit", use_batch_vit);
+    ov::Tensor processed_vision_embeds;
+    if (!use_batch_vit) {
+        processed_vision_embeds = videochat_flash_utils::cyclic_vit_infer(transpose_features, vision_embeddings, m_pos_emb);
+    } else {
+        vision_embeddings.set_tensor("hidden_states", transpose_features);
+        vision_embeddings.set_tensor("rotary_pos_emb", m_pos_emb);
+        vision_embeddings.infer();
+        processed_vision_embeds = vision_embeddings.get_output_tensor();
+    }
 
     ov::Tensor clipped_vision_embeds = videochat_flash_utils::remove_second_dim_first_element(processed_vision_embeds);
 
@@ -606,14 +655,19 @@ EncodedImage VisionEncoderVideoChat_Flash::encode(const ov::Tensor& image, const
     // flatten vision features
     auto final_features = videochat_flash_utils::efficient_flatten(proj_features);
     encoded_feature.images_features_projection = final_features;
+    std::cout << "finish encode." << std::endl;
     return encoded_feature;
 }
 
 
 std::vector<ov::genai::EncodedImage> InputsEmbedderVideoChat_Flash::encode_images(const std::vector<ov::Tensor>& images) {
+    return encode_images(images, {});
+}
+
+std::vector<ov::genai::EncodedImage> InputsEmbedderVideoChat_Flash::encode_images(const std::vector<ov::Tensor>& images, const ov::AnyMap& config_map) {
     std::vector<EncodedImage> embeds;
     for (const ov::Tensor& single_video : images) {
-        auto encoded_video = m_vision_encoder->encode(single_video);
+        auto encoded_video = m_vision_encoder->encode(single_video, config_map);
         embeds.emplace_back(encoded_video);
     }
     return embeds;
