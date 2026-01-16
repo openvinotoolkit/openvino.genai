@@ -51,12 +51,6 @@ public:
     std::string device() const {
         return m_device;
     }
-    void set_verbose(bool verbose) {
-        m_verbose = verbose;
-    }
-    bool is_verbose() const {
-        return m_verbose;
-    }
 
     /// @brief Sets draft-to-target token mapping for sampler
     void set_draft_target_mapping(std::shared_ptr<ov::op::v0::Constant> d2t_mapping) {
@@ -166,7 +160,6 @@ protected:
     SequenceGroup::Ptr m_sequence_group;
     Sampler m_sampler;
     ov::genai::RawPerfMetrics m_raw_perf_metrics;
-    bool m_verbose = false;
 };
 
 /**
@@ -238,10 +231,6 @@ public:
 
     void start_chat(const std::string& system_message) override;
     void finish_chat() override;
-
-    bool is_verbose() const {
-        return m_target ? m_target->is_verbose() : false;
-    }
 
     GenerationConfig resolve_generation_config(OptionalGenerationConfig generation_config);
     ov::genai::SpeculativeDecodingMetrics get_speculative_decoding_metrics() const;
