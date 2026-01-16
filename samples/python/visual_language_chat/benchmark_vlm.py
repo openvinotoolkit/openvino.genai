@@ -31,20 +31,18 @@ def read_images(path: str) -> list[Tensor]:
         return [read_image(str(file)) for file in sorted(entry.iterdir())]
     return [read_image(path)]
 
+
 def ratio_type(value):
     ivalue = int(value)
     if ivalue < 0 or ivalue > 100:
-        raise argparse.ArgumentTypeError(
-            f"pruning_ratio must be between 0 and 100, got {value}"
-        )
+        raise argparse.ArgumentTypeError(f"pruning_ratio must be between 0 and 100, got {value}")
     return ivalue
+
 
 def weight_0_1(value):
     fvalue = float(value)
     if not 0.0 <= fvalue <= 1.0:
-        raise argparse.ArgumentTypeError(
-            f"relevance_weight must be between 0 and 1, got {value}"
-        )
+        raise argparse.ArgumentTypeError(f"relevance_weight must be between 0 and 1, got {value}")
     return fvalue
 
 
