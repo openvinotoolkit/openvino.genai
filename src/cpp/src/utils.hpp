@@ -336,6 +336,9 @@ bool has_input(const std::shared_ptr<Model>& model, const std::string& name);
 std::pair<ov::Coordinate, ov::Coordinate> make_roi(const std::vector<size_t>& shape, const size_t dim, const size_t range_start, const size_t range_end);
 
 ov::Tensor concat_tensors(const std::vector<ov::Tensor>& tensors, const size_t axis);
+ov::genai::GenerationConfig get_beam_search_config();
+ov::genai::GenerationConfig get_greedy_config();
+ov::genai::GenerationConfig get_multinomial_config();
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov

@@ -888,7 +888,7 @@ EncodedImage VisionEncoderPhi3V::encode(const ov::Tensor& image, const ov::AnyMa
 
     ImageSize image_size;
 
-    if (use_ov_image_preprocess) {
+    if (use_ov_vision_preprocess) {
         ov::Tensor hd_image = HD_transform(image, config.phi3_v.num_crops);
         image_size = ImageSize{hd_image.get_shape().at(2), hd_image.get_shape().at(1)};
 
@@ -921,8 +921,8 @@ EncodedImage VisionEncoderPhi3V::encode(const ov::Tensor& image, const ov::AnyMa
     return encoded_image;
 }
 
-bool can_use_ov_image_preprocess() {
-    const char* env = std::getenv("IMAGE_PREPROCESS");
+bool can_use_ov_vision_preprocess() {
+    const char* env = std::getenv("VISION_PREPROCESS");
     return !(env && std::string(env) == "CPP");
 }
 
@@ -930,8 +930,8 @@ VisionEncoderPhi3V::VisionEncoderPhi3V(const std::filesystem::path& model_dir,
                                        const std::string& device,
                                        const ov::AnyMap properties)
     : VisionEncoder(model_dir, device, properties),
-      use_ov_image_preprocess(can_use_ov_image_preprocess()) {
-    if (use_ov_image_preprocess) {
+      use_ov_vision_preprocess(can_use_ov_vision_preprocess()) {
+    if (use_ov_vision_preprocess) {
         auto vision_encoder_model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
         auto model = patch_image_preprocess_into_vision_encoder_model(vision_encoder_model, m_processor_config);
         auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
@@ -963,8 +963,8 @@ VisionEncoderPhi3V::VisionEncoderPhi3V(const ModelsMap& models_map,
                                        const std::string& device,
                                        const ov::AnyMap properties)
     : VisionEncoder(models_map, config_dir_path, device, properties),
-      use_ov_image_preprocess(can_use_ov_image_preprocess()) {
-    if (use_ov_image_preprocess) {
+      use_ov_vision_preprocess(can_use_ov_vision_preprocess()) {
+    if (use_ov_vision_preprocess) {
         const auto& [vision_encoder_model, vision_encoder_weights] = utils::get_model_weights_pair(models_map, "vision_embeddings");
         auto model_org = utils::singleton_core().read_model(vision_encoder_model, vision_encoder_weights);
         auto model = patch_image_preprocess_into_vision_encoder_model(model_org, m_processor_config);

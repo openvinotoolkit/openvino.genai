@@ -26,15 +26,17 @@ void print_perf_metrics(T& perf_metrics, std::string model_name) {
 }
 
 int main(int argc, char* argv[]) try {
-    if (6 != argc) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <EAGLE_MODEL_DIR> <MAX_NEW_TOKENS> <DEPTH> '<PROMPT>'");
+    if (8 != argc) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <EAGLE_MODEL_DIR> <MAX_NEW_TOKENS> <BRANCHING_FACTOR> <DEPTH> <TOTAL_TOKENS> '<PROMPT>'");
     }
 
     std::string main_model_path = argv[1];
     std::string eagle_model_path = argv[2];
     int max_new_tokens = atoi(argv[3]);
-    int depth = atoi(argv[4]);
-    std::string prompt = argv[5];
+    int branching_factor = atoi(argv[4]);
+    int depth = atoi(argv[5]);
+    int total_tokens = atoi(argv[6]);
+    std::string prompt = argv[7];
     if (std::filesystem::is_regular_file(prompt)) {
         std::string prompt_file = prompt;
         prompt = utils::read_prompt(prompt_file);
@@ -47,9 +49,9 @@ int main(int argc, char* argv[]) try {
     ov::genai::GenerationConfig config = ov::genai::greedy();
     config.max_new_tokens = max_new_tokens;
     // Eagle specific parameters
-    config.eagle_tree_params.branching_factor = 3; // Number of candidate tokens to consider at each level
+    config.eagle_tree_params.branching_factor = branching_factor; // Number of candidate tokens to consider at each level
     config.eagle_tree_params.tree_depth = depth; // How deep to explore the token tree
-    config.eagle_tree_params.total_tokens = 10; // Total number of tokens to generate in eagle tree
+    config.eagle_tree_params.total_tokens = total_tokens; // Total number of tokens to generate in eagle tree
     config.num_return_sequences = 1; // only support 1
 
     //config.eagle_tree_width = 3;    // Number of candidate tokens to consider at each level

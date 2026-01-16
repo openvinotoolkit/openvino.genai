@@ -431,7 +431,6 @@ public:
                         }
                     }
                 }
-                //std::cout << std::endl << "scheduled tokens in this step: ";
                 for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++gathering_current_index) {
                     // compute token for current sequence
                     if (sequence_group_type == SequenceGroupType::TOKENS) {

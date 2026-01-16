@@ -11,7 +11,14 @@ import UsageOptionsSection from './_sections/_usage_options/index.mdx';
 <ConvertModelSection>
     Download and convert model (e.g. [openai/whisper-base](https://huggingface.co/openai/whisper-base)) to OpenVINO format from Hugging Face:
 
-    <OptimumCLI model='openai/whisper-base' outputDir='whisper_ov' trustRemoteCode />
+    <Tabs groupId="whisper-export-command">
+        <TabItem label="Default" value="default">
+            <OptimumCLI model='openai/whisper-base' outputDir='whisper_ov' trustRemoteCode />
+        </TabItem>
+        <TabItem label="INT8 Static Quantization" value="int8_quant">
+            <OptimumCLI model='openai/whisper-base' outputDir='whisper_ov_int8' trustRemoteCode quantMode='int8' dataset='librispeech' numSamples={32} />
+        </TabItem>
+    </Tabs>
 
     See all supported [Speech Recognition Models](/docs/supported-models/#speech-recognition-models-whisper-based).
 </ConvertModelSection>
