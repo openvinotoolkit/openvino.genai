@@ -40,6 +40,8 @@ void init_generation_config(py::module_& m);
 void init_continuous_batching_pipeline(py::module_& m);
 void init_llm_pipeline(py::module_& m);
 void init_image_generation_pipelines(py::module_& m);
+void init_video_generation_models(py::module_& m);
+void init_video_generation_pipelines(py::module_& m);
 void init_vlm_pipeline(py::module_& m);
 void init_whisper_pipeline(py::module_& m);
 void init_rag_pipelines(py::module_& m);
@@ -132,6 +134,8 @@ PYBIND11_MODULE(py_openvino_genai, m) {
     init_llm_pipeline(m);
     init_continuous_batching_pipeline(m);
     init_image_generation_pipelines(m);
+    init_video_generation_models(m);
+    init_video_generation_pipelines(m);
     init_vlm_pipeline(m);
     init_whisper_pipeline(m);
     init_rag_pipelines(m);
