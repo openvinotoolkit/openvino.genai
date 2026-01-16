@@ -442,6 +442,10 @@ void truncate_long_words_at_sentence_boundaries(std::vector<ov::genai::WhisperWo
 
 // https://github.com/openai/whisper/blob/v20250625/whisper/timing.py#L245
 std::vector<ov::genai::WhisperWordTiming> merge_punctuations(std::vector<ov::genai::WhisperWordTiming>& words) {
+    if (words.size() < 2) {
+        return words;
+    }
+
     const std::string prepend_punctuations = "\"'“¿([{-";
     const std::string append_punctuations = "\"'.。,，!！?？:：”)]}、";
 
