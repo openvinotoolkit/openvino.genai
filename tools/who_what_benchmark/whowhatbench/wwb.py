@@ -155,12 +155,6 @@ def parse_args():
         "of OpenVINO GenAI API. Or a JSON string of SchedulerConfig.",
     )
     parser.add_argument(
-        "--generation-config",
-        type=str,
-        default=None,
-        help="Path to the JSON file that contains GenerateConfig for generating of OpenVINO GenAI API, or a JSON string of the configuration.",
-    )
-    parser.add_argument(
         "--llamacpp",
         action="store_true",
         help="Use llama-cpp-python to instantiate the model.",
@@ -280,6 +274,19 @@ def parse_args():
         default=None,
         help="The number of frames that will be taken from video for input, the frames will be taken evenly across the entire length, "
              "applicable for Visual Language Models with video inputs",
+    )
+    parser.add_argument(
+        "--pruning_ratio",
+        type=int,
+        default=None,
+        help="Percentage of visual tokens to prune (valid range: 0-100), pruning is disabled by default.",
+    )
+    parser.add_argument(
+        "--relevance_weight",
+        type=float,
+        default=None,
+        help="Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, "
+        "a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.",
     )
 
     return parser.parse_args()
@@ -523,7 +530,7 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
     return image
 
 
-def genai_gen_visual_text(model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question, generation_config=None):
+def genai_gen_visual_text(model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question, pruning_ratio, relevance_weight):
     kwargs = {
         "do_sample": False,
         "max_new_tokens": max_new_tokens
@@ -532,15 +539,10 @@ def genai_gen_visual_text(model, prompt, image, video, processor, tokenizer, max
         kwargs['image'] = ov.Tensor(np.array(image)[None])
     if video is not None:
         kwargs['videos'] = [ov.Tensor(np.array(video))]
-
-    if generation_config is not None:
-        import openvino_genai
-        gen_config = openvino_genai.GenerationConfig()
-        if "pruning_ratio" in generation_config:
-            pruning_ratio = generation_config.get("pruning_ratio")
-            if pruning_ratio >= 0 and pruning_ratio <= 100:
-                gen_config.pruning_ratio = int(pruning_ratio)
-        kwargs["generation_config"] = gen_config
+    if pruning_ratio is not None:
+        kwargs["pruning_ratio"] = pruning_ratio
+    if relevance_weight is not None:
+        kwargs["relevance_weight"] = relevance_weight
 
     out = model.generate(
         prompt,
@@ -569,10 +571,6 @@ def create_evaluator(base_model, args):
     # task = TasksManager.infer_task_from_model(config._name_or_path)
     # TODO: Add logic to auto detect task based on model_id (TaskManager does not work for locally saved models)
     task = args.model_type
-
-    gen_config = None
-    if args.generation_config is not None:
-        gen_config = get_json_config(args.generation_config)
 
     try:
         EvaluatorCLS = EVALUATOR_REGISTRY[task]
@@ -643,7 +641,8 @@ def create_evaluator(base_model, args):
                 crop_question=crop_question,
                 task_type=task,
                 frames_num=args.video_frames_num,
-                generation_config=gen_config,
+                pruning_ratio=args.pruning_ratio,
+                relevance_weight=args.relevance_weight,
                 seqs_per_request=getattr(
                     args, "seqs_per_request", 1
                 ),  # Default to 1 if not set; make configurable to avoid magic number
