@@ -10,7 +10,11 @@ const INSTRUCT_MODEL_PATH =
 describe("LLMPipeline.generate() with generation config", () => {
   let pipeline = null;
 
-  before(async () => {
+  before(async function() {
+    if (os.platform() === "darwin") {
+      // Ticket - 179439
+      this.skip();
+    }
     pipeline = await LLMPipeline(INSTRUCT_MODEL_PATH, "CPU");
   });
 
