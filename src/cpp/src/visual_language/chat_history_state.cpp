@@ -266,10 +266,13 @@ void ChatHistoryInternalState::release_refs_from(size_t image_index, size_t vide
 }
 
 size_t ChatHistoryInternalState::find_last_user_message_index(const ov::genai::ChatHistory& history) {
-    for (size_t i = history.size(); i-- > 0;) {
-        const auto& message = history[i];
-        if (message.contains("role") && message["role"].get_string() == "user") {
-            return i;
+    for (size_t i = history.size(); i > 0; --i) {
+        const auto& message = history[i - 1];
+        if (!message.contains("role")) {
+            continue;
+        }
+        if (message["role"].get_string() == "user") {
+            return i - 1;
         }
     }
     OPENVINO_THROW("No user message found in chat history.");
