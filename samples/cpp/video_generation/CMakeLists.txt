@@ -25,6 +25,12 @@ FetchContent_MakeAvailable(indicators)
 # OpenCV is required for this sample
 find_package(OpenCV QUIET COMPONENTS core imgproc videoio imgcodecs)
 
+# create main sample executable
+add_executable(text2video text2video.cpp)
+target_sources(text2video PRIVATE imwrite_video.cpp)
+
+target_include_directories(text2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src/")
+
 if(NOT OpenCV_FOUND)
     set(BUILD_SHARED_LIBS ON)
     set(BUILD_SHARED_LIBS ON)
@@ -71,12 +77,9 @@ else()
     set(TEXT2VIDEO_OPENCV_TARGETS ${OpenCV_LIBS})
 endif()
 
-# create main sample executable
-add_executable(text2video text2video.cpp)
-
-target_include_directories(text2video PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/../image_generation/" "${CMAKE_CURRENT_SOURCE_DIR}/../../../src/cpp/src/")
-
-target_sources(text2video PRIVATE imwrite_video.cpp)
+if(OpenCV_FOUND)
+    target_include_directories(text2video PRIVATE ${OpenCV_INCLUDE_DIRS})
+endif()
 
 target_link_libraries(text2video PRIVATE openvino::genai indicators::indicators ${TEXT2VIDEO_OPENCV_TARGETS})
 
