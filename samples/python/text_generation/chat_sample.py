@@ -31,8 +31,7 @@ def main():
             break
         chat_history.append({'role': 'user', 'content': prompt})
         decoded_results: openvino_genai.DecodedResults = pipe.generate(chat_history, config, streamer)
-        output = decoded_results.texts[0]
-        chat_history.append({'role': 'assistant', 'content': output})
+        chat_history.append({'role': 'assistant', 'content': decoded_results.texts[0]})
         print('\n----------')
 
 

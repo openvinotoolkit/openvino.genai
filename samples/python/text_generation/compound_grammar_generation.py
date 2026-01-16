@@ -11,7 +11,8 @@ from openvino_genai import (
     LLMPipeline,
     StreamingStatus,
     Parser,
-    DecodedResults
+    DecodedResults,
+    ChatHistory,
 )
 
 from openvino_genai import (
@@ -133,8 +134,12 @@ def main():
 
     pipe = LLMPipeline(args.model_dir, "CPU")
     tokenizer = pipe.get_tokenizer()
-    chat_history = [{"role": "system", "content": sys_message}]
+
     tools = [tool_to_dict(tool) for tool in [book_flight_ticket, book_hotel]]
+    chat_history = ChatHistory()
+    chat_history.set_tools(tools)
+    chat_history.set_extra_context({"add_generation_prompt": True})
+    chat_history.append({"role": "system", "content": sys_message})
 
     generation_config = GenerationConfig()
     generation_config.max_new_tokens = 300
@@ -143,13 +148,13 @@ def main():
     user_text_1 = "Do dolphins have fingers?"
     print("User: ", user_text_1)
     chat_history.append({"role": "user", "content": user_text_1})
-    model_input = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True, tools=tools)
+
     # same as SOC.Union(SOC.ConstString("yes"), SOC.ConstString("no"))
     yes_or_no_grammar = SOC.ConstString("yes") | SOC.ConstString("no")
     generation_config.structured_output_config = SOC(structural_tags_config=yes_or_no_grammar)
     print("Assistant: ", end="")
-    answer = pipe.generate(model_input, generation_config, streamer=streamer)
-    chat_history.append({"role": "assistant", "content": answer})
+    answer = pipe.generate(chat_history, generation_config, streamer=streamer)
+    chat_history.append({"role": "assistant", "content": answer.texts[0]})
     print()
 
     user_text_2 = (
@@ -158,7 +163,6 @@ def main():
     )
     print("User: ", user_text_2)
     chat_history.append({"role": "user", "content": user_text_2})
-    model_input = tokenizer.apply_chat_template(chat_history, add_generation_prompt=True, tools=tools)
 
     start_tool_call_tag = SOC.ConstString(r"functools")
     tools_json = SOC.JSONSchema(tools_to_array_schema(book_flight_ticket, book_hotel))
@@ -166,7 +170,7 @@ def main():
     generation_config.structured_output_config.structural_tags_config = tool_call_grammar
 
     print("Assistant: ", end="")
-    answer = pipe.generate([model_input], generation_config, parsers=[CustomToolCallParser()])
+    answer = pipe.generate(chat_history, generation_config, parsers=[CustomToolCallParser()])
     
     print("\n\nThe following tool calls were generated:")
     print_tool_call(answer)
