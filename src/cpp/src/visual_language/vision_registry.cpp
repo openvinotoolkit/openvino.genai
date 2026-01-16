@@ -90,7 +90,7 @@ VisionID VisionRegistry::compute_hash(const ov::Tensor& tensor) {
             hash *= FNV_PRIME;
         }
         
-        // Hash last chunk if strided loop didn't processed it
+        // Hash last chunk if strided loop didn't process it
         if (frame_stride > 1 && frame_chunks > 0 && (frame_chunks - 1) % frame_stride != 0) {
             hash ^= frame_data[frame_chunks - 1];
             hash *= FNV_PRIME;
