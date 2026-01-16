@@ -20,8 +20,8 @@ int main(int argc, char* argv[]) try {
     ("n,num_iter", "Number of iterations", cxxopts::value<size_t>()->default_value(std::to_string(3)))
     ("mt,max_new_tokens", "Maximal number of new tokens", cxxopts::value<size_t>()->default_value(std::to_string(20)))
     ("d,device", "device", cxxopts::value<std::string>()->default_value("CPU"))
-    ("pr,pruning_ratio", "Percentage of visual tokens to prune (valid range: 0-100), pruning is disabled by default.", cxxopts::value<size_t>())
-    ("rw,relevance_weight", "Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.", cxxopts::value<float>())
+    ("pr,pruning_ratio", "(optional): Percentage of visual tokens to prune (valid range: 0-100); if this option is not provided, pruning is disabled.", cxxopts::value<size_t>())
+    ("rw,relevance_weight", "(optional): Float value from 0 to 1, controls the trade-off between diversity and relevance for visual tokens pruning; a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.", cxxopts::value<float>())
     ("h,help", "Print usage");
 
     cxxopts::ParseResult result;
