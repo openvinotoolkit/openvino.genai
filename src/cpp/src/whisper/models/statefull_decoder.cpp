@@ -113,9 +113,8 @@ ov::Tensor WhisperStatefullDecoder::create_host_tensor(const element::Type eleme
 
 std::vector<Tensor> WhisperStatefullDecoder::get_alignments_heads_qks(
     const std::vector<std::pair<size_t, size_t>>& alignment_heads) {
-    if (!m_decompose_cross_attention_spda_ops) {
-        OPENVINO_THROW("Encoder attention heads are not decomposed. Cannot get encoder attention QKs.");
-    }
+    OPENVINO_ASSERT(m_decompose_cross_attention_spda_ops,
+                    "Encoder attention heads are not decomposed. Cannot get encoder attention QKs.");
 
     return ov::genai::get_whisper_alignments_heads_qks(m_request, alignment_heads);
 }
