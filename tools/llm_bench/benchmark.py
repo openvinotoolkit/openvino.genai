@@ -122,13 +122,13 @@ def get_argprser():
         "--pruning_ratio",
         type=int,
         default=0,
-        help="Percentage of visual tokens to prune (valid range: 0-100), pruning is disabled by default."
+        help="Percentage of visual tokens to prune (valid range: 0-100), pruning is disabled by default.",
     )
     parser.add_argument(
         "--relevance_weight",
         type=float,
         help="Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, "
-        "a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens."
+        "a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.",
     )
     parser.add_argument(
         '--torch_compile_backend',
