@@ -20,15 +20,25 @@ namespace py = pybind11;
 namespace pyutils = ov::genai::pybind::utils;
 namespace common_utils = ov::genai::common_bindings::utils;
 
-
-auto vlm_generate_docstring = R"(
+auto vlm_generate_description = R"(
     Generates sequences for VLMs.
+)";
 
-    :param prompt: input prompt
+auto vlm_generate_prompt_param = R"(
+    :param prompt: Input prompt
     :type prompt: str
     For using image and video tags in prompt, see:
     https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+)";
 
+auto vlm_generate_history_param = R"(
+    :param history: Chat history
+    :type history: ChatHistory
+    For using image and video tags in prompt, see:
+    https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+)";
+
+auto vlm_generate_common_params = R"(
     :param images: image or list of images
     :type images: list[ov.Tensor] or ov.Tensor
 
@@ -48,14 +58,7 @@ auto vlm_generate_docstring = R"(
     :rtype: VLMDecodedResults
 )";
 
-auto vlm_generate_kwargs_docstring = R"(
-    Generates sequences for VLMs.
-
-    :param prompt: input prompt
-    :type prompt: str
-    For using image and video tags in prompt, see:
-    https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
-
+auto vlm_generate_kwargs_param = R"(
     :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
 
     Expected parameters list:
@@ -67,6 +70,22 @@ auto vlm_generate_kwargs_docstring = R"(
     :return: return results in decoded form
     :rtype: VLMDecodedResults
 )";
+
+auto vlm_generate_prompt_docstring = std::string(vlm_generate_description) +
+    std::string(vlm_generate_prompt_param) +
+    std::string(vlm_generate_common_params);
+
+auto vlm_generate_history_docstring = std::string(vlm_generate_description) +
+    std::string(vlm_generate_history_param) +
+    std::string(vlm_generate_common_params);
+
+auto vlm_generate_prompt_kwargs_docstring = std::string(vlm_generate_description) +
+    std::string(vlm_generate_prompt_param) +
+    std::string(vlm_generate_kwargs_param);
+
+auto vlm_generate_history_kwargs_docstring = std::string(vlm_generate_description) +
+    std::string(vlm_generate_history_param) +
+    std::string(vlm_generate_kwargs_param);
 
 auto raw_perf_metrics_docstring = R"(
     Structure with VLM specific raw performance metrics for each generation before any statistics are calculated.
@@ -229,7 +248,7 @@ void init_vlm_pipeline(py::module_& m) {
             py::arg("videos"), "Input videos",
             py::arg("generation_config"), "generation_config",
             py::arg("streamer") = std::monostate(), "streamer",
-            (vlm_generate_docstring + std::string(" \n ")).c_str()
+            (vlm_generate_prompt_docstring + std::string(" \n ")).c_str()
         )
         .def(
             "generate",
@@ -246,7 +265,7 @@ void init_vlm_pipeline(py::module_& m) {
             py::arg("images"), "Input images",
             py::arg("generation_config"), "generation_config",
             py::arg("streamer") = std::monostate(), "streamer",
-            (vlm_generate_docstring + std::string(" \n ")).c_str()
+            (vlm_generate_prompt_docstring + std::string(" \n ")).c_str()
         )
         .def(
             "generate",
@@ -263,7 +282,7 @@ void init_vlm_pipeline(py::module_& m) {
             py::arg("videos"), "Input videos, each providing multiple frames",
             py::arg("generation_config"), "generation_config",
             py::arg("streamer") = std::monostate(), "streamer",
-            (vlm_generate_docstring + std::string(" \n ")).c_str()
+            (vlm_generate_prompt_docstring + std::string(" \n ")).c_str()
         )
         .def(
             "generate",
@@ -280,7 +299,7 @@ void init_vlm_pipeline(py::module_& m) {
             py::arg("image"), "Input image",
             py::arg("generation_config"), "generation_config",
             py::arg("streamer") = std::monostate(), "streamer",
-            (vlm_generate_docstring + std::string(" \n ")).c_str()
+            (vlm_generate_prompt_docstring + std::string(" \n ")).c_str()
         )
         .def(
             "generate",
@@ -297,7 +316,7 @@ void init_vlm_pipeline(py::module_& m) {
                 return py::cast(res);
             },
             py::arg("prompt"), "Input string",
-            (vlm_generate_kwargs_docstring + std::string(" \n ")).c_str()
+            (vlm_generate_prompt_kwargs_docstring + std::string(" \n ")).c_str()
         )
         .def(
             "generate",
@@ -316,7 +335,7 @@ void init_vlm_pipeline(py::module_& m) {
             py::arg("videos"), "Input videos",
             py::arg("generation_config"), "generation_config",
             py::arg("streamer") = std::monostate(), "streamer",
-            (vlm_generate_docstring + std::string(" \n ")).c_str()
+            (vlm_generate_history_docstring + std::string(" \n ")).c_str()
         )
         .def(
             "generate",
@@ -333,7 +352,7 @@ void init_vlm_pipeline(py::module_& m) {
             py::arg("images"), "Input images",
             py::arg("generation_config"), "generation_config",
             py::arg("streamer") = std::monostate(), "streamer",
-            (vlm_generate_docstring + std::string(" \n ")).c_str()
+            (vlm_generate_history_docstring + std::string(" \n ")).c_str()
         )
         .def(
             "generate",
@@ -350,7 +369,7 @@ void init_vlm_pipeline(py::module_& m) {
             py::arg("videos"), "Input videos",
             py::arg("generation_config"), "generation_config",
             py::arg("streamer") = std::monostate(), "streamer",
-            (vlm_generate_docstring + std::string(" \n ")).c_str()
+            (vlm_generate_history_docstring + std::string(" \n ")).c_str()
         )
         .def(
             "generate",
@@ -367,6 +386,6 @@ void init_vlm_pipeline(py::module_& m) {
                 return py::cast(res);
             },
             py::arg("history"), "Chat history",
-            (vlm_generate_kwargs_docstring + std::string(" \n ")).c_str()
+            (vlm_generate_history_kwargs_docstring + std::string(" \n ")).c_str()
         );
 }
