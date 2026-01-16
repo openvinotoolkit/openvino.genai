@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path, pruning_ratio, relevance_weight):
+def run_test(model_id, model_type, tmp_path, pruning_ratio, relevance_weight):
     if sys.platform == "darwin":
         pytest.xfail("Ticket 173169")
     if sys.platform == "win32":
@@ -77,4 +77,4 @@ def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path,
 def test_pruner_basic(model_id, model_type, tmp_path, pruning_ratio, relevance_weight):
     env = os.environ.copy()
     env["OPENVINO_LOG_LEVEL"] = "7"
-    run_test(model_id, model_type, None, None, tmp_path, pruning_ratio, relevance_weight)
+    run_test(model_id, model_type, tmp_path, pruning_ratio, relevance_weight)
