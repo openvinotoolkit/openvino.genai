@@ -45,7 +45,7 @@ struct ArchitectureLoraConfig {
     std::vector<std::string> fallback_prefixes;
 };
 
-namespace {
+namespace detail {
 
 inline std::string to_lower(const std::string& str) {
     std::string result = str;
@@ -167,7 +167,7 @@ inline RagModelArchitecture detect_architecture(const std::filesystem::path& mod
 
     return RagModelArchitecture::UNKNOWN;
 }
-}  // anonymous namespace
+}  // detail namespace
 
 /**
  * @brief Detect appropriate LoRA tensor prefix based on model architecture
@@ -175,8 +175,8 @@ inline RagModelArchitecture detect_architecture(const std::filesystem::path& mod
  * @return Recommended LoRA tensor prefix
  */
 inline std::string detect_lora_prefix(const std::filesystem::path& model_dir) {
-    auto arch = detect_architecture(model_dir);
-    auto config = get_lora_config(arch);
+    auto arch = detail::detect_architecture(model_dir);
+    auto config = detail::get_lora_config(arch);
     return config.primary_prefix;
 }
 
@@ -186,23 +186,9 @@ inline std::string detect_lora_prefix(const std::filesystem::path& model_dir) {
  * @return Vector of fallback prefixes to try if primary doesn't match
  */
 inline std::vector<std::string> get_lora_prefix_fallbacks(const std::filesystem::path& model_dir) {
-    auto arch = detect_architecture(model_dir);
-    auto config = get_lora_config(arch);
+    auto arch = detail::detect_architecture(model_dir);
+    auto config = detail::get_lora_config(arch);
     return config.fallback_prefixes;
-}
-
-
-/**
- * @brief Apply LoRA weights to an inference request
- *
- * @param controller The AdapterController managing LoRA state
- * @param request The inference request to apply weights to
- * @param adapters Adapter configuration with weights and alpha values
- */
-inline void apply_lora_weights(AdapterController& controller,
-                               ov::InferRequest& request,
-                               const AdapterConfig& adapters) {
-    controller.apply(request, adapters);
 }
 
 /**

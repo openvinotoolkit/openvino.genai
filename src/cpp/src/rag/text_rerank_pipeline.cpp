@@ -21,7 +21,7 @@ namespace {
 using namespace ov::genai;
 using namespace ov;
 
-// Property name constant for LoRA tensor prefix (local to this file)
+// Local redefinition of the Lora tensor prefix property for this translation unit
 static constexpr ov::Property<std::string> lora_tensor_prefix{"lora_tensor_prefix"};
 
 ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
