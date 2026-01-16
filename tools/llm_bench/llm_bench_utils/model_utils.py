@@ -146,7 +146,7 @@ def analyze_args(args):
     model_args['emb_normalize'] = args.embedding_normalize
     model_args["emb_max_length"] = args.embedding_max_length
     model_args["emb_padding_side"] = args.embedding_padding_side
-    model_args["emb_disable_pad_to_max_length"] = args.embedding_disable_pad_to_max_length
+    model_args["emb_pad_to_max_length"] = args.embedding_pad_to_max_length
     model_args['rerank_max_length'] = args.reranking_max_length
     model_args["rerank_top_n"] = args.reranking_top_n
     model_args["rerank_texts"] = args.texts
