@@ -26,28 +26,8 @@ auto vlm_generate_docstring = R"(
 
     :param prompt: input prompt
     :type prompt: str
-    The prompt can contain <ov_genai_image_i> with i replaced with
-    an actual zero based index to refer to an image. Reference to
-    images used in previous prompts isn't implemented.
-    A model's native image tag can be used instead of
-    <ov_genai_image_i>. These tags are:
-    InternVL2: <image>\n
-    llava-1.5-7b-hf: <image>
-    LLaVA-NeXT: <image>
-    LLaVa-NeXT-Video: <image>
-    nanoLLaVA: <image>\n
-    nanoLLaVA-1.5: <image>\n
-    MiniCPM-o-2_6: <image>./</image>\n
-    MiniCPM-V-2_6: <image>./</image>\n
-    Phi-3-vision: <|image_i|>\n - the index starts with one
-    Phi-4-multimodal-instruct: <|image_i|>\n - the index starts with one
-    Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-    Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-    gemma-3-4b-it: <start_of_image>
-    Model's native video tag can be used to refer to a video:
-    LLaVa-NeXT-Video: <video>
-    If the prompt doesn't contain image or video tags, but images or videos are
-    provided, the tags are prepended to the prompt.
+    For using image and video tags in prompt, see:
+    https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
 
     :param images: image or list of images
     :type images: list[ov.Tensor] or ov.Tensor
@@ -72,30 +52,9 @@ auto vlm_generate_kwargs_docstring = R"(
     Generates sequences for VLMs.
 
     :param prompt: input prompt
-    The prompt can contain <ov_genai_image_i> with i replaced with
-    an actual zero based index to refer to an image. Reference to
-    images used in previous prompts isn't implemented.
-    A model's native image tag can be used instead of
-    <ov_genai_image_i>. These tags are:
-    InternVL2: <image>\n
-    llava-1.5-7b-hf: <image>
-    LLaVA-NeXT: <image>
-    LLaVa-NeXT-Video: <image>
-    nanoLLaVA: <image>\n
-    nanoLLaVA-1.5: <image>\n
-    MiniCPM-o-2_6: <image>./</image>\n
-    MiniCPM-V-2_6: <image>./</image>\n
-    Phi-3-vision: <|image_i|>\n - the index starts with one
-    Phi-4-multimodal-instruct: <|image_i|>\n - the index starts with one
-    Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-    Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-    gemma-3-4b-it: <start_of_image>
-    Model's native video tag can be used to refer to a video:
-    LLaVa-NeXT-Video: <video>
-    If the prompt doesn't contain image or video tags, but images or videos are
-    provided, the tags are prepended to the prompt.
-
     :type prompt: str
+    For using image and video tags in prompt, see:
+    https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
 
     :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
 

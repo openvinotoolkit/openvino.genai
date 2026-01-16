@@ -89,6 +89,8 @@ public:
     /// @brief Generate a response given a prompt and any number of
     /// uint8 RGB images with [NHWC] or [HWC] layout.
     /// @param prompt A prompt to respond to.
+    /// For using image and video tags in prompt, see:
+    /// https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
     /// @param images Images to be prepended to a prompt.
     /// @param generation_config A config to follow for text generation.
     /// @param streamer A streamer to acquire intermediate result.
@@ -104,28 +106,8 @@ public:
 
     /// @brief Generate a response given a prompt and uint8 RGB image with [NHWC] or [HWC] layout.
     /// @param prompt A prompt to respond to.
-    /// The prompt can contain <ov_genai_image_i> with i replaced with
-    /// an actual zero based index to refer to an image. Reference to
-    /// images used in previous prompts isn't implemented.
-    /// A model's native image tag can be used instead of
-    /// <ov_genai_image_i>. These tags are:
-    /// InternVL2: <image>\n
-    /// llava-1.5-7b-hf: <image>
-    /// LLaVA-NeXT: <image>
-    /// LLaVa-NeXT-Video: <image>
-    /// nanoLLaVA: <image>\n
-    /// nanoLLaVA-1.5: <image>\n
-    /// MiniCPM-o-2_6: <image>./</image>\n
-    /// MiniCPM-V-2_6: <image>./</image>\n
-    /// Phi-3-vision: <|image_i|>\n - the index starts with one
-    /// Phi-4-multimodal-instruct: <|image_i|>\n - the index starts with one
-    /// Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-    /// Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-    /// gemma-3-4b-it: <start_of_image>
-    /// Model's native video tag can be used to refer to a video:
-    /// LLaVa-NeXT-Video: <video>
-    /// If the prompt doesn't contain image or video tags, but images or videos are
-    /// provided, the tags are prepended to the prompt.
+    /// For using image and video tags in prompt, see:
+    /// https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
     /// @param images Image to be prepended to a prompt.
     /// @param videos Multiple videos, each providing multiple frames, to be prepended to a prompt.
     /// @param generation_config A config to follow for text generation.
@@ -143,26 +125,8 @@ public:
 
     /// @brief Generate a response given a prompt and uint8 RGB image with [NHWC] or [HWC] layout.
     /// @param prompt A prompt to respond to.
-    /// The prompt can contain <ov_genai_image_i> with i replaced with
-    /// an actual zero based index to refer to an image. Reference to
-    /// images used in previous prompts isn't implemented.
-    /// A model's native image tag can be used instead of
-    /// <ov_genai_image_i>. These tags are:
-    /// InternVL2: <image>\n
-    /// llava-1.5-7b-hf: <image>
-    /// LLaVA-NeXT: <image>
-    /// LLaVa-NeXT-Video: <image>
-    /// nanoLLaVA: <image>\n
-    /// nanoLLaVA-1.5: <image>\n
-    /// MiniCPM-o-2_6: <image>./</image>\n
-    /// MiniCPM-V-2_6: <image>./</image>\n
-    /// Phi-3-vision: <|image_i|>\n - the index starts with one
-    /// Phi-4-multimodal-instruct: <|image_i|>\n - the index starts with one
-    /// Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-    /// Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-    /// gemma-3-4b-it: <start_of_image>
-    /// If the prompt doesn't contain image tags, but images are
-    /// provided, the tags are prepended to the prompt.
+    /// For using image and video tags in prompt, see:
+    /// https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
     /// @param image Image to be prepended to a prompt.
     /// @param generation_config A config to follow for text generation.
     /// @param streamer A streamer to acquire intermediate result.
@@ -178,28 +142,8 @@ public:
 
     /// @brief Generate a response given a prompt and config.
     /// @param prompt A prompt to respond to.
-    /// The prompt can contain <ov_genai_image_i> with i replaced with
-    /// an actual zero based index to refer to an image. Reference to
-    /// images used in previous prompts isn't implemented.
-    /// A model's native image tag can be used instead of
-    /// <ov_genai_image_i>. These tags are:
-    /// InternVL2: <image>\n
-    /// llava-1.5-7b-hf: <image>
-    /// LLaVA-NeXT: <image>
-    /// LLaVa-NeXT-Video: <image>
-    /// nanoLLaVA: <image>\n
-    /// nanoLLaVA-1.5: <image>\n
-    /// MiniCPM-o-2_6: <image>./</image>\n
-    /// MiniCPM-V-2_6: <image>./</image>\n
-    /// Phi-3-vision: <|image_i|>\n - the index starts with one
-    /// Phi-4-multimodal-instruct: <|image_i|>\n - the index starts with one
-    /// Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-    /// Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-    /// gemma-3-4b-it: <start_of_image>
-    /// Model's native video tag can be used to refer to a video:
-    /// LLaVa-NeXT-Video: <video>
-    /// If the prompt doesn't contain image or video tags, but images or videos are
-    /// provided, the tags are prepended to the prompt.
+    /// For using image and video tags in prompt, see:
+    /// https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
     /// @param config_map A config may contain GenerationConfig, values
     /// for its members, StreamerVariant a single image or multiple
     /// images.
@@ -216,26 +160,8 @@ public:
     /// Example:
     /// generate("text", image(rgb), do_sample(true));
     /// @param prompt A prompt to respond to.
-    /// The prompt can contain <ov_genai_image_i> with i replaced with
-    /// an actual zero based index to refer to an image. Reference to
-    /// images used in previous prompts isn't implemented.
-    /// A model's native image tag can be used instead of
-    /// <ov_genai_image_i>. These tags are:
-    /// InternVL2: <image>\n
-    /// llava-1.5-7b-hf: <image>
-    /// LLaVA-NeXT: <image>
-    /// LLaVa-NeXT-Video: <image>
-    /// nanoLLaVA: <image>\n
-    /// nanoLLaVA-1.5: <image>\n
-    /// MiniCPM-o-2_6: <image>./</image>\n
-    /// MiniCPM-V-2_6: <image>./</image>\n
-    /// Phi-3-vision: <|image_i|>\n - the index starts with one
-    /// Phi-4-multimodal-instruct: <|image_i|>\n - the index starts with one
-    /// Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-    /// Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-    /// gemma-3-4b-it: <start_of_image>
-    /// If the prompt doesn't contain image tags, but images are
-    /// provided, the tags are prepended to the prompt.
+    /// For using image and video tags in prompt, see:
+    /// https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
     /// @param ...properties ov::Property instances to be combined into
     /// ov::AnyMap.
     /// @return A string generated by a model.
