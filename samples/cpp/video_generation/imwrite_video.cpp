@@ -18,6 +18,11 @@ void save_video(const std::string& filename,
                 bool input_is_rgb) {
     const ov::Shape shape = video_tensor.get_shape();
 
+    if (shape.empty() || video_tensor.get_size() == 0) {
+        std::runtime_error("save_video(): input tensor is empty, skip saving: " + filename);
+        return;
+    }
+
     const size_t B = shape[0], F = shape[1], H = shape[2], W = shape[3], C = shape[4];
     const uint8_t* video_data = video_tensor.data<const uint8_t>();
 
