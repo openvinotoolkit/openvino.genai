@@ -14,8 +14,6 @@ VLMChatContext::VLMChatContext(
     m_inputs_embedder(embedder)
 {
     OPENVINO_ASSERT(!m_history.empty(), "Chat history cannot be empty");
-    OPENVINO_ASSERT(m_history.last()["role"].get_string() == "user",
-                    "Last message must be from user");
 
     m_history_state = ChatHistoryInternalState::get_or_create(history, vision_registry);
     m_initial_messages_metadata_count = m_history_state->get_messages_metadata().size();
@@ -52,11 +50,13 @@ VLMChatContext::ProcessedChatData VLMChatContext::process(
     result.image_sequence = std::move(resolved_visions.image_sequence);
     result.video_sequence = std::move(resolved_visions.video_sequence);
 
-    const auto& last_message_metadata = m_history_state->get_messages_metadata().back();
+    const auto& last_user_message_metadata = m_history_state->get_messages_metadata().at(
+        m_history_state->get_last_user_message_index()
+    );
 
     auto resolved_new_visions = m_history_state->resolve_visions_with_sequence(
-        last_message_metadata.image_sequence,
-        last_message_metadata.video_sequence
+        last_user_message_metadata.image_sequence,
+        last_user_message_metadata.video_sequence
     );
 
     result.new_encoded_images = std::move(resolved_new_visions.encoded_images);
@@ -121,7 +121,7 @@ void VLMChatContext::fill_messages_metadata(
             continue;
         }
         
-        if (i == m_history.size() - 1) {
+        if (i == m_history_state->get_last_user_message_index()) {
             metadata.provided_image_indices = new_image_indices;
             metadata.provided_video_indices = new_video_indices;
         }

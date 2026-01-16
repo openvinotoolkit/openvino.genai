@@ -268,6 +268,16 @@ void ChatHistoryInternalState::release_refs_from(size_t image_index, size_t vide
     }
 }
 
+size_t ChatHistoryInternalState::find_last_user_message_index(const ov::genai::ChatHistory& history) {
+    for (size_t i = history.size(); i-- > 0;) {
+        const auto& message = history[i];
+        if (message.contains("role") && message["role"].get_string() == "user") {
+            return i;
+        }
+    }
+    OPENVINO_THROW("No user message found in chat history.");
+}
+
 /**
  * @brief Detects chat history format based on the last user message
  * and verifies different formats are not mixed within the history.
@@ -276,8 +286,8 @@ void ChatHistoryInternalState::detect_chat_history_format(const ChatHistory& his
     const ChatHistoryFormat current_format = m_chat_history_format;
     ChatHistoryFormat detected_format = ChatHistoryFormat::UNKNOWN;
 
-    const auto& last_user_message = history.last();
-    OPENVINO_ASSERT(last_user_message["role"].get_string() == "user");
+    m_last_user_message_index = find_last_user_message_index(history);
+    const auto& last_user_message = history[m_last_user_message_index];
 
     if (!last_user_message.contains("content")) {
         OPENVINO_THROW("Unknown chat history format: user message does not contain 'content' field.");

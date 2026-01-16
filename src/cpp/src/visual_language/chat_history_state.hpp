@@ -110,6 +110,8 @@ public:
 
     ChatHistoryFormat get_chat_history_format() { return m_chat_history_format; }
 
+    size_t get_last_user_message_index() const { return m_last_user_message_index; }
+
     static std::shared_ptr<ChatHistoryInternalState> get_or_create(
         ov::genai::ChatHistory& history,
         std::shared_ptr<VisionRegistry> vision_registry = nullptr
@@ -126,9 +128,13 @@ private:
 
     std::vector<MessageMetadata> m_messages_metadata;
 
+    size_t m_last_user_message_index = -1;
+
     void release_refs_from(size_t image_index, size_t video_index);
 
     void detect_chat_history_format(const ov::genai::ChatHistory& history);
+
+    static size_t find_last_user_message_index(const ov::genai::ChatHistory& history);
 };
 
 } // namespace ov::genai
