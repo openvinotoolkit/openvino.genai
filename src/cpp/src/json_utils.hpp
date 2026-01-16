@@ -45,7 +45,7 @@ constexpr bool is_std_array<std::array<T, N>> = true;
 /// if types are not compatible leave param unchanged
 template <typename T>
 void read_json_param(const nlohmann::json& data, const std::string& name, T& param) {
-    if (data.contains(name)) {
+    if (data.contains(name) && !data[name].is_null()) {
         if (data[name].is_number() || data[name].is_boolean() || data[name].is_string() || data[name].is_object()
             || (is_std_array<T> && data[name].is_array())
         ) {

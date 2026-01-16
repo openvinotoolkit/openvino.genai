@@ -125,6 +125,17 @@
 - 'src/python/py_image_generation_models.cpp'
 - 'src/python/py_image_generation_pipelines.cpp'
 
+'category: video generation':
+- 'src/cpp/include/openvino/genai/video_generation/**/*'
+- 'src/cpp/src/video_generation/**/*'
+- 'src/python/py_video_generation_models.cpp'
+- 'src/python/py_video_generation_pipelines.cpp'
+- 'tests/python_tests/test_video_generation.py'
+
+'category: Video generation samples':
+- 'samples/cpp/video_generation/**/*'
+- 'samples/python/video_generation/**/*'
+
 'category: speech generation':
 - 'src/include/openvino/genai/speech_generation/**/*'
 - 'src/cpp/src/speech_generation/**/*'
