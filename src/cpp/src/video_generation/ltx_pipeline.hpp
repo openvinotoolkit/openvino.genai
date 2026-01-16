@@ -51,6 +51,9 @@ void replace_defaults(VideoGenerationConfig& config) {
     if (-1 == config.width) {
         config.width = LTX_VIDEO_DEFAULT_CONFIG.width;
     }
+    if (-1 == config.num_inference_steps) {
+        config.num_inference_steps = LTX_VIDEO_DEFAULT_CONFIG.num_inference_steps;
+    }
     if (-1 == config.max_sequence_length) {
         config.max_sequence_length = LTX_VIDEO_DEFAULT_CONFIG.max_sequence_length;
     }
