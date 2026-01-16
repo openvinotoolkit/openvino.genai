@@ -12,7 +12,7 @@
 
 namespace ov::genai {
 
-using VideoGenerationPerfMetrics = ImageGenerationPerfMetrics;
+struct VideoGenerationPerfMetrics : public ImageGenerationPerfMetrics {};
 
 struct VideoGenerationResult {
     ov::Tensor video;
