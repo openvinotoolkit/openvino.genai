@@ -171,6 +171,10 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
                     extensions.push_back(std::filesystem::path(item.cast<std::string>()));
                 } else if (py::isinstance<ov::Extension>(item)) {
                     extensions.push_back(item.cast<std::shared_ptr<ov::Extension>>());
+                } else {
+                    OPENVINO_THROW("Incorrect value in \"",
+                                   property_name,
+                                   "\". Expected string path or ov::Extension object.");
                 }
             }
             return extensions;
