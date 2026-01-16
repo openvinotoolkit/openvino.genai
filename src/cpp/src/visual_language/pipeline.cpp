@@ -345,94 +345,88 @@ public:
 
         VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
 
-        try {
-            auto processed_chat_data = chat_context.process(images, videos);
+        auto processed_chat_data = chat_context.process(images, videos);
 
-            bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history;
+        bool use_full_history = processed_chat_data.needs_kv_cache_reset || m_use_full_chat_history;
 
-            if (use_full_history) {
-                m_language.reset_state();
-                m_language.get_tensor("attention_mask").set_shape({1, 0});
-                m_inputs_embedder->start_chat("");
-            }
-
-            std::string templated_history = m_tokenizer.apply_chat_template(
-                processed_chat_data.normalized_history,
-                true
-            );
-
-            ov::genai::utils::GenerationFinishInfo generation_finish_info;
-
-            const auto& images_embeds = use_full_history 
-                ? processed_chat_data.encoded_images 
-                : processed_chat_data.new_encoded_images;
-            const auto& videos_embeds = use_full_history 
-                ? processed_chat_data.encoded_videos 
-                : processed_chat_data.new_encoded_videos;
-            const auto& image_seq = use_full_history 
-                ? processed_chat_data.image_sequence 
-                : processed_chat_data.new_image_sequence;
-            const auto& video_seq = use_full_history 
-                ? processed_chat_data.video_sequence 
-                : processed_chat_data.new_video_sequence;
-            
-            generation_finish_info = prepare_inputs_and_generate(
-                templated_history,
-                images_embeds,
-                videos_embeds,
-                image_seq,
-                video_seq,
-                generation_config,
-                perf_metrics,
-                streamer
-            );
-
-            EncodedResults& encoded_result = generation_finish_info.results;
-
-            auto decode_start_time = std::chrono::steady_clock::now();
-            VLMDecodedResults decoded;
-            for (size_t idx = 0; idx < encoded_result.tokens.size(); ++idx) {
-                decoded.texts.push_back(m_tokenizer.decode(encoded_result.tokens.at(idx)));
-                decoded.scores.push_back(encoded_result.scores.at(idx));
-            }
-            auto decode_end_time = std::chrono::steady_clock::now();
-
-            std::string decoded_text = decoded.texts.at(0);
-            
-            // TODO Consider moving update_chat_history to chat_context (e.g. finilize(status)) as decoded_text seems to be not used
-            m_inputs_embedder->update_chat_history(decoded_text, generation_finish_info.streaming_finish_status);
-
-            if (generation_finish_info.streaming_finish_status == ov::genai::GenerationStatus::CANCEL) {
-                chat_context.rollback();
-            }
-
-            auto generate_end_time = std::chrono::steady_clock::now();
-            decoded.perf_metrics = encoded_result.perf_metrics;
-
-            // Common perf metrics
-            auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
-            decoded.perf_metrics.num_input_tokens = perf_metrics.num_input_tokens;
-            decoded.perf_metrics.load_time = this->get_load_time();
-            res_raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(generate_end_time - generate_start_time));
-            res_raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
-            res_raw_counters.tokenization_durations.insert(res_raw_counters.tokenization_durations.end(), raw_counters.tokenization_durations.begin(), raw_counters.tokenization_durations.end());
-
-            // VLM specific perf metrics
-            decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.insert(
-                decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end(),
-                perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.begin(),
-                perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end()
-            );
-
-            // Evaluate statistics
-            decoded.perf_metrics.m_evaluated = false;
-            decoded.perf_metrics.evaluate_statistics(generate_start_time);
-
-            return decoded;
-        } catch (...) {
-            chat_context.rollback();
-            throw;
+        if (use_full_history) {
+            m_language.reset_state();
+            m_language.get_tensor("attention_mask").set_shape({1, 0});
+            m_inputs_embedder->start_chat("");
         }
+
+        std::string templated_history = m_tokenizer.apply_chat_template(
+            processed_chat_data.normalized_history,
+            true
+        );
+
+        ov::genai::utils::GenerationFinishInfo generation_finish_info;
+
+        const auto& images_embeds = use_full_history 
+            ? processed_chat_data.encoded_images 
+            : processed_chat_data.new_encoded_images;
+        const auto& videos_embeds = use_full_history 
+            ? processed_chat_data.encoded_videos 
+            : processed_chat_data.new_encoded_videos;
+        const auto& image_seq = use_full_history 
+            ? processed_chat_data.image_sequence 
+            : processed_chat_data.new_image_sequence;
+        const auto& video_seq = use_full_history 
+            ? processed_chat_data.video_sequence 
+            : processed_chat_data.new_video_sequence;
+        
+        generation_finish_info = prepare_inputs_and_generate(
+            templated_history,
+            images_embeds,
+            videos_embeds,
+            image_seq,
+            video_seq,
+            generation_config,
+            perf_metrics,
+            streamer
+        );
+
+        EncodedResults& encoded_result = generation_finish_info.results;
+
+        auto decode_start_time = std::chrono::steady_clock::now();
+        VLMDecodedResults decoded;
+        for (size_t idx = 0; idx < encoded_result.tokens.size(); ++idx) {
+            decoded.texts.push_back(m_tokenizer.decode(encoded_result.tokens.at(idx)));
+            decoded.scores.push_back(encoded_result.scores.at(idx));
+        }
+        auto decode_end_time = std::chrono::steady_clock::now();
+
+        std::string decoded_text = decoded.texts.at(0);
+        
+        m_inputs_embedder->update_chat_history(decoded_text, generation_finish_info.streaming_finish_status);
+
+        if (generation_finish_info.streaming_finish_status == ov::genai::GenerationStatus::CANCEL) {
+            chat_context.rollback();
+        }
+
+        auto generate_end_time = std::chrono::steady_clock::now();
+        decoded.perf_metrics = encoded_result.perf_metrics;
+
+        // Common perf metrics
+        auto& res_raw_counters = decoded.perf_metrics.raw_metrics;
+        decoded.perf_metrics.num_input_tokens = perf_metrics.num_input_tokens;
+        decoded.perf_metrics.load_time = this->get_load_time();
+        res_raw_counters.generate_durations.emplace_back(PerfMetrics::get_microsec(generate_end_time - generate_start_time));
+        res_raw_counters.detokenization_durations.emplace_back(PerfMetrics::get_microsec(decode_end_time - decode_start_time));
+        res_raw_counters.tokenization_durations.insert(res_raw_counters.tokenization_durations.end(), raw_counters.tokenization_durations.begin(), raw_counters.tokenization_durations.end());
+
+        // VLM specific perf metrics
+        decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.insert(
+            decoded.perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end(),
+            perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.begin(),
+            perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.end()
+        );
+
+        // Evaluate statistics
+        decoded.perf_metrics.m_evaluated = false;
+        decoded.perf_metrics.evaluate_statistics(generate_start_time);
+
+        return decoded;
     }
 
     void start_chat(const std::string& system_message) override {
