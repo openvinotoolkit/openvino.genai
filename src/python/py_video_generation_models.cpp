@@ -181,7 +181,6 @@ void init_autoencoder_kl_ltx_video(py::module_& m) {
         .def_readonly("latent_channels", &ov::genai::AutoencoderKLLTXVideo::Config::latent_channels)
         .def_readonly("out_channels", &ov::genai::AutoencoderKLLTXVideo::Config::out_channels)
         .def_readonly("scaling_factor", &ov::genai::AutoencoderKLLTXVideo::Config::scaling_factor)
-        .def_readonly("shift_factor", &ov::genai::AutoencoderKLLTXVideo::Config::shift_factor)
         .def_readonly("block_out_channels", &ov::genai::AutoencoderKLLTXVideo::Config::block_out_channels)
         .def_readonly("patch_size", &ov::genai::AutoencoderKLLTXVideo::Config::patch_size)
         .def_readonly("patch_size_t", &ov::genai::AutoencoderKLLTXVideo::Config::patch_size_t);
