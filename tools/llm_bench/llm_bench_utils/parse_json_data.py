@@ -24,7 +24,7 @@ def parse_vlm_json_data(json_data_list):
     text_param_list = []
     for json_data in json_data_list:
         prompt_data = create_base_prompt(json_data)
-        for param in ['media', 'video']:
+        for param in ["media", "video"]:
             if param in json_data:
                 prompt_data[param] = json_data[param]
 
@@ -36,11 +36,11 @@ def parse_image_json_data(json_data_list):
     image_param_list = []
     for json_data in json_data_list:
         image_param = create_base_prompt(json_data)
-        for param in ['width', 'height', 'steps']:
+        for param in ["width", "height", "steps"]:
             if param in json_data:
                 image_param[param] = int(json_data[param])
 
-        for param in ['media', 'mask_image']:
+        for param in ["media", "mask_image"]:
             if param in json_data:
                 image_param[param] = json_data[param]
 
@@ -55,11 +55,11 @@ def parse_video_json_data(json_data_list):
     video_param_list = []
     for json_data in json_data_list:
         video_param = create_base_prompt(json_data)
-        for param in ['width', 'height', 'num_steps', 'num_frames', 'frame_rate']:
+        for param in ["width", "height", "num_steps", "num_frames", "frame_rate"]:
             if param in json_data:
                 video_param[param] = int(json_data[param])
 
-        for param in ['guidance_scale', 'guidance_rescale']:
+        for param in ["guidance_scale", "guidance_rescale"]:
             if param in json_data:
                 video_param[param] = float(json_data[param])
 

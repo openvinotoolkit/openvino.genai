@@ -22,20 +22,42 @@ image_generation_json = [
     {"steps": 30, "width": 64, "height": 128, "guidance_scale": 1.0, "prompt": image_generation_prompt},
     {"steps": 4, "width": 64, "height": 32, "guidance_scale": 7.0, "prompt": image_generation_prompt}
 ]
-image_generation_inpainting_json = [{
-    "steps": 30, "width": 64, "height": 128, "guidance_scale": 1.0, "strength": "0.8",
-    "media": "overture-creations.png", "prompt": image_generation_prompt,
-    "mask_image": "overture-creations-mask.png"
-}]
-image_generation_i2i_json = [{
-    "steps": 30, "width": 64, "height": 128, "guidance_scale": 1.0, "strength": "0.8", "media": "cat.png",
-    "prompt": "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k"
-}]
-video_generation_json = [{
-    "num_steps":"25", "width": 256, "height": 256, "guidance_scale": 3.0, "guidance_rescale": 0.3,
-    "prompt": "A cat plays with ball on the christmas tree.", 
-    "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted", "num_frames": 9, "frame_rate": 24
-}]
+image_generation_inpainting_json = [
+    {
+        "steps": 30,
+        "width": 64,
+        "height": 128,
+        "guidance_scale": 1.0,
+        "strength": "0.8",
+        "media": "overture-creations.png",
+        "prompt": image_generation_prompt,
+        "mask_image": "overture-creations-mask.png",
+    }
+]
+image_generation_i2i_json = [
+    {
+        "steps": 30,
+        "width": 64,
+        "height": 128,
+        "guidance_scale": 1.0,
+        "strength": "0.8",
+        "media": "cat.png",
+        "prompt": "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k",
+    }
+]
+video_generation_json = [
+    {
+        "num_steps": "25",
+        "width": 256,
+        "height": 256,
+        "guidance_scale": 3.0,
+        "guidance_rescale": 0.3,
+        "prompt": "A cat plays with ball on the christmas tree.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "num_frames": 9,
+        "frame_rate": 24,
+    }
+]
 
 
 class TestBenchmarkLLM:
@@ -114,8 +136,12 @@ class TestBenchmarkLLM:
         ],
     )
     @pytest.mark.parametrize("convert_model", ["tiny-random-latent-consistency"], indirect=True)
-    @pytest.mark.parametrize("generate_llm_bench_input_generation_jsonl", [("image_generation.jsonl", image_generation_json)], indirect=True)  
-    def test_python_tool_llm_benchmark_jsonl(self, convert_model, generate_llm_bench_input_generation_jsonl, sample_args):
+    @pytest.mark.parametrize(
+        "generate_llm_bench_input_generation_jsonl", [("image_generation.jsonl", image_generation_json)], indirect=True
+    )
+    def test_python_tool_llm_benchmark_jsonl(
+        self, convert_model, generate_llm_bench_input_generation_jsonl, sample_args
+    ):
         """
         Test Speculative Decoding via GenAI with JSONL input
         """
@@ -124,8 +150,10 @@ class TestBenchmarkLLM:
         benchmark_py_command = [
             sys.executable,
             benchmark_script,
-            "-m", convert_model,
-            "-pf", generate_llm_bench_input_generation_jsonl,
+            "-m",
+            convert_model,
+            "-pf",
+            generate_llm_bench_input_generation_jsonl,
         ] + sample_args
         run_sample(benchmark_py_command)
 
@@ -134,18 +162,25 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1", "--num_steps", "4"], ["-d", "cpu", "-n", "1", "--num_steps", "4", "--empty_lora"]])
     @pytest.mark.parametrize("convert_model", ["tiny-random-latent-consistency"], indirect=True)
     @pytest.mark.parametrize("download_model", ["tiny-random-latent-consistency-lora"], indirect=True)
-    @pytest.mark.parametrize("generate_llm_bench_input_generation_jsonl", [("image_generation.jsonl", image_generation_json)], indirect=True)
-    def test_python_tool_llm_benchmark_jsonl_lora(self, request, convert_model, download_model, generate_llm_bench_input_generation_jsonl, sample_args):
-        model_name = request.node.callspec.params['download_model']
+    @pytest.mark.parametrize(
+        "generate_llm_bench_input_generation_jsonl", [("image_generation.jsonl", image_generation_json)], indirect=True
+    )
+    def test_python_tool_llm_benchmark_jsonl_lora(
+        self, request, convert_model, download_model, generate_llm_bench_input_generation_jsonl, sample_args
+    ):
+        model_name = request.node.callspec.params["download_model"]
 
         # Run Python benchmark
         benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
         benchmark_py_command = [
             sys.executable,
             benchmark_script,
-            "-m", convert_model,
-            "-pf", generate_llm_bench_input_generation_jsonl,
-            "--lora", f'{download_model}/{model_name}.safetensors',
+            "-m",
+            convert_model,
+            "-pf",
+            generate_llm_bench_input_generation_jsonl,
+            "--lora",
+            f"{download_model}/{model_name}.safetensors",
         ] + sample_args
         run_sample(benchmark_py_command)
 
@@ -155,9 +190,19 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize("convert_model", ["tiny-random-latent-consistency"], indirect=True)
     @pytest.mark.parametrize("download_test_content", ["overture-creations.png"], indirect=True)
     @pytest.mark.parametrize("download_mask_image", ["overture-creations-mask.png"], indirect=True)
-    @pytest.mark.parametrize("generate_llm_bench_input_generation_jsonl", [("image_generation_inpainting.jsonl", image_generation_inpainting_json)], indirect=True)
-    def test_python_tool_llm_benchmark_inpainting(self, convert_model, download_test_content, download_mask_image, generate_llm_bench_input_generation_jsonl, sample_args):
-
+    @pytest.mark.parametrize(
+        "generate_llm_bench_input_generation_jsonl",
+        [("image_generation_inpainting.jsonl", image_generation_inpainting_json)],
+        indirect=True,
+    )
+    def test_python_tool_llm_benchmark_inpainting(
+        self,
+        convert_model,
+        download_test_content,
+        download_mask_image,
+        generate_llm_bench_input_generation_jsonl,
+        sample_args,
+    ):
         # to use the relative media and mask_image paths
         os.chdir(os.path.dirname(download_test_content))
 
@@ -166,8 +211,10 @@ class TestBenchmarkLLM:
         benchmark_py_command = [
             sys.executable,
             benchmark_script,
-            "-m", convert_model,
-            "-pf", generate_llm_bench_input_generation_jsonl,
+            "-m",
+            convert_model,
+            "-pf",
+            generate_llm_bench_input_generation_jsonl,
         ] + sample_args
         run_sample(benchmark_py_command)
 
@@ -176,9 +223,14 @@ class TestBenchmarkLLM:
     @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1", "--num_steps", "4", "--task", "image-to-image"]])
     @pytest.mark.parametrize("convert_model", ["tiny-random-latent-consistency"], indirect=True)
     @pytest.mark.parametrize("download_test_content", ["cat.png"], indirect=True)
-    @pytest.mark.parametrize("generate_llm_bench_input_generation_jsonl", [("image_generation_i2i.jsonl", image_generation_i2i_json)], indirect=True)
-    def test_python_tool_llm_benchmark_i2i(self, convert_model, download_test_content, generate_llm_bench_input_generation_jsonl, sample_args):
-
+    @pytest.mark.parametrize(
+        "generate_llm_bench_input_generation_jsonl",
+        [("image_generation_i2i.jsonl", image_generation_i2i_json)],
+        indirect=True,
+    )
+    def test_python_tool_llm_benchmark_i2i(
+        self, convert_model, download_test_content, generate_llm_bench_input_generation_jsonl, sample_args
+    ):
         # to use the relative media and mask_image paths
         os.chdir(os.path.dirname(download_test_content))
 
@@ -187,8 +239,10 @@ class TestBenchmarkLLM:
         benchmark_py_command = [
             sys.executable,
             benchmark_script,
-            "-m", convert_model,
-            "-pf", generate_llm_bench_input_generation_jsonl,
+            "-m",
+            convert_model,
+            "-pf",
+            generate_llm_bench_input_generation_jsonl,
         ] + sample_args
         run_sample(benchmark_py_command)
 
@@ -333,41 +387,72 @@ class TestBenchmarkLLM:
         benchmark_py_command.extend(sample_args)
         run_sample(benchmark_py_command)
 
-
     @pytest.mark.samples
-    @pytest.mark.parametrize("convert_model, sample_args", [
-        pytest.param("tiny-random-ltx-video",
-                     ["-d", "cpu", "-n", "1", "--optimum", "--num_steps", "5", "--num_frames", "9", "--frame_rate", "23", "--width", "256", "--height", "256"]),
-        # pytest.param("tiny-random-ltx-video", 
-        #              [ "-d", "cpu", "-n", "1", "--num_steps", "4", "--static_reshape", "--width", "256", "--height", "256", "--optimum"]),
-        # pytest.param("tiny-random-ltx-video",
-        #              ["-d", "cpu", "-n", "1", "--genai", "--num_steps", "5", "--num_frames", "9", "width", 256, "height", 256]),
-    ], indirect=["convert_model"])
+    @pytest.mark.parametrize(
+        "convert_model, sample_args",
+        [
+            pytest.param(
+                "tiny-random-ltx-video",
+                [
+                    "-d",
+                    "cpu",
+                    "-n",
+                    "1",
+                    "--optimum",
+                    "--num_steps",
+                    "5",
+                    "--num_frames",
+                    "9",
+                    "--frame_rate",
+                    "23",
+                    "--width",
+                    "256",
+                    "--height",
+                    "256",
+                ],
+            ),
+            # pytest.param("tiny-random-ltx-video",
+            #              [ "-d", "cpu", "-n", "1", "--num_steps", "4", "--static_reshape", "--width", "256", "--height", "256", "--optimum"]),
+            # pytest.param("tiny-random-ltx-video",
+            #              ["-d", "cpu", "-n", "1", "--genai", "--num_steps", "5", "--num_frames", "9", "width", 256, "height", 256]),
+        ],
+        indirect=["convert_model"],
+    )
     def test_python_tool_llm_benchmark_video_gen(self, convert_model, sample_args):
-        benchmark_script = os.path.join(SAMPLES_PY_DIR, 'llm_bench/benchmark.py')
+        benchmark_script = os.path.join(SAMPLES_PY_DIR, "llm_bench/benchmark.py")
         benchmark_py_command = [
             sys.executable,
             benchmark_script,
-            "-m", convert_model,
-            "--prompt", "A cat is playing with a ball on a Christmas tree.",
-            "--negative_prompt", "worst quality, inconsistent motion, blurry, jittery, distorted"
+            "-m",
+            convert_model,
+            "--prompt",
+            "A cat is playing with a ball on a Christmas tree.",
+            "--negative_prompt",
+            "worst quality, inconsistent motion, blurry, jittery, distorted",
         ]
         benchmark_py_command.extend(sample_args)
         run_sample(benchmark_py_command)
 
-
     @pytest.mark.samples
     # @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1", "--num_steps", "4", "--task", "text-to-video"]])
-    @pytest.mark.parametrize("sample_args", [["-d", "cpu", "-n", "1", "--num_steps", "4", "--task", "text-to-video", "--optimum"]])
+    @pytest.mark.parametrize(
+        "sample_args", [["-d", "cpu", "-n", "1", "--num_steps", "4", "--task", "text-to-video", "--optimum"]]
+    )
     @pytest.mark.parametrize("convert_model", ["tiny-random-ltx-video"], indirect=True)
-    @pytest.mark.parametrize("generate_llm_bench_input_generation_jsonl", [("video_generation.jsonl", video_generation_json)], indirect=True)
-    def test_python_tool_llm_benchmark_video_gen_json(self, convert_model, generate_llm_bench_input_generation_jsonl, sample_args):
+    @pytest.mark.parametrize(
+        "generate_llm_bench_input_generation_jsonl", [("video_generation.jsonl", video_generation_json)], indirect=True
+    )
+    def test_python_tool_llm_benchmark_video_gen_json(
+        self, convert_model, generate_llm_bench_input_generation_jsonl, sample_args
+    ):
         # Run Python benchmark
-        benchmark_script = SAMPLES_PY_DIR / 'llm_bench/benchmark.py'
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
         benchmark_py_command = [
             sys.executable,
             benchmark_script,
-            "-m", convert_model,
-            "-pf", generate_llm_bench_input_generation_jsonl,
+            "-m",
+            convert_model,
+            "-pf",
+            generate_llm_bench_input_generation_jsonl,
         ] + sample_args
         run_sample(benchmark_py_command)

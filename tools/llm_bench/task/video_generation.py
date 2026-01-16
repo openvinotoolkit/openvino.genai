@@ -118,10 +118,15 @@ class TextToVideoOptimum(CommonPipeline):
     ):
         result_md5_list = []
         for bs_idx in range(self.batch_size):
-            llm_bench_utils.output_file.output_gen_video(generation_result[bs_idx], {'batch_size': self.batch_size,
-                                                                                     'model_name': self.model_name,
-                                                                                     'output_dir': self.output_dir},
-                                                         prompt_index, iter_num, bs_idx, proc_id, '.mp4')
+            llm_bench_utils.output_file.output_gen_video(
+                generation_result[bs_idx],
+                {"batch_size": self.batch_size, "model_name": self.model_name, "output_dir": self.output_dir},
+                prompt_index,
+                iter_num,
+                bs_idx,
+                proc_id,
+                ".mp4",
+            )
 
         iter_data = gen_output_data.gen_iterate_data(
             iter_idx=iter_num,
@@ -146,10 +151,14 @@ class TextToVideoOptimum(CommonPipeline):
 
         return iter_data, result_md5_list
 
-    def run(self, input_param: dict, iter_num: int, prompt_index: int, proc_id: int, bench_hook: object | None) -> tuple[dict, list]:
+    def run(
+        self, input_param: dict, iter_num: int, prompt_index: int, proc_id: int, bench_hook: object | None
+    ) -> tuple[dict, list]:
         set_seed(self.seed)
 
-        input_args = collect_input_args(input_param, self.width, self.height, self.num_steps, self.num_frames, self.frame_rate)
+        input_args = collect_input_args(
+            input_param, self.width, self.height, self.num_steps, self.num_frames, self.frame_rate
+        )
         input_token_size = self.get_input_tokens_num(input_param["prompt"])
         if input_param.get("negative_prompt"):
             input_token_size += self.get_input_tokens_num(input_param["negative_prompt"])
@@ -165,8 +174,12 @@ class TextToVideoOptimum(CommonPipeline):
             self.mem_consumption_meter.start()
         generation_result, generation_time = self.generate(input_param["prompt"], **input_args)
         if (self.mem_consumption_level == 1 and iter_num == 0) or self.mem_consumption_level == 2:
-            self.mem_consumption_meter.stop_and_collect_data(f"{'P' + str(iter_num) if iter_num > 0 else 'warm-up'}_{proc_id}")
-            max_rss_mem_consumption, rss_mem_increase, max_sys_mem_consumption, sys_mem_increase = self.mem_consumption_meter.get_data()
+            self.mem_consumption_meter.stop_and_collect_data(
+                f"{'P' + str(iter_num) if iter_num > 0 else 'warm-up'}_{proc_id}"
+            )
+            max_rss_mem_consumption, rss_mem_increase, max_sys_mem_consumption, sys_mem_increase = (
+                self.mem_consumption_meter.get_data()
+            )
 
         iter_data = {}
         iter_data, _ = self.postprocess_output_info(
@@ -350,7 +363,9 @@ def run_video_generation_benchmark(model_path, framework, device, args, num_iter
     text_list, prompt_idx_list = collect_prompts_step(args, get_video_gen_prompt)
 
     if args.get("static_reshape", False):
-        input_args = collect_input_args(text_list[0], args["width"], args["height"], args["num_steps"], args["num_frames"], args["frame_rate"])
+        input_args = collect_input_args(
+            text_list[0], args["width"], args["height"], args["num_steps"], args["num_frames"], args["frame_rate"]
+        )
         args |= input_args
 
     pipe, tokenizer, pretrain_time, callback, use_genai = FW_UTILS[framework].create_video_gen_model(
@@ -358,7 +373,9 @@ def run_video_generation_benchmark(model_path, framework, device, args, num_iter
     )
     iter_data_list = []
 
-    log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(text_list)}, prompt idx: {prompt_idx_list}')
+    log.info(
+        f"Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(text_list)}, prompt idx: {prompt_idx_list}"
+    )
 
     if use_genai:
         video_gen_pipeline = TextToVideoGenAI(pipe, tokenizer, args, model_path, mem_consumption, callback)

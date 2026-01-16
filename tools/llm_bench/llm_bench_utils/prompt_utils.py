@@ -145,20 +145,24 @@ def get_vlm_prompt(args):
 def get_image_prompt(args):
     input_image_list = []
 
-    input_key = ['prompt']
-    if args.get("task") == args["use_case"].TASK["inpainting"]["name"] or ((args.get("media") or args.get("images")) and args.get("mask_image")):
-        input_key = ['media', "mask_image", "prompt"]
+    input_key = ["prompt"]
+    if args.get("task") == args["use_case"].TASK["inpainting"]["name"] or (
+        (args.get("media") or args.get("images")) and args.get("mask_image")
+    ):
+        input_key = ["media", "mask_image", "prompt"]
     elif args.get("task") == args["use_case"].TASK["img2img"]["name"] or args.get("media") or args.get("images"):
-        input_key = ['media', "prompt"]
+        input_key = ["media", "prompt"]
 
     output_data_list, is_json_data = get_param_from_file(args, input_key)
     if is_json_data is True:
         image_param_list = parse_image_json_data(output_data_list)
         if len(image_param_list) > 0:
             for image_data in image_param_list:
-                if args['prompt_file'] is not None and len(args['prompt_file']) > 0:
-                    image_data['media'] = resolve_media_file_path(image_data.get("media"), args['prompt_file'][0])
-                    image_data['mask_image'] = resolve_media_file_path(image_data.get("mask_image"), args['prompt_file'][0])
+                if args["prompt_file"] is not None and len(args["prompt_file"]) > 0:
+                    image_data["media"] = resolve_media_file_path(image_data.get("media"), args["prompt_file"][0])
+                    image_data["mask_image"] = resolve_media_file_path(
+                        image_data.get("mask_image"), args["prompt_file"][0]
+                    )
                 input_image_list.append(image_data)
     else:
         input_image_list.append(output_data_list[0])
@@ -167,7 +171,7 @@ def get_image_prompt(args):
 
 def get_video_gen_prompt(args):
     input_list = []
-    output_data_list, is_json_data = get_param_from_file(args, ['prompt', 'negative_prompt'])
+    output_data_list, is_json_data = get_param_from_file(args, ["prompt", "negative_prompt"])
     if is_json_data is True:
         media_param_list = parse_video_json_data(output_data_list)
         if len(media_param_list) > 0:

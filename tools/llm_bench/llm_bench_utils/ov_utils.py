@@ -1334,12 +1334,12 @@ def create_genai_video_gen_model(model_path, device, ov_config, memory_data_coll
 
 
 def create_video_gen_model(model_path, device, memory_data_collector, **kwargs):
-    model_class = kwargs['use_case'].ov_cls
+    model_class = kwargs["use_case"].ov_cls
 
     model_path = Path(model_path)
-    ov_config = kwargs['config']
+    ov_config = kwargs["config"]
     if not Path(model_path).exists():
-        raise RuntimeError(f'==Failure ==: model path:{model_path} does not exist')
+        raise RuntimeError(f"==Failure ==: model path:{model_path} does not exist")
     else:
         if kwargs.get("genai", True) and is_genai_available(log_msg=True):
             log.info("Selected OpenVINO GenAI for benchmarking")
@@ -1361,8 +1361,8 @@ def create_video_gen_model(model_path, device, memory_data_collector, **kwargs):
             ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config)
         end = time.perf_counter()
         if kwargs.get("mem_consumption"):
-            memory_data_collector.stop_and_collect_data('compilation_phase')
+            memory_data_collector.stop_and_collect_data("compilation_phase")
             memory_data_collector.log_data(compilation_phase=True)
     from_pretrained_time = end - start
-    log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
+    log.info(f"From pretrained time: {from_pretrained_time:.2f}s")
     return ov_model, ov_model.tokenizer, from_pretrained_time, None, False

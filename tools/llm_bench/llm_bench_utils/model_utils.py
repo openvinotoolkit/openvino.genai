@@ -34,12 +34,12 @@ def get_param_from_file(args, input_key):
                     data_list.append('What is OpenVINO?')
                 elif args['use_case'].task in ['text_rerank']:
                     data_list.append("What are the main features of Intel Core Ultra processors?")
-                elif args['use_case'].task == 'code_gen':
-                    data_list.append('def print_hello_world():')
-                elif args['use_case'].task == 'image_gen':
-                    data_list.append('sailing ship in storm by Leonardo da Vinci')
-                elif args['use_case'].task == 'video_gen':
-                    data_list["prompt"] = 'cat plays with ball on the christmas tree'
+                elif args["use_case"].task == "code_gen":
+                    data_list.append("def print_hello_world():")
+                elif args["use_case"].task == "image_gen":
+                    data_list.append("sailing ship in storm by Leonardo da Vinci")
+                elif args["use_case"].task == "video_gen":
+                    data_list["prompt"] = "cat plays with ball on the christmas tree"
                 else:
                     raise RuntimeError(f'== {input_key} and prompt file is empty ==')
             elif args[input_key] is not None and args['prompt_file'] is not None:
@@ -69,17 +69,17 @@ def get_param_from_file(args, input_key):
             if args["prompt"] is None:
                 if args["use_case"].task == "visual_text_gen":
                     data_dict["prompt"] = "What is OpenVINO?" if data_dict.get("media") is None else "Describe image"
-                elif args['use_case'].task == 'image_gen':
-                    data_dict["prompt"] = 'sailing ship in storm by Leonardo da Vinci'
-                elif args['use_case'].task == 'video_gen':
-                    data_dict["prompt"] = 'A cat plays with ball on the christmas tree'
+                elif args["use_case"].task == "image_gen":
+                    data_dict["prompt"] = "sailing ship in storm by Leonardo da Vinci"
+                elif args["use_case"].task == "video_gen":
+                    data_dict["prompt"] = "A cat plays with ball on the christmas tree"
             else:
                 data_dict["prompt"] = args["prompt"]
             if "negative_prompt" in input_key:
                 if args.get("negative_prompt"):
-                    data_dict['negative_prompt'] = args['negative_prompt']
+                    data_dict["negative_prompt"] = args["negative_prompt"]
                 else:
-                    data_dict['negative_prompt'] = "worst quality, inconsistent motion, blurry, jittery, distorted"
+                    data_dict["negative_prompt"] = "worst quality, inconsistent motion, blurry, jittery, distorted"
             if "mask_image" in input_key:
                 if args.get("mask_image"):
                     data_dict["mask_image"] = args["mask_image"]

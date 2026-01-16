@@ -228,13 +228,22 @@ def collect_prompts_step(args, get_prompt_fn):
     return text_list, prompt_idx_list
 
 
-def launch(pipeline: CommonPipeline, iter_num: int, prompt_idx: int, iter_timestamp: dict, input_item: str | dict,
-           proc_id: int, bench_hook: object | None) -> dict:
+def launch(
+    pipeline: CommonPipeline,
+    iter_num: int,
+    prompt_idx: int,
+    iter_timestamp: dict,
+    input_item: str | dict,
+    proc_id: int,
+    bench_hook: object | None,
+) -> dict:
     iter_timestamp[iter_num][prompt_idx]["start"] = datetime.datetime.now().isoformat()
     iter_data, _ = pipeline.run(input_item, iter_num, prompt_idx, proc_id, bench_hook)
     iter_timestamp[iter_num][prompt_idx]["end"] = datetime.datetime.now().isoformat()
     prefix = "[warm-up]" if iter_num == 0 else "[{}]".format(iter_num)
-    log.info(f"{prefix}[P{prompt_idx}] start: {iter_timestamp[iter_num][prompt_idx]['start']}, end: {iter_timestamp[iter_num][prompt_idx]['end']}")
+    log.info(
+        f"{prefix}[P{prompt_idx}] start: {iter_timestamp[iter_num][prompt_idx]['start']}, end: {iter_timestamp[iter_num][prompt_idx]['end']}"
+    )
 
     return iter_data
 

@@ -32,7 +32,11 @@ class StableDiffusionHook:
         return self.main_model_time_list[0] * 1000 if len(self.main_model_time_list) > 0 else 0
 
     def get_2nd_main_model_latency(self):
-        return sum(self.main_model_time_list[1:]) / (len(self.main_model_time_list) - 1) * 1000 if len(self.main_model_time_list) > 1 else 0
+        return (
+            sum(self.main_model_time_list[1:]) / (len(self.main_model_time_list) - 1) * 1000
+            if len(self.main_model_time_list) > 1
+            else 0
+        )
 
     def get_first_and_other_unet_infer_duration(self):
         first = self.get_1st_main_model_latency()
@@ -47,7 +51,11 @@ class StableDiffusionHook:
         return {'text_encoder': duration}
 
     def get_main_model_infer_duration(self):
-        mean = (sum(self.main_model_time_list) / len(self.main_model_time_list)) * 1000 if len(self.main_model_time_list) > 0 else 0
+        mean = (
+            (sum(self.main_model_time_list) / len(self.main_model_time_list)) * 1000
+            if len(self.main_model_time_list) > 0
+            else 0
+        )
         return MeanStdPair(mean=mean)
 
     def get_vae_decoder_infer_duration(self):
@@ -102,6 +110,7 @@ class StableDiffusionHook:
             self.main_model_time_list.append(main_model_time)
             self.main_model_step_count += 1
             return r
+
         main_model.request = my_main_model
 
     def new_vae_decoder(self, pipe):
@@ -128,6 +137,7 @@ class StableDiffusionHook:
             self.vae_encoder_time += vae_encoder_time
             self.vae_encoder_step_count += 1
             return r
+
         pipe.vae_encoder.request = my_vae_encoder
 
     def init_custom_pipe(self, pipe):

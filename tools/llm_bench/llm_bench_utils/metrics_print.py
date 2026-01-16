@@ -157,7 +157,7 @@ def print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion=N
 
     log_str += (f"vae decoder latency: {stable_diffusion.get_vae_decoder_infer_duration():.2f} ms/step, ")
 
-    log_str += (f"vae encoder latency: {stable_diffusion.get_vae_encoder_infer_duration():.2f} ms/step, ")
+    log_str += f"vae encoder latency: {stable_diffusion.get_vae_encoder_infer_duration():.2f} ms/step, "
 
     if hasattr(stable_diffusion, 'get_text_encoder_step_count'):
         log_str += f"text encoder step count: {stable_diffusion.get_text_encoder_step_count()}, "
@@ -167,7 +167,7 @@ def print_stable_diffusion_infer_latency(iter_str, iter_data, stable_diffusion=N
     else:
         log_str += "vae decoder step count: 1 "
 
-    if hasattr(stable_diffusion, 'get_vae_encoder_step_count'):
+    if hasattr(stable_diffusion, "get_vae_encoder_step_count"):
         log_str += f"vae encoder step count: {stable_diffusion.get_vae_encoder_step_count()}, "
     else:
         log_str += "vae encoder step count: 1 "
