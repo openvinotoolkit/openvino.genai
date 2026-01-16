@@ -211,9 +211,9 @@ def get_argparser():
                              "Different post-processing is applied depending on the padding side. Applicable only for text embeddings")
     parser.add_argument("--embedding_normalize", action="store_true", help="Normalize embeddings. Applicable only for text embeddings")
     parser.add_argument(
-        "--embedding_disable_pad_to_max_length",
+        "--embedding_pad_to_max_length",
         action="store_true",
-        help="Disable padding embeddings. Applicable only for text embeddings",
+        help="Pad embeddings. Applicable only for text embeddings",
     )
     parser.add_argument(
         "--embedding_max_length",
