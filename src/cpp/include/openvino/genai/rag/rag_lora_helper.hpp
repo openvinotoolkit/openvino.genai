@@ -18,12 +18,19 @@
 
 namespace ov {
 namespace genai {
+
+ /**
+ * @brief LoRA tensor name prefix override for RAG pipelines.
+ * Auto-detected if not specified.
+ */
+static constexpr ov::Property<std::string> lora_tensor_prefix{"lora_tensor_prefix"};
+
 namespace rag {
 
 /**
  * @brief Known embedding/reranking model architecture types for LoRA prefix detection
  */
-enum class RagModelArchitecture {
+enum class RAGModelArchitecture {
     UNKNOWN,
     BGE,        // BAAI General Embedding / Reranker
     BCE,        // Bilingual/Cross-lingual Embedding
@@ -61,28 +68,28 @@ inline bool contains_ci(const std::string& str, const std::string& substr) {
 /**
  * @brief Get LoRA configuration for a specific architecture
  */
-inline ArchitectureLoraConfig get_lora_config(RagModelArchitecture arch) {
+inline ArchitectureLoraConfig get_lora_config(RAGModelArchitecture arch) {
     switch (arch) {
-        case RagModelArchitecture::BGE:
+        case RAGModelArchitecture::BGE:
             return {"base_model.model", {"base_model.model.encoder", "bert", "encoder", "model.encoder", ""}};
-        case RagModelArchitecture::BCE:
+        case RAGModelArchitecture::BCE:
             return {"base_model.model", {"bert", "encoder", "model", ""}};
-        case RagModelArchitecture::GTE:
+        case RAGModelArchitecture::GTE:
             return {"base_model.model", {"bert", "encoder", "model.encoder", ""}};
-        case RagModelArchitecture::E5:
+        case RAGModelArchitecture::E5:
             return {"base_model.model", {"bert", "encoder", "roberta", "xlm-roberta", ""}};
-        case RagModelArchitecture::JINA:
+        case RAGModelArchitecture::JINA:
             return {"base_model.model", {"bert", "encoder", "model", ""}};
-        case RagModelArchitecture::NOMIC:
+        case RAGModelArchitecture::NOMIC:
             return {"base_model.model", {"model", "bert", "encoder", ""}};
-        case RagModelArchitecture::INSTRUCTOR:
+        case RAGModelArchitecture::INSTRUCTOR:
             return {"base_model.model", {"encoder", "model.encoder", "t5.encoder", ""}};
-        case RagModelArchitecture::STELLA:
+        case RAGModelArchitecture::STELLA:
             return {"base_model.model", {"model", "bert", "encoder", ""}};
-        case RagModelArchitecture::QWEN3:
+        case RAGModelArchitecture::QWEN3:
             return {"base_model.model", {"model", "transformer", ""}};
-        case RagModelArchitecture::GENERIC:
-        case RagModelArchitecture::UNKNOWN:
+        case RAGModelArchitecture::GENERIC:
+        case RAGModelArchitecture::UNKNOWN:
         default:
             return {"base_model.model", {"bert", "encoder", "model", "base_model.model.encoder", ""}};
     }
@@ -91,7 +98,7 @@ inline ArchitectureLoraConfig get_lora_config(RagModelArchitecture arch) {
 /**
  * @brief Detect model architecture from config.json
  */
-inline RagModelArchitecture detect_architecture(const std::filesystem::path& model_dir) {
+inline RAGModelArchitecture detect_architecture(const std::filesystem::path& model_dir) {
     std::filesystem::path config_path = model_dir / "config.json";
 
     std::string model_id;
@@ -117,55 +124,55 @@ inline RagModelArchitecture detect_architecture(const std::filesystem::path& mod
     // Detection based on model_id
     if (!model_id.empty()) {
         if (contains_ci(model_id, "bge-") || contains_ci(model_id, "baai/bge")) {
-            return RagModelArchitecture::BGE;
+            return RAGModelArchitecture::BGE;
         }
         if (contains_ci(model_id, "bce-") || contains_ci(model_id, "maidalun/bce") ||
             contains_ci(model_id, "netease")) {
-            return RagModelArchitecture::BCE;
+            return RAGModelArchitecture::BCE;
         }
         if (contains_ci(model_id, "gte-") || contains_ci(model_id, "thenlper/gte") ||
             contains_ci(model_id, "alibaba-nlp/gte")) {
-            return RagModelArchitecture::GTE;
+            return RAGModelArchitecture::GTE;
         }
         if (contains_ci(model_id, "e5-") || contains_ci(model_id, "intfloat/e5") ||
             contains_ci(model_id, "multilingual-e5")) {
-            return RagModelArchitecture::E5;
+            return RAGModelArchitecture::E5;
         }
         if (contains_ci(model_id, "jina")) {
-            return RagModelArchitecture::JINA;
+            return RAGModelArchitecture::JINA;
         }
         if (contains_ci(model_id, "nomic")) {
-            return RagModelArchitecture::NOMIC;
+            return RAGModelArchitecture::NOMIC;
         }
         if (contains_ci(model_id, "instructor")) {
-            return RagModelArchitecture::INSTRUCTOR;
+            return RAGModelArchitecture::INSTRUCTOR;
         }
         if (contains_ci(model_id, "stella")) {
-            return RagModelArchitecture::STELLA;
+            return RAGModelArchitecture::STELLA;
         }
     }
 
     // Detection based on model_type
     if (!model_type.empty()) {
         if (model_type == "qwen3") {
-            return RagModelArchitecture::QWEN3;
+            return RAGModelArchitecture::QWEN3;
         }
     }
 
     // Fallback: try directory name
     std::string dir_name = to_lower(model_dir.filename().string());
 
-    if (contains_ci(dir_name, "bge")) return RagModelArchitecture::BGE;
-    if (contains_ci(dir_name, "bce")) return RagModelArchitecture::BCE;
-    if (contains_ci(dir_name, "gte")) return RagModelArchitecture::GTE;
-    if (contains_ci(dir_name, "e5-") || contains_ci(dir_name, "e5_")) return RagModelArchitecture::E5;
-    if (contains_ci(dir_name, "jina")) return RagModelArchitecture::JINA;
-    if (contains_ci(dir_name, "nomic")) return RagModelArchitecture::NOMIC;
-    if (contains_ci(dir_name, "instructor")) return RagModelArchitecture::INSTRUCTOR;
-    if (contains_ci(dir_name, "stella")) return RagModelArchitecture::STELLA;
-    if (contains_ci(dir_name, "qwen3")) return RagModelArchitecture::QWEN3;
+    if (contains_ci(dir_name, "bge")) return RAGModelArchitecture::BGE;
+    if (contains_ci(dir_name, "bce")) return RAGModelArchitecture::BCE;
+    if (contains_ci(dir_name, "gte")) return RAGModelArchitecture::GTE;
+    if (contains_ci(dir_name, "e5-") || contains_ci(dir_name, "e5_")) return RAGModelArchitecture::E5;
+    if (contains_ci(dir_name, "jina")) return RAGModelArchitecture::JINA;
+    if (contains_ci(dir_name, "nomic")) return RAGModelArchitecture::NOMIC;
+    if (contains_ci(dir_name, "instructor")) return RAGModelArchitecture::INSTRUCTOR;
+    if (contains_ci(dir_name, "stella")) return RAGModelArchitecture::STELLA;
+    if (contains_ci(dir_name, "qwen3")) return RAGModelArchitecture::QWEN3;
 
-    return RagModelArchitecture::UNKNOWN;
+    return RAGModelArchitecture::UNKNOWN;
 }
 }  // detail namespace
 

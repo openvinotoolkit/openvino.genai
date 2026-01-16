@@ -238,11 +238,5 @@ static constexpr ov::Property<std::string> embed_instruction{"embed_instruction"
  * for inference optimization. Number of documents passed to pipeline should be equal to batch_size.
  */
 static constexpr ov::Property<size_t> batch_size{"batch_size"};
-
-/**
- * @brief LoRA tensor name prefix override for embedding models.
- * Auto-detected if not specified.
- */
-static constexpr ov::Property<std::string> lora_tensor_prefix{"lora_tensor_prefix"};
 }  // namespace genai
 }  // namespace ov

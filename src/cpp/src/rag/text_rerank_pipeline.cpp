@@ -21,9 +21,6 @@ namespace {
 using namespace ov::genai;
 using namespace ov;
 
-// Local redefinition of the Lora tensor prefix property for this translation unit
-static constexpr ov::Property<std::string> lora_tensor_prefix{"lora_tensor_prefix"};
-
 ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     auto properties_copy = properties;
 
@@ -152,7 +149,7 @@ TextRerankPipeline::Config::Config(const ov::AnyMap& properties) {
     read_anymap_param(properties, ov::genai::max_length.name(), max_length);
     read_anymap_param(properties, ov::genai::padding_side.name(), padding_side);
     read_anymap_param(properties, ov::genai::pad_to_max_length.name(), pad_to_max_length);
-    read_anymap_param(properties, ::lora_tensor_prefix.name(), lora_tensor_prefix);
+    read_anymap_param(properties, ov::genai::lora_tensor_prefix.name(), lora_tensor_prefix);
 };
 
 void TextRerankPipeline::Config::validate() const {
