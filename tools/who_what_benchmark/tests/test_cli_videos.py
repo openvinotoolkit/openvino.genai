@@ -1,6 +1,7 @@
 import subprocess  # nosec B404
 import os
 import shutil
+import sys
 import pytest
 import logging
 import tempfile
@@ -26,6 +27,7 @@ def teardown_module():
     shutil.rmtree(MODEL_CACHE)
 
 
+@pytest.mark.skipif(sys.platform == "darwin", reason="Not enough memory on macOS CI runners")
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [("optimum-intel-internal-testing/tiny-random-ltx-video", "text-to-video")],
