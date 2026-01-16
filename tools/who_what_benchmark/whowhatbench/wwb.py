@@ -285,8 +285,8 @@ def parse_args():
         "--relevance_weight",
         type=float,
         default=None,
-        help="Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, "
-        "a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.",
+        help="Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, a value of 0 disables "
+        "relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.",
     )
 
     return parser.parse_args()
@@ -530,11 +530,10 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
     return image
 
 
-def genai_gen_visual_text(model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question, pruning_ratio, relevance_weight):
-    kwargs = {
-        "do_sample": False,
-        "max_new_tokens": max_new_tokens
-    }
+def genai_gen_visual_text(
+    model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question, pruning_ratio, relevance_weight
+):
+    kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
     if image is not None:
         kwargs['image'] = ov.Tensor(np.array(image)[None])
     if video is not None:

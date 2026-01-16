@@ -114,7 +114,16 @@ class VisualTextEvaluator(TextEvaluator):
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
         def default_gen_answer(
-            model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question, pruning_ratio, relevance_weight
+            model,
+            prompt,
+            image,
+            video,
+            processor,
+            tokenizer,
+            max_new_tokens,
+            crop_question,
+            pruning_ratio,
+            relevance_weight,
         ):
 
             from optimum.intel.openvino.modeling_visual_language import \
@@ -178,7 +187,7 @@ class VisualTextEvaluator(TextEvaluator):
                     self.max_new_tokens,
                     self._crop_question,
                     self.pruning_ratio,
-                    self.relevance_weight
+                    self.relevance_weight,
                 )
             )
 

@@ -4,7 +4,6 @@ import logging
 import sys
 import os
 from test_cli_image import run_wwb
-from whowhatbench.utils import get_json_config
 
 
 logging.basicConfig(level=logging.INFO)
