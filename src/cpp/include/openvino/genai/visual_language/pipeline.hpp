@@ -228,8 +228,6 @@ public:
 
     /// @brief Generate a response given a chat history and arbitrary number
     /// of ov::Property instances.
-    /// Example:
-    /// generate("text", image(rgb), do_sample(true));
     /// @param history Chat history with messages.
     /// For using image and video tags in prompt, see:
     /// https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
@@ -243,8 +241,6 @@ public:
     );
 
     /// @brief Generate a response given a chat history and config.
-    /// Example:
-    /// generate("text", image(rgb), do_sample(true));
     /// @param history Chat history with messages.
     /// For using image and video tags in prompt, see:
     /// https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
