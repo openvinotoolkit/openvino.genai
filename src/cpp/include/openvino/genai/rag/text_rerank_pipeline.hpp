@@ -3,6 +3,9 @@
 
 #pragma once
 
+#include <filesystem>
+#include <optional>
+#include "openvino/genai/lora_adapter.hpp"
 #include "openvino/genai/tokenizer.hpp"
 
 namespace ov {
@@ -32,6 +35,12 @@ public:
         std::optional<std::string> padding_side;
 
         /**
+         * @brief LoRA tensor name prefix override.
+         * If not specified, the prefix is auto-detected based on model architecture.
+         * Common prefixes: "base_model.model", "bert", "encoder"
+         */
+        std::optional<std::string> lora_tensor_prefix;
+        /**
          * @brief Constructs text rerank pipeline configuration
          */
         Config() = default;
@@ -47,6 +56,12 @@ public:
          * ov::genai::TextRerankPipeline::Config config({{"top_n", 3}});
          */
         explicit Config(const ov::AnyMap& properties);
+
+        /**
+         * @brief checks that are no conflicting parameters
+         * @throws Exception if config is invalid.
+         */
+        void validate() const;
     };
 
     /**
@@ -56,6 +71,18 @@ public:
      * @param device Device
      * @param config Pipeline configuration
      * @param properties Optional plugin properties to pass to ov::Core::compile_model().
+     *                   May include ov::genai::adapters() for LoRA support.
+     *
+     * @code
+     * // Basic usage
+     * TextRerankPipeline pipeline(models_path, "CPU", config);
+     *
+     * // With LoRA adapter
+     * Adapter lora("domain_adapter.safetensors");
+     * AdapterConfig adapter_config;
+     * adapter_config.add(lora, 1.0f);
+     * TextRerankPipeline pipeline(models_path, "CPU", config, ov::genai::adapters(adapter_config));
+     * @endcode
      */
     TextRerankPipeline(const std::filesystem::path& models_path,
                        const std::string& device,
@@ -67,7 +94,8 @@ public:
      *
      * @param models_path Path to the directory containing model xml/bin files and tokenizer
      * @param device Device
-     * @param properties Optional plugin and/or config properties
+     * @param properties Optional plugin and/or config properties.
+     *                   May include ov::genai::adapters() for LoRA support.
      */
     TextRerankPipeline(const std::filesystem::path& models_path,
                        const std::string& device,
@@ -101,6 +129,19 @@ public:
      */
     std::vector<std::pair<size_t, float>> wait_rerank();
 
+    /**
+     * @brief Set or update LoRA adapters at runtime
+     * @param adapters Optional adapter configuration. Pass std::nullopt to disable LoRA.
+     *
+     * @note The pipeline must have been compiled with LoRA support (i.e., adapters
+     *       were provided during construction) for this method to work.
+     */
+    void set_adapters(const std::optional<AdapterConfig>& adapters);
+    /**
+     * @brief Check if LoRA adapters are currently active
+     * @return true if LoRA adapters were configured during construction
+     */
+    bool has_adapters() const;
     ~TextRerankPipeline();
 
 private:
@@ -112,6 +153,12 @@ private:
  * @brief Number of documents to return after reranking sorted by score
  */
 static constexpr ov::Property<size_t> top_n{"top_n"};
+
+// Note: The following properties are already defined elsewhere and should be used from there:
+
+// - max_length: defined in generation_config.hpp
+// - pad_to_max_length: defined in tokenizer.hpp  
+// - padding_side: defined in tokenizer.hpp
 
 }  // namespace genai
 }  // namespace ov

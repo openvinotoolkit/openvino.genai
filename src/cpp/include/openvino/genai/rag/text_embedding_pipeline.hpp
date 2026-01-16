@@ -7,6 +7,7 @@
 #include <optional>
 #include <variant>
 
+#include "openvino/genai/lora_adapter.hpp"
 #include "openvino/genai/tokenizer.hpp"
 
 namespace ov {
@@ -79,6 +80,12 @@ public:
          * @brief Instruction to use for embedding a document
          */
         std::optional<std::string> embed_instruction;
+        /**
+         * @brief LoRA tensor name prefix override.
+         * If not specified, the prefix is auto-detected based on model architecture.
+         * Common prefixes: "base_model.model", "bert", "encoder"
+         */
+        std::optional<std::string> lora_tensor_prefix;
 
         /**
          * @brief Constructs text embedding pipeline configuration
@@ -111,6 +118,18 @@ public:
      * @param device Device
      * @param config Pipeline configuration
      * @param properties Optional plugin properties to pass to ov::Core::compile_model().
+     *                   May include ov::genai::adapters() for LoRA support.
+     *
+     * @code
+     * // Basic usage
+     * TextEmbeddingPipeline pipeline(models_path, "CPU", config);
+     *
+     * // With LoRA adapter
+     * Adapter lora("domain_adapter.safetensors");
+     * AdapterConfig adapter_config;
+     * adapter_config.add(lora, 1.0f);
+     * TextEmbeddingPipeline pipeline(models_path, "CPU", config, ov::genai::adapters(adapter_config));
+     * @endcode
      */
     TextEmbeddingPipeline(const std::filesystem::path& models_path,
                           const std::string& device,
@@ -122,7 +141,8 @@ public:
      *
      * @param models_path Path to the directory containing model xml/bin files and tokenizer
      * @param device Device
-     * @param properties Optional plugin and/or config properties
+     * @param properties Optional plugin and/or config properties.
+     *                   May include ov::genai::adapters() for LoRA support.
      */
     TextEmbeddingPipeline(const std::filesystem::path& models_path,
                           const std::string& device,
@@ -172,6 +192,19 @@ public:
      */
     EmbeddingResult wait_embed_query();
 
+    /**
+     * @brief Set or update LoRA adapters at runtime
+     * @param adapters Optional adapter configuration. Pass std::nullopt to disable LoRA.
+     *
+     * @note The pipeline must have been compiled with LoRA support (i.e., adapters
+     *       were provided during construction) for this method to work.
+     */
+    void set_adapters(const std::optional<AdapterConfig>& adapters);
+    /**
+     * @brief Check if LoRA adapters are currently active
+     * @return true if LoRA adapters were configured during construction
+     */
+    bool has_adapters() const;
     ~TextEmbeddingPipeline();
 
 private:
@@ -206,5 +239,10 @@ static constexpr ov::Property<std::string> embed_instruction{"embed_instruction"
  */
 static constexpr ov::Property<size_t> batch_size{"batch_size"};
 
+/**
+ * @brief LoRA tensor name prefix override for embedding models.
+ * Auto-detected if not specified.
+ */
+static constexpr ov::Property<std::string> lora_tensor_prefix{"lora_tensor_prefix"};
 }  // namespace genai
 }  // namespace ov

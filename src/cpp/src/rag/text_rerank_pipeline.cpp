@@ -7,11 +7,14 @@
 
 #include "debug_utils.hpp"
 #include "json_utils.hpp"
+#include "lora/helper.hpp"
 #include "openvino/core/except.hpp"
+#include "openvino/genai/lora_adapter.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/opsets/opset.hpp"
 #include "openvino/opsets/opset1.hpp"
 #include "openvino/opsets/opset8.hpp"
+#include "openvino/genai/rag/rag_lora_helper.hpp"
 #include "utils.hpp"
 
 namespace {
@@ -25,15 +28,20 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     properties_copy.erase(max_length.name());
     properties_copy.erase(pad_to_max_length.name());
     properties_copy.erase(padding_side.name());
-
+    properties_copy.erase("lora_tensor_prefix");
     return properties_copy;
 }
 
-std::optional<std::string> read_model_type(const std::filesystem::path& models_path) {
+struct ModelTypeInfo {
+    std::optional<std::string> model_type;
+    bool is_qwen3 = false;
+};
+ModelTypeInfo read_model_type(const std::filesystem::path& models_path) {
+    ModelTypeInfo info;
     // config.json not found. Skip parameters initialization from file, use defaults.
     const std::filesystem::path& json_path = models_path / "config.json";
     if (!std::filesystem::exists(json_path)) {
-        return std::nullopt;
+        return info;
     }
 
     using ov::genai::utils::read_json_param;
@@ -43,18 +51,17 @@ std::optional<std::string> read_model_type(const std::filesystem::path& models_p
 
     nlohmann::json data = nlohmann::json::parse(f);
 
-    std::optional<std::string> model_type;
-    read_json_param(data, "model_type", model_type);
-    return model_type;
+    read_json_param(data, "model_type", info.model_type);
+    if (info.model_type.has_value()) {
+        info.is_qwen3 = (info.model_type.value() == "qwen3");
+    }
+    return info;
 }
 
 bool has_input(const std::shared_ptr<Model>& model, const std::string& name) {
-    for (const auto& input : model->inputs()) {
-        if (input.get_any_name() == name) {
-            return true;
-        }
-    }
-    return false;
+    const auto& inputs = model->inputs();
+    return std::any_of(inputs.begin(),inputs.end(), 
+        [&name](const auto& input) { return input.get_any_name() == name; });
 }
 
 std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model) {
@@ -142,7 +149,21 @@ TextRerankPipeline::Config::Config(const ov::AnyMap& properties) {
     read_anymap_param(properties, ov::genai::max_length.name(), max_length);
     read_anymap_param(properties, ov::genai::padding_side.name(), padding_side);
     read_anymap_param(properties, ov::genai::pad_to_max_length.name(), pad_to_max_length);
+    // Read LoRA prefix if specified
+    std::optional<std::string> prefix;
+    read_anymap_param(properties, "lora_tensor_prefix", prefix);
+    if (prefix.has_value()) {
+        lora_tensor_prefix = prefix;
+    }
 };
+
+void TextRerankPipeline::Config::validate() const {
+    if (max_length.has_value()) {
+        OPENVINO_ASSERT(max_length.value() > 0, "max_length should be greater than 0");
+    }
+
+    OPENVINO_ASSERT(top_n > 0, "top_n should be greater than 0");
+}
 
 class TextRerankPipeline::TextRerankPipelineImpl {
 public:
@@ -150,9 +171,10 @@ public:
                            const std::string& device,
                            const Config& config,
                            const ov::AnyMap& properties = {})
-        : m_config{config} {
-        const auto model_type = read_model_type(models_path);
-        const bool is_qwen3 = model_type.has_value() && model_type.value() == "qwen3";
+        : m_config{config},
+          m_models_path{models_path} {
+        const auto model_info = read_model_type(models_path);
+        const bool is_qwen3 = model_info.is_qwen3;
 
         if (m_config.max_length) {
             m_tokenization_params.insert({max_length.name(), *m_config.max_length});
@@ -173,9 +195,23 @@ public:
 
         auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);
 
+        // ============================================
+        // LoRA Support: Extract adapters from properties
+        // ============================================
+        auto filtered_properties = extract_adapters_from_properties(properties, &m_adapters);
+        // Setup LoRA if adapters were provided
+        if (m_adapters.has_value()) {
+            setup_lora(model, device, model_info);
+        }
+        // ============================================
+        // Existing: Check for special inputs
+        // ============================================
         m_has_position_ids = has_input(model, "position_ids");
         m_has_beam_idx = has_input(model, "beam_idx");
 
+        // ============================================
+        // Existing: Apply model-specific postprocessing
+        // ============================================
         if (is_qwen3) {
             const auto vocab = m_tokenizer.get_vocab();
             const auto token_true_id = vocab.at("yes");
@@ -185,10 +221,20 @@ public:
             model = apply_postprocessing(model);
         }
 
-        ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
+        // ============================================
+        // CRITICAL: Store CompiledModel as member
+        // This is required for LoRA state tensors to work correctly.
+        // ============================================
+        m_compiled_model = core.compile_model(model, device, *filtered_properties);
 
-        utils::print_compiled_model_properties(compiled_model, "text rerank model");
-        m_request = compiled_model.create_infer_request();
+        utils::print_compiled_model_properties(m_compiled_model, "text rerank model");
+        m_request = m_compiled_model.create_infer_request();
+        // ============================================
+        // LoRA Support: Apply initial LoRA weights
+        // ============================================
+        if (m_adapters.has_value() && m_adapter_controller.has_value()) {
+            m_adapter_controller->apply(m_request, *m_adapters);
+        }
     };
 
     std::vector<std::pair<size_t, float>> rerank(const std::string& query, const std::vector<std::string>& texts) {
@@ -260,13 +306,69 @@ public:
         return results;
     }
 
+    void set_adapters(const std::optional<AdapterConfig>& adapters) {
+        OPENVINO_ASSERT(m_adapter_controller.has_value(),
+                        "Cannot set adapters: pipeline was not constructed with LoRA support. "
+                        "Provide adapters in the constructor properties to enable LoRA.");
+        if (adapters.has_value()) {
+            m_adapter_controller->apply(m_request, *adapters);
+        } else {
+            // Disable LoRA by applying nullopt
+            m_adapter_controller->apply(m_request, std::nullopt);
+        }
+    }
+    bool has_adapters() const {
+        return m_adapters.has_value();
+    }
 private:
     Tokenizer m_tokenizer;
+    ov::CompiledModel m_compiled_model;  // CRITICAL: Must be stored as member for LoRA state
     InferRequest m_request;
     Config m_config;
     AnyMap m_tokenization_params;
+    std::filesystem::path m_models_path;
     bool m_has_position_ids = false;
     bool m_has_beam_idx = false;
+    // LoRA support members
+    std::optional<AdapterConfig> m_adapters;
+    std::optional<AdapterController> m_adapter_controller;
+    /**
+     * @brief Setup LoRA adapters for the model
+     *
+     * This method:
+     * 1. Determines the appropriate LoRA tensor prefix
+     * 2. Creates the AdapterController which modifies the model
+     *    to add state variables for LoRA weights
+     */
+    void setup_lora(std::shared_ptr<Model>& model, const std::string& device, const ModelTypeInfo& model_info) {
+        OPENVINO_ASSERT(m_adapters.has_value(), "setup_lora called without adapters");
+        // Determine LoRA prefix
+        std::string prefix;
+        if (m_config.lora_tensor_prefix.has_value()) {
+            // User explicitly specified prefix in config
+            prefix = *m_config.lora_tensor_prefix;
+        } else if (m_adapters->get_tensor_name_prefix().has_value()) {
+            // Prefix already set in adapter config
+            prefix = *m_adapters->get_tensor_name_prefix();
+        } else {
+            // Auto-detect based on model architecture
+            prefix = rag::detect_lora_prefix(m_models_path);
+        }
+        // Set prefix in adapter config
+        m_adapters->set_tensor_name_prefix(prefix);
+        // Try primary prefix first, then fallbacks if needed
+        try {
+            m_adapter_controller = AdapterController(model, *m_adapters, device);
+        } catch (const std::exception& e) {
+            m_adapter_controller =
+                rag::setup_lora_with_fallbacks(model,
+                                               *m_adapters,
+                                               m_models_path,
+                                               device,
+                                               prefix,
+                                               rag::get_lora_prefix_fallbacks(m_models_path));
+        }
+    }
 
     TokenizedInputs tokenize(const std::string& query, const std::vector<std::string>& texts) {
         if (m_tokenizer.supports_paired_input()) {
@@ -311,6 +413,12 @@ std::vector<std::pair<size_t, float>> TextRerankPipeline::wait_rerank() {
     return m_impl->wait_rerank();
 }
 
+void TextRerankPipeline::set_adapters(const std::optional<AdapterConfig>& adapters) {
+    m_impl->set_adapters(adapters);
+}
+bool TextRerankPipeline::has_adapters() const {
+    return m_impl->has_adapters();
+}
 TextRerankPipeline::~TextRerankPipeline() = default;
 
 }  // namespace genai
