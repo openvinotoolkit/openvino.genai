@@ -455,7 +455,7 @@ std::vector<ov::genai::WhisperWordTiming> merge_punctuations(std::vector<ov::gen
     while (i < words.size()) {
         auto& previous = words[i];
         auto& following = words[j];
-        if (!previous.word.empty() && previous.word[0] == ' ' &&
+        if (previous.word.size() > 1 && previous.word[0] == ' ' &&
             prepend_punctuations.find(previous.word.substr(1)) != std::string::npos) {
             // prepend it to the following word
             following.word = previous.word + following.word;
@@ -479,7 +479,7 @@ std::vector<ov::genai::WhisperWordTiming> merge_punctuations(std::vector<ov::gen
     while (j < words.size()) {
         auto& previous = words[i];
         auto& following = words[j];
-        if (!previous.word.empty() && previous.word.back() != ' ' &&
+        if (!previous.word.empty() && previous.word.back() != ' ' && following.word.size() == 1 &&
             append_punctuations.find(following.word) != std::string::npos) {
             // append it to the previous word
             previous.word = previous.word + following.word;
