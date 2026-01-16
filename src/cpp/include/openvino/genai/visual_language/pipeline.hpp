@@ -141,6 +141,22 @@ public:
         const StreamerVariant& streamer
     );
 
+    /// @brief Generate a response given a prompt, images/videos, and extra config options.
+    /// @param prompt A prompt to respond to.
+    /// @param images Images to be prepended to a prompt.
+    /// @param videos Multiple videos, each providing multiple frames, to be prepended to a prompt.
+    /// @param generation_config A config to follow for text generation.
+    /// @param streamer A streamer to acquire intermediate result.
+    /// @param config_map Additional config options (e.g., vision encoder switches).
+    VLMDecodedResults generate(
+        const std::string& prompt,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        const GenerationConfig& generation_config,
+        const StreamerVariant& streamer,
+        const ov::AnyMap& config_map
+    );
+
     /// @brief Generate a response given a prompt and uint8 RGB image with [NHWC] or [HWC] layout.
     /// @param prompt A prompt to respond to.
     /// The prompt can contain <ov_genai_image_i> with i replaced with

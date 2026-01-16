@@ -63,6 +63,7 @@ public:
         const ov::AnyMap device_config);
 
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images) override;
+    std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images, const ov::AnyMap& config_map) override;
 
     // std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos) override;
 

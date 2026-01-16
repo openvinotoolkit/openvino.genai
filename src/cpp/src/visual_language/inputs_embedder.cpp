@@ -371,6 +371,10 @@ std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::ve
     return m_impl->encode_images(images);
 }
 
+std::vector<ov::genai::EncodedImage> InputsEmbedder::encode_images(const std::vector<ov::Tensor>& images, const ov::AnyMap& config_map) {
+    return m_impl->encode_images(images, config_map);
+}
+
 std::vector<ov::genai::EncodedVideo> InputsEmbedder::encode_videos(const std::vector<ov::Tensor>& videos) {
     return m_impl->encode_videos(videos);
 }

@@ -100,6 +100,7 @@ public:
 
         ov::CompiledModel compiled_language_model;
         auto embedder_device = device;
+
         if (m_is_npu) {
             embedder_device = "CPU";
             utils::KVDesc kv_desc;
@@ -178,7 +179,7 @@ public:
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
-        return generate(prompt, images, {}, std::move(generation_config), streamer);
+        return generate(prompt, images, {}, std::move(generation_config), streamer, {});
     }
 
     VLMDecodedResults generate(
@@ -187,6 +188,17 @@ public:
         const std::vector<ov::Tensor>& videos,
         GenerationConfig generation_config,
         const StreamerVariant& streamer
+    ) override {
+        return generate(prompt, images, videos, std::move(generation_config), streamer, {});
+    }
+
+    VLMDecodedResults generate(
+        const std::string& prompt,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer,
+        const ov::AnyMap& config_map
     ) override {
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
@@ -216,7 +228,7 @@ public:
             if (m_is_chat_conversation)
                 OPENVINO_ASSERT(videos.empty(), "Chat mode is currently not supported with video input for NPU device!");
         }
-        auto encoded_images = m_inputs_embedder->encode_images(images);
+        auto encoded_images = m_inputs_embedder->encode_images(images, config_map);
         OPENVINO_ASSERT(images.size() == encoded_images.size(), "Input images size and encoded images size mismatch!");
         const auto encoded_videos = m_inputs_embedder->encode_videos(videos);
         auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
@@ -261,7 +273,6 @@ public:
             inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, perf_metrics, recalculate_merged_embeddings, image_sequence, video_sequence);
         }
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
-
         if (m_is_npu) {
             // Prefill model in NPU is reshaped to NPUW_LLM_MAX_PROMPT_LEN x NPUW_LLM_MAX_PROMPT_LEN
             OPENVINO_ASSERT(inputs_embeds.get_shape().at(1) <= m_max_prompt_len,
@@ -529,6 +540,17 @@ VLMDecodedResults VLMPipeline::generate(
     const StreamerVariant& streamer
 ) {
     return m_pimpl->generate(prompt, images, videos, generation_config, streamer);
+}
+
+VLMDecodedResults VLMPipeline::generate(
+    const std::string& prompt,
+    const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& videos,
+    const GenerationConfig& generation_config,
+    const StreamerVariant& streamer,
+    const ov::AnyMap& config_map
+) {
+    return m_pimpl->generate(prompt, images, videos, generation_config, streamer, config_map);
 }
 
 VLMDecodedResults VLMPipeline::generate(
