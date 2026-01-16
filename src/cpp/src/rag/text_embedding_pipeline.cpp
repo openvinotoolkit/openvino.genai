@@ -35,7 +35,7 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     properties_copy.erase(embed_instruction.name());
     properties_copy.erase(query_instruction.name());
     properties_copy.erase(padding_side.name());
-    properties_copy.erase(lora_tensor_prefix.name());
+    properties_copy.erase(::lora_tensor_prefix.name());
 
     return properties_copy;
 }
