@@ -745,7 +745,76 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
 
     for i, (answer_start_chat, answer_chat_history) in enumerate(zip(answers_start_chat, answers_chat_history)):
         assert answer_start_chat == answer_chat_history, (
-            f"Answer {i} does not match!\n answer_start_chat: {answer_start_chat}\n answer_chat_history: {answer_chat_history}"
+            f"Answer {i} does not match!\n"
+            f"answer_start_chat: {answer_start_chat}\n"
+            f"answer_chat_history: {answer_chat_history}"
+        )
+
+
+@pytest.mark.parametrize(
+    "ov_pipe_model",
+    [
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"),
+            id="qwen2.5-vl/SDPA",
+        ),
+    ],
+    indirect=["ov_pipe_model"],
+)
+def test_vlm_pipeline_chat_history_multipart_content(
+    ov_pipe_model: VlmModelInfo,
+    iteration_images: list[list[PIL.Image]],
+):
+    ov_pipe = ov_pipe_model.pipeline
+
+    generation_config = _setup_generation_config(ov_pipe, do_sample=False)
+
+    prompts_with_images = [
+        (PROMPTS[0], iteration_images[0]),
+        *[(PROMPTS[1], image_set) for image_set in iteration_images[1:]],
+    ]
+
+    # Collect chat_history results (baseline)
+    answers_chat_history = []
+    history = ChatHistory()
+    for prompt, images in prompts_with_images:
+        history.append({"role": "user", "content": prompt})
+        res = ov_pipe.generate(
+            history,
+            images=images,
+            generation_config=generation_config,
+        )
+        answer = res.texts[0]
+        history.append({"role": "assistant", "content": answer})
+        answers_chat_history.append(answer)
+
+    # Collect chat_history with multipart content (OpenAI-like) results
+    answers_chat_history_multipart_content = []
+    history_multipart_content = ChatHistory()
+    for prompt, images in prompts_with_images:
+        history_multipart_content.append(
+            {
+                "role": "user",
+                "content": [
+                    *[{"type": "image"} for _ in images],
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        )
+        res = ov_pipe.generate(
+            history_multipart_content,
+            images=images,
+            generation_config=generation_config,
+        )
+        answer = res.texts[0]
+        history_multipart_content.append({"role": "assistant", "content": answer})
+        answers_chat_history_multipart_content.append(answer)
+
+    for i, (answer_1, answer_2) in enumerate(zip(answers_chat_history, answers_chat_history_multipart_content)):
+        assert answer_1 == answer_2, (
+            f"Answer {i} does not match!\n"
+            f"answers_chat_history: {answer_1}\n"
+            f"answers_chat_history_multipart_content: {answer_2}"
         )
 
 
