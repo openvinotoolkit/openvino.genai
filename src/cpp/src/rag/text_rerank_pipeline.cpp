@@ -32,12 +32,12 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     return properties_copy;
 }
 
-struct ModelTypeInfo {
+struct ModelMetadata {
     std::optional<std::string> model_type;
     bool is_qwen3 = false;
 };
-ModelTypeInfo read_model_type(const std::filesystem::path& models_path) {
-    ModelTypeInfo info;
+ModelMetadata read_model_type(const std::filesystem::path& models_path) {
+    ModelMetadata info;
     // config.json not found. Skip parameters initialization from file, use defaults.
     const std::filesystem::path& json_path = models_path / "config.json";
     if (!std::filesystem::exists(json_path)) {
@@ -337,7 +337,7 @@ private:
      * 2. Creates the AdapterController which modifies the model
      *    to add state variables for LoRA weights
      */
-    void setup_lora(std::shared_ptr<Model>& model, const std::string& device, const ModelTypeInfo& model_info) {
+    void setup_lora(std::shared_ptr<Model>& model, const std::string& device, const ModelMetadata& model_info) {
         OPENVINO_ASSERT(m_adapters.has_value(), "setup_lora called without adapters");
         // Determine LoRA prefix
         std::string prefix;
