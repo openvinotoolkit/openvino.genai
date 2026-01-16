@@ -21,6 +21,9 @@ namespace {
 using namespace ov::genai;
 using namespace ov;
 
+// Property name constant for LoRA tensor prefix (local to this file)
+static constexpr ov::Property<std::string> lora_tensor_prefix{"lora_tensor_prefix"};
+
 ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     auto properties_copy = properties;
 
@@ -28,7 +31,7 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     properties_copy.erase(max_length.name());
     properties_copy.erase(pad_to_max_length.name());
     properties_copy.erase(padding_side.name());
-    properties_copy.erase("lora_tensor_prefix");
+    properties_copy.erase(lora_tensor_prefix.name());
     return properties_copy;
 }
 
@@ -149,12 +152,7 @@ TextRerankPipeline::Config::Config(const ov::AnyMap& properties) {
     read_anymap_param(properties, ov::genai::max_length.name(), max_length);
     read_anymap_param(properties, ov::genai::padding_side.name(), padding_side);
     read_anymap_param(properties, ov::genai::pad_to_max_length.name(), pad_to_max_length);
-    // Read LoRA prefix if specified
-    std::optional<std::string> prefix;
-    read_anymap_param(properties, "lora_tensor_prefix", prefix);
-    if (prefix.has_value()) {
-        lora_tensor_prefix = prefix;
-    }
+    read_anymap_param(properties, ::lora_tensor_prefix.name(),lora_tensor_prefix);
 };
 
 void TextRerankPipeline::Config::validate() const {
