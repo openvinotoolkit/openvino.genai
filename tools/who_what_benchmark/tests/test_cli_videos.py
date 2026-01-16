@@ -72,6 +72,8 @@ def test_video_model_genai(model_id, model_type, tmp_path):
             "2",
             "--video-frames-num",
             "8",
+            "--output",
+            tmp_path,
         ]
     )
 
