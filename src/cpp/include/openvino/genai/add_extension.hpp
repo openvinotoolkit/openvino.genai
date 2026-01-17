@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -33,9 +33,10 @@ inline std::pair<std::string, ov::Any> extensions(const std::vector<std::filesys
 /**
  * @brief A helper allowing extensions({extensions}) instead of explicit std::variant.
  */
-inline std::pair<std::string, ov::Any> extensions(const std::vector<std::shared_ptr<ov::Extension>>& extens) {
+inline std::pair<std::string, ov::Any> extensions(const std::vector<std::shared_ptr<ov::Extension>>& extension_list) {
     return extensions(
-        std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>{extens.begin(), extens.end()});
+        std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>{extension_list.begin(),
+                                                                                         extension_list.end()});
 }
 
 /**

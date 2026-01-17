@@ -1,4 +1,4 @@
-// Copyright (C) 2018-2025 Intel Corporation
+// Copyright (C) 2018-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 //
 
@@ -23,9 +23,9 @@ TEST(TestIsContainer, test_is_container) {
 
 TEST(TestAddExtensions, test_add_extensions_to_core) {
     // Use intentionally non-existent, platform-agnostic extension paths to trigger error handling.
-    ov::AnyMap properties1 = {ov::genai::extensions({"non_existent_extension1.so", "non_existent_extension2.so"})};
+    ov::AnyMap properties1 = {ov::genai::extensions({"non_existent_extension1", "non_existent_extension2"})};
     ov::AnyMap properties2 = {ov::genai::extensions(
-        std::vector<std::filesystem::path>{"non_existent_extension1.so", "non_existent_extension2.so"})};
+        std::vector<std::filesystem::path>{"non_existent_extension1", "non_existent_extension2"})};
     ov::AnyMap properties3 = {ov::genai::extensions(std::vector<std::shared_ptr<ov::Extension>>{})};
 
     EXPECT_THROW(add_extensions_to_core(properties1), ov::Exception);
