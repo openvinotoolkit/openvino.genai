@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "md_llm_inference.hpp"
+
+#include "module_genai/module_factory.hpp"
 #include <fstream>
 
 namespace ov {
@@ -10,6 +12,8 @@ namespace genai {
 extern std::shared_ptr<ov::Model> g_llm_model;
 extern std::shared_ptr<ov::Model> g_model_vision_embeddings_merger;
 namespace module {
+
+GENAI_REGISTER_MODULE_SAME(LLMInferenceModule);
 
 void LLMInferenceModule::print_static_config() {
     std::cout << R"(

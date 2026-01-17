@@ -11,32 +11,17 @@ namespace genai {
 namespace module {
 
 const std::unordered_map<ModuleType, std::string> ModuleTypeConverter::kTypeToString = {
-    {ModuleType::ParameterModule, "ParameterModule"},
-    {ModuleType::ImagePreprocessModule, "ImagePreprocessModule"},
-    {ModuleType::VisionEncoderModule, "VisionEncoderModule"},
-    {ModuleType::TextEncoderModule, "TextEncoderModule"},
-    {ModuleType::TextEmbeddingModule, "TextEmbeddingModule"},
-    {ModuleType::EmbeddingMergerModule, "EmbeddingMergerModule"},
-    {ModuleType::FeaturePrunerModule, "FeaturePrunerModule"},
-    {ModuleType::FeatureFusionModule, "FeatureFusionModule"},
-    {ModuleType::VAEDecoderTilingModule, "VAEDecoderTilingModule"},
-    {ModuleType::LLMInferenceModule, "LLMInferenceModule"},
-    {ModuleType::ZImageDenoiserLoopModule, "ZImageDenoiserLoopModule"},
-    {ModuleType::VAEDecoderModule, "VAEDecoderModule"},
-    {ModuleType::ClipTextEncoderModule, "ClipTextEncoderModule"},
-    {ModuleType::ResultModule, "ResultModule"},
-    {ModuleType::SaveImageModule, "SaveImageModule"},
-    {ModuleType::RandomLatentImageModule, "RandomLatentImageModule"},
-    {ModuleType::Unknown, "Unknown"},
-
-    {ModuleType::FakeModuleA, "FakeModuleA"},
-    {ModuleType::FakeModuleB, "FakeModuleB"},
-    {ModuleType::FakeModuleC, "FakeModuleC"},
-    {ModuleType::FakeModuleD, "FakeModuleD"},
+#define X(name, val) {ModuleType::name, #name},
+    GENAI_MODULE_TYPE_LIST
+#undef X
 };
 
-const std::unordered_map<std::string, ModuleType> ModuleTypeConverter::kStringToType =
-    ModuleTypeConverter::create_string_to_type_map();
+// 用宏自动生成字符串到类型的映射
+const std::unordered_map<std::string, ModuleType> ModuleTypeConverter::kStringToType = {
+#define X(name, val) {#name, ModuleType::name},
+    GENAI_MODULE_TYPE_LIST
+#undef X
+};
 
 const std::unordered_map<ThreadMode, std::string> ThreadModeConverter::kModeToString = {
     {ThreadMode::AUTO, "AUTO"},

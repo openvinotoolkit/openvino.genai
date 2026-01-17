@@ -3,10 +3,13 @@
 
 #include "md_random_latent_image.hpp"
 #include "utils.hpp"
+#include "module_genai/module_factory.hpp"
 #include <fstream>
 #include "json_utils.hpp"
 
 namespace ov::genai::module {
+
+GENAI_REGISTER_MODULE_SAME(RandomLatentImageModule);
 
 void RandomLatentImageModule::print_static_config() {
     std::cout << R"(

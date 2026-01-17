@@ -1,4 +1,6 @@
 #include "md_vision_encoder.hpp"
+
+#include "module_genai/module_factory.hpp"
 #include <array>
 #include <cstddef>
 #include <cstring>
@@ -20,6 +22,8 @@
 namespace ov {
 namespace genai {
 namespace module {
+
+GENAI_REGISTER_MODULE_SAME(VisionEncoderModule);
 
 void VisionEncoderModule::print_static_config() {
     std::cout << R"(

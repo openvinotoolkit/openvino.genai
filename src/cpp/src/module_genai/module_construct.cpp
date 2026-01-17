@@ -2,21 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "module.hpp"
-#include "modules/md_clip_text_encoder.hpp"
-#include "modules/md_embedding_merger.hpp"
-#include "modules/md_fake.hpp"
-#include "modules/md_img_preprocess.hpp"
-#include "modules/md_io.hpp"
-#include "modules/md_llm_inference.hpp"
-#include "modules/md_save_image.hpp"
-#include "modules/md_text_embedding.hpp"
-#include "modules/md_text_encoder.hpp"
-#include "modules/md_vae_decoder.hpp"
-#include "modules/md_vae_decoder_tiling.hpp"
-#include "modules/md_vision_encoder.hpp"
-#include "modules/md_zimage_denoiser_loop.hpp"
-#include "modules/md_random_latent_image.hpp"
-#include "utils/yaml_utils.hpp"
+#include "module_genai/module_factory.hpp"
 
 namespace ov {
 namespace genai {
@@ -51,37 +37,16 @@ void construct_pipeline(const PipelineModulesDesc& pipeline_modules_desc,
                         PipelineModuleInstance& pipeline_instance,
                         const PipelineDesc::PTR& pipeline_desc) {
     for (auto& module_desc : pipeline_modules_desc) {
-        IBaseModule::PTR module_ptr = nullptr;
-        switch (module_desc.second->type) {
-#define GENAI_MODULE_TYPE_CASE(module_type_enum, module_class) \
-    case ModuleType::module_type_enum:                         \
-        module_ptr = module_class::create(module_desc.second, pipeline_desc); \
-        break;
-
-        GENAI_MODULE_TYPE_CASE(ParameterModule, ParameterModule);
-        GENAI_MODULE_TYPE_CASE(ResultModule, ResultModule);
-        GENAI_MODULE_TYPE_CASE(ImagePreprocessModule, ImagePreprocessModule);
-        GENAI_MODULE_TYPE_CASE(TextEncoderModule, TextEncoderModule);
-        GENAI_MODULE_TYPE_CASE(VisionEncoderModule, VisionEncoderModule);
-        GENAI_MODULE_TYPE_CASE(TextEmbeddingModule, TextEmbeddingModule);
-        GENAI_MODULE_TYPE_CASE(EmbeddingMergerModule, EmbeddingMergerModule);
-        GENAI_MODULE_TYPE_CASE(LLMInferenceModule, LLMInferenceModule);
-        GENAI_MODULE_TYPE_CASE(ClipTextEncoderModule, ClipTextEncoderModule);
-        GENAI_MODULE_TYPE_CASE(ZImageDenoiserLoopModule, ZImageDenoiserLoopModule);
-        GENAI_MODULE_TYPE_CASE(VAEDecoderTilingModule, VAEDecoderTilingModule);
-        GENAI_MODULE_TYPE_CASE(VAEDecoderModule, VAEDecoderModule);
-        GENAI_MODULE_TYPE_CASE(SaveImageModule, SaveImageModule);
-        GENAI_MODULE_TYPE_CASE(RandomLatentImageModule, RandomLatentImageModule);
-
-        GENAI_MODULE_TYPE_CASE(FakeModuleA, FakeModuleA);
-        GENAI_MODULE_TYPE_CASE(FakeModuleB, FakeModuleB);
-        GENAI_MODULE_TYPE_CASE(FakeModuleC, FakeModuleC);
-        GENAI_MODULE_TYPE_CASE(FakeModuleD, FakeModuleD);
-#undef GENAI_MODULE_TYPE_CASES
-        default:
-            break;
-        }
-        OPENVINO_ASSERT(module_ptr, "No implementation for type: " + ModuleTypeConverter::toString(module_desc.second->type));
+        const auto type = module_desc.second->type;
+        IBaseModule::PTR module_ptr = ModuleFactory::instance().create(type,
+                                                                       module_desc.second,
+                                                                       pipeline_desc);
+        OPENVINO_ASSERT(module_ptr,
+                        "No registered creator for module type: ",
+                        ModuleTypeConverter::toString(type),
+                        ". Add a registration in the corresponding module .cpp (e.g. GENAI_REGISTER_MODULE_SAME(",
+                        ModuleTypeConverter::toString(type),
+                        ")) and ensure that translation unit is built/linked.");
         pipeline_instance.push_back(module_ptr);
     }
     module_connect(pipeline_instance);

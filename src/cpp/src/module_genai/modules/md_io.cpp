@@ -3,9 +3,14 @@
 
 #include "md_io.hpp"
 
+#include "module_genai/module_factory.hpp"
+
 namespace ov {
 namespace genai {
 namespace module {
+
+GENAI_REGISTER_MODULE_SAME(ParameterModule);
+GENAI_REGISTER_MODULE_SAME(ResultModule);
 
 void ParameterModule::print_static_config() {
     std::cout << R"(

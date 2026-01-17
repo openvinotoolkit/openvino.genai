@@ -2,12 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "md_text_embedding.hpp"
+
+#include "module_genai/module_factory.hpp"
 #include "visual_language/embedding_model.hpp"
 #include "circular_buffer_queue.hpp"
 
 namespace ov {
 namespace genai {
 namespace module {
+
+GENAI_REGISTER_MODULE_SAME(TextEmbeddingModule);
 
 void TextEmbeddingModule::print_static_config() {
     std::cout << R"(

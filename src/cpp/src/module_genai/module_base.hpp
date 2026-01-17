@@ -49,6 +49,9 @@ public:
     PipelineDesc::PTR pipeline_desc = nullptr;
     bool is_input() const { return is_input_module; }
     bool is_output() const { return is_output_module; }
+    const std::string& get_name() const {
+        return module_desc->name;
+    }
 
 protected:
     // Check if exist input in inputs map.
@@ -68,22 +71,34 @@ protected:
     std::shared_ptr<ov::Model> get_ov_model_from_cfg_models_map(const std::string& param_name, bool required = false);
 };
 
+#ifndef DeclareModuleConstructorImpl
+#    define DeclareModuleConstructorImpl(class_name, dummy_impl, dummy_base_impl)                                   \
+    protected:                                                                                                      \
+        class_name() = delete;                                                                                      \
+        class_name(const IBaseModuleDesc::PTR& desc, const PipelineDesc::PTR& pipeline_desc) dummy_base_impl dummy_impl \
+                                                                                                                    \
+    public:                                                                                                         \
+        ~class_name() dummy_impl                                                                                    \
+                                                                                                                    \
+                 using PTR = std::shared_ptr<class_name>;                                                           \
+        static PTR create(const IBaseModuleDesc::PTR& desc, const PipelineDesc::PTR& pipeline_desc) {               \
+            return PTR(new class_name(desc, pipeline_desc));                                                        \
+        }                                                                                                           \
+        static void print_static_config() dummy_impl
+#endif  // DeclareModuleConstructorImpl
+
+// Module constructor and coommon function declaration macro.
 #ifndef DeclareModuleConstructor
-#    define DeclareModuleConstructor(class_name)                                                      \
-    protected:                                                                                        \
-        class_name() = delete;                                                                        \
-        class_name(const IBaseModuleDesc::PTR& desc, const PipelineDesc::PTR& pipeline_desc);         \
-                                                                                                      \
-    public:                                                                                           \
-        ~class_name();                                                                                \
-                                                                                                      \
-        void run() override;                                                                          \
-                                                                                                      \
-        using PTR = std::shared_ptr<class_name>;                                                      \
-        static PTR create(const IBaseModuleDesc::PTR& desc, const PipelineDesc::PTR& pipeline_desc) { \
-            return PTR(new class_name(desc, pipeline_desc));                                          \
-        }                                                                                             \
-        static void print_static_config()
+#    define DeclareModuleConstructor(class_name) \
+    public:                                      \
+        void run() override;                     \
+        DeclareModuleConstructorImpl(class_name, ;, )
+#endif
+
+// Dummy constructor macro, only for test purpose.
+#ifndef DeclareModuleConstructorDummy
+#    define DeclareModuleConstructorDummy(class_name) \
+        DeclareModuleConstructorImpl(class_name, {}, : IBaseModule(desc, pipeline_desc))
 #endif
 
 }  // namespace module

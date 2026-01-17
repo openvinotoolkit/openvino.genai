@@ -3,6 +3,8 @@
 
 #include "md_vae_decoder_tiling.hpp"
 
+#include "module_genai/module_factory.hpp"
+
 #include <fstream>
 
 #include "json_utils.hpp"
@@ -17,6 +19,8 @@
 namespace ov {
 namespace genai {
 namespace module {
+
+GENAI_REGISTER_MODULE_SAME(VAEDecoderTilingModule);
 
 void VAEDecoderTilingModule::print_static_config() {
     std::cout << R"(

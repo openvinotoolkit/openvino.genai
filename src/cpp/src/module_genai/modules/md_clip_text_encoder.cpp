@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "md_clip_text_encoder.hpp"
+
+#include "module_genai/module_factory.hpp"
 #include "utils.hpp"
 #include "module_genai/utils/tensor_utils.hpp"
 #include <iostream>
@@ -12,6 +14,8 @@
 namespace ov {
 namespace genai {
 namespace module {
+
+GENAI_REGISTER_MODULE_SAME(ClipTextEncoderModule);
 
 void ClipTextEncoderModule::print_static_config() {
     std::cout << R"(

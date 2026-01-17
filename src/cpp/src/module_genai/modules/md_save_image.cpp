@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "md_save_image.hpp"
+
+#include "module_genai/module_factory.hpp"
 #include "utils.hpp"
 #include <iostream>
 #include <fstream>
@@ -13,6 +15,8 @@
 namespace ov {
 namespace genai {
 namespace module {
+
+GENAI_REGISTER_MODULE_SAME(SaveImageModule);
 
 void SaveImageModule::print_static_config() {
     std::cout << R"(

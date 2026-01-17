@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "md_zimage_denoiser_loop.hpp"
+
+#include "module_genai/module_factory.hpp"
 #include "module_genai/transformer_config.hpp"
 #include "utils.hpp"
 #include "image_generation/schedulers/z_image_flow_match_euler_discrete.hpp"
@@ -13,6 +15,8 @@
 namespace ov {
 namespace genai {
 namespace module {
+
+GENAI_REGISTER_MODULE_SAME(ZImageDenoiserLoopModule);
 
 void ZImageDenoiserLoopModule::print_static_config() {
     std::cout << R"(

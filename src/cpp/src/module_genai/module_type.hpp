@@ -15,42 +15,31 @@ namespace genai {
 
 namespace module {
 
-    enum class ModuleType : int {
-        // 0. Parameter/Input Modules
-        ParameterModule = 0,
-        
-        // 1. Preprocessing Modules
-        ImagePreprocessModule = 10,
-        TextEncoderModule = 11,
-        RandomLatentImageModule = 12,
-        
-        // 2. Embedding/Encoder Modules
-        VisionEncoderModule = 20,
-        TextEmbeddingModule = 21,
-        EmbeddingMergerModule = 22,
-        ClipTextEncoderModule = 23,
-        
-        // 3. Fusion/Pruning Modules
-        FeaturePrunerModule = 30,
-        FeatureFusionModule = 31,
-        VAEDecoderTilingModule = 32,
-        
-        // 4. Inference/Generator Modules
-        LLMInferenceModule = 40,
-        ZImageDenoiserLoopModule = 41,
-        VAEDecoderModule = 42,
-        
-        // 5. Output/Result Modules
-        ResultModule = 50,
-        SaveImageModule = 51,
-        
-        // Default/Unknown
-        Unknown = 99,
+    // 只需维护一次类型列表
+    #define GENAI_MODULE_TYPE_LIST \
+        X(ParameterModule, 0) \
+        X(ImagePreprocessModule, 10) \
+        X(TextEncoderModule, 11) \
+        X(RandomLatentImageModule, 12) \
+        X(VisionEncoderModule, 20) \
+        X(TextEmbeddingModule, 21) \
+        X(EmbeddingMergerModule, 22) \
+        X(ClipTextEncoderModule, 23) \
+        X(FeaturePrunerModule, 30) \
+        X(FeatureFusionModule, 31) \
+        X(VAEDecoderTilingModule, 32) \
+        X(LLMInferenceModule, 40) \
+        X(ZImageDenoiserLoopModule, 41) \
+        X(VAEDecoderModule, 42) \
+        X(ResultModule, 50) \
+        X(SaveImageModule, 51) \
+        X(Unknown, 99) \
+        X(DummyModuleBase, 10000)
 
-        FakeModuleA = 10000,
-        FakeModuleB = 10001,
-        FakeModuleC = 10002,
-        FakeModuleD = 10003,
+    enum class ModuleType : int {
+    #define X(name, val) name = val,
+        GENAI_MODULE_TYPE_LIST
+    #undef X
     };
 
     enum class ThreadMode : int {
@@ -94,17 +83,7 @@ namespace module {
     struct ModuleTypeConverter {
     private:
         static const std::unordered_map<ModuleType, std::string> kTypeToString;
-
         static const std::unordered_map<std::string, ModuleType> kStringToType;
-
-        static std::unordered_map<std::string, ModuleType> create_string_to_type_map() {
-            std::unordered_map<std::string, ModuleType> map;
-            for (const auto& pair : kTypeToString) {
-                map[pair.second] = pair.first;
-            }
-            return map;
-        }
-
     public:
         static std::string toString(ModuleType type) {
             auto it = kTypeToString.find(type);
@@ -113,7 +92,6 @@ namespace module {
             }
             throw std::runtime_error("Unknown ModuleType value: " + std::to_string(static_cast<int>(type)));
         }
-
         static ModuleType fromString(const std::string& str) {
             auto it = kStringToType.find(str);
             if (it != kStringToType.end()) {

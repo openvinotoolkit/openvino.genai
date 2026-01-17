@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "md_text_encoder.hpp"
+
+#include "module_genai/module_factory.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "tokenizer/tokenizer_impl.hpp"
 
@@ -11,6 +13,8 @@
 namespace ov {
 namespace genai {
 namespace module {
+
+GENAI_REGISTER_MODULE_SAME(TextEncoderModule);
 
 const std::string NATIVE_TAG = "<|vision_start|><|image_pad|><|vision_end|>";
 const std::string NATIVE_VIDEO_TAG = "<|vision_start|><|video_pad|><|vision_end|>";

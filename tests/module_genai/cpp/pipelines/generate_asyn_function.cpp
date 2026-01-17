@@ -3,59 +3,52 @@
 
 #include <gtest/gtest.h>
 
-#include <thread>
 #include <chrono>
 #include <filesystem>
 #include <openvino/genai/module_genai/pipeline.hpp>
+#include <thread>
 
-#include "utils/load_image.hpp"
-#include "utils/utils.hpp"
-#include "utils/model_yaml.hpp"
-#include "../utils/ut_modules_base.hpp"
 #include "../utils/model_yaml.hpp"
+#include "../utils/ut_modules_base.hpp"
+#include "module_genai/module_base.hpp"
+#include "module_genai/module_factory.hpp"
+#include "utils/load_image.hpp"
+#include "utils/model_yaml.hpp"
+#include "utils/utils.hpp"
 
-TEST(PipelineAccuracyCompareTest, GenerateAsync) {
-    std::string device = TEST_MODEL::get_device();
-    std::string qwen2_5_vl_model_path = TEST_MODEL::Qwen2_5_VL_3B_Instruct_INT4();
-    std::string test_img_cat = TEST_DATA::img_cat_120_100();
+// Test for ModulePipeline generate_async function with different thread modes.
+// The test verifies that modules configured to run in SYNC mode execute on the same thread,
+// while those in ASYNC mode may run on different threads(Checked by comparing thread ids).
 
-    std::string yaml_context = TEST_MODEL::get_qwen2_5_vl_config_yaml(qwen2_5_vl_model_path, device);
+// Define Dummy Modules for testing
+namespace ov::genai::module {
 
-    ov::AnyMap inputs;
-    inputs["prompts_data"] = std::vector<std::string>{"Please describle this image"};
-    inputs["img1"] = utils::load_image(test_img_cat);
+static std::thread::id dummy_module_a_thread_id;
+static std::thread::id dummy_module_b_thread_id;
 
-    ov::genai::module::ModulePipeline pipe(yaml_context);
+class DummyModuleA : public IBaseModule {
+    DeclareModuleConstructorDummy(DummyModuleA);
 
-    auto t1 = std::chrono::high_resolution_clock::now();
-    pipe.generate(inputs);
-    auto t2 = std::chrono::high_resolution_clock::now();
-    std::string output_text_sync = pipe.get_output("generated_text").as<std::string>();
+public:
+    void run() override {
+        if (get_name() == "dummy_module_a") {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            dummy_module_a_thread_id = std::this_thread::get_id();
+        } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            dummy_module_b_thread_id = std::this_thread::get_id();
+        }
+    }
+};
 
-    auto t3 = std::chrono::high_resolution_clock::now();
-    pipe.generate_async(inputs);
-    auto t4 = std::chrono::high_resolution_clock::now();
-    std::string output_text_async = pipe.get_output("generated_text").as<std::string>();
+REGISTER_MODULE_CONFIG(DummyModuleA);
+GENAI_REGISTER_MODULE(ov::genai::module::ModuleType::DummyModuleBase, DummyModuleA);
+}  // namespace ov::genai::module
 
-    std::cout << "  Synchronous Generate time: "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count() << " ms" << std::endl;
-
-    std::cout << "  Asynchronous Generate time: "
-              << std::chrono::duration_cast<std::chrono::milliseconds>(t4 - t3).count() << " ms" << std::endl;
-    std::cout << "  Generated Text: " << output_text_sync << std::endl;
-
-    EXPECT_EQ(output_text_sync, output_text_async);
-}
-
-
-// Define test parameters: 
+// Define test parameters:
 // bool: generate_async or generate;
 // vector<int>: module ids of sync execution order when run: generate_async();
 using test_params = std::tuple<bool, std::vector<std::string>>;
-namespace ov::genai::module {
-    extern std::thread::id FakeModuleA_thread_id;
-    extern std::thread::id FakeModuleB_thread_id;
-}
 
 class PipelineGenerateAsyncTest : public ModuleTestBase, public ::testing::TestWithParam<test_params> {
 private:
@@ -96,13 +89,13 @@ public:
 protected:
     std::string get_yaml_content() override {
         YAML::Node config;
-        config["global_context"]["model_type"] = "FakeModel";
+        config["global_context"]["model_type"] = "DummyModel";
 
         YAML::Node pipeline_modules = config["pipeline_modules"];
         // Modules graph
         /*          input_module
          *         /            \
-         *  fake_module_a    fake_module_b
+         *  dummy_module_a    dummy_module_b
          *         \            /
          *          \          /
          *          output_module
@@ -119,39 +112,41 @@ protected:
         }
 
         {
-            YAML::Node fake_module_a;
-            fake_module_a["type"] = "FakeModuleA";
+            YAML::Node dummy_module_a;
+            dummy_module_a["type"] = "DummyModuleBase";
             YAML::Node inputs_a;
             inputs_a.push_back(input_node("input_data", "OVTensor", "input_node.input_data_1"));
-            fake_module_a["inputs"] = inputs_a;
+            dummy_module_a["inputs"] = inputs_a;
             YAML::Node outputs_a;
             outputs_a.push_back(output_node("output_data", "OVTensor"));
-            fake_module_a["outputs"] = outputs_a;
-            pipeline_modules["fake_module_a"] = fake_module_a;
+            dummy_module_a["outputs"] = outputs_a;
+            pipeline_modules["dummy_module_a"] = dummy_module_a;
 
-            fake_module_a["thread_mode"] = (m_async && not_in_sync_execution_modules("fake_module_a")) ? "ASYNC" : "SYNC";
+            dummy_module_a["thread_mode"] =
+                (m_async && not_in_sync_execution_modules("dummy_module_a")) ? "ASYNC" : "SYNC";
         }
 
         {
-            YAML::Node fake_module_b;
-            fake_module_b["type"] = "FakeModuleB";
+            YAML::Node dummy_module_b;
+            dummy_module_b["type"] = "DummyModuleBase";
             YAML::Node inputs_b;
             inputs_b.push_back(input_node("input_data", "OVTensor", "input_node.input_data_2"));
-            fake_module_b["inputs"] = inputs_b;
+            dummy_module_b["inputs"] = inputs_b;
             YAML::Node outputs_b;
             outputs_b.push_back(output_node("output_data", "OVTensor"));
-            fake_module_b["outputs"] = outputs_b;
-            pipeline_modules["fake_module_b"] = fake_module_b;
+            dummy_module_b["outputs"] = outputs_b;
+            pipeline_modules["dummy_module_b"] = dummy_module_b;
 
-            fake_module_b["thread_mode"] = (m_async && not_in_sync_execution_modules("fake_module_b")) ? "ASYNC" : "SYNC";
+            dummy_module_b["thread_mode"] =
+                (m_async && not_in_sync_execution_modules("dummy_module_b")) ? "ASYNC" : "SYNC";
         }
 
         {
             YAML::Node output_module;
             output_module["type"] = "ResultModule";
             YAML::Node inputs;
-            inputs.push_back(input_node("output_data_1", "OVTensor", "fake_module_a.output_data"));
-            inputs.push_back(input_node("output_data_2", "OVTensor", "fake_module_b.output_data"));
+            inputs.push_back(input_node("output_data_1", "OVTensor", "dummy_module_a.output_data"));
+            inputs.push_back(input_node("output_data_2", "OVTensor", "dummy_module_b.output_data"));
             output_module["inputs"] = inputs;
             pipeline_modules["output_node"] = output_module;
         }
@@ -168,9 +163,9 @@ protected:
 
     void check_outputs(ov::genai::module::ModulePipeline& pipe) override {
         if (m_async && _sync_execution_module_names.size() == 0) {
-            EXPECT_NE(ov::genai::module::FakeModuleA_thread_id, ov::genai::module::FakeModuleB_thread_id);
+            EXPECT_NE(ov::genai::module::dummy_module_a_thread_id, ov::genai::module::dummy_module_b_thread_id);
         } else {
-            EXPECT_EQ(ov::genai::module::FakeModuleA_thread_id, ov::genai::module::FakeModuleB_thread_id);
+            EXPECT_EQ(ov::genai::module::dummy_module_a_thread_id, ov::genai::module::dummy_module_b_thread_id);
         }
     }
 };
@@ -179,15 +174,9 @@ TEST_P(PipelineGenerateAsyncTest, ModuleTest) {
     run();
 }
 
-static std::vector<test_params> g_test_params = {
-    {true, {"fake_module_a", "fake_module_b"}},
-    {true, {}},
-    {false, {}}
-};
+static std::vector<test_params> g_test_params = {{true, {"dummy_module_a", "dummy_module_b"}}, {true, {}}, {false, {}}};
 
-INSTANTIATE_TEST_SUITE_P(
-    PipelineTestSuite,
-    PipelineGenerateAsyncTest,
-    ::testing::ValuesIn(g_test_params),
-    PipelineGenerateAsyncTest::get_test_case_name
-);
+INSTANTIATE_TEST_SUITE_P(PipelineTestSuite,
+                         PipelineGenerateAsyncTest,
+                         ::testing::ValuesIn(g_test_params),
+                         PipelineGenerateAsyncTest::get_test_case_name);

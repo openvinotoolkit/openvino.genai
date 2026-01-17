@@ -3,12 +3,16 @@
 
 #include "md_img_preprocess.hpp"
 
+#include "module_genai/module_factory.hpp"
+
 #include <chrono>
 #include <thread>
 
 namespace ov {
 namespace genai {
 namespace module {
+
+GENAI_REGISTER_MODULE_SAME(ImagePreprocessModule);
 
 void ImagePreprocessModule::print_static_config() {
     std::cout << R"(
