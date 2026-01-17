@@ -182,7 +182,7 @@ public:
     std::vector<GenerationResult> generate(const std::vector<std::string>& prompts, const std::vector<ov::genai::GenerationConfig>& sampling_params, const ov::genai::StreamerVariant& streamer=std::monostate{});
     
     std::vector<GenerationResult> generate(
-        const std::vector<ChatHistory>& histories,
+        std::vector<ChatHistory>& histories,
         const std::vector<ov::genai::GenerationConfig>& sampling_params,
         const ov::genai::StreamerVariant& streamer=std::monostate{});
 

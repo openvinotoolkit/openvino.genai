@@ -155,15 +155,28 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
 std::vector<GenerationResult>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
-    const std::vector<ChatHistory>& histories,
+    std::vector<ChatHistory>& histories,
     const std::vector<ov::genai::GenerationConfig>& sampling_params,
     const StreamerVariant& streamer
 ) {
-    // TODO Enable chat history input for embeddings models.
-    OPENVINO_ASSERT(m_model_input_type == ModelInputType::TOKENS, "Chat history input is not supported for embeddings models.");
-    
     OPENVINO_ASSERT(histories.size() == sampling_params.size(), "Number of histories must match sampling params");
     OPENVINO_ASSERT(!m_tokenizer.get_chat_template().empty(), "Chat template must not be empty when using ChatHistory in generate method.");
+
+    if (m_model_input_type == ModelInputType::EMBEDDINGS) {
+        // TODO: remove this code and within model runner add check: if sequence group type is tokens, 
+        // but embedding model is available => compute embeddings first, then pass to LLM
+        std::vector<std::vector<ov::Tensor>> images(histories.size());
+        auto results_vlm = generate(histories, images, sampling_params, streamer);
+        std::vector<GenerationResult> results;
+        for (auto& vlm_result : results_vlm) {
+            GenerationResult result;
+            result.m_generation_ids = std::move(vlm_result.texts);
+            result.m_scores = std::move(vlm_result.scores);
+            result.perf_metrics = std::move(vlm_result.perf_metrics);
+            results.push_back(result);
+        }
+        return results;
+    }
     
     auto start_time = std::chrono::steady_clock::now();
 
@@ -399,6 +412,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
              const std::vector<std::vector<ov::Tensor>>& images_vector,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) {
+    // empty videos batch size should match prompt batch size
+    const std::vector<std::vector<ov::Tensor>> empty_videos_vector(histories.size());
     return generate(histories, images_vector, {{}}, sampling_params, streamer);
 }
 
@@ -440,6 +455,8 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
         processed_chat_data.normalized_history,
         true
     );
+
+    m_inputs_embedder->set_apply_chat_template_status(false);
 
     if (m_inputs_embedder->has_token_type_ids()) {
         auto [embeds, tt_ids] = m_inputs_embedder->get_inputs_embeds_with_token_type_ids(templated_history,

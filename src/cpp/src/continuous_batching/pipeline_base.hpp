@@ -158,7 +158,7 @@ public:
      * Performs monolitic generation based on ChatHistory objects
      */
     std::vector<GenerationResult>
-    generate(const std::vector<ChatHistory>& histories,
+    generate(std::vector<ChatHistory>& histories,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer);
 

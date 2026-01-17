@@ -335,9 +335,8 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::ve
 }
 
 std::vector<GenerationResult> ContinuousBatchingPipeline::generate(
-    const std::vector<ChatHistory>& histories,
-    const std::vector<ov::genai::GenerationConfig>&
-    sampling_params,
+    std::vector<ChatHistory>& histories,
+    const std::vector<ov::genai::GenerationConfig>& sampling_params,
     const StreamerVariant& streamer
 ) {
     auto decoded_results = m_impl->generate(histories, sampling_params, streamer);
