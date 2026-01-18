@@ -12,6 +12,7 @@
 // bool: true: use batch input; false: use single input
 // string: device
 using test_params = std::tuple<bool, bool, std::string>;
+using namespace ov::genai::module;
 
 class LLMInferenceModuleTest : public ModuleTestBase, public ::testing::TestWithParam<test_params> {
 private:

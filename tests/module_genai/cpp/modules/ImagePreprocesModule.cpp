@@ -8,6 +8,7 @@
 
 // add device param to test_params
 using test_params = std::tuple<std::vector<std::string>, std::string>;
+using namespace ov::genai::module;
 
 class ImagePreprocesModuleTest : public ModuleTestBase, public ::testing::TestWithParam<test_params> {
 private:

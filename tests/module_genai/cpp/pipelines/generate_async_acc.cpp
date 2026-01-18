@@ -14,6 +14,8 @@
 #include "../utils/ut_modules_base.hpp"
 #include "../utils/model_yaml.hpp"
 
+using namespace ov::genai::module;
+
 // Test for ModulePipeline generate_async and generate functions.
 // The test verifies that both functions produce the same output given the same input.
 

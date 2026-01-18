@@ -6,6 +6,8 @@
 #include "../utils/model_yaml.hpp"
 #include "../utils/load_image.hpp"
 
+using namespace ov::genai::module;
+
 struct ZImageDenoiserLoopTestData {
     ov::Tensor latents;
     ov::Tensor prompt_embed;

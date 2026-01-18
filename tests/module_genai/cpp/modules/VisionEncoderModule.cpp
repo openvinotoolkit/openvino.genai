@@ -6,6 +6,8 @@
 #include "../utils/model_yaml.hpp"
 #include "../utils/load_image.hpp"
 
+using namespace ov::genai::module;
+
 struct VisionEncoderTestData {
     ov::Tensor preprocessed_image;
     std::vector<int> source_size;
@@ -17,7 +19,7 @@ namespace TEST_DATA {
 
 VisionEncoderTestData vision_encoder_test_data() {
     VisionEncoderTestData data;
-    data.preprocessed_image = ModuleTestBase::ut_randn_tensor(ov::Shape{64, 1280}, 42);
+    data.preprocessed_image = ov::genai::module::ModuleTestBase::ut_randn_tensor(ov::Shape{64, 1280}, 42);
     data.source_size = {8, 8};
     data.images_sequence = {0};
     data.input_ids = ov::Tensor(ov::element::i64, ov::Shape{1, 6});
@@ -31,7 +33,7 @@ VisionEncoderTestData vision_encoder_test_data() {
 
 using test_params = std::tuple<VisionEncoderTestData, std::string>;
 
-class VisionEncoderModuleTest : public ModuleTestBase, public ::testing::TestWithParam<test_params> {
+class VisionEncoderModuleTest : public ov::genai::module::ModuleTestBase, public ::testing::TestWithParam<test_params> {
 private:
     std::string m_device;
     VisionEncoderTestData m_test_data;

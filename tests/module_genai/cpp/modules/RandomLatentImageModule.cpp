@@ -5,6 +5,8 @@
 #include "../utils/utils.hpp"
 #include "../utils/model_yaml.hpp"
 
+using namespace ov::genai::module;
+
 struct RandomLatentImageTestData {
     int width;
     int height;

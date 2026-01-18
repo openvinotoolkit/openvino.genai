@@ -34,7 +34,7 @@ namespace module {
         X(ResultModule, 50) \
         X(SaveImageModule, 51) \
         X(Unknown, 99) \
-        X(DummyModuleBase, 10000)
+        X(DummyModule, 10000)
 
     enum class ModuleType : int {
     #define X(name, val) name = val,

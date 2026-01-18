@@ -1,4 +1,7 @@
-SCRIPT_DIR_UNIT_TEST_CPP="$(dirname "$(readlink -f "$BASH_SOURCE")")"
+#!/usr/bin/env bash
+set -eo pipefail
+
+SCRIPT_DIR_UNIT_TEST_CPP="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 cd ${SCRIPT_DIR_UNIT_TEST_CPP}
 
 source ../../../../source_ov.sh

@@ -23,6 +23,7 @@ IBaseModule::IBaseModule(const IBaseModuleDesc::PTR& desc, const PipelineDesc::P
         this->outputs[output.name] = OutputModule();
     }
 
+    // Initilize first ov::Model with key "ov_model"
     init_ov_model();
 }
 

@@ -18,7 +18,7 @@ namespace genai {
 
 namespace module {
 
-// ConfigModelsMap: key is model name, value is pair of model IR as string and shared_ptr<ov::Model>
+// ConfigModelsMap: key is module name, value is pair of model IR as string and shared_ptr<ov::Model>
 using ConfigModelsMap = std::map<std::string, std::map<std::string, std::shared_ptr<ov::Model>>>;
 
 class OPENVINO_GENAI_EXPORTS ModulePipeline {

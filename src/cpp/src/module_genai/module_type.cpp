@@ -7,7 +7,6 @@
 
 namespace ov {
 namespace genai {
-
 namespace module {
 
 const std::unordered_map<ModuleType, std::string> ModuleTypeConverter::kTypeToString = {
@@ -16,7 +15,6 @@ const std::unordered_map<ModuleType, std::string> ModuleTypeConverter::kTypeToSt
 #undef X
 };
 
-// 用宏自动生成字符串到类型的映射
 const std::unordered_map<std::string, ModuleType> ModuleTypeConverter::kStringToType = {
 #define X(name, val) {#name, ModuleType::name},
     GENAI_MODULE_TYPE_LIST
