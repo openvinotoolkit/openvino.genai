@@ -7,14 +7,15 @@ import openvino_genai
 
 
 def streamer(subword):
-    print(subword, end='', flush=True)
+    print(subword, end="", flush=True)
     # Return flag corresponds whether generation should be stopped.
     return openvino_genai.StreamingStatus.RUNNING
 
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('model_dir', help='Path to the model directory')
-    parser.add_argument('device', nargs='?', default='CPU', help='Device to run the model on (default: CPU)')
+    parser.add_argument("model_dir", help="Path to the model directory")
+    parser.add_argument("device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
     args = parser.parse_args()
 
     device = args.device
@@ -26,15 +27,14 @@ def main():
     chat_history = openvino_genai.ChatHistory()
     while True:
         try:
-            prompt = input('question:\n')
+            prompt = input("question:\n")
         except EOFError:
             break
-        chat_history.append({'role': 'user', 'content': prompt})
+        chat_history.append({"role": "user", "content": prompt})
         decoded_results: openvino_genai.DecodedResults = pipe.generate(chat_history, config, streamer)
-        output = decoded_results.texts[0]
-        chat_history.append({'role': 'assistant', 'content': output})
-        print('\n----------')
+        chat_history.append({"role": "assistant", "content": decoded_results.texts[0]})
+        print("\n----------")
 
 
-if '__main__' == __name__:
+if "__main__" == __name__:
     main()
