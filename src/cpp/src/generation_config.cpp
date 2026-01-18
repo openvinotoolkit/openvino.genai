@@ -154,6 +154,10 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     // Structured output
     read_anymap_param(properties, "structured_output_config", structured_output_config);
     read_anymap_param(properties, "parsers", parsers);
+
+    // CDPruner
+    read_anymap_param(properties, "pruning_ratio", pruning_ratio);
+    read_anymap_param(properties, "relevance_weight", relevance_weight);
 }
 
 
