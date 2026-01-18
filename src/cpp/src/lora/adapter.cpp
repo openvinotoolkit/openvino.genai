@@ -43,6 +43,13 @@
 #include "lora/common.hpp"
 #include "lora/names_mapping.hpp"
 
+#ifdef ENABLE_GGUF
+#include <regex>
+#include <vector>
+#include <utility>
+#include "gguf_utils/gguf.hpp"
+#endif
+
 extern "C" {
     #include "safetensors.h"
 }
@@ -1063,6 +1070,93 @@ private:
 };
 
 
+#ifdef ENABLE_GGUF
+// Helper to convert GGUF tensor names to OpenVINO/HF names
+std::string convert_gguf_name_to_hf(std::string name) {
+    // 1. Handle blocks: blk.N. -> model.layers.N.
+    static const std::regex blk_pattern("blk\\.(\\d+)\\.");
+    std::string new_name = std::regex_replace(name, blk_pattern, "model.layers.$1.");
+
+    // 2. Handle specific layer components
+    // Attention and Norms
+    static const std::vector<std::pair<std::string, std::string>> replacements = {
+        {"attn_norm", "input_layernorm"},
+        {"ffn_norm", "post_attention_layernorm"},
+        {"attn_q", "self_attn.q_proj"},
+        {"attn_k", "self_attn.k_proj"},
+        {"attn_v", "self_attn.v_proj"},
+        {"attn_output", "self_attn.o_proj"},
+        {"ffn_gate", "mlp.gate_proj"},
+        {"ffn_up", "mlp.up_proj"},
+        {"ffn_down", "mlp.down_proj"},
+        // Qwen specific ?
+        {"attn_k_norm", "self_attn.k_norm"},
+        {"attn_q_norm", "self_attn.q_norm"},
+        // Global components
+        {"token_embd", "model.embed_tokens"},
+        {"output_norm", "model.norm"},
+        {"output", "lm_head"}
+    };
+
+    for (const auto& [gguf_part, hf_part] : replacements) {
+        size_t pos = new_name.find(gguf_part);
+        if (pos != std::string::npos) {
+            new_name.replace(pos, gguf_part.length(), hf_part);
+        }
+    }
+    
+    return new_name;
+}
+
+class GGUFAdapterImpl : public AdapterImpl {
+public:
+
+    GGUFAdapterImpl(const std::filesystem::path& path) {
+        // Use get_gguf_data to load raw tensors without enforcing a full model structure
+        // This is crucial for adapters which only contain sparse weights
+        auto gguf_data = get_gguf_data(path.string());
+        auto& raw_tensors = std::get<1>(gguf_data);
+
+        ConstantMap constant_map;
+        for (auto& [name, tensor] : raw_tensors) {
+            // Convert GGUF naming convention to Hugging Face / OpenVINO convention
+            std::string converted_name = convert_gguf_name_to_hf(name);
+
+            auto constant = std::make_shared<v0::Constant>(tensor.get_element_type(), tensor.get_shape(), tensor.data());
+            constant->get_rt_info()["__gguf_buffer_holder"] = tensor;
+            constant_map[converted_name] = constant;
+        }
+
+        constant_tensors = group_lora_constant_tensors(constant_map, default_lora_constant_patterns());
+        for (const auto& constant_tensor : constant_tensors) {
+            constant_map.erase(constant_tensor.first);
+        }
+        tensors = group_lora_tensors(constant_map, default_lora_patterns());
+    }
+
+    const LoRATensors& get_tensors() const override {
+        return tensors;
+    }
+
+    const LoRAConstantTensors& get_constant_tensors() const override {
+        return constant_tensors;
+    }
+
+    bool eq(const AdapterImpl* other) const override {
+        if(auto other_casted = dynamic_cast<const GGUFAdapterImpl*>(other)) {
+            return other == this;
+        }
+        return false;
+    }
+
+private:
+
+    LoRATensors tensors;
+    LoRAConstantTensors constant_tensors;
+};
+#endif
+
+
 /// @brief Adapter that derived from another adapter by applying Derivation function.
 /// Two objects instantiated from the same Derivation type are equal when both origins and derivations are equal (while comparing with operator==).
 /// The derivation is postponed to the first call of get_tensors(), giving a way to compare Adapters without applying the derivation.
@@ -1122,8 +1216,16 @@ Adapter flux_adapter_normalization(const Adapter& adapter) {
 Adapter::Adapter(const std::shared_ptr<AdapterImpl>& pimpl) : m_pimpl(pimpl) {}
 
 
-Adapter::Adapter(const std::filesystem::path& path) :
-    m_pimpl(std::make_shared<SafetensorsAdapterImpl>(path)) {
+Adapter::Adapter(const std::filesystem::path& path) {
+    if (path.extension() == ".gguf") {
+#ifdef ENABLE_GGUF
+        m_pimpl = std::make_shared<GGUFAdapterImpl>(path);
+#else
+        OPENVINO_THROW("GGUF support is disabled. Please build with ENABLE_GGUF=ON to use GGUF adapters.");
+#endif
+    } else {
+        m_pimpl = std::make_shared<SafetensorsAdapterImpl>(path);
+    }
 }
 
 
