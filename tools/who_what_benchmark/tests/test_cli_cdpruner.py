@@ -2,7 +2,6 @@ import subprocess  # nosec B404
 import pytest
 import logging
 import sys
-import os
 from test_cli_image import run_wwb
 
 
@@ -76,7 +75,7 @@ def run_test(model_id, model_type, tmp_path, pruning_ratio, relevance_weight):
             "--relevance_weight",
             relevance_weight,
         ],
-        env
+        env,
     )
 
     pruning_ratio = int(pruning_ratio)
