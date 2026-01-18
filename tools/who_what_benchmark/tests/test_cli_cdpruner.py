@@ -87,8 +87,8 @@ def run_test(model_id, model_type, tmp_path, pruning_ratio, relevance_weight):
 @pytest.mark.parametrize(
     ("model_id", "model_type", "pruning_ratio", "relevance_weight"),
     [
-        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "visual-text", "20", "0.8"),
-        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "visual-text", "100", "0.8"),
+        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "visual-text", 20, 0.8),
+        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "visual-text", 100, 0.8),
     ],
 )
 def test_pruner_basic(model_id, model_type, tmp_path, pruning_ratio, relevance_weight):
