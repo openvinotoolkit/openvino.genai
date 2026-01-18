@@ -7,7 +7,10 @@ list(APPEND SOURCE_FILES "${CMAKE_CURRENT_BINARY_DIR}/version.cpp")
 
 # Dependencies
 
-include(FetchContent)
+# Prefer an installed/configured nlohmann_json first to avoid network downloads on CI
+if(NOT TARGET nlohmann_json)
+    find_package(nlohmann_json 3.11.3 QUIET CONFIG)
+endif()
 
 # OpenCL support for CDPruner DPP acceleration - reuse OpenVINO's ENABLE_SYSTEM_OPENCL
 if(ENABLE_SYSTEM_OPENCL)
@@ -71,9 +74,13 @@ else()
 endif()
 
 if(NOT TARGET nlohmann_json)
-    FetchContent_Declare(nlohmann_json
-        URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.3.tar.gz
-        URL_HASH SHA256=0d8ef5af7f9794e3263480193c491549b2ba6cc74bb018906202ada498a79406)
+    include(FetchContent)
+    # Use git clone fallback instead of a single tarball URL to avoid HTTP/TLS download issues
+    FetchContent_Declare(
+        nlohmann_json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.11.3
+    )
     FetchContent_MakeAvailable(nlohmann_json)
 endif()
 

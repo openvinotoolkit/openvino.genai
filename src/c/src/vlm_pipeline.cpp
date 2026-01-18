@@ -1,13 +1,16 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/c/vlm_pipeline.h"
 
+#include <cstdarg>
+#include <cstring>
+#include <filesystem>
+
+#include "openvino/c/ov_tensor.h"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
-#include "openvino/c/ov_tensor.h"
 #include "types_c.h"
-#include <stdarg.h>
 
 ov_status_e ov_genai_vlm_decoded_results_create(ov_genai_vlm_decoded_results** results) {
     if (!results) {
@@ -35,9 +38,10 @@ ov_status_e ov_genai_vlm_decoded_results_get_perf_metrics(const ov_genai_vlm_dec
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
-        std::unique_ptr<ov_genai_perf_metrics> _metrics = std::make_unique<ov_genai_perf_metrics>();
-        _metrics->object = std::make_shared<ov::genai::VLMPerfMetrics>(results->object->perf_metrics);
-        *metrics = _metrics.release();
+        // Robust allocation for opaque C struct on Windows/MSVC
+        auto _metrics_ptr = std::unique_ptr<ov_genai_perf_metrics>(new ov_genai_perf_metrics{});
+        _metrics_ptr->object = std::make_shared<ov::genai::VLMPerfMetrics>(results->object->perf_metrics);
+        *metrics = _metrics_ptr.release();
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }
@@ -53,7 +57,7 @@ void ov_genai_vlm_decoded_results_perf_metrics_free(ov_genai_perf_metrics* metri
 ov_status_e ov_genai_vlm_decoded_results_get_string(const ov_genai_vlm_decoded_results* results,
                                                     char* output,
                                                     size_t* output_size) {
-    if (!results || !(results->object) || !(output_size)) {
+    if (!results || !(results->object) || !output_size) {
         return ov_status_e::INVALID_C_PARAM;
     }
     try {
@@ -74,7 +78,11 @@ ov_status_e ov_genai_vlm_decoded_results_get_string(const ov_genai_vlm_decoded_r
     return ov_status_e::OK;
 }
 
-ov_status_e ov_genai_vlm_pipeline_create(const char* models_path, const char* device, const size_t property_args_size, ov_genai_vlm_pipeline** pipe, ...) {
+ov_status_e ov_genai_vlm_pipeline_create(const char* models_path,
+                                         const char* device,
+                                         const size_t property_args_size,
+                                         ov_genai_vlm_pipeline** pipe,
+                                         ...) {
     if (!models_path || !device || !pipe || property_args_size % 2 != 0) {
         return ov_status_e::INVALID_C_PARAM;
     }
@@ -88,15 +96,15 @@ ov_status_e ov_genai_vlm_pipeline_create(const char* models_path, const char* de
         }
         va_end(args_ptr);
         // Check Property MAX_PROMPT_LEN and MIN_RESPONSE_LEN for NPU
-        // These two special properties, which only affect the genai level, should be manually converted to integers 
+        // These two special properties, which only affect the genai level, should be manually converted to integers
         // before being passed to the constructor of VLMPipeline
-        if(std::string(device) == "NPU") {
-            if(property.find("MAX_PROMPT_LEN") != property.end()) {
+        if (std::string(device) == "NPU") {
+            if (property.find("MAX_PROMPT_LEN") != property.end()) {
                 std::string max_prompt_len = property["MAX_PROMPT_LEN"].as<std::string>();
                 property.erase("MAX_PROMPT_LEN");
                 property["MAX_PROMPT_LEN"] = std::stoi(max_prompt_len);
             }
-            if(property.find("MIN_RESPONSE_LEN") != property.end()) {
+            if (property.find("MIN_RESPONSE_LEN") != property.end()) {
                 std::string min_response_len = property["MIN_RESPONSE_LEN"].as<std::string>();
                 property.erase("MIN_RESPONSE_LEN");
                 property["MIN_RESPONSE_LEN"] = std::stoi(min_response_len);
@@ -132,46 +140,51 @@ ov_status_e ov_genai_vlm_pipeline_generate(ov_genai_vlm_pipeline* pipe,
     std::vector<ov::Tensor> rgbs_cpp;
     rgbs_cpp.reserve(num_images);
     for (size_t i = 0; i < num_images; ++i) {
-        const ov_tensor* ct = rgbs[i];
+        const ov_tensor_t* ct = rgbs[i];
 
-        auto et = ov::element::Type_t::u8;
+        ov_element_type_e et;
+        ov_tensor_get_element_type(ct, &et);
 
         ov_shape_t shape_c{};
         ov_tensor_get_shape(ct, &shape_c);
         std::vector<size_t> dims(shape_c.rank);
-        for (size_t d = 0; d < shape_c.rank; ++d) dims[d] = shape_c.dims[d];
+        for (size_t d = 0; d < shape_c.rank; ++d)
+            dims[d] = shape_c.dims[d];
         ov_shape_free(&shape_c);
 
         void* data_ptr = nullptr;
-        ov_tensor_data(const_cast<ov_tensor*>(ct), &data_ptr);
+        ov_tensor_data(const_cast<ov_tensor_t*>(ct), &data_ptr);
         if (!data_ptr) {
             return ov_status_e::INVALID_C_PARAM;
         }
 
-        rgbs_cpp.emplace_back(ov::element::Type(et), ov::Shape(dims), data_ptr);
+        rgbs_cpp.emplace_back(ov::element::Type(static_cast<ov::element::Type_t>(et)), ov::Shape(dims), data_ptr);
     }
 
     try {
         std::unique_ptr<ov_genai_vlm_decoded_results> _results = std::make_unique<ov_genai_vlm_decoded_results>();
         _results->object = std::make_shared<ov::genai::VLMDecodedResults>();
         std::string input_str(text_inputs);
-        ov::genai::StringInputs input = {input_str};
-        
+
+        ov::genai::StreamerVariant streamer_cpp = ov::genai::StreamerVariant{};
         if (streamer) {
-            auto callback = [streamer](std::string word) -> ov::genai::StreamingStatus {
+            streamer_cpp = [streamer](std::string word) -> ov::genai::StreamingStatus {
                 return static_cast<ov::genai::StreamingStatus>((streamer->callback_func)(word.c_str(), streamer->args));
             };
-            if (num_images > 0) {
-                *(_results->object) = (config && config->object)
-                                        ? pipe->object->generate(input_str, rgbs_cpp, *(config->object), callback)
-                                        : pipe->object->generate(input_str, rgbs_cpp, {}, callback);
-            }
-            if (num_images == 0){
-                *(_results->object) = (config && config->object)
-                ? pipe->object->generate(input_str, ov::genai::generation_config(*(config->object)), ov::genai::streamer(callback))
-                : pipe->object->generate(input_str, ov::genai::streamer(callback));
-            }
-        } 
+        }
+
+        ov::genai::GenerationConfig generation_config =
+            (config && config->object) ? *(config->object) : ov::genai::GenerationConfig{};
+
+        if (num_images > 0) {
+            *(_results->object) = pipe->object->generate(input_str, rgbs_cpp, generation_config, streamer_cpp);
+        } else {
+            // Using property-based generate for cases without images to maintain flexibility
+            *(_results->object) = pipe->object->generate(input_str,
+                                                         ov::genai::generation_config(generation_config),
+                                                         ov::genai::streamer(streamer_cpp));
+        }
+
         if (results) {
             *results = _results.release();
         }
@@ -180,7 +193,7 @@ ov_status_e ov_genai_vlm_pipeline_generate(ov_genai_vlm_pipeline* pipe,
         return ov_status_e::UNKNOW_EXCEPTION;
     }
     return ov_status_e::OK;
-} 
+}
 
 ov_status_e ov_genai_vlm_pipeline_start_chat(ov_genai_vlm_pipeline* pipe) {
     if (!pipe || !(pipe->object)) {
