@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "continuous_batching/cache_eviction.hpp"
@@ -541,4 +541,3 @@ size_t SnapKVScoreAggregationCalculator::get_num_token_scores_to_aggregate(size_
 }
 
 }
-
