@@ -211,7 +211,7 @@ inline ov::Tensor from_npy(const std::filesystem::path& npy) {
 inline std::string print_token_id(const std::vector<int64_t>& print_ids,
                                   const std::string& prefix,
                                   const size_t& last_num,
-                                  const ov::genai::Tokenizer& tokenizer) {
+                                  ov::genai::Tokenizer& tokenizer) {
     std::stringstream ss;
     ss << prefix << " = ";
     size_t start_id = (print_ids.size() > last_num) ? (print_ids.size() - last_num) : 0;
