@@ -2,11 +2,27 @@ import subprocess  # nosec B404
 import sys
 import pytest
 import logging
+import shutil
+import time
+from datetime import datetime, timezone
 from test_cli_image import run_wwb
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _ts() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
+def _log(message: str) -> None:
+    logger.info(f"[{_ts()}] [wwb-embeddings] {message}")
+
+
+def _require_optimum_cli() -> None:
+    if shutil.which("optimum-cli") is None:
+        pytest.skip("Missing required executable 'optimum-cli' for embeddings export.")
 
 
 @pytest.mark.parametrize(
@@ -22,17 +38,28 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
     if sys.platform == "win32":
         pytest.xfail("Ticket 178790")
 
+    _require_optimum_cli()
+    _log(f"Test params: model_id={model_id} model_type={model_type} tmp_path={tmp_path}")
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = tmp_path / model_id.replace("/", "_")
 
-    result = subprocess.run(["optimum-cli", "export",
-                             "openvino", "-m", model_id,
-                             MODEL_PATH, "--task",
-                             "feature-extraction",
-                             "--trust-remote-code"],
-                            capture_output=True,
-                            text=True,
-                            )
+    start = time.perf_counter()
+    result = subprocess.run(
+        [
+            "optimum-cli",
+            "export",
+            "openvino",
+            "-m",
+            model_id,
+            MODEL_PATH,
+            "--task",
+            "feature-extraction",
+            "--trust-remote-code",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    _log(f"optimum-cli export dt={time.perf_counter() - start:.3f}s rc={result.returncode} MODEL_PATH={MODEL_PATH}")
     assert result.returncode == 0
 
     # Collect reference with HF model
@@ -108,17 +135,28 @@ def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
     if sys.platform == "win32":
         pytest.xfail("Ticket 178790")
 
+    _require_optimum_cli()
+    _log(f"Test params: model_id={model_id} model_type={model_type} batch_size={batch_size} tmp_path={tmp_path}")
     GT_FILE = tmp_path / f"gt_batch_{batch_size}.csv"
     MODEL_PATH = tmp_path / model_id.replace("/", "_")
 
-    result = subprocess.run(["optimum-cli", "export",
-                             "openvino", "-m", model_id,
-                             MODEL_PATH, "--task",
-                             "feature-extraction",
-                             "--trust-remote-code"],
-                            capture_output=True,
-                            text=True,
-                            )
+    start = time.perf_counter()
+    result = subprocess.run(
+        [
+            "optimum-cli",
+            "export",
+            "openvino",
+            "-m",
+            model_id,
+            MODEL_PATH,
+            "--task",
+            "feature-extraction",
+            "--trust-remote-code",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    _log(f"optimum-cli export dt={time.perf_counter() - start:.3f}s rc={result.returncode} MODEL_PATH={MODEL_PATH}")
     assert result.returncode == 0
 
     # Collect reference with HF model
