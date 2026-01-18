@@ -1409,7 +1409,7 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
     
     with pytest.raises(RuntimeError):
         ov_pipe.generate(image_tag(0))
-            
+
 
 @pytest.mark.parametrize(
     "ov_pipe_model,has_image,has_video",
@@ -1760,3 +1760,13 @@ def test_cdpruner_continuous_batching(
     )
 
     assert results[0].texts[0].strip() != "", "Result should not be empty"
+
+
+def test_vlm_pipeline_add_extension():
+    models_path = _get_ov_model(MODEL_IDS[0])
+
+    properties = {"extensions": ["fake_path"]}
+
+    with pytest.raises(RuntimeError) as exc_info:
+        VLMPipeline(models_path, "CPU", config=properties)
+    assert "Cannot find entry point to the extension library" in str(exc_info.value)
