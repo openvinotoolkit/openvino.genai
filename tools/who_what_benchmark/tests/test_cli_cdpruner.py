@@ -37,19 +37,21 @@ def run_test(model_id, model_type, tmp_path, pruning_ratio, relevance_weight):
     assert result.returncode == 0
 
     # Collect reference with HF model
-    run_wwb([
-        "--base-model",
-        model_id,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        model_type,
-        "--hf",
-    ])
+    run_wwb(
+        [
+            "--base-model",
+            model_id,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--hf",
+        ]
+    )
 
     # test cdpruner
     output = run_wwb(
