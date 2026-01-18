@@ -1,0 +1,48 @@
+Video Similarity evaluation: 10it [04:12, 25.30s/it]
+INFO:__main__:Metrics for model: /home/labuser/work/notebook/openvino.genai/models/ltx_hf
+INFO:__main__:   similarity
+0    0.926587
+INFO:__main__:=======================================================================================================
+INFO:__main__:Top-1 example:
+INFO:__main__:similarity                                                                                                                                                                                                                                                                                            0.872807
+per_frame          [0.863993, 0.8697232, 0.87982726, 0.88633025, 0.8948775, 0.88551706, 0.867858, 0.87493384, 0.89429426, 0.8620807, 0.85930896, 0.8789909, 0.86685336, 0.8588746, 0.85176444, 0.8771286, 0.8655051, 0.860549, 0.8855689, 0.8653542, 0.87040496, 0.8642998, 0.87230325, 0.88042855, 0.8834051]
+prompts                                                                                                                                                                                                                                                             cowboy running in slow motion in a field
+source_model                                                                                                                                                                                                                                                                                 reference/video_0
+optimized_model                                                                                                                                                                                                                               /home/labuser/work/notebook/openvino.genai/out_hf/target/video_0
+Name: 0, dtype: object
+INFO:__main__:=======================================================================================================
+INFO:__main__:Top-2 example:
+INFO:__main__:similarity                                                                                                                                                                                                                                                                                             0.887368
+per_frame          [0.8871872, 0.8869467, 0.85796607, 0.8967118, 0.88550436, 0.89251703, 0.87551755, 0.9005059, 0.88514113, 0.88472545, 0.8837644, 0.8999299, 0.8868808, 0.8852254, 0.8904059, 0.88806957, 0.8790874, 0.88376653, 0.88198626, 0.8739811, 0.8960515, 0.8943306, 0.9037218, 0.8883736, 0.8959048]
+prompts                                                                                                                                                                                                                                                                       octopus figure skating, cartoon
+source_model                                                                                                                                                                                                                                                                                  reference/video_7
+optimized_model                                                                                                                                                                                                                                /home/labuser/work/notebook/openvino.genai/out_hf/target/video_7
+Name: 7, dtype: object
+INFO:__main__:=======================================================================================================
+INFO:__main__:Top-3 example:
+INFO:__main__:similarity                                                                                                                                                                                                                                                                                                   0.898533
+per_frame          [0.8846318, 0.89364123, 0.89606816, 0.90520835, 0.89990604, 0.90730584, 0.9084669, 0.90380013, 0.91040766, 0.89905477, 0.8743136, 0.9103744, 0.88250816, 0.8999705, 0.90139693, 0.90683913, 0.9051002, 0.8936784, 0.88980436, 0.8977965, 0.8970734, 0.89419603, 0.9076474, 0.89829046, 0.89583224]
+prompts                                                                                                                                                                                                                                                                                       fight naruto vs saske
+source_model                                                                                                                                                                                                                                                                                        reference/video_3
+optimized_model                                                                                                                                                                                                                                      /home/labuser/work/notebook/openvino.genai/out_hf/target/video_3
+Name: 3, dtype: object
+INFO:__main__:=======================================================================================================
+INFO:__main__:Top-4 example:
+INFO:__main__:similarity                                                                                                                                                                                                                                                                                               0.92063
+per_frame          [0.92601585, 0.91334426, 0.9104391, 0.9115267, 0.9206182, 0.9128696, 0.9165244, 0.9295911, 0.90867174, 0.9169818, 0.9296118, 0.9249383, 0.9260864, 0.91794574, 0.92485356, 0.9308256, 0.9226842, 0.90882367, 0.92773736, 0.89623374, 0.92181456, 0.92432696, 0.9271541, 0.9267959, 0.9393321]
+prompts                                                                                                                                                                                                               slow motion, hydrogen bond energy, atom, 4k, cinematic -gs 24 -motion 2 -ar 16:9 -fps 24
+source_model                                                                                                                                                                                                                                                                                   reference/video_2
+optimized_model                                                                                                                                                                                                                                 /home/labuser/work/notebook/openvino.genai/out_hf/target/video_2
+Name: 2, dtype: object
+INFO:__main__:=======================================================================================================
+INFO:__main__:Top-5 example:
+INFO:__main__:similarity                                                                                                                                                                                                                                                                                               0.92158
+per_frame          [0.91554844, 0.9118484, 0.9261645, 0.9216336, 0.9255843, 0.92744607, 0.9236192, 0.91328067, 0.92231536, 0.9318491, 0.9139346, 0.9283084, 0.9100289, 0.9230741, 0.91734266, 0.9194629, 0.9174213, 0.92608166, 0.91852343, 0.92541015, 0.9288535, 0.92535686, 0.92713904, 0.9156982, 0.9235669]
+prompts                                                                                                                                                                                                                                                            indian womens wahsing clothes at river side
+source_model                                                                                                                                                                                                                                                                                   reference/video_6
+optimized_model                                                                                                                                                                                                                                 /home/labuser/work/notebook/openvino.genai/out_hf/target/video_6
+Name: 6, dtype: object
+
+
+0    0.839385
+0    0.898635

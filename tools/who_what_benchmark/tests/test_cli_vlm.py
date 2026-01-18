@@ -1,8 +1,9 @@
-import subprocess  # nosec B404
 import pytest
 import logging
 import sys
-from test_cli_image import run_wwb, get_similarity
+
+from conftest import convert_model, run_wwb
+from test_cli_image import get_similarity
 
 
 logging.basicConfig(level=logging.INFO)
@@ -12,21 +13,9 @@ logger = logging.getLogger(__name__)
 def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path):
     if sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
-    if sys.platform == "win32":
-        pytest.xfail("Ticket 178790")
 
     GT_FILE = tmp_path / "gt.csv"
-    MODEL_PATH = tmp_path / model_id.replace("/", "_")
-
-    result = subprocess.run(["optimum-cli", "export",
-                             "openvino", "-m", model_id,
-                             MODEL_PATH, "--task",
-                             "image-text-to-text",
-                             "--trust-remote-code"],
-                            capture_output=True,
-                            text=True,
-                            )
-    assert result.returncode == 0
+    MODEL_PATH = convert_model(model_id)
 
     # Collect reference with HF model
     run_wwb([

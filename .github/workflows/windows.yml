@@ -704,10 +704,12 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
             timeout: 30
           - name: 'WWB tests'
+            env_hf_cache: C:/mount/caches/datasets_test
             cmd: 'python -m pytest -s -v tools/who_what_benchmark/tests -m "not nanollava"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 120
           - name: 'WWB tests (nanollava)'
+            env_hf_cache: C:/mount/caches/datasets_test
             cmd: |
               python -m pip install transformers==4.48.0
               python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
@@ -761,7 +763,11 @@ jobs:
 
       - name: Tests
         if: ${{ matrix.test.run_condition }}
-        run: ${{ matrix.test.cmd }}
+        run: |
+          if ("${{ matrix.test.env_hf_cache }}" -ne "") {
+            $env:HF_HUB_DOWNLOAD_TIMEOUT=100
+          }
+          ${{ matrix.test.cmd }}
         working-directory: ${{ env.SRC_DIR }}
 
   genai_samples_tests:
