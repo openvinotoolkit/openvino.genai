@@ -79,9 +79,11 @@ public:
         Output scheduler_output;
         // map of src -> dst blocks copies, which need to be performed by CacheManager
         std::map<size_t, std::list<size_t>> block_copy_map;
+        // reference logic to handle kv cache remap for tree speculative decoding
+        // _set_cache_remap_indices(sequence_groups, scheduler_output);
 
         // free some blocks taken by non-confirmed candidates in SD / prompt look-up
-        clean_empty_blocks(sequence_groups);
+        // clean_empty_blocks(sequence_groups);
 
         if (m_block_manager->get_total_number_of_kv_blocks() == 0) {
             _initialize_cache(sequence_groups);
@@ -108,13 +110,109 @@ public:
         m_cache_manager->allocate_cache_if_needed(m_block_manager->get_total_number_of_kv_blocks());
         _clear_waiting_sequences(sequence_groups);
         scheduler_output.m_cache_usage = m_block_manager->get_used_percentage();
-
+        // reference logic to handle kv cache remap for tree speculative decoding
+        /*auto remap_indices = _set_cache_remap_indices(sequence_groups, scheduler_output);
+        if (remap_indices.size() > 0) {
+            _remap_kv_cache(remap_indices);
+        }*/
         static ManualTimer copy_blocks_timer("copy block");
         copy_blocks_timer.start();
         m_cache_manager->copy_blocks(block_copy_map);
         copy_blocks_timer.end();
 
         return scheduler_output;
+    }
+
+    void _remap_kv_cache(std::map<size_t, std::map<size_t, size_t>>& remap_indices) {
+        // found the corresponding blocks for each sequence group and remap the kv cache
+
+    }
+
+    void _set_cache_remap_indices(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                                  const Scheduler::Output& scheduler_output) {
+        std::string src_tensor_name = "kv_remap_indices_src";
+        std::string dst_tensor_name = "kv_remap_indices_dst";
+        size_t num_sequence_groups = sequence_groups.size();
+        size_t total_indices_to_remap = 0;
+        std::map<size_t, std::map<size_t, size_t>> remap_indices;
+        for (size_t i = 0; i < num_sequence_groups; ++i) {
+            //size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[i];
+            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+            size_t num_running_sequences = running_sequences.size();
+            auto validated_indices = running_sequences[0]->get_eagle_metadata().validated_indices;
+            if (validated_indices.size() == 0) {
+                continue;
+            }
+            total_indices_to_remap += validated_indices.size();
+        // m_request.get_tensor(src_tensor_name).set_shape({total_indices_to_remap});
+        // m_request.get_tensor(dst_tensor_name).set_shape({total_indices_to_remap});
+        // fill the kv_remap_indices for both src and dst
+            OPENVINO_ASSERT(num_running_sequences == 1, "bell debug");
+
+            auto num_processed_tokens = sequence_group->get_num_processed_tokens();
+            size_t prev_num_processed_tokens = num_processed_tokens - validated_indices.size();
+            size_t index = prev_num_processed_tokens;
+            for (auto& idx : validated_indices) {
+                remap_indices[i].emplace(prev_num_processed_tokens + idx, index++);  // src idx, dst idx
+            }
+        }
+        if (remap_indices.size() > 0) {
+            for (auto & [seq_group_id, indices_map] : remap_indices) {
+                // get the actual index in block_table
+                auto running_sequences = sequence_groups[seq_group_id]->get_running_sequences();
+                const auto& block_table_for_layers = m_block_manager->get_block_tables(running_sequences[0]->get_id());
+                // suppose all layers have the same block table structure
+                auto& block_table_for_sequence = block_table_for_layers[0];
+                size_t block_size = m_block_manager->get_block_size();
+                for (const auto& [src_idx, dst_idx] : indices_map) {
+                    size_t src_block_idx = (src_idx) / block_size;
+                    size_t dst_block_idx = (dst_idx) / block_size;
+                    size_t src_slot_idx = (src_idx) % block_size;
+                    size_t dst_slot_idx = (dst_idx) % block_size;
+                    auto src_index = block_table_for_sequence[src_block_idx]->get_index();
+                    auto dst_index = block_table_for_sequence[dst_block_idx]->get_index();
+                    std::cout << "remap seq_group_id " << seq_group_id << " src idx " << src_idx << " to dst idx " << dst_idx << std::endl;
+                    std::cout << "src block info: block idx " << src_block_idx << " slot idx " << src_slot_idx << std::endl;
+                    std::cout << "dst block info: block idx " << dst_block_idx << " slot idx " << dst_slot_idx << std::endl;
+                    std::cout << "src physical block index: " << src_index << ", dst physical block index: " << dst_index << std::endl;
+                    m_cache_manager->copy_slots(src_index, src_slot_idx, dst_index, dst_slot_idx);
+                }
+                // get the dst block indexes and token offset
+                /*std::map<size_t, size_t> dst_block_indices;
+                size_t block_size = m_block_manager->get_block_size();
+                    size_t src_block_idx = (src_idx) / block_size;
+                    size_t dst_block_idx = (dst_idx) / block_size;
+                    size_t src_slot_idx = (src_idx) % block_size;
+                    size_t dst_slot_idx = (dst_idx) % block_size;
+                    //std::cout << "remap seq_group_id " << seq_group_id << " src idx " << src_idx << " to dst idx " << dst_idx << std::endl;
+                    // get the physical block index from block tables
+                    size_t src_block_idx_physical = block_tables[src_block_idx][0]->at(src_block_idx)->get_index();
+                    size_t dst_block_idx_physical = block_tables[dst_block_idx][0]->at(dst_block_idx)->get_index();
+                    // remap the kv cache
+                    //std::cout << "src block info: block idx " << src_block_idx << " slot idx " << src_slot_idx << std::endl;
+                    //sstd::cout << "dst block info: block idx " << dst_block_idx << " slot idx " << dst_slot_idx << std::endl;
+                    m_cache_manager->copy_slots(src_block_idx_physical, src_slot_idx, dst_block_idx_physical, dst_slot_idx);     
+
+                // auto remap_indices_src_tensor = m_request.get_tensor(src_tensor_name);
+                // auto remap_indices_dst_tensor = m_request.get_tensor(dst_tensor_name);
+                /*size_t offset = 0;
+                for (size_t j = 0; j < i; j++) {
+                    size_t prev_seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[j];
+                    SequenceGroup::CPtr prev_sequence_group = sequence_groups[prev_seq_group_id];
+                    std::vector<Sequence::CPtr> prev_running_sequences = prev_sequence_group->get_running_sequences();
+                    OPENVINO_ASSERT(prev_running_sequences.size() == 1, "remap_indices tensor is only supported for sequence groups with greedy sampling.");
+                    offset += prev_running_sequences[0]->get_eagle_metadata().retrieve_indices[0].size();
+                }
+                auto remap_indices_data = remap_indices_src_tensor.data<int32_t>() + offset;
+                std::memcpy(remap_indices_data, retrieve_indices.data(), retrieve_indices.size() * sizeof(int32_t));
+                // fill the dst tensor with sequential indices
+                auto remap_indices_dst_data = remap_indices_dst_tensor.data<int32_t>() + offset;
+                for (size_t j = 0; j < retrieve_indices.size(); j++) {
+                    remap_indices_dst_data[j] = static_cast<int32_t>(j);
+                }*/
+            }
+        }
     }
 
     /**
