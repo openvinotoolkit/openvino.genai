@@ -44,11 +44,6 @@ Follow [build instruction](../../../src/docs/BUILD.md) to build GenAI samples.
 
 GPUs usually provide better performance compared to CPUs. Modify the source code to change the device for inference to the GPU.
 
-Install [../../deployment-requirements.txt](../../deployment-requirements.txt) to run samples:
-```sh
-pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
-```
-
 ### Text to Video Sample (`text2video.py`)
 
 - **Description:**
@@ -60,12 +55,12 @@ pip install --upgrade-strategy eager -r ../../deployment-requirements.txt
 
 - **Run Command:**
   ```bash
-  python text2video.py model_dir prompt [--device DEVICE] [--output OUTPUT]
+  python text2video.py model_dir prompt
   ```
 
   Example:
   ```bash
-  python text2video.py ./ltx_video_ov/INT8 "A woman with long brown hair and light skin smiles at another woman with long blonde hair"
+  ./text2video Lightricks/LTX-Video/INT8 "A woman with long brown hair and light skin smiles at another woman with long blonde hair"
   ```
 
 The sample will generate a video file `genai_video.avi` in the current directory.
@@ -85,19 +80,21 @@ You can also implement a callback function that runs in a separate thread. This 
 
 Please find the template of the callback usage below:
 
-```python
-pipe = openvino_genai.Text2VideoPipeline(model_dir, device)
+```cpp
+ov::genai::Text2VideoPipeline pipe(models_path, device);
 
-def callback(step, num_steps, latent):
-   print(f"Video generation step: {step + 1} / {num_steps}")
-   if your_condition:  # return True if you want to interrupt video generation
-      return True
-   return False
+auto callback = [&](size_t step, size_t num_steps, ov::Tensor& latent) -> bool {
+   std::cout << "Generation step: " << step + 1 << " / " << num_steps << std::endl;
+   ov::Tensor video = pipe.decode(latent).video; // get intermediate video tensor
+   if (your_condition) // return true if you want to interrupt video generation
+      return true;
+   return false;
+};
 
-video = pipe.generate(
-   prompt,
-   callback=callback
-).video
+ov::Tensor video = pipe.generate(prompt,
+   /* other generation properties */
+   ov::genai::callback(callback)
+).video;
 ```
 
 ## Troubleshooting
@@ -111,15 +108,12 @@ video = pipe.generate(
 > - At least 2 inference steps (1 step may produce artifacts)
 > - Best quality achieved with resolutions under 720x1280 and number of frames below 257
 
-### OpenCV Installation
+### OpenCV Installation (C++ samples)
 
-If you encounter issues with OpenCV when running the samples, ensure it's properly installed:
+If you encounter issues with OpenCV when running the samples, ensure it's properly installed.
+Installation instructions: https://docs.opencv.org/4.x/df/d65/tutorial_table_of_content_introduction.html
 
-```sh
-pip install opencv-python==4.12.0.88
-```
-
-This dependency is included in [../../deployment-requirements.txt](../../deployment-requirements.txt).
+> Note: `pip install opencv-python` is for Python and does **not** provide the C++ libraries required by C++ samples.
 
 ### Unicode characters encoding error on Windows
 
