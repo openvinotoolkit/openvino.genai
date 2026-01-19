@@ -134,12 +134,11 @@ public:
         if (!content_str.has_value()) {
             OPENVINO_THROW("Message does not contain 'content' string field");
         }
-        if (content_str) {
-            for (const auto& parser_func : m_parsers) {
-                // Call each implemented parser from vLLM parser python object.
-                auto result = parser_func(content_str.value());
-                new_message.concatenate(result);
-            }
+
+        for (const auto& parser_func : m_parsers) {
+            // Call each implemented parser from vLLM parser python object.
+            auto result = parser_func(content_str.value());
+            new_message.concatenate(result);
         }
         message = new_message;
     }
