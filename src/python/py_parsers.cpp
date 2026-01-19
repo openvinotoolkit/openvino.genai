@@ -98,10 +98,14 @@ public:
             m_parsers.push_back(
                 [py_parser](const std::string& content) -> JsonContainer {
                     py::object parsed = py_parser.attr("extract_tool_calls")(content, py::none());
-                    if (py::hasattr(parsed, "json")) {
-                        return JsonContainer::from_json_string(parsed.attr("json")().cast<std::string>());
+                    if (py::hasattr(parsed, "model_dump_json")) {
+                        return JsonContainer::from_json_string(
+                            parsed.attr("model_dump_json")().cast<std::string>());
+                    } else if (py::hasattr(parsed, "json")) {
+                        return JsonContainer::from_json_string(
+                            parsed.attr("json")().cast<std::string>());
                     } else {
-                        OPENVINO_THROW("Parsed object does not have json attribute");
+                        OPENVINO_THROW("Parsed object does not have model_dump_json or json attribute");
                     }
                 }
             );
