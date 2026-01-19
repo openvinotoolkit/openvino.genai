@@ -124,6 +124,7 @@ public:
                 }
             );
         }
+        OPENVINO_ASSERT(!m_parsers.empty(), "Provided vLLM parser does not have supported parsing methods");
     }
 
     void parse(JsonContainer& message) override {
