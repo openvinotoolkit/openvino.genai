@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (C) 2023-2025 Intel Corporation
+# Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import sys
@@ -32,6 +32,20 @@ def read_images(path: str) -> list[Tensor]:
     return [read_image(path)]
 
 
+def ratio_type(value):
+    ivalue = int(value)
+    if ivalue < 0 or ivalue > 100:
+        raise argparse.ArgumentTypeError(f"pruning_ratio must be between 0 and 100, got {value}")
+    return ivalue
+
+
+def weight_0_1(value):
+    fvalue = float(value)
+    if not 0.0 <= fvalue <= 1.0:
+        raise argparse.ArgumentTypeError(f"relevance_weight must be between 0 and 1, got {value}")
+    return fvalue
+
+
 def main():
     parser = argparse.ArgumentParser(description="Help command")
     parser.add_argument("-m", "--model", type=str, help="Path to model and tokenizers base directory")
@@ -42,6 +56,18 @@ def main():
     parser.add_argument("-n", "--num_iter", type=int, default=2, help="Number of iterations")
     parser.add_argument("-mt", "--max_new_tokens", type=int, default=20, help="Maximal number of new tokens")
     parser.add_argument("-d", "--device", type=str, default="CPU", help="Device")
+    parser.add_argument(
+        "--pruning_ratio",
+        type=ratio_type,
+        default=0,
+        help="(optional): Percentage of visual tokens to prune (valid range: 0-100). If this option is not provided, pruning is disabled.",
+    )
+    parser.add_argument(
+        "--relevance_weight",
+        type=weight_0_1,
+        help="(optional): Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, "
+        "a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.",
+    )
 
     args = parser.parse_args()
 
@@ -68,6 +94,10 @@ def main():
 
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = args.max_new_tokens
+    if args.pruning_ratio is not None:
+        config.pruning_ratio = args.pruning_ratio
+    if args.relevance_weight is not None:
+        config.relevance_weight = args.relevance_weight
 
     if device == "NPU":
         pipe = ov_genai.VLMPipeline(models_path, device)
