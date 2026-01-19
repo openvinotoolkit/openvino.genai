@@ -743,6 +743,10 @@ def test_continuous_batching_add_extension():
 
     scheduler_config = SchedulerConfig()
 
+    if sys.platform == "linux":
+        properties_linux = {"extensions": ["libopenvino_tokenizers.so"]}
+        ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties_linux)
+
     properties = {"extensions": ["fake_path"]}
 
     with pytest.raises(RuntimeError) as exc_info:

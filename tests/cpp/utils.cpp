@@ -22,11 +22,15 @@ TEST(TestIsContainer, test_is_container) {
 }
 
 TEST(TestAddExtensions, test_add_extensions_to_core) {
+#ifdef __linux__
+    ov::AnyMap properties1 = {ov::genai::extensions(std::vector<std::filesystem::path>{"libopenvino_tokenizers.so"})};
+    EXPECT_NO_THROW(add_extensions_to_core(properties1));
+#endif
     // Use intentionally non-existent, platform-agnostic extension paths to trigger error handling.
-    ov::AnyMap properties1 = {ov::genai::extensions(
+    ov::AnyMap properties2 = {ov::genai::extensions(
         std::vector<std::filesystem::path>{"non_existent_extension1", "non_existent_extension2"})};
-    ov::AnyMap properties2 = {ov::genai::extensions(std::vector<std::shared_ptr<ov::Extension>>{})};
+    ov::AnyMap properties3 = {ov::genai::extensions(std::vector<std::shared_ptr<ov::Extension>>{})};
 
-    EXPECT_THROW(add_extensions_to_core(properties1), ov::Exception);
-    EXPECT_NO_THROW(add_extensions_to_core(properties2));
+    EXPECT_THROW(add_extensions_to_core(properties2), ov::Exception);
+    EXPECT_NO_THROW(add_extensions_to_core(properties3));
 }
