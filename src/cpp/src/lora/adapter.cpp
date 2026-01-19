@@ -45,6 +45,7 @@
 
 #ifdef ENABLE_GGUF
 #include <algorithm>
+#include <cctype>
 #include <vector>
 #include <utility>
 #include "gguf_utils/gguf.hpp"
@@ -1083,7 +1084,8 @@ std::string convert_gguf_name_to_hf(std::string name) {
             std::string layer_num = new_name.substr(num_start, num_end - num_start);
             // Verify it's actually a number
             bool is_number = !layer_num.empty() && 
-                           std::all_of(layer_num.begin(), layer_num.end(), ::isdigit);
+                           std::all_of(layer_num.begin(), layer_num.end(), 
+                                     [](unsigned char c){ return std::isdigit(c); });
             if (is_number) {
                 std::string replacement = "model.layers." + layer_num + ".";
                 new_name.replace(pos, num_end - pos + 1, replacement);
