@@ -64,7 +64,13 @@ def get_ov_cache_converted_models_dir():
 def convert_model(model_name):
     models_dir = get_ov_cache_converted_models_dir()
 
-    model_id = model_name.split("/")[1]
+    parts = model_name.split("/")
+    if len(parts) != 2 or parts[1] not in MODELS:
+        raise ValueError(
+            f"Invalid model name '{model_name}', potentially it is not registered in MODELS set or the name is incorrect."
+        )
+    model_id = parts[1]
+
     convert_args = MODELS[model_id]["convert_args"]
     model_path = Path(models_dir) / f"wwb_{model_id}"
 
@@ -93,13 +99,13 @@ def convert_model(model_name):
     try:
         manager.execute(convert)
     except subprocess.CalledProcessError as error:
-        logger.exception(f"optimum-cli returned {error.returncode}. Output:\n{error.output}")
+        logger.exception(f"optimum-cli returned {error.returncode}. Output:\n{error.stderr}")
         raise
     return str(model_path)
 
 
 @pytest.fixture(scope="session", autouse=True)
-def module_teardown():
+def session_setup_teardown():
     ov_cache_dir = get_ov_cache_dir()
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
     logger.info(f"Creating directories: {ov_cache_converted_dir}")

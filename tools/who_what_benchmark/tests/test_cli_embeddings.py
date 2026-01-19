@@ -5,16 +5,17 @@ from conftest import convert_model, run_wwb
 
 
 @pytest.mark.parametrize(
-    ("model_id"),
+    ("model_id", "model_type"),
     [
         pytest.param(
             "BAAI/bge-small-en-v1.5",
+            "text-embedding",
             marks=pytest.mark.xfail(sys.platform == "darwin", reason="Hangs. Ticket 175534", run=False),
         ),
-        ("Qwen/Qwen3-Embedding-0.6B"),
+        ("Qwen/Qwen3-Embedding-0.6B", "text-embedding"),
     ],
 )
-def test_embeddings_basic(model_id, tmp_path):
+def test_embeddings_basic(model_id, model_type, tmp_path):
     if sys.platform == "win32":
         pytest.xfail("Ticket 178790")
 
@@ -33,7 +34,7 @@ def test_embeddings_basic(model_id, tmp_path):
             "--device",
             "CPU",
             "--model-type",
-            "text-embedding",
+            model_type,
             "--hf",
         ]
     )
@@ -50,7 +51,7 @@ def test_embeddings_basic(model_id, tmp_path):
             "--device",
             "CPU",
             "--model-type",
-            "text-embedding",
+            model_type,
         ]
     )
 
@@ -66,7 +67,7 @@ def test_embeddings_basic(model_id, tmp_path):
             "--device",
             "CPU",
             "--model-type",
-            "text-embedding",
+            model_type,
             "--genai",
             "--output",
             tmp_path,
@@ -85,20 +86,20 @@ def test_embeddings_basic(model_id, tmp_path):
             "--device",
             "CPU",
             "--model-type",
-            "text-embedding",
+            model_type,
             "--genai",
         ]
     )
 
 
 @pytest.mark.parametrize(
-    ("model_id", "batch_size"),
+    ("model_id", "model_type", "batch_size"),
     [
-        ("Qwen/Qwen3-Embedding-0.6B", 1),
-        ("Qwen/Qwen3-Embedding-0.6B", 12),
+        ("Qwen/Qwen3-Embedding-0.6B", "text-embedding", 1),
+        ("Qwen/Qwen3-Embedding-0.6B", "text-embedding", 12),
     ],
 )
-def test_embeddings_with_batch(model_id, batch_size, tmp_path):
+def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
     if sys.platform == "win32":
         pytest.xfail("Ticket 178790")
     GT_FILE = tmp_path / f"gt_batch_{batch_size}.csv"
@@ -116,7 +117,7 @@ def test_embeddings_with_batch(model_id, batch_size, tmp_path):
             "--device",
             "CPU",
             "--model-type",
-            "text-embedding",
+            model_type,
             "--embeds_batch_size",
             str(batch_size),
             "--hf",
@@ -135,7 +136,7 @@ def test_embeddings_with_batch(model_id, batch_size, tmp_path):
             "--device",
             "CPU",
             "--model-type",
-            "text-embedding",
+            model_type,
             "--embeds_batch_size",
             str(batch_size),
         ]
@@ -153,7 +154,7 @@ def test_embeddings_with_batch(model_id, batch_size, tmp_path):
             "--device",
             "CPU",
             "--model-type",
-            "text-embedding",
+            model_type,
             "--genai",
             "--output",
             tmp_path,
@@ -174,7 +175,7 @@ def test_embeddings_with_batch(model_id, batch_size, tmp_path):
             "--device",
             "CPU",
             "--model-type",
-            "text-embedding",
+            model_type,
             "--genai",
             "--embeds_batch_size",
             str(batch_size),
