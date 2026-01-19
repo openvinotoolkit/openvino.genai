@@ -619,6 +619,61 @@ def test_vlm_continuous_batching_vs_stateful(
             )
 
 
+@pytest.mark.parametrize(
+    "config",
+    [
+        pytest.param(get_greedy(), id="greedy"),
+        pytest.param(get_beam_search(), id="beam_search"),
+    ],
+)
+@parametrize_one_model_sdpa
+def test_vlm_continuous_batching_vs_stateful_chat_history(
+    ov_pipe_model: VlmModelInfo,
+    ov_continious_batching_pipe: ContinuousBatchingPipeline,
+    config: GenerationConfig,
+    cat_tensor: openvino.Tensor,
+    car_tensor: openvino.Tensor,
+):
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = config
+    generation_config.max_new_tokens = 25
+    image_links_list = [[cat_tensor], [car_tensor]]
+
+    histories_batch = 2
+    histories_cb = []
+    histories_stateful = []
+
+    for i in range(histories_batch):
+        histories_cb.append(ChatHistory())
+        histories_stateful.append(ChatHistory())
+
+    # Continuous batching generation
+    results_cb = []
+    for images in image_links_list:
+        for i in range(histories_batch):
+            histories_cb[i].append({"role": "user", "content": PROMPTS[i]})
+        results = ov_continious_batching_pipe.generate(
+            histories_cb,
+            images=[images for _ in range(histories_batch)],
+            generation_config=[generation_config for _ in range(histories_batch)],
+        )
+        for i in range(histories_batch):
+            histories_cb[i].append({"role": "assistant", "content": results[i].texts[0]})
+        results_cb.append(results)
+
+    # Stateful generation + comparison
+    for i in range(histories_batch):
+        for q_i, images in enumerate(image_links_list):
+            histories_stateful[i].append({"role": "user", "content": PROMPTS[i]})
+            result_stateful = ov_pipe.generate(
+                histories_stateful[i], images=images, generation_config=generation_config
+            )
+            histories_stateful[i].append({"role": "assistant", "content": result_stateful.texts[0]})
+            for out_idx, text in enumerate(result_stateful.texts):
+                assert text == results_cb[q_i][i].texts[out_idx]
+                assert abs(result_stateful.scores[out_idx] - results_cb[q_i][i].scores[out_idx]) < DEFAULT_SCORE_EPSILON
+
+
 @pytest.fixture(scope="module", params=[
     pytest.param([[], []], id="generation with text input only"),
     pytest.param(
