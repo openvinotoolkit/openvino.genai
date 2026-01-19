@@ -131,7 +131,7 @@ async function main() {
     const yesOrNo = SOC.Union(SOC.Regex("yes"), SOC.Regex("no"));
     generationConfig.structured_output_config = new SOC({ structural_tags_config: yesOrNo });
     process.stdout.write("Assistant: ");
-    const answer1 = await pipe.generate(chatHistory , generationConfig, streamer);
+    const answer1 = await pipe.generate(chatHistory, generationConfig, streamer);
     chatHistory.push({ role: "assistant", content: answer1.texts[0] });
     console.log();
 
