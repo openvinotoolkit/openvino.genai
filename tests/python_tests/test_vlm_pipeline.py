@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2025 Intel Corporation
+# Copyright (C) 2018-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """
@@ -1674,6 +1674,7 @@ def test_cdpruner_with_multiple_images(
 
 
 @parametrize_cdpruner_models
+@pytest.mark.xfail(condition=(sys.platform == "win32"), run=False, reason="Segfault. Ticket - 179274")
 def test_cdpruner_chat_mode(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, car_tensor: openvino.Tensor):
     """Test CDPruner in chat mode."""
     ov_pipe = ov_pipe_model.pipeline
