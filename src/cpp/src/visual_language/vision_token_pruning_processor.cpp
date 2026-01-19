@@ -81,11 +81,11 @@ std::vector<std::vector<size_t>> VisionTokenPruningProcessor::get_last_selected_
     }
 }
 
-std::string VisionTokenPruningProcessor::get_updated_prompt(const std::string& original_prompt,
-                                                            const std::string& vision_start_token,
-                                                            const std::string& vision_end_token,
-                                                            const std::string& image_pad_token,
-                                                            const std::string& video_pad_token) const {
+std::string VisionTokenPruningProcessor::get_last_updated_prompt(const std::string& original_prompt,
+                                                                 const std::string& vision_start_token,
+                                                                 const std::string& vision_end_token,
+                                                                 const std::string& image_pad_token,
+                                                                 const std::string& video_pad_token) const {
     if (m_last_keep_flags.empty()) {
         return original_prompt;
     }
@@ -887,9 +887,9 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
                 context.input_ids.get_size());
 
     if (is_chat_conversation) {
-        size_t history_boundary_with_generated = kv_history.size() - context.input_ids.get_size();
+        size_t retained_history_size = kv_history.size() - context.input_ids.get_size();
         // Chat mode: preserve complete history (input + generated tokens)
-        kv_history.resize(history_boundary_with_generated);
+        kv_history.resize(retained_history_size);
     } else {
         // First turn: clear kv_cache
         kv_history.resize(prev_hist_length_inout);

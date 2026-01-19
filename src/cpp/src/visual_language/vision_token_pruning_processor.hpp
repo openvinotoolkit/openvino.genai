@@ -109,11 +109,11 @@ public:
      * @param video_pad_token Video pad token string
      * @return Updated prompt if modifications were made, otherwise returns original_prompt unchanged
      */
-    std::string get_updated_prompt(const std::string& original_prompt,
-                                   const std::string& vision_start_token,
-                                   const std::string& vision_end_token,
-                                   const std::string& image_pad_token,
-                                   const std::string& video_pad_token) const;
+    std::string get_last_updated_prompt(const std::string& original_prompt,
+                                        const std::string& vision_start_token,
+                                        const std::string& vision_end_token,
+                                        const std::string& image_pad_token,
+                                        const std::string& video_pad_token) const;
 
     /**
      * @brief Result structure for CDPruner visual token pruning pipeline.
