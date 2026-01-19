@@ -21,16 +21,6 @@ namespace genai {
  */
 namespace eagle3 {
 
-/** @brief Default number of assistant tokens for speculative decoding. */
-constexpr std::size_t DEFAULT_NUM_ASSISTANT_TOKENS = 5;
-
-/**
- * @brief Ensures num_assistant_tokens is set and validates generation config.
- * @param config Generation configuration to validate and potentially modify.
- * @throws Exception if assistant_confidence_threshold is non-zero (unsupported).
- */
-void ensure_num_assistant_tokens_is_set(ov::genai::GenerationConfig& config);
-
 /**
  * @brief Runtime configuration for EAGLE3 speculative decoding.
  */

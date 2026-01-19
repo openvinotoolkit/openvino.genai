@@ -1,7 +1,7 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "speculative_decoding_stateful_eagle3.hpp"
+#include "eagle3_strategy.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -9,7 +9,7 @@
 
 #include "continuous_batching/timer.hpp"
 #include "openvino/genai/text_streamer.hpp"
-#include "speculative_decoding_eagle_utils.hpp"
+#include "speculative_decoding/eagle3_model_transforms.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
@@ -444,11 +444,10 @@ InferResult Eagle3DraftWrapper::forward(const InferContext& ctx) {
 
 StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc& target_model_desc,
                                                      const ov::genai::ModelDesc& draft_model_desc)
-    : LLMPipelineImplBase(target_model_desc.tokenizer, target_model_desc.generation_config) {
+    : StatefulSpeculativePipelineBase(target_model_desc.tokenizer, target_model_desc.generation_config) {
     // Initialize draft iterations from generation config
-    ov::genai::eagle3::ensure_num_assistant_tokens_is_set(m_generation_config);
+    ensure_num_assistant_tokens_is_set(m_generation_config);
     m_draft_iterations = m_generation_config.num_assistant_tokens;
-    m_tokenizer = target_model_desc.tokenizer;
 
     // Extract hidden_layers_list from draft model properties
     OPENVINO_ASSERT(draft_model_desc.properties.find("hidden_layers_list") != draft_model_desc.properties.end(),
@@ -495,10 +494,6 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
         target_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = validation_window;
     }
     m_target = std::make_unique<Eagle3TargetWrapper>(target_desc);
-
-    // Initialize performance metrics
-    m_sd_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
-    m_sd_perf_metrics.raw_metrics.m_inference_durations = {{ov::genai::MicroSeconds(0.0f)}};
 }
 
 StatefulEagle3LLMPipeline::~StatefulEagle3LLMPipeline() {
@@ -507,151 +502,20 @@ StatefulEagle3LLMPipeline::~StatefulEagle3LLMPipeline() {
 }
 
 GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGenerationConfig generation_config) {
-    GenerationConfig config = generation_config.value_or(m_generation_config);
+    // Call base class implementation to handle common defaults
+    GenerationConfig config = StatefulSpeculativePipelineBase::resolve_generation_config(generation_config);
 
+    // Apply Eagle3 specific validations
     const size_t prev_draft_iterations = m_draft_iterations;
-    ov::genai::eagle3::ensure_num_assistant_tokens_is_set(config);
+    ensure_num_assistant_tokens_is_set(config);
     m_draft_iterations = config.num_assistant_tokens;
 
-    // Apply defaults
-    if (config.stop_token_ids.empty()) {
-        config.stop_token_ids = m_generation_config.stop_token_ids;
-    }
-    if (config.eos_token_id == -1) {
-        config.set_eos_token_id(m_generation_config.eos_token_id);
-    }
-
-    config.validate();
     return config;
 }
 
-DecodedResults StatefulEagle3LLMPipeline::generate(StringInputs inputs,
-                                                   OptionalGenerationConfig generation_config,
-                                                   StreamerVariant streamer) {
-    ManualTimer generate_timer("StatefulEagle3LLMPipeline::generate()");
-    generate_timer.start();
-
-    ManualTimer encode_timer("Encode");
-    encode_timer.start();
-
-    // Extract prompt string
-    std::string prompt =
-        std::visit(overloaded{[](const std::string& prompt_str) {
-                                  return prompt_str;
-                              },
-                              [](std::vector<std::string>& prompts) {
-                                  OPENVINO_ASSERT(prompts.size() == 1u, "Currently only batch size=1 is supported");
-                                  return prompts.front();
-                              }},
-                   inputs);
-
-    GenerationConfig config = resolve_generation_config(generation_config);
-
-    // Tokenize input based on chat mode
-    ov::genai::TokenizedInputs tokenized_input;
-    if (m_is_chat_active) {
-        m_chat_history.push_back({{"role", "user"}, {"content", prompt}});
-        constexpr bool add_generation_prompt = true;
-        prompt = m_tokenizer.apply_chat_template(m_chat_history, add_generation_prompt);
-        tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false));
-    } else {
-        if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
-            ChatHistory history({{{"role", "user"}, {"content", prompt}}});
-            constexpr bool add_generation_prompt = true;
-            auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
-            tokenized_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
-        } else {
-            tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(true));
-        }
-    }
-    encode_timer.end();
-
-    // Generate tokens
-    auto encoded_results = generate(tokenized_input, config, streamer);
-
-    // Decode results
-    ManualTimer decode_timer("Decode");
-    decode_timer.start();
-    DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
-    decode_timer.end();
-
-    // Update chat history
-    if (m_is_chat_active) {
-        if (m_streaming_was_cancelled) {
-            m_chat_history.pop_back();  // Rollback on cancellation
-        } else {
-            m_chat_history.push_back({{"role", "assistant"}, {"content", decoded_results.texts[0]}});
-        }
-    }
-
-    // Update performance metrics
-    decoded_results.perf_metrics = encoded_results.perf_metrics;
-    decoded_results.extended_perf_metrics = encoded_results.extended_perf_metrics;
-    generate_timer.end();
-
-    auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
-    raw_counters.generate_durations.clear();
-    raw_counters.generate_durations.emplace_back(generate_timer.get_duration_microsec());
-    raw_counters.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
-    raw_counters.detokenization_durations.emplace_back(decode_timer.get_duration_microsec());
-    decoded_results.perf_metrics.m_evaluated = false;
-    decoded_results.perf_metrics.evaluate_statistics(generate_timer.get_start_time());
-
-    return decoded_results;
-}
-
-DecodedResults StatefulEagle3LLMPipeline::generate(const ChatHistory& history,
-                                                   OptionalGenerationConfig generation_config,
-                                                   StreamerVariant streamer) {
-    ManualTimer generate_timer("StatefulEagle3LLMPipeline::generate()");
-    generate_timer.start();
-
-    ManualTimer encode_timer("Encode");
-    encode_timer.start();
-
-    GenerationConfig config = resolve_generation_config(generation_config);
-
-    OPENVINO_ASSERT(config.apply_chat_template, "Chat template must be applied when using ChatHistory");
-    OPENVINO_ASSERT(!m_tokenizer.get_chat_template().empty(), "Chat template must not be empty when using ChatHistory");
-    OPENVINO_ASSERT(!history.empty(), "Chat history must not be empty");
-
-    constexpr bool add_generation_prompt = true;
-    auto templated_chat_history = m_tokenizer.apply_chat_template(history, add_generation_prompt);
-    auto tokenized_inputs = m_tokenizer.encode(templated_chat_history, ov::genai::add_special_tokens(false));
-    encode_timer.end();
-
-    // Generate tokens
-    auto encoded_results = generate(tokenized_inputs, config, streamer);
-
-    // Decode results
-    ManualTimer decode_timer("Decode");
-    decode_timer.start();
-    DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
-    decode_timer.end();
-
-    // Update performance metrics
-    decoded_results.perf_metrics = encoded_results.perf_metrics;
-    decoded_results.extended_perf_metrics = encoded_results.extended_perf_metrics;
-    generate_timer.end();
-
-    auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
-    raw_counters.generate_durations.clear();
-    raw_counters.generate_durations.emplace_back(generate_timer.get_duration_microsec());
-    raw_counters.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
-    raw_counters.detokenization_durations.emplace_back(decode_timer.get_duration_microsec());
-    decoded_results.perf_metrics.m_evaluated = false;
-    decoded_results.perf_metrics.evaluate_statistics(generate_timer.get_start_time());
-
-    return decoded_results;
-}
-
-EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
-                                                   OptionalGenerationConfig generation_config,
-                                                   StreamerVariant streamer) {
-    ManualTimer generate_timer("StatefulEagle3LLMPipeline::generate");
-    generate_timer.start();
-
-    auto config = resolve_generation_config(generation_config);
+EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& inputs,
+                                                          const GenerationConfig& config,
+                                                          StreamerVariant streamer) {
     std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
 
     // Extract input tensors
@@ -730,14 +594,11 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
     EncodedResults results;
     results.tokens = {m_target->get_generated_tokens()};
     results.scores = {0.0f};
-    generate_timer.end();
 
     // Update performance metrics
     m_sd_perf_metrics.num_input_tokens = m_prompt_length;
     m_sd_perf_metrics.load_time = m_load_time_ms;
     m_sd_perf_metrics.num_accepted_tokens = total_draft_accepted;
-    m_sd_perf_metrics.raw_metrics.generate_durations.clear();
-    m_sd_perf_metrics.raw_metrics.generate_durations.emplace_back(generate_timer.get_duration_microsec());
 
     // Reset evaluated flags before updating raw_metrics to ensure statistics are recalculated
     m_sd_perf_metrics.m_evaluated = false;
@@ -755,7 +616,7 @@ EncodedResults StatefulEagle3LLMPipeline::generate(const EncodedInputs& inputs,
         m_sd_metrics.update_generated_len(generated_tokens);
     }
 
-    m_sd_perf_metrics.evaluate_statistics(generate_timer.get_start_time());
+    m_sd_perf_metrics.evaluate_statistics(std::chrono::steady_clock::now());
     results.perf_metrics = m_sd_perf_metrics;
     results.extended_perf_metrics = std::make_shared<SDPerModelsPerfMetrics>(m_sd_perf_metrics);
 
@@ -858,17 +719,9 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     return result;
 }
 
-void StatefulEagle3LLMPipeline::start_chat(const std::string& system_message) {
-    m_is_chat_active = true;
-    m_chat_history.clear();
-    if (!system_message.empty()) {
-        m_chat_history.push_back({{"role", "system"}, {"content", system_message}});
-    }
-}
-
 void StatefulEagle3LLMPipeline::finish_chat() {
-    m_is_chat_active = false;
-    m_chat_history.clear();
+    // Eagle3 uses base class implementation directly (no model state reset needed)
+    StatefulSpeculativePipelineBase::finish_chat();
 }
 
 SpeculativeDecodingMetrics StatefulEagle3LLMPipeline::get_speculative_decoding_metrics() const {

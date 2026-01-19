@@ -7,10 +7,10 @@
 #include <openvino/genai/perf_metrics.hpp>
 #include <openvino/genai/speculative_decoding/perf_metrics.hpp>
 
-#include "llm/pipeline_base.hpp"
 #include "sampling/sampler.hpp"
 #include "sequence_group.hpp"
-#include "speculative_decoding_metrics.hpp"
+#include "speculative_decoding/validation_metrics.hpp"
+#include "stateful_pipeline_base.hpp"
 #include "utils.hpp"
 
 namespace ov {
@@ -89,9 +89,8 @@ public:
     void set_sequence_group(SequenceGroup::Ptr sequence_group) {
         m_sequence_group = sequence_group;
         if (m_sequence_group) {
-            // TODO(top-k): Remove this assertion when top-k is supported
             OPENVINO_ASSERT(get_running_sequence_count() == 1,
-                            "Eagle3 currently only supports top-1 (single sequence), got ",
+                            "Eagle3 only supports single sequence, got ",
                             get_running_sequence_count());
         }
     }
@@ -114,8 +113,7 @@ public:
         return nullptr;
     }
 
-    /// @brief Returns current (first) sequence - convenience method for top-1
-    /// @deprecated Use get_sequence(0) for clarity, will be removed when top-k is implemented
+    /// @brief Returns current (first) sequence
     Sequence::Ptr get_current_sequence() const {
         return get_sequence(0);
     }
@@ -211,29 +209,24 @@ public:
  * Implements Eagle3 algorithm: draft model generates candidates,
  * target model validates them in parallel, accepts valid tokens and samples new ones
  */
-class StatefulEagle3LLMPipeline : public ov::genai::LLMPipelineImplBase {
+class StatefulEagle3LLMPipeline : public StatefulSpeculativePipelineBase {
 public:
     StatefulEagle3LLMPipeline(const ov::genai::ModelDesc& target_model_desc,
                               const ov::genai::ModelDesc& draft_model_desc);
     ~StatefulEagle3LLMPipeline();
 
-    DecodedResults generate(StringInputs inputs,
-                            OptionalGenerationConfig generation_config,
-                            StreamerVariant streamer) override;
+    ov::genai::SpeculativeDecodingMetrics get_speculative_decoding_metrics() const;
 
-    DecodedResults generate(const ChatHistory& history,
-                            OptionalGenerationConfig generation_config,
-                            StreamerVariant streamer) override;
-
-    EncodedResults generate(const EncodedInputs& inputs,
-                            OptionalGenerationConfig generation_config,
-                            StreamerVariant streamer) override;
-
-    void start_chat(const std::string& system_message) override;
+    // Override to reset model states
     void finish_chat() override;
 
-    GenerationConfig resolve_generation_config(OptionalGenerationConfig generation_config);
-    ov::genai::SpeculativeDecodingMetrics get_speculative_decoding_metrics() const;
+protected:
+    // Override base class methods
+    GenerationConfig resolve_generation_config(OptionalGenerationConfig generation_config) override;
+
+    EncodedResults generate_tokens(const EncodedInputs& inputs,
+                                   const GenerationConfig& config,
+                                   StreamerVariant streamer) override;
 
 private:
     struct SpeculativeResult {
@@ -251,13 +244,6 @@ private:
     size_t m_draft_iterations = 5;
     std::vector<int32_t> m_hidden_layers_to_abstract;
     size_t m_prompt_length = 0;
-
-    ov::genai::SpeculativeDecodingMetrics m_sd_metrics;
-    ov::genai::SDPerModelsPerfMetrics m_sd_perf_metrics;
-
-    bool m_is_chat_active = false;
-    ChatHistory m_chat_history;
-    bool m_streaming_was_cancelled = false;
 };
 
 }  // namespace genai

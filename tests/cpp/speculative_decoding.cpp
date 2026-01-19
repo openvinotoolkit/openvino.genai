@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "gtest/gtest.h"
-
-#include "speculative_decoding/continuous_batching_for_speculative_decoding_impl.hpp"
+#include "speculative_decoding/continuous_batching/pipeline_impl.hpp"
 #include "utils.hpp"
 
 class CBForSDTest : public testing::Test, public ov::genai::ContinuousBatchingPipeline {

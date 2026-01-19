@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "speculative_decoding_impl.hpp"
+#include "fast_draft_strategy.hpp"
 #include "openvino/op/constant.hpp"
 
 namespace ov::genai {

@@ -6,7 +6,7 @@
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
 #include "continuous_batching_for_prompt_lookup.hpp"
-#include "speculative_decoding/speculative_decoding_metrics.hpp"
+#include "speculative_decoding/validation_metrics.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {

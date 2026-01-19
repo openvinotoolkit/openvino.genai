@@ -1,7 +1,7 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "speculative_decoding_eagle_utils.hpp"
+#include "eagle3_model_transforms.hpp"
 
 #include <fstream>
 #include <nlohmann/json.hpp>
@@ -19,17 +19,6 @@
 namespace ov {
 namespace genai {
 namespace eagle3 {
-
-void ensure_num_assistant_tokens_is_set(ov::genai::GenerationConfig& config) {
-    OPENVINO_ASSERT(
-        config.assistant_confidence_threshold == 0.f,
-        "Stateful (non Continuous Batching) Eagle-3 Speculative Decoding pipeline only supports num_assistant_tokens, "
-        "not assistant_confidence_threshold. Set assistant_confidence_threshold to 0.f.");
-
-    if (config.num_assistant_tokens == 0) {
-        config.num_assistant_tokens = DEFAULT_NUM_ASSISTANT_TOKENS;
-    }
-}
 
 Eagle3RTInfo extract_eagle3_info_from_config(ov::AnyMap& config, const std::filesystem::path& models_path) {
     Eagle3RTInfo eagle_rt_info;

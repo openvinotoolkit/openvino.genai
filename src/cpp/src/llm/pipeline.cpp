@@ -8,13 +8,13 @@
 #include "openvino/core/visibility.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/perf_metrics.hpp"
+#include "openvino/genai/text_streamer.hpp"
 
 #include "llm/pipeline_stateful.hpp"
 #include "llm/pipeline_continuous_batching_adapter.hpp"
-#include "speculative_decoding/speculative_decoding_impl.hpp"
-#include "speculative_decoding/speculative_decoding_stateful.hpp"
-#include "speculative_decoding/speculative_decoding_stateful_eagle3.hpp"
-#include "speculative_decoding/speculative_decoding_eagle_utils.hpp"
+#include "speculative_decoding/eagle3_model_transforms.hpp"
+#include "speculative_decoding/stateful/eagle3_strategy.hpp"
+#include "speculative_decoding/stateful/fast_draft_strategy.hpp"
 #include "utils.hpp"
 
 namespace {
@@ -152,9 +152,8 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
 
     if (draft_model_descr.model != nullptr) {
         OPENVINO_ASSERT(device == "NPU" || draft_model_descr.device == "NPU",
-                        "Stateful Speculative Decoding and Stateful Eagle3 Speculative Decoding are expected to be "
-                        "launched when NPU is requested as "
-                        "execution device for one or both models.");
+                        "Stateful fast_draft and Stateful Eagle3 Speculative Decoding require NPU to be "
+                        "the execution device for at least one model.");
 
         // Check if Eagle3 mode is enabled in draft model properties
         bool is_eagle3_mode = draft_model_descr.properties.find("eagle3_mode") != draft_model_descr.properties.end() &&
@@ -168,7 +167,7 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
             }
             return std::make_unique<StatefulEagle3LLMPipeline>(main_model_descr, draft_model_descr);
         } else {
-            // Standard Speculative Decoding mode
+            // Standard Speculative Decoding mode (fast_draft)
             return std::make_unique<StatefulSpeculativeLLMPipeline>(main_model_descr, draft_model_descr);
         }
     }

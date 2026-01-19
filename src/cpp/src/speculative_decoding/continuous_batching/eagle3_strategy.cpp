@@ -1,7 +1,8 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
-#include "speculative_decoding_eagle3_impl.hpp"
-#include "speculative_decoding_eagle_utils.hpp"
+
+#include "eagle3_strategy.hpp"
+#include "speculative_decoding/eagle3_model_transforms.hpp"
 #include "logger.hpp"
 
 namespace ov::genai {

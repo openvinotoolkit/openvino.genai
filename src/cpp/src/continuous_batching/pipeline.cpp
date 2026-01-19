@@ -6,15 +6,16 @@
 #include <memory>
 #include <openvino/runtime/properties.hpp>
 
+#include "continuous_batching/pipeline_impl.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
-#include "speculative_decoding/speculative_decoding_impl.hpp"
-#include "speculative_decoding/speculative_decoding_eagle3_impl.hpp"
-#include "speculative_decoding/speculative_decoding_eagle_utils.hpp"
 #include "prompt_lookup/prompt_lookup_impl.hpp"
 #include "continuous_batching/timer.hpp"
+#include "speculative_decoding/continuous_batching/eagle3_strategy.hpp"
+#include "speculative_decoding/continuous_batching/fast_draft_strategy.hpp"
+#include "speculative_decoding/eagle3_model_transforms.hpp"
 #include "utils.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "json_utils.hpp"
