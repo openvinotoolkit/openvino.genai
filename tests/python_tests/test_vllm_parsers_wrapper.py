@@ -3,7 +3,7 @@
 
 from typing import Optional
 from transformers import AutoTokenizer
-
+import pytest
 from openvino_genai import (
     Tokenizer,
     VLLMParserWrapper,
@@ -12,7 +12,13 @@ from openvino_genai import (
 import json
 
 
-def compare_dicts(dict1, dict2, skip_keys: Optional[list[str]] = None):
+"""
+Helper function to compare two dictionaries, with an option to skip certain keys.
+Returns True if the dictionaries are equivalent (considering the skip_keys), False otherwise.
+"""
+
+
+def compare_dicts(dict1, dict2, skip_keys: Optional[list[str]] = None) -> bool:
     if dict1.keys() != dict2.keys():
         return False
 
@@ -21,16 +27,27 @@ def compare_dicts(dict1, dict2, skip_keys: Optional[list[str]] = None):
             continue
         if type(dict1[key]) is not type(dict2[key]):
             return False
-        if not isinstance(dict1[key], dict):
-            return dict1[key] == dict2[key]
-        return compare_dicts(dict1[key], dict2[key])
+
+        if isinstance(dict1[key], dict):
+            if not compare_dicts(dict1[key], dict2[key], skip_keys):
+                return False
+        elif isinstance(dict1[key], list):
+            for item1, item2 in zip(dict1[key], dict2[key]):
+                if not compare_dicts(item1, item2, skip_keys):
+                    return False
+        else:
+            if dict1[key] != dict2[key]:
+                return False
 
     return True
 
 
 def test_final_parser_llama_32_json():
     model_output = 'Here is the result: {"name": "getOpenIncidentsTool", "parameters": {}} Would you like to know more?'
-    from vllm.entrypoints.openai.tool_parsers.llama_tool_parser import Llama3JsonToolParser
+    try:
+        from vllm.entrypoints.openai.tool_parsers.llama_tool_parser import Llama3JsonToolParser
+    except ImportError:
+        pytest.skip("No vLLM package in the environment")
 
     parser = Llama3JsonToolParser(AutoTokenizer.from_pretrained("gpt2"))
     res_vllm = parser.extract_tool_calls(model_output, None).model_dump_json()
@@ -43,7 +60,10 @@ def test_final_parser_llama_32_json():
 
 def test_final_parser_deepseek():
     model_output = "This is a reasoning section</think>This is the rest"
-    from vllm.reasoning.deepseek_r1_reasoning_parser import DeepSeekR1ReasoningParser
+    try:
+        from vllm.reasoning.deepseek_r1_reasoning_parser import DeepSeekR1ReasoningParser
+    except ImportError:
+        pytest.skip("No vLLM package in the environment")
 
     parser = DeepSeekR1ReasoningParser(AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-V3.1"))
     reasoning, content = parser.extract_reasoning(model_output, None)
