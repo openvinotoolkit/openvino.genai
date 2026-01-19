@@ -136,7 +136,6 @@ def main():
     args = parser.parse_args()
 
     pipe = LLMPipeline(args.model_dir, "CPU")
-    tokenizer = pipe.get_tokenizer()
 
     tools = [tool_to_dict(tool) for tool in [book_flight_ticket, book_hotel]]
     chat_history = ChatHistory()
