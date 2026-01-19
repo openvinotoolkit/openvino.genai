@@ -15,6 +15,7 @@
 #include "openvino/op/add.hpp"
 #include "openvino/op/clamp.hpp"
 #include "openvino/op/multiply.hpp"
+#include "module_genai/utils/profiler.hpp"
 
 namespace ov {
 namespace genai {
@@ -142,6 +143,8 @@ bool VAEDecoderTilingModule::initialize() {
         return false;
     }
 
+    m_slice_infer_request = tensor_utils::init_slice_request(module_desc->device.empty() ? "CPU" : module_desc->device);
+
     return true;
 }
 
@@ -187,7 +190,11 @@ void VAEDecoderTilingModule::run() {
 
         // Post-process
         pp_infer_request.set_input_tensor(output_latent);
-        pp_infer_request.infer();
+        {
+            PROFILE(pm, "post-process infer");
+            pp_infer_request.infer();
+        }
+        
         
         output_latent = pp_infer_request.get_output_tensor();
         ov::Tensor pp_out_tensor = ov::Tensor(output_latent.get_element_type(), output_latent.get_shape());

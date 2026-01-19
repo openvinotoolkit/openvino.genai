@@ -8,6 +8,7 @@
 #include "openvino/genai/image_generation/generation_config.hpp"
 #include "circular_buffer_queue.hpp"
 #include <memory>
+#include <map>
 
 namespace ov {
 namespace genai {
@@ -34,6 +35,7 @@ private:
     int m_tile_latent_min_size;
     int m_tile_sample_min_size;
     bool m_enable_tiling = true;
+    InferRequest m_slice_infer_request;
 
     void tile_decode(const ov::Tensor& latent, ov::Tensor& output_latent);
     ov::Tensor decoder(const ov::Tensor& tile);

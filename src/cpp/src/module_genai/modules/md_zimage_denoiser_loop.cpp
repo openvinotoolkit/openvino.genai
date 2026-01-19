@@ -11,6 +11,7 @@
 #include "module_genai/utils/tensor_utils.hpp"
 #include "image_generation/numpy_utils.hpp"
 #include <fstream>
+#include "module_genai/utils/profiler.hpp"
 
 namespace ov {
 namespace genai {
@@ -79,7 +80,8 @@ bool ZImageDenoiserLoopModule::initialize() {
     std::filesystem::path model_path = module_desc->get_full_path(it_path->second);
 
     if (m_model_type == ImageGenerationModelType::ZIMAGE) {
-        m_scheduler = std::make_shared<ZImageFlowMatchEulerDiscreteScheduler>(model_path / "scheduler/scheduler_config.json");
+        std::string device = module_desc->device.empty() ? "CPU" : module_desc->device;
+        m_scheduler = std::make_shared<ZImageFlowMatchEulerDiscreteScheduler>(model_path / "scheduler/scheduler_config.json", device);
     } else {
         OPENVINO_THROW("Unsupported '", module_desc->model_type, "' Transformer model type");
     }
@@ -235,7 +237,11 @@ ov::Tensor ZImageDenoiserLoopModule::run(
             m_request.set_tensor("encoder_hidden_states", prompt_tensor);
         }
 
-        m_request.infer();
+        {
+            PROFILE(pm, "infer");
+            m_request.infer();
+        }
+        
         ov::Tensor model_output = m_request.get_output_tensor();
         ov::Tensor noise_pred;
         if (apply_cfg) {
@@ -268,10 +274,6 @@ ov::Tensor ZImageDenoiserLoopModule::run(
             noise_pred = m_request.get_output_tensor();
         }
 
-        float *noise_pred_data = noise_pred.data<float>();
-        for (size_t i = 0; i < noise_pred.get_size(); i++) {
-            noise_pred_data[i] = -noise_pred_data[i];
-        }
         auto scheduler_step_result = m_scheduler->step(
             noise_pred, latents, inference_step, generation_config.generator);
         latents = scheduler_step_result["latent"];

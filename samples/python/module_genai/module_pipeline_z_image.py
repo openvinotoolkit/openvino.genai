@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
+import time
 import numpy as np
 from openvino import Core, Tensor
 from transformers import AutoTokenizer
@@ -254,90 +255,6 @@ class TransformerPipeline():
         cfg_data["sub_modules"] = sub_modules['sub_modules']
         return cfg_data
 
-    def encode_prompt(
-        self,
-        prompt: Union[str, List[str]],
-        do_classifier_free_guidance: bool = False,
-        negative_prompt: Optional[Union[str, List[str]]] = None,
-        prompt_embeds: Optional[List[torch.FloatTensor]] = None,
-        negative_prompt_embeds: Optional[torch.FloatTensor] = None,
-        max_sequence_length: int = 512,
-    ):
-        prompt = [prompt] if isinstance(prompt, str) else prompt
-        prompt_embeds = self._encode_prompt(
-            prompt=prompt,
-            prompt_embeds=prompt_embeds,
-            max_sequence_length=max_sequence_length,
-        )
-
-        if do_classifier_free_guidance:
-            if negative_prompt is None:
-                negative_prompt = ["" for _ in prompt]
-            else:
-                negative_prompt = [negative_prompt] if isinstance(negative_prompt, str) else negative_prompt
-            assert len(prompt) == len(negative_prompt)
-            negative_prompt_embeds = self._encode_prompt(
-                prompt=negative_prompt,
-                prompt_embeds=negative_prompt_embeds,
-                max_sequence_length=max_sequence_length,
-            )
-        else:
-            negative_prompt_embeds = []
-        return prompt_embeds, negative_prompt_embeds
-
-    def _encode_prompt(
-        self,
-        prompt: Union[str, List[str]],
-        prompt_embeds: Optional[List[torch.FloatTensor]] = None,
-        max_sequence_length: int = 512,
-    ) -> List[torch.FloatTensor]:
-        device = "cpu"
-
-        if prompt_embeds is not None:
-            return prompt_embeds
-
-        if isinstance(prompt, str):
-            prompt = [prompt]
-
-        for i, prompt_item in enumerate(prompt):
-            messages = [
-                {"role": "user", "content": prompt_item},
-            ]
-            prompt_item = self.tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-                enable_thinking=True,
-            )
-            prompt[i] = prompt_item
-
-        text_inputs = self.tokenizer(
-            prompt,
-            padding="max_length",
-            max_length=max_sequence_length,
-            truncation=True,
-            return_tensors="pt",
-        )
-
-        text_input_ids = text_inputs.input_ids.to(device)
-        prompt_masks = text_inputs.attention_mask.to(device).bool()
-
-        text_encoder_inputs = {
-            "input_ids": text_input_ids,
-            "attention_mask": prompt_masks,
-        }
-
-        ov_outputs = self.text_encoder_request(text_encoder_inputs, share_inputs=True)
-        hidden_states = [torch.from_numpy(ov_outputs[out_name]) for out_name in self.text_encoder_hidden_states_output_names]
-        prompt_embeds = hidden_states[-2]
-
-        embeddings_list = []
-
-        for i in range(len(prompt_embeds)):
-            embeddings_list.append(prompt_embeds[i][prompt_masks[i]])
-
-        return embeddings_list
-
     @torch.no_grad()
     def __call__(
         self,
@@ -365,24 +282,6 @@ class TransformerPipeline():
                 f"Width must be divisible by {vae_scale} (got {width}). "
                 f"Please adjust the width to a multiple of {vae_scale}."
             )
-
-        # (
-        #     prompt_embeds,
-        #     negative_prompt_embeds,
-        # ) = self.encode_prompt(
-        #     prompt=prompt,
-        #     negative_prompt=negative_prompt,
-        #     prompt_embeds=prompt_embeds,
-        #     negative_prompt_embeds=negative_prompt_embeds,
-        #     max_sequence_length=max_sequence_length,
-        # )
-
-        # self.pipe.generate(
-        #     prompt_embed=Tensor(prompt_embeds[0].detach().cpu().contiguous().numpy()),
-        #     num_inference_steps=num_inference_steps,
-        #     width=width,
-        #     height=height
-        # )
         
         self.pipe.generate(
             prompt=prompt,
@@ -425,6 +324,7 @@ def main():
         args.model_path,
         args.device,
         args.enable_tiling)
+
     images = pipeline(
         prompt=args.prompt,
         height=16*65,

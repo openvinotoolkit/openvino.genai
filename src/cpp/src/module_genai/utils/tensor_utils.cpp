@@ -2,8 +2,37 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "tensor_utils.hpp"
+#include "openvino/op/parameter.hpp"
+#include "module_genai/utils/profiler.hpp"
+#include "openvino/runtime/infer_request.hpp"
+#include "openvino/op/strided_slice.hpp"
+#include "openvino/op/concat.hpp"
+#include "openvino/op/constant.hpp"
 
 namespace ov::genai::module::tensor_utils {
+
+InferRequest init_slice_request(const std::string &device) {
+    auto input = std::make_shared<ov::op::v0::Parameter>(
+        ov::element::f32, ov::PartialShape{-1, -1, -1, -1});
+    auto begin = std::make_shared<ov::op::v0::Parameter>(
+        ov::element::i64, ov::Shape{4});
+    auto end = std::make_shared<ov::op::v0::Parameter>(
+        ov::element::i64, ov::Shape{4});
+    auto stride = std::make_shared<ov::op::v0::Constant>(
+        ov::element::i64, ov::Shape{4}, std::vector<int64_t>{1, 1, 1, 1});
+    
+    std::vector<int64_t> begin_mask = {0, 0, 0, 0};
+    std::vector<int64_t> end_mask = {0, 0, 0, 0};
+    
+    auto sliced_tensor = std::make_shared<ov::op::v1::StridedSlice>(
+        input, begin, end, stride, begin_mask, end_mask);
+    
+    auto model = std::make_shared<ov::Model>(
+        ov::OutputVector {sliced_tensor}, ov::ParameterVector {input, begin, end});
+
+    auto compiled_model = ov::genai::utils::singleton_core().compile_model(model, device);
+    return compiled_model.create_infer_request();
+}
 
 std::vector<ov::Tensor> split(const ov::Tensor &tensor) {
     std::vector<ov::Tensor> outputs;
@@ -57,12 +86,36 @@ ov::Tensor stack(const std::vector<ov::Tensor>& tensors) {
     return stacked_tensor;
 }
 
+ov::Tensor slice_tensor_with_model(const ov::Tensor& tensor, ov::Coordinate begin, ov::Coordinate end, InferRequest infer_request) {
+    OPENVINO_ASSERT(begin.size() == end.size(), "Begin and end coordinates must have the same number of dimensions.");
+    ov::Shape tensor_shape = tensor.get_shape();
+    OPENVINO_ASSERT(begin.size() == tensor_shape.size(), "Begin coordinate size must match tensor rank.");
+
+    ov::Tensor begin_tensor(ov::element::i64, ov::Shape{begin.size()}, begin.data());
+    ov::Tensor end_tensor(ov::element::i64, ov::Shape{end.size()}, end.data());
+
+    infer_request.set_input_tensor(0, tensor);
+    infer_request.set_input_tensor(1, begin_tensor);
+    infer_request.set_input_tensor(2, end_tensor);
+
+    ov::Shape output_shape;
+    for (size_t i = 0; i < begin.size(); ++i) {
+        output_shape.push_back(end[i] - begin[i]);
+    }
+    ov::Tensor output_tensor(tensor.get_element_type(), output_shape);
+    infer_request.set_output_tensor(0, output_tensor);
+
+    infer_request.infer();
+
+    return output_tensor;
+}
+
 ov::Tensor slice_tensor(const ov::Tensor& tensor, ov::Coordinate begin, ov::Coordinate end) {
     OPENVINO_ASSERT(begin.size() == end.size(), "Begin and end coordinates must have the same number of dimensions.");
     ov::Shape tensor_shape = tensor.get_shape();
     OPENVINO_ASSERT(begin.size() == tensor_shape.size(), "Begin coordinate size must match tensor rank.");
 
-#if 1
+#if 0
     ov::Tensor sliced_view = ov::Tensor(tensor, begin, end);
     ov::Tensor deep_copy(sliced_view.get_element_type(), sliced_view.get_shape());
 

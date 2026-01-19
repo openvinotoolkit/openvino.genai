@@ -26,6 +26,7 @@ private:
     TransformerConfig m_encoder_config;
     ov::InferRequest m_request;
     std::shared_ptr<Tokenizer::TokenizerImpl> m_tokenizer_impl;
+    std::shared_ptr<minja::chat_template> m_minja_template;
     std::pair<ov::Tensor, ov::Tensor> run(
         const std::vector<std::string>& prompts,
         const std::vector<std::string>& negative_prompts,

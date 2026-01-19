@@ -10,6 +10,7 @@
 #include "openvino/genai/tokenizer.hpp"
 #include "tokenizer/tokenizer_impl.hpp"
 #include "openvino/genai/image_generation/generation_config.hpp"
+#include "module_genai/utils/profiler.hpp"
 
 namespace ov {
 namespace genai {
@@ -96,6 +97,8 @@ bool ClipTextEncoderModule::initialize() {
         GENAI_ERR("ClipTextEncoderModule[" + module_desc->name + "]: Failed to initiate text tokenizer: " + e.what());
         return false;
     }
+
+    m_minja_template = std::make_shared<minja::chat_template>(m_tokenizer_impl->get_chat_template(), m_tokenizer_impl->m_bos_token, m_tokenizer_impl->m_eos_token);
     
     return true;
 }
@@ -183,7 +186,7 @@ ov::Tensor ClipTextEncoderModule::encode_prompt(
     for (const auto& s : prompts) {
         ChatHistory history({{{"role", "user"}, {"content", s}}});
         bool add_generation_prompt = true;
-        auto templated_s = m_tokenizer_impl->apply_chat_template(history, add_generation_prompt, {}, std::nullopt, std::nullopt);
+        auto templated_s = m_tokenizer_impl->apply_chat_template(history, add_generation_prompt, {}, std::nullopt, std::nullopt, m_minja_template);
         templated_prompts.push_back(templated_s);
     }
 
@@ -191,7 +194,11 @@ ov::Tensor ClipTextEncoderModule::encode_prompt(
     auto text_inputs = m_tokenizer_impl->encode(templated_prompts, tokenization_params);
     m_request.set_tensor("input_ids", text_inputs.input_ids);
     m_request.set_tensor("attention_mask", text_inputs.attention_mask);
-    m_request.infer();
+    {
+        PROFILE(pm, "infer");
+        m_request.infer();
+    }
+    
 
     size_t idx = m_encoder_config.num_hidden_layers;
     ov::Tensor prompt_embed = m_request.get_output_tensor(idx);

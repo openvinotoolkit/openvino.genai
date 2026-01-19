@@ -3,9 +3,12 @@
 
 #pragma once
 #include "openvino/runtime/tensor.hpp"
+#include "utils.hpp"
 #include <vector>
 
 namespace ov::genai::module::tensor_utils {
+
+InferRequest init_slice_request(const std::string &device);
 
 ov::Tensor squeeze(const ov::Tensor& tensor, size_t dim);
 
@@ -14,6 +17,8 @@ ov::Tensor unsqueeze(const ov::Tensor& tensor, size_t dim);
 std::vector<ov::Tensor> split(const ov::Tensor& tensor);
 
 ov::Tensor stack(const std::vector<ov::Tensor>& tensors);
+
+ov::Tensor slice_tensor_with_model(const ov::Tensor& tensor, ov::Coordinate begin, ov::Coordinate end, InferRequest infer_request);
 
 ov::Tensor slice_tensor(const ov::Tensor& tensor, ov::Coordinate begin, ov::Coordinate end);
 

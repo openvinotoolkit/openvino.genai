@@ -794,6 +794,47 @@ std::string Tokenizer::TokenizerImpl::apply_chat_template(
     return result;
 }
 
+std::string Tokenizer::TokenizerImpl::apply_chat_template(
+    const ChatHistory& history,
+    bool add_generation_prompt,
+    const std::string& chat_template,
+    const std::optional<JsonContainer>& tools,
+    const std::optional<JsonContainer>& extra_context,
+    const std::shared_ptr<minja::chat_template>& minja_template
+) const {
+    auto resolved_tools = tools.value_or(history.get_tools());
+    auto resolved_extra_context = extra_context.value_or(history.get_extra_context());
+
+    minja::chat_template_inputs minja_inputs;
+    minja_inputs.messages = history.get_messages();
+    if (!resolved_tools.empty()) {
+        minja_inputs.tools = resolved_tools;
+    }
+    minja_inputs.add_generation_prompt = add_generation_prompt;
+    minja_inputs.extra_context = nlohmann::ordered_json::object();
+    minja_inputs.extra_context["bos_token"] = m_bos_token;
+    minja_inputs.extra_context["eos_token"] = m_eos_token;
+    minja_inputs.extra_context["pad_token"] = m_pad_token;
+    if (!resolved_extra_context.empty()) {
+        minja_inputs.extra_context.update(resolved_extra_context);
+    }
+    std::string result;
+    try {
+        result = minja_template->apply(minja_inputs);
+    } catch (const std::exception& error) {
+        OPENVINO_THROW("Minja failed to apply chat template. Possible solutions are\n"
+                        "* Provide a simplified chat template with set_chat_template().\n"
+                        "* Set apply_chat_template to false in GenerationConfig. "
+                        "It's possible to apply the template manually to your prompt before calling generate. "
+                        "For example: <|user|>\\n{prompt}</s>\\n<|assistant|>\\n\n"
+                        "Minja's error: ", error.what());
+    }
+    OPENVINO_ASSERT(!result.empty(), "Applied chat template resulted in an empty string. "
+                                     "Please check the chat template or apply template manually to your prompt before calling generate."
+                                     "For example: <start_of_turn>user{user_prompt}<end_of_turn><start_of_turn>model");
+    return result;
+}
+
 void Tokenizer::TokenizerImpl::set_chat_template(const std::string& chat_template) {
     m_original_chat_template = chat_template;
     m_chat_template = remap_template(chat_template);

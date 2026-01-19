@@ -2,7 +2,7 @@
 # GLOBAL CONFIGURATION
 # ----------------------------------------------------------------------
 global_context:
-  model_type: "z-image-turbo"
+  model_type: "zimage"
 
 # ----------------------------------------------------------------------
 # MODULES DEFINITION
@@ -13,9 +13,7 @@ pipeline_modules:
   pipeline_params:
     type: "ParameterModule"
     outputs:
-      - name: "prompts"
-        type: "String"
-      - name: "prompts_negative"  # [optinonal]
+      - name: "prompt"
         type: "String"
       - name: "width"
         type: "Int"
@@ -23,98 +21,82 @@ pipeline_modules:
         type: "Int"
       - name: "num_inference_steps"
         type: "Int"
+      - name: "guidance_scale"
+        type: "Float"
+      - name: "max_sequence_length"
+        type: "Int"
 
   # --- 1. Prompt Encode  ---
-  tokenizer:
-    type: "TextEncoderModule"
+  clip_text_encoder:
+    type: "ClipTextEncoderModule"
     device: "CPU"
     inputs:
-      - name: "prompts"
+      - name: "prompt"
         type: "String"
-        source: "pipeline_params.prompts"
-      - name: "prompts_negative"  # [optinonal]
-        type: "String"
-        source: "pipeline_params.prompts_negative"
-    outputs:
-      - name: "input_ids"
-        type: "OVTensor"
-      - name: "input_ids_negative"  # [optinonal]
-        type: "OVTensor"
-    params:
-      model_path: "./ut_pipelines/Z-Image-Turbo-fp16-ov/tokenizer/"
-
-  # --- 2. Prompt Embedding  ---
-  text_encoder:
-    type: "TextEmbeddingModule"
-    device: "CPU"
-    inputs:
-      - name: "input_ids"
-        type: "OVTensor"
-        source: "tokenizer.input_ids"
-      - name: "input_ids_negative"  # [optinonal]
-        type: "OVTensor"
-        source: "tokenizer.input_ids_negative"
+        source: "pipeline_params.prompt"
+      - name: "guidance_scale"
+        type: "Float"
+        source: "pipeline_params.guidance_scale"
+      - name: "max_sequence_length"
+        type: "Int"
+        source: "pipeline_params.max_sequence_length"
     outputs:
       - name: "prompt_embeds"
-        type: "OVTensor"
-      - name: "prompt_embeds_negative"  # [optinonal]
-        type: "OVTensor"
+        type: "VecOVTensor"
     params:
-      model_path: "./ut_pipelines/Z-Image-Turbo-fp16-ov/text_encoder/"
-  
-  # --- 3. Z-Image transformer ---
-  denoising_loop:
-    type: "ZImageDenoiserLoopModule"
-    device: "GPU"
+      model_path: "./test_models/Z-Image-Turbo-fp16-ov/"
+
+  # --- 2. Init Random Latent ---
+  random_latent_image:
+    type: "RandomLatentImageModule"
     inputs:
-      - name: "prompt_embed"
-        type: "OVTensor"
-        source: "text_encoder.prompt_embeds"
-      - name: "prompt_embed_negative"  # [optinonal]
-        type: "OVTensor"
-        source: "text_encoder.prompt_embeds_negative"
       - name: "width"
         type: "Int"
         source: "pipeline_params.width"
       - name: "height"
         type: "Int"
         source: "pipeline_params.height"
+    outputs:
+      - name: "latents"
+        type: "OVTensor"
+    params:
+      model_path: "./test_models/Z-Image-Turbo-fp16-ov/"
+
+  # --- 3. Z-Image transformer ---
+  denoising_loop:
+    type: "ZImageDenoiserLoopModule"
+    device: "GPU"
+    inputs:
+      - name: "latents"
+        type: "OVTensor"
+        source: "random_latent_image.latents"
+      - name: "prompt_embeds"
+        type: "VecOVTensor"
+        source: "clip_text_encoder.prompt_embeds"
       - name: "num_inference_steps"
         type: "Int"
         source: "pipeline_params.num_inference_steps"
     outputs:
-      - name: "latent"
+      - name: "latents"
         type: "OVTensor"
     params:
-      model_path: "./ut_pipelines/Z-Image-Turbo-fp16-ov/"
+      model_path: "./test_models/Z-Image-Turbo-fp16-ov/"
 
   # --- 4. vae.decode ---
   vae_decoder:
-    type: "VaeDecoderModule"
+    type: "VAEDecoderModule"
     description: "LLM module for Continuous Batch pipeline"
     device: "GPU"
     inputs:
-      - name: "latent"
+      - name: "latents"
         type: "OVTensor"
-        source: "denoising_loop.latent"
+        source: "denoising_loop.latents"
     outputs:
       - name: "image"
         type: "OVTensor"
     params:
-      model_path: "./ut_pipelines/Qwen2.5-VL-3B-Instruct/INT4/"
-
-  # --- 5. Image Postprocess ---
-  image_postprocess:
-    type: "VaeDecoderImagePostprocessModule"
-    device: "CPU"
-    inputs:
-      - name: "image"
-        type: "OVTensor"
-        source: "vae_decoder.image"
-    outputs:
-      - name: "image"
-        type: "OVTensor"
-
+      model_path: "./test_models/Z-Image-Turbo-fp16-ov/"
+      enable_postprocess: true
   
   # --- 6. Result Module ---
   pipeline_result:
@@ -124,4 +106,4 @@ pipeline_modules:
     inputs:
       - name: "generated_image"
         type: "OVTensor"
-        source: "image_postprocess.image"
+        source: "vae_decoder.image"

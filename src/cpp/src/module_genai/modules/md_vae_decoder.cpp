@@ -6,6 +6,7 @@
 #include "module_genai/utils/tensor_utils.hpp"
 #include "module_genai/module_factory.hpp"
 #include <iostream>
+#include "module_genai/utils/profiler.hpp"
 
 namespace ov {
 namespace genai {
@@ -91,9 +92,11 @@ void VAEDecoderModule::run() {
     ov::Tensor image;
     auto& latent_data = this->inputs["latents"].data.as<ov::Tensor>();
     if (latent_data.get_shape().size() == 3u) {
+        PROFILE(pm, "vae infer");
         ov::Tensor latent = tensor_utils::unsqueeze(this->inputs["latents"].data.as<ov::Tensor>(), 0);
         image = m_vae->decode(latent);
     } else {
+        PROFILE(pm, "vae infer");
         image = m_vae->decode(this->inputs["latents"].data.as<ov::Tensor>());
     }
 
