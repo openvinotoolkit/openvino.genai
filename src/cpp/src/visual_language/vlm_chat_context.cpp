@@ -6,16 +6,16 @@
 namespace ov::genai {
 
 VLMChatContext::VLMChatContext(
-    ChatHistory& history,
-    std::shared_ptr<VisionRegistry> vision_registry,
+    const ChatHistory& history,
+    const std::shared_ptr<VisionRegistry>& vision_registry,
     InputsEmbedder& embedder
 ) : m_history(history),
     m_vision_registry(vision_registry),
-    m_inputs_embedder(embedder)
+    m_inputs_embedder(embedder),
+    m_history_state(ChatHistoryInternalState::get_or_create(history, vision_registry))
 {
     OPENVINO_ASSERT(!m_history.empty(), "Chat history cannot be empty");
 
-    m_history_state = ChatHistoryInternalState::get_or_create(history, vision_registry);
     m_initial_messages_metadata_count = m_history_state->get_messages_metadata().size();
     m_initial_base_image_index = m_history_state->get_base_image_index();
     m_initial_base_video_index = m_history_state->get_base_video_index();

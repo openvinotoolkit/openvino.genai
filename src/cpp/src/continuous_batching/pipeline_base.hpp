@@ -158,18 +158,18 @@ public:
      * Performs monolitic generation based on ChatHistory objects
      */
     std::vector<GenerationResult>
-    generate(std::vector<ChatHistory>& histories,
+    generate(const std::vector<ChatHistory>& histories,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer);
 
     virtual std::vector<VLMDecodedResults>
     generate(
-             std::vector<ChatHistory>& histories,
+             const std::vector<ChatHistory>& histories,
              const std::vector<std::vector<ov::Tensor>>& rgbs,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer);
 
-    virtual std::vector<VLMDecodedResults> generate(std::vector<ChatHistory>& histories,
+    virtual std::vector<VLMDecodedResults> generate(const std::vector<ChatHistory>& histories,
                                                     const std::vector<std::vector<ov::Tensor>>& images,
                                                     const std::vector<std::vector<ov::Tensor>>& videos,
                                                     const std::vector<GenerationConfig>& sampling_params,

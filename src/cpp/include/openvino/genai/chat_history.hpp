@@ -72,7 +72,7 @@ private:
     JsonContainer m_extra_context = JsonContainer::object();
 
     friend class ChatHistoryInternalState;
-    std::shared_ptr<ChatHistoryInternalState> m_internal_state;
+    mutable std::shared_ptr<ChatHistoryInternalState> m_internal_state;
 };
 
 } // namespace genai

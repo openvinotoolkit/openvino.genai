@@ -62,7 +62,7 @@ public:
     };
 
     ChatHistoryInternalState() = default;
-    explicit ChatHistoryInternalState(std::shared_ptr<VisionRegistry> registry);
+    explicit ChatHistoryInternalState(const std::shared_ptr<VisionRegistry>& registry);
     ~ChatHistoryInternalState();
 
     ChatHistoryInternalState(const ChatHistoryInternalState&) = delete;
@@ -70,9 +70,6 @@ public:
 
     ChatHistoryInternalState(ChatHistoryInternalState&&) = default;
     ChatHistoryInternalState& operator=(ChatHistoryInternalState&&) = default;
-
-    void set_vision_registry(std::shared_ptr<VisionRegistry> vision_registry);
-    std::shared_ptr<VisionRegistry> get_vision_registry() const;
 
     const std::vector<MessageMetadata>& get_messages_metadata() const { return m_messages_metadata; }
     std::vector<MessageMetadata>& get_messages_metadata() { return m_messages_metadata; }
@@ -113,8 +110,8 @@ public:
     size_t get_last_user_message_index() const { return m_last_user_message_index; }
 
     static std::shared_ptr<ChatHistoryInternalState> get_or_create(
-        ov::genai::ChatHistory& history,
-        std::shared_ptr<VisionRegistry> vision_registry = nullptr
+        const ov::genai::ChatHistory& history,
+        const std::shared_ptr<VisionRegistry>& vision_registry = nullptr
     );
 
 private:
@@ -129,6 +126,9 @@ private:
     std::vector<MessageMetadata> m_messages_metadata;
 
     size_t m_last_user_message_index;
+
+    void set_vision_registry(const std::shared_ptr<VisionRegistry>& vision_registry);
+    std::shared_ptr<VisionRegistry> get_vision_registry() const;
 
     void release_refs_from(size_t image_index, size_t video_index);
 

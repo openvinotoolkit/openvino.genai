@@ -5,14 +5,14 @@
 
 namespace ov::genai {
 
-ChatHistoryInternalState::ChatHistoryInternalState(std::shared_ptr<VisionRegistry> vision_registry)
+ChatHistoryInternalState::ChatHistoryInternalState(const std::shared_ptr<VisionRegistry>& vision_registry)
     : m_vision_registry(vision_registry) {}
 
 ChatHistoryInternalState::~ChatHistoryInternalState() {
     reset();
 }
 
-void ChatHistoryInternalState::set_vision_registry(std::shared_ptr<VisionRegistry> vision_registry) {
+void ChatHistoryInternalState::set_vision_registry(const std::shared_ptr<VisionRegistry>& vision_registry) {
     m_vision_registry = vision_registry;
 }
 
@@ -197,12 +197,12 @@ ChatHistory ChatHistoryInternalState::build_normalized_history(const ChatHistory
 }
 
 std::shared_ptr<ChatHistoryInternalState> ChatHistoryInternalState::get_or_create(
-    ChatHistory& history,
-    std::shared_ptr<VisionRegistry> vision_registry
+    const ChatHistory& history,
+    const std::shared_ptr<VisionRegistry>& vision_registry
 ) {
     if (!history.m_internal_state) {
         history.m_internal_state = std::make_shared<ChatHistoryInternalState>(vision_registry);
-    } else if (vision_registry && !history.m_internal_state->get_vision_registry()) {
+    } else if (vision_registry && !history.m_internal_state->m_vision_registry.lock()) {
         history.m_internal_state->set_vision_registry(vision_registry);
     }
     history.m_internal_state->detect_chat_history_format(history);
@@ -312,7 +312,6 @@ void ChatHistoryInternalState::detect_chat_history_format(const ChatHistory& his
         "Unknown chat history format. Supported formats schemas are "
         "`{role: user, content: string}` and "
         "`{role: user, content: [{type: text/image/video, ...}, ...]}`.");
-
 
     OPENVINO_ASSERT(m_chat_history_format == ChatHistoryFormat::UNKNOWN ||
                     m_chat_history_format == detected_format,

@@ -86,14 +86,14 @@ public:
     }
 
     virtual VLMDecodedResults generate(
-        ChatHistory& history,
+        const ChatHistory& history,
         const std::vector<ov::Tensor>& images,
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) = 0;
 
     virtual VLMDecodedResults generate(
-        ChatHistory& history,
+        const ChatHistory& history,
         const std::vector<ov::Tensor>& images,
         const std::vector<ov::Tensor>& videos,
         GenerationConfig generation_config,
@@ -101,7 +101,7 @@ public:
     ) = 0;
 
     VLMDecodedResults generate(
-        ChatHistory& history,
+        const ChatHistory& history,
         const ov::AnyMap& config_map
     ) {
         auto [images_vector, videos_vector] = extract_images_and_videos_from_config_map(config_map);

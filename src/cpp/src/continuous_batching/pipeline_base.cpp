@@ -155,7 +155,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
 std::vector<GenerationResult>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
-    std::vector<ChatHistory>& histories,
+    const std::vector<ChatHistory>& histories,
     const std::vector<ov::genai::GenerationConfig>& sampling_params,
     const StreamerVariant& streamer
 ) {
@@ -408,7 +408,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
 std::vector<VLMDecodedResults>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
-             std::vector<ChatHistory>& histories,
+             const std::vector<ChatHistory>& histories,
              const std::vector<std::vector<ov::Tensor>>& images_vector,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer) {
@@ -419,7 +419,7 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
 
 std::vector<VLMDecodedResults>
 ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
-             std::vector<ChatHistory>& histories,
+             const std::vector<ChatHistory>& histories,
              const std::vector<std::vector<ov::Tensor>>& images_vector,
              const std::vector<std::vector<ov::Tensor>>& videos_vector,
              const std::vector<GenerationConfig>& sampling_params,

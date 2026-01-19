@@ -187,7 +187,7 @@ public:
     /// @param streamer A streamer to acquire intermediate result.
     /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
     VLMDecodedResults generate(
-        ChatHistory& history,
+        const ChatHistory& history,
         const std::vector<ov::Tensor>& images,
         const GenerationConfig& generation_config,
         const StreamerVariant& streamer
@@ -204,7 +204,7 @@ public:
     /// @param streamer A streamer to acquire intermediate result.
     /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
     VLMDecodedResults generate(
-        ChatHistory& history,
+        const ChatHistory& history,
         const std::vector<ov::Tensor>& images,
         const std::vector<ov::Tensor>& videos,
         const GenerationConfig& generation_config,
@@ -220,7 +220,7 @@ public:
     /// @param streamer A streamer to acquire intermediate result.
     /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
     VLMDecodedResults generate(
-        ChatHistory& history,
+        const ChatHistory& history,
         const ov::Tensor& image,
         const GenerationConfig& generation_config,
         const StreamerVariant& streamer
@@ -236,7 +236,7 @@ public:
     /// images/videos.
     /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
     VLMDecodedResults generate(
-        ChatHistory& history,
+        const ChatHistory& history,
         const ov::AnyMap& config_map
     );
 
@@ -249,7 +249,7 @@ public:
     /// @return VLMDecodedResults structure containing generated texts, scores and perf metrics.
     template <typename... Properties>
     util::EnableIfAllStringAny<VLMDecodedResults, Properties...> generate(
-        ChatHistory& history,
+        const ChatHistory& history,
         Properties&&... properties
     ) {
         return generate(

@@ -4,6 +4,7 @@
 #pragma once
 
 #include "visual_language/pipeline_base.hpp"
+#include "visual_language/chat_history_state.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 
 using namespace ov::genai;
@@ -78,7 +79,7 @@ public:
     }
 
     VLMDecodedResults generate(
-        ChatHistory& history,
+        const ChatHistory& history,
         const std::vector<ov::Tensor>& images,
         GenerationConfig generation_config,
         const StreamerVariant& streamer
@@ -87,17 +88,16 @@ public:
     }
 
     VLMDecodedResults generate(
-        ChatHistory& history,
+        const ChatHistory& history,
         const std::vector<ov::Tensor>& images,
         const std::vector<ov::Tensor>& videos,
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
         auto start_time = std::chrono::steady_clock::now();
-        std::vector<ChatHistory> histories = {history};
-        
-        auto result = m_impl.generate(histories, {images}, {videos}, {std::move(generation_config)}, streamer)[0];
-        history = histories[0];
+        // Ensure chat history internal state is initialized for original history
+        ChatHistoryInternalState::get_or_create(history);
+        auto result = m_impl.generate({history}, {images}, {videos}, {std::move(generation_config)}, streamer)[0];
         auto stop_time = std::chrono::steady_clock::now();
 
         VLMDecodedResults decoded;

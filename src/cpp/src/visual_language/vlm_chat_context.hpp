@@ -39,8 +39,8 @@ public:
     };
 
     VLMChatContext(
-        ChatHistory& history,
-        std::shared_ptr<VisionRegistry> vision_registry,
+        const ChatHistory& history,
+        const std::shared_ptr<VisionRegistry>& vision_registry,
         InputsEmbedder& embedder
     );
 
@@ -52,10 +52,10 @@ public:
     void rollback();
 
 private:
-    ChatHistory& m_history;
-    std::shared_ptr<VisionRegistry> m_vision_registry;
+    const ChatHistory& m_history;
+    const std::shared_ptr<VisionRegistry>& m_vision_registry;
     InputsEmbedder& m_inputs_embedder;
-    std::shared_ptr<ChatHistoryInternalState> m_history_state;
+    const std::shared_ptr<ChatHistoryInternalState> m_history_state;
     
     size_t m_initial_messages_metadata_count = 0;
     size_t m_initial_base_image_index = 0;

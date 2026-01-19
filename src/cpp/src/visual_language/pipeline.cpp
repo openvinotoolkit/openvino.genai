@@ -316,7 +316,7 @@ public:
     }
 
     VLMDecodedResults generate(
-        ChatHistory& history,
+        const ChatHistory& history,
         const std::vector<ov::Tensor>& images,
         GenerationConfig generation_config,
         const StreamerVariant& streamer
@@ -325,7 +325,7 @@ public:
     }
 
     VLMDecodedResults generate(
-        ChatHistory& history,
+        const ChatHistory& history,
         const std::vector<ov::Tensor>& images,
         const std::vector<ov::Tensor>& videos,
         GenerationConfig generation_config,
@@ -730,7 +730,7 @@ VLMDecodedResults VLMPipeline::generate(
 }
 
 VLMDecodedResults VLMPipeline::generate(
-    ChatHistory& history,
+    const ChatHistory& history,
     const std::vector<ov::Tensor>& images,
     const std::vector<ov::Tensor>& videos,
     const GenerationConfig& generation_config,
@@ -740,7 +740,7 @@ VLMDecodedResults VLMPipeline::generate(
 }
 
 VLMDecodedResults VLMPipeline::generate(
-    ChatHistory& history,
+    const ChatHistory& history,
     const std::vector<ov::Tensor>& images,
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
@@ -749,7 +749,7 @@ VLMDecodedResults VLMPipeline::generate(
 }
 
 VLMDecodedResults VLMPipeline::generate(
-    ChatHistory& history,
+    const ChatHistory& history,
     const ov::Tensor& image,
     const GenerationConfig& generation_config,
     const StreamerVariant& streamer
@@ -758,7 +758,7 @@ VLMDecodedResults VLMPipeline::generate(
 }
 
 VLMDecodedResults VLMPipeline::generate(
-    ChatHistory& history,
+    const ChatHistory& history,
     const ov::AnyMap& config_map
 ) {
     return m_pimpl->generate(history, config_map);
