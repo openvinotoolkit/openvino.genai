@@ -335,8 +335,7 @@ public:
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation) {
             // Get original prompt from history and update with pruning if needed
-            const auto& messages = m_history.get_messages();
-            std::string original_prompt = messages[messages.size() - 1]["content"].get_string();
+            std::string original_prompt = m_history.last()["content"].get_string();
 
             auto pruned_prompt = m_inputs_embedder->update_chat_history(decoded_results,
                                                                         finish_info.streaming_finish_status,

@@ -103,61 +103,66 @@ std::string VisionTokenPruningProcessor::get_last_updated_prompt(const std::stri
     size_t total_pads_kept = 0;
 
     while (pos < original_prompt.size()) {
-        // Check for vision_start_token
-        if (original_prompt.compare(pos, vision_start_token.size(), vision_start_token) == 0) {
+        // Find the next nearest special token position
+        size_t next_vision_start = original_prompt.find(vision_start_token, pos);
+        size_t next_vision_end = original_prompt.find(vision_end_token, pos);
+        size_t next_image_pad = inside_vision_region ? original_prompt.find(image_pad_token, pos) : std::string::npos;
+        size_t next_video_pad = inside_vision_region ? original_prompt.find(video_pad_token, pos) : std::string::npos;
+
+        // Determine which token comes first
+        size_t next_token_pos = std::min({next_vision_start, next_vision_end, next_image_pad, next_video_pad});
+
+        // If no special tokens found, copy remaining text and exit
+        if (next_token_pos == std::string::npos) {
+            result.append(original_prompt, pos, std::string::npos);
+            break;
+        }
+
+        // Copy regular text before the next special token
+        if (next_token_pos > pos) {
+            result.append(original_prompt, pos, next_token_pos - pos);
+            pos = next_token_pos;
+        }
+
+        // Process the special token found at current position
+        if (next_token_pos == next_vision_start) {
             result.append(vision_start_token);
             pos += vision_start_token.size();
             inside_vision_region = true;
             pad_idx = 0;
-            continue;
-        }
-
-        // Check for vision_end_token
-        if (original_prompt.compare(pos, vision_end_token.size(), vision_end_token) == 0) {
+        } else if (next_token_pos == next_vision_end) {
             result.append(vision_end_token);
             pos += vision_end_token.size();
             inside_vision_region = false;
             region_idx++;
-            continue;
-        }
-
-        // Inside vision region: check for pad tokens
-        if (inside_vision_region) {
-            // Check for image_pad_token
-            if (original_prompt.compare(pos, image_pad_token.size(), image_pad_token) == 0) {
-                if (region_idx < region_count && pad_idx < keep_flags[region_idx].size()) {
-                    total_pads_processed++;
-                    if (keep_flags[region_idx][pad_idx]) {
-                        result.append(image_pad_token);
-                        total_pads_kept++;
-                    }
-                    pad_idx++;
+        } else if (next_token_pos == next_image_pad) {
+            if (region_idx < region_count && pad_idx < keep_flags[region_idx].size()) {
+                total_pads_processed++;
+                if (keep_flags[region_idx][pad_idx]) {
+                    result.append(image_pad_token);
+                    total_pads_kept++;
                 }
-                pos += image_pad_token.size();
-                continue;
+                pad_idx++;
             }
-
-            // Check for video_pad_token
-            if (original_prompt.compare(pos, video_pad_token.size(), video_pad_token) == 0) {
-                if (region_idx < region_count && pad_idx < keep_flags[region_idx].size()) {
-                    total_pads_processed++;
-                    if (keep_flags[region_idx][pad_idx]) {
-                        result.append(video_pad_token);
-                        total_pads_kept++;
-                    }
-                    pad_idx++;
+            pos += image_pad_token.size();
+        } else if (next_token_pos == next_video_pad) {
+            if (region_idx < region_count && pad_idx < keep_flags[region_idx].size()) {
+                total_pads_processed++;
+                if (keep_flags[region_idx][pad_idx]) {
+                    result.append(video_pad_token);
+                    total_pads_kept++;
                 }
-                pos += video_pad_token.size();
-                continue;
+                pad_idx++;
             }
+            pos += video_pad_token.size();
         }
-
-        // Regular character
-        result.push_back(original_prompt[pos]);
-        pos++;
     }
 
-    GENAI_DEBUG("Prompt update: processed %zu pad tokens, kept %zu", total_pads_processed, total_pads_kept);
+    GENAI_DEBUG("Prompt update (len=%zu, regions=%zu): processed %zu pad tokens, kept %zu",
+                original_prompt.size(),
+                region_count,
+                total_pads_processed,
+                total_pads_kept);
     return result;
 }
 
