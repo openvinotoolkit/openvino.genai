@@ -86,6 +86,9 @@ JsonContainer ChatHistory::last() const {
 
 void ChatHistory::clear() {
     m_messages.clear();
+    m_tools.clear();
+    m_extra_context.clear();
+    _set_internal_state(nullptr);
 }
 
 size_t ChatHistory::size() const {
@@ -118,6 +121,14 @@ ChatHistory& ChatHistory::set_extra_context(const JsonContainer& extra_context) 
 
 const JsonContainer& ChatHistory::get_extra_context() const {
     return m_extra_context;
+}
+
+std::shared_ptr<ChatHistoryInternalState> ChatHistory::_get_internal_state() const {
+    return m_internal_state;
+}
+
+void ChatHistory::_set_internal_state(const std::shared_ptr<ChatHistoryInternalState>& state) {
+    m_internal_state = state;
 }
 
 } // namespace genai
