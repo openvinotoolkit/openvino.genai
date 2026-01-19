@@ -3915,9 +3915,9 @@ class UNet2DConditionModel:
     def set_hidden_states(self, tensor_name: str, encoder_hidden_states: openvino._pyopenvino.Tensor) -> None:
         ...
 class VLLMParserWrapper(Parser):
-    def __init__(self, py_parse: typing.Any) -> None:
+    def __init__(self, py_parser: typing.Any) -> None:
         """
-        Wraps a Python VLLM parser to be used as a C++ Parser.
+        Wraps a vLLM parser to be used out of the box in Python.
         """
 class VLMDecodedResults(DecodedResults):
     """

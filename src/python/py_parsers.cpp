@@ -208,5 +208,5 @@ void init_parsers(py::module_& m) {
         .def(py::init<>());
 
     py::class_<VLLMParserWrapper, std::shared_ptr<VLLMParserWrapper>, Parser>(m, "VLLMParserWrapper")
-        .def(py::init<py::object>(), py::arg("py_parse"), "Wraps a vLLM parser to be used out of the box in Python.");
+        .def(py::init<py::object>(), py::arg("py_parser"), "Wraps a vLLM parser to be used out of the box in Python.");
 }
