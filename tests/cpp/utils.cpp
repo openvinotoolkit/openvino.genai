@@ -4,7 +4,7 @@
 
 #include <gtest/gtest.h>
 #include "utils.hpp"
-#include "openvino/genai/add_extension.hpp"
+#include "openvino/genai/extensions.hpp"
 
 
 using namespace ov::genai::utils;
