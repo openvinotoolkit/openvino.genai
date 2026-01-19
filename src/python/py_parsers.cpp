@@ -102,10 +102,11 @@ public:
                         return JsonContainer::from_json_string(
                             parsed.attr("model_dump_json")().cast<std::string>());
                     } else if (py::hasattr(parsed, "json")) {
+                        // json() method is deprecated but still supported in old versions
                         return JsonContainer::from_json_string(
                             parsed.attr("json")().cast<std::string>());
                     } else {
-                        OPENVINO_THROW("Parsed object does not have model_dump_json or json attribute");
+                        OPENVINO_THROW("Parsed object does not have model_dump_json() or json() method");
                     }
                 }
             );
