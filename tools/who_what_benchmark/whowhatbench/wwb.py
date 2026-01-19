@@ -657,9 +657,7 @@ def create_evaluator(base_model, args):
                 frames_num=args.video_frames_num,
                 pruning_ratio=args.pruning_ratio,
                 relevance_weight=args.relevance_weight,
-                seqs_per_request=getattr(
-                    args, "seqs_per_request", 1
-                ),  # Default to 1 if not set.
+                seqs_per_request=getattr(args, "seqs_per_request", 1),  # Default to 1 if not set.
             )
         elif task == "image-to-image":
             return EvaluatorCLS(
