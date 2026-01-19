@@ -79,7 +79,7 @@ def run_test(model_id, model_type, tmp_path, pruning_ratio, relevance_weight):
     )
 
     pruning_ratio = int(pruning_ratio)
-    if pruning_ratio > 0 and pruning_ratio < 100:
+    if 0 < pruning_ratio < 100:
         pruner_info = f"Pruning Ratio: {pruning_ratio}%"
     elif pruning_ratio == 100:
         pruner_info = "Original visual tokens and pruned visual tokens are the same!"
