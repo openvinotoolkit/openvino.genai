@@ -229,7 +229,7 @@ pipeline_modules:
     {
         "EmptyConfig",
         "",
-        false, 1, "pipeline_modules", false, ""  // 1 error: missing pipeline_modules (global_context is optional)
+        false, 1, "Empty", false, ""  // 1 error: empty YAML content
     },
 
     // global_context is optional (warning only)

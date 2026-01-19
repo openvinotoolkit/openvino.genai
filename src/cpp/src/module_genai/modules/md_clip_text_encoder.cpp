@@ -144,12 +144,14 @@ void ClipTextEncoderModule::run() {
     if (prompt_embeds) {
         this->outputs["prompt_embeds"].data = tensor_utils::split(prompt_embeds);
     } else {
-        this->outputs["prompt_embeds"].data = prompt_embeds;
+        // Set empty vector instead of uninitialized tensor
+        this->outputs["prompt_embeds"].data = std::vector<ov::Tensor>{};
     }
     if (negative_prompt_embeds) {
         this->outputs["negative_prompt_embeds"].data = tensor_utils::split(negative_prompt_embeds);
     } else {
-        this->outputs["negative_prompt_embeds"].data = negative_prompt_embeds;
+        // When CFG is disabled (guidance_scale <= 1.0), set empty vector instead of uninitialized tensor
+        this->outputs["negative_prompt_embeds"].data = std::vector<ov::Tensor>{};
     }
 }
 

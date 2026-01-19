@@ -60,6 +60,24 @@ public:
     // Validate YAML config content string
     static ValidationResult validate_config_string(const std::string& config_yaml_content);
 
+    // Convert ComfyUI JSON file to YAML config string context
+    // @param comfyui_json_path: Path to ComfyUI JSON file (workflow or API format)
+    // @param pipeline_inputs: [in/out] Pipeline parameters. Input: model_path_base (default: "./models/"), default_device (default: "CPU").
+    //                         Output: Extracted parameters (prompt, guidance_scale, num_inference_steps, width, height, etc.)
+    // @return YAML config string, empty string if conversion fails
+    static std::string comfyui_json_to_yaml(
+        const std::filesystem::path& comfyui_json_path,
+        ov::AnyMap& pipeline_inputs);
+
+    // Convert ComfyUI JSON string to YAML config string context
+    // @param comfyui_json_content: ComfyUI JSON content string (workflow or API format)
+    // @param pipeline_inputs: [in/out] Pipeline parameters. Input: model_path_base (default: "./models/"), default_device (default: "CPU").
+    //                         Output: Extracted parameters (prompt, guidance_scale, num_inference_steps, width, height, etc.)
+    // @return YAML config string, empty string if conversion fails
+    static std::string comfyui_json_string_to_yaml(
+        const std::string& comfyui_json_content,
+        ov::AnyMap& pipeline_inputs);
+
 private:
     void* m_pipeline_impl = nullptr;
 };

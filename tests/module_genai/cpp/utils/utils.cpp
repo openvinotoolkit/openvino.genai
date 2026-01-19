@@ -138,3 +138,7 @@ ov::Tensor load_tensor_from_file(const std::string& meta_data_path) {
     data_file.close();
     return tensor;
 }
+
+std::string get_test_file_path(const std::string& filename) {
+    return (fs::path(get_data_path()) / filename).string();
+}

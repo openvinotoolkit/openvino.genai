@@ -1,0 +1,424 @@
+// Copyright (C) 2018-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+/**
+ * @file yaml_module_generators.cpp
+ * @brief Implementation of YAML module generators
+ *
+ * This file contains all YAML module generator classes for converting ComfyUI nodes
+ * to GenAI pipeline YAML format.
+ *
+ * To add a new generator:
+ * 1. Create a class derived from YamlModuleGeneratorBase in the header
+ * 2. Implement the generate() method in this file
+ * 3. Register it in initialize_defaults()
+ */
+
+#include "yaml_module_generators.hpp"
+#include "logger.hpp"
+
+namespace ov {
+namespace genai {
+namespace module {
+namespace comfyui {
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+YAML::Node create_input_node(const std::string& name, const std::string& source, const std::string& type) {
+    YAML::Node node;
+    node["name"] = name;
+    node["source"] = source;
+    node["type"] = type;
+    return node;
+}
+
+YAML::Node create_output_node(const std::string& name, const std::string& type) {
+    YAML::Node node;
+    node["name"] = name;
+    node["type"] = type;
+    return node;
+}
+
+// ============================================================================
+// Singleton Instance
+// ============================================================================
+
+YamlModuleGeneratorRegistry& YamlModuleGeneratorRegistry::instance() {
+    static YamlModuleGeneratorRegistry registry;
+    return registry;
+}
+
+// ============================================================================
+// Registry Methods
+// ============================================================================
+
+void YamlModuleGeneratorRegistry::initialize_defaults() {
+    if (initialized_) return;
+
+    // Register generators by ComfyUI class_type for easy lookup
+    // Format: { "class_type", generator_instance }
+    static const std::vector<std::pair<std::string, std::shared_ptr<YamlModuleGeneratorBase>>> default_generators = {
+        {"EmptySD3LatentImage",  std::make_shared<RandomLatentImageModuleGenerator>()},
+        {"CLIPTextEncode",       std::make_shared<ClipTextEncoderModuleGenerator>()},
+        {"KSampler",             std::make_shared<ZImageDenoiserLoopModuleGenerator>()},
+        {"VAEDecode",            std::make_shared<VAEDecoderModuleGenerator>()},
+        {"VAEDecodeSwitcher",    std::make_shared<VAEDecoderTilingModuleGenerator>()},
+        {"SaveImage",            std::make_shared<SaveImageModuleGenerator>()},
+    };
+
+    for (const auto& [class_type, generator] : default_generators) {
+        register_generator(class_type, generator);
+    }
+
+    initialized_ = true;
+}
+
+void YamlModuleGeneratorRegistry::register_generator(
+    const std::string& class_type,
+    std::shared_ptr<YamlModuleGeneratorBase> generator) {
+    // Store ownership
+    generator_storage_.push_back(generator);
+    // Map class_type to generator
+    generators_[class_type] = generator;
+}
+
+YamlModuleGeneratorBase* YamlModuleGeneratorRegistry::get_generator(const std::string& node_type) const {
+    auto it = generators_.find(node_type);
+    if (it != generators_.end()) {
+        return it->second.get();
+    }
+    return nullptr;
+}
+
+bool YamlModuleGeneratorRegistry::has_generator(const std::string& node_type) const {
+    return generators_.find(node_type) != generators_.end();
+}
+
+// ============================================================================
+// RandomLatentImageModule Generator (EmptySD3LatentImage)
+// ============================================================================
+
+void RandomLatentImageModuleGenerator::generate(YamlGeneratorContext& ctx) {
+    const auto& node = ctx.current_node;
+    GENAI_DEBUG("[EmptySD3LatentImage] Processing node: node_id_str=%s, title=%s",
+                node.node_id_str.c_str(), node.title.c_str());
+
+    std::string module_name = node.node_id_str;
+    GENAI_DEBUG("[YAML] Adding RandomLatentImageModule (%s)", module_name.c_str());
+
+    YAML::Node module = ctx.pipeline_modules[module_name];
+    module["device"] = ctx.options.device;
+
+    YAML::Node inputs;
+    inputs.push_back(create_input_node("width", "pipeline_params.width", "Int"));
+    inputs.push_back(create_input_node("height", "pipeline_params.height", "Int"));
+    inputs.push_back(create_input_node("batch_size", "pipeline_params.batch_size", "Int"));
+    inputs.push_back(create_input_node("seed", "pipeline_params.seed", "Int"));
+    module["inputs"] = inputs;
+
+    YAML::Node outputs;
+    outputs.push_back(create_output_node("latents", "OVTensor"));
+    module["outputs"] = outputs;
+
+    module["params"]["model_path"] = ctx.options.model_path;
+    module["type"] = "RandomLatentImageModule";
+}
+
+// ============================================================================
+// ClipTextEncoderModule Generator (CLIPTextEncode)
+// ============================================================================
+
+void ClipTextEncoderModuleGenerator::generate(YamlGeneratorContext& ctx) {
+    // CLIPTextEncode -> ClipTextEncoderModule
+    const auto& node = ctx.current_node;
+    GENAI_DEBUG("[CLIP] Processing node: node_id_str=%s, title=%s",
+                node.node_id_str.c_str(), node.title.c_str());
+
+    std::string module_name = node.node_id_str;
+    bool is_negative = (node.title.find("Negative") != std::string::npos);
+
+    GENAI_DEBUG("[YAML] Adding ClipTextEncoderModule (%s) - %s",
+                module_name.c_str(), is_negative ? "negative" : "positive");
+
+    YAML::Node module = ctx.pipeline_modules[module_name];
+    module["device"] = ctx.options.device;
+
+    YAML::Node inputs;
+    if (is_negative) {
+        inputs.push_back(create_input_node("negative_prompt", "pipeline_params.negative_prompt", "String"));
+    } else {
+        inputs.push_back(create_input_node("prompt", "pipeline_params.prompt", "String"));
+    }
+    inputs.push_back(create_input_node("guidance_scale", "pipeline_params.guidance_scale", "Float"));
+    inputs.push_back(create_input_node("max_sequence_length", "pipeline_params.max_sequence_length", "Int"));
+    module["inputs"] = inputs;
+
+    YAML::Node outputs;
+    if (is_negative) {
+        outputs.push_back(create_output_node("negative_prompt_embeds", "VecOVTensor"));
+    } else {
+        outputs.push_back(create_output_node("prompt_embeds", "VecOVTensor"));
+    }
+    module["outputs"] = outputs;
+
+    module["params"]["model_path"] = ctx.options.model_path;
+    module["type"] = "ClipTextEncoderModule";
+}
+
+// ============================================================================
+// ZImageDenoiserLoopModule Generator (KSampler)
+// ============================================================================
+
+void ZImageDenoiserLoopModuleGenerator::generate(YamlGeneratorContext& ctx) {
+    // KSampler -> ZImageDenoiserLoopModule
+    const auto& node = ctx.current_node;
+    GENAI_DEBUG("[KSampler] Processing node: node_id_str=%s, title=%s",
+                node.node_id_str.c_str(), node.title.c_str());
+
+    // Get referenced module names from CLIPTextEncode nodes
+    std::string clip_positive_module_name;
+    std::string clip_negative_module_name;
+    if (auto* clip_nodes = ctx.params.get_nodes("CLIPTextEncode")) {
+        for (const auto& clip_node : *clip_nodes) {
+            if (clip_node.title.find("Negative") != std::string::npos) {
+                clip_negative_module_name = clip_node.node_id_str;
+            } else {
+                clip_positive_module_name = clip_node.node_id_str;
+            }
+        }
+    }
+
+    std::string latent_module_name;
+    if (auto* latent_node = ctx.params.get_node("EmptySD3LatentImage")) {
+        latent_module_name = latent_node->node_id_str;
+    }
+
+    std::string module_name = node.node_id_str;
+    GENAI_DEBUG("[YAML] Adding ZImageDenoiserLoopModule (%s)", module_name.c_str());
+
+    YAML::Node module = ctx.pipeline_modules[module_name];
+    module["device"] = ctx.options.device;
+
+    YAML::Node inputs;
+    if (!clip_positive_module_name.empty()) {
+        inputs.push_back(create_input_node("prompt_embeds", clip_positive_module_name + ".prompt_embeds", "VecOVTensor"));
+    }
+    if (!clip_negative_module_name.empty()) {
+        inputs.push_back(create_input_node("prompt_embeds_negative", clip_negative_module_name + ".negative_prompt_embeds", "VecOVTensor"));
+    }
+    if (!latent_module_name.empty()) {
+        inputs.push_back(create_input_node("latents", latent_module_name + ".latents", "OVTensor"));
+    }
+    inputs.push_back(create_input_node("num_inference_steps", "pipeline_params.num_inference_steps", "Int"));
+    inputs.push_back(create_input_node("width", "pipeline_params.width", "Int"));
+    inputs.push_back(create_input_node("height", "pipeline_params.height", "Int"));
+    module["inputs"] = inputs;
+
+    YAML::Node outputs;
+    outputs.push_back(create_output_node("latents", "OVTensor"));
+    module["outputs"] = outputs;
+
+    module["params"]["model_path"] = ctx.options.model_path;
+    module["type"] = "ZImageDenoiserLoopModule";
+}
+
+// ============================================================================
+// VAEDecoderModule Generator (VAEDecode)
+// ============================================================================
+
+void VAEDecoderModuleGenerator::generate(YamlGeneratorContext& ctx) {
+    // VAEDecode -> VAEDecoderModule (handles both VAEDecode and VAEDecodeSwitcher)
+    const auto& node = ctx.current_node;
+    GENAI_DEBUG("[VAEDecode] Processing node: node_id_str=%s, title=%s",
+                node.node_id_str.c_str(), node.title.c_str());
+
+    // Get referenced module name from KSampler
+    std::string ksampler_module_name;
+    if (auto* ksampler_node = ctx.params.get_node("KSampler")) {
+        ksampler_module_name = ksampler_node->node_id_str;
+    }
+
+    std::string module_name = node.node_id_str;
+    GENAI_DEBUG("[YAML] Adding VAEDecoderModule (%s)", module_name.c_str());
+
+    YAML::Node module = ctx.pipeline_modules[module_name];
+    module["device"] = ctx.options.device;
+
+    YAML::Node inputs;
+    if (!ksampler_module_name.empty()) {
+        inputs.push_back(create_input_node("latent", ksampler_module_name + ".latents", "OVTensor"));
+    }
+    module["inputs"] = inputs;
+
+    YAML::Node outputs;
+    outputs.push_back(create_output_node("image", "OVTensor"));
+    module["outputs"] = outputs;
+
+    module["params"]["model_path"] = ctx.options.model_path;
+    module["type"] = "VAEDecoderModule";
+}
+
+// ============================================================================
+// VAEDecoderTilingModule Generator (VAEDecodeSwitcher)
+// ============================================================================
+
+void VAEDecoderTilingModuleGenerator::generate(YamlGeneratorContext& ctx) {
+    const auto& node = ctx.current_node;
+    GENAI_DEBUG("[VAEDecodeSwitcher] Processing node: node_id_str=%s, title=%s",
+                node.node_id_str.c_str(), node.title.c_str());
+
+    // Get referenced module name from KSampler
+    std::string ksampler_module_name;
+    if (auto* ksampler_node = ctx.params.get_node("KSampler")) {
+        ksampler_module_name = ksampler_node->node_id_str;
+    }
+
+    // Check if tiled mode
+    bool use_tiled = false;
+    if (node.inputs.contains("select_decoder")) {
+        use_tiled = (node.inputs["select_decoder"].get<std::string>() == "tiled");
+    }
+
+    std::string module_name = node.node_id_str;
+
+    YAML::Node module = ctx.pipeline_modules[module_name];
+    module["device"] = ctx.options.device;
+
+    YAML::Node inputs;
+    if (!ksampler_module_name.empty()) {
+        inputs.push_back(create_input_node("latent", ksampler_module_name + ".latents", "OVTensor"));
+    }
+    module["inputs"] = inputs;
+
+    YAML::Node outputs;
+    outputs.push_back(create_output_node("image", "OVTensor"));
+    module["outputs"] = outputs;
+
+    module["params"]["model_path"] = ctx.options.model_path;
+
+    if (use_tiled) {
+        GENAI_DEBUG("[YAML] Adding VAEDecoderTilingModule (%s) - tiled mode", module_name.c_str());
+        module["params"]["sub_module_name"] = "vae_decoder_submodule";
+        module["params"]["tile_overlap_factor"] = "0.25";
+        module["type"] = "VAEDecoderTilingModule";
+
+        YAML::Node sub_module;
+        sub_module["name"] = "vae_decoder_submodule";
+
+        YAML::Node vae_decoder;
+        vae_decoder["device"] = ctx.options.device;
+
+        YAML::Node sub_inputs;
+        YAML::Node input_node;
+        input_node["name"] = "latents";
+        input_node["type"] = "OVTensor";
+        sub_inputs.push_back(input_node);
+        vae_decoder["inputs"] = sub_inputs;
+
+        YAML::Node sub_outputs;
+        sub_outputs.push_back(create_output_node("image", "OVTensor"));
+        vae_decoder["outputs"] = sub_outputs;
+
+        vae_decoder["params"]["enable_postprocess"] = "false";
+        vae_decoder["params"]["model_path"] = ctx.options.model_path;
+        vae_decoder["type"] = "VAEDecoderModule";
+
+        sub_module["vae_decoder"] = vae_decoder;
+        ctx.root["sub_modules"].push_back(sub_module);
+    } else {
+        GENAI_DEBUG("[YAML] Adding VAEDecoderModule (%s) - standard mode", module_name.c_str());
+        module["type"] = "VAEDecoderModule";
+    }
+}
+
+// ============================================================================
+// SaveImageModule Generator (SaveImage)
+// ============================================================================
+
+void SaveImageModuleGenerator::generate(YamlGeneratorContext& ctx) {
+    // SaveImage -> SaveImageModule
+    const auto& node = ctx.current_node;
+    GENAI_DEBUG("[SaveImage] Processing node: node_id_str=%s, title=%s",
+                node.node_id_str.c_str(), node.title.c_str());
+
+    // Get referenced module name from VAE
+    std::string vae_module_name;
+    if (auto* vae_node = ctx.params.get_node("VAEDecodeSwitcher")) {
+        vae_module_name = vae_node->node_id_str;
+    } else if (auto* vae_node = ctx.params.get_node("VAEDecode")) {
+        vae_module_name = vae_node->node_id_str;
+    }
+
+    std::string module_name = node.node_id_str;
+    GENAI_DEBUG("[YAML] Adding SaveImageModule (%s)", module_name.c_str());
+
+    std::string filename_prefix = "ComfyUI";
+    if (node.inputs.contains("filename_prefix")) {
+        filename_prefix = node.inputs["filename_prefix"].get<std::string>();
+    }
+
+    YAML::Node module = ctx.pipeline_modules[module_name];
+    module["device"] = "CPU";
+
+    YAML::Node inputs;
+    if (!vae_module_name.empty()) {
+        inputs.push_back(create_input_node("raw_data", vae_module_name + ".image", "OVTensor"));
+    }
+    module["inputs"] = inputs;
+
+    YAML::Node outputs;
+    outputs.push_back(create_output_node("saved_image", "String"));
+    module["outputs"] = outputs;
+
+    module["params"]["filename_prefix"] = filename_prefix;
+    module["type"] = "SaveImageModule";
+}
+
+// ============================================================================
+// Result Module Generator (always called last)
+// ============================================================================
+
+void YamlModuleGeneratorRegistry::generate_result_module(
+    YAML::Node& pipeline_modules,
+    YAML::Node& root,
+    const ComfyUIToGenAIConverter::PipelineParams& params,
+    const ConversionOptions& options) {
+
+    GENAI_DEBUG("[YAML] Adding ResultModule (pipeline_result)");
+    YAML::Node module = pipeline_modules["pipeline_result"];
+
+    // Get referenced module names
+    std::string vae_module_name;
+    if (auto* vae_node = params.get_node("VAEDecodeSwitcher")) {
+        vae_module_name = vae_node->node_id_str;
+    } else if (auto* vae_node = params.get_node("VAEDecode")) {
+        vae_module_name = vae_node->node_id_str;
+    }
+
+    std::string save_image_module_name;
+    if (auto* save_node = params.get_node("SaveImage")) {
+        save_image_module_name = save_node->node_id_str;
+    }
+
+    YAML::Node inputs;
+    // Priority: SaveImage > VAE (only one input, fallback logic)
+    if (!save_image_module_name.empty()) {
+        inputs.push_back(create_input_node("saved_image", save_image_module_name + ".saved_image", "String"));
+    } else if (!vae_module_name.empty()) {
+        inputs.push_back(create_input_node("image", vae_module_name + ".image", "OVTensor"));
+    }
+    module["inputs"] = inputs;
+
+    YAML::Node outputs;
+    outputs.push_back(create_output_node("saved_image", "String"));
+    module["outputs"] = outputs;
+
+    module["type"] = "ResultModule";
+}
+
+}  // namespace comfyui
+}  // namespace module
+}  // namespace genai
+}  // namespace ov

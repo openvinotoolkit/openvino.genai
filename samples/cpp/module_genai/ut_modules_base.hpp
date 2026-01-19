@@ -15,7 +15,7 @@
 #include <random>
 
 #include "utils.hpp"
-#include "load_image.hpp"
+#include "utils_image.hpp"
 #include <yaml-cpp/yaml.h>
 
 #ifndef CHECK

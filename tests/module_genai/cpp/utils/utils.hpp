@@ -14,6 +14,9 @@ bool readFileToString(const std::string &filename, std::string &content);
 // If the variable is not set, it uses the default path "./test_data".
 std::string get_data_path();
 
+// Get the full path to a test file by combining get_data_path() with filename.
+std::string get_test_file_path(const std::string& filename);
+
 // Get the absolute path to the model directory.
 // It first checks the MODEL_DIR environment variable.
 // If the variable is not set, it uses the default path "./test_models".

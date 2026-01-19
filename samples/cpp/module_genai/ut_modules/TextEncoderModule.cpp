@@ -81,7 +81,7 @@ pipeline_modules:
     ov::AnyMap prepare_inputs() override {
         ov::AnyMap inputs;
         inputs["prompts_data"] = std::vector<std::string>{"This is a sample prompt."};
-        auto img1 = utils::load_image("ut_test_data/cat_120_100.png");
+        auto img1 = image_utils::load_image("ut_test_data/cat_120_100.png");
         CHECK(img1, "Failed to load test image: ut_test_data/cat_120_100.png");
         inputs["img1"] = img1;
         return inputs;

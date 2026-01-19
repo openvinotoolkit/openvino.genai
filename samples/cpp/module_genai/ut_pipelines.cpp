@@ -1,7 +1,7 @@
 // Copyright (C) 2024 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "load_image.hpp"
+#include "utils_image.hpp"
 #include "utils.hpp"
 #include <openvino/genai/module_genai/pipeline.hpp>
 #include <filesystem>
@@ -48,7 +48,7 @@ void test_qwen2_5_vl_module_pipeline(int argc, char *argv[])
 
     ov::AnyMap inputs;
     inputs["prompts_data"] = std::vector<std::string>{"Please describle this image"};
-    inputs["img1"] = utils::load_image("ut_test_data/cat_120_100.png");
+    inputs["img1"] = image_utils::load_image("ut_test_data/cat_120_100.png");
 
     auto outputs = test_module_pipeline(std::filesystem::path(config_yaml), inputs, {"generated_text"});
     auto generated_text = outputs[0].as<std::string>();
