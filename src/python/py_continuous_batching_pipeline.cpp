@@ -553,7 +553,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
             py::arg("generation_config"),
             py::arg("streamer") = std::monostate{}
         )
-        
+
         .def(
             "generate",
             [](ContinuousBatchingPipeline& pipe,
@@ -591,7 +591,7 @@ void init_continuous_batching_pipeline(py::module_& m) {
             ) -> py::typing::Union<std::vector<ov::genai::GenerationResult>> {
                 return pyutils::call_and_sync_py_chat_histories(
                     py_histories,
-                    [&](std::vector<ChatHistory>& histories) {
+                    [&](std::vector<ov::genai::ChatHistory>& histories) {
                         ov::genai::StreamerVariant streamer = pyutils::pystreamer_to_streamer(py_streamer);
                         std::vector<ov::genai::VLMDecodedResults> generated_results;
                         {
