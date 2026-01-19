@@ -1099,10 +1099,8 @@ std::string convert_gguf_name_to_hf(std::string name) {
     };
 
     for (const auto& [gguf_part, hf_part] : replacements) {
-        size_t pos = new_name.find(gguf_part);
-        if (pos != std::string::npos) {
-            new_name.replace(pos, gguf_part.length(), hf_part);
-        }
+        const std::regex part_pattern(gguf_part);
+        new_name = std::regex_replace(new_name, part_pattern, hf_part);
     }
     
     return new_name;
@@ -1144,7 +1142,7 @@ public:
 
     bool eq(const AdapterImpl* other) const override {
         if(auto other_casted = dynamic_cast<const GGUFAdapterImpl*>(other)) {
-            return other == this;
+            return other_casted == this;
         }
         return false;
     }
