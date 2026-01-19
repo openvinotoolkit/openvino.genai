@@ -13,7 +13,6 @@
 #include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
 #include "types_c.h"
 
-// Explicit mapping helper to convert C++ element type to C enum
 static ov_element_type_e cpp_element_type_to_c(const ov::element::Type& t) {
     if (t == ov::element::f32)
         return static_cast<ov_element_type_e>(ov::element::Type_t::f32);
@@ -25,7 +24,7 @@ static ov_element_type_e cpp_element_type_to_c(const ov::element::Type& t) {
         return static_cast<ov_element_type_e>(ov::element::Type_t::i64);
     if (t == ov::element::u8)
         return static_cast<ov_element_type_e>(ov::element::Type_t::u8);
-    return static_cast<ov_element_type_e>(ov::element::Type_t::undefined);
+    return static_cast<ov_element_type_e>(0);
 }
 
 ov_status_e ov_genai_text2speech_decoded_results_create(ov_genai_text2speech_decoded_results** results) {

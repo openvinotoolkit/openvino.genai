@@ -190,6 +190,7 @@ jobs:
             echo "Creating venv for python$py_version"
             python$py_version -m venv venv$py_version
             source venv$py_version/bin/activate
+            pip install numpy
             echo "PATH: $PATH"
 
             echo "Configuring cmake for python$py_version"
@@ -353,7 +354,13 @@ jobs:
           save_to: ${{ github.workspace }}
 
       - name: Clean sccache stats
-        run: ${SCCACHE_PATH} --zero-stats
+        run: |
+          sccache_cmd="${SCCACHE_PATH:-sccache}"
+          if command -v "$sccache_cmd" >/dev/null 2>&1; then
+              "$sccache_cmd" --zero-stats || echo "sccache --zero-stats returned non-zero"
+          else
+              echo "sccache not found, skipping --zero-stats"
+          fi
 
       - name: Build GenAI Wheel
         run: |
@@ -366,7 +373,13 @@ jobs:
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
       - name: Show sccache stats
-        run: ${SCCACHE_PATH} --show-stats
+        run: |
+          sccache_cmd="${SCCACHE_PATH:-sccache}"
+          if command -v "$sccache_cmd" >/dev/null 2>&1; then
+              "$sccache_cmd" --show-stats || echo "sccache --show-stats returned non-zero"
+          else
+              echo "sccache not found, skipping --show-stats"
+          fi
 
       - name: Upload GenAI Wheel
         if: ${{ always() }}
@@ -416,7 +429,7 @@ jobs:
           path: ${{ github.workspace }}
           merge-multiple: true
 
-      - name: Store ${{ matrix.build_type }} artifacts to a shared drive
+      - name: Store ${{ matrix.build-type }} artifacts to a shared drive
         id: store_artifacts
         if: ${{ always() }}
         uses: openvinotoolkit/openvino/.github/actions/store_artifacts@master
@@ -1030,9 +1043,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check status of all jobs
-        if: >-
-          ${{
-            contains(needs.*.result, 'failure') ||
-            contains(needs.*.result, 'cancelled')
-          }}
-        run: exit 1
+        if: always()
+        run: |
+          echo "All dependent job results:"
+          echo '${{ toJSON(needs) }}' | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+
+          # List failed / cancelled jobs
+          failed_jobs=$(echo '${{ toJSON(needs) }}' | jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | .key' || true)
+
+          if [ -n "$failed_jobs" ]; then
+            echo "Failed or cancelled jobs:"
+            echo "$failed_jobs"
+            # Optionally show more info for each failed job
+            echo '${{ toJSON(needs) }}' | jq -r --argjson _ "$(echo '{}' )" \
+              'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | "\(.key): \(.value | tojson)"'
+            exit 1
+          fi

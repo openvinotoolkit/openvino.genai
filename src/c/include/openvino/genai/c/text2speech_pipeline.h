@@ -11,7 +11,10 @@
 #pragma once
 
 #include "openvino/c/ov_tensor.h"
+#include "openvino/genai/c/perf_metrics.h"
 #include "openvino/genai/c/speech_generation_config.h"
+#include "openvino/genai/c/visibility.h"
+
 
 /**
  * @struct ov_genai_text2speech_decoded_results
