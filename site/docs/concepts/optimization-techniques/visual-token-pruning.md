@@ -67,7 +67,7 @@ res = pipe.generate(prompt, images=images, generation_config=config)
 The script prints performance metrics (Includes TTFT, Embeddings preparation time). Compare runs with different `--pruning_ratio` to quantify latency improvements and memory savings.
 
 ## Performance & Benefits
-* Reduced KV cache memory for visual tokens -> enables larger batch sizes or longer text generation within same memory budget.
+* Reduced KV cache memory for visual tokens -> enables larger batch sizes or longer text generation within the same memory budget.
 * Lower per-step attention computations involving image tokens -> improved latency.
 * Helpful for edge or GPU memory-constrained deployments (e.g., running VLM on integrated GPU with limited VRAM).
 
@@ -75,4 +75,4 @@ The script prints performance metrics (Includes TTFT, Embeddings preparation tim
 * Current implementation assumes a standard image encoder output; exotic hierarchical or sparse encoders might require adjusted scoring strategies.
 * Pruning is applied only after the initial image encoding; does not dynamically re-introduce pruned tokens later.
 * Score computation details are internal; no per-token debug API is exposed yet.
-* The current implementation supports Qwen-VL models only; support for other models will be added in a subsequent release.
+* The current implementation supports Qwen2.5-VL models only; support for other models will be added in a subsequent release.
