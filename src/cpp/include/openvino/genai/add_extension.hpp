@@ -39,17 +39,5 @@ inline std::pair<std::string, ov::Any> extensions(const std::vector<std::shared_
                                                                                          extension_list.end()});
 }
 
-/**
- * @brief A helper allowing extensions(initializer_list{"path"}) instead of explicit std::variant.
- */
-template <class T, class = std::enable_if_t<std::is_constructible<std::filesystem::path, const T&>::value>>
-inline std::pair<std::string, ov::Any> extensions(std::initializer_list<T> paths) {
-    std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>> paths_var;
-    for (const auto& path : paths) {
-        paths_var.emplace_back(std::filesystem::path{path});
-    }
-    return extensions(std::move(paths_var));
-}
-
 }  // namespace genai
 }  // namespace ov

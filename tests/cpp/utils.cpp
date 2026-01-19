@@ -23,12 +23,10 @@ TEST(TestIsContainer, test_is_container) {
 
 TEST(TestAddExtensions, test_add_extensions_to_core) {
     // Use intentionally non-existent, platform-agnostic extension paths to trigger error handling.
-    ov::AnyMap properties1 = {ov::genai::extensions({"non_existent_extension1", "non_existent_extension2"})};
-    ov::AnyMap properties2 = {ov::genai::extensions(
+    ov::AnyMap properties1 = {ov::genai::extensions(
         std::vector<std::filesystem::path>{"non_existent_extension1", "non_existent_extension2"})};
-    ov::AnyMap properties3 = {ov::genai::extensions(std::vector<std::shared_ptr<ov::Extension>>{})};
+    ov::AnyMap properties2 = {ov::genai::extensions(std::vector<std::shared_ptr<ov::Extension>>{})};
 
     EXPECT_THROW(add_extensions_to_core(properties1), ov::Exception);
-    EXPECT_THROW(add_extensions_to_core(properties2), ov::Exception);
-    EXPECT_NO_THROW(add_extensions_to_core(properties3));
+    EXPECT_NO_THROW(add_extensions_to_core(properties2));
 }
