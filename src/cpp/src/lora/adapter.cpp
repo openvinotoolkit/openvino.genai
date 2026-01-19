@@ -44,7 +44,7 @@
 #include "lora/names_mapping.hpp"
 
 #ifdef ENABLE_GGUF
-#include <regex>
+#include <algorithm>
 #include <vector>
 #include <utility>
 #include "gguf_utils/gguf.hpp"
@@ -1074,8 +1074,27 @@ private:
 // Helper to convert GGUF tensor names to OpenVINO/HF names
 std::string convert_gguf_name_to_hf(std::string name) {
     // 1. Handle blocks: blk.N. -> model.layers.N.
-    static const std::regex blk_pattern("blk\\.(\\d+)\\.");
-    std::string new_name = std::regex_replace(name, blk_pattern, "model.layers.$1.");
+    std::string new_name = name;
+    size_t pos = 0;
+    while ((pos = new_name.find("blk.", pos)) != std::string::npos) {
+        size_t num_start = pos + 4; // after "blk."
+        size_t num_end = new_name.find('.', num_start);
+        if (num_end != std::string::npos) {
+            std::string layer_num = new_name.substr(num_start, num_end - num_start);
+            // Verify it's actually a number
+            bool is_number = !layer_num.empty() && 
+                           std::all_of(layer_num.begin(), layer_num.end(), ::isdigit);
+            if (is_number) {
+                std::string replacement = "model.layers." + layer_num + ".";
+                new_name.replace(pos, num_end - pos + 1, replacement);
+                pos += replacement.length();
+            } else {
+                pos = num_end;
+            }
+        } else {
+            break;
+        }
+    }
 
     // 2. Handle specific layer components
     // Attention and Norms
@@ -1099,8 +1118,12 @@ std::string convert_gguf_name_to_hf(std::string name) {
     };
 
     for (const auto& [gguf_part, hf_part] : replacements) {
-        const std::regex part_pattern(gguf_part);
-        new_name = std::regex_replace(new_name, part_pattern, hf_part);
+        if (gguf_part.empty()) continue; // avoid infinite loop
+        size_t pos = 0;
+        while ((pos = new_name.find(gguf_part, pos)) != std::string::npos) {
+            new_name.replace(pos, gguf_part.length(), hf_part);
+            pos += hf_part.length(); // continue after replaced part
+        }
     }
     
     return new_name;
