@@ -677,6 +677,10 @@ jobs:
             cmd: 'python -m pytest -s -v tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py tests/python_tests/test_image_generation.py --override-ini cache_dir=/mount/caches/pytest/'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test || fromJSON(needs.smart_ci.outputs.affected_components).Image_generation.test }}
             timeout: 180
+          - name: 'Video Generation'
+            cmd: 'python -m pytest -s -v tests/python_tests/test_video_generation.py --override-ini cache_dir=/mount/caches/pytest/'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).video_generation.test }}
+            timeout: 60
           - name: 'VLM (MiniCPM-o-2_6)'
             cmd: |
               python -m pip install transformers==4.51.3

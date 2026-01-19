@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "continuous_batching/pipeline_base.hpp"
@@ -258,6 +258,11 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     std::vector<EncodedImage> encoded_images = {};
     std::vector<EncodedVideo> encoded_videos = {};
     bool recalculate_merged_embeddings = images_vector.size() > 0 || videos_vector.size() > 0;
+
+    const auto& generation_config = sampling_params[0];
+    // Set visual token pruning configuration
+    m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
+                                                       generation_config.relevance_weight);
 
     if (m_is_chat_conversation) {
         OPENVINO_ASSERT(1 == prompts.size(), "Can't chat with multiple prompts");
