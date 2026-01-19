@@ -50,9 +50,7 @@ def test_gguf_lora_generation():
     from pathlib import Path
 
     # Download pre-converted OpenVINO IR model
-    model_path = snapshot_download(
-        repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub"
-    )
+    model_path = snapshot_download(repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub")
 
     # Download GGUF adapter
     adapter_path = download_gguf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
@@ -91,9 +89,7 @@ def test_gguf_lora_generation():
     gc.collect()
 
     # Verify generation succeeded
-    assert (
-        lora_text is not None and len(lora_text) > 0
-    ), "Generation with GGUF adapter failed or produced empty output"
+    assert lora_text is not None and len(lora_text) > 0, "Generation with GGUF adapter failed or produced empty output"
 
     # If we got here, the GGUF adapter:
     # - Loaded successfully (GGUF parsing works)
@@ -155,9 +151,7 @@ class TestGGUFLoRANameConversion:
         from huggingface_hub import snapshot_download
         from pathlib import Path
 
-        model_path = snapshot_download(
-            repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub"
-        )
+        model_path = snapshot_download(repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub")
         adapter_path = download_gguf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
 
         device = "CPU"
@@ -187,9 +181,7 @@ class TestGGUFLoRANameConversion:
         # 1. GGUF file was parsed correctly
         # 2. Tensor names were converted correctly
         # 3. Converted names matched the model's layer structure
-        assert (
-            output is not None and len(output) > 0
-        ), "Adapter loaded but produced no output"
+        assert output is not None and len(output) > 0, "Adapter loaded but produced no output"
 
 
 class TestGGUFLoRAAlphaScaling:
@@ -209,9 +201,7 @@ class TestGGUFLoRAAlphaScaling:
         from pathlib import Path
 
         # Download model and adapter
-        model_path = snapshot_download(
-            repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub"
-        )
+        model_path = snapshot_download(repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub")
         adapter_path = download_gguf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
 
         device = "CPU"
@@ -237,9 +227,7 @@ class TestGGUFLoRAAlphaScaling:
 
         # Verify all alpha values produced valid output
         for alpha, output in outputs.items():
-            assert (
-                output is not None and len(output) > 0
-            ), f"Alpha {alpha} produced empty or None output"
+            assert output is not None and len(output) > 0, f"Alpha {alpha} produced empty or None output"
 
         # Note: We don't require different outputs because this is a function-calling
         # adapter that may not affect all prompts. The key test is that alpha
@@ -316,9 +304,7 @@ class TestGGUFLoRAIntegration:
         from huggingface_hub import snapshot_download
         from pathlib import Path
 
-        model_path = snapshot_download(
-            repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub"
-        )
+        model_path = snapshot_download(repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub")
         adapter_path = download_gguf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
 
         device = "CPU"
@@ -350,9 +336,7 @@ class TestGGUFLoRAIntegration:
         # Verify all prompts produced output
         assert len(outputs) == len(prompts), "Not all prompts produced output"
         for i, output in enumerate(outputs):
-            assert (
-                output is not None and len(output) > 0
-            ), f"Prompt {i} produced empty output"
+            assert output is not None and len(output) > 0, f"Prompt {i} produced empty output"
 
     @pytest.mark.nightly
     @pytest.mark.skipif(sys.platform == "darwin", reason="Sporadic instability on Mac")
@@ -361,9 +345,7 @@ class TestGGUFLoRAIntegration:
         from huggingface_hub import snapshot_download
         from pathlib import Path
 
-        model_path = snapshot_download(
-            repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub"
-        )
+        model_path = snapshot_download(repo_id=MODEL_ID, cache_dir=Path.home() / ".cache" / "huggingface" / "hub")
         adapter_path = download_gguf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
 
         device = "CPU"
@@ -394,6 +376,4 @@ class TestGGUFLoRAIntegration:
         gc.collect()
 
         # Outputs should be identical (deterministic generation)
-        assert (
-            output1 == output2
-        ), f"Reloaded adapter produced different output.\nFirst: {output1}\nSecond: {output2}"
+        assert output1 == output2, f"Reloaded adapter produced different output.\nFirst: {output1}\nSecond: {output2}"
