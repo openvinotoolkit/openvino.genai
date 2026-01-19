@@ -1,13 +1,13 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "module_genai/utils/yaml_utils.hpp"
-#include "module_genai/utils/data_type_converter.hpp"
-#include "logger.hpp"
 
 #include <yaml-cpp/yaml.h>
+
 #include <filesystem>
 
+#include "logger.hpp"
 #include "module_genai/modules/md_img_preprocess.hpp"
 #include "module_genai/modules/md_io.hpp"
 #include "module_genai/modules/md_text_encoder.hpp"

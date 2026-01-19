@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "module_genai/utils/data_type_converter.hpp"
+#include "module_genai/module_data_type.hpp"
 
 #include <unordered_map>
 
@@ -11,21 +11,15 @@ namespace genai {
 namespace module {
 
 const std::unordered_map<DataType, std::string> DataTypeConverter::kTypeToString = {
-    {DataType::Unknown, "Unknown"},
-    {DataType::OVTensor, "OVTensor"},
-    {DataType::VecOVTensor, "VecOVTensor"},
-    {DataType::OVRemoteTensor, "OVRemoteTensor"},
-    {DataType::VecOVRemoteTensor, "VecOVRemoteTensor"},
-    {DataType::String, "String"},
-    {DataType::VecString, "VecString"},
-    {DataType::Int, "Int"},
-    {DataType::VecInt, "VecInt"},
-    {DataType::VecVecInt, "VecVecInt"},
-    {DataType::Float, "Float"},
-    {DataType::VecFloat, "VecFloat"}};
+#define OV_GENAI_MODULE_DATA_TYPE_TO_STRING_ITEM(name, value) {DataType::name, #name},
+    OV_GENAI_MODULE_DATA_TYPE_LIST(OV_GENAI_MODULE_DATA_TYPE_TO_STRING_ITEM)
+#undef OV_GENAI_MODULE_DATA_TYPE_TO_STRING_ITEM
+};
 
-const std::unordered_map<std::string, DataType> DataTypeConverter::kStringToType =
-    DataTypeConverter::create_string_to_type_map();
+const std::unordered_map<std::string, DataType> DataTypeConverter::kStringToType = []() {
+    auto map = DataTypeConverter::create_string_to_type_map();
+    return map;
+}();
 
 }  // namespace module
 }  // namespace genai

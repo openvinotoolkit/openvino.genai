@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "module_genai/utils/yaml_utils.hpp"
-#include "module_genai/utils/data_type_converter.hpp"
+#include "module_genai/module_data_type.hpp"
 #include "logger.hpp"
 
 #include <yaml-cpp/yaml.h>

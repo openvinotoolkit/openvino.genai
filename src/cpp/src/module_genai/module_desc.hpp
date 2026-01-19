@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "module_genai/module_data_type.hpp"
 #include "module_genai/module_print_config.hpp"
 #include "module_genai/module_type.hpp"
 #include "openvino/core/any.hpp"
@@ -12,21 +13,6 @@
 namespace ov {
 namespace genai {
 namespace module {
-
-enum class DataType : int {
-    Unknown = 0,
-    OVTensor = 1,
-    VecOVTensor = 2,
-    OVRemoteTensor = 3,
-    VecOVRemoteTensor = 4,
-    String = 10,
-    VecString = 11,
-    Int = 20,
-    VecInt = 21,
-    VecVecInt = 22,
-    Float = 30,
-    VecFloat = 31
-};
 
 struct OutputPort {
     std::string name;
