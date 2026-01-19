@@ -64,6 +64,8 @@ def test_gguf_lora_generation():
     config = ov_genai.GenerationConfig()
     config.max_new_tokens = 30
     config.do_sample = False  # Deterministic
+    config.rng_seed = 42
+
     
     prompt = "<human>: What is the weather in London?\n<bot>:"
     
@@ -221,6 +223,7 @@ class TestGGUFLoRAAlphaScaling:
         config = ov_genai.GenerationConfig()
         config.max_new_tokens = 20
         config.do_sample = False
+        config.rng_seed = 42
         
         prompt = "<human>: Hello\n<bot>:"
         
@@ -239,9 +242,7 @@ class TestGGUFLoRAAlphaScaling:
         
         # Verify all alpha values produced valid output
         for alpha, output in outputs.items():
-            assert output is not None and len(output) > 0, (
-                f"Alpha {alpha} produced empty or None output"
-            )
+            assert output is not None and len(output) > 0, f"Alpha {alpha} produced empty or None output"
         
         # Note: We don't require different outputs because this is a function-calling
         # adapter that may not affect all prompts. The key test is that alpha
@@ -328,6 +329,7 @@ class TestGGUFLoRAIntegration:
         config = ov_genai.GenerationConfig()
         config.max_new_tokens = 15
         config.do_sample = False
+        config.rng_seed = 42
         
         prompts = [
             "<human>: Hi\n<bot>:",
@@ -372,7 +374,8 @@ class TestGGUFLoRAIntegration:
         device = "CPU"
         config = ov_genai.GenerationConfig()
         config.max_new_tokens = 10
-        config.do_sample = False  # Deterministic generation
+        config.do_sample = False
+        config.rng_seed = 42  # Deterministic generation
         
         prompt = "<human>: Test\n<bot>:"
         
@@ -396,8 +399,4 @@ class TestGGUFLoRAIntegration:
         gc.collect()
         
         # Outputs should be identical (deterministic generation)
-        assert output1 == output2, (
-            f"Reloaded adapter produced different output.\n"
-            f"First: {output1}\n"
-            f"Second: {output2}"
-        )
+        assert output1 == output2, f"Reloaded adapter produced different output.\nFirst: {output1}\nSecond: {output2}"
