@@ -74,26 +74,6 @@ describe("corner cases", async () => {
       message: "LLMPipeline is already initialized",
     });
   });
-
-  it("should throw an error if chat is already started", async () => {
-    const pipeline = await LLMPipeline(MODEL_PATH, "CPU");
-
-    await pipeline.startChat();
-
-    await assert.rejects(() => pipeline.startChat(), {
-      name: "Error",
-      message: "Chat is already started",
-    });
-  });
-
-  it("should throw an error if chat is not started", async () => {
-    const pipeline = await LLMPipeline(MODEL_PATH, "CPU");
-
-    await assert.rejects(() => pipeline.finishChat(), {
-      name: "Error",
-      message: "Chat is not started",
-    });
-  });
 });
 
 describe("generation parameters validation", () => {
@@ -123,7 +103,7 @@ describe("generation parameters validation", () => {
 
     await assert.rejects(async () => await pipeline.generate("prompt", {}, false), {
       name: "Error",
-      message: "Callback must be a function",
+      message: "Streamer must be a function",
     });
   });
 

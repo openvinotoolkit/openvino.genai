@@ -15,8 +15,13 @@ import {
   ILlama3PythonicToolParser,
   ILlama3JsonToolParser,
 } from "./parsers.js";
-import { GenerationConfig, StreamingStatus, VLMPipelineProperties } from "./utils.js";
-import { VLMPerfMetrics } from "./perfMetrics.js";
+import {
+  GenerationConfig,
+  StreamingStatus,
+  VLMPipelineProperties,
+  LLMPipelineProperties,
+} from "./utils.js";
+import { VLMPerfMetrics, PerfMetrics } from "./perfMetrics.js";
 
 export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
 export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
@@ -106,6 +111,34 @@ export interface TextRerankPipeline {
   ): void;
 }
 
+export interface LLMPipeline {
+  new (): LLMPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    ovProperties: LLMPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    inputs: string | string[] | IChatHistory,
+    generationConfig: GenerationConfig,
+    streamer: ((chunk: string) => StreamingStatus) | undefined,
+    callback: (
+      err: Error | null,
+      result: {
+        texts: string[];
+        scores: number[];
+        perfMetrics: PerfMetrics;
+        parsed: Record<string, unknown>[];
+        subword: string;
+      },
+    ) => void,
+  ): void;
+  startChat(systemMessage: string, callback: (err: Error | null) => void): void;
+  finishChat(callback: (err: Error | null) => void): void;
+  getTokenizer(): ITokenizer;
+}
+
 export interface VLMPipeline {
   new (): VLMPipeline;
   init(
@@ -140,7 +173,7 @@ export interface VLMPipeline {
 interface OpenVINOGenAIAddon {
   TextRerankPipeline: TextRerankPipeline;
   TextEmbeddingPipeline: TextEmbeddingPipelineWrapper;
-  LLMPipeline: any;
+  LLMPipeline: LLMPipeline;
   VLMPipeline: VLMPipeline;
   ChatHistory: IChatHistory;
   Tokenizer: ITokenizer;
