@@ -659,7 +659,7 @@ def create_evaluator(base_model, args):
                 relevance_weight=args.relevance_weight,
                 seqs_per_request=getattr(
                     args, "seqs_per_request", 1
-                ),  # Default to 1 if not set; make configurable to avoid magic number
+                ),  # Default to 1 if not set.
             )
         elif task == "image-to-image":
             return EvaluatorCLS(
