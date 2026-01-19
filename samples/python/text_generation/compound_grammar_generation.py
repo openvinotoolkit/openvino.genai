@@ -140,7 +140,6 @@ def main():
     tools = [tool_to_dict(tool) for tool in [book_flight_ticket, book_hotel]]
     chat_history = ChatHistory()
     chat_history.set_tools(tools)
-    chat_history.set_extra_context({"add_generation_prompt": True})
     chat_history.append({"role": "system", "content": sys_message})
 
     generation_config = GenerationConfig()

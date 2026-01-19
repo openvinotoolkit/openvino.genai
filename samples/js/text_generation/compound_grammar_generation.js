@@ -115,7 +115,6 @@ async function main() {
     const chatHistory = new ChatHistory([{ role: "system", content: sysMessage }]);
     const tools = [bookFlightTicket, bookHotel].map((tool) => toolToDict(tool, true));
     chatHistory.setTools(tools);
-    chatHistory.setExtraContext({ add_generation_prompt: true });
 
     const generationConfig = {
         return_decoded_results: true,
