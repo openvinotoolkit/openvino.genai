@@ -54,6 +54,6 @@ void quantize_q8_0(const float* src,
 std::tuple<std::map<std::string, GGUFMetaData>,
            std::unordered_map<std::string, ov::Tensor>,
            std::unordered_map<std::string, gguf_tensor_type>>
-load_gguf(const std::string& file, bool dequantize_to_fp16 = false, bool requantize_for_npu = false);
+load_gguf(const std::string& file, bool dequantize_to_fp16 = false, bool requantize = false);
 
-GGUFLoad get_gguf_data(const std::string& file, bool dequantize_to_fp16 = false, bool requantize_for_npu = false);
+GGUFLoad get_gguf_data(const std::string& file, bool dequantize_to_fp16 = false, bool requantize = false);

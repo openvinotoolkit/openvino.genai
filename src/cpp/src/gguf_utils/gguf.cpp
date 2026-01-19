@@ -405,7 +405,7 @@ void load_arrays(gguf_ctx* ctx,
                  std::unordered_map<std::string, ov::Tensor>& array_map,
                  std::unordered_map<std::string, gguf_tensor_type>& qtype_map,
                  bool dequantize_to_fp16,
-                 bool requantize_for_npu) {
+                 bool requantize) {
     gguf_tensor tensor;
 
     auto check_insert = [](const auto& inserted) {
@@ -431,14 +431,14 @@ void load_arrays(gguf_ctx* ctx,
             constexpr std::string_view weight_suffix = ".weight";
             const std::string name_prefix = name.substr(0, name.length() - weight_suffix.length());
             
-            // Phase 2: Requantize for NPU if requested
-            if (requantize_for_npu) {
+            // Phase 2: Requantize if requested
+            if (requantize) {
                 // Check test mode: override strategy with simple uniform quantization
                 const char* test_mode = std::getenv("GGUF_REQUANT_MODE");
                 bool force_q8_0 = (test_mode && std::string(test_mode) == "Q8_0_C");
                 bool force_q4_0 = (test_mode && std::string(test_mode) == "Q4_0_128");
                 
-                printf("[DEBUG REQUANT] GGUF_REQUANT_MODE=%s\n", test_mode ? test_mode : "(not set - using mixed strategy)");
+                // printf("[DEBUG REQUANT] GGUF_REQUANT_MODE=%s\n", test_mode ? test_mode : "(not set - using mixed strategy)");
                 
                 if (force_q8_0) {
                     printf("[DEBUG REQUANT] TEST MODE: Force all tensors to Q8_0_C\n");
@@ -447,13 +447,8 @@ void load_arrays(gguf_ctx* ctx,
                 }
                 
                 // Determine requantization type based on tensor name
-                // Strategy aligned with llama.cpp's ggml_openvino_get_requant_type
                 bool is_token_embd = (name.find("token_embd.weight") != std::string::npos);
                 bool is_output = (name == "output.weight");  // Exact match to avoid false positives
-                
-                // Check device type ONCE at the beginning
-                const char* device = std::getenv("GGML_OPENVINO_DEVICE");
-                bool is_npu = (device && std::string(device) == "NPU");
                 
                 bool should_requant = true;
                 bool use_q8_0 = false;
@@ -467,47 +462,31 @@ void load_arrays(gguf_ctx* ctx,
                     use_q8_0 = false;
                     block_size = 128;
                 } else {
-                    // PRODUCTION MODE: Mixed strategy
-                    // Decide requant format (matching llama.cpp logic):
-                    // 1. token_embd.weight: 
-                    //    - NPU + Q6_K → F16 (no requant)
-                    //    - Otherwise → Q8_0_C
+                    // PRODUCTION MODE: Simplified mixed strategy
+                    // 1. token_embd.weight → Q8_0_C (channel-wise)
                     // 2. output.weight → Q8_0_C (channel-wise)
-                    // 3. NPU other tensors → Q4_0_128
-                    // 4. Non-NPU Q6_K/Q5_K → Q8_0_C
+                    // 3. All other tensors → Q4_0_128
                     
                     if (is_token_embd) {
-                        // token_embd: NPU+Q6_K→F16, else→Q8_0 (channel-wise)
-                        if (is_npu && tensor.type == GGUF_TYPE_Q6_K) {
-                            should_requant = false;  // Keep as F16
-                        } else {
-                            use_q8_0 = true;
-                            block_size = fp16_tensor.get_shape()[1];  // Channel-wise quantization (Q8_0_C)
-                        }
-                    } else if (is_output) {
-                        // output.weight → Q8_0 (channel-wise)
+                        // token_embd → Q8_0_C (channel-wise)
                         use_q8_0 = true;
-                        block_size = fp16_tensor.get_shape()[1];  // Channel-wise quantization (Q8_0_C)
-                    } else if (is_npu) {
-                        // NPU other tensors → Q4_0_128
+                        block_size = fp16_tensor.get_shape()[1];
+                    } else if (is_output) {
+                        // output.weight → Q8_0_C (channel-wise)
+                        use_q8_0 = true;
+                        block_size = fp16_tensor.get_shape()[1];
+                    } else {
+                        // All other tensors → Q4_0_128
                         use_q8_0 = false;
                         block_size = 128;
-                    } else {
-                        // Non-NPU: Q6_K/Q5_K → Q8_0 (channel-wise), others → no requant
-                        if (tensor.type == GGUF_TYPE_Q6_K || tensor.type == GGUF_TYPE_Q5_K) {
-                            use_q8_0 = true;
-                            block_size = fp16_tensor.get_shape()[1];  // Channel-wise quantization (Q8_0_C)
-                        } else {
-                            should_requant = false;
-                        }
                     }
                 }
                 
-                printf("[DEBUG REQUANT] Tensor: %s, Type: %d, is_npu: %d, is_token_embd: %d, is_output: %d\n", 
-                       name.c_str(), tensor.type, is_npu, is_token_embd, is_output);
+                // printf("[DEBUG REQUANT] Tensor: %s, Type: %d, is_token_embd: %d, is_output: %d\n", 
+                //        name.c_str(), tensor.type, is_token_embd, is_output);
                 
-                printf("[DEBUG REQUANT] Decision: should_requant=%d, use_q8_0=%d, block_size=%lld\n", 
-                       should_requant, use_q8_0, block_size);
+                // printf("[DEBUG REQUANT] Decision: should_requant=%d, use_q8_0=%d, block_size=%lld\n", 
+                //        should_requant, use_q8_0, block_size);
                 
                 if (should_requant) {
                     printf("[DEBUG REQUANT] Starting requantization for %s\n", name.c_str());
@@ -520,7 +499,7 @@ void load_arrays(gguf_ctx* ctx,
                     for (int64_t i = 0; i < n_elements; i++) {
                         fp32_data[i] = from_half(fp16_ptr[i]);
                     }
-                    printf("[DEBUG REQUANT] Converted FP16 to FP32, n_elements=%lld\n", n_elements);
+                    // printf("[DEBUG REQUANT] Converted FP16 to FP32, n_elements=%lld\n", n_elements);
                     
                     // Create output tensors
                     ov::Tensor weights_out, scales_out, biases_out;
@@ -534,11 +513,11 @@ void load_arrays(gguf_ctx* ctx,
                         scales_out = ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});
                         biases_out = ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});  // Match scales shape
                         
-                        printf("[DEBUG REQUANT] Q8_0: shape=[%zu,%zu], block_size=%lld, num_blocks_per_row=%zu\n",
-                               shape[0], shape[1], block_size, num_blocks_per_row);
+                        // printf("[DEBUG REQUANT] Q8_0: shape=[%zu,%zu], block_size=%lld, num_blocks_per_row=%zu\n",
+                        //        shape[0], shape[1], block_size, num_blocks_per_row);
                         
                         quantize_q8_0(fp32_data.data(), weights_out, scales_out, biases_out, n_elements, block_size);
-                        printf("[DEBUG REQUANT] Q8_0 quantization complete\n");
+                        // printf("[DEBUG REQUANT] Q8_0 quantization complete\n");
                     } else {
                         // Q4_0_128 format
                         size_t num_blocks_per_row = shape[1] / block_size;
@@ -547,14 +526,14 @@ void load_arrays(gguf_ctx* ctx,
                         scales_out = ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});
                         biases_out = ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});  // Match scales shape
                         
-                        printf("[DEBUG REQUANT] Q4_0: shape=[%zu,%zu], block_size=%lld, num_blocks_per_row=%zu\n",
-                               shape[0], shape[1], block_size, num_blocks_per_row);
+                        // printf("[DEBUG REQUANT] Q4_0: shape=[%zu,%zu], block_size=%lld, num_blocks_per_row=%zu\n",
+                        //        shape[0], shape[1], block_size, num_blocks_per_row);
                         
                         quantize_q4_0(fp32_data.data(), weights_out, scales_out, biases_out, n_elements, block_size);
-                        printf("[DEBUG REQUANT] Q4_0 quantization complete\n");
+                        // printf("[DEBUG REQUANT] Q4_0 quantization complete\n");
                     }
                     
-                    printf("[DEBUG REQUANT] Storing tensors: weights, scales, biases\n");
+                    // printf("[DEBUG REQUANT] Storing tensors: weights, scales, biases\n");
                     
                     // Store requantized tensors (same structure as gguf_load_quantized)
                     check_insert(array_map.emplace(name, std::move(weights_out)));
@@ -562,10 +541,10 @@ void load_arrays(gguf_ctx* ctx,
                     check_insert(array_map.emplace(name_prefix + ".biases", std::move(biases_out)));
                     qtype_map.emplace(name_prefix + ".qtype", use_q8_0 ? GGUF_TYPE_Q8_0 : GGUF_TYPE_Q4_0);
                     requantized_count++;
-                    printf("[DEBUG REQUANT] Successfully stored requantized tensors for %s\n", name.c_str());
+                    // printf("[DEBUG REQUANT] Successfully stored requantized tensors for %s\n", name.c_str());
                 } else {
                     // Keep as F16
-                    printf("[DEBUG REQUANT] Keeping tensor as F16: %s\n", name.c_str());
+                    // printf("[DEBUG REQUANT] Keeping tensor as F16: %s\n", name.c_str());
                     check_insert(array_map.emplace(name, fp16_tensor));
                     qtype_map.emplace(name_prefix + ".qtype", GGUF_TYPE_F16);
                 }
@@ -595,8 +574,8 @@ void load_arrays(gguf_ctx* ctx,
 
     if (dequantize_to_fp16) {
         std::cout << "[DEBUG] Dequantized " << dequantized_count << " tensors to FP16" << std::endl;
-        if (requantize_for_npu) {
-            std::cout << "[DEBUG] Requantized " << requantized_count << " tensors for NPU" << std::endl;
+        if (requantize) {
+            std::cout << "[DEBUG] Requantized " << requantized_count << " tensors" << std::endl;
         }
     } else {
         std::cout << "[DEBUG] Loaded " << quantized_count << " quantized tensors" << std::endl;
@@ -631,7 +610,7 @@ std::vector<std::string> get_all_files(std::string file, int total_num) {
     return files;
 }
 
-GGUFLoad get_gguf_data(const std::string& file, bool dequantize_to_fp16, bool requantize_for_npu) {
+GGUFLoad get_gguf_data(const std::string& file, bool dequantize_to_fp16, bool requantize) {
     std::unordered_map<std::string, ov::Tensor> arrays;
     std::unordered_map<std::string, gguf_tensor_type> qtype;
 
@@ -648,7 +627,7 @@ GGUFLoad get_gguf_data(const std::string& file, bool dequantize_to_fp16, bool re
 
     if (it == metadata.end())  // single GGUF file
     {
-        load_arrays(ctx.get(), arrays, qtype, dequantize_to_fp16, requantize_for_npu);
+        load_arrays(ctx.get(), arrays, qtype, dequantize_to_fp16, requantize);
         return {metadata, arrays, qtype};
     } else  // multi GGUF files
     {
@@ -663,9 +642,9 @@ GGUFLoad get_gguf_data(const std::string& file, bool dequantize_to_fp16, bool re
 
             auto metadata_tmp = load_metadata(ctx_i.get());
 
-            load_arrays(ctx_i.get(), arrays, qtype, dequantize_to_fp16, requantize_for_npu);
+            load_arrays(ctx_i.get(), arrays, qtype, dequantize_to_fp16, requantize);
         }
-        load_arrays(ctx.get(), arrays, qtype, dequantize_to_fp16, requantize_for_npu);
+        load_arrays(ctx.get(), arrays, qtype, dequantize_to_fp16, requantize);
         return {metadata, arrays, qtype};
     }
 }
@@ -882,15 +861,13 @@ std::unordered_map<std::string, gguf_tensor_type> get_qtype_map(
 std::tuple<std::map<std::string, GGUFMetaData>,
            std::unordered_map<std::string, ov::Tensor>,
            std::unordered_map<std::string, gguf_tensor_type>>
-load_gguf(const std::string& file, bool dequantize_to_fp16, bool requantize_for_npu) {
+load_gguf(const std::string& file, bool dequantize_to_fp16, bool requantize) {
     std::cout << "[DEBUG] load_gguf called with dequantize_to_fp16=" << (dequantize_to_fp16 ? "true" : "false")
-              << ", requantize_for_npu=" << (requantize_for_npu ? "true" : "false") << std::endl;
+              << ", requantize=" << (requantize ? "true" : "false") << std::endl;
     
-    auto [metadata, weights, qtype] = get_gguf_data(file, dequantize_to_fp16, requantize_for_npu);
+    auto [metadata, weights, qtype] = get_gguf_data(file, dequantize_to_fp16, requantize);
 
     auto config = config_from_meta(metadata);
-    auto consts = consts_from_weights(config, weights);
-    auto qtypes = get_qtype_map(config, qtype);
 
     std::cout << "[DEBUG] load_gguf completed, loaded " << weights.size() << " tensors" << std::endl;
     
@@ -904,6 +881,15 @@ load_gguf(const std::string& file, bool dequantize_to_fp16, bool requantize_for_
             if (++count > 20) break;
         }
     }
+    
+    std::cout << "[DEBUG] Creating consts_from_weights..." << std::endl;
+    auto consts = consts_from_weights(config, weights);
+    std::cout << "[DEBUG] consts_from_weights completed, created " << consts.size() << " consts" << std::endl;
+    
+    std::cout << "[DEBUG] Creating get_qtype_map..." << std::endl;
+    auto qtypes = get_qtype_map(config, qtype);
+    std::cout << "[DEBUG] get_qtype_map completed, created " << qtypes.size() << " qtype entries" << std::endl;
+    
     
     return {config, consts, qtypes};
 }

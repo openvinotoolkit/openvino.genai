@@ -146,22 +146,22 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
 
     // TODO1: finished
     // dequant to FP16 - when saving OV model, load with FP16 weights
-    // TODO2: NPU requantization
-    // Check environment variable for NPU requantization
-    bool requantize_for_npu = false;
-    const char* env_requant = std::getenv("GGUF_REQUANT_NPU");
+    // TODO2: Requantization
+    // Check environment variable for requantization
+    bool requantize = false;
+    const char* env_requant = std::getenv("GGUF_REQUANT");
     if (env_requant != nullptr && std::string(env_requant) == "1") {
-        requantize_for_npu = true;
+        requantize = true;
         ss.str("");
-        ss << "[DEBUG] NPU requantization enabled (GGUF_REQUANT_NPU=1)";
+        ss << "[DEBUG] Requantization enabled (GGUF_REQUANT=1)";
         ov::genai::utils::print_gguf_debug_info(ss.str());
     } else {
         ss.str("");
-        ss << "[DEBUG] NPU requantization disabled (GGUF_REQUANT_NPU=" << (env_requant ? env_requant : "unset") << ")";
+        ss << "[DEBUG] Requantization disabled (GGUF_REQUANT=" << (env_requant ? env_requant : "unset") << ")";
         ov::genai::utils::print_gguf_debug_info(ss.str());
     }
     
-    auto [config, consts, qtypes] = load_gguf(model_path, enable_save_ov_model, requantize_for_npu);
+    auto [config, consts, qtypes] = load_gguf(model_path, enable_save_ov_model, requantize);
     auto load_finish_time = std::chrono::high_resolution_clock::now();
 
     ss.str("");

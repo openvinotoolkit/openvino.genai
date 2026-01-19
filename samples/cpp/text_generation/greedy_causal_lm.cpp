@@ -20,7 +20,9 @@ int main(int argc, char* argv[]) try {
         std::cout << "[TEST] Not a GGUF model, enable_save_ov_model disabled" << std::endl;
     }
     
+    std::cout << "[INFO] Creating LLMPipeline with device: " << device << std::endl;
     ov::genai::LLMPipeline pipe(models_path, device, pipe_config);
+    std::cout << "[INFO] LLMPipeline created successfully" << std::endl;
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
     std::string result = pipe.generate(prompt, config);
