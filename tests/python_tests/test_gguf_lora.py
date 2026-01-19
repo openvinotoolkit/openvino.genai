@@ -200,7 +200,13 @@ class TestGGUFLoRAAlphaScaling:
     @pytest.mark.nightly
     @pytest.mark.skipif(sys.platform == "darwin", reason="Sporadic instability on Mac")
     def test_different_alpha_values(self):
-        """Test that different alpha values produce different outputs."""
+        """Test that different alpha values can be set and used without errors.
+        
+        Note: This adapter is for function calling, so it may not produce different
+        outputs for arbitrary prompts. The test verifies that the alpha parameter
+        works correctly (can be set and doesn't cause errors), not that it always
+        changes output.
+        """
         from huggingface_hub import snapshot_download
         from pathlib import Path
         
@@ -221,7 +227,7 @@ class TestGGUFLoRAAlphaScaling:
         # Test with different alpha values
         outputs = {}
         for alpha in [0.5, 1.0, 2.0]:
-            adapter = ov_genai.Adapter(adapter_path)
+            adapter = ov_genai.Adapter(str(adapter_path))
             adapter_config = ov_genai.AdapterConfig(adapter, alpha=alpha)
             
             pipe = ov_genai.LLMPipeline(model_path, device, adapters=adapter_config)
@@ -231,14 +237,15 @@ class TestGGUFLoRAAlphaScaling:
             del pipe
             gc.collect()
         
-        # Verify that different alphas can produce different outputs
-        # Note: Not all alphas will necessarily produce different outputs,
-        # but at least some should differ
-        unique_outputs = len(set(outputs.values()))
-        assert unique_outputs >= 1, (
-            f"Expected at least 1 unique output, got {unique_outputs}. "
-            f"Outputs: {outputs}"
-        )
+        # Verify all alpha values produced valid output
+        for alpha, output in outputs.items():
+            assert output is not None and len(output) > 0, (
+                f"Alpha {alpha} produced empty or None output"
+            )
+        
+        # Note: We don't require different outputs because this is a function-calling
+        # adapter that may not affect all prompts. The key test is that alpha
+        # parameter can be set and used without errors.
 
 
 class TestGGUFLoRAAdapterEquality:
@@ -246,18 +253,25 @@ class TestGGUFLoRAAdapterEquality:
     
     @pytest.mark.nightly
     @pytest.mark.skipif(sys.platform == "darwin", reason="Sporadic instability on Mac")
-    def test_same_adapter_equality(self):
-        """Test that the same adapter loaded twice is considered equal."""
+    def test_adapter_can_be_loaded_multiple_times(self):
+        """Test that the same adapter can be loaded multiple times without errors.
+        
+        Note: This test verifies that adapters can be instantiated multiple times
+        from the same file, which is important for scenarios where multiple pipelines
+        need to use the same adapter.
+        """
         adapter_path = download_gguf_model(ADAPTER_REPO_ID, ADAPTER_FILENAME)
         
-        adapter1 = ov_genai.Adapter(adapter_path)
-        adapter2 = ov_genai.Adapter(adapter_path)
+        # Load adapter twice
+        adapter1 = ov_genai.Adapter(str(adapter_path))
+        adapter2 = ov_genai.Adapter(str(adapter_path))
         
-        # Same path should create equal adapters
-        # Note: Actual equality depends on implementation details
-        # This test verifies the adapter can be loaded multiple times
-        assert adapter1 is not None
-        assert adapter2 is not None
+        # Verify both adapters loaded successfully
+        assert adapter1 is not None, "First adapter failed to load"
+        assert adapter2 is not None, "Second adapter failed to load"
+        
+        # Both adapters should be usable (we don't test equality since
+        # Adapter class may not implement __eq__)
 
 
 class TestGGUFLoRAErrorHandling:
@@ -268,10 +282,12 @@ class TestGGUFLoRAErrorHandling:
         import tempfile
         from pathlib import Path
         
-        # Create a path to a non-existent file
-        nonexistent_path = Path(tempfile.gettempdir()) / "nonexistent_adapter.gguf"
+        # Create a unique path to a non-existent file
+        with tempfile.NamedTemporaryFile(suffix='.gguf', delete=True) as f:
+            nonexistent_path = f.name
+        # File is now deleted, path doesn't exist
         
-        with pytest.raises(Exception):
+        with pytest.raises((FileNotFoundError, RuntimeError, Exception)):
             ov_genai.Adapter(str(nonexistent_path))
     
     def test_invalid_gguf_file(self):
@@ -285,8 +301,8 @@ class TestGGUFLoRAErrorHandling:
             invalid_path = f.name
         
         try:
-            with pytest.raises(Exception):
-                ov_genai.Adapter(invalid_path)
+            with pytest.raises((ValueError, RuntimeError, Exception)):
+                ov_genai.Adapter(str(invalid_path))
         finally:
             # Clean up
             Path(invalid_path).unlink(missing_ok=True)
@@ -356,7 +372,7 @@ class TestGGUFLoRAIntegration:
         device = "CPU"
         config = ov_genai.GenerationConfig()
         config.max_new_tokens = 10
-        config.do_sample = False
+        config.do_sample = False  # Deterministic generation
         
         prompt = "<human>: Test\n<bot>:"
         
