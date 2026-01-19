@@ -138,30 +138,32 @@ std::shared_ptr<ov::Model> create_language_model(
 
 } // namespace
 
-std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const bool enable_save_ov_model) {
+std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const ov::genai::SaveOVModelConfig& save_config) {
     auto start_time = std::chrono::high_resolution_clock::now();
     std::stringstream ss;
     ss << "Loading and unpacking model from: " << model_path;
     ov::genai::utils::print_gguf_debug_info(ss.str());
 
-    // TODO1: finished
-    // dequant to FP16 - when saving OV model, load with FP16 weights
-    // TODO2: Requantization
-    // Check environment variable for requantization
-    bool requantize = false;
-    const char* env_requant = std::getenv("GGUF_REQUANT");
-    if (env_requant != nullptr && std::string(env_requant) == "1") {
-        requantize = true;
-        ss.str("");
-        ss << "[DEBUG] Requantization enabled (GGUF_REQUANT=1)";
-        ov::genai::utils::print_gguf_debug_info(ss.str());
-    } else {
-        ss.str("");
-        ss << "[DEBUG] Requantization disabled (GGUF_REQUANT=" << (env_requant ? env_requant : "unset") << ")";
-        ov::genai::utils::print_gguf_debug_info(ss.str());
-    }
+    // Map SaveMode to load_gguf parameters:
+    // DISABLED: no processing needed
+    // ORIGINAL: keep Q4_K/Q6_K as-is (dequantize=false)
+    // OPTIMIZED: dequantize Q4_K/Q6_K to FP16, then requantize to Q4_0_128/Q8_0_C
+    //
+    // Note: dequantize_to_fp16 and requantize are separate flags to allow flexibility.
+    // Future use case: save certain tensors as FP16 without requantization (dequantize=true, requantize=false)
+    bool enable_save_ov_model = (save_config.mode != ov::genai::SaveOVModelConfig::SaveMode::DISABLED);
+    bool dequantize_to_fp16 = (save_config.mode == ov::genai::SaveOVModelConfig::SaveMode::OPTIMIZED);
+    bool requantize = (save_config.mode == ov::genai::SaveOVModelConfig::SaveMode::OPTIMIZED);
     
-    auto [config, consts, qtypes] = load_gguf(model_path, enable_save_ov_model, requantize);
+    ss.str("");
+    ss << "[DEBUG] SaveOVModelConfig: mode=" 
+       << (save_config.mode == ov::genai::SaveOVModelConfig::SaveMode::DISABLED ? "DISABLED" :
+           save_config.mode == ov::genai::SaveOVModelConfig::SaveMode::ORIGINAL ? "ORIGINAL" : "OPTIMIZED")
+       << ", dequantize_to_fp16=" << (dequantize_to_fp16 ? "true" : "false")
+       << ", requantize=" << (requantize ? "true" : "false");
+    ov::genai::utils::print_gguf_debug_info(ss.str());
+    
+    auto [config, consts, qtypes] = load_gguf(model_path, dequantize_to_fp16, requantize);
     auto load_finish_time = std::chrono::high_resolution_clock::now();
 
     ss.str("");
@@ -177,8 +179,19 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
         model = create_language_model(config, consts, qtypes);
         if (enable_save_ov_model){
             std::filesystem::path gguf_model_path(model_path);
-            std::filesystem::path save_path = gguf_model_path.parent_path() / "openvino_model.xml";
+            // Save to different folders based on save mode
+            // - ov_model_original: Original GGUF quantization (small group size, for accuracy alignment with llama.cpp)
+            // - ov_model_optimized: Optimized quantization (larger group size, for better GPU/NPU performance)
+            std::filesystem::path save_dir = gguf_model_path.parent_path() /
+                (save_config.mode == ov::genai::SaveOVModelConfig::SaveMode::OPTIMIZED 
+                    ? "ov_model_optimized" 
+                    : "ov_model_original");
+            std::filesystem::create_directories(save_dir);
+            std::filesystem::path save_path = save_dir / "openvino_model.xml";
             ov::genai::utils::save_openvino_model(model, save_path.string(), true);
+            ss.str("");
+            ss << "Saved OpenVINO model to: " << save_path.string();
+            ov::genai::utils::print_gguf_debug_info(ss.str());
         }
     } else {
         OPENVINO_THROW("Unsupported model architecture '", model_arch, "'");

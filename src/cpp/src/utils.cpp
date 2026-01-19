@@ -357,17 +357,17 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 
 } // namespace
 
-std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties) {
-    bool enable_save_ov_model = false;
+std::pair<ov::AnyMap, ov::genai::SaveOVModelConfig> extract_gguf_properties(const ov::AnyMap& external_properties) {
+    ov::genai::SaveOVModelConfig save_config;
     ov::AnyMap properties = external_properties;
 
-    auto it = properties.find(ov::genai::enable_save_ov_model.name());
+    auto it = properties.find(ov::genai::save_ov_model_config.name());
     if (it != properties.end()) {
-        enable_save_ov_model = it->second.as<bool>();
+        save_config = it->second.as<ov::genai::SaveOVModelConfig>();
         properties.erase(it);
     }
 
-    return {properties, enable_save_ov_model};
+    return {properties, save_config};
 }
 
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16) {
@@ -381,15 +381,15 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
         ov::genai::utils::print_gguf_debug_info(ss.str());
     }
     catch (const ov::Exception& e) {
-        OPENVINO_THROW("Exception during model serialization ", e.what(), ", user can disable it by setting 'ov::genai::enable_save_ov_model' property to false");
+        OPENVINO_THROW("Exception during model serialization ", e.what(), ", user can disable it by setting 'ov::genai::save_ov_model_config' to SaveMode::DISABLED");
     }
 }
 
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
-    auto [filtered_properties, enable_save_ov_model] = extract_gguf_properties(properties);
+    auto [filtered_properties, save_config] = extract_gguf_properties(properties);
     if (is_gguf_model(model_dir)) {
 #ifdef ENABLE_GGUF
-        return create_from_gguf(model_dir.string(), enable_save_ov_model);
+        return create_from_gguf(model_dir.string(), save_config);
 #else
         OPENVINO_ASSERT("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
 #endif

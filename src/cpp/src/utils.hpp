@@ -13,6 +13,7 @@
 
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/scheduler_config.hpp"
+#include "openvino/genai/save_ov_model_config.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "visual_language/processor_config.hpp"
 
@@ -133,7 +134,7 @@ void apply_gather_before_matmul_transformation(std::shared_ptr<ov::Model> model)
 
 ov::Core& singleton_core();
 
-std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties);
+std::pair<ov::AnyMap, ov::genai::SaveOVModelConfig> extract_gguf_properties(const ov::AnyMap& external_properties);
 
 std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& external_properties);
 

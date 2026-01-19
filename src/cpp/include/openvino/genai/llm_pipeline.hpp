@@ -14,6 +14,7 @@
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/scheduler_config.hpp"
+#include "openvino/genai/save_ov_model_config.hpp"
 #include "openvino/genai/common_types.hpp"
 #include "openvino/genai/json_container.hpp"
 
@@ -392,11 +393,11 @@ static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_confi
 static constexpr ov::Property<bool> prompt_lookup{"prompt_lookup"};
 
 /**
-* @brief enable enable_save_ov_model property serves to serialize ov model (xml/bin) generated from gguf model on disk for re-use.
-* Set `true` to activate this mode.
+* @brief save_ov_model_config property serves to configure saving OV model (xml/bin) generated from GGUF model.
+* Create SaveOVModelConfig and set save_gguf_quant/save_requant to true to save the corresponding model variant.
 * And create LLMPipeline instance with this config.
 */
-static constexpr ov::Property<bool> enable_save_ov_model{"enable_save_ov_model"};
+static constexpr ov::Property<SaveOVModelConfig> save_ov_model_config{"save_ov_model_config"};
 
 
 }  // namespace genai

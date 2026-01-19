@@ -872,15 +872,15 @@ load_gguf(const std::string& file, bool dequantize_to_fp16, bool requantize) {
     std::cout << "[DEBUG] load_gguf completed, loaded " << weights.size() << " tensors" << std::endl;
     
     // DEBUG: Print all weight keys to verify scales/biases are present
-    std::cout << "[DEBUG] Sample weight keys:" << std::endl;
-    int count = 0;
-    for (const auto& [key, _] : weights) {
-        if (key.find("scales") != std::string::npos || key.find("biases") != std::string::npos || 
-            key.find("token_embd") != std::string::npos || key.find("output.weight") != std::string::npos) {
-            std::cout << "[DEBUG]   - " << key << std::endl;
-            if (++count > 20) break;
-        }
-    }
+    // std::cout << "[DEBUG] Sample weight keys:" << std::endl;
+    // int count = 0;
+    // for (const auto& [key, _] : weights) {
+    //     if (key.find("scales") != std::string::npos || key.find("biases") != std::string::npos || 
+    //         key.find("token_embd") != std::string::npos || key.find("output.weight") != std::string::npos) {
+    //         std::cout << "[DEBUG]   - " << key << std::endl;
+    //         if (++count > 20) break;
+    //     }
+    // }
     
     std::cout << "[DEBUG] Creating consts_from_weights..." << std::endl;
     auto consts = consts_from_weights(config, weights);

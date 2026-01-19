@@ -6,5 +6,6 @@
 #include <cstring>
 
 #include "openvino/openvino.hpp"
+#include "openvino/genai/save_ov_model_config.hpp"
 
-std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const bool enable_save_ov_model);
+std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const ov::genai::SaveOVModelConfig& save_config);

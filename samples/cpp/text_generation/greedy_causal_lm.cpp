@@ -12,12 +12,13 @@ int main(int argc, char* argv[]) try {
     std::string device = "GPU";  // CPU can be used as well
     ov::AnyMap pipe_config = {};
     
-    // Enable save_ov_model for GGUF files to test WA-style dequantization
+    // Enable save_ov_model for GGUF files to save optimized model variant
     if (models_path.size() >= 5 && models_path.substr(models_path.size() - 5) == ".gguf") {
-        pipe_config["enable_save_ov_model"] = true;
-        std::cout << "[TEST] enable_save_ov_model is set to true for GGUF model" << std::endl;
+        ov::genai::SaveOVModelConfig save_config;
+        save_config.mode = ov::genai::SaveOVModelConfig::SaveMode::ORIGINAL;
+        pipe_config.insert(ov::genai::save_ov_model_config(save_config));
     } else {
-        std::cout << "[TEST] Not a GGUF model, enable_save_ov_model disabled" << std::endl;
+        std::cout << "[TEST] Not a GGUF model, save_ov_model_config disabled" << std::endl;
     }
     
     std::cout << "[INFO] Creating LLMPipeline with device: " << device << std::endl;
