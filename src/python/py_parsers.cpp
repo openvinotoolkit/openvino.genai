@@ -129,7 +129,7 @@ public:
                 }
             );
         }
-        OPENVINO_ASSERT(!m_parsers.empty(), "Provided vLLM parser does not have supported parsing methods");
+        OPENVINO_ASSERT(!m_parsers.empty(), "Provided vLLM parser does not have supported parsing methods: 'extract_tool_calls' or 'extract_reasoning'");
     }
 
     void parse(JsonContainer& message) override {
