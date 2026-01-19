@@ -22,6 +22,19 @@ FetchContent_Declare(indicators
     URL_HASH SHA256=70da7a693ff7a6a283850ab6d62acf628eea17d386488af8918576d0760aef7b)
 FetchContent_MakeAvailable(indicators)
 
+# Fix encoding issues with indicators library headers on Windows with non-UTF-8 code pages (e.g., code page 936)
+# The indicators library contains Unicode block characters (¨€) that break MSVC compilation without /utf-8
+set(IMAGE_GEN_SAMPLES
+    text2image
+    text2image_concurrency
+    lora_text2image
+    heterogeneous_stable_diffusion
+    image2image
+    image2image_concurrency
+    stable_diffusion_export_import
+    inpainting
+    benchmark_image_gen)
+
 # create main sample executable
 
 add_executable(text2image text2image.cpp imwrite.cpp)
@@ -176,3 +189,12 @@ install(TARGETS benchmark_image_gen
         RUNTIME DESTINATION samples_bin/
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
+
+# Apply /utf-8 compile option for MSVC to fix encoding issues with indicators library headers
+if(MSVC)
+    foreach(target IN LISTS IMAGE_GEN_SAMPLES)
+        if(TARGET ${target})
+            target_compile_options(${target} PRIVATE /utf-8)
+        endif()
+    endforeach()
+endif()

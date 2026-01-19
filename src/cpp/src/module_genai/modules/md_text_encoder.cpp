@@ -76,7 +76,7 @@ bool TextEncoderModule::initialize() {
     std::filesystem::path tokenizer_path = module_desc->get_full_path(it_path->second);
 
     m_tokenizer_impl = std::make_shared<Tokenizer::TokenizerImpl>(tokenizer_path, m_tokenization_params);
-    OPENVINO_ASSERT(m_tokenizer_impl->m_ireq_queue_tokenizer != nullptr, std::string("Load tokenizer model fail: ") + tokenizer_path.c_str());
+    OPENVINO_ASSERT(m_tokenizer_impl->m_ireq_queue_tokenizer != nullptr, std::string("Load tokenizer model fail: ") + tokenizer_path.string());
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(tokenizer_path, "config.json");
     m_processor_config = utils::from_config_json_if_exists<ProcessorConfig>(tokenizer_path, "preprocessor_config.json");
     m_merge_length = std::pow(m_processor_config.merge_size, 2);

@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+find_package(yaml-cpp REQUIRED)
+
 if(NOT TARGET gtest)
   set(INSTALL_GTEST OFF CACHE BOOL "")
   set(BUILD_SHARED_LIBS OFF)

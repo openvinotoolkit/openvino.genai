@@ -18,6 +18,7 @@
 
 #include "utils.hpp"
 #include "load_image.hpp"
+#include "model_yaml.hpp"
 #include "pipelines/dummy_module_impl.hpp"
 
 namespace ov {

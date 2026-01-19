@@ -48,6 +48,10 @@ if(NOT CMAKE_CROSSCOMPILING)
             OUTPUT_VARIABLE OpenVINO_DIR_PY
             ERROR_QUIET
         )
+        # Convert backslashes to forward slashes to avoid CMake escape character issues
+        if(OpenVINO_DIR_PY)
+            string(REPLACE "\\" "/" OpenVINO_DIR_PY "${OpenVINO_DIR_PY}")
+        endif()
     endif()
 endif()
 

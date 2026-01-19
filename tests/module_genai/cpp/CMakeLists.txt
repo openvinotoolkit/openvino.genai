@@ -27,6 +27,8 @@ else()
     message(FATAL_ERROR "OpenCV not found! Check your installation and environment.")
 endif()
 
+find_package(yaml-cpp REQUIRED)
+
 file(GLOB src_modules CONFIGURE_DEPENDS "./modules/*.cpp")
 file(GLOB src_pipelines CONFIGURE_DEPENDS "./pipelines/*.cpp")
 file(GLOB src_utils CONFIGURE_DEPENDS "./utils/*.cpp")

@@ -98,7 +98,8 @@ if(ENABLE_XGRAMMAR)
         add_subdirectory("${xgrammar_SOURCE_DIR}" "${xgrammar_BINARY_DIR}" EXCLUDE_FROM_ALL)
         if(MSVC)
             # Suppress C4146 warning for MSVC compiler
-            target_compile_options(xgrammar PRIVATE "/wd4146")
+            # Add /utf-8 to fix encoding issues with non-ASCII characters in xgrammar source files
+            target_compile_options(xgrammar PRIVATE "/wd4146" "/utf-8")
         endif()
     endif()
 else()

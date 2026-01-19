@@ -15,7 +15,7 @@ namespace genai {
 
 namespace module {
 
-    // 只需维护一次类型列表
+    // Module type list - maintain only once
     #define GENAI_MODULE_TYPE_LIST \
         X(ParameterModule, 0) \
         X(ImagePreprocessModule, 10) \

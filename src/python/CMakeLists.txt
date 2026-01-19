@@ -35,6 +35,12 @@ endif()
 
 target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai)
 target_include_directories(${TARGET_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.." "${OpenVINOGenAI_SOURCE_DIR}/src/cpp/src") # for tokenizer/tokenizers_path.hpp
+
+# Fix encoding issues with pybind11 headers on Windows with non-UTF-8 code pages (e.g., code page 936)
+if(MSVC)
+    target_compile_options(${TARGET_NAME} PRIVATE /utf-8)
+endif()
+
 set_target_properties(${TARGET_NAME} PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"
     LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/openvino_genai/>"

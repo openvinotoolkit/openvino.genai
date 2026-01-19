@@ -21,7 +21,7 @@ namespace module {
 
 // config_yaml_path: yaml file.
 ModulePipeline::ModulePipeline(const std::filesystem::path& config_yaml_path, ConfigModelsMap models_map) {
-    auto pipeline_desc = utils::load_config(config_yaml_path);
+    auto pipeline_desc = utils::load_config(config_yaml_path.string());
     pipeline_desc->setConfigModelsMap(models_map);
 
     ModulePipelineImpl* pImpl = new ModulePipelineImpl(pipeline_desc->main_pipeline_desc, pipeline_desc);
