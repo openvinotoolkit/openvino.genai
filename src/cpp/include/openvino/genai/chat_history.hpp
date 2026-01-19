@@ -66,23 +66,12 @@ public:
     ChatHistory& set_extra_context(const JsonContainer& extra_context);
     const JsonContainer& get_extra_context() const;
 
-    /**
-     * @internal
-     * @brief Internal use only - get pointer to chat history internal state.
-     */
-    std::shared_ptr<ChatHistoryInternalState> _get_internal_state() const;
-
-    /**
-     * @internal
-     * @brief Internal use only - set pointer to chat history internal state.
-     */
-    void _set_internal_state(const std::shared_ptr<ChatHistoryInternalState>& state);
-
 private:
     JsonContainer m_messages = JsonContainer::array();
     JsonContainer m_tools = JsonContainer::array();
     JsonContainer m_extra_context = JsonContainer::object();
 
+    friend class ChatHistoryInternalState;
     std::shared_ptr<ChatHistoryInternalState> m_internal_state;
 };
 

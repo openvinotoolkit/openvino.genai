@@ -200,15 +200,13 @@ std::shared_ptr<ChatHistoryInternalState> ChatHistoryInternalState::get_or_creat
     ChatHistory& history,
     std::shared_ptr<VisionRegistry> vision_registry
 ) {
-    auto state = history._get_internal_state();
-    if (!state) {
-        state = std::make_shared<ChatHistoryInternalState>(vision_registry);
-        history._set_internal_state(state);
-    } else if (vision_registry && !state->get_vision_registry()) {
-        state->set_vision_registry(vision_registry);
+    if (!history.m_internal_state) {
+        history.m_internal_state = std::make_shared<ChatHistoryInternalState>(vision_registry);
+    } else if (vision_registry && !history.m_internal_state->get_vision_registry()) {
+        history.m_internal_state->set_vision_registry(vision_registry);
     }
-    state->detect_chat_history_format(history);
-    return state;
+    history.m_internal_state->detect_chat_history_format(history);
+    return history.m_internal_state;
 }
 
 const size_t ChatHistoryInternalState::find_matching_history_length(const ChatHistory& history) const {
