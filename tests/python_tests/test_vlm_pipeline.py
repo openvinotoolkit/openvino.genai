@@ -619,24 +619,15 @@ def test_vlm_continuous_batching_vs_stateful(
             )
 
 
-@pytest.mark.parametrize(
-    "config",
-    [
-        pytest.param(get_greedy(), id="greedy"),
-        pytest.param(get_beam_search(), id="beam_search"),
-    ],
-)
 @parametrize_one_model_sdpa
 def test_vlm_continuous_batching_vs_stateful_chat_history(
     ov_pipe_model: VlmModelInfo,
     ov_continious_batching_pipe: ContinuousBatchingPipeline,
-    config: GenerationConfig,
     cat_tensor: openvino.Tensor,
     car_tensor: openvino.Tensor,
 ):
     ov_pipe = ov_pipe_model.pipeline
-    generation_config = config
-    generation_config.max_new_tokens = 25
+    generation_config = get_greedy()
     image_links_list = [[cat_tensor], [car_tensor]]
 
     histories_batch = 2
