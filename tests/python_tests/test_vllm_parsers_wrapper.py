@@ -12,13 +12,13 @@ from openvino_genai import (
 import json
 
 
-"""
-Helper function to compare two dictionaries, with an option to skip certain keys.
-Returns True if the dictionaries are equivalent (considering the skip_keys), False otherwise.
-"""
 
 
 def compare_dicts(dict1, dict2, skip_keys: Optional[list[str]] = None) -> bool:
+    """
+    Helper function to compare two dictionaries, with an option to skip certain keys.
+    Returns True if the dictionaries are equivalent (considering the skip_keys), False otherwise.
+    """
     if dict1.keys() != dict2.keys():
         return False
 

@@ -86,7 +86,7 @@ class VLLMParserWrapper: public Parser {
 // Wraps a Python parser to be used as a Parser.
 // from vllm.entrypoints.openai.tool_parsers.*
 
-// vLLMs Python object have implemented methods 'extract_tool_calls' and 'extract_reasoning'.
+// vLLM's Python object has implemented methods 'extract_tool_calls' and 'extract_reasoning'.
 // This wrapper will call those methods and convert the results back to JsonContainer so that
 // vLLM parsers can be used out of the box in Python.
 
