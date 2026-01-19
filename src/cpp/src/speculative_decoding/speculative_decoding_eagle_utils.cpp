@@ -252,8 +252,6 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
         const std::string output_name = "last_hidden_state";
         result->output(0).set_names({output_name});
         result->set_friendly_name(output_name);
-        // NPUW use this info to identify manually added outputs
-        result->get_rt_info()["manually_added_output"] = true;
         model->add_results({result});
     }
 }
