@@ -101,11 +101,25 @@ public:
     std::vector<std::vector<size_t>> get_last_selected_tokens() const;
 
     /**
+     * @brief Get updated prompt with modified vision tokens based on keep_flags
+     * @param original_prompt The original prompt string
+     * @param vision_start_token Vision start token string
+     * @param vision_end_token Vision end token string
+     * @param image_pad_token Image pad token string
+     * @param video_pad_token Video pad token string
+     * @return Updated prompt if modifications were made, otherwise returns original_prompt unchanged
+     */
+    std::string get_last_updated_prompt(const std::string& original_prompt,
+                                        const std::string& vision_start_token,
+                                        const std::string& vision_end_token,
+                                        const std::string& image_pad_token,
+                                        const std::string& video_pad_token) const;
+
+    /**
      * @brief Result structure for CDPruner visual token pruning pipeline.
      * Contains all necessary information about the pruning operation and its results.
      */
     struct PruningResult {
-
         size_t original_visual_tokens = 0;                     ///< Original number of visual tokens before pruning
         size_t pruned_visual_tokens = 0;                       ///< Number of visual tokens after pruning
         ov::Tensor pruned_embeddings;                          ///< Pruned visual embeddings tensor
@@ -207,17 +221,20 @@ public:
      * - Position IDs adjustment
      * - Input IDs and embeddings regeneration
      * - KV cache update
+     * - Updating prev_hist_length if in chat mode
      *
      * @param context PruningContext containing input data
      * @param position_ids Position IDs tensor (modified in-place)
      * @param kv_cache_state KV cache state (modified)
-     * @param prev_hist_length Previous history length for KV cache
+     * @param is_chat_conversation Whether in chat mode
+     * @param prev_hist_length_inout Previous history length (modified in-place if chat + pruning occurred)
      * @return std::optional<PruningResult> with pruned tensors if pruning occurred, std::nullopt otherwise
      */
     std::optional<PruningResult> execute(const PruningContext& context,
                                          ov::Tensor& position_ids,
                                          utils::KVCacheState& kv_cache_state,
-                                         size_t prev_hist_length);
+                                         bool is_chat_conversation,
+                                         size_t& prev_hist_length_inout);
 
 private:
     /// @brief CDPruner instance for token pruning (lazy initialized)
@@ -225,6 +242,8 @@ private:
     /// @brief Configuration storage (used before pruner is created; pruner becomes source of truth after creation)
     /// Device is stored in m_config.device
     cdpruner::Config m_config;
+    /// @brief Cache of last keep_flags for prompt synchronization
+    std::vector<std::vector<bool>> m_last_keep_flags;
 };
 
 }  // namespace ov::genai
