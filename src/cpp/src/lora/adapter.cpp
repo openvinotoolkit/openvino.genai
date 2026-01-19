@@ -1073,7 +1073,7 @@ private:
 
 #ifdef ENABLE_GGUF
 // Helper to convert GGUF tensor names to OpenVINO/HF names
-std::string convert_gguf_name_to_hf(std::string name) {
+std::string convert_gguf_name_to_hf(const std::string& name) {
     // 1. Handle blocks: blk.N. -> model.layers.N.
     std::string new_name = name;
     size_t pos = 0;
@@ -1110,7 +1110,7 @@ std::string convert_gguf_name_to_hf(std::string name) {
         {"ffn_gate", "mlp.gate_proj"},
         {"ffn_up", "mlp.up_proj"},
         {"ffn_down", "mlp.down_proj"},
-        // Qwen specific ?
+        // Qwen-specific attention normalization mappings
         {"attn_k_norm", "self_attn.k_norm"},
         {"attn_q_norm", "self_attn.q_norm"},
         // Global components
