@@ -83,43 +83,65 @@ public:
 };
 
 class VLLMParserWrapper: public Parser {
-// Wraps a Python parser to be used as a C++ Parser
-// from vllm.entrypoints.openai.tool_parsers.llama_tool_parser
+// Wraps a Python parser to be used as a Parser.
+// from vllm.entrypoints.openai.tool_parsers.*
+
+// vLLMs Python object have implemented methods 'extract_tool_calls' and 'extract_reasoning'.
+// This wrapper will call those methods and convert the results back to JsonContainer so that
+// vLLM parsers can be used out of the box in Python.
 
 public:
-    py::object m_py_parser;
-    VLLMParserWrapper(py::object py_parser)
-        : m_py_parser(py_parser) {}
+    std::vector<std::function<JsonContainer(const std::string&)>> m_parsers;
+    VLLMParserWrapper(py::object py_parser) {
+        // Check that has tool calling method
+        if (py::hasattr(py_parser, "extract_tool_calls")) {
+            m_parsers.push_back(
+                [py_parser](const std::string& content) -> JsonContainer {
+                    py::object parsed = py_parser.attr("extract_tool_calls")(content, py::none());
+                    if (py::hasattr(parsed, "json")) {
+                        return JsonContainer::from_json_string(parsed.attr("json")().cast<std::string>());
+                    } else {
+                        OPENVINO_THROW("Parsed object does not have json attribute");
+                    }
+                }
+            );
+        }
+        // Check that has reasoning extraction method
+        if (py::hasattr(py_parser, "extract_reasoning")) {
+            m_parsers.push_back(
+                [py_parser](const std::string& content) -> JsonContainer {
+                    py::object parsed = py_parser.attr("extract_reasoning")(content, py::none());
+                    if (py::isinstance<py::tuple>(parsed) && py::len(parsed) == 2) {
+                        auto msg_str_1 = parsed.attr("__getitem__")(0).cast<std::string>();
+                        auto msg_str_2 = parsed.attr("__getitem__")(1).cast<std::string>();
+                        JsonContainer new_message;
+                        new_message["reasoning"] = msg_str_1;
+                        new_message["content"] = msg_str_2;
+                        return new_message;
+                    } else {
+                        OPENVINO_THROW("Parsed object is not a tuple of length 2");
+                    }
+                }
+            );
+        }
+    }
 
-    JsonContainer final_message;
     void parse(JsonContainer& message) override {
         py::gil_scoped_acquire acquire;
-        // Check if method exists
-        std::vector<std::string> parser_names = {
-            "extract_tool_calls",
-            "extract_reasoning"
-        };
+
         JsonContainer new_message;
-        for (const auto& name : parser_names) {
-            if (!py::hasattr(m_py_parser, name.c_str())) {
-                continue;
-            }
-            py::object parsed = m_py_parser.attr(name.c_str())(message["content"].as_string(), py::none());
-
-            if (py::isinstance<py::tuple>(parsed) && py::len(parsed) == 2) {
-                auto msg_str_1 = parsed.attr("__getitem__")(0).cast<std::string>();
-                auto msg_str_2 = parsed.attr("__getitem__")(1).cast<std::string>();
-                new_message["reasoning"] = msg_str_1;
-                new_message["content"] = msg_str_2;
-            } else if (py::hasattr(parsed, "json")) {
-                new_message = JsonContainer::from_json_string(parsed.attr("json")().cast<std::string>());
-            }
-
-            final_message.concatenate(new_message);
+        auto content_str = message["content"].as_string();
+        if (!content_str.has_value()) {
+            OPENVINO_THROW("Message does not contain 'content' string field");
         }
-        message = final_message;
-        
-        // call python 
+        if (content_str) {
+            for (const auto& parser_func : m_parsers) {
+                // Call each implemented parser from vLLM parser python object.
+                auto result = parser_func(content_str.value());
+                new_message.concatenate(result);
+            }
+        }
+        message = new_message;
     }
 };
 
@@ -186,5 +208,5 @@ void init_parsers(py::module_& m) {
         .def(py::init<>());
 
     py::class_<VLLMParserWrapper, std::shared_ptr<VLLMParserWrapper>, Parser>(m, "VLLMParserWrapper")
-        .def(py::init<py::object>(), py::arg("py_parser"), "Wraps a Python VLLM parser to be used as a C++ Parser.");
+        .def(py::init<py::object>(), py::arg("py_parse"), "Wraps a vLLM parser to be used out of the box in Python.");
 }
