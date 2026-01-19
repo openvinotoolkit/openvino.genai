@@ -135,7 +135,7 @@ def get_argprser():
     parser.add_argument(
         "--pruning_ratio",
         type=ratio_type,
-        default=0,
+        default=None,
         help="(optional): Percentage of visual tokens to prune (valid range: 0-100). If this option is not provided, pruning is disabled.",
     )
     parser.add_argument(
