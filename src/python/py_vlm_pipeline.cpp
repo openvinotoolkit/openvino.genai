@@ -185,21 +185,40 @@ void init_vlm_pipeline(py::module_& m) {
             return res;
         });
 
+    py::class_<VLMPipeline::Config>(vlm_pipeline, "Config", vlm_config_docstring)
+        .def(py::init<>())
+        .def(py::init([](py::kwargs kwargs) {
+            return VLMPipeline::Config(pyutils::kwargs_to_any_map(kwargs));
+        }))
+        .def("validate",
+             &VLMPipeline::Config::validate,
+             "Checks that are no conflicting parameters. Raises exception if config is invalid.")
+        .def_embedder_device("embedder_device", &VLMPipeline::Config::embedder_device)
+
     py::class_<ov::genai::VLMPipeline>(m, "VLMPipeline", "This class is used for generation with VLMs")
         .def(py::init([](
             const std::filesystem::path& models_path,
             const std::string& device,
+            const std::optional<VLMPipeline::Config>& config,
             const py::kwargs& kwargs
         ) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            if (config.has_value()) {
+                return std::make_unique<ov::genai::VLMPipeline>(models_path,
+                                                               device,
+                                                               *config,
+                                                               pyutils::kwargs_to_any_map(kwargs));
+            }
             return std::make_unique<ov::genai::VLMPipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("models_path"), "folder with exported model files",
         py::arg("device"), "device on which inference will be done",
+        py::arg("config") = std::nullopt, "Optional pipeline configuration",
         R"(
             VLMPipeline class constructor.
             models_path (os.PathLike): Path to the folder with exported model files.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            config: (VLMPipeline.Config): Optional pipeline configuration
             kwargs: Device properties
         )")
 
