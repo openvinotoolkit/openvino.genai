@@ -25,7 +25,12 @@ int main(int argc, char* argv[]) try {
         // next run. It's not beneficial for CPU.
         enable_compile_cache.insert({ov::cache_dir("vlm_cache")});
     }
-    ov::genai::VLMPipeline pipe(argv[1], device, enable_compile_cache);
+    ov::genai::VLMPipeline::Config config;
+    if (device == "NPU") {
+        // Set embedder_device to GPU when run VLM on NPU
+        config.embedder_device = "GPU";
+    }
+    ov::genai::VLMPipeline pipe(argv[1], device, config, enable_compile_cache);
 
     ov::genai::GenerationConfig generation_config;
     generation_config.max_new_tokens = 100;
