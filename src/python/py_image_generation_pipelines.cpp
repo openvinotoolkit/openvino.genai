@@ -205,8 +205,11 @@ public:
 
             ~TorchTensorAllocator() {
                 if (m_torch_tensor && Py_IsInitialized()) {
-                    py::gil_scoped_acquire acquire;
-                    m_torch_tensor = py::object();
+                    try {
+                        py::gil_scoped_acquire acquire;
+                        m_torch_tensor = py::object();
+                    } catch (...) {
+                    }
                 }
             }
 
