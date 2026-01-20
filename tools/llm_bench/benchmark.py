@@ -42,14 +42,14 @@ def num_infer_count_type(x):
     return x
 
 
-def ratio_type(value: int):
+def ratio_type(value: str) -> int:
     ivalue = int(value)
     if ivalue < 0 or ivalue > 100:
         raise argparse.ArgumentTypeError(f"pruning_ratio must be between 0 and 100, got {value}")
     return ivalue
 
 
-def weight_0_1(value: float):
+def weight_0_1(value: str) -> float:
     fvalue = float(value)
     if not 0.0 <= fvalue <= 1.0:
         raise argparse.ArgumentTypeError(f"relevance_weight must be between 0 and 1, got {value}")
