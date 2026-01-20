@@ -42,7 +42,7 @@ def num_infer_count_type(x):
     return x
 
 
-def ratio_type(value):
+def ratio_type(value: int):
     ivalue = int(value)
     if ivalue < 0 or ivalue > 100:
         raise argparse.ArgumentTypeError(f"pruning_ratio must be between 0 and 100, got {value}")
