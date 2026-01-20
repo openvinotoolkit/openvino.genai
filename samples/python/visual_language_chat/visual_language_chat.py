@@ -64,7 +64,11 @@ def main():
         # It's not beneficial for CPU.
         enable_compile_cache["CACHE_DIR"] = "vlm_cache"
 
-    pipe = openvino_genai.VLMPipeline(args.model_dir, args.device, **enable_compile_cache)
+    config = openvino_genai.VLMPipeline.Config()
+    if args.device == "NPU":
+        config.embedder_device = "GPU"
+
+    pipe = openvino_genai.VLMPipeline(args.model_dir, args.device, config, **enable_compile_cache)
 
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
