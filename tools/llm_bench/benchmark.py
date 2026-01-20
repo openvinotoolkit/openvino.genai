@@ -49,7 +49,7 @@ def ratio_type(value: int):
     return ivalue
 
 
-def weight_0_1(value):
+def weight_0_1(value: float):
     fvalue = float(value)
     if not 0.0 <= fvalue <= 1.0:
         raise argparse.ArgumentTypeError(f"relevance_weight must be between 0 and 1, got {value}")
