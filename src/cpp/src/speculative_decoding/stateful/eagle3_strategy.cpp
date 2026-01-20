@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "eagle3_strategy.hpp"
@@ -436,7 +436,7 @@ InferResult Eagle3DraftWrapper::forward(const InferContext& ctx) {
     auto sampled = sample_tokens(output.logits, ctx.input_token_count, 1);
 
     // 5. Store internal hidden state (last position) for next iteration
-    auto next_hidden = eagle3::slice_hidden_state_for_last_token(output.hidden_features);
+    auto next_hidden = utils::eagle3::slice_hidden_state_for_last_token(output.hidden_features);
     get_current_sequence()->update_hidden_state(next_hidden);
 
     return InferResult{std::move(output), std::move(sampled)};
@@ -464,15 +464,15 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
     auto draft_model = draft_model_desc.model;
 
     // Model preparation
-    eagle3::share_vocabulary(target_model, draft_model);
+    utils::eagle3::share_vocabulary(target_model, draft_model);
 
-    auto d2t_mapping = eagle3::extract_d2t_mapping_table(draft_model);
+    auto d2t_mapping = utils::eagle3::extract_d2t_mapping_table(draft_model);
     OPENVINO_ASSERT(d2t_mapping && d2t_mapping->get_element_type() == ov::element::i64, "Invalid d2t mapping tensor");
-    eagle3::remove_d2t_result_node(draft_model);
+    utils::eagle3::remove_d2t_result_node(draft_model);
 
-    eagle3::transform_hidden_state(target_model, m_hidden_layers_to_abstract);
-    eagle3::move_fc_from_draft_to_main(draft_model, target_model);
-    eagle3::transform_hidden_state(draft_model, {-1});
+    utils::eagle3::transform_hidden_state(target_model, m_hidden_layers_to_abstract);
+    utils::eagle3::move_fc_from_draft_to_main(draft_model, target_model);
+    utils::eagle3::transform_hidden_state(draft_model, {-1});
 
     const size_t validation_window = m_draft_iterations + 1;
 

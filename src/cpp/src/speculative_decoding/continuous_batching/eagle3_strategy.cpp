@@ -27,11 +27,11 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     m_tokenizer = main_model_tokenizer;
     // for eagle model, we need to obtain hidden layer state as extra output
     // apply transformations needed to run eagle model
-    eagle3::share_vocabulary(main_model, draft_model);
-    eagle3::transform_hidden_state(main_model, hidden_layers);
+    utils::eagle3::share_vocabulary(main_model, draft_model);
+    utils::eagle3::transform_hidden_state(main_model, hidden_layers);
     // move the FC layer from draft model to main model
-    eagle3::move_fc_from_draft_to_main(draft_model, main_model);
-    eagle3::transform_hidden_state(draft_model, {-1});
+    utils::eagle3::move_fc_from_draft_to_main(draft_model, main_model);
+    utils::eagle3::transform_hidden_state(draft_model, {-1});
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
     m_main_pipeline = std::make_shared<ContinuousBatchingForEagle3DecodingImpl>(main_model,
@@ -54,7 +54,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
 
     // specific params update for eagle pipeline
     // check draft_model, retrieve d2t table if exists
-    auto d2t_tensor = eagle3::extract_d2t_mapping_table(draft_model);
+    auto d2t_tensor = utils::eagle3::extract_d2t_mapping_table(draft_model);
     update_eagle_pipeline_params(d2t_tensor);
 }
 

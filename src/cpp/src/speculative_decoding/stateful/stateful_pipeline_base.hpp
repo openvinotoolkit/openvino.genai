@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -6,7 +6,7 @@
 #include "llm/pipeline_base.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
-#include "speculative_decoding/validation_metrics.hpp"
+#include "speculative_decoding/speculative_decoding_metrics.hpp"
 
 namespace ov {
 namespace genai {

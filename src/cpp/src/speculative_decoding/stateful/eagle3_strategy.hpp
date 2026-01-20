@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -9,7 +9,7 @@
 
 #include "sampling/sampler.hpp"
 #include "sequence_group.hpp"
-#include "speculative_decoding/validation_metrics.hpp"
+#include "speculative_decoding/speculative_decoding_metrics.hpp"
 #include "stateful_pipeline_base.hpp"
 #include "utils.hpp"
 

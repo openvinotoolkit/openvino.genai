@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -13,11 +13,14 @@
 
 namespace ov {
 namespace genai {
+namespace utils {
 
 /**
- * @brief EAGLE3 speculative decoding utilities.
+ * @brief EAGLE3 speculative decoding model transformations and configuration utilities.
  *
- * This namespace contains utility functions for EAGLE3 speculative decoding implementation.
+ * This namespace provides functions for configuring and transforming models to support EAGLE3
+ * speculative decoding, including extracting hidden states, sharing embeddings between draft
+ * and main models, and managing model topology modifications.
  */
 namespace eagle3 {
 
@@ -109,5 +112,6 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
 ov::Tensor slice_hidden_state_for_last_token(const ov::Tensor& hidden_features);
 
 }  // namespace eagle3
+}  // namespace utils
 }  // namespace genai
 }  // namespace ov

@@ -96,7 +96,7 @@ std::pair<std::string, Any> draft_model(
 
     std::filesystem::path openvino_model_name = "openvino_model.xml";
     auto model = utils::singleton_core().read_model(models_path / openvino_model_name, {}, plugin_config);
-    eagle3::apply_eagle3_rt_info(model, plugin_config);
+    utils::eagle3::apply_eagle3_rt_info(model, plugin_config);
     auto generation_config = utils::from_config_json_if_exists(models_path);
     auto tokenizer = ov::genai::Tokenizer(models_path);
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
@@ -112,7 +112,7 @@ std::pair<std::string, Any> draft_model(
     auto [plugin_config, scheduler_config] = utils::extract_scheduler_config(properties);
 
     auto model = utils::singleton_core().read_model(model_str, weights_tensor);
-    eagle3::apply_eagle3_rt_info(model, plugin_config);
+    utils::eagle3::apply_eagle3_rt_info(model, plugin_config);
     return { utils::DRAFT_MODEL_ARG_NAME, Any::make<ModelDesc>(model, tokenizer, device, plugin_config, scheduler_config, generation_config) };
 }
 
@@ -161,7 +161,7 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
 
         if (is_eagle3_mode) {
             // Eagle3 Speculative Decoding mode
-            auto eagle_rt_info = eagle3::extract_eagle3_info_from_config(draft_model_descr.properties, models_path);
+            auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_descr.properties, models_path);
             if (!eagle_rt_info.hidden_layers_list.empty()) {
                 draft_model_descr.properties["hidden_layers_list"] = eagle_rt_info.hidden_layers_list;
             }

@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "sampling/sampler.hpp"
@@ -6,7 +6,7 @@
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
 
-#include "speculative_decoding/validation_metrics.hpp"
+#include "speculative_decoding/speculative_decoding_metrics.hpp"
 #include "stateful_pipeline_base.hpp"
 
 namespace ov {

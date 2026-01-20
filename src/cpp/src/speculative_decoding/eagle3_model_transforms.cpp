@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "eagle3_model_transforms.hpp"
@@ -18,6 +18,7 @@
 
 namespace ov {
 namespace genai {
+namespace utils {
 namespace eagle3 {
 
 Eagle3RTInfo extract_eagle3_info_from_config(ov::AnyMap& config, const std::filesystem::path& models_path) {
@@ -258,5 +259,6 @@ ov::Tensor slice_hidden_state_for_last_token(const ov::Tensor& hidden_features) 
 }
 
 }  // namespace eagle3
+}  // namespace utils
 }  // namespace genai
 }  // namespace ov
