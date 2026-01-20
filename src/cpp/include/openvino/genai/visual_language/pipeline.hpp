@@ -23,6 +23,49 @@ public:
 /// response or run a chat given a prompt and an image.
 class OPENVINO_GENAI_EXPORTS VLMPipeline {
 public:
+    struct OPENVINO_GENAI_EXPORTS Config {
+        /**
+         * @brief Execution device for embedder models of visual language modeling pipeline when executing language models on NPU.
+         */
+        std::optional<std::string> embedder_device = std::nullopt;
+
+        /**
+         * @brief Constructs visual language modeling pipeline configuration
+         */
+        Config() = default;
+
+        /**
+         * @brief Constructs visual language modeling pipeline configuration
+         *
+         * @param properties configuration options
+         *
+         * const ov::AnyMap properties{{"embedder_device", "GPU"}};
+         * ov::genai::VLMpipeline::Config config(properties);
+         *
+         * ov::genai::VLMpipeline::Config config({{"embedder_device", "GPU"}});
+         */
+        explicit Config(const ov::AnyMap& properties);
+
+        /**
+         * @brief checks that are no conflicting parameters
+         * @throws Exception if config is invalid.
+         */
+        void validate() const;
+    };
+    /// @brief Construct a pipeline from a folder containing tokenizer
+    /// and model IRs.
+    /// @param models_path A folder to read tokenizer and model IRs.
+    /// @param device Inference device. A tokenizer is always compiled
+    /// for CPU.
+    /// @param config Pipeline configuration
+    /// @param properties A config to pass to ov::Core::compile_model().
+    VLMPipeline(
+        const std::filesystem::path& models_path,
+        const std::string& device,
+        const Config& config,
+        const ov::AnyMap& properties = {}
+    );
+
     /// @brief Construct a pipeline from a folder containing tokenizer
     /// and model IRs.
     /// @param models_path A folder to read tokenizer and model IRs.
@@ -52,6 +95,21 @@ public:
         const ov::AnyMap& properties = {},
         const ov::genai::GenerationConfig& generation_config = {}
     );
+
+    /// @brief Construct a pipeline from a folder containing tokenizer
+    /// and model IRs. Accepts arbitrary list of optional properties.
+    /// @param models_path A folder to read tokenizer and model IRs.
+    /// @param device Inference device. A tokenizer is always compiled
+    /// for CPU.
+    /// @param config Pipeline configuration
+    /// @param properties A config to pass to ov::Core::compile_model().
+    template <typename... Properties, typename std::enable_if<ov::util::StringAny<Properties...>::value, bool>::type = true>
+    VLMPipeline(
+        const std::filesystem::path& models_path,
+        const std::string& device,
+        const Config& config,
+        Properties&&... properties)
+        : VLMPipeline(models_path, device, config, ov::AnyMap{std::forward<Properties>(properties)...}) { }
 
     /// @brief Construct a pipeline from a folder containing tokenizer
     /// and model IRs. Accepts arbitrary list of optional properties.
@@ -297,4 +355,10 @@ private:
 static constexpr ov::Property<ov::Tensor> image{"image"};
 static constexpr ov::Property<std::vector<ov::Tensor>> images{"images"};
 static constexpr ov::Property<std::vector<ov::Tensor>> videos{"videos"};
+
+/**
+* @brief Execution device for embedder models of visual language modeling pipeline when execute language models model on NPU.
+* This property allows to specify the device (e.g. "CPU", "GPU") on which the embedder models will be executed.
+*/
+static constexpr ov::Property<std::string> embedder_device{"embedder_device"};
 }
