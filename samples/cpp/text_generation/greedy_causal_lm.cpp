@@ -14,9 +14,20 @@ int main(int argc, char* argv[]) try {
     
     // Enable save_ov_model for GGUF files to save optimized model variant
     if (models_path.size() >= 5 && models_path.substr(models_path.size() - 5) == ".gguf") {
-        ov::genai::SaveOVModelConfig save_config;
-        save_config.mode = ov::genai::SaveOVModelConfig::SaveMode::ORIGINAL;
-        pipe_config.insert(ov::genai::save_ov_model_config(save_config));
+        // Test backward compatibility: Use legacy API (enable_save_ov_model)
+        // This is equivalent to OVModelSaveMode::ORIGINAL
+        bool test_legacy_api = true;  // Set to false to test new API
+        
+        if (test_legacy_api) {
+            // Legacy API: enable_save_ov_model(true) → ORIGINAL mode
+            pipe_config.insert(ov::genai::enable_save_ov_model(true));
+            std::cout << "[TEST] Using legacy API: enable_save_ov_model(true)" << std::endl;
+        } else {
+            // New API: Explicit mode selection
+            ov::genai::OVModelSaveMode save_mode = ov::genai::OVModelSaveMode::ORIGINAL;
+            pipe_config.insert(ov::genai::save_ov_model_config(save_mode));
+            std::cout << "[TEST] Using new API: save_ov_model_config(ORIGINAL)" << std::endl;
+        }
     } else {
         std::cout << "[TEST] Not a GGUF model, save_ov_model_config disabled" << std::endl;
     }

@@ -284,7 +284,7 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
 
     std::shared_ptr<ov::Model> ov_tokenizer = nullptr;
     std::shared_ptr<ov::Model> ov_detokenizer = nullptr;
-    auto [filtered_properties, save_config] = utils::extract_gguf_properties(properties);
+    auto [filtered_properties, save_mode] = utils::extract_gguf_properties(properties);
     
     if (ov::genai::is_gguf_model(models_path)) {
         std::map<std::string, GGUFMetaData> tokenizer_config{};
@@ -310,10 +310,10 @@ void Tokenizer::TokenizerImpl::setup_tokenizer(const std::filesystem::path& mode
         ov_tokenizer->set_rt_info(ov::genai::get_version().buildNumber, "openvino_genai_version");
         ov_detokenizer->set_rt_info(ov::genai::get_version().buildNumber, "openvino_genai_version");
 
-        if (save_config.mode != ov::genai::SaveOVModelConfig::SaveMode::DISABLED){
+        if (save_mode != ov::genai::OVModelSaveMode::DISABLED){
             std::filesystem::path gguf_model_path(models_path);
             std::filesystem::path save_dir = gguf_model_path.parent_path() /
-                (save_config.mode == ov::genai::SaveOVModelConfig::SaveMode::OPTIMIZED 
+                (save_mode == ov::genai::OVModelSaveMode::OPTIMIZED 
                     ? "ov_model_optimized" 
                     : "ov_model_original");
             std::filesystem::create_directories(save_dir);

@@ -14,12 +14,29 @@
 #include "openvino/genai/streamer_base.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/scheduler_config.hpp"
-#include "openvino/genai/save_ov_model_config.hpp"
 #include "openvino/genai/common_types.hpp"
 #include "openvino/genai/json_container.hpp"
 
 namespace ov {
 namespace genai {
+
+/**
+ * @brief Mode for saving OpenVINO models generated from GGUF files.
+ * 
+ * Controls whether and how to save the OpenVINO model after loading from a GGUF file.
+ * - DISABLED: Do not save any model (default)
+ * - ORIGINAL: Save model with original GGUF quantization (preserves Q4_K/Q6_K small group sizes)
+ *             Output: <gguf_dir>/ov_model_original/openvino_model.xml
+ * - OPTIMIZED: Save model with device-optimized quantization (e.g., Q4_0_128/Q8_0_C for GPU)
+ *              Output: <gguf_dir>/ov_model_optimized/openvino_model.xml
+ * 
+ * Future extensions can add more modes like COMPRESSED, PERFORMANCE, etc.
+ */
+enum class OVModelSaveMode {
+    DISABLED,    // Do not save any model (default)
+    ORIGINAL,    // Save model preserving original GGUF quantization
+    OPTIMIZED    // Save model with optimized quantization for target device
+};
 
 // Return flag corresponds whether generation should be stopped. It could be:
 // ov::genai::StreamingStatus flag, RUNNING means continue generation, STOP means stop generation, CANCEL means stop generation and remove last prompt and answer from history
@@ -393,11 +410,20 @@ static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_confi
 static constexpr ov::Property<bool> prompt_lookup{"prompt_lookup"};
 
 /**
-* @brief save_ov_model_config property serves to configure saving OV model (xml/bin) generated from GGUF model.
-* Create SaveOVModelConfig and set save_gguf_quant/save_requant to true to save the corresponding model variant.
+* @brief enable_save_ov_model property serves to enable saving OV model (xml/bin) generated from GGUF model.
+* @deprecated Use save_ov_model_config instead for more control over save modes.
+* Set `true` to save model with original GGUF quantization (equivalent to OVModelSaveMode::ORIGINAL).
 * And create LLMPipeline instance with this config.
 */
-static constexpr ov::Property<SaveOVModelConfig> save_ov_model_config{"save_ov_model_config"};
+static constexpr ov::Property<bool> enable_save_ov_model{"enable_save_ov_model"};
+
+/**
+* @brief save_ov_model_config property serves to configure saving OV model (xml/bin) generated from GGUF model.
+* Set to ORIGINAL to save with GGUF quantization, or OPTIMIZED to save with device-optimized quantization.
+* This property takes priority over enable_save_ov_model if both are set.
+* And create LLMPipeline instance with this config.
+*/
+static constexpr ov::Property<OVModelSaveMode> save_ov_model_config{"save_ov_model_config"};
 
 
 }  // namespace genai

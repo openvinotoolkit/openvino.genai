@@ -138,27 +138,27 @@ std::shared_ptr<ov::Model> create_language_model(
 
 } // namespace
 
-std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const ov::genai::SaveOVModelConfig& save_config) {
+std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const ov::genai::OVModelSaveMode& save_mode) {
     auto start_time = std::chrono::high_resolution_clock::now();
     std::stringstream ss;
     ss << "Loading and unpacking model from: " << model_path;
     ov::genai::utils::print_gguf_debug_info(ss.str());
 
-    // Map SaveMode to load_gguf parameters:
+    // Map OVModelSaveMode to load_gguf parameters:
     // DISABLED: no processing needed
     // ORIGINAL: keep Q4_K/Q6_K as-is (dequantize=false)
     // OPTIMIZED: dequantize Q4_K/Q6_K to FP16, then requantize to Q4_0_128/Q8_0_C
     //
     // Note: dequantize_to_fp16 and requantize are separate flags to allow flexibility.
     // Future use case: save certain tensors as FP16 without requantization (dequantize=true, requantize=false)
-    bool enable_save_ov_model = (save_config.mode != ov::genai::SaveOVModelConfig::SaveMode::DISABLED);
-    bool dequantize_to_fp16 = (save_config.mode == ov::genai::SaveOVModelConfig::SaveMode::OPTIMIZED);
-    bool requantize = (save_config.mode == ov::genai::SaveOVModelConfig::SaveMode::OPTIMIZED);
+    bool enable_save_ov_model = (save_mode != ov::genai::OVModelSaveMode::DISABLED);
+    bool dequantize_to_fp16 = (save_mode == ov::genai::OVModelSaveMode::OPTIMIZED);
+    bool requantize = (save_mode == ov::genai::OVModelSaveMode::OPTIMIZED);
     
     ss.str("");
-    ss << "[DEBUG] SaveOVModelConfig: mode=" 
-       << (save_config.mode == ov::genai::SaveOVModelConfig::SaveMode::DISABLED ? "DISABLED" :
-           save_config.mode == ov::genai::SaveOVModelConfig::SaveMode::ORIGINAL ? "ORIGINAL" : "OPTIMIZED")
+    ss << "[DEBUG] OVModelSaveMode: mode=" 
+       << (save_mode == ov::genai::OVModelSaveMode::DISABLED ? "DISABLED" :
+           save_mode == ov::genai::OVModelSaveMode::ORIGINAL ? "ORIGINAL" : "OPTIMIZED")
        << ", dequantize_to_fp16=" << (dequantize_to_fp16 ? "true" : "false")
        << ", requantize=" << (requantize ? "true" : "false");
     ov::genai::utils::print_gguf_debug_info(ss.str());
@@ -183,7 +183,7 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
             // - ov_model_original: Original GGUF quantization (small group size, for accuracy alignment with llama.cpp)
             // - ov_model_optimized: Optimized quantization (larger group size, for better GPU/NPU performance)
             std::filesystem::path save_dir = gguf_model_path.parent_path() /
-                (save_config.mode == ov::genai::SaveOVModelConfig::SaveMode::OPTIMIZED 
+                (save_mode == ov::genai::OVModelSaveMode::OPTIMIZED 
                     ? "ov_model_optimized" 
                     : "ov_model_original");
             std::filesystem::create_directories(save_dir);

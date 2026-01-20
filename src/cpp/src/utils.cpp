@@ -357,17 +357,26 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 
 } // namespace
 
-std::pair<ov::AnyMap, ov::genai::SaveOVModelConfig> extract_gguf_properties(const ov::AnyMap& external_properties) {
-    ov::genai::SaveOVModelConfig save_config;
+std::pair<ov::AnyMap, ov::genai::OVModelSaveMode> extract_gguf_properties(const ov::AnyMap& external_properties) {
+    ov::genai::OVModelSaveMode save_mode = ov::genai::OVModelSaveMode::DISABLED;
     ov::AnyMap properties = external_properties;
 
+    // Backward compatibility: Check legacy enable_save_ov_model property first
+    auto legacy_it = properties.find(ov::genai::enable_save_ov_model.name());
+    if (legacy_it != properties.end()) {
+        bool enable = legacy_it->second.as<bool>();
+        save_mode = enable ? ov::genai::OVModelSaveMode::ORIGINAL : ov::genai::OVModelSaveMode::DISABLED;
+        properties.erase(legacy_it);
+    }
+
+    // New property overrides legacy property (higher priority)
     auto it = properties.find(ov::genai::save_ov_model_config.name());
     if (it != properties.end()) {
-        save_config = it->second.as<ov::genai::SaveOVModelConfig>();
+        save_mode = it->second.as<ov::genai::OVModelSaveMode>();
         properties.erase(it);
     }
 
-    return {properties, save_config};
+    return {properties, save_mode};
 }
 
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16) {
@@ -381,15 +390,15 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
         ov::genai::utils::print_gguf_debug_info(ss.str());
     }
     catch (const ov::Exception& e) {
-        OPENVINO_THROW("Exception during model serialization ", e.what(), ", user can disable it by setting 'ov::genai::save_ov_model_config' to SaveMode::DISABLED");
+        OPENVINO_THROW("Exception during model serialization ", e.what(), ", user can disable it by setting 'ov::genai::save_ov_model_config' to OVModelSaveMode::DISABLED");
     }
 }
 
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
-    auto [filtered_properties, save_config] = extract_gguf_properties(properties);
+    auto [filtered_properties, save_mode] = extract_gguf_properties(properties);
     if (is_gguf_model(model_dir)) {
 #ifdef ENABLE_GGUF
-        return create_from_gguf(model_dir.string(), save_config);
+        return create_from_gguf(model_dir.string(), save_mode);
 #else
         OPENVINO_ASSERT("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
 #endif
