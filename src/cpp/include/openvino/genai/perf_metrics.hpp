@@ -176,6 +176,11 @@ struct OPENVINO_GENAI_EXPORTS PerfMetrics {
     PerfMetrics& operator+=(const PerfMetrics& right);
 
     RawPerfMetrics raw_metrics;
+
+    /**
+     * @brief Returns a string representation of the performance metrics.
+     */
+    virtual std::string to_string() const;
 };
 
 // interface for creating perf metrics for python API

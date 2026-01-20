@@ -1,6 +1,9 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <iomanip>
+#include <sstream>
+
 #include "openvino/genai/whisper_pipeline.hpp"
 
 namespace ov {
@@ -41,6 +44,18 @@ WhisperPerfMetrics WhisperPerfMetrics::operator+(const WhisperPerfMetrics& right
 WhisperPerfMetrics& WhisperPerfMetrics::operator+=(const WhisperPerfMetrics& right) {
     *this = *this + right;
     return *this;
+}
+
+std::string WhisperPerfMetrics::to_string() const {
+    std::string base = PerfMetrics::to_string();
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(2);
+
+    oss << base;
+    oss << "  Features extraction duration: " << features_extraction_duration.mean << " ± "
+        << features_extraction_duration.std << " ms\n";
+
+    return oss.str();
 }
 
 }  // namespace genai
