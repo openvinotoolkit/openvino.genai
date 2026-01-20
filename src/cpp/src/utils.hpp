@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <utility>
 
+#include "openvino/genai/extensions.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/runtime/core.hpp"
@@ -296,13 +297,11 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
  *   - a std::filesystem::path pointing to an extension library file, or
  *   - a std::shared_ptr<ov::Extension> representing an already constructed OpenVINO extension.
  *
- * Each element in this vector is added to the global OpenVINO core instance as a custom extension. After processing,
- * the "extensions" key is removed from the @p properties map. This function is used to dynamically add custom
- * extensions to the OpenVINO core at runtime.
- *
  * @param properties Properties map that may contain the "extensions" key with a vector of extension specifications.
  */
-void add_extensions_to_core(ov::AnyMap& properties);
+PathExtensions extract_extensions(ov::AnyMap& properties);
+
+void add_extensions_to_core(const PathExtensions& extensions);
 
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16);
 

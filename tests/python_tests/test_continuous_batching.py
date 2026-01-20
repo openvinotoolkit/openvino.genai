@@ -97,7 +97,7 @@ def test_e2e_real_models(llm_model: OVConvertedModelSchema):
 
 #
 # Comparison with stateful
-# TODO: remove these tests once test_llm_pipeline.py are generalized 
+# TODO: remove these tests once test_llm_pipeline.py are generalized
 # and parametrized to test both Stateful and PA paths
 @pytest.mark.parametrize(
     "generation_config", 
@@ -743,8 +743,17 @@ def test_continuous_batching_add_extension():
 
     scheduler_config = SchedulerConfig()
 
-    if sys.platform == "linux":
-        properties_linux = {"extensions": ["libopenvino_tokenizers.so"]}
+    if sys.platform == "win32":
+        ext_path = "libopenvino_tokenizers.so"
+    elif sys.platform == "darwin":
+        ext_path = "libopenvino_tokenizers.dylib"
+    elif sys.platform == "linux":
+        ext_path = "libopenvino_tokenizers.so"
+    else:
+        ext_path = ""
+
+    if ext_path != "":
+        properties_linux = {"extensions": [ext_path]}
         ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties_linux)
 
     properties = {"extensions": ["fake_path"]}

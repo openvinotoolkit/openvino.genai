@@ -4,15 +4,19 @@
 #pragma once
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 #include "openvino/runtime/core.hpp"
 
 namespace ov {
 namespace genai {
 
+using PathExtensions = std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>;
+
 /**
- * @brief Wrap paths and Extensions into ov::AnyMap compatible pair. ov::Core::add_extension() is called for each item
- * in pipeline constructor.
+ * @brief Wrap paths and Extensions into ov::AnyMap compatible pair that can be passed to pipeline constructors like
+ * LLMPipeline or VLMPipeline. And that the extensions will be loaded into the OpenVINO Core instance before model
+ * loading.
  */
 template <typename T,
           typename = std::enable_if_t<
@@ -24,6 +28,13 @@ std::pair<std::string, ov::Any> extensions(T&& vector) {
 
 /**
  * @brief A helper allowing extensions({"path"}) instead of explicit std::variant.
+ *
+ * The following code is an example usage showing how to pass extensions to pipeline constructors
+ *
+ * @code
+ * ov::AnyMap properties = {ov::genai::extensions(std::vector<std::filesystem::path>{"path1", "path2"})};
+ * ov::genai::ContinuousBatchingPipeline pipe(models_path, scheduler_config, device, properties);
+ * @endcode
  */
 inline std::pair<std::string, ov::Any> extensions(const std::vector<std::filesystem::path>& paths) {
     return extensions(
