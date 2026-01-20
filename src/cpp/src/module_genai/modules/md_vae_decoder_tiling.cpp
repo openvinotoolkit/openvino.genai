@@ -42,6 +42,7 @@ void VAEDecoderTilingModule::print_static_config() {
         type: "VecOVTensor"                                # Support DataType: [VecOVTensor]
     params:
       tile_overlap_factor: "0.25"   # [Optional] float, default is 0.25
+      sample_size: "1024"           # [Optional] int, tiling size. default is 1024, 
       model_path: "model"
       sub_module_name: "sub_modules: name"  # sub-pipeline module name
 
@@ -63,18 +64,28 @@ VAEDecoderTilingModule::VAEDecoderTilingModule(const IBaseModuleDesc::PTR& desc,
 VAEDecoderTilingModule::~VAEDecoderTilingModule() {}
 
 bool VAEDecoderTilingModule::init_tile_params(const std::filesystem::path& model_path) {
-    const auto& params = module_desc->params;
-    auto it_tile_overlap = params.find("tile_overlap_factor");
-    if (it_tile_overlap != params.end()) {
-        m_tile_overlap_factor = std::stof(it_tile_overlap->second);
+    auto factor = get_optional_param("tile_overlap_factor");
+    if (!factor.empty()) {
+        m_tile_overlap_factor = std::stof(factor);
     }
+
+    bool have_sample_size = false;
+    auto sample_size = get_optional_param("sample_size");
+    if (!sample_size.empty()) {
+        m_sample_size = std::stoi(sample_size);
+        m_tile_sample_min_size = m_sample_size;
+        have_sample_size = true;
+    }
+
 
     auto config_path = model_path / "vae_decoder/config.json";
     if (std::filesystem::exists(config_path)) {
         std::ifstream vae_config(config_path);
         nlohmann::json parsed = nlohmann::json::parse(vae_config);
-        ov::genai::utils::read_json_param(parsed, "sample_size", m_sample_size);
-        m_tile_sample_min_size = m_sample_size;
+        if (!have_sample_size) {
+            ov::genai::utils::read_json_param(parsed, "sample_size", m_sample_size);
+            m_tile_sample_min_size = m_sample_size;
+        }
 
         // get block_out_channels: "block_out_channels": [128,256,512,512]
         std::vector<int> block_out_channels;
@@ -182,9 +193,10 @@ void VAEDecoderTilingModule::run() {
             tile_decode(cur_latent, output_latent);
         } else {
             // Non-tiling decode
-            std::cout << "VAEDecoderTilingModule[" + module_desc->name + "]: Non-tiling decode for latent shape: " +
-                             ov::genai::module::tensor_utils::shape_to_string(cur_latent.get_shape())
-                      << std::endl;
+            GENAI_WARN("VAEDecoderTilingModule[" + module_desc->name + "]: Latent size w,h [" +
+                       std::to_string(cur_latent.get_shape()[3]) + "," + std::to_string(cur_latent.get_shape()[2]) +
+                       "] is smaller than tile size[" + std::to_string(m_tile_latent_min_size) +
+                       "], using non-tiling decode.");
             output_latent = decoder(cur_latent);
         }
 

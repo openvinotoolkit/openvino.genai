@@ -8,24 +8,28 @@
 
 // Define test parameters:
 // std::string: device;
-using test_params = std::tuple<std::string>;
+// int: tile_size(sample_size);
+using test_params = std::tuple<std::string, int>;
 using namespace ov::genai::module;
 
 class VAEDecoderTilingModuleTest : public ModuleTestBase, public ::testing::TestWithParam<test_params> {
 private:
     std::string _device;
+    int _tile_size;
 
 public:
     static std::string get_test_case_name(const testing::TestParamInfo<test_params>& obj) {
         const auto& device = std::get<0>(obj.param);
+        int tile_size = std::get<1>(obj.param);
         std::string result;
         result += device;
+        result += "_TileSize_" + std::to_string(tile_size);
         return result;
     }
 
     void SetUp() override {
         REGISTER_TEST_NAME();
-        std::tie(_device) = GetParam();
+        std::tie(_device, _tile_size) = GetParam();
     }
 
     void TearDown() override {}
@@ -48,6 +52,7 @@ protected:
             cur_node["outputs"].push_back(output_node("image", to_string(DataType::OVTensor)));
             cur_node["params"] = YAML::Node();
             cur_node["params"]["tile_overlap_factor"] = "0.25";
+            cur_node["params"]["sample_size"] = std::to_string(_tile_size);
             cur_node["params"]["model_path"] = TEST_MODEL::ZImage_Turbo_fp16_ov();
             cur_node["params"]["sub_module_name"] = vae_decoder_tiling_submodule_name;
             pipeline_modules[vae_decoder_tiling_name] = cur_node;
@@ -80,7 +85,7 @@ protected:
 
     ov::AnyMap prepare_inputs() override {
         ov::AnyMap inputs;
-        auto latent = ut_randn_tensor(ov::Shape{1, 16, 240, 240}, 42);
+        auto latent = ut_randn_tensor(ov::Shape{1, 16, 15, 15}, 42);
         inputs["latent"] = latent;
         return inputs;
     }
@@ -89,8 +94,15 @@ protected:
         auto output = pipe.get_output("image").as<ov::Tensor>();
         EXPECT_EQ(output.get_element_type(), ov::element::u8) << "Expect output data type is u8";
 
-        const std::vector<uint8_t> expected_output = {119, 113, 97, 107, 97, 81, 106, 93};
-        EXPECT_TRUE(compare_big_tensor<uint8_t>(output, expected_output, static_cast<uint8_t>(1))) << "latent do not match expected values";
+        const std::vector<uint8_t> expected_output_1 = {186, 193, 169, 187, 189, 164, 182, 182};
+        const std::vector<uint8_t> expected_output_2 = {190, 198, 173, 189, 192, 165, 183, 183};
+        if (_tile_size == 64) {
+            EXPECT_TRUE(compare_big_tensor<uint8_t>(output, expected_output_1, static_cast<uint8_t>(1)))
+                << "latent do not match expected values";
+        } else {
+            EXPECT_TRUE(compare_big_tensor<uint8_t>(output, expected_output_2, static_cast<uint8_t>(1)))
+                << "latent do not match expected values";
+        }
     }
 };
 
@@ -99,8 +111,9 @@ TEST_P(VAEDecoderTilingModuleTest, ModuleTest) {
 }
 
 static auto test_devices = std::vector<std::string>{TEST_MODEL::get_device()};
+static auto test_tile_sizes = std::vector<int>{64, 1024};
 
 INSTANTIATE_TEST_SUITE_P(ModuleTestSuite,
                          VAEDecoderTilingModuleTest,
-                         ::testing::Combine(::testing::ValuesIn(test_devices)),
+                         ::testing::Combine(::testing::ValuesIn(test_devices), ::testing::ValuesIn(test_tile_sizes)),
                          VAEDecoderTilingModuleTest::get_test_case_name);
