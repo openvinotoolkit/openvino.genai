@@ -136,12 +136,14 @@ def get_argprser():
         "--pruning_ratio",
         type=ratio_type,
         default=None,
-        help="(optional): Percentage of visual tokens to prune (valid range: 0-100). If this option is not provided, pruning is disabled.",
+        required=False,
+        help="Percentage of visual tokens to prune (valid range: 0-100). If this option is not provided, pruning is disabled.",
     )
     parser.add_argument(
         "--relevance_weight",
         type=weight_0_1,
-        help="(optional): Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, "
+        required=False,
+        help="Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, "
         "a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, "
         "making pruning more conservative on borderline tokens.",
     )
