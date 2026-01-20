@@ -3791,7 +3791,7 @@ class VLMPipeline:
             Checks that are no conflicting parameters. Raises exception if config is invalid.
             """
     @typing.overload
-    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, config: openvino_genai.py_openvino_genai.VLMPipeline.Config | None = None, **kwargs) -> None:
         """
                     VLMPipeline class constructor.
                     models_path (os.PathLike): Path to the folder with exported model files.

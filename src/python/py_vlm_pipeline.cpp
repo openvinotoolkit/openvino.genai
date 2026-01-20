@@ -193,7 +193,9 @@ void init_vlm_pipeline(py::module_& m) {
             return res;
         });
 
-    py::class_<ov::genai::VLMPipeline::Config>(m, "Config", vlm_config_docstring)
+    auto vlm_pipeline_class = py::class_<ov::genai::VLMPipeline>(m, "VLMPipeline", "This class is used for generation with VLMs");
+
+    py::class_<ov::genai::VLMPipeline::Config>(vlm_pipeline_class, "Config", vlm_config_docstring)
         .def(py::init<>())
         .def(py::init([](py::kwargs kwargs) {
             return ov::genai::VLMPipeline::Config(pyutils::kwargs_to_any_map(kwargs));
@@ -203,7 +205,7 @@ void init_vlm_pipeline(py::module_& m) {
              "Checks that are no conflicting parameters. Raises exception if config is invalid.")
         .def_readwrite("embedder_device", &ov::genai::VLMPipeline::Config::embedder_device);
 
-    py::class_<ov::genai::VLMPipeline>(m, "VLMPipeline", "This class is used for generation with VLMs")
+    vlm_pipeline_class
         .def(py::init([](
             const std::filesystem::path& models_path,
             const std::string& device,
