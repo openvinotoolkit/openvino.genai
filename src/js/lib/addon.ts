@@ -68,11 +68,17 @@ export interface TextEmbeddingPipelineWrapper {
   embedDocumentsSync(documents: string[]): EmbeddingResults;
 }
 
+export type VLMPipelineConfig = {
+  /** Execution device for embedder models of visual language modeling pipeline when execute language models model on NPU */
+  embedder_device?: string;
+};
+
 export interface VLMPipeline {
   new (): VLMPipeline;
   init(
     modelPath: string,
     device: string,
+    config: VLMPipelineConfig,
     ovProperties: VLMPipelineProperties,
     callback: (err: Error | null) => void,
   ): void;
