@@ -33,6 +33,8 @@ void update_npu_properties(const std::filesystem::path& models_dir, ov::AnyMap& 
             break;
     }
 }
+}
+
 
 using utils::read_anymap_param;
 
@@ -40,9 +42,9 @@ VLMPipeline::Config::Config(const ov::AnyMap& properties) {
     read_anymap_param(properties, ov::genai::embedder_device.name(), embedder_device);
 };
 
-void VLMPipeline::Config::validate() const {||
+void VLMPipeline::Config::validate() const {
     if (embedder_device.has_value()) {
-        OPENVINO_ASSERT(embedder_device.value() != "CPU" && embedder_device.value() != "GPU", "embedder_device should be neither CPU nor GPU");
+        OPENVINO_ASSERT(embedder_device.value() == "CPU" || embedder_device.value() == "GPU", "embedder_device should be either CPU or GPU");
     }
 }
 
@@ -51,7 +53,6 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
 
     properties_copy.erase(embedder_device.name());
     return properties_copy;
-}
 }
 
 class VLMPipeline::VLMPipelineImpl : public VLMPipelineBase{
