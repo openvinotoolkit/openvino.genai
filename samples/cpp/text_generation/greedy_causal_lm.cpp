@@ -24,7 +24,7 @@ int main(int argc, char* argv[]) try {
             std::cout << "[TEST] Using legacy API: enable_save_ov_model(true)" << std::endl;
         } else {
             // New API: Explicit mode selection
-            ov::genai::OVModelSaveMode save_mode = ov::genai::OVModelSaveMode::ORIGINAL;
+            ov::genai::OVModelSaveMode save_mode = ov::genai::OVModelSaveMode::ORIGINAL;  // Set to OPTIMIZED to save requantization
             pipe_config.insert(ov::genai::save_ov_model_config(save_mode));
             std::cout << "[TEST] Using new API: save_ov_model_config(ORIGINAL)" << std::endl;
         }

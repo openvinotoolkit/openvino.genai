@@ -138,7 +138,8 @@ std::shared_ptr<ov::Model> create_language_model(
 
 } // namespace
 
-std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const ov::genai::OVModelSaveMode& save_mode) {
+std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
+                                            const ov::genai::OVModelSaveMode& save_mode) {
     auto start_time = std::chrono::high_resolution_clock::now();
     std::stringstream ss;
     ss << "Loading and unpacking model from: " << model_path;
@@ -154,15 +155,16 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const
     bool enable_save_ov_model = (save_mode != ov::genai::OVModelSaveMode::DISABLED);
     bool dequantize_to_fp16 = (save_mode == ov::genai::OVModelSaveMode::OPTIMIZED);
     bool requantize = (save_mode == ov::genai::OVModelSaveMode::OPTIMIZED);
-    
+
     ss.str("");
-    ss << "[DEBUG] OVModelSaveMode: mode=" 
-       << (save_mode == ov::genai::OVModelSaveMode::DISABLED ? "DISABLED" :
-           save_mode == ov::genai::OVModelSaveMode::ORIGINAL ? "ORIGINAL" : "OPTIMIZED")
+    ss << "[DEBUG] OVModelSaveMode: mode="
+       << (save_mode == ov::genai::OVModelSaveMode::DISABLED   ? "DISABLED"
+           : save_mode == ov::genai::OVModelSaveMode::ORIGINAL ? "ORIGINAL"
+                                                               : "OPTIMIZED")
        << ", dequantize_to_fp16=" << (dequantize_to_fp16 ? "true" : "false")
        << ", requantize=" << (requantize ? "true" : "false");
     ov::genai::utils::print_gguf_debug_info(ss.str());
-    
+
     auto [config, consts, qtypes] = load_gguf(model_path, dequantize_to_fp16, requantize);
     auto load_finish_time = std::chrono::high_resolution_clock::now();
 

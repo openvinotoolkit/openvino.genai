@@ -274,8 +274,8 @@ void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
 
 // Use gguflib's FP16 conversion functions
 extern "C" {
-    uint16_t to_half(float f);
-    float from_half(uint16_t h);
+uint16_t to_half(float f);
+float from_half(uint16_t h);
 }
 
 // Quantize FP32 weights to Q4_0 format (symmetric, 4-bit)
@@ -288,19 +288,19 @@ void quantize_q4_0(const float* src,
                    int64_t n_elements,
                    int64_t block_size) {
     OPENVINO_ASSERT(n_elements % block_size == 0, "n_elements must be divisible by block_size");
-    
+
     const int64_t num_blocks = n_elements / block_size;
-    
+
     auto* weights = static_cast<uint32_t*>(weights_out.data());  // u32 packed format
     // scales_out and biases_out are f16 type, but we write uint16_t bit representation
     auto* scales = reinterpret_cast<uint16_t*>(scales_out.data());
     auto* biases = reinterpret_cast<uint16_t*>(biases_out.data());
-    
+
     for (int64_t i = 0; i < num_blocks; i++) {
         // Find absolute max value in block
         float amax = 0.0f;
         float max_val = 0.0f;
-        
+
         for (int64_t j = 0; j < block_size; j++) {
             float v = src[i * block_size + j];
             if (fabsf(v) > amax) {
@@ -308,10 +308,10 @@ void quantize_q4_0(const float* src,
                 max_val = v;
             }
         }
-        
+
         // Calculate scale (symmetric: maps max to -8)
         float d = max_val / -8.0f;
-        
+
         if (d == 0.0f) {
             // Zero block - use dummy scale and zero point at 8
             scales[i] = to_half(1.0f);
@@ -323,28 +323,28 @@ void quantize_q4_0(const float* src,
             }
             continue;
         }
-        
+
         float id = 1.0f / d;
         scales[i] = to_half(d);
-        
+
         // Symmetric quantization: replicate bias for all blocks
         // (building_blocks.cpp expects biases.shape == scales.shape)
         biases[i] = to_half(-8.0f * d);
-        
+
         // Quantize and pack weights: 2 q4 per byte, 4 bytes per u32 (8 q4 per u32)
         for (int64_t j = 0; j < block_size; j += 8) {
             uint32_t packed = 0;
             for (int k = 0; k < 4; k++) {  // 4 bytes per u32
                 int idx0 = i * block_size + j + k * 2;
                 int idx1 = i * block_size + j + k * 2 + 1;
-                
+
                 float x0 = src[idx0] * id;
                 float x1 = src[idx1] * id;
-                
+
                 // Clamp to [0, 15] range (4-bit)
                 uint8_t q0 = std::min(15, static_cast<int>(x0 + 8.5f));
                 uint8_t q1 = std::min(15, static_cast<int>(x1 + 8.5f));
-                
+
                 // Pack: low 4 bits = q0, high 4 bits = q1
                 uint8_t byte_val = q0 | (q1 << 4);
                 packed |= (static_cast<uint32_t>(byte_val) << (k * 8));
@@ -364,35 +364,35 @@ void quantize_q8_0(const float* src,
                    int64_t n_elements,
                    int64_t block_size) {
     OPENVINO_ASSERT(n_elements % block_size == 0, "n_elements must be divisible by block_size");
-    
+
     const int64_t num_blocks = n_elements / block_size;
-    
+
     auto* weights = static_cast<uint32_t*>(weights_out.data());  // u32 packed format
     // scales_out and biases_out are f16 type, but we write uint16_t bit representation
     auto* scales = reinterpret_cast<uint16_t*>(scales_out.data());
     auto* biases = reinterpret_cast<uint16_t*>(biases_out.data());
-    
+
     for (int64_t i = 0; i < num_blocks; i++) {
         // Find absolute max value in block
         float amax = 0.0f;
-        
+
         for (int64_t j = 0; j < block_size; j++) {
             float v = src[i * block_size + j];
             if (fabsf(v) > amax) {
                 amax = fabsf(v);
             }
         }
-        
+
         // Calculate scale
         float d = amax / 127.0f;
         float id = (d != 0.0f) ? 1.0f / d : 0.0f;
-        
+
         scales[i] = to_half(d);
-        
+
         // Symmetric quantization: replicate bias for all blocks
         // (building_blocks.cpp expects biases.shape == scales.shape)
         biases[i] = to_half(-128.0f * d);
-        
+
         // Quantize weights to [0, 255] range (offset by 128), pack 4 u8 per u32
         for (int64_t j = 0; j < block_size; j += 4) {
             uint32_t packed = 0;

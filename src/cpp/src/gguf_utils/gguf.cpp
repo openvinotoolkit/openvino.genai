@@ -425,35 +425,37 @@ void load_arrays(gguf_ctx* ctx,
         if ((tensor.type == GGUF_TYPE_Q4_K || tensor.type == GGUF_TYPE_Q6_K) && dequantize_to_fp16) {
             std::string name(tensor.name, tensor.namelen);
             ov::Tensor fp16_tensor = extract_tensor_data(&tensor);
-            printf("[DEBUG EXTRACT] Tensor: %s, extracted element_type: %s\n", 
-                   name.c_str(), fp16_tensor.get_element_type().to_string().c_str());
-            
+            printf("[DEBUG EXTRACT] Tensor: %s, extracted element_type: %s\n",
+                   name.c_str(),
+                   fp16_tensor.get_element_type().to_string().c_str());
+
             constexpr std::string_view weight_suffix = ".weight";
             const std::string name_prefix = name.substr(0, name.length() - weight_suffix.length());
-            
+
             // Phase 2: Requantize if requested
             if (requantize) {
                 // Check test mode: override strategy with simple uniform quantization
                 const char* test_mode = std::getenv("GGUF_REQUANT_MODE");
                 bool force_q8_0 = (test_mode && std::string(test_mode) == "Q8_0_C");
                 bool force_q4_0 = (test_mode && std::string(test_mode) == "Q4_0_128");
-                
-                // printf("[DEBUG REQUANT] GGUF_REQUANT_MODE=%s\n", test_mode ? test_mode : "(not set - using mixed strategy)");
-                
+
+                // printf("[DEBUG REQUANT] GGUF_REQUANT_MODE=%s\n", test_mode ? test_mode : "(not set - using mixed
+                // strategy)");
+
                 if (force_q8_0) {
                     printf("[DEBUG REQUANT] TEST MODE: Force all tensors to Q8_0_C\n");
                 } else if (force_q4_0) {
                     printf("[DEBUG REQUANT] TEST MODE: Force all tensors to Q4_0_128\n");
                 }
-                
+
                 // Determine requantization type based on tensor name
                 bool is_token_embd = (name.find("token_embd.weight") != std::string::npos);
                 bool is_output = (name == "output.weight");  // Exact match to avoid false positives
-                
+
                 bool should_requant = true;
                 bool use_q8_0 = false;
                 int64_t block_size = 128;
-                
+
                 // TEST MODE: Override with uniform quantization
                 if (force_q8_0) {
                     use_q8_0 = true;
@@ -466,7 +468,7 @@ void load_arrays(gguf_ctx* ctx,
                     // 1. token_embd.weight → Q8_0_C (channel-wise)
                     // 2. output.weight → Q8_0_C (channel-wise)
                     // 3. All other tensors → Q4_0_128
-                    
+
                     if (is_token_embd) {
                         // token_embd → Q8_0_C (channel-wise)
                         use_q8_0 = true;
@@ -481,16 +483,16 @@ void load_arrays(gguf_ctx* ctx,
                         block_size = 128;
                     }
                 }
-                
-                // printf("[DEBUG REQUANT] Tensor: %s, Type: %d, is_token_embd: %d, is_output: %d\n", 
+
+                // printf("[DEBUG REQUANT] Tensor: %s, Type: %d, is_token_embd: %d, is_output: %d\n",
                 //        name.c_str(), tensor.type, is_token_embd, is_output);
-                
-                // printf("[DEBUG REQUANT] Decision: should_requant=%d, use_q8_0=%d, block_size=%lld\n", 
+
+                // printf("[DEBUG REQUANT] Decision: should_requant=%d, use_q8_0=%d, block_size=%lld\n",
                 //        should_requant, use_q8_0, block_size);
-                
+
                 if (should_requant) {
                     printf("[DEBUG REQUANT] Starting requantization for %s\n", name.c_str());
-                    
+
                     // Convert FP16 → FP32
                     auto shape = fp16_tensor.get_shape();
                     int64_t n_elements = fp16_tensor.get_size();
@@ -500,22 +502,25 @@ void load_arrays(gguf_ctx* ctx,
                         fp32_data[i] = from_half(fp16_ptr[i]);
                     }
                     // printf("[DEBUG REQUANT] Converted FP16 to FP32, n_elements=%lld\n", n_elements);
-                    
+
                     // Create output tensors
                     ov::Tensor weights_out, scales_out, biases_out;
-                    
+
                     if (use_q8_0) {
                         // Q8_0_C format
                         // For channel-wise: each row (output channel) has its own scale
-                        // Symmetric quantization: biases replicated to match scales shape (for building_blocks compatibility)
+                        // Symmetric quantization: biases replicated to match scales shape (for building_blocks
+                        // compatibility)
                         size_t num_blocks_per_row = shape[1] / block_size;  // Should be 1 for channel-wise
-                        weights_out = ov::Tensor(ov::element::u32, ov::Shape{shape[0], shape[1] / 4});  // 4 u8 packed per u32
+                        weights_out =
+                            ov::Tensor(ov::element::u32, ov::Shape{shape[0], shape[1] / 4});  // 4 u8 packed per u32
                         scales_out = ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});
-                        biases_out = ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});  // Match scales shape
-                        
+                        biases_out = ov::Tensor(ov::element::f16,
+                                                ov::Shape{shape[0], num_blocks_per_row});  // Match scales shape
+
                         // printf("[DEBUG REQUANT] Q8_0: shape=[%zu,%zu], block_size=%lld, num_blocks_per_row=%zu\n",
                         //        shape[0], shape[1], block_size, num_blocks_per_row);
-                        
+
                         quantize_q8_0(fp32_data.data(), weights_out, scales_out, biases_out, n_elements, block_size);
                         // printf("[DEBUG REQUANT] Q8_0 quantization complete\n");
                     } else {
@@ -524,17 +529,18 @@ void load_arrays(gguf_ctx* ctx,
                         size_t packed_width = shape[1] / 8;  // 2 u4 per u8, then 4 u8 per u32 = 8 u4 per u32
                         weights_out = ov::Tensor(ov::element::u32, ov::Shape{shape[0], packed_width});
                         scales_out = ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});
-                        biases_out = ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});  // Match scales shape
-                        
+                        biases_out = ov::Tensor(ov::element::f16,
+                                                ov::Shape{shape[0], num_blocks_per_row});  // Match scales shape
+
                         // printf("[DEBUG REQUANT] Q4_0: shape=[%zu,%zu], block_size=%lld, num_blocks_per_row=%zu\n",
                         //        shape[0], shape[1], block_size, num_blocks_per_row);
-                        
+
                         quantize_q4_0(fp32_data.data(), weights_out, scales_out, biases_out, n_elements, block_size);
                         // printf("[DEBUG REQUANT] Q4_0 quantization complete\n");
                     }
-                    
+
                     // printf("[DEBUG REQUANT] Storing tensors: weights, scales, biases\n");
-                    
+
                     // Store requantized tensors (same structure as gguf_load_quantized)
                     check_insert(array_map.emplace(name, std::move(weights_out)));
                     check_insert(array_map.emplace(name_prefix + ".scales", std::move(scales_out)));
