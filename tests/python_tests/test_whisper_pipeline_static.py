@@ -93,7 +93,7 @@ def compare_results_with_assert(expected, actual_out):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
-def test_static_whisper_generation_compare__stateless(model_descr, sample_from_dataset):
+def test_static_whisper_generation_compare_stateless(model_descr, sample_from_dataset):
     model_id, stateful_model_path = load_and_save_whisper_model(model_descr, stateful=True)
     model_id, stateless_model_path = load_and_save_whisper_model(model_descr, stateful=False)
 
