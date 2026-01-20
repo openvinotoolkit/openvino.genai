@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections.abc
 import openvino._pyopenvino
 import typing
-__all__: list[str] = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLLMParserWrapper', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'draft_model', 'get_version']
+__all__: list[str] = ['Adapter', 'AdapterConfig', 'AggregationMode', 'AutoencoderKL', 'AutoencoderKLLTXVideo', 'CLIPTextModel', 'CLIPTextModelWithProjection', 'CacheEvictionConfig', 'ChatHistory', 'ChunkStreamerBase', 'ContinuousBatchingPipeline', 'CppStdGenerator', 'DecodedResults', 'DeepSeekR1ReasoningIncrementalParser', 'DeepSeekR1ReasoningParser', 'EncodedGenerationResult', 'EncodedResults', 'ExtendedPerfMetrics', 'FluxTransformer2DModel', 'GenerationConfig', 'GenerationFinishReason', 'GenerationHandle', 'GenerationOutput', 'GenerationResult', 'GenerationStatus', 'Generator', 'Image2ImagePipeline', 'ImageGenerationConfig', 'ImageGenerationPerfMetrics', 'IncrementalParser', 'InpaintingPipeline', 'KVCrushAnchorPointMode', 'KVCrushConfig', 'LLMPipeline', 'LTXVideoTransformer3DModel', 'Llama3JsonToolParser', 'Llama3PythonicToolParser', 'MeanStdPair', 'Parser', 'PerfMetrics', 'Phi4ReasoningIncrementalParser', 'Phi4ReasoningParser', 'PipelineMetrics', 'RawImageGenerationPerfMetrics', 'RawPerfMetrics', 'ReasoningIncrementalParser', 'ReasoningParser', 'SD3Transformer2DModel', 'SDPerModelsPerfMetrics', 'SDPerfMetrics', 'Scheduler', 'SchedulerConfig', 'SparseAttentionConfig', 'SparseAttentionMode', 'SpeechGenerationConfig', 'SpeechGenerationPerfMetrics', 'StopCriteria', 'StreamerBase', 'StreamingStatus', 'StructuralTagItem', 'StructuralTagsConfig', 'StructuredOutputConfig', 'SummaryStats', 'T5EncoderModel', 'Text2ImagePipeline', 'Text2SpeechDecodedResults', 'Text2SpeechPipeline', 'Text2VideoPipeline', 'TextEmbeddingPipeline', 'TextParserStreamer', 'TextRerankPipeline', 'TextStreamer', 'TokenizedInputs', 'Tokenizer', 'TorchGenerator', 'UNet2DConditionModel', 'VLMDecodedResults', 'VLMPerfMetrics', 'VLMPipeline', 'VLMRawPerfMetrics', 'VideoGenerationConfig', 'VideoGenerationPerfMetrics', 'VideoGenerationResult', 'WhisperDecodedResultChunk', 'WhisperDecodedResults', 'WhisperGenerationConfig', 'WhisperPerfMetrics', 'WhisperPipeline', 'WhisperRawPerfMetrics', 'WhisperWordTiming', 'draft_model', 'get_version']
 class Adapter:
     """
     Immutable LoRA Adapter that carries the adaptation matrices and serves as unique adapter identifier.
@@ -4357,6 +4357,9 @@ class WhisperDecodedResults:
     @property
     def texts(self) -> list[str]:
         ...
+    @property
+    def words(self) -> list[WhisperWordTiming] | None:
+        ...
 class WhisperGenerationConfig(GenerationConfig):
     """
     
@@ -4409,6 +4412,14 @@ class WhisperGenerationConfig(GenerationConfig):
                            then it means the model predicts that the segment "Hi there!" was spoken after `0.5` and before `1.5` seconds.
                            Note that a segment of text refers to a sequence of one or more words, rather than individual words.
         :type return_timestamps: bool
+    
+        :param word_timestamps: If `true` the pipeline will return word-level timestamps.
+                                When enabled word_timestamps=True property should be passed to WhisperPipeline constructor:
+                                WhisperPipeline("model_path", "CPU", word_timestamps=True);
+        :type word_timestamps: bool
+    
+        :param alignment_heads: Encoder attention alignment heads used for word-level timestamps prediction. Each pair represents (layer_index, head_index).
+        :type alignment_heads: list[tuple[int, int]]
     
         :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
         window. Can be used to steer the model to use particular spellings or styles.
@@ -4478,6 +4489,7 @@ class WhisperGenerationConfig(GenerationConfig):
     language: str | None
     return_timestamps: bool
     task: str | None
+    word_timestamps: bool
     @typing.overload
     def __init__(self, json_path: os.PathLike | str | bytes) -> None:
         """
@@ -4487,6 +4499,12 @@ class WhisperGenerationConfig(GenerationConfig):
     def __init__(self, **kwargs) -> None:
         ...
     def update_generation_config(self, **kwargs) -> None:
+        ...
+    @property
+    def alignment_heads(self) -> list[tuple[int, int]]:
+        ...
+    @alignment_heads.setter
+    def alignment_heads(self, arg0: collections.abc.Sequence[tuple[typing.SupportsInt, typing.SupportsInt]]) -> None:
         ...
     @property
     def begin_suppress_tokens(self) -> list[int]:
@@ -4647,6 +4665,14 @@ class WhisperPipeline:
                                Note that a segment of text refers to a sequence of one or more words, rather than individual words.
             :type return_timestamps: bool
         
+            :param word_timestamps: If `true` the pipeline will return word-level timestamps.
+                                    When enabled word_timestamps=True property should be passed to WhisperPipeline constructor:
+                                    WhisperPipeline("model_path", "CPU", word_timestamps=True);
+            :type word_timestamps: bool
+        
+            :param alignment_heads: Encoder attention alignment heads used for word-level timestamps prediction. Each pair represents (layer_index, head_index).
+            :type alignment_heads: list[tuple[int, int]]
+        
             :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
             window. Can be used to steer the model to use particular spellings or styles.
         
@@ -4727,6 +4753,24 @@ class WhisperRawPerfMetrics:
         ...
     @property
     def features_extraction_durations(self) -> list[float]:
+        ...
+class WhisperWordTiming:
+    """
+    Structure to store word-level timestamps
+    """
+    def __init__(self) -> None:
+        ...
+    @property
+    def end_ts(self) -> float:
+        ...
+    @property
+    def start_ts(self) -> float:
+        ...
+    @property
+    def token_ids(self) -> list[int]:
+        ...
+    @property
+    def word(self) -> str:
         ...
 def draft_model(models_path: os.PathLike | str | bytes, device: str = '', **kwargs) -> openvino._pyopenvino.OVAny:
     """
