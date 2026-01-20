@@ -150,4 +150,10 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
     const result2 = await pipeline.generate("What is your name?");
     assert.ok(!/Tom/.test(result2.toString()));
   });
+  it("test VLM Pipeline config param", async () => {
+      const pipelineWithConfig = await VLMPipeline(MODEL_PATH, "NPU", {
+        embedder_device: "GPU",
+      });
+      assert.ok(pipelineWithConfig instanceof Object);
+    });
 });
