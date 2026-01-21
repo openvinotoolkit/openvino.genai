@@ -1765,16 +1765,24 @@ def test_vlm_prompt_lookup_functionality(cat_tensor):
     """Test prompt_lookup functionality for Qwen2VL model."""
     model_id = "optimum-intel-internal-testing/tiny-random-qwen2vl"
     model_path = _get_ov_model(model_id)
-    ov_pipe = VLMPipeline(model_path, "CPU", prompt_lookup=True)
-    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
-    # add parameter to enable prompt lookup decoding to generate `num_assistant_tokens` candidates per iteration
-    generation_config.num_assistant_tokens = 5
-    # Define max_ngram_size
-    generation_config.max_ngram_size = 3
 
+    ov_pipe = VLMPipeline(model_path, "CPU")
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
     results = ov_pipe.generate(
         PROMPTS[0],
         images=[cat_tensor],
         generation_config=generation_config
     )
-    assert results.texts[0].strip() != "", "Result with prompt_lookup should not be empty"
+
+    ov_pipe_pld = VLMPipeline(model_path, "CPU", prompt_lookup=True)
+    # add parameter to enable prompt lookup decoding to generate `num_assistant_tokens` candidates per iteration
+    generation_config.num_assistant_tokens = 5
+    # Define max_ngram_size
+    generation_config.max_ngram_size = 3
+    results_pld = ov_pipe_pld.generate(
+        PROMPTS[0],
+        images=[cat_tensor],
+        generation_config=generation_config
+    )
+
+    assert results.texts[0].strip() == results_pld.texts[0].strip(), "Result should be same for enable prompt_lookup and disable prompt_lookup."
