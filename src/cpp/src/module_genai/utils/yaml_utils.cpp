@@ -164,9 +164,9 @@ void parse_sub_modules_pipeline_config_internal(const YAML::Node& sub_modules, P
     }
 }
 
-PipelineDesc::PTR load_config(const std::string& cfg_path) {
+PipelineDesc::PTR load_config(const std::filesystem::path& cfg_path) {
     try {
-        YAML::Node config = YAML::LoadFile(cfg_path);
+        YAML::Node config = YAML::LoadFile(cfg_path.string());
         yaml_cfg_auto_padding(config);
 
         std::string root_path = std::filesystem::path(cfg_path).has_parent_path()
@@ -188,6 +188,12 @@ PipelineDesc::PTR load_config(const std::string& cfg_path) {
 }
 
 PipelineDesc::PTR load_config_from_string(const std::string& content) {
+    // Check context is not path
+    OPENVINO_ASSERT(!std::filesystem::path(content).has_parent_path(),
+                    "The provided content seems to be a file path. Please use 'std::filesystem::path' pass file path "
+                    "instead. content: " +
+                        content);
+
     try {
         PipelineDesc::PTR pipeline_desc = PipelineDesc::create();
         YAML::Node config = YAML::Load(content);

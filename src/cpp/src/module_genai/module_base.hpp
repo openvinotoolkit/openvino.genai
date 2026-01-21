@@ -57,6 +57,7 @@ public:
     std::shared_ptr<ov::Model> get_ov_model_from_cfg_models_map(const std::string& param_name, bool required = false);
     // Check if exist input in inputs map.
     bool exists_input(const std::string& input_name);
+    ov::Any& get_input(const std::string& input_name);
 
     // Get param value from module_desc->params.
     // Return empty string if param not found.

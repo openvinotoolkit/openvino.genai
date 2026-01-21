@@ -74,7 +74,7 @@ void ImagePreprocessModule::run() {
     prepare_inputs();
 
     if (exists_input("images")) {
-        auto images_data = this->inputs["images"].data.as<std::vector<ov::Tensor>>();
+        auto images_data = get_input("images").as<std::vector<ov::Tensor>>();
         std::vector<ov::Tensor> output_tensors;
         std::vector<ImageSize> output_sizes;
         for (size_t i = 0; i < images_data.size(); ++i) {
@@ -89,7 +89,7 @@ void ImagePreprocessModule::run() {
         }
         this->outputs["source_sizes"].data = sizes_vec;
     } else {
-        auto image1_data = this->inputs["image"].data.as<ov::Tensor>();
+        auto image1_data = get_input("image").as<ov::Tensor>();
         auto encoded_img = encoder_ptr->encode(image1_data, ov::AnyMap{});
         this->outputs["raw_data"].data = encoded_img.resized_source;
         this->outputs["source_size"].data =

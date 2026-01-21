@@ -20,7 +20,7 @@ namespace utils {
 
 std::pair<std::string, std::string> parse_source(const std::string& source);
 
-PipelineDesc::PTR load_config(const std::string& cfg_path);
+PipelineDesc::PTR load_config(const std::filesystem::path& cfg_path);
 
 PipelineDesc::PTR load_config_from_string(const std::string& content);
 

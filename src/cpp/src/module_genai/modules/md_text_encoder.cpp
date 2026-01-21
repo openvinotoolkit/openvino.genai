@@ -88,30 +88,32 @@ void TextEncoderModule::run() {
     
     prepare_inputs();
     std::vector<std::string> m_prompts = {};
-    if (this->inputs.find("prompts") != this->inputs.end()) {
-        m_prompts = this->inputs["prompts"].data.as<std::vector<std::string>>();
-    }
-    if (this->inputs.find("prompt") != this->inputs.end()) {
-        std::string single_prompt = this->inputs["prompt"].data.as<std::string>();
+    if (exists_input("prompts")) {
+        m_prompts = get_input("prompts").as<std::vector<std::string>>();
+    } else if (exists_input("prompt")) {
+        std::string single_prompt = get_input("prompt").as<std::string>();
         m_prompts.insert(m_prompts.begin(), single_prompt);
+    } else {
+        OPENVINO_ASSERT(false, "TextEncoderModule[" + module_desc->name + "]: No prompt input found.");
     }
+
     std::vector<ov::Tensor> encoded_images = {};
     std::vector<std::vector<int>> source_sizes = {};
     bool has_encoded_image = false;
-    if (this->inputs.find("encoded_image") != this->inputs.end()) {
-        ov::Tensor encoded_image = this->inputs["encoded_image"].data.as<ov::Tensor>();
+    if (exists_input("encoded_image")) {
+        ov::Tensor encoded_image = get_input("encoded_image").as<ov::Tensor>();
         encoded_images.push_back(encoded_image);
         has_encoded_image = true;
     }
-    if (this->inputs.find("encoded_images") != this->inputs.end()) {
-        encoded_images = this->inputs["encoded_images"].data.as<std::vector<ov::Tensor>>();
+    if (exists_input("encoded_images")) {
+        encoded_images = get_input("encoded_images").as<std::vector<ov::Tensor>>();
         has_encoded_image = true;
     }
-    if (this->inputs.find("source_size") != this->inputs.end()) {
-        source_sizes.push_back(this->inputs["source_size"].data.as<std::vector<int>>());
+    if (exists_input("source_size")) {
+        source_sizes.push_back(get_input("source_size").as<std::vector<int>>());
     }
-    if (this->inputs.find("source_sizes") != this->inputs.end()) {
-        source_sizes = this->inputs["source_sizes"].data.as<std::vector<std::vector<int>>>();
+    if (exists_input("source_sizes")) {
+        source_sizes = get_input("source_sizes").as<std::vector<std::vector<int>>>();
     }
 
     if (has_encoded_image) {

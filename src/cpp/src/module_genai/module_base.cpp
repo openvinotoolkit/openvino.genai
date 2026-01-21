@@ -44,6 +44,12 @@ bool IBaseModule::exists_input(const std::string& input_name) {
     return inputs.find(input_name) != inputs.end();
 }
 
+ov::Any& IBaseModule::get_input(const std::string& input_name) {
+    OPENVINO_ASSERT(exists_input(input_name),
+                    "Module[" + module_desc->name + "]: input '" + input_name + "' not found in inputs");
+    return inputs[input_name].data;
+}
+
 std::string IBaseModule::get_param(const std::string& param_item) {
     const auto& params = module_desc->params;
     auto it_models_path = params.find(param_item);
