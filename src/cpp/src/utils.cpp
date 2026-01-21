@@ -697,6 +697,16 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
     return false;
 }
 
+bool clear_false_prompt_lookup_from_config(ov::AnyMap& properties) {
+    bool res = false;
+    if (properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
+        res = properties.at(ov::genai::prompt_lookup.name()).as<bool>();
+        if (!res)
+            properties.erase(ov::genai::prompt_lookup.name());
+    }
+    return res;
+}
+
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties,
                                                              bool is_npu_requested) {
     std::string attention_backend = PA_BACKEND;
@@ -708,14 +718,6 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
         OPENVINO_ASSERT(attention_backend == PA_BACKEND || attention_backend == SDPA_BACKEND,
             "Attention backend must be either '", PA_BACKEND, "' or '", SDPA_BACKEND, "', got '", attention_backend, "'");
         properties.erase(it);
-    }
-
-    // GenAI-only options must not be forwarded to device plugins.
-    // Keep them available in `external_properties` for decision-making, but strip from the map
-    // that will later be used as plugin properties.
-    auto prompt_lookup_it = properties.find(ov::genai::prompt_lookup.name());
-    if (prompt_lookup_it != properties.end()) {
-        properties.erase(prompt_lookup_it);
     }
 
     if (explicitly_requires_paged_attention(external_properties, is_npu_requested)) {
