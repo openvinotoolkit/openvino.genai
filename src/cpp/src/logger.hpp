@@ -53,6 +53,7 @@ private:
 namespace detail {
 
 inline void log_message(ov::log::Level level, const char* file, int line, const std::string& msg) {
+    auto& logger = Logger::get_instance();
     if (!logger.should_log(level)) {
         return;
     }
