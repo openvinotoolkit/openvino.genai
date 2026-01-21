@@ -56,7 +56,7 @@ def main():
     device = "CPU"
 
     # Currently only for ATTENTION_BACKEND="PA", PLD is enabled.
-    pipe = openvino_genai.VLMPipeline(args.model_dir, device, prompt_lookup=args.enable_lookup, ATTENTION_BACKEND="PA")
+    pipe = openvino_genai.VLMPipeline(args.model_dir, device, prompt_lookup=args.enable_lookup)
 
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
