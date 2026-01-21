@@ -14,9 +14,9 @@ namespace genai {
 using PathExtensions = std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>;
 
 /**
- * @brief Wrap paths and Extensions into ov::AnyMap compatible pair that can be passed to pipeline constructors like
- * LLMPipeline or VLMPipeline. And that the extensions will be loaded into the OpenVINO Core instance before model
- * loading.
+ * @brief Wrap paths and Extensions into an ov::AnyMap-compatible pair that can be passed to pipeline constructors
+ * like LLMPipeline or VLMPipeline, ensuring that the extensions are loaded into the OpenVINO Core instance before
+ * model loading.
  */
 template <typename T,
           typename = std::enable_if_t<

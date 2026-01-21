@@ -289,8 +289,8 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties, bool is_npu_requested = false);
 
 /**
- * @brief Extracts the "extensions" key from the provided properties map and adds each extension to the
- * singleton OpenVINO core.
+ * @brief Extracts the "extensions" key from the provided properties map and returns the corresponding
+ * list of extensions.
  *
  * The "extensions" entry, if present, is expected to be an ov::Any containing a
  * std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>, where each element is either:
@@ -298,6 +298,7 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
  *   - a std::shared_ptr<ov::Extension> representing an already constructed OpenVINO extension.
  *
  * @param properties Properties map that may contain the "extensions" key with a vector of extension specifications.
+ * @return A PathExtensions object representing the extracted extensions.
  */
 PathExtensions extract_extensions(ov::AnyMap& properties);
 

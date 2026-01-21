@@ -13,9 +13,9 @@ using namespace ov::genai::utils;
 TEST(TestAddExtensions, test_extract_extensions) {
     ov::AnyMap properties = {
         ov::genai::extensions(std::vector<std::filesystem::path>{"path_extension1", "path_extension2"})};
-    ov::genai::PathExtensions pathExtentions{"path_extension1", "path_extension2"};
+    ov::genai::PathExtensions pathExtensions{"path_extension1", "path_extension2"};
 
-    EXPECT_EQ(extract_extensions(properties), pathExtentions);
+    EXPECT_EQ(extract_extensions(properties), pathExtensions);
 }
 
 TEST(TestAddExtensions, test_add_extensions_to_core) {
