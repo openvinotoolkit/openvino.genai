@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include "openvino/genai/extensions.hpp"
+#include "tokenizer/tokenizers_path.hpp"
 #include "utils.hpp"
 
 using namespace ov::genai::utils;
@@ -18,14 +19,9 @@ TEST(TestAddExtensions, test_extract_extensions) {
 }
 
 TEST(TestAddExtensions, test_add_extensions_to_core) {
-    std::string exe_path = "";
-#ifdef __linux__
-    exe_path = "../openvino_genai/libopenvino_tokenizers.so";
-#elif defined(_WIN32)
-    exe_path = "../openvino_genai/libopenvino_tokenizers.dll";
-#elif defined(__APPLE__)
-    exe_path = "../openvino_genai/libopenvino_tokenizers.dylib";
-#endif
+    auto path = tokenizers_relative_to_genai();
+    std::filesystem::path genai_path = "openvino_genai";
+    std::string exe_path = path.parent_path().parent_path() / genai_path / path.filename();
     if (!exe_path.empty()) {
         ov::AnyMap properties1 = {ov::genai::extensions(std::vector<std::filesystem::path>{exe_path.c_str()})};
         auto extensions1 = extract_extensions(properties1);

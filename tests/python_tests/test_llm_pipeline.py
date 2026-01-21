@@ -912,8 +912,8 @@ def test_llm_pipeline_add_extension():
     model_id = "katuni4ka/tiny-random-phi3"
     models_path = download_and_convert_model(model_id).models_path
 
-    if _ext_path.name:
-        path = os.path.dirname(ov_genai.__file__) + "/" + _ext_path.name
+    if _ext_path.exists():
+        path = os.path.join(os.path.dirname(ov_genai.__file__), _ext_path.name)
         properties = {"extensions": [path]}
         ov_genai.LLMPipeline(models_path, "CPU", **properties)
 

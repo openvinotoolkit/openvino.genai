@@ -5,12 +5,10 @@ import os
 import pytest
 import math
 import sys
-import openvino_genai
+import openvino_genai as ov_genai
 
 from pathlib import Path
 from shutil import rmtree
-
-from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig, draft_model, GenerationFinishReason, ChatHistory
 
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
 
@@ -192,7 +190,7 @@ def test_chat_scenario_vs_stateful(
     ov_pipe = create_ov_pipeline(models_path, pipeline_type=PipelineType.STATEFUL)
     cb_pipe = create_ov_pipeline(models_path, pipeline_type=pipeline_type)
 
-    generation_config = GenerationConfig(**generation_config_kwargs)
+    generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
     # assisted generation is not supported for beam search
     if generation_config.is_beam_search() and pipeline_type != PipelineType.PAGED_ATTENTION:
         return
@@ -216,7 +214,7 @@ def test_chat_scenario_vs_stateful(
         # Test that finish_chat() doesn't fail just in case.
         cb_pipe.finish_chat()
     elif input_type == GenerationChatInputsType.CHAT_HISTORY:
-        chat_history = ChatHistory()
+        chat_history = ov_genai.ChatHistory()
         for question in COMMON_QUESTIONS:
             chat_history.append({"role": "user", "content": question})
             cb_decoded_results = cb_pipe.generate(chat_history, generation_config=generation_config)
@@ -253,7 +251,7 @@ def test_continuous_batching_add_request_health_check(
 
     cb_pipe = create_ov_cb_pipeline(models_path, pipeline_type=pipeline_type)
 
-    generation_config = GenerationConfig(**generation_config_kwargs)
+    generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
 
     if generation_config.is_beam_search() and pipeline_type != PipelineType.CONTINUOUS_BATCHING:
         pytest.skip("Assisted generation does not support beam search")
@@ -270,7 +268,7 @@ def test_continuous_batching_add_request_health_check(
     for handle in handles:
         outputs = handle.read_all()
         for output in outputs:
-            assert output.finish_reason == GenerationFinishReason.STOP or output.finish_reason == GenerationFinishReason.LENGTH
+            assert output.finish_reason == ov_genai.GenerationFinishReason.STOP or output.finish_reason == ov_genai.GenerationFinishReason.LENGTH
 
 @pytest.mark.parametrize(
     "generation_config_kwargs", 
@@ -289,7 +287,7 @@ def test_continuous_batching_add_request_fails(
 
     cb_pipe = create_ov_cb_pipeline(models_path, pipeline_type=pipeline_type)
 
-    generation_config = GenerationConfig(**generation_config_kwargs)
+    generation_config = ov_genai.GenerationConfig(**generation_config_kwargs)
 
     if generation_config.is_beam_search() and pipeline_type != PipelineType.CONTINUOUS_BATCHING:
         pytest.skip("Assisted generation does not support beam search")
@@ -342,8 +340,8 @@ def test_post_oom_health(model_facebook_opt_125m: OVConvertedModelSchema, sampli
 # Pre-emption
 #
 
-def get_parallel_sampling_seq_len_300() -> GenerationConfig:
-    generation_config = GenerationConfig()
+def get_parallel_sampling_seq_len_300() -> ov_genai.GenerationConfig:
+    generation_config = ov_genai.GenerationConfig()
     # TODO: add generation_config.generator and return parameters below
     # generation_config.num_return_sequences = 3
     # generation_config.do_sample = True
@@ -353,8 +351,8 @@ def get_parallel_sampling_seq_len_300() -> GenerationConfig:
     return generation_config
 
 
-def get_beam_search_seq_len_300() -> GenerationConfig:
-    generation_config = GenerationConfig()
+def get_beam_search_seq_len_300() -> ov_genai.GenerationConfig:
+    generation_config = ov_genai.GenerationConfig()
     generation_config.num_beam_groups = 3
     generation_config.num_beams = 6
     generation_config.diversity_penalty = 1
@@ -541,7 +539,7 @@ def test_dynamic_split_fuse_doesnt_affect_generated_text():
     scheduler_config_target = dict_to_scheduler_config({"dynamic_split_fuse": True, "max_num_batched_tokens": 5})
     cb_pipe_target = create_ov_pipeline(models_path, scheduler_config=scheduler_config_target, pipeline_type=pipeline_type)
 
-    generation_config = GenerationConfig(do_sample=False, max_new_tokens=20, eos_token_id=cb_pipe_ref.get_tokenizer().get_eos_token_id())
+    generation_config = ov_genai.GenerationConfig(do_sample=False, max_new_tokens=20, eos_token_id=cb_pipe_ref.get_tokenizer().get_eos_token_id())
 
     generation_config = prepare_generation_config_by_pipe_type(generation_config=generation_config, pipeline_type=pipeline_type)
     cb_pipe_ref.set_generation_config(generation_config)
@@ -582,7 +580,7 @@ speculative_cases = [
 def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType, main_model_id, draft_model_id, prompt):
     def run_extended_perf_metrics_collection(
         model_id: str,
-        generation_config: GenerationConfig,
+        generation_config: ov_genai.GenerationConfig,
         prompt: str,
         pipeline_type: PipelineType,
         draft_model_id: str,
@@ -596,7 +594,7 @@ def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType,
 
     import time
     start_time = time.perf_counter()
-    generation_config = GenerationConfig(
+    generation_config = ov_genai.GenerationConfig(
         do_sample=False, 
         max_new_tokens=20, 
         ignore_eos=True, 
@@ -611,7 +609,7 @@ def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType,
 
     else:
         if pipeline_type == PipelineType.SPECULATIVE_DECODING:
-            generation_config = GenerationConfig(
+            generation_config = ov_genai.GenerationConfig(
                 do_sample=False, max_new_tokens=20, ignore_eos=True, num_assistant_tokens=5
             )
             extended_perf_metrics = run_extended_perf_metrics_collection(
@@ -682,7 +680,7 @@ def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_dev
     )
 
     # Run reference HF model:
-    ov_generation_config = GenerationConfig(max_new_tokens=20)
+    ov_generation_config = ov_genai.GenerationConfig(max_new_tokens=20)
     ref_gen_results = run_hugging_face(main_opt_model, main_hf_tokenizer, [prompt], ov_generation_config)
 
     # Run OpenVINO GenAI pipeline:
@@ -717,7 +715,7 @@ def compare_results_for_dynamic_split_fuse_config(main_model_id, draft_model_id)
         scheduler_config=scheduler_config_target,
     )
 
-    generation_config = GenerationConfig(max_new_tokens=20, num_assistant_tokens=4)
+    generation_config = ov_genai.GenerationConfig(max_new_tokens=20, num_assistant_tokens=4)
     prompt = "Why is the Sun yellow?"
     result_ref = ov_pipe_ref.generate([prompt], generation_config)
     result_gen = ov_pipe_target.generate([prompt], generation_config)
@@ -744,15 +742,15 @@ def test_continuous_batching_add_extension():
     model_id = "katuni4ka/tiny-random-phi3"
     models_path = download_and_convert_model(model_id).models_path
 
-    scheduler_config = SchedulerConfig()
+    scheduler_config = ov_genai.SchedulerConfig()
 
-    if _ext_path.name:
-        path = os.path.dirname(openvino_genai.__file__) + "/" + _ext_path.name
+    if _ext_path.exists():
+        path = os.path.join(os.path.dirname(ov_genai.__file__), _ext_path.name)
         properties = {"extensions": [path]}
-        ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties)
+        ov_genai.ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties)
 
     properties = {"extensions": ["fake_path"]}
 
     with pytest.raises(RuntimeError) as exc_info:
-        ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties)
+        ov_genai.ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties)
     assert "Cannot find entry point to the extension library" in str(exc_info.value)
