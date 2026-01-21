@@ -6,15 +6,14 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 
-#include "openvino/core/except.hpp"
-
 #include "json_utils.hpp"
+#include "openvino/core/except.hpp"
 
 namespace ov {
 namespace genai {
 
 WhisperConfig::WhisperConfig(const std::filesystem::path& json_path) {
-    // preprocessor_config.json not found. Skip parameters initialization from file, use defaults.
+    // config not found. Skip parameters initialization from file, use defaults.
     if (!std::filesystem::exists(json_path)) {
         return;
     }
