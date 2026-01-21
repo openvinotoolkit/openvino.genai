@@ -1463,10 +1463,10 @@ def test_model_tags_representation(
         ]
         templated_prompt = processor.apply_chat_template(messages, add_generation_prompt=True)
 
-    visions: list[openvino.Tensor] = request.getfixturevalue(
+    input_tensor: openvino.Tensor = request.getfixturevalue(
         "cat_tensor" if vision_type == VisionType.IMAGE else "synthetic_video_32x32_tensor"
     )
-    vision_inputs_kwargs = get_vision_inputs_kwargs([visions], vision_type)
+    vision_inputs_kwargs = get_vision_inputs_kwargs([input_tensor], vision_type)
 
     def workaround_inconsistent_inference():
         __tracebackhide__ = True
@@ -1615,22 +1615,24 @@ def test_model_tags_same_reference(
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=2, set_eos_token=False)
     ov_pipe.set_generation_config(generation_config)
 
-    visions: list[openvino.Tensor] = request.getfixturevalue(
+    input_tensor: openvino.Tensor = request.getfixturevalue(
         "cat_tensor" if vision_type == VisionType.IMAGE else "synthetic_video_32x32_tensor"
     )
     
     def workaround_inconsistent_inference():
         __tracebackhide__ = True
-        one_image = ov_pipe.generate(
-            get_universal_tag(vision_type, 0) * 2, **get_vision_inputs_kwargs(visions, vision_type), do_sample=False
-        )
-        two_images = ov_pipe.generate(
-            get_universal_tag(vision_type, 0) + get_universal_tag(vision_type, 1),
-            **get_vision_inputs_kwargs(visions * 2, vision_type),
+        one_input = ov_pipe.generate(
+            get_universal_tag(vision_type, 0) * 2,
+            **get_vision_inputs_kwargs([input_tensor], vision_type),
             do_sample=False,
         )
-        assert one_image.texts == two_images.texts
-        assert one_image.scores == two_images.scores
+        two_inputs = ov_pipe.generate(
+            get_universal_tag(vision_type, 0) + get_universal_tag(vision_type, 1),
+            **get_vision_inputs_kwargs([input_tensor] * 2, vision_type),
+            do_sample=False,
+        )
+        assert one_input.texts == two_inputs.texts
+        assert one_input.scores == two_inputs.scores
 
     retry(workaround_inconsistent_inference)
 
@@ -1643,16 +1645,16 @@ def test_model_tags_older(
 ):
     ov_pipe = ov_pipe_model.pipeline
 
-    visions: list[openvino.Tensor] = request.getfixturevalue(
+    input_tensor: openvino.Tensor = request.getfixturevalue(
         "car_tensor" if vision_type == VisionType.IMAGE else "synthetic_video_32x32_tensor"
     )
     
     generation_config = _setup_generation_config(ov_pipe, set_eos_token=False)
     ov_pipe.set_generation_config(generation_config)
     ov_pipe.start_chat()
-    ov_pipe.generate("", **get_vision_inputs_kwargs(visions, vision_type))
+    ov_pipe.generate("", **get_vision_inputs_kwargs([input_tensor], vision_type))
     with pytest.raises(RuntimeError):
-        ov_pipe.generate(get_universal_tag(vision_type, 0), **get_vision_inputs_kwargs(visions, vision_type))
+        ov_pipe.generate(get_universal_tag(vision_type, 0), **get_vision_inputs_kwargs([input_tensor], vision_type))
     ov_pipe.finish_chat()
 
 
