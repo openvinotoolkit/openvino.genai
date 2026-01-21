@@ -1,7 +1,7 @@
 // Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/rag/npu/text_embedding_pipeline.hpp"
+#include "text_embedding_pipeline.hpp"
 
 #include "openvino/core/except.hpp"
 #include "rag/text_embedding_utils.hpp"
