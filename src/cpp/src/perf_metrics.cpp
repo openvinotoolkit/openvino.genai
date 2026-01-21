@@ -6,8 +6,6 @@
 #include <tuple>
 #include <numeric>
 #include <cmath>
-#include <sstream>
-#include <iomanip>
 
 namespace ov {
 namespace genai {

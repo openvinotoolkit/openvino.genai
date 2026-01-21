@@ -1,9 +1,6 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include <iomanip>
-#include <sstream>
-
 #include "openvino/genai/whisper_pipeline.hpp"
 
 namespace ov {
