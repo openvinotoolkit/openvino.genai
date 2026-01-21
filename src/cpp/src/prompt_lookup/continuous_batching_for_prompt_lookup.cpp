@@ -32,7 +32,7 @@ TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::gene
     if (max_ngram_size >= input_length) {
         // Comparing them is not very meaningful until the ngram length reaches half the length of `input_ids`, because
         // the ngrams will overlap with `input_ids`.
-        adjusted_ngram_size = max_ngram_size / 2;
+        adjusted_ngram_size = static_cast<int32_t>(input_length / 2);
     }
     for (int32_t ngram_size = adjusted_ngram_size; ngram_size > 0; ngram_size--) {
         // extract last ngram_size tokens as search ngram
