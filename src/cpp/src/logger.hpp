@@ -69,7 +69,11 @@ inline void log_message(ov::log::Level level, const char* file, int line, const 
 
 template <typename... Args, typename = std::enable_if_t<(sizeof...(Args) > 0)>>
 inline void log_message(ov::log::Level level, const char* file, int line, const char* format, Args&&... args) {
-    Logger::get_instance().log_format(level, file, line, format, std::forward<Args>(args)...);
+    auto& logger = Logger::get_instance();
+    if (!logger.should_log(level)) {
+        return;
+    }
+    logger.log_format(level, file, line, format, std::forward<Args>(args)...);
 }
 
 }  // namespace detail
