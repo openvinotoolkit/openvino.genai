@@ -8,8 +8,8 @@
 
 #include "json_utils.hpp"
 #include "logger.hpp"
+#include "npu/text_embedding_pipeline.hpp"
 #include "openvino/core/except.hpp"
-#include "openvino/genai/rag/npu/text_embedding_pipeline.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "text_embedding_utils.hpp"
 #include "utils.hpp"
