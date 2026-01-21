@@ -265,6 +265,17 @@ private:
 
         ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
 
+        /**
+         * @brief 1. Verify native and universal tags aren't mixed.
+         * 2. Replace universal tags with native and save image order.
+         * 3. If there were no universal tags, restore image order from native.
+         * 4. If no tags were found, prepend native tags and assume incremental ordering.
+         * 
+         * @param automatic_tag MiniCPM-V-2_6 inserts
+         * <image>./</image>\n per image but it only replaces
+         * <image>./</image> leaving \n untouched.
+         * automatic_tag allows to handle this by being separated from native_tag param.
+         */
         std::pair<std::string, std::vector<size_t>> normalize(
             const std::string& prompt,
             const std::string& native_tag,
@@ -347,24 +358,5 @@ std::pair<std::string, std::vector<size_t>> universal_to_native(
 }
 
 void verify_ids(const std::vector<size_t>& vision_indices, size_t base_idx, size_t n_visions);
-
-/// @brief 1. Verify native and universal tags aren't mixed.
-/// 2. Replace universal tags with native and save image order.
-/// 3. If there were no universal tags, restore image order from native.
-/// 4. If no tags were found, prepend native tags and assume incremental
-/// ordering.
-/// @param automatic_tag MiniCPM-V-2_6 inserts
-/// <image>./</image>\n per image but it only replaces
-/// <image>./</image> leaving \n untouched.
-/// automatic_tag allows to handle this by being separated
-/// from native_tag param.
-// TODO Check if used
-std::pair<std::string, std::vector<size_t>> normalize_prompt(
-    const std::string& prompt,
-    const std::string& native_tag,
-    const std::string& automatic_tag,
-    size_t base_idx,
-    size_t n_visions
-);
 
 } // namespace ov::genai
