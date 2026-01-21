@@ -42,14 +42,14 @@ def num_infer_count_type(x):
     return x
 
 
-def ratio_type(value: str) -> int:
+def pruning_ratio_type(value: str) -> int:
     ivalue = int(value)
     if ivalue < 0 or ivalue > 100:
         raise argparse.ArgumentTypeError(f"pruning_ratio must be between 0 and 100, got {value}")
     return ivalue
 
 
-def weight_0_1(value: str) -> float:
+def relevance_weight_type(value: str) -> float:
     fvalue = float(value)
     if not 0.0 <= fvalue <= 1.0:
         raise argparse.ArgumentTypeError(f"relevance_weight must be between 0 and 1, got {value}")
@@ -134,14 +134,14 @@ def get_argprser():
     parser.add_argument('--num_beams', type=int, default=1, help='Number of beams in the decoding strategy, activates beam_search if greater than 1')
     parser.add_argument(
         "--pruning_ratio",
-        type=ratio_type,
+        type=pruning_ratio_type,
         default=None,
         required=False,
         help="Percentage of visual tokens to prune (valid range: 0-100). If this option is not provided, pruning is disabled.",
     )
     parser.add_argument(
         "--relevance_weight",
-        type=weight_0_1,
+        type=relevance_weight_type,
         required=False,
         help="Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, "
         "a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, "
