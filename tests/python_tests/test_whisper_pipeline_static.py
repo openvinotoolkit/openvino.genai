@@ -256,7 +256,7 @@ def test_static_whisper_stateful_generation_long(model_descr, sample_from_datase
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0, "long_form": False}], indirect=True)
 def test_static_whisper_stateful_word_timestamps(model_descr, sample_from_dataset):
     model_id, model_path = load_and_save_whisper_model(model_descr, stateful=True)
-    sample_from_dataset = sample_from_dataset[: 16000 * 30]  # use only first 30 seconds
+    sample_from_dataset = sample_from_dataset[: 16000 * 30]
 
     expected, actual_out = get_word_timestamps_results_cpu_npu(model_path, sample_from_dataset)
 
