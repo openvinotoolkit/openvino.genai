@@ -445,7 +445,6 @@ public:
                 size_t num_blocks_utilized = num_blocks - num_past_blocks_to_ignore;
 
                 past_lens_data[0] = expected_kv_cache_size - num_past_blocks_to_ignore * m_block_size;
-
                 subsequence_begins_data[1] = subsequence_begins_data[0] + num_scheduled_tokens;
 
                 block_indices_begins_data[1] = block_indices_begins_data[0] + num_blocks_utilized;
@@ -543,11 +542,17 @@ public:
             m_request.set_tensor("score_aggregation_window", score_aggregation_window);
         }
 
+        auto infer_start = std::chrono::high_resolution_clock::now();
         {
             static ManualTimer timer("pure generate inference");
             timer.start();
             m_request.infer();
             timer.end();
+        }
+        auto infer_end = std::chrono::high_resolution_clock::now();
+        auto infer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(infer_end - infer_start);
+        if (OV_GENAI_VERBOSE_TIMING) {
+            std::cout << "[ModelRunner] INFER TIMING: m_request.infer() took " << infer_duration.count() << "ms" << std::endl;
         }
 
         if (m_collect_attention_scores) {

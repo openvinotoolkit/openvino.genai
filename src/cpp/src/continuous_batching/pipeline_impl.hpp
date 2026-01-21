@@ -4,6 +4,7 @@
 #pragma once
 
 #include "continuous_batching/pipeline_base.hpp"
+#include "continuous_batching/cache_manager.hpp"
 
 #include "openvino/genai/lora_adapter.hpp"
 #include "continuous_batching/cache_eviction.hpp"
@@ -50,7 +51,15 @@ protected:
     std::vector<ov::Tensor> m_current_step_rotation_deltas;
 
     std::shared_ptr<ov::genai::CacheRotationCalculator> m_cache_rotation_calculator;
+    
+    // Smart prefill optimization: cached sequence state from loaded KV cache
+    CacheManager::SequenceState m_cached_sequence_state;
+    bool m_has_cached_sequence_state = false;
 
+    // Store scheduler config for KV cache dump/load operations
+    SchedulerConfig m_scheduler_config;
+
+    size_t kv_snapshot_counter = 0;
 
 #ifdef DEBUG_CACHE_STATE_DUMP
     size_t step_count = 0;
