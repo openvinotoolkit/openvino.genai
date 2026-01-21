@@ -347,8 +347,7 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::ve
 
 std::vector<GenerationResult> ContinuousBatchingPipeline::generate(
     const std::vector<ChatHistory>& histories,
-    const std::vector<ov::genai::GenerationConfig>&
-    sampling_params,
+    const std::vector<ov::genai::GenerationConfig>& sampling_params,
     const StreamerVariant& streamer
 ) {
     auto decoded_results = m_impl->generate(histories, sampling_params, streamer);
@@ -375,6 +374,25 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer) {
     return m_impl->generate(prompts, images, videos, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
+    const std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    return m_impl->generate(histories, images, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
+    const std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images,
+    const std::vector<std::vector<ov::Tensor>>& videos,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    return m_impl->generate(histories, images, videos, sampling_params, streamer);
 }
 
 void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {
