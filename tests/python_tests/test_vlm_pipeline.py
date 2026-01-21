@@ -259,17 +259,13 @@ GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transforme
 @pytest.fixture(scope="module")
 def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     ov_model, ov_backend = request.param
-    
+
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
 
     models_path = _get_ov_model(ov_model)
-    
-    pipeline = ov_genai.VLMPipeline(
-        models_path, 
-        "CPU", 
-        ATTENTION_BACKEND=ov_backend
-    )
+
+    pipeline = ov_genai.VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=ov_backend)
     return VlmModelInfo(
         ov_model, 
         ov_backend, 
@@ -419,7 +415,7 @@ def cat_tensor(cat_image) -> openvino.Tensor:
 def car_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
     return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['car'], "car.jpg"))
 
- 
+
 @pytest.fixture(scope="module")
 def synthetic_video_32x32_tensor(synthetic_video_32x32):
     return openvino.Tensor(synthetic_video_32x32)
@@ -583,7 +579,7 @@ def test_vlm_continuous_batching_generate_vs_add_request_for_gemma(
 def test_vlm_continuous_batching_vs_stateful(
     ov_pipe_model: VlmModelInfo,
     ov_continious_batching_pipe: ov_genai.ContinuousBatchingPipeline,
-    config: ov_genai.GenerationConfig, 
+    config: ov_genai.GenerationConfig,
     cat_tensor: openvino.Tensor,
 ):
     ov_pipe = ov_pipe_model.pipeline
@@ -1130,11 +1126,7 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     def streamer(subword):
         nonlocal current_iter
         current_iter += 1
-        return (
-            ov_genai.StreamingStatus.CANCEL
-            if current_iter == num_iters
-            else ov_genai.StreamingStatus.RUNNING
-        )
+        return ov_genai.StreamingStatus.CANCEL if current_iter == num_iters else ov_genai.StreamingStatus.RUNNING
 
     generation_config = _setup_generation_config(ov_pipe, ignore_eos=True, do_sample=False)
 
@@ -1213,7 +1205,7 @@ def test_start_chat_clears_history(
 
 def test_start_chat_clears_history_cb_api(
     ov_continious_batching_pipe: ov_genai.ContinuousBatchingPipeline,
-    image_sequence: list[openvino.Tensor]
+    image_sequence: list[openvino.Tensor],
 ):
     callback_questions = [
         "Why is the Sun yellow?"
@@ -1244,7 +1236,7 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(
 ):    
     if "phi" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "SDPA":
         pytest.skip("SDPA is failing for phi models on VLM model reusing")
-    
+
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
         "Why is the Sun yellow?",
@@ -1261,11 +1253,7 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(
 
         current_iter += 1
         streamer_generation_result += subword
-        return (
-            ov_genai.StreamingStatus.CANCEL
-            if current_iter == num_iters
-            else ov_genai.StreamingStatus.RUNNING
-        )
+        return ov_genai.StreamingStatus.CANCEL if current_iter == num_iters else ov_genai.StreamingStatus.RUNNING
 
     generation_config = _setup_generation_config(
         ov_pipe, ignore_eos=True, do_sample=False
@@ -1548,16 +1536,16 @@ def test_model_tags_older(ov_pipe_model: VlmModelInfo, car_tensor: openvino.Tens
     with pytest.raises(RuntimeError):
         ov_pipe.generate("<ov_genai_image_0>", images=[car_tensor])
     ov_pipe.finish_chat()
-        
-        
+
+
 @model_and_tag_parametrize()
 def test_model_tags_missing_universal(ov_pipe_model: VlmModelInfo):
     ov_pipe = ov_pipe_model.pipeline
     
     with pytest.raises(RuntimeError):
         ov_pipe.generate("<ov_genai_image_0>")
-        
-        
+
+
 @model_and_tag_parametrize()
 def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
     ov_pipe = ov_pipe_model.pipeline

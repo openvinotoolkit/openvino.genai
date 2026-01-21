@@ -264,11 +264,14 @@ def test_continuous_batching_add_request_health_check(
 
     while cb_pipe.has_non_finished_requests():
         cb_pipe.step()
-        
+
     for handle in handles:
         outputs = handle.read_all()
         for output in outputs:
-            assert output.finish_reason == ov_genai.GenerationFinishReason.STOP or output.finish_reason == ov_genai.GenerationFinishReason.LENGTH
+            assert (
+                output.finish_reason == ov_genai.GenerationFinishReason.STOP
+                or output.finish_reason == ov_genai.GenerationFinishReason.LENGTH
+            )
 
 @pytest.mark.parametrize(
     "generation_config_kwargs", 
@@ -539,7 +542,11 @@ def test_dynamic_split_fuse_doesnt_affect_generated_text():
     scheduler_config_target = dict_to_scheduler_config({"dynamic_split_fuse": True, "max_num_batched_tokens": 5})
     cb_pipe_target = create_ov_pipeline(models_path, scheduler_config=scheduler_config_target, pipeline_type=pipeline_type)
 
-    generation_config = ov_genai.GenerationConfig(do_sample=False, max_new_tokens=20, eos_token_id=cb_pipe_ref.get_tokenizer().get_eos_token_id())
+    generation_config = ov_genai.GenerationConfig(
+        do_sample=False,
+        max_new_tokens=20,
+        eos_token_id=cb_pipe_ref.get_tokenizer().get_eos_token_id(),
+    )
 
     generation_config = prepare_generation_config_by_pipe_type(generation_config=generation_config, pipeline_type=pipeline_type)
     cb_pipe_ref.set_generation_config(generation_config)
