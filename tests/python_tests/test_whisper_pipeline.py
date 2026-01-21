@@ -714,9 +714,13 @@ def test_random_sampling(model_descr, sample_from_dataset):
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_perf_metrics(model_descr, sample_from_dataset):
-    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
+    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr, word_timestamps=True)
 
-    result = genai_pipe.generate(sample_from_dataset)
+    result = genai_pipe.generate(
+        sample_from_dataset,
+        return_timestamps=True,
+        word_timestamps=True,
+    )
 
     perf_metrics = result.perf_metrics
 
@@ -735,6 +739,7 @@ def test_perf_metrics(model_descr, sample_from_dataset):
     assert perf_metrics.get_detokenization_duration().mean > 0
     assert perf_metrics.get_detokenization_duration().mean > 0
     assert perf_metrics.get_features_extraction_duration().mean > 0
+    assert perf_metrics.get_word_level_timestamps_processing_duration().mean > 0
 
     # assert that calculating statistics manually from the raw counters we get the same results as from PerfMetrics
     whisper_raw_metrics = perf_metrics.whisper_raw_metrics
@@ -743,6 +748,11 @@ def test_perf_metrics(model_descr, sample_from_dataset):
     mean_dur, std_dur = perf_metrics.get_features_extraction_duration()
     assert np.allclose(mean_dur, np.mean(raw_dur))
     assert np.allclose(std_dur, np.std(raw_dur))
+
+    word_ts_raw_dur = np.array(whisper_raw_metrics.word_level_timestamps_processing_durations) / 1000
+    mean_dur, std_dur = perf_metrics.get_word_level_timestamps_processing_duration()
+    assert np.allclose(mean_dur, np.mean(word_ts_raw_dur))
+    assert np.allclose(std_dur, np.std(word_ts_raw_dur))
 
 
 @pytest.fixture(params=[

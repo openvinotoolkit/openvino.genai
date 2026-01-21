@@ -207,6 +207,9 @@ auto raw_perf_metrics_docstring = R"(
 
     :param features_extraction_durations: Duration for each features extraction call.
     :type features_extraction_durations: list[MicroSeconds]
+
+    :param word_level_timestamps_processing_durations: Duration for each word-level timestamps processing call.
+    :type word_level_timestamps_processing_durations: list[MicroSeconds]
 )";
 
 auto perf_metrics_docstring = R"(
@@ -214,6 +217,9 @@ auto perf_metrics_docstring = R"(
 
     :param get_features_extraction_duration: Returns mean and standard deviation of features extraction duration in milliseconds
     :type get_features_extraction_duration: MeanStdPair
+
+    :param get_word_level_timestamps_processing_duration: Returns mean and standard deviation of word-level timestamps processing duration in milliseconds
+    :type get_word_level_timestamps_processing_duration: MeanStdPair
 
     :param whisper_raw_metrics: Whisper specific raw metrics
     :type WhisperRawPerfMetrics:
@@ -351,11 +357,15 @@ void init_whisper_pipeline(py::module_& m) {
         .def(py::init<>())
         .def_property_readonly("features_extraction_durations", [](const WhisperRawPerfMetrics& rw) {
             return common_utils::get_ms(rw, &WhisperRawPerfMetrics::features_extraction_durations);
+        })
+        .def_property_readonly("word_level_timestamps_processing_durations", [](const WhisperRawPerfMetrics& rw) {
+            return common_utils::get_ms(rw, &WhisperRawPerfMetrics::word_level_timestamps_processing_durations);
         });
 
     py::class_<WhisperPerfMetrics, PerfMetrics>(m, "WhisperPerfMetrics", perf_metrics_docstring)
         .def(py::init<>())
         .def("get_features_extraction_duration", &WhisperPerfMetrics::get_features_extraction_duration)
+        .def("get_word_level_timestamps_processing_duration", &WhisperPerfMetrics::get_word_level_timestamps_processing_duration)
         .def_readonly("whisper_raw_metrics", &WhisperPerfMetrics::whisper_raw_metrics);
 
     py::class_<WhisperDecodedResultChunk>(m, "WhisperDecodedResultChunk", whisper_decoded_result_chunk)
