@@ -350,7 +350,12 @@ def load_visual_text_model(
             )
         except ValueError:
             try:
-                model_cls = AutoModelForImageTextToText if config.model_type in ["smolvlm"] else AutoModel
+                model_cls = AutoModel
+                if config.model_type in ["smolvlm"]:
+                    model_cls = AutoModelForImageTextToText
+                elif config.model_type in ["gemma3"]:
+                    model_cls = AutoModelForCausalLM
+
                 model = model_cls.from_pretrained(
                     model_id, trust_remote_code=trust_remote_code, device_map=device.lower()
                 )
