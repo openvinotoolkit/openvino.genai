@@ -58,14 +58,12 @@ def get_whisper_models_list(tiny_only=False):
 # used whisper models are relatively small
 # cache them in memory to speedup tests
 @functools.lru_cache()
-def read_whisper_model(params, stateful=True, word_timestamps=False):
+def read_whisper_model(params, word_timestamps=False):
     model_id, path = params
-    if not stateful:
-        path = pathlib.Path(f"{path}_with_past")
 
     manager = AtomicDownloadManager(path)
     if not manager.is_complete() and not (path / "openvino_encoder_model.xml").exists():
-        save_model(model_id=model_id, tmp_path=path, stateful=stateful)
+        save_model(model_id=model_id, tmp_path=path)
 
     opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
         path,
@@ -97,7 +95,7 @@ def read_whisper_model(params, stateful=True, word_timestamps=False):
     )
 
 
-def save_model(model_id: str, tmp_path: pathlib.Path, stateful=True):
+def save_model(model_id: str, tmp_path: pathlib.Path):
     manager = AtomicDownloadManager(tmp_path)
 
     def save_to_temp(temp_path: pathlib.Path) -> None:
@@ -117,7 +115,6 @@ def save_model(model_id: str, tmp_path: pathlib.Path, stateful=True):
             model_id,
             export=True,
             trust_remote_code=True,
-            stateful=stateful,
             compile=False,
             device="CPU",
             load_in_8bit=False,
@@ -241,9 +238,6 @@ def run_pipeline_with_ref(
     streamer: typing.Callable[[str], bool] | None = None,
 ):
     _, _, hf_pipe, genai_pipe = read_whisper_model((model_id, tmp_path))
-    _, _, _, genai_with_past_pipe = read_whisper_model(
-        (model_id, tmp_path), stateful=False
-    )
 
     if type(sample) is np.ndarray and len(sample.shape) == 1:
         sample = np.expand_dims(sample, 0)
@@ -253,12 +247,6 @@ def run_pipeline_with_ref(
         hf_result = run_huggingface(hf_pipe, _sample, generation_config)
 
         compare_results(hf_result, genai_result)
-
-        genai_with_past_result = run_genai(
-            genai_with_past_pipe, _sample, generation_config, streamer
-        )
-
-        compare_results(hf_result, genai_with_past_result)
 
 
 def compare_results(hf_result, genai_result):
@@ -507,32 +495,6 @@ def test_return_timestamps_max_new_tokens_short_form(model_descr, sample_from_da
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_longform_audio(model_descr, sample_from_dataset):
     _, _, hf_pipe, genai_pipe = read_whisper_model(model_descr)
-
-    streamer_result = []
-
-    genai_result = run_genai(
-        genai_pipe,
-        sample_from_dataset,
-        config=ov_genai.WhisperGenerationConfig(return_timestamps=True),
-        streamer=lambda x: streamer_result.append(x),
-    )
-
-    hf_result = run_huggingface(
-        hf_pipe,
-        sample_from_dataset,
-        config=ov_genai.WhisperGenerationConfig(return_timestamps=True),
-    )
-
-    compare_results(hf_result, genai_result)
-
-    assert "".join(streamer_result) == hf_result["text"]
-
-
-@pytest.mark.parametrize("model_descr", get_whisper_models_list())
-@pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(n=2, long_form=True)], indirect=True)
-@pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
-def test_longform_audio_with_past(model_descr, sample_from_dataset):
-    _, _, hf_pipe, genai_pipe = read_whisper_model(model_descr, stateful=True)
 
     streamer_result = []
 

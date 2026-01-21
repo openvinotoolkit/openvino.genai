@@ -70,6 +70,17 @@ def get_results_cpu_npu(model_path, audio_sample, **config_kwargs):
 
     return expected, actual_out
 
+
+def get_results_npu_stateful_stateless(stateful_model_path, stateless_model_path, audio_sample, **config_kwargs):
+    stateful_pipe = ov_genai.WhisperPipeline(stateful_model_path, "NPU", **config)
+    stateful_out = stateful_pipe.generate(audio_sample, **config_kwargs)
+
+    stateless_pipe = ov_genai.WhisperPipeline(stateless_model_path, "NPU", **config)
+    stateless_out = stateless_pipe.generate(audio_sample, **config_kwargs)
+
+    return stateful_out, stateless_out
+
+
 def compare_results_with_assert(expected, actual_out):
     assert len(expected.texts) == len(actual_out.texts)
 
@@ -82,10 +93,13 @@ def compare_results_with_assert(expected, actual_out):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0}], indirect=True)
-def test_static_whisper_generation_compare_with_cpu(model_descr, sample_from_dataset):
-    model_id, model_path = load_and_save_whisper_model(model_descr)
+def test_static_whisper_generation_compare_stateless(model_descr, sample_from_dataset):
+    model_id, stateful_model_path = load_and_save_whisper_model(model_descr, stateful=True)
+    model_id, stateless_model_path = load_and_save_whisper_model(model_descr, stateful=False)
 
-    expected, actual_out = get_results_cpu_npu(model_path, sample_from_dataset)
+    expected, actual_out = get_results_npu_stateful_stateless(
+        stateful_model_path, stateless_model_path, sample_from_dataset
+    )
 
     compare_results_with_assert(expected, actual_out)
 
@@ -95,9 +109,12 @@ def test_static_whisper_generation_compare_with_cpu(model_descr, sample_from_dat
                                                  *get_fixture_params_for_n_whisper_dataset_samples(n=2, language="de"),
                                                  *get_fixture_params_for_n_whisper_dataset_samples(n=2, language="es")], indirect=True)
 def test_static_whisper_autodetect(model_descr, sample_from_dataset):
-    model_id, model_path = load_and_save_whisper_model(model_descr)
+    model_id, stateful_model_path = load_and_save_whisper_model(model_descr, stateful=True)
+    model_id, stateless_model_path = load_and_save_whisper_model(model_descr, stateful=False)
 
-    expected, actual_out = get_results_cpu_npu(model_path, sample_from_dataset)
+    expected, actual_out = get_results_npu_stateful_stateless(
+        stateful_model_path, stateless_model_path, sample_from_dataset
+    )
 
     compare_results_with_assert(expected, actual_out)
 
@@ -105,9 +122,12 @@ def test_static_whisper_autodetect(model_descr, sample_from_dataset):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='de', n=3)], indirect=True)
 def test_static_whisper_language_de(model_descr, sample_from_dataset):
-    model_id, model_path = load_and_save_whisper_model(model_descr)
+    model_id, stateful_model_path = load_and_save_whisper_model(model_descr, stateful=True)
+    model_id, stateless_model_path = load_and_save_whisper_model(model_descr, stateful=False)
 
-    expected, actual_out = get_results_cpu_npu(model_path, sample_from_dataset, max_new_tokens=30, language="<|de|>")
+    expected, actual_out = get_results_npu_stateful_stateless(
+        stateful_model_path, stateless_model_path, sample_from_dataset, max_new_tokens=30, language="<|de|>"
+    )
 
     compare_results_with_assert(expected, actual_out)
 
@@ -115,9 +135,12 @@ def test_static_whisper_language_de(model_descr, sample_from_dataset):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='fr', n=3)], indirect=True)
 def test_static_whisper_language_fr(model_descr, sample_from_dataset):
-    model_id, model_path = load_and_save_whisper_model(model_descr)
+    model_id, stateful_model_path = load_and_save_whisper_model(model_descr, stateful=True)
+    model_id, stateless_model_path = load_and_save_whisper_model(model_descr, stateful=False)
 
-    expected, actual_out = get_results_cpu_npu(model_path, sample_from_dataset, max_new_tokens=30, language="<|fr|>")
+    expected, actual_out = get_results_npu_stateful_stateless(
+        stateful_model_path, stateless_model_path, sample_from_dataset, max_new_tokens=30, language="<|fr|>"
+    )
 
     compare_results_with_assert(expected, actual_out)
 
@@ -125,9 +148,12 @@ def test_static_whisper_language_fr(model_descr, sample_from_dataset):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [*get_fixture_params_for_n_whisper_dataset_samples(language='ru', n=3)], indirect=True)
 def test_static_whisper_language_ru(model_descr, sample_from_dataset):
-    model_id, model_path = load_and_save_whisper_model(model_descr)
+    model_id, stateful_model_path = load_and_save_whisper_model(model_descr, stateful=True)
+    model_id, stateless_model_path = load_and_save_whisper_model(model_descr, stateful=False)
 
-    expected, actual_out = get_results_cpu_npu(model_path, sample_from_dataset, max_new_tokens=30, language="<|ru|>")
+    expected, actual_out = get_results_npu_stateful_stateless(
+        stateful_model_path, stateless_model_path, sample_from_dataset, max_new_tokens=30, language="<|ru|>"
+    )
 
     compare_results_with_assert(expected, actual_out)
 
@@ -135,9 +161,12 @@ def test_static_whisper_language_ru(model_descr, sample_from_dataset):
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0, "long_form": True}], indirect=True)
 def test_static_whisper_generation_long(model_descr, sample_from_dataset):
-    model_id, model_path = load_and_save_whisper_model(model_descr)
+    model_id, stateful_model_path = load_and_save_whisper_model(model_descr, stateful=True)
+    model_id, stateless_model_path = load_and_save_whisper_model(model_descr, stateful=False)
 
-    expected, actual_out = get_results_cpu_npu(model_path, sample_from_dataset)
+    expected, actual_out = get_results_npu_stateful_stateless(
+        stateful_model_path, stateless_model_path, sample_from_dataset
+    )
 
     compare_results_with_assert(expected, actual_out)
 

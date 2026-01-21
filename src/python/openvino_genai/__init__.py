@@ -24,6 +24,7 @@ from .py_openvino_genai import (
 
 from .py_openvino_genai import (
     Parser,
+    VLLMParserWrapper,
     ReasoningParser,
     DeepSeekR1ReasoningParser,
     Phi4ReasoningParser,

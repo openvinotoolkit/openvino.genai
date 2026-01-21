@@ -459,7 +459,7 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
                 }
             );
 
-            auto callback_wrapped = [shared_callback](std::string subword) -> ov::genai::StreamingStatus {
+            auto callback_wrapped = [shared_callback = std::move(shared_callback)](std::string subword) -> ov::genai::StreamingStatus {
                 py::gil_scoped_acquire acquire;
                 PyObject* py_str = PyUnicode_DecodeUTF8(subword.data(), subword.length(), "replace");
                 if (!py_str) {
