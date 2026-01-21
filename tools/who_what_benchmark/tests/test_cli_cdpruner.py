@@ -82,7 +82,9 @@ def run_test(model_id, model_type, tmp_path, pruning_ratio, relevance_weight):
     )
 
     pruning_ratio_int = int(pruning_ratio)
-    if 0 < pruning_ratio_int < 100:
+    if pruning_ratio_int == 0:
+        pruner_info = "pruning_ratio is 0, pruning disabled!"
+    elif 0 < pruning_ratio_int < 100:
         pruner_info = f"Pruning Ratio: {pruning_ratio_int}%"
     elif pruning_ratio_int == 100:
         pruner_info = "Original visual tokens and pruned visual tokens are the same!"
@@ -93,6 +95,7 @@ def run_test(model_id, model_type, tmp_path, pruning_ratio, relevance_weight):
 @pytest.mark.parametrize(
     ("model_id", "model_type", "pruning_ratio", "relevance_weight"),
     [
+        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "visual-text", "0", "0.8"),
         ("optimum-intel-internal-testing/tiny-random-qwen2vl", "visual-text", "20", "0.8"),
         ("optimum-intel-internal-testing/tiny-random-qwen2vl", "visual-text", "100", "0.8"),
     ],
