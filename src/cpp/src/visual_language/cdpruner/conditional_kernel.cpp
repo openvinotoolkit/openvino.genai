@@ -389,8 +389,8 @@ std::shared_ptr<ov::Model> ConditionalKernelBuilder::create_similarity_matrix_mo
 
     auto result = std::make_shared<ov::op::v0::Result>(matmul);
 
-    return std::make_shared<ov::Model>(ov::ResultVector{result},
-                                       ov::ParameterVector{input_features},
+    return std::make_shared<ov::Model>(ov::ResultVector{std::move(result)},
+                                       ov::ParameterVector{std::move(input_features)},
                                        "SimilarityMatrix_Model");
 }
 
@@ -442,7 +442,7 @@ std::shared_ptr<ov::Model> ConditionalKernelBuilder::create_conditional_kernel_m
     }
 
     // Step 1.6: Min-max normalization to get relevance scores
-    auto relevance_scores = create_min_max_normalize_ops(processed_mean);
+    auto relevance_scores = create_min_max_normalize_ops(std::move(processed_mean));
 
     // ========== KERNEL COMPUTATION ==========
     // Step 2.1: Compute visual self-similarity matrix [B, N, N]
@@ -479,8 +479,8 @@ std::shared_ptr<ov::Model> ConditionalKernelBuilder::create_conditional_kernel_m
     // Create outputs
     auto kernel_result = std::make_shared<ov::op::v0::Result>(conditional_kernel);
 
-    return std::make_shared<ov::Model>(ov::ResultVector{kernel_result},
-                                       ov::ParameterVector{visual_input, text_input},
+    return std::make_shared<ov::Model>(ov::ResultVector{std::move(kernel_result)},
+                                       ov::ParameterVector{std::move(visual_input), std::move(text_input)},
                                        "CDPruner_Kernel_Model");
 }
 
