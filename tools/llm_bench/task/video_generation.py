@@ -88,9 +88,9 @@ class TextToVideoOptimum(CommonPipeline):
         return input_tokens[0].numel()
 
     def print_batch_size_info(self, iter_num: int, input_args: dict):
-        out_str = "[warm-up]" if iter_num == 0 else "[{}]".format(iter_num)
+        iter_prefix = "[warm-up]" if iter_num == 0 else "[{}]".format(iter_num)
         out_str = (
-            f"Input params: Batch_size={self.batch_size}, "
+            f"{iter_prefix} Input params: Batch_size={self.batch_size}, "
             f"steps={self.num_steps}, width={input_args['width']}, "
             f"height={input_args['height']}, frame number={input_args['num_frames']}"
         )
@@ -127,6 +127,7 @@ class TextToVideoOptimum(CommonPipeline):
                 bs_idx,
                 proc_id,
                 ".mp4",
+                fps=self.frame_rate or 24,
             )
 
         iter_data = gen_output_data.gen_iterate_data(
@@ -230,9 +231,9 @@ class TextToVideoGenAI(CommonPipeline):
         return self.tokenizer(prompt, return_tensors="pt").input_ids.numel()
 
     def print_batch_size_info(self, iter_num: int, input_args: dict):
-        out_str = "[warm-up]" if iter_num == 0 else "[{}]".format(iter_num)
+        iter_prefix = "[warm-up]" if iter_num == 0 else "[{}]".format(iter_num)
         out_str = (
-            f"Input params: Batch_size={self.batch_size}, "
+            f"{iter_prefix} Input params: Batch_size={self.batch_size}, "
             f"steps={self.num_steps}, width={input_args['width']}, "
             f"height={input_args['height']}, frame number={input_args['num_frames']}"
         )
@@ -266,6 +267,7 @@ class TextToVideoGenAI(CommonPipeline):
                 bs_idx,
                 proc_id,
                 ".mp4",
+                fps=self.frame_rate or 24,
             )
 
         perf_metrics = generation_result.perf_metrics

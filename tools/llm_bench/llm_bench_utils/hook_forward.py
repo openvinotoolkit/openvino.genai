@@ -144,7 +144,7 @@ class StableDiffusionHook:
         self.clear_statistics()
         if pipe.text_encoder.request:
             self.new_text_encoder(pipe)
-        if pipe.unet or pipe.transformer:
+        if pipe.unet is not None or pipe.transformer is not None:
             self.new_main_model(pipe)
         if pipe.vae_decoder.request:
             self.new_vae_decoder(pipe)

@@ -42,7 +42,7 @@ def save_video_file(
     frames,
     video_save_name,
     args,
-    fps: int = 24,
+    fps: int,
 ):
     save_path = get_file_path(args["output_dir"], video_save_name)
 
@@ -144,7 +144,7 @@ def output_gen_audio(audio, args, prompt_idx, iteration, batchsize_idx, proc_id,
     return audio_save_path
 
 
-def output_gen_video(video, args, prompt_idx, iteration, batchsize_idx, proc_id, suffix):
+def output_gen_video(video, args, prompt_idx, iteration, batchsize_idx, proc_id, suffix, fps: int):
     video_save_name = construct_file_name(
         args["batch_size"],
         args["model_name"],
@@ -155,5 +155,5 @@ def output_gen_video(video, args, prompt_idx, iteration, batchsize_idx, proc_id,
         proc_id=proc_id,
         suffix=f"_output{suffix}",
     )
-    video_save_path = save_video_file(video, video_save_name, args)
+    video_save_path = save_video_file(video, video_save_name, args, fps)
     return video_save_path
