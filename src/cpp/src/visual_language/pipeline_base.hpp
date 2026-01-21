@@ -59,7 +59,7 @@ public:
                 images_vector.insert(images_vector.end(), imgs.begin(), imgs.end());
             } else if (images->second.is<ov::Tensor>()) {
                 images_vector.push_back(std::move(images->second.as<ov::Tensor>()));
-            } else {
+            } else if (!images->second.empty()) {
                 OPENVINO_THROW("Unknown images type.");
             }
         }
@@ -69,7 +69,7 @@ public:
                 videos_vector = videos->second.as<std::vector<ov::Tensor>>();
             } else if (videos->second.is<ov::Tensor>()) {
                 videos_vector = {videos->second.as<ov::Tensor>()};
-            } else {
+            } else if (!videos->second.empty()) {
                 OPENVINO_THROW("Unknown videos type.");
             }
         }
