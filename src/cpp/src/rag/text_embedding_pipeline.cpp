@@ -10,8 +10,8 @@
 #include "logger.hpp"
 #include "openvino/core/except.hpp"
 #include "openvino/genai/rag/npu/text_embedding_pipeline.hpp"
-#include "openvino/genai/rag/text_embedding_utils.hpp"
 #include "openvino/genai/tokenizer.hpp"
+#include "text_embedding_utils.hpp"
 #include "utils.hpp"
 
 namespace {
@@ -118,10 +118,7 @@ public:
                                                           properties,
                                                           m_max_position_embeddings,
                                                           is_seq_len_fixed);
-            auto post_request = create_text_embedding_npu_post_request(model, m_config);
-            if (post_request.has_value()) {
-                m_post_request = post_request.value();
-            }
+            m_post_request = create_text_embedding_npu_post_request(model, m_config);
         } else {
             if (m_config.batch_size.has_value() || m_config.max_length.has_value()) {
                 utils::reshape_model(model, m_config, m_max_position_embeddings);
@@ -178,7 +175,7 @@ private:
     std::optional<size_t> m_max_position_embeddings;
     ov::Tensor m_attention_mask;
 
-    ov::Tensor post_model_infer(ov::Tensor input) {
+    ov::Tensor post_model_infer(const ov::Tensor& input) {
         if (!m_post_request) {
             return input;
         }
