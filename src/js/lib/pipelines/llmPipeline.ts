@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 import util from "node:util";
 import { ChatHistory, LLMPipeline as LLMPipelineWrap } from "../addon.js";
 import { GenerationConfig, StreamingStatus, LLMPipelineProperties } from "../utils.js";
