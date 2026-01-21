@@ -166,6 +166,7 @@ char generation_config_docstring[] = R"(
     echo:           if set to true, the model will echo the prompt in the output.
     logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                     Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+    parsers:        list of Parser objects to parse the generated text.
     apply_chat_template: whether to apply chat_template for non-chat scenarios
 
     repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.

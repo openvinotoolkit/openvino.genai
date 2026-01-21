@@ -47,6 +47,12 @@ protected:
     void compute_decoded_length_for_position(size_t cache_position);
 };
 
+/**
+ * @brief TextParserStreamer is used to decode tokens into text, parse the text and call a user-defined callback function.
+ *
+ * @param tokenizer Tokenizer object to decode tokens into text.
+ * @param parsers Vector of IncrementalParser objects to parse the decoded text.
+ */
 class OPENVINO_GENAI_EXPORTS TextParserStreamer : public TextStreamer {
 public:
     class TextParserStreamerImpl;
