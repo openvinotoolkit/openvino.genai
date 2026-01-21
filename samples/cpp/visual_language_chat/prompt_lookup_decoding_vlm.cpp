@@ -24,7 +24,8 @@ int main(int argc, char* argv[]) try {
 
     std::string device = "CPU";
 
-    // Currently only for ATTENTION_BACKEND="PA", PLD is enabled.
+    // Prompt lookup decoding is implemented only for ContiniousBatching backend
+    // which is the default backed for all models except for Qwen2VL, Qwen2.5VL, and Gemma3 due to accuracy issues.
     ov::genai::VLMPipeline pipe(
         model_path,
         device,
