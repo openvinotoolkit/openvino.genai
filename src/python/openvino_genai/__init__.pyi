@@ -79,7 +79,6 @@ from openvino_genai.py_openvino_genai import WhisperGenerationConfig
 from openvino_genai.py_openvino_genai import WhisperPerfMetrics
 from openvino_genai.py_openvino_genai import WhisperPipeline
 from openvino_genai.py_openvino_genai import WhisperRawPerfMetrics
-from openvino_genai.py_openvino_genai import WhisperWordTiming
 from openvino_genai.py_openvino_genai import draft_model
 from openvino_genai.py_openvino_genai import get_version
 import os as os

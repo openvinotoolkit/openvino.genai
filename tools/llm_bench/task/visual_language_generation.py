@@ -15,7 +15,7 @@ import llm_bench_utils.output_file
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
 from llm_bench_utils.prompt_utils import extract_prompt_data
-from llm_bench_utils.prompt_utils import get_image_text_prompt
+from llm_bench_utils.prompt_utils import get_vlm_prompt
 
 
 DEFAULT_OUTPUT_TOKEN_SIZE = 512
@@ -302,7 +302,7 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
     md5_list = {num : {} for num in range(num_iters + 1)}
-    input_image_text_list = get_image_text_prompt(args)
+    input_image_text_list = get_vlm_prompt(args)
     if args['prompt_index'] is None:
         prompt_idx_list = list(range(0, len(input_image_text_list)))
         image_text_list = input_image_text_list
