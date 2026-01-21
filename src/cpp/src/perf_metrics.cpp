@@ -226,38 +226,5 @@ PerfMetrics& PerfMetrics::operator+=(const PerfMetrics& right) {
     return *this;
 }
 
-std::string PerfMetrics::to_string() const {
-    std::ostringstream oss;
-    oss << std::fixed << std::setprecision(2);
-
-    oss << "Performance Metrics:\n";
-    oss << "  Load time: " << load_time << " ms\n";
-    oss << "  Generate duration: " << generate_duration.mean << " ± " << generate_duration.std << " ms\n";
-    oss << "  Inference duration: " << inference_duration.mean << " ± " << inference_duration.std << " ms\n";
-    oss << "  Tokenization duration: " << tokenization_duration.mean << " ± " << tokenization_duration.std << " ms\n";
-    oss << "  Detokenization duration: " << detokenization_duration.mean << " ± " << detokenization_duration.std
-        << " ms\n";
-    oss << "  TTFT: " << ttft.mean << " ± " << ttft.std << " ms\n";
-    oss << "  TPOT: " << tpot.mean << " ± " << tpot.std << " ms/token\n";
-    oss << "  IPOT: " << ipot.mean << " ± " << ipot.std << " ms/token\n";
-    oss << "  Throughput: " << throughput.mean << " ± " << throughput.std << " tokens/s\n";
-    oss << "  Number of input tokens: " << num_input_tokens << "\n";
-    oss << "  Number of generated tokens: " << num_generated_tokens << "\n";
-
-    if (!grammar_compiler_init_times.empty()) {
-        oss << "  Grammar compiler init times:\n";
-        for (const auto& [backend, time] : grammar_compiler_init_times) {
-            oss << "    " << backend << ": " << time << " ms\n";
-        }
-    }
-
-    if (grammar_compile_time.mean >= 0) {
-        oss << "  Grammar compile time: " << grammar_compile_time.mean << " ± " << grammar_compile_time.std
-            << " ms (min: " << grammar_compile_time.min << ", max: " << grammar_compile_time.max << ")\n";
-    }
-
-    return oss.str();
-}
-
 } // namespace genai
 } // namespace ov

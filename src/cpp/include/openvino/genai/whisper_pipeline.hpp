@@ -100,8 +100,6 @@ struct OPENVINO_GENAI_EXPORTS WhisperPerfMetrics : public PerfMetrics {
     WhisperPerfMetrics& operator+=(const WhisperPerfMetrics& right);
 
     WhisperRawPerfMetrics whisper_raw_metrics;
-
-    std::string to_string() const override;
 };
 
 struct WhisperWordTiming {

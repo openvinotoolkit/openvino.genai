@@ -63,20 +63,5 @@ WhisperPerfMetrics& WhisperPerfMetrics::operator+=(const WhisperPerfMetrics& rig
     return *this;
 }
 
-std::string WhisperPerfMetrics::to_string() const {
-    std::string base = PerfMetrics::to_string();
-    std::ostringstream oss;
-    oss << std::fixed << std::setprecision(2);
-
-    oss << base;
-    oss << "  Features extraction duration: " << features_extraction_duration.mean << " ± "
-        << features_extraction_duration.std << " ms\n";
-
-    oss << "  Word-level timestamps processing duration: " << word_level_timestamps_processing_duration.mean << " ± "
-        << word_level_timestamps_processing_duration.std << " ms\n";
-
-    return oss.str();
-}
-
 }  // namespace genai
 }  // namespace ov
