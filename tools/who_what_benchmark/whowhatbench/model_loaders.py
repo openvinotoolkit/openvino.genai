@@ -346,6 +346,7 @@ def load_visual_text_model(
         # force downloading to .cache image_processing file, as it is not happened by default
         if config.model_type.lower() in ["minicpmo"]:
             from transformers import AutoImageProcessor
+
             AutoImageProcessor.from_pretrained(model_id, trust_remote_code=True)
 
         try:
