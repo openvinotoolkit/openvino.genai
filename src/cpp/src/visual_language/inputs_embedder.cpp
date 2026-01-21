@@ -441,8 +441,8 @@ NormalizedPrompt InputsEmbedder::normalize_prompt(const std::string& prompt,
 
 void verify_ids(const std::vector<size_t>& vision_indices, size_t base_idx, size_t n_visions) {
     for (size_t idx : vision_indices) {
-        OPENVINO_ASSERT(base_idx <= idx, "Referring to older vision is not supported.");
-        OPENVINO_ASSERT(idx < base_idx + n_visions, "Missing image ", idx);
+        OPENVINO_ASSERT(base_idx <= idx, "Referring to older images/videos is not supported.");
+        OPENVINO_ASSERT(idx < base_idx + n_visions, "Missing image/video with index ", idx);
     }
 }
 
@@ -463,7 +463,8 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedder::IInputsEmbedder::nor
         vision_type
     );
     if (!vision_sequence.empty()) {
-        OPENVINO_ASSERT(pos == std::string::npos, "Prompt can contain only one type of vision tags.");
+        OPENVINO_ASSERT(pos == std::string::npos,
+            "Prompt cannot mix universal tags (<ov_genai_image_i>/<ov_genai_video_i>) with native vision tags.");
         verify_ids(vision_sequence, base_idx, n_visions);
         return {std::move(vision_prompt), std::move(vision_sequence)};
     }
@@ -473,7 +474,9 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedder::IInputsEmbedder::nor
         pos = prompt.find(native_tag, pos + native_tag.length());
     }
     if (!vision_sequence.empty()) {
-        OPENVINO_ASSERT(vision_sequence.size() == n_visions, "The number of native vision tags and provided visions must match because it's ambiguous which vision should be ignored.");
+        OPENVINO_ASSERT(vision_sequence.size() == n_visions,
+            "The number of native vision tags must match the number of provided images/videos"
+            " because it's ambiguous which input should be ignored.");
         return {std::move(vision_prompt), std::move(vision_sequence)};
     }
     // Prepend automatic tags
