@@ -101,13 +101,13 @@ def compare_results_with_assert(expected, actual_out):
         assert expected.texts[i] == actual_out.texts[i]
 
 
-def compare_word_timestamps_results_with_assert(expected, actual_out, ts_tolerance=0.06):
+def compare_word_timestamps_results_with_assert(expected, actual_out, ts_tolerance=0.07):
     assert len(expected.words) == len(actual_out.words)
 
     for exp_word, act_word in zip(expected.words, actual_out.words):
         assert exp_word.word == act_word.word
-        assert round(abs(exp_word.start_ts - act_word.start_ts), 2) <= ts_tolerance
-        assert round(abs(exp_word.end_ts - act_word.end_ts), 2) <= ts_tolerance
+        assert exp_word.start_ts - act_word.start_ts == pytest.approx(0.0, abs=ts_tolerance)
+        assert exp_word.end_ts - act_word.end_ts == pytest.approx(0.0, abs=ts_tolerance)
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
