@@ -24,6 +24,7 @@ from utils.hugging_face import generation_config_to_hf, download_and_convert_mod
 from utils.tokenizers import delete_rt_info, model_tmp_path
 from utils.ov_genai_pipelines import create_ov_pipeline, generate_and_compare, MAIN_PIPELINE_TYPES, PipelineType, GenerationChatInputsType
 from data.models import get_models_list, CHAT_MODELS_LIST
+from openvino_tokenizers import _ext_path
 
 
 def assert_hf_equals_genai(hf_reference, genai_output):
@@ -910,6 +911,11 @@ def test_pipelines_generate_with_streaming(
 def test_llm_pipeline_add_extension():
     model_id = "katuni4ka/tiny-random-phi3"
     models_path = download_and_convert_model(model_id).models_path
+
+    if _ext_path.name:
+        path = os.path.dirname(ov_genai.__file__) + "/" + _ext_path.name
+        properties = {"extensions": [path]}
+        ov_genai.LLMPipeline(models_path, "CPU", **properties)
 
     properties = {"extensions": ["fake_path"]}
 

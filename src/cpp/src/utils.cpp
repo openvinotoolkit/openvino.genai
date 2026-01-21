@@ -719,7 +719,7 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
 };
 
 PathExtensions extract_extensions(ov::AnyMap& properties) {
-    auto it = properties.find(EXTENSIONS_ARG_NAME);
+    auto it = properties.find(ov::genai::extension.name());
     PathExtensions extensions = {};
     if (it != properties.end()) {
         extensions = it->second.as<std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>>();

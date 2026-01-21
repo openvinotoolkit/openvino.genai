@@ -41,6 +41,7 @@ import sys
 import os
 import numpy as np
 import transformers
+import openvino_genai
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from optimum.utils.import_utils import is_transformers_version
 from openvino_genai import (
@@ -1764,6 +1765,11 @@ def test_cdpruner_continuous_batching(
 
 def test_vlm_pipeline_add_extension():
     models_path = _get_ov_model(MODEL_IDS[0])
+
+    if openvino_tokenizers._ext_path.name:
+        path = os.path.dirname(openvino_genai.__file__) + "/" + openvino_tokenizers._ext_path.name
+        properties = {"extensions": [path]}
+        VLMPipeline(models_path, "CPU", config=properties)
 
     properties = {"extensions": ["fake_path"]}
 

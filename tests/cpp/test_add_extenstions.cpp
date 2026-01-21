@@ -8,7 +8,6 @@
 #include "utils.hpp"
 
 using namespace ov::genai::utils;
-using map_type = std::map<std::string, int64_t>;
 
 TEST(TestAddExtensions, test_extract_extensions) {
     ov::AnyMap properties = {
@@ -24,6 +23,8 @@ TEST(TestAddExtensions, test_add_extensions_to_core) {
     exe_path = "../openvino_genai/libopenvino_tokenizers.so";
 #elif defined(_WIN32)
     exe_path = "../openvino_genai/libopenvino_tokenizers.dll";
+#elif defined(__APPLE__)
+    exe_path = "../openvino_genai/libopenvino_tokenizers.dylib";
 #endif
     if (!exe_path.empty()) {
         ov::AnyMap properties1 = {ov::genai::extensions(std::vector<std::filesystem::path>{exe_path.c_str()})};

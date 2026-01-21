@@ -5,6 +5,7 @@ import os
 import pytest
 import math
 import sys
+import openvino_genai
 
 from pathlib import Path
 from shutil import rmtree
@@ -12,6 +13,8 @@ from shutil import rmtree
 from openvino_genai import ContinuousBatchingPipeline, LLMPipeline, GenerationConfig, SchedulerConfig, draft_model, GenerationFinishReason, ChatHistory
 
 from test_sampling import RandomSamplingTestStruct, get_current_platform_ref_texts
+
+from openvino_tokenizers import _ext_path
 
 from utils.generation_config import get_greedy, get_beam_search, \
     get_multinomial_all_parameters, get_multinomial_temperature_and_num_return_sequence, \
@@ -743,18 +746,10 @@ def test_continuous_batching_add_extension():
 
     scheduler_config = SchedulerConfig()
 
-    if sys.platform == "win32":
-        ext_path = "libopenvino_tokenizers.so"
-    elif sys.platform == "darwin":
-        ext_path = "libopenvino_tokenizers.dylib"
-    elif sys.platform == "linux":
-        ext_path = "libopenvino_tokenizers.so"
-    else:
-        ext_path = ""
-
-    if ext_path != "":
-        properties_linux = {"extensions": [ext_path]}
-        ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties_linux)
+    if _ext_path.name:
+        path = os.path.dirname(openvino_genai.__file__) + "/" + _ext_path.name
+        properties = {"extensions": [path]}
+        ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties)
 
     properties = {"extensions": ["fake_path"]}
 
