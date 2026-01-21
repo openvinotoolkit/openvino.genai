@@ -5,9 +5,14 @@
 #include "openvino/op/concat.hpp"
 
 std::shared_ptr<ov::Model> get_dummy_model(ov::Core core, size_t num_layers) {
+    // Default to u8 for unit tests (matches typical CPU inference default)
+    // Use the overloaded version with explicit kv_cache_type for other precisions (e.g., f16 for GPU)
+    return get_dummy_model(core, num_layers, ov::element::u8);
+}
+
+std::shared_ptr<ov::Model> get_dummy_model(ov::Core core, size_t num_layers, ov::element::Type kv_cache_type) {
     ov::NodeVector keys, values;
     ov::ParameterVector params;
-    ov::element::Type kv_cache_type = core.get_property("CPU", ov::hint::kv_cache_precision);
 
     auto shape = ov::PartialShape::dynamic(4);
     shape[1] = 12;

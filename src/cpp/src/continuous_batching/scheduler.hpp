@@ -163,6 +163,10 @@ public:
         m_block_manager->restore_cached_blocks(sequence_group);
     }
 
+    bool restore_from_disk_cache(const SequenceGroup::Ptr& sequence_group, size_t num_cached_tokens) {
+        return m_block_manager->restore_from_disk_cache(sequence_group, num_cached_tokens);
+    }
+
     const SchedulerConfig& get_config() const {
         return m_config;
     }
@@ -175,6 +179,18 @@ public:
         OPENVINO_ASSERT(m_config.enable_prefix_caching == false, "KV-cache should not be cleared if prefix caching is enabled.");
         m_cache_manager->clear();
         m_block_manager->clear();
+    }
+
+    const std::shared_ptr<BlockManager> get_block_manager() const {
+        return m_block_manager;
+    }
+
+    const std::shared_ptr<CacheManager> get_cache_manager() const {
+        return m_cache_manager;
+    }
+
+    size_t get_total_kv_blocks() const {
+        return m_block_manager->get_total_number_of_kv_blocks();
     }
 
 private:
@@ -286,6 +302,7 @@ private:
 
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
+
             if (!sequence_group->can_generate_tokens() && !sequence_group->is_waiting() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
                 size_t num_running_seqs = sequence_group->num_running_seqs();
                 // prompt phases can have a single running sequence
@@ -457,6 +474,7 @@ private:
 
         for (size_t sequence_group_id = 0; sequence_group_id < sequence_groups.size(); ++sequence_group_id) {
             SequenceGroup::Ptr sequence_group = sequence_groups[sequence_group_id];
+
             const bool recompute_evicted_sequences = sequence_group->get_num_processed_tokens() == 0 && !m_can_use_partial_preemption;
             if ((!sequence_group->can_generate_tokens() || recompute_evicted_sequences) && !sequence_group->is_waiting() && !sequence_group->handle_stopped() && !sequence_group->handle_cancelled()) {
                 size_t num_running_seqs = sequence_group->num_running_seqs();

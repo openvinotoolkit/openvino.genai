@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <sstream>
+#include <string>
 
 #include "openvino/genai/cache_eviction.hpp"
 #include "openvino/genai/sparse_attention.hpp"
@@ -68,11 +69,28 @@ struct SchedulerConfig {
      */
     SparseAttentionConfig sparse_attention_config;
 
+    /**
+     * Directory path to load pre-computed KV cache from disk.
+     * When set, the pipeline will attempt to restore KV cache state from this directory
+     * during initialization, enabling fast context restoration without re-computation.
+     * Takes precedence over the OV_GENAI_LOAD_KV_DIR environment variable.
+     */
+    std::string kv_cache_load_dir;
+
+    /**
+     * Directory path to dump KV cache to disk.
+     * When set, the pipeline will save KV cache state to this directory after prefill,
+     * enabling future runs to restore the cached state for faster startup.
+     * Takes precedence over the OV_GENAI_DUMP_KV_DIR environment variable.
+     */
+    std::string kv_cache_dump_dir;
+
     bool operator==(const SchedulerConfig& other) const {
         return max_num_batched_tokens == other.max_num_batched_tokens && num_kv_blocks == other.num_kv_blocks &&
                cache_size == other.cache_size &&
                dynamic_split_fuse == other.dynamic_split_fuse && use_cache_eviction == other.use_cache_eviction &&
-               max_num_seqs == other.max_num_seqs && enable_prefix_caching == other.enable_prefix_caching;
+               max_num_seqs == other.max_num_seqs && enable_prefix_caching == other.enable_prefix_caching &&
+               kv_cache_load_dir == other.kv_cache_load_dir && kv_cache_dump_dir == other.kv_cache_dump_dir;
     }
 
     /**
@@ -98,6 +116,12 @@ struct SchedulerConfig {
         oss << "  use_sparse_attention: " << std::boolalpha << use_sparse_attention << "\n";
         if (use_sparse_attention) {
             oss << sparse_attention_config.to_string() << "\n";
+        }
+        if (!kv_cache_load_dir.empty()) {
+            oss << "  kv_cache_load_dir: " << kv_cache_load_dir << "\n";
+        }
+        if (!kv_cache_dump_dir.empty()) {
+            oss << "  kv_cache_dump_dir: " << kv_cache_dump_dir << "\n";
         }
         oss << " }";
         return oss.str();
