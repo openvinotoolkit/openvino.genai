@@ -85,9 +85,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate
                 }
             }
 
-            GENAI_DEBUG(print_token_id(generated_tokens, "generated_tokens", sampling_params.num_assistant_tokens + 1, m_tokenizer));
-            GENAI_DEBUG(print_token_id(candidates, "candidates", candidates.size(), m_tokenizer));
-
             for (const auto& candidate : candidates) {
                 running_sequence->append_token(candidate, 0);
             }
