@@ -1,3 +1,6 @@
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 from .registry import register_evaluator, EVALUATOR_REGISTRY
 from .text_evaluator import TextEvaluator
 from .text_evaluator import TextEvaluator as Evaluator
