@@ -1065,8 +1065,9 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
 
     const size_t max_sequence_length = 448;
 
-    // When word_timestamps is enabled decoder can receive tokens decoded from entire audio chunk which is 447
-    const size_t decoder_max_prompt_len = m_generation_config.word_timestamps ? (max_sequence_length - 1) : MAX_PROMPT_LEN;
+    // When word_timestamps is enabled, the decoder may receive tokens decoded from the entire audio chunk.
+    // We use max_sequence_length - 1 (447). Setting decoder_max_prompt_len to 448 leads to shape mismatch exception.
+    const size_t decoder_max_prompt_len = m_generation_config.word_timestamps ? (max_sequence_length) : MAX_PROMPT_LEN;
 
     add_attention_mask_input(decoder_model, true /* transform_cross_attn */, last_hidden_state_shape[1].get_length(), decoder_max_prompt_len);
     // NB: Note, there is no need to transform cross attention for decoder_with_past_model
