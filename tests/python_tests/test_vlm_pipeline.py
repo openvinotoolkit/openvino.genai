@@ -1204,8 +1204,7 @@ def test_start_chat_clears_history(
 
 
 def test_start_chat_clears_history_cb_api(
-    ov_continious_batching_pipe: ov_genai.ContinuousBatchingPipeline,
-    image_sequence: list[openvino.Tensor],
+    ov_continious_batching_pipe: ov_genai.ContinuousBatchingPipeline, image_sequence: list[openvino.Tensor]
 ):
     callback_questions = [
         "Why is the Sun yellow?"
