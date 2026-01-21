@@ -4,7 +4,7 @@
 #include "openvino/genai/rag/npu/text_embedding_pipeline.hpp"
 
 #include "openvino/core/except.hpp"
-#include "openvino/genai/rag/text_embedding_utils.hpp"
+#include "rag/text_embedding_utils.hpp"
 #include "utils.hpp"
 
 namespace ov {
@@ -41,15 +41,15 @@ InferRequest create_text_embedding_npu_request(std::shared_ptr<ov::Model>& model
     return compiled_model.create_infer_request();
 }
 
-std::optional<InferRequest> create_text_embedding_npu_post_request(std::shared_ptr<ov::Model>& model,
-                                                                   const TextEmbeddingPipeline::Config& config) {
+InferRequest create_text_embedding_npu_post_request(std::shared_ptr<ov::Model>& model,
+                                                    const TextEmbeddingPipeline::Config& config) {
     if (model->is_dynamic()) {
         ov::Core core = utils::singleton_core();
         auto post_model = utils::create_post_model(model, config);
         auto post_compiled_model = core.compile_model(post_model, "CPU");
         return post_compiled_model.create_infer_request();
     } else {
-        return std::nullopt;
+        return InferRequest{};
     }
 }
 
