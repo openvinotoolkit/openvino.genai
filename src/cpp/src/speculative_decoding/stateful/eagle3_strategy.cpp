@@ -492,6 +492,7 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
     if (target_desc.device == "NPU") {
         target_desc.properties["NPUW_EAGLE"] = "TRUE";
         target_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = validation_window;
+        target_desc.properties["NPUW_SLICE_OUT"] = "NO";
     }
     m_target = std::make_unique<Eagle3TargetWrapper>(target_desc);
 }
