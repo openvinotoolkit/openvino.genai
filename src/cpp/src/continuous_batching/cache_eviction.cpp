@@ -702,7 +702,7 @@ std::vector<double> AdaptiveRKVBlockCalculator::get_filtered_block_diversity(con
         for (size_t col_idx = 0; col_idx < eviction_size; col_idx += m_block_size) {
             size_t logical_block_idx_in_evictable_area = col_idx / m_block_size;
             if (diversity_blocks.find(logical_block_idx_in_evictable_area) != diversity_blocks.end()) {
-                accumulated_value += std::accumulate(it_b + col_idx, it_b + col_idx + m_block_size);
+                accumulated_value += std::accumulate(it_b + col_idx, it_b + col_idx + m_block_size, 0.0);
             }
         }
         retval[row_idx] = accumulated_value / (diversity_blocks.size() * m_block_size);
