@@ -24,8 +24,7 @@ int main(int argc, char* argv[]) try {
 
     std::string device = "CPU";
 
-    // Prompt lookup decoding is implemented only for ContiniousBatching backend
-    // which is the default backed for all models except for Qwen2VL, Qwen2.5VL, and Gemma3 due to accuracy issues.
+    // Prompt lookup decoding in VLM pipeline is supported only for ContiniousBatching backend.
     ov::genai::VLMPipeline pipe(
         model_path,
         device,
