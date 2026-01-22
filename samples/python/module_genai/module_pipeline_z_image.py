@@ -18,6 +18,7 @@ def parse_args():
     parser.add_argument('--height', type=int, default=None, help="Image height (must be divisible by 32, default from JSON or 1040)")
     parser.add_argument('--width', type=int, default=None, help="Image width (must be divisible by 32, default from JSON or 1040)")
     parser.add_argument('--steps', type=int, default=None, help="Number of inference steps (default from JSON or 9)")
+    parser.add_argument('--tile_size', type=int, default=None, help="VAE decoder tile size (sample_size for tiling)")
     parser.add_argument('--debug', action='store_true', help="Enable debug output")
     return parser.parse_args()
 
@@ -68,13 +69,12 @@ def validate_and_print_config(yaml_content: str, config_name: str = "config") ->
     return result.valid
 
 
-def load_from_comfyui_json(json_path: str, model_path: str, device: str) -> tuple:
+def load_from_comfyui_json(json_path: str, **kwargs) -> tuple:
     """
     Load pipeline configuration from ComfyUI JSON file.
 
     :param json_path: Path to ComfyUI JSON file
-    :param model_path: Base path for models
-    :param device: Device to use (CPU, GPU, etc.)
+    :param kwargs: Optional parameters (model_path, device, tile_size, etc.)
     :return: Tuple of (yaml_content, extracted_params)
     """
     print(f"\n{'='*60}")
@@ -83,8 +83,7 @@ def load_from_comfyui_json(json_path: str, model_path: str, device: str) -> tupl
 
     yaml_content, params = openvino_genai.ModulePipeline.comfyui_json_to_yaml(
         json_path,
-        model_path=model_path,
-        device=device
+        **kwargs
     )
 
     print(f"Conversion successful!")
@@ -100,7 +99,8 @@ class TransformerPipeline():
         self,
         model_path: str,
         device: str,
-        enable_tiling:bool):
+        enable_tiling:bool,
+        tile_size:int=None):
         self.model_path = model_path
         self.device = device
         core = Core()
@@ -280,7 +280,9 @@ class TransformerPipeline():
 
         if enable_tiling:
             print(f"enable_tiling = {enable_tiling}")
-            cfg_data = self._update_config_with_tiling(cfg_data, decoder_module_name="vae")
+            if tile_size is not None:
+                print(f"tile_size = {tile_size}")
+            cfg_data = self._update_config_with_tiling(cfg_data, decoder_module_name="vae", tile_size=tile_size)
 
         # Convert to YAML string
         yaml_content = yaml.dump(cfg_data)
@@ -302,7 +304,7 @@ class TransformerPipeline():
             print(f"[ERROR] ModulePipeline constructor failed: {e}")
             raise
 
-    def _update_config_with_tiling(self, cfg_data:dict, decoder_module_name:str):
+    def _update_config_with_tiling(self, cfg_data:dict, decoder_module_name:str, tile_size:int=None):
         decoder_node = cfg_data["pipeline_modules"][decoder_module_name]
 
         vae_decoder_tiling = {
@@ -318,6 +320,9 @@ class TransformerPipeline():
                 }
             }
         }
+        # Map tile_size to sample_size
+        if tile_size is not None:
+            vae_decoder_tiling['vae_decoder_tiling']['params']['sample_size'] = str(tile_size)
         vae_decoder_tiling['vae_decoder_tiling']['inputs'] = decoder_node['inputs']
         vae_decoder_tiling['vae_decoder_tiling']['outputs'] = decoder_node['outputs']
         cfg_data["pipeline_modules"][decoder_module_name] = vae_decoder_tiling['vae_decoder_tiling']
@@ -443,10 +448,17 @@ def main():
         print("Demo: ComfyUI JSON to YAML Conversion")
         print("="*60)
 
+        # Build conversion kwargs, include tile_size if provided via command line
+        conversion_kwargs = {
+            "model_path": args.model_path,
+            "device": args.device
+        }
+        if args.tile_size is not None:
+            conversion_kwargs["tile_size"] = args.tile_size
+
         yaml_content, params = load_from_comfyui_json(
             args.json,
-            model_path=args.model_path,
-            device=args.device
+            **conversion_kwargs
         )
 
         if yaml_content:
@@ -470,6 +482,9 @@ def main():
             if final_steps is None:
                 final_steps = params.get("num_inference_steps", DEFAULT_STEPS)
 
+            # tile_size: command line overrides JSON value
+            final_tile_size = args.tile_size if args.tile_size is not None else params.get("tile_size")
+
             print(f"\nUsing parameters from ComfyUI JSON:")
             print(f"  prompt: {final_prompt[:50]}..." if len(final_prompt) > 50 else f"  prompt: {final_prompt}")
             negative_prompt = params.get("negative_prompt", "")
@@ -478,10 +493,12 @@ def main():
             print(f"  height: {final_height}")
             print(f"  steps: {final_steps}")
             print(f"  seed: {params.get('seed', 0)}")
+            print(f"  tile_size: {final_tile_size}")
 
             # Save yaml_content and params to use for pipeline creation
             comfyui_yaml_content = yaml_content
             comfyui_params = params
+
             print("\nComfyUI JSON successfully converted to YAML!")
         else:
             print("ComfyUI JSON conversion returned empty YAML")
@@ -537,7 +554,8 @@ def main():
             pipeline = TransformerPipeline(
                 args.model_path,
                 args.device,
-                args.enable_tiling)
+                args.enable_tiling,
+                args.tile_size)
             print("[INFO] Pipeline created successfully")
 
             print("[INFO] Starting generation...")

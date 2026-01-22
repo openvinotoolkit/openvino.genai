@@ -58,6 +58,7 @@ struct ProgramOptions {
     int steps = 0;
     float guidance = 0.0f;
     int max_seq_len = 0;
+    int tile_size = 0;
     int verbose = 2;  // 0=quiet, 1=error, 2=info (default), 3=debug
     bool show_help = false;
 };
@@ -78,6 +79,7 @@ void print_help(const char* program_name) {
               << "  --steps <int>           Number of inference steps (default: 4)\n"
               << "  --guidance <float>      Guidance scale (default: 0.0)\n"
               << "  --max-seq-len <int>     Max sequence length (default: 512)\n"
+              << "  --tile_size <int>       VAE decoder tile size (sample_size)\n"
               << "  --verbose <level>       Verbosity: 0=quiet, 1=error, 2=info (default), 3=debug\n"
               << "  --help                  Show this help message\n\n"
               << "Examples:\n"
@@ -133,6 +135,9 @@ int main(int argc, char* argv[]) {
             // Set conversion options via pipeline_inputs
             extracted_inputs["model_path"] = opts.model_path;
             extracted_inputs["device"] = opts.device;
+            if (opts.tile_size != 0) {
+                extracted_inputs["tile_size"] = opts.tile_size;
+            }
 
             // Use the new ModulePipeline API for conversion and input extraction
             yaml_content = ov::genai::module::ModulePipeline::comfyui_json_to_yaml(
@@ -229,6 +234,8 @@ bool parse_arguments(int argc, char* argv[], ProgramOptions& opts) {
             opts.guidance = std::stof(argv[++i]);
         } else if (arg == "--max-seq-len" && i + 1 < argc) {
             opts.max_seq_len = std::stoi(argv[++i]);
+        } else if (arg == "--tile_size" && i + 1 < argc) {
+            opts.tile_size = std::stoi(argv[++i]);
         } else if (arg == "--verbose" && i + 1 < argc) {
             opts.verbose = std::stoi(argv[++i]);
         } else {
@@ -266,8 +273,8 @@ std::string read_file_content(const std::string& filepath) {
 // Load and validate YAML config file
 // ============================================================================
 
-bool load_and_validate_yaml(const std::string& yaml_file, 
-                            std::string& yaml_content, 
+bool load_and_validate_yaml(const std::string& yaml_file,
+                            std::string& yaml_content,
                             ov::AnyMap& extracted_inputs) {
     LOG_INFO("Loading YAML config from: " << yaml_file);
 
@@ -346,6 +353,9 @@ ov::AnyMap build_pipeline_inputs(const ov::AnyMap& extracted_inputs,
     if (extracted_inputs.count("seed")) {
         inputs["seed"] = extracted_inputs.at("seed").as<int64_t>();
     }
+    if (extracted_inputs.count("tile_size")) {
+        inputs["tile_size"] = extracted_inputs.at("tile_size").as<int>();
+    }
 
     // Command line arguments override extracted defaults
     if (!opts.prompt.empty()) {
@@ -365,6 +375,9 @@ ov::AnyMap build_pipeline_inputs(const ov::AnyMap& extracted_inputs,
     }
     if (opts.max_seq_len != 0) {
         inputs["max_sequence_length"] = opts.max_seq_len;
+    }
+    if (opts.tile_size != 0) {
+        inputs["tile_size"] = opts.tile_size;
     }
 
     // Ensure required inputs have default values
@@ -411,6 +424,9 @@ void print_pipeline_inputs(const ov::AnyMap& inputs) {
         std::cout << "  - steps: " << inputs.at("num_inference_steps").as<int>() << std::endl;
         std::cout << "  - guidance: " << inputs.at("guidance_scale").as<float>() << std::endl;
         std::cout << "  - max_seq_len: " << inputs.at("max_sequence_length").as<int>() << std::endl;
+        if (inputs.count("tile_size")) {
+            std::cout << "  - tile_size: " << inputs.at("tile_size").as<int>() << std::endl;
+        }
     }
 }
 
@@ -441,6 +457,9 @@ void print_extracted_inputs(const ov::AnyMap& extracted_inputs) {
         if (extracted_inputs.count("guidance_scale")) {
             std::cout << "  - guidance: " << extracted_inputs.at("guidance_scale").as<float>() << std::endl;
         }
+        if (extracted_inputs.count("tile_size")) {
+            std::cout << "  - tile_size: " << extracted_inputs.at("tile_size").as<int>() << std::endl;
+        }
     }
 }
 
@@ -469,7 +488,7 @@ void save_and_print_yaml_debug(const std::string& yaml_content, const std::strin
 // Handle pipeline output - get and save/verify image
 // ============================================================================
 
-bool handle_pipeline_output(ov::genai::module::ModulePipeline& pipeline, 
+bool handle_pipeline_output(ov::genai::module::ModulePipeline& pipeline,
                             const std::string& output_file) {
     LOG_INFO("Getting output...");
 

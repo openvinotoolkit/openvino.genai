@@ -79,6 +79,7 @@ void log_validation_errors(const PromptValidationResult& result) {
 ConversionOptions create_conversion_options(const ov::AnyMap& pipeline_inputs) {
     std::string model_path = "./models/";
     std::string device = "CPU";
+    int tile_size = 0;
 
     auto it_model_path = pipeline_inputs.find("model_path");
     if (it_model_path != pipeline_inputs.end()) {
@@ -98,9 +99,19 @@ ConversionOptions create_conversion_options(const ov::AnyMap& pipeline_inputs) {
         }
     }
 
+    auto it_tile_size = pipeline_inputs.find("tile_size");
+    if (it_tile_size != pipeline_inputs.end()) {
+        try {
+            tile_size = it_tile_size->second.as<int>();
+        } catch (const ov::Exception&) {
+            GENAI_WARN("tile_size has invalid type, using default");
+        }
+    }
+
     ConversionOptions options;
     options.model_path = model_path;
     options.device = device;
+    options.tile_size = tile_size;
     return options;
 }
 
@@ -219,6 +230,9 @@ std::string ComfyUIToGenAIConverter::convert_to_yaml(
 
     // FluxGuidance -> max_sequence_length
     pipeline_inputs["max_sequence_length"] = params.get_value<int>("FluxGuidance", "max_sequence_length", 512);
+
+    // VAEDecodeSwitcher -> tile_size
+    pipeline_inputs["tile_size"] = params.get_value<int>("VAEDecodeSwitcher", "tile_size", 0);
 
     return yaml;
 }

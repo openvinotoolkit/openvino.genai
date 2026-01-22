@@ -302,6 +302,18 @@ void VAEDecoderTilingModuleGenerator::generate(YamlGeneratorContext& ctx) {
         GENAI_DEBUG("[YAML] Adding VAEDecoderTilingModule (%s) - tiled mode", module_name.c_str());
         module["params"]["sub_module_name"] = "vae_decoder_submodule";
         module["params"]["tile_overlap_factor"] = "0.25";
+
+        // Set default sample_size from options or node.inputs (will be overridden at runtime if tile_size input > 0)
+        int default_tile_size = 0;
+        if (ctx.options.tile_size > 0) {
+            default_tile_size = ctx.options.tile_size;
+        } else if (node.inputs.contains("tile_size")) {
+            default_tile_size = node.inputs["tile_size"].get<int>();
+        }
+        if (default_tile_size > 0) {
+            module["params"]["sample_size"] = std::to_string(default_tile_size);
+        }
+
         module["type"] = "VAEDecoderTilingModule";
 
         YAML::Node sub_module;

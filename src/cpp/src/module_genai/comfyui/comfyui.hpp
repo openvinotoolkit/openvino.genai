@@ -317,6 +317,7 @@ private:
 struct ConversionOptions {
     std::string model_path = "./models/";  // Base path for model files
     std::string device = "CPU"; // default device
+    int tile_size = 0;  // VAE decoder tile size (sample_size), 0 means use value from JSON
     // Note: use_tiled_vae is now auto-detected from VAEDecodeSwitcher's select_decoder input
 };
 

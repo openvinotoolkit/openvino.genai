@@ -188,9 +188,13 @@ PipelineDesc::PTR load_config(const std::filesystem::path& cfg_path) {
 }
 
 PipelineDesc::PTR load_config_from_string(const std::string& content) {
-    // Check context is not path
-    OPENVINO_ASSERT(!std::filesystem::path(content).has_parent_path(),
-                    "The provided content seems to be a file path. Please use 'std::filesystem::path' pass file path "
+    // Check content is not a file path - YAML content should contain newlines
+    // A simple file path would not contain newlines
+    bool looks_like_yaml = content.find('\n') != std::string::npos ||
+                           content.find("global_context") != std::string::npos ||
+                           content.find("pipeline_modules") != std::string::npos;
+    OPENVINO_ASSERT(looks_like_yaml,
+                    "The provided content seems to be a file path. Please use 'std::filesystem::path' to pass file path "
                     "instead. content: " +
                         content);
 
