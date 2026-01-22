@@ -8,7 +8,6 @@ from transformers import (
     AutoModel,
     AutoModelForVision2Seq,
     AutoTokenizer,
-    AutoModelForImageTextToText,
 )
 
 from .embeddings_evaluator import DEFAULT_MAX_LENGTH as EMBED_DEFAULT_MAX_LENGTH
@@ -344,6 +343,12 @@ def load_visual_text_model(
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
             trust_remote_code = True
 
+        # force downloading to .cache image_processing file, as it is not happened by default
+        if config.model_type.lower() in ["minicpmo"]:
+            from transformers import AutoImageProcessor
+
+            AutoImageProcessor.from_pretrained(model_id, trust_remote_code=True)
+
         try:
             model = AutoModelForVision2Seq.from_pretrained(
                 model_id, trust_remote_code=trust_remote_code, device_map=device.lower()
@@ -352,6 +357,7 @@ def load_visual_text_model(
             try:
                 model_cls = AutoModel
                 if config.model_type in ["smolvlm"]:
+                    from transformers import AutoModelForImageTextToText
                     model_cls = AutoModelForImageTextToText
                 elif config.model_type in ["gemma3"]:
                     model_cls = AutoModelForCausalLM
