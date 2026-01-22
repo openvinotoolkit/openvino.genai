@@ -98,6 +98,13 @@ struct OPENVINO_GENAI_EXPORTS WhisperPerfMetrics : public PerfMetrics {
     WhisperRawPerfMetrics whisper_raw_metrics;
 };
 
+struct WhisperWordTiming {
+    std::string word;
+    std::vector<int64_t> token_ids;
+    float start_ts;
+    float end_ts;
+};
+
 struct WhisperDecodedResultChunk {
     // start of chunk in seconds
     float start_ts;
@@ -113,6 +120,7 @@ struct WhisperDecodedResults {
     std::vector<std::string> texts;
     std::vector<float> scores;
     std::optional<std::vector<WhisperDecodedResultChunk>> chunks = std::nullopt;
+    std::optional<std::vector<WhisperWordTiming>> words = std::nullopt;
     WhisperPerfMetrics perf_metrics;
 
     operator std::string() const {

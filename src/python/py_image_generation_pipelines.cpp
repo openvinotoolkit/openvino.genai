@@ -205,8 +205,14 @@ public:
 
             ~TorchTensorAllocator() {
                 if (m_torch_tensor && Py_IsInitialized()) {
-                    py::gil_scoped_acquire acquire;
-                    m_torch_tensor = py::object();
+                    try {
+                        py::gil_scoped_acquire acquire;
+                        m_torch_tensor = py::object();
+                    } catch (...) {
+                        // Best-effort cleanup during interpreter shutdown: exceptions here
+                        // cannot be propagated (destructors must not throw) and are therefore
+                        // intentionally ignored.
+                    }
                 }
             }
 

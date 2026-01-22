@@ -42,7 +42,7 @@ std::shared_ptr<ov::Node> create_mean_scale(std::shared_ptr<ov::Node> input_u8_o
     if (input_u8_or_f32->get_element_type() == ov::element::u8) {
         input_f32 = std::make_shared<v0::Convert>(input_u8_or_f32, ov::element::f32);
     } else {
-        input_f32 = input_u8_or_f32;
+        input_f32 = std::move(input_u8_or_f32);
     }
 
     // Follow the original mean_scale() function logic exactly, in tensor form:
