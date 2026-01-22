@@ -1,6 +1,7 @@
 import os
 from typing import Any, Union
 
+import json
 import pandas as pd
 from tqdm import tqdm
 from transformers import set_seed
@@ -11,103 +12,6 @@ import openvino_genai
 from .registry import register_evaluator, BaseEvaluator
 
 from .whowhat_metrics import VideoSimilarity
-
-
-default_data = [
-    # small resolution
-    {
-        "prompt": "octopus figure skating, cartoon  ",
-        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
-        "width": 256,
-        "height": 128,
-        "guidance_scale": 3,
-        "guidance_rescale": 0.3,
-    },
-    # small resolution
-    {
-        "prompt": "slow motion, hydrogen bond energy, atom, 4k, cinematic -gs 24 -motion 2 -ar 16:9 -fps 24  ",
-        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
-        "width": 256,
-        "height": 256,
-        "guidance_scale": 3,
-        "guidance_rescale": 0.3,
-    },
-    # middle/common resolution
-    {
-        "prompt": "cowboy running in slow motion in a field  ",
-        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
-        "width": 704,
-        "height": 480,
-        "guidance_scale": 3,
-        "guidance_rescale": 0.3,
-    },
-    # big resolution
-    {
-        "prompt": "House in front of a lake and the wind blowing through the trees  ",
-        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
-        "width": 1216,
-        "height": 704,
-        "guidance_scale": 3,
-        "guidance_rescale": 0.3,
-    },
-    # guidance_rescale 0
-    {
-        "prompt": "fight naruto vs sasuke  ",
-        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
-        "width": 704,
-        "height": 480,
-        "guidance_scale": 3,
-        "guidance_rescale": 0,
-    },
-    # guidance_scale 1
-    {
-        "prompt": "reporter in front of the TV cameras talking about the joker  ",
-        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
-        "width": 704,
-        "height": 480,
-        "guidance_scale": 1,
-        "guidance_rescale": 0.3,
-    },
-    # guidance_scale 1 guidance_rescale 0
-    {
-        "prompt": "Realistic night silhouette of a white Lwxux LX III 2008 with headlights on driving on in the fog in the dark  ",
-        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
-        "width": 704,
-        "height": 480,
-        "guidance_scale": 1,
-        "guidance_rescale": 0,
-    },
-    # guidance_scale 1 guidance_rescale 0
-    {
-        "prompt": "indian women washing clothes at river side  ",
-        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
-        "width": 256,
-        "height": 128,
-        "guidance_scale": 3,
-        "guidance_rescale": 0.3,
-    },
-    # big prompt
-    {
-        "prompt": "Levitating woman uses magic and fairy dusty spews forth from her fingers.  cinematic shot  photos taken by ARRI, photos taken "
-        + "by sony, photos taken by canon, photos taken by nikon, photos taken by hasselblad  ",
-        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
-        "width": 704,
-        "height": 480,
-        "guidance_scale": 3,
-        "guidance_rescale": 0.3,
-    },
-    # big prompt, small resolution
-    {
-        "prompt": "A mythical river adventure in the Yellow River basin during ancient times, where majestic dragons soar through the turbulent waters, "
-        + "casting a vibrant glow on the submerged landscapes, blending a sense of awe and fantasy, Sculpture, intricate clay model with luminescent "
-        + "elements, --ar 16:9 --v 5  ",
-        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
-        "width": 256,
-        "height": 128,
-        "guidance_scale": 3,
-        "guidance_rescale": 0.3,
-    },
-]
 
 
 @register_evaluator("text-to-video")
@@ -196,6 +100,14 @@ class Text2VideoEvaluator(BaseEvaluator):
 
         return res
 
+    def collect_default_data(self):
+        from importlib.resources import files
+        data_path = files('whowhatbench.prompts').joinpath("text_to_video_prompts.json")
+        with open(data_path) as input_file:
+            data = json.load(input_file)
+
+        return data
+
     def _generate_data(self, model, gen_video_fn=None, videos_dir="reference"):
         def default_gen_video_fn(
             model,
@@ -210,10 +122,10 @@ class Text2VideoEvaluator(BaseEvaluator):
             guidance_rescale=self.DEF_GUIDANCE_RESCALE,
             generator=None,
         ):
+            kwargs = {"negative_prompt": negative_prompt} if guidance_scale > 1 else {}
             with torch.no_grad():
                 output = model(
                     prompt=prompt,
-                    negative_prompt=negative_prompt,
                     num_inference_steps=num_inference_steps,
                     width=width,
                     height=height,
@@ -222,11 +134,13 @@ class Text2VideoEvaluator(BaseEvaluator):
                     guidance_scale=guidance_scale,
                     guidance_rescale=guidance_rescale,
                     generator=generator,
+                    **kwargs
                 )
             return output.frames[0]
 
         generation_fn = gen_video_fn or default_gen_video_fn
 
+        data_keys = ["prompt", "negative_prompt", "width", "height", "guidance_scale", "guidance_rescale"]
         if self.test_data:
             if isinstance(self.test_data, str):
                 data = pd.read_csv(self.test_data)
@@ -238,10 +152,10 @@ class Text2VideoEvaluator(BaseEvaluator):
                     data = {"prompt": list(self.test_data)}
                 data = pd.DataFrame.from_dict(data)
         else:
-            data = pd.DataFrame.from_dict(default_data)
+            data = pd.DataFrame.from_dict(self.collect_default_data())
 
         inputs = data.values if self.num_samples is None else data.values[: self.num_samples]
-        res_data = dict(zip(list(default_data[0].keys()), map(list, zip(*inputs))))
+        res_data = dict(zip(data_keys, map(list, zip(*inputs))))
         videos = []
 
         rng = torch.Generator(device="cpu")

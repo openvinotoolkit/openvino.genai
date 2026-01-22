@@ -526,9 +526,9 @@ def genai_gen_text2video(
     guidance_rescale=0.3,
     generator=None,
 ):
+    kwargs = {"negative_prompt": negative_prompt} if guidance_scale > 1 else {}
     result = model.generate(
         prompt,
-        negative_prompt=negative_prompt,
         num_inference_steps=num_inference_steps,
         width=width,
         height=height,
@@ -537,6 +537,7 @@ def genai_gen_text2video(
         guidance_scale=guidance_scale,
         guidance_rescale=guidance_rescale,
         generator=generator,
+        **kwargs
     )
     return [Image.fromarray(frame) for frame in result.video.data[0]]
 
