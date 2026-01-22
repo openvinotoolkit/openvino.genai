@@ -358,6 +358,7 @@ def load_visual_text_model(
                 model_cls = AutoModel
                 if config.model_type in ["smolvlm"]:
                     from transformers import AutoModelForImageTextToText
+
                     model_cls = AutoModelForImageTextToText
                 elif config.model_type in ["gemma3"]:
                     model_cls = AutoModelForCausalLM
