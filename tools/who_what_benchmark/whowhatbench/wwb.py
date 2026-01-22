@@ -75,7 +75,7 @@ def parse_args():
             "text-reranking",
         ],
         default="text",
-        help="Indicated the model type: text - for causal text generation, visual-text - for Visual Language Models with image inputs, "
+        help="Indicates the model type: text - for causal text generation, visual-text - for Visual Language Models with image inputs, "
         "visual-video-text - for Visual Language Models with video inputs, text-to-image - for image generation, "
         "image-to-image - for image generation based on image and prompt, image-inpainting - for image generation based on image, mask and prompt, "
         "text-to-video - for video generation, text-reranking - for reranking a list of texts based on relevance to query, "

@@ -21,7 +21,7 @@ class Text2VideoEvaluator(BaseEvaluator):
     DEF_FRAME_RATE = 25
     DEF_WIDTH = 704
     DEF_HEIGHT = 480
-    DEF_GUIDANCE_SCALE = 3
+    DEF_GUIDANCE_SCALE = 3  # CVS-179754: guidance_scale == 1 triggers GenAI runtime error
     DEF_GUIDANCE_RESCALE = 0.3
 
     def __init__(
@@ -39,7 +39,7 @@ class Text2VideoEvaluator(BaseEvaluator):
         is_genai=False,
     ) -> None:
         assert base_model is not None or gt_data is not None, (
-            "Text generation pipeline for evaluation or ground truth data must be defined"
+            "Video generation pipeline for evaluation or ground truth data must be defined"
         )
 
         self.test_data = test_data
