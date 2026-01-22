@@ -3,7 +3,7 @@
 
 import readline from 'readline';
 import { z } from 'zod';
-import { LLMPipeline, StructuredOutputConfig } from 'openvino-genai-node';
+import { LLMPipeline, StructuredOutputConfig, ChatHistory } from 'openvino-genai-node';
 
 const PersonSchema = z.object({
     name: z.string().regex(/^[A-Z][a-z]{1,20}$/),
@@ -77,21 +77,25 @@ async function main() {
     async function handleInput(prompt) {
         try {
             const pipe = await pipeline;
-            await pipe.startChat(sysMessage);
+            const chatHistory = new ChatHistory();
+            chatHistory.push({ role: "system", content: sysMessage });
+
             config.structured_output_config = new StructuredOutputConfig({
                 json_schema: JSON.stringify(z.toJSONSchema(ItemQuantitiesSchema))
             });
             config.do_sample = false;
 
-            const json_response = await pipe.generate(prompt, config);
-            const res = JSON.parse(json_response);
-            await pipe.finishChat();
-            console.log(`Generated JSON with item quantities: ${json_response}`);
+            chatHistory.push({ role: "user", content: prompt });
+            const decodedResults = await pipe.generate(chatHistory, config);
+            const res = JSON.parse(decodedResults.toString());
+            console.log(`Generated JSON with item quantities: ${decodedResults.toString()}`);
 
             config.do_sample = true;
             config.temperature = 0.8;
 
-            await pipe.startChat(sysMessageForItems);
+            chatHistory.clear();
+            chatHistory.push({ role: "system", content: sysMessageForItems });
+
             let generateHasRun = false;
 
             for (const [item, quantity] of Object.entries(res)) {
@@ -102,14 +106,13 @@ async function main() {
                 });
                 for (let i = 0; i < quantity; i++) {
                     generateHasRun = true;
-                    const result = await pipe.generate(prompt, config);
+                    chatHistory.push({ role: "user", content: prompt });
+                    const decodedResults = await pipe.generate(chatHistory, config);
                     // validate JSON
-                    JSON.parse(result.toString());
-                    console.log(result.toString());
+                    JSON.parse(decodedResults.toString());
+                    console.log(decodedResults.toString());
                 }
             }
-
-            await pipe.finishChat();
 
             if (!generateHasRun) {
                 console.log("No items generated. Please try again with a different request.");

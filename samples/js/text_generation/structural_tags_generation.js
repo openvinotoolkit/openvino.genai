@@ -3,7 +3,7 @@
 
 import readline from 'readline';
 import { z } from 'zod';
-import { LLMPipeline, StreamingStatus, StructuredOutputConfig } from 'openvino-genai-node';
+import { LLMPipeline, StreamingStatus, StructuredOutputConfig, ChatHistory } from 'openvino-genai-node';
 import { serialize_json } from './helper.js';
 
 const getWeatherTool = {
@@ -100,7 +100,9 @@ async function main() {
         generation_config.return_decoded_results = true;
         generation_config.max_new_tokens = 300;
 
-        await pipe.startChat(sysMessage);
+        const chatHistory = new ChatHistory();
+        chatHistory.push({ role: "system", content: sysMessage });
+
         if (useStructuralTags) {
             generation_config.structured_output_config = {
                 structural_tags_config: StructuredOutputConfig.TriggeredTags({
@@ -115,12 +117,14 @@ async function main() {
             generation_config.do_sample = true;
         };
 
-        const response = await pipe.generate(prompt, generation_config, streamer);
-        await pipe.finishChat();
+        chatHistory.push({ role: "user", content: prompt });
+        const decodedResults = await pipe.generate(chatHistory, generation_config, streamer);
+        chatHistory.push({ role: "assistant", content: decodedResults.toString() });
+
         console.log("\n" + "-".repeat(80));
 
         console.log("Correct tool calls by the model:");
-        console.log(parseToolsFromResponse(response.toString()));
+        console.log(parseToolsFromResponse(decodedResults.toString()));
     }
 }
 
