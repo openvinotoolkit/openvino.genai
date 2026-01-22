@@ -74,7 +74,7 @@ JsonContainer::JsonContainer(std::shared_ptr<JsonContainerImpl> impl, const std:
 
 JsonContainer::JsonContainer(const JsonContainer& other) :
     m_impl(std::make_shared<JsonContainerImpl>(*other.m_impl->get_json_value_ptr(other.m_path, AccessMode::Read))),
-    m_path(other.m_path) {}
+    m_path("") {}
 
 JsonContainer::JsonContainer(JsonContainer&& other) noexcept :
     m_impl(std::move(other.m_impl)),

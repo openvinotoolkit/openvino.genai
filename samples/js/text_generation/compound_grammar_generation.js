@@ -125,14 +125,13 @@ async function main() {
     const userText1 = "Do dolphins have fingers?";
     console.log("User: ", userText1);
     chatHistory.push({ role: "user", content: userText1 });
-    const modelInput = tokenizer.applyChatTemplate(chatHistory, true);
 
     // the example grammar works the same as SOC.Regex("yes|no")
     // but the Union grammar is more flexible and can be extended with more options
     const yesOrNo = SOC.Union(SOC.Regex("yes"), SOC.Regex("no"));
     generationConfig.structured_output_config = new SOC({ structural_tags_config: yesOrNo });
     process.stdout.write("Assistant: ");
-    const answer1 = await pipe.generate(modelInput, generationConfig, streamer);
+    const answer1 = await pipe.generate(chatHistory, generationConfig, streamer);
     chatHistory.push({ role: "assistant", content: answer1.texts[0] });
     console.log();
 
@@ -141,7 +140,6 @@ async function main() {
         + "then book hotel from 2025-12-04 to 2025-12-10 in Paris";
     console.log("User: ", userText2);
     chatHistory.push({ role: "user", content: userText2 });
-    const modelInput2 = tokenizer.applyChatTemplate(chatHistory, true);
 
     const startToolCallTag = SOC.ConstString("functools");
     const toolsJson = SOC.JSONSchema(
@@ -153,7 +151,7 @@ async function main() {
     generationConfig.parsers = [new CustomToolCallParser()];
 
     process.stdout.write("Assistant: ");
-    const answer2 = await pipe.generate(modelInput2, generationConfig);
+    const answer2 = await pipe.generate(chatHistory, generationConfig);
     console.log("\n\nThe following tool calls were generated:")
     printToolCall(answer2)
     console.log();

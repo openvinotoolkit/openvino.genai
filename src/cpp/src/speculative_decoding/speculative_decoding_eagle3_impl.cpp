@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 #include "speculative_decoding_eagle3_impl.hpp"
 #include "logger.hpp"
@@ -174,6 +174,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     auto scheduler_configs = init_speculative_models(main_model_desc, draft_model_desc);
     auto main_model = main_model_desc.model;
     auto draft_model = draft_model_desc.model;
+    OPENVINO_ASSERT(main_model && draft_model);
 
     auto main_device = main_model_desc.device;
     std::string draft_device = draft_model_desc.device.empty() ? main_model_desc.device : draft_model_desc.device;
