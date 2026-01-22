@@ -64,21 +64,8 @@ install(TARGETS benchmark_vlm
 
 add_executable(video_to_text_chat video_to_text_chat.cpp)
 target_include_directories(video_to_text_chat PRIVATE "${CMAKE_BINARY_DIR}")
-ov_genai_fetch_opencv(video_to_text_chat core imgproc videoio imgcodecs)
+ov_genai_link_opencv(video_to_text_chat core imgproc videoio imgcodecs)
 target_link_libraries(video_to_text_chat PRIVATE openvino::genai cxxopts::cxxopts)
-
-if(video_to_text_chat_OPENCV_FETCHED)
-    if(LINUX)
-        set_target_properties(video_to_text_chat ${video_to_text_chat_OPENCV_TARGETS} PROPERTIES
-            INSTALL_RPATH "$ORIGIN/../lib"
-            INSTALL_RPATH_USE_LINK_PATH ON)
-    elseif(APPLE)
-        set_target_properties(video_to_text_chat ${video_to_text_chat_OPENCV_TARGETS} PROPERTIES
-            INSTALL_RPATH "@loader_path/../lib"
-            # Ensure out of box LC_RPATH on macOS with SIP
-            INSTALL_RPATH_USE_LINK_PATH ON)
-    endif()
-endif()
 
 install(TARGETS video_to_text_chat
         RUNTIME DESTINATION samples_bin/

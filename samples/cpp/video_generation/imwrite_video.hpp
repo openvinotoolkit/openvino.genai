@@ -12,4 +12,4 @@
  * @param video_tensor Video tensor of shape [B, F, H, W, C] with uint8 data (C = 1, 3, or 4).
  * @param fps Frames per second.
  */
-void save_video(const std::string& filename, const ov::Tensor& video_tensor, int fps = 25);
+void save_video(const std::string& filename, const ov::Tensor& video_tensor, float fps = 25.0f);

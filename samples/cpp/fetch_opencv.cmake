@@ -1,7 +1,7 @@
 # Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-function(ov_genai_fetch_opencv target_name)
+function(ov_genai_link_opencv target_name)
     set(required_components ${ARGN})
     if(NOT required_components)
         set(required_components core imgproc videoio imgcodecs)
@@ -66,15 +66,21 @@ function(ov_genai_fetch_opencv target_name)
                 ${OPENCV_MODULE_opencv_${component}_LOCATION}/include)
         endforeach()
 
-        set(${target_name}_OPENCV_FETCHED TRUE PARENT_SCOPE)
+        if(LINUX)
+            set_target_properties(${target_name} ${opencv_targets} PROPERTIES
+                INSTALL_RPATH "$ORIGIN/../lib"
+                INSTALL_RPATH_USE_LINK_PATH ON)
+        elseif(APPLE)
+            set_target_properties(${target_name} ${opencv_targets} PROPERTIES
+                INSTALL_RPATH "@loader_path/../lib"
+                INSTALL_RPATH_USE_LINK_PATH ON)
+        endif()
     else()
         set(opencv_targets ${OpenCV_LIBS})
         if(OpenCV_INCLUDE_DIRS)
             target_include_directories(${target_name} PRIVATE ${OpenCV_INCLUDE_DIRS})
         endif()
-        set(${target_name}_OPENCV_FETCHED FALSE PARENT_SCOPE)
     endif()
 
     target_link_libraries(${target_name} PRIVATE ${opencv_targets})
-    set(${target_name}_OPENCV_TARGETS ${opencv_targets} PARENT_SCOPE)
 endfunction()

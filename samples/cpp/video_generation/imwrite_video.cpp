@@ -14,7 +14,7 @@
 
 void save_video(const std::string& filename,
                 const ov::Tensor& video_tensor,  // [B, F, H, W, C], u8
-                int fps) {
+                float fps) {
     const ov::Shape shape = video_tensor.get_shape();
 
     if (shape.empty() || video_tensor.get_size() == 0) {
