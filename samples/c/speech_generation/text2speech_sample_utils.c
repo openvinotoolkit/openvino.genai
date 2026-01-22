@@ -1,10 +1,13 @@
+// Copyright (C) 2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+//
+
 #include "text2speech_sample_utils.h"
 
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
 
 // Minimal WAV header structure
 // This removes struct padding to ensure the Wav Header matches the exact binary layout
