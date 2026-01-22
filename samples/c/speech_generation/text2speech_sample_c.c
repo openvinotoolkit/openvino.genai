@@ -69,5 +69,5 @@ err:
     if (speaker_embedding)
         ov_tensor_free(speaker_embedding);
 
-    return EXIT_SUCCESS;
+    return (results && pipeline) ? EXIT_SUCCESS : EXIT_FAILURE;
 }

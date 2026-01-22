@@ -85,7 +85,11 @@ ov_tensor_t* read_speaker_embedding(const char* file_path) {
     shape.dims = dims;
 
     // Create tensor from host ptr
-    ov_tensor_create(f32, shape, &tensor);
+    if (ov_tensor_create(F32, shape, &tensor) != 0) {
+        fprintf(stderr, "Failed to create speaker embedding tensor.\n");
+        free(data);
+        return NULL;
+    }
     void* tensor_data = NULL;
     ov_tensor_data(tensor, &tensor_data);
     memcpy(tensor_data, data, file_size);

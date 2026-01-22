@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "openvino/c/ov_tensor.h"
+#include "openvino/c/openvino.h"
 
 #define CHECK_STATUS(return_status)                                                           \
     if (return_status != 0) {                                                                 \
