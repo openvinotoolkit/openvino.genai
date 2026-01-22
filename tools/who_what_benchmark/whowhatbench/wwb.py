@@ -179,7 +179,7 @@ def parse_args():
     parser.add_argument(
         "--num-inference-steps",
         type=int,
-        default=4,
+        default=None,
         help="Text-to-image/text-to-video specific parameter that defines the number of denoising steps.",
     )
     parser.add_argument(
