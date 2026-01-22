@@ -752,8 +752,7 @@ def test_continuous_batching_add_extension():
     scheduler_config = ov_genai.SchedulerConfig()
 
     if _ext_path.exists():
-        path = os.path.join(os.path.dirname(ov_genai.__file__), _ext_path.name)
-        properties = {"extensions": [path]}
+        properties = {"extensions": [str(_ext_path)]}
         ov_genai.ContinuousBatchingPipeline(models_path, scheduler_config, "CPU", properties)
 
     properties = {"extensions": ["fake_path"]}

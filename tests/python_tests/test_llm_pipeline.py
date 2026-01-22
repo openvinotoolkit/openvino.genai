@@ -913,8 +913,7 @@ def test_llm_pipeline_add_extension():
     models_path = download_and_convert_model(model_id).models_path
 
     if _ext_path.exists():
-        path = os.path.join(os.path.dirname(ov_genai.__file__), _ext_path.name)
-        properties = {"extensions": [path]}
+        properties = {"extensions": [str(_ext_path)]}
         ov_genai.LLMPipeline(models_path, "CPU", **properties)
 
     properties = {"extensions": ["fake_path"]}

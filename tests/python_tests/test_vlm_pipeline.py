@@ -1909,8 +1909,7 @@ def test_vlm_pipeline_add_extension():
     models_path = _get_ov_model(MODEL_IDS[0])
 
     if openvino_tokenizers._ext_path.exists():
-        path = os.path.join(os.path.dirname(ov_genai.__file__), openvino_tokenizers._ext_path.name)
-        properties = {"extensions": [path]}
+        properties = {"extensions": [str(openvino_tokenizers._ext_path)]}
         ov_genai.VLMPipeline(models_path, "CPU", config=properties)
 
     properties = {"extensions": ["fake_path"]}
