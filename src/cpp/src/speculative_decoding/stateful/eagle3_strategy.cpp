@@ -516,6 +516,9 @@ GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGe
 EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& inputs,
                                                           const GenerationConfig& config,
                                                           StreamerVariant streamer) {
+    ManualTimer generate_timer("StatefulEagle3LLMPipeline::generate()");
+    generate_timer.start();
+
     std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
 
     // Extract input tensors
@@ -597,10 +600,14 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
     results.tokens = {m_target->get_generated_tokens()};
     results.scores = {0.0f};
 
+    generate_timer.end();
+
     // Update performance metrics
     m_sd_perf_metrics.num_input_tokens = m_prompt_length;
     m_sd_perf_metrics.load_time = m_load_time_ms;
     m_sd_perf_metrics.num_accepted_tokens = total_draft_accepted;
+    m_sd_perf_metrics.raw_metrics.generate_durations.clear();
+    m_sd_perf_metrics.raw_metrics.generate_durations.emplace_back(generate_timer.get_duration_microsec());
 
     // Reset evaluated flags before updating raw_metrics to ensure statistics are recalculated
     m_sd_perf_metrics.m_evaluated = false;
@@ -618,9 +625,12 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
         m_sd_metrics.update_generated_len(generated_tokens);
     }
 
-    m_sd_perf_metrics.evaluate_statistics(std::chrono::steady_clock::now());
+    m_sd_perf_metrics.evaluate_statistics(generate_timer.get_start_time());
     results.perf_metrics = m_sd_perf_metrics;
     results.extended_perf_metrics = std::make_shared<SDPerModelsPerfMetrics>(m_sd_perf_metrics);
+
+    // Reset timer
+    generate_timer.clear();
 
     return results;
 }

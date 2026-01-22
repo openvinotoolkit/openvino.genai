@@ -410,6 +410,8 @@ GenerationConfig StatefulSpeculativeLLMPipeline::resolve_generation_config(Optio
 EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInputs& inputs,
                                                                const GenerationConfig& config,
                                                                StreamerVariant streamer) {
+    ManualTimer generate_timer("StatefulSpeculativeLLMPipeline::generate()");
+    generate_timer.start();
     ov::Tensor input_ids;
     ov::Tensor attention_mask;
 
@@ -659,19 +661,28 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInpu
         m_main_request->reset_state();
     }
 
+    generate_timer.end();
+
     // Update perf metrics
     // If is called without tokenization then that stat will not be reported.
     m_sd_perf_metrics.num_input_tokens = input_ids.get_shape().at(1);
     m_sd_perf_metrics.load_time = this->m_load_time_ms;
+    m_sd_perf_metrics.raw_metrics.generate_durations.clear();
+    m_sd_perf_metrics.raw_metrics.generate_durations.emplace_back(generate_timer.get_duration_microsec());
 
     m_sd_perf_metrics.draft_model_metrics.raw_metrics = m_draft_request->raw_perf_metrics;
     m_sd_perf_metrics.main_model_metrics.raw_metrics = m_main_request->raw_perf_metrics;
 
-    m_sd_perf_metrics.evaluate_statistics(std::chrono::steady_clock::now());
+    m_sd_perf_metrics.evaluate_statistics(generate_timer.get_start_time());
 
     results.perf_metrics = m_sd_perf_metrics;
     results.extended_perf_metrics = std::make_shared<SDPerModelsPerfMetrics>(m_sd_perf_metrics);
 
+    // Reset all timers.
+    generate_timer.clear();
+    iteration_timer.clear();
+    candidates_timer.clear();
+    main_timer.clear();
     return results;
 }
 

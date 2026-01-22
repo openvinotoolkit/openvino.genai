@@ -92,7 +92,7 @@ protected:
      * @param config Generation configuration (for chat template settings)
      * @return Tokenized inputs ready for model inference
      */
-    TokenizedInputs tokenize_prompt(const std::string& prompt, const GenerationConfig& config);
+    TokenizedInputs tokenize(const std::string& prompt, const GenerationConfig& config);
 
     /**
      * @brief Detokenize tokens with timing measurement
@@ -102,7 +102,7 @@ protected:
      * @param tokens Token IDs to decode
      * @return Decoded text
      */
-    std::vector<std::string> detokenize_tokens(const std::vector<std::vector<int64_t>>& tokens);
+    std::vector<std::string> detokenize(const std::vector<std::vector<int64_t>>& tokens);
 
     /**
      * @brief Finalize performance metrics after generation

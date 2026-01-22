@@ -151,8 +151,9 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
         ov::genai::ModelDesc(model, tokenizer, device, properties_without_draft_model, {}, generation_config);
 
     if (draft_model_descr.model != nullptr) {
+        // FIXME: Add support for StatefulSpeculativeLLMPipeline for non-NPU devices for both models.
         OPENVINO_ASSERT(device == "NPU" || draft_model_descr.device == "NPU",
-                        "Stateful fast_draft and Stateful Eagle3 Speculative Decoding require NPU to be "
+                        "Stateful FastDraft and Stateful Eagle3 Speculative Decoding require NPU to be "
                         "the execution device for at least one model.");
 
         // Check if Eagle3 mode is enabled in draft model properties
@@ -167,7 +168,7 @@ static std::unique_ptr<LLMPipelineImplBase> create(const std::shared_ptr<ov::Mod
             }
             return std::make_unique<StatefulEagle3LLMPipeline>(main_model_descr, draft_model_descr);
         } else {
-            // Standard Speculative Decoding mode (fast_draft)
+            // Standard Speculative Decoding mode (FastDraft)
             return std::make_unique<StatefulSpeculativeLLMPipeline>(main_model_descr, draft_model_descr);
         }
     }

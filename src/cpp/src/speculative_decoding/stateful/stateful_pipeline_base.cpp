@@ -26,7 +26,7 @@ void StatefulSpeculativePipelineBase::ensure_num_assistant_tokens_is_set(Generat
     OPENVINO_ASSERT(
         config.assistant_confidence_threshold == 0.f,
         "Stateful (non-Continuous Batching) Speculative Decoding pipeline only supports num_assistant_tokens, "
-        "not assistant_confidence_threshold. Set assistant_confidence_threshold to 0.f.");
+        "not assistant_confidence_threshold. Set assistant_confidence_threshold to 0.f or remove its specification.");
 
     if (config.num_assistant_tokens == 0) {
         config.num_assistant_tokens = DEFAULT_NUM_ASSISTANT_TOKENS;
@@ -49,8 +49,7 @@ GenerationConfig StatefulSpeculativePipelineBase::resolve_generation_config(
     return config;
 }
 
-TokenizedInputs StatefulSpeculativePipelineBase::tokenize_prompt(const std::string& prompt,
-                                                                 const GenerationConfig& config) {
+TokenizedInputs StatefulSpeculativePipelineBase::tokenize(const std::string& prompt, const GenerationConfig& config) {
     ManualTimer encode_timer("Encode");
     encode_timer.start();
 
@@ -79,17 +78,16 @@ TokenizedInputs StatefulSpeculativePipelineBase::tokenize_prompt(const std::stri
     return tokenized_input;
 }
 
-std::vector<std::string> StatefulSpeculativePipelineBase::detokenize_tokens(
-    const std::vector<std::vector<int64_t>>& tokens) {
+std::vector<std::string> StatefulSpeculativePipelineBase::detokenize(const std::vector<std::vector<int64_t>>& tokens) {
     ManualTimer decode_timer("Decode");
     decode_timer.start();
 
-    auto decoded = m_tokenizer.decode(tokens);
+    auto result = m_tokenizer.decode(tokens);
 
     decode_timer.end();
     m_sd_perf_metrics.raw_metrics.detokenization_durations.emplace_back(decode_timer.get_duration_microsec());
 
-    return decoded;
+    return result;
 }
 
 void StatefulSpeculativePipelineBase::finalize_perf_metrics(EncodedResults& results,
@@ -101,8 +99,8 @@ void StatefulSpeculativePipelineBase::finalize_perf_metrics(EncodedResults& resu
     auto& raw_counters = m_sd_perf_metrics.raw_metrics;
     raw_counters.generate_durations.clear();
     raw_counters.generate_durations.emplace_back(generate_duration_us);
-    
-    // Tokenization/detokenization are already added during tokenize_prompt/detokenize_tokens
+
+    // Tokenization/detokenization are already added during tokenize/detokenize
     // but we ensure they're set correctly here as well
     if (raw_counters.tokenization_durations.empty()) {
         raw_counters.tokenization_durations.emplace_back(tokenization_duration_us);
@@ -144,13 +142,13 @@ DecodedResults StatefulSpeculativePipelineBase::generate(StringInputs inputs,
     GenerationConfig config = resolve_generation_config(generation_config);
 
     // Tokenize
-    auto tokenized_input = tokenize_prompt(prompt, config);
+    auto tokenized_input = tokenize(prompt, config);
 
     // Generate tokens
     auto encoded_results = generate_tokens(tokenized_input, config, streamer);
 
     // Detokenize
-    DecodedResults decoded_results = {detokenize_tokens(encoded_results.tokens), encoded_results.scores};
+    DecodedResults decoded_results = {detokenize(encoded_results.tokens), encoded_results.scores};
 
     // Handle chat history
     if (m_is_chat_active) {
@@ -206,7 +204,7 @@ DecodedResults StatefulSpeculativePipelineBase::generate(const ChatHistory& hist
     auto encoded_results = generate_tokens(tokenized_inputs, config, streamer);
 
     // Detokenize
-    DecodedResults decoded_results = {detokenize_tokens(encoded_results.tokens), encoded_results.scores};
+    DecodedResults decoded_results = {detokenize(encoded_results.tokens), encoded_results.scores};
 
     // Finalize performance metrics
     generate_timer.end();
