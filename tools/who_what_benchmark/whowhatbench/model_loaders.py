@@ -30,12 +30,18 @@ class GenAIModelWrapper:
         self.model = model
         self.model_type = model_type
 
-        if model_type in ["text", "visual-text", "visual-video-text", "text-embedding", "text-reranking"]:
+        if model_type in (
+            "text",
+            "visual-text",
+            "visual-video-text",
+            "text-embedding",
+            "text-reranking",
+        ):
             try:
                 self.config = AutoConfig.from_pretrained(model_dir)
             except Exception:
                 self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
-        elif model_type in ["text-to-image", "text-to-video"]:
+        elif model_type in ("text-to-image", "text-to-video"):
             from diffusers import DiffusionPipeline
             try:
                 self.config = DiffusionPipeline.load_config(model_dir)
@@ -660,7 +666,7 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
         logger.info("Using HF Transformers API")
         try:
             model = LTXPipeline.from_pretrained(model_id)
-        except Exception:
+        except ValueError:
             model = LTXPipeline.from_pretrained(model_id, trust_remote_code=True)
     else:
         logger.info("Using Optimum API")

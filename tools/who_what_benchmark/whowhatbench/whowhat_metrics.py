@@ -7,7 +7,6 @@ from transformers import AutoTokenizer
 from PIL import Image
 import torch
 import torch.nn.functional as F
-from pathlib import Path
 
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
@@ -243,7 +242,7 @@ class VideoSimilarity:
 
     def get_pixel_values_videos(self, video):
         # according to pre processing of inputs in get_video_features of LlavaNextVideoModel
-        # https://github.com/huggingface/transformers/blob/main/src/transformers/models/llava_next_video/modular_llava_next_video.py#L381
+        # https://github.com/huggingface/transformers/blob/v4.53.2/src/transformers/models/llava_next_video/modular_llava_next_video.py#L381
         inputs = self.processor.video_processor(videos=video, return_tensors="pt")["pixel_values_videos"]
         batch_size, frames, channels, height, width = inputs.shape
         pixel_values_videos = inputs.reshape(batch_size * frames, channels, height, width)
@@ -255,12 +254,15 @@ class VideoSimilarity:
             # output shape (batch, patches, hidden_dim)
             outputs = self.model.vision_tower(pixel_values_videos, output_hidden_states=True)
         # according to post processing of outputs in get_video_features of LlavaNextVideoModel
-        # https://github.com/huggingface/transformers/blob/main/src/transformers/models/llava_next_video/modular_llava_next_video.py#L387
+        # https://github.com/huggingface/transformers/blob/v4.53.2/src/transformers/models/llava_next_video/modular_llava_next_video.py#L387
         outputs = outputs.hidden_states[layer_idx][:, 1:]
-        # mean pooling by patches
-        outputs = outputs.mean(dim=2)
-        outputs = torch.nn.functional.normalize(outputs, dim=-1)
-        return outputs
+        return outputs.mean(dim=2)
+
+    def load_video_frames(self, video_path):
+        import imageio.v3 as iio
+
+        frames = iio.imread(video_path, plugin="pyav")
+        return [Image.fromarray(frame).convert("RGB") for frame in frames]
 
     def evaluate(self, gt, prediction):
         videos_gold = gt["videos"].values
@@ -269,15 +271,8 @@ class VideoSimilarity:
         metric_per_video = []
         metric_per_frames_per_video = []
         for gold, pred in tqdm(zip(videos_gold, videos_prediction), desc="Video Similarity evaluation"):
-            gold_video = []
-            for i in range(len(list(Path(gold).glob("*.png")))):
-                frame_file_path = Path(gold, f"{i}.png")
-                gold_video.append(Image.open(frame_file_path).convert("RGB"))
-
-            prediction_video = []
-            for i in range(len(list(Path(pred).glob("*.png")))):
-                frame_file_path = Path(pred, f"{i}.png")
-                prediction_video.append(Image.open(frame_file_path).convert("RGB"))
+            gold_video = self.load_video_frames(gold)
+            prediction_video = self.load_video_frames(pred)
 
             gold_inputs_pixel_values = self.get_pixel_values_videos(gold_video)
             prediction_inputs_pixel_values = self.get_pixel_values_videos(prediction_video)
@@ -286,8 +281,7 @@ class VideoSimilarity:
             prediction_outputs = self.get_video_features(prediction_inputs_pixel_values)
 
             cos_sim_all = cosine_similarity(prediction_outputs, gold_outputs)
-            min_frames = min(len(gold_video), len(prediction_video))
-            cos_sim_frames = np.array([cos_sim_all[i, i] for i in range(min_frames)])
+            cos_sim_frames = np.array([cos_sim_all[i, i] for i in range(len(gold_video))])
             metric_per_video.append(np.mean(cos_sim_frames))
             metric_per_frames_per_video.append(cos_sim_frames)
 

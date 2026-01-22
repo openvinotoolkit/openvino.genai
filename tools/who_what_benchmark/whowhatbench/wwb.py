@@ -498,8 +498,7 @@ def genai_gen_image(model, prompt, num_inference_steps, generator=None, empty_ad
             generator=generator,
             **kwargs,
         )
-    image = Image.fromarray(image_tensor.data[0])
-    return image
+    return Image.fromarray(image_tensor.data[0])
 
 
 def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=None):
@@ -511,8 +510,7 @@ def genai_gen_image2image(model, prompt, image, num_inference_steps, generator=N
         strength=0.8,
         generator=generator,
     )
-    image = Image.fromarray(image_tensor.data[0])
-    return image
+    return Image.fromarray(image_tensor.data[0])
 
 
 def genai_gen_text2video(
@@ -540,8 +538,7 @@ def genai_gen_text2video(
         guidance_rescale=guidance_rescale,
         generator=generator,
     )
-    frames = [Image.fromarray(frame) for frame in result.video.data[0]]
-    return frames
+    return [Image.fromarray(frame) for frame in result.video.data[0]]
 
 
 def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, generator=None):
@@ -554,8 +551,7 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
         num_inference_steps=num_inference_steps,
         generator=generator,
     )
-    image = Image.fromarray(image_tensor.data[0])
-    return image
+    return Image.fromarray(image_tensor.data[0])
 
 
 def genai_gen_visual_text(model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question):

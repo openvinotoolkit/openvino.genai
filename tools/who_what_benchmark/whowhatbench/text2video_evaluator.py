@@ -4,17 +4,15 @@ from typing import Any, Union
 import pandas as pd
 from tqdm import tqdm
 from transformers import set_seed
+from diffusers.utils import export_to_video
 import torch
 import openvino_genai
 
 from .registry import register_evaluator, BaseEvaluator
 
 from .whowhat_metrics import VideoSimilarity
-# from diffusers.utils import export_to_video
 
 
-# let's agreed default parameter will be:
-# width: 704, height: 480, guidance_scale: 3, guidance_rescale: 0.3
 default_data = [
     # small resolution
     {
@@ -81,7 +79,7 @@ default_data = [
     },
     # guidance_scale 1 guidance_rescale 0
     {
-        "prompt": "indian womens wahsing clothes at river side  ",
+        "prompt": "indian women washing clothes at river side  ",
         "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
         "width": 256,
         "height": 128,
@@ -137,7 +135,7 @@ class Text2VideoEvaluator(BaseEvaluator):
         is_genai=False,
     ) -> None:
         assert base_model is not None or gt_data is not None, (
-            "Text generation pipeline for evaluation or ground trush data must be defined"
+            "Text generation pipeline for evaluation or ground truth data must be defined"
         )
 
         self.test_data = test_data
@@ -267,16 +265,9 @@ class Text2VideoEvaluator(BaseEvaluator):
                 guidance_rescale=input[5],
                 generator=openvino_genai.TorchGenerator(self.seed) if self.is_genai else rng,
             )
-            video_path = os.path.join(videos_dir, f"video_{i}")
-            if not os.path.exists(video_path):
-                os.makedirs(video_path)
-            for number, frame in enumerate(frames):
-                frame_path = os.path.join(video_path, f"{number}.png")
-                frame.save(frame_path)
+            video_path = os.path.join(videos_dir, f"video_{i}.mp4")
+            export_to_video(frames, video_path, self.frame_rate)
             videos.append(video_path)
-            # video_path = os.path.join(videos_dir, f"video_{i}.mp4")
-            # export_to_video(frames, video_path, self.frame_rate)
-            # videos.append(video_path)
 
         res_data["videos"] = videos
         df = pd.DataFrame(res_data)
