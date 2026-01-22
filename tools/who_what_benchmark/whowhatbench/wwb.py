@@ -537,7 +537,7 @@ def genai_gen_text2video(
         guidance_scale=guidance_scale,
         guidance_rescale=guidance_rescale,
         generator=generator,
-        **kwargs
+        **kwargs,
     )
     return [Image.fromarray(frame) for frame in result.video.data[0]]
 

@@ -102,7 +102,8 @@ class Text2VideoEvaluator(BaseEvaluator):
 
     def collect_default_data(self):
         from importlib.resources import files
-        data_path = files('whowhatbench.prompts').joinpath("text_to_video_prompts.json")
+
+        data_path = files("whowhatbench.prompts").joinpath("text_to_video_prompts.json")
         with open(data_path) as input_file:
             data = json.load(input_file)
 
@@ -134,7 +135,8 @@ class Text2VideoEvaluator(BaseEvaluator):
                     guidance_scale=guidance_scale,
                     guidance_rescale=guidance_rescale,
                     generator=generator,
-                    **kwargs
+                    max_sequence_length=256,
+                    **kwargs,
                 )
             return output.frames[0]
 

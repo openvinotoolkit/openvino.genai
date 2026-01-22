@@ -23,7 +23,7 @@
         "guidance_scale": 3,
         "guidance_rescale": 0.3
     },
-    { 
+    {
         "prompt": "The camera pans across a cityscape of tall buildings with a circular building in the center. The camera moves from left to right, showing the tops of the buildings and the circular building in the center. The buildings are various shades of gray and white, and the circular building has a green roof. The camera angle is high, looking down at the city. The lighting is bright, with the sun shining from the upper left, casting shadows from the buildings. The scene is computer-generated imagery.",
         "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
         "width": 1216,
@@ -41,10 +41,10 @@
     },
     {
         "prompt": "A woman with short brown hair, wearing a maroon sleeveless top and a silver necklace, walks through a room while talking, then a woman with pink hair and a white shirt appears in the doorway and yells. The first woman walks from left to right, her expression serious; she has light skin and her eyebrows are slightly furrowed. The second woman stands in the doorway, her mouth open in a yell; she has light skin and her eyes are wide. The room is dimly lit, with a bookshelf visible in the background. The camera follows the first woman as she walks, then cuts to a close-up of the second woman's face. The scene is captured in real-life footage.",
-        "negative_prompt": "",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
         "width": 704,
         "height": 480,
-        "guidance_scale": 2,
+        "guidance_scale": 5,
         "guidance_rescale": 0.3
     },
     {
@@ -52,7 +52,7 @@
         "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
         "width": 704,
         "height": 480,
-        "guidance_scale": 2,
+        "guidance_scale": 5,
         "guidance_rescale": 0
     },
     {
