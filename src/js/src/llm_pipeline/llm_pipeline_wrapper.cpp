@@ -47,18 +47,19 @@ void performInferenceThread(TsfnContext* context) {
         }
     };
     auto finalize = [context]() {
-        *context->is_generating = false;
         context->callback.Release();
         if (context->streamer.has_value()) {
             context->streamer->Release();
         }
     };
+    std::vector<std::string> streamer_exceptions;
+    ov::genai::DecodedResults result;
+    // Run inference
     try {
         ov::genai::GenerationConfig config;
         config.update_generation_config(*context->generation_config);
 
         ov::genai::StreamerVariant streamer = std::monostate();
-        std::vector<std::string> streamer_exceptions;
         if (context->streamer.has_value()) {
             streamer = [context, &streamer_exceptions](std::string word) {
                 std::promise<ov::genai::StreamingStatus> resultPromise;
@@ -88,7 +89,6 @@ void performInferenceThread(TsfnContext* context) {
             };
         }
 
-        ov::genai::DecodedResults result;
         std::visit(overloaded{[context, config, streamer, &result](ov::genai::StringInputs& inputs) {
                                   result = context->pipe->generate(inputs, config, streamer);
                               },
@@ -100,6 +100,14 @@ void performInferenceThread(TsfnContext* context) {
                               }},
                    context->inputs);
 
+    } catch (std::exception& e) {
+        report_error(e.what());
+    }
+    // should be called right after inference to release the flag asap
+    *context->is_generating = false;
+
+    // Call callback with result or error
+    try {
         if (!streamer_exceptions.empty()) {
             // If there were exceptions from the streamer, report them all as a single error and finish without result
             std::string combined_error = "Streamer exceptions occurred:\n";
@@ -125,11 +133,10 @@ void performInferenceThread(TsfnContext* context) {
                 report_error("The final BlockingCall failed with status " + status);
             }
         }
-        finalize();
     } catch (std::exception& e) {
         report_error(e.what());
-        finalize();
     }
+    finalize();
 }
 
 LLMPipelineWrapper::LLMPipelineWrapper(const Napi::CallbackInfo& info) : Napi::ObjectWrap<LLMPipelineWrapper>(info) {};
@@ -203,8 +210,8 @@ Napi::Value LLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
         }
         context->native_thread = std::thread(performInferenceThread, context);
     } catch (const std::exception& ex) {
-        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
         *this->is_generating = false;
+        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
     }
     return env.Undefined();
 }

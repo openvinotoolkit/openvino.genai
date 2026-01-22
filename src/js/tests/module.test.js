@@ -266,6 +266,12 @@ describe("LLMPipeline.generate()", () => {
       message: /Passed argument is not of type PerfMetrics/,
     });
   });
+
+  it("throw error if generate called during another generation", async () => {
+    const promise = pipeline.generate("prompt1");
+    await assert.rejects(pipeline.generate("prompt2"), /Another generation is already in progress/);
+    await promise;
+  });
 });
 
 describe("stream()", () => {
