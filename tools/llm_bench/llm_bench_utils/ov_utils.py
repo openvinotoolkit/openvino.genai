@@ -22,6 +22,7 @@ from llm_bench_utils.config_class import (
 from transformers import pipeline
 import queue
 from transformers.generation.streamers import BaseStreamer
+from openvino_genai import StreamingStatus
 
 
 def build_ov_tokenizer(hf_tokenizer):
@@ -268,11 +269,11 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_data_colle
             self.generated_tokens = []
             self.start_time = time.perf_counter()
 
-        def put(self, token_id):
+        def write(self, token_id) -> openvino_genai.StreamingStatus:
             self.token_generation_time.append(time.perf_counter() - self.start_time)
             self.generated_tokens.append(token_id)
             self.start_time = time.perf_counter()
-            return False
+            return openvino_genai.StreamingStatus.RUNNING
 
         def reset(self):
             self.token_generation_time = []
@@ -1005,7 +1006,7 @@ def get_genai_chunk_streamer():
             """
             self.text_queue.put(word)
 
-        def put(self, token_id: int) -> bool:
+        def write(self, token_id: int) -> StreamingStatus:
             """
             Processes a token and manages the decoding buffer. Adds decoded text to the queue.
 
@@ -1038,11 +1039,11 @@ def get_genai_chunk_streamer():
                 if self.get_stop_flag():
                     # When generation is stopped from streamer then end is not called, need to call it here manually.
                     self.end()
-                    return True  # True means stop  generation
+                    return StreamingStatus.STOP  # stop generation
                 else:
-                    return False  # False means continue generation
+                    return StreamingStatus.RUNNING  # continue generation
             else:
-                return False
+                return StreamingStatus.RUNNING
 
         def end(self):
             """
