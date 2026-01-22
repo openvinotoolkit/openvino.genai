@@ -175,15 +175,6 @@ std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(const std::share
     return nullptr;
 }
 
-void remove_d2t_result_node(std::shared_ptr<ov::Model>& model) {
-    // Find and remove the d2t Result node
-    auto d2t_result = find_d2t_result_node(model);
-    if (d2t_result) {
-        model->remove_result(d2t_result);
-        model->validate_nodes_and_infer_types();
-    }
-}
-
 void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector<int32_t>& hidden_layers_to_abstract) {
     if (hidden_layers_to_abstract.empty()) {
         return;

@@ -3,10 +3,9 @@
 
 #pragma once
 
-#include "openvino/genai/continuous_batching_pipeline.hpp"
-
 #include "continuous_batching/pipeline_impl.hpp"
-#include "speculative_decoding/continuous_batching/update_request_structs.hpp"
+#include "openvino/genai/continuous_batching_pipeline.hpp"
+#include "update_request_structs.hpp"
 
 namespace ov::genai {
 class ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl : public ContinuousBatchingPipeline::ContinuousBatchingImpl {

@@ -468,7 +468,6 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
 
     auto d2t_mapping = utils::eagle3::extract_d2t_mapping_table(draft_model);
     OPENVINO_ASSERT(d2t_mapping && d2t_mapping->get_element_type() == ov::element::i64, "Invalid d2t mapping tensor");
-    utils::eagle3::remove_d2t_result_node(draft_model);
 
     utils::eagle3::transform_hidden_state(target_model, m_hidden_layers_to_abstract);
     utils::eagle3::move_fc_from_draft_to_main(draft_model, target_model);

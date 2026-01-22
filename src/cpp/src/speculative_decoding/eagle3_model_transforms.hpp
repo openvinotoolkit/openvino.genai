@@ -77,14 +77,6 @@ void move_fc_from_draft_to_main(std::shared_ptr<ov::Model>& draft_model, std::sh
 std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(const std::shared_ptr<ov::Model>& model);
 
 /**
- * @brief Removes draft-to-target result node from model (NPU-specific optimization).
- * @param model Model to modify.
- * @note NPU-specific: Removing this node prevents certain NPU compilation issues.
- *       This operation has no adverse impact on other devices.
- */
-void remove_d2t_result_node(std::shared_ptr<ov::Model>& model);
-
-/**
  * @brief Extracts hidden states from specified decoder layers.
  *
  * This function modifies the provided model by identifying and extracting the outputs of residual
