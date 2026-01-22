@@ -21,6 +21,20 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def pruning_ratio_type(value: str) -> int:
+    ivalue = int(value)
+    if ivalue < 0 or ivalue > 100:
+        raise argparse.ArgumentTypeError(f"pruning_ratio must be between 0 and 100, got {value}")
+    return ivalue
+
+
+def relevance_weight_type(value: str) -> float:
+    fvalue = float(value)
+    if not 0.0 <= fvalue <= 1.0:
+        raise argparse.ArgumentTypeError(f"relevance_weight must be between 0 and 1, got {value}")
+    return fvalue
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         prog="WWB CLI",
@@ -275,6 +289,22 @@ def parse_args():
         help="The number of frames that will be taken from video for input, the frames will be taken evenly across the entire length, "
              "applicable for Visual Language Models with video inputs",
     )
+    parser.add_argument(
+        "--pruning_ratio",
+        type=pruning_ratio_type,
+        default=None,
+        required=False,
+        help="Percentage of visual tokens to prune (valid range: 0-100). If this option is not provided, pruning is disabled.",
+    )
+    parser.add_argument(
+        "--relevance_weight",
+        type=relevance_weight_type,
+        default=None,
+        required=False,
+        help="Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, "
+        "a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, "
+        "making pruning more conservative on borderline tokens.",
+    )
 
     return parser.parse_args()
 
@@ -517,15 +547,18 @@ def genai_gen_inpainting(model, prompt, image, mask, num_inference_steps, genera
     return image
 
 
-def genai_gen_visual_text(model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question):
-    kwargs = {
-        "do_sample": False,
-        "max_new_tokens": max_new_tokens
-    }
+def genai_gen_visual_text(
+    model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question, pruning_ratio, relevance_weight
+):
+    kwargs = {"do_sample": False, "max_new_tokens": max_new_tokens}
     if image is not None:
         kwargs['image'] = ov.Tensor(np.array(image)[None])
     if video is not None:
         kwargs['videos'] = [ov.Tensor(np.array(video))]
+    if pruning_ratio is not None:
+        kwargs["pruning_ratio"] = pruning_ratio
+    if relevance_weight is not None:
+        kwargs["relevance_weight"] = relevance_weight
 
     out = model.generate(
         prompt,
@@ -623,7 +656,9 @@ def create_evaluator(base_model, args):
                 processor=processor,
                 crop_question=crop_question,
                 task_type=task,
-                frames_num=args.video_frames_num
+                frames_num=args.video_frames_num,
+                pruning_ratio=args.pruning_ratio,
+                relevance_weight=args.relevance_weight,
             )
         elif task == "image-to-image":
             return EvaluatorCLS(
