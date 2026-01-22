@@ -8,6 +8,8 @@
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/genai/text_streamer.hpp"
+#include "openvino/runtime/properties.hpp"
+#include "openvino/runtime/auto/properties.hpp"
 
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/inputs_embedder.hpp"
@@ -32,6 +34,17 @@ void update_npu_properties(const std::filesystem::path& models_dir, ov::AnyMap& 
         default:
             break;
     }
+}
+
+void npu_auto_default_properties(ov::AnyMap& device_properties) {
+    auto auto_propeties = utils::pop_or_default<ov::AnyMap>(device_properties, "AUTO", {});
+    auto priorities = auto_propeties.insert(ov::device::priorities("GPU", "CPU"));
+    if (priorities.first->second != "CPU") {
+        auto_propeties.insert(ov::intel_auto::enable_startup_fallback(false));
+        auto_propeties.insert(ov::intel_auto::enable_runtime_fallback(false));
+    }
+
+    device_properties["AUTO"] = auto_propeties;
 }
 }
 
@@ -90,23 +103,24 @@ public:
         //     ov::device::properties("NPU", ...),
         //     ov::device::properties("CPU", ...)
         // }
-        auto device_propertes = utils::pop_or_default<ov::AnyMap>(
+        auto device_properties = utils::pop_or_default<ov::AnyMap>(
             properties_copy, ov::device::properties.name(), { }
         );
         // Otherwise, the same properties are used for all models and devices
-        auto lm_properties = device_propertes.empty()
+        auto lm_properties = device_properties.empty()
             ? properties_copy
-            : utils::pop_or_default<ov::AnyMap>(device_propertes, device, {});
+            : utils::pop_or_default<ov::AnyMap>(device_properties, device, {});
 
         ov::CompiledModel compiled_language_model;
         auto embedder_device = device;
         if (m_is_npu) {
-            embedder_device = "CPU";
+            embedder_device = "AUTO";
             utils::KVDesc kv_desc;
             update_npu_properties(models_dir, lm_properties);
             std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(language_model, lm_properties, kv_pos);
             m_max_prompt_len = kv_desc.max_prompt_len;
             m_max_kv_cache_size = kv_desc.max_prompt_len + kv_desc.min_response_len;
+            npu_auto_default_properties(device_properties);
         } else {
             compiled_language_model = utils::singleton_core().compile_model(language_model, device, lm_properties);
         }
@@ -115,9 +129,9 @@ public:
         m_language = compiled_language_model.create_infer_request();
         m_language.get_tensor("attention_mask").set_shape({1, 0});
 
-        auto embedder_properties = device_propertes.empty()
+        auto embedder_properties = device_properties.empty()
             ? properties_copy
-            : utils::pop_or_default<ov::AnyMap>(device_propertes, embedder_device, {});
+            : utils::pop_or_default<ov::AnyMap>(device_properties, embedder_device, {});
 
         m_inputs_embedder = std::make_shared<InputsEmbedder>(models_dir, embedder_device, embedder_properties);
         m_tokenizer = m_inputs_embedder->get_tokenizer();
@@ -207,6 +221,7 @@ public:
             generation_config.set_eos_token_id(m_generation_config.eos_token_id);
         generation_config.validate();
 
+        bool intermediate_remote_tensor = true;
         if (m_is_npu) {
             OPENVINO_ASSERT(images.size() <= 1u && videos.size() <= 1u, "Currently only batch size equal to 1 is supported for NPU device!");
             OPENVINO_ASSERT(generation_config.is_greedy_decoding() || generation_config.is_multinomial(),
@@ -215,6 +230,7 @@ public:
                 "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
             if (m_is_chat_conversation)
                 OPENVINO_ASSERT(videos.empty(), "Chat mode is currently not supported with video input for NPU device!");
+            intermediate_remote_tensor = false;
         }
 
         m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
@@ -320,7 +336,8 @@ public:
 
         ov::genai::utils::GenerationFinishInfo finish_info = ov::genai::get_lm_encoded_results(
             m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, std::move(requests),
-            position_ids, token_type_ids, kv_cache_state, m_embedding, rope_delta, m_max_kv_cache_size
+            position_ids, token_type_ids, kv_cache_state, m_embedding, rope_delta, m_max_kv_cache_size,
+            intermediate_remote_tensor
         );
         EncodedResults& encoded_result = finish_info.results;
 
