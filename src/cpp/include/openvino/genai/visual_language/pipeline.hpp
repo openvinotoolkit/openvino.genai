@@ -363,7 +363,7 @@ static constexpr ov::Property<std::vector<ov::Tensor>> images{"images"};
 static constexpr ov::Property<std::vector<ov::Tensor>> videos{"videos"};
 
 /**
-* @brief Execution device for embedder models of visual language modeling pipeline when execute language models model on NPU.
+* @brief Execution device for embedder models of visual language modeling pipeline when executing language models on NPU.
 * This property allows to specify the device (e.g. "CPU", "GPU") on which the embedder models will be executed.
 */
 static constexpr ov::Property<std::string> embedder_device{"embedder_device"};
