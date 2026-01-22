@@ -13,6 +13,7 @@ from openvino_genai import (
     GenerationConfig,
     LLMPipeline,
     StreamingStatus,
+    ChatHistory,
 )
 from openvino_genai import (
     StructuredOutputConfig as SOC,
@@ -118,7 +119,9 @@ def main():
         config = GenerationConfig()
         config.max_new_tokens = 300
 
-        pipe.start_chat(sys_message)
+        history = ChatHistory()
+        history.append({"role": "system", "content": sys_message})
+
         if use_structural_tags:
             config.structured_output_config = SOC(
                 structural_tags_config=SOC.TriggeredTags(
@@ -134,8 +137,11 @@ def main():
                 )
             )
             config.do_sample = True
-        response = pipe.generate(args.prompt, config, streamer=streamer)
-        pipe.finish_chat()
+
+        history.append({"role": "user", "content": args.prompt})
+        decoded_results = pipe.generate(history, config, streamer=streamer)
+        response = decoded_results.texts[0]
+        history.append({"role": "assistant", "content": response})
         print("\n" + "-" * 80)
 
         print("Correct tool calls by the model:")
