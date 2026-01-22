@@ -404,7 +404,7 @@ class TestBenchmarkLLM:
                     "--num_frames",
                     "9",
                     "--frame_rate",
-                    "23",
+                    "25",
                     "--width",
                     "256",
                     "--height",

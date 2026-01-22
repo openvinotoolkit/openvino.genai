@@ -117,6 +117,7 @@ class CommonPipeline(ABC):
         """
         raise NotImplementedError
 
+    @abstractmethod
     def gen_iterate_data(
         self,
         input_token_size: int,

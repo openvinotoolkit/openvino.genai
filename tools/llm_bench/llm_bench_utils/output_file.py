@@ -46,7 +46,7 @@ def save_video_file(
 ):
     save_path = get_file_path(args["output_dir"], video_save_name)
 
-    h, w = frames[0].size[1], frames[0].size[0]
+    w, h = frames[0].size[0], frames[0].size[1]
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out = cv2.VideoWriter(save_path, fourcc, fps, (w, h))

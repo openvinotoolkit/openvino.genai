@@ -21,15 +21,16 @@ from task.pipeline_utils import CommonPipeline, execution_time_in_sec, collect_p
 FW_UTILS = {"pt": llm_bench_utils.pt_utils, "ov": llm_bench_utils.ov_utils}
 
 MS_PER_SEC = 1000
+DEFAULT_FRAME_RATE = 25
 
 
 def collect_input_args(
     input_param: dict,
-    width: int | None = None,
-    height: int | None = None,
-    num_steps: int | None = None,
-    num_frames: int | None = None,
-    frame_rate: int | None = None,
+    width: int | None,
+    height: int | None,
+    num_steps: int | None,
+    num_frames: int | None,
+    frame_rate: int | None,
 ):
     input_args = {}
     if "width" in input_param or width is not None:
@@ -127,7 +128,7 @@ class TextToVideoOptimum(CommonPipeline):
                 bs_idx,
                 proc_id,
                 ".mp4",
-                fps=self.frame_rate or 24,
+                fps=self.frame_rate or DEFAULT_FRAME_RATE,
             )
 
         iter_data = gen_output_data.gen_iterate_data(
@@ -267,7 +268,7 @@ class TextToVideoGenAI(CommonPipeline):
                 bs_idx,
                 proc_id,
                 ".mp4",
-                fps=self.frame_rate or 24,
+                fps=self.frame_rate or DEFAULT_FRAME_RATE,
             )
 
         perf_metrics = generation_result.perf_metrics
