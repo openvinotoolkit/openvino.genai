@@ -552,7 +552,9 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
     // Phase 1: Initial Prompt Processing (Prefill)
 
     // Prefill: process all prompt tokens from sequence
-    auto prefill_result = m_target->forward({.input_token_count = m_prompt_length});
+    InferContext prefill_ctx;
+    prefill_ctx.input_token_count = m_prompt_length;
+    auto prefill_result = m_target->forward(prefill_ctx);
     OPENVINO_ASSERT(prefill_result.sampled_tokens.size() == 1, "Expected single token from prefill");
     auto initial_token = prefill_result.sampled_tokens[0];
 
@@ -640,9 +642,11 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     const size_t pre_draft_token_len = m_draft->get_sequence_length();
 
     // Step 1: Generate first draft token using target hidden states
-    auto first_result = m_draft->forward({.input_token_count = input_token_count,
-                                          .use_target_hidden = true,
-                                          .target_sequence = m_target->get_current_sequence()});
+    InferContext first_ctx;
+    first_ctx.input_token_count = input_token_count;
+    first_ctx.use_target_hidden = true;
+    first_ctx.target_sequence = m_target->get_current_sequence();
+    auto first_result = m_draft->forward(first_ctx);
 
     OPENVINO_ASSERT(first_result.sampled_tokens.size() == 1, "Expected single token from first draft");
     int64_t first_draft_token = first_result.sampled_tokens[0];
@@ -657,7 +661,10 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
 
     // Step 2: Generate additional draft tokens using internal hidden states
     for (size_t i = 1; i < m_draft_iterations; ++i) {
-        auto more_result = m_draft->forward({.input_token_count = 1, .use_target_hidden = false});
+        InferContext more_ctx;
+        more_ctx.input_token_count = 1;
+        more_ctx.use_target_hidden = false;
+        auto more_result = m_draft->forward(more_ctx);
 
         OPENVINO_ASSERT(more_result.sampled_tokens.size() == 1, "Expected single token from draft iteration");
         int64_t draft_token = more_result.sampled_tokens[0];
@@ -673,9 +680,11 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
 
     const size_t validation_window_size = m_draft_iterations + 1;
 
-    auto val_result = m_target->forward({.input_token_count = validation_window_size,
-                                         .sample_count = validation_window_size,
-                                         .num_tokens_to_validate = m_draft_iterations});
+    InferContext val_ctx;
+    val_ctx.input_token_count = validation_window_size;
+    val_ctx.sample_count = validation_window_size;
+    val_ctx.num_tokens_to_validate = m_draft_iterations;
+    auto val_result = m_target->forward(val_ctx);
 
     // Sampler validates draft tokens and returns accepted + new sampled token
     auto validated_tokens = val_result.sampled_tokens;
