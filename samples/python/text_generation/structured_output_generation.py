@@ -102,9 +102,7 @@ def main():
                 decoded_results = pipe.generate(history, config)
                 json_strs = decoded_results.texts[0]
                 history.append({"role": "assistant", "content": json_strs})
-                # Validate generated JSON
-                json.loads(json_strs)
-                print(json_strs)
+                print(json.loads(json_strs))
 
         if not generate_has_run:
             print("No items generated. Please try again with a different request.")
