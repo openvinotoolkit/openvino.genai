@@ -101,6 +101,32 @@ class TextToVideoOptimum(CommonPipeline):
             out_str += f", guidance_rescale={input_args['guidance_rescale']}"
         log.info(out_str)
 
+    def gen_iterate_data(
+        self,
+        input_token_size: int,
+        iter_num: int,
+        infer_count: int,
+        gen_time_list: list,
+        infer_duration_list: list,
+        max_rss_mem_consumption: float,
+        rss_mem_increase: float,
+        max_sys_mem_consumption: float,
+        sys_mem_increase: float,
+        prompt_index: int,
+        tokenization_time: list,
+    ):
+        return gen_output_data.gen_iterate_data(
+            iter_idx=iter_num,
+            in_size=input_token_size * self.batch_size,
+            infer_count=infer_count,
+            gen_time=gen_time_list[0] if gen_time_list else 0,
+            max_rss_mem=max_rss_mem_consumption,
+            max_rss_mem_increase=rss_mem_increase,
+            max_sys_mem=max_sys_mem_consumption,
+            max_sys_mem_increase=sys_mem_increase,
+            prompt_idx=prompt_index,
+        )
+
     def postprocess_output_info(
         self,
         generation_result: Any,
@@ -243,6 +269,32 @@ class TextToVideoGenAI(CommonPipeline):
         if input_args.get("guidance_rescale"):
             out_str += f", guidance_rescale={input_args['guidance_rescale']}"
         log.info(out_str)
+
+    def gen_iterate_data(
+        self,
+        input_token_size: int,
+        iter_num: int,
+        infer_count: int,
+        gen_time_list: list,
+        infer_duration_list: list,
+        max_rss_mem_consumption: float,
+        rss_mem_increase: float,
+        max_sys_mem_consumption: float,
+        sys_mem_increase: float,
+        prompt_index: int,
+        tokenization_time: list,
+    ):
+        return gen_output_data.gen_iterate_data(
+            iter_idx=iter_num,
+            in_size=input_token_size * self.batch_size,
+            infer_count=infer_count,
+            gen_time=gen_time_list[0] if gen_time_list else 0,
+            max_rss_mem=max_rss_mem_consumption,
+            max_rss_mem_increase=rss_mem_increase,
+            max_sys_mem=max_sys_mem_consumption,
+            max_sys_mem_increase=sys_mem_increase,
+            prompt_idx=prompt_index,
+        )
 
     def postprocess_output_info(
         self,
