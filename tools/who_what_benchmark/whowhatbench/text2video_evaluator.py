@@ -52,7 +52,7 @@ default_data = [
     },
     # guidance_rescale 0
     {
-        "prompt": "fight naruto vs saske  ",
+        "prompt": "fight naruto vs sasuke  ",
         "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
         "width": 704,
         "height": 480,
@@ -89,7 +89,7 @@ default_data = [
     # big prompt
     {
         "prompt": "Levitating woman uses magic and fairy dusty spews forth from her fingers.  cinematic shot  photos taken by ARRI, photos taken "
-        + "by sony, photos taken by canon, photos taken by nikon, photos taken by sony, photos taken by hasselblad  ",
+        + "by sony, photos taken by canon, photos taken by nikon, photos taken by hasselblad  ",
         "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
         "width": 704,
         "height": 480,

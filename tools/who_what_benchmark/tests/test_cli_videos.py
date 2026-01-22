@@ -27,8 +27,8 @@ def teardown_module():
     shutil.rmtree(MODEL_CACHE)
 
 
-@pytest.mark.skipif(sys.platform == "darwin", reason="Not enough memory on macOS CI runners")
-@pytest.mark.skipif(sys.platform == "win32", reason="Access violation in OVLTXPipeline on Windows")
+@pytest.mark.xfail(sys.platform == "darwin", reason="Not enough memory on macOS CI runners")
+@pytest.mark.xfail(sys.platform == "win32", reason="Access violation in OVLTXPipeline on Windows")
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [("optimum-intel-internal-testing/tiny-random-ltx-video", "text-to-video")],
