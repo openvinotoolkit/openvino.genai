@@ -3981,7 +3981,7 @@ class VLMPipeline:
 
         Attributes:
             embedder_device (str, optional):
-                Execution device for embedder models of visual language modeling pipeline when execute language models model on NPU.
+                Execution device for embedder models of visual language modeling pipeline when executing language models model on NPU.
         """
         embedder_device: str | None
         @typing.overload
