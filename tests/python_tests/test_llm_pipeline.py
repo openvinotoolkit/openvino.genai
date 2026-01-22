@@ -912,12 +912,10 @@ def test_llm_pipeline_add_extension():
     model_id = "katuni4ka/tiny-random-phi3"
     models_path = download_and_convert_model(model_id).models_path
 
-    if _ext_path.exists():
-        properties = {"extensions": [str(_ext_path)]}
-        ov_genai.LLMPipeline(models_path, "CPU", **properties)
+    properties = {"extensions": [str(_ext_path)]}
+    ov_genai.LLMPipeline(models_path, "CPU", **properties)
 
     properties = {"extensions": ["fake_path"]}
-
     with pytest.raises(RuntimeError) as exc_info:
         ov_genai.LLMPipeline(models_path, "CPU", **properties)
     assert "Cannot find entry point to the extension library" in str(exc_info.value)
