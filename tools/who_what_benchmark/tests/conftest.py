@@ -1,5 +1,4 @@
 import os
-import sys
 import pytest
 import logging
 import shutil
@@ -8,10 +7,7 @@ import subprocess  # nosec B404
 from pathlib import Path
 from typing import Any, Dict
 
-sys.path.insert(0, f"{os.path.dirname(__file__)}/../../../tests/")
-from python_tests.utils.atomic_download import AtomicDownloadManager  # noqa
-from python_tests.utils.constants import get_ov_cache_dir  # noqa
-from python_tests.utils.network import retry_request  # noqa
+from ov_utils import AtomicDownloadManager, get_ov_cache_dir, retry_request  # noqa
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -61,7 +57,7 @@ def get_ov_cache_converted_models_dir():
     return get_ov_cache_dir() / "converted_models"
 
 
-def convert_model(model_name):
+def convert_model(model_name: str) -> str:
     models_dir = get_ov_cache_converted_models_dir()
 
     parts = model_name.split("/")
@@ -122,7 +118,7 @@ def session_setup_teardown():
             logger.info(f"Skipped temporary directory cleanup because it doesn't exist: {ov_cache_dir}")
 
 
-def run_wwb(args, env=None):
+def run_wwb(args: list[str], env=None):
     command = ["wwb"] + args
     base_env = {"TRANSFORMERS_VERBOSITY": "debug", "PYTHONIOENCODING": "utf-8", **os.environ}
     if env:
