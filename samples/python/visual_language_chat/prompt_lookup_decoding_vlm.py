@@ -55,7 +55,7 @@ def main():
 
     device = "CPU"
 
-    # Prompt lookup decoding is implemented only for ContiniousBatching backend
+    # Prompt lookup decoding is implemented only for ContinuousBatching backend
     # which is the default backed for all models except for Qwen2VL, Qwen2.5VL, and Gemma3 due to accuracy issues.
     pipe = openvino_genai.VLMPipeline(args.model_dir, device, prompt_lookup=args.enable_lookup)
 
