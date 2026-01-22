@@ -7,6 +7,8 @@
 #include <memory>
 #include <string>
 
+#include "openvino/c/ov_common.h"
+#include "openvino/core/type/element_type.hpp"
 #include "openvino/genai/chat_history.hpp"
 #include "openvino/genai/generation_config.hpp"
 #include "openvino/genai/json_container.hpp"
@@ -18,6 +20,78 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
+
+
+inline ov_element_type_e cpp_element_type_to_c(const ov::element::Type& t) {
+    if (t == ov::element::f32)
+        return static_cast<ov_element_type_e>(ov::element::Type_t::f32);
+    if (t == ov::element::f16)
+        return static_cast<ov_element_type_e>(ov::element::Type_t::f16);
+    if (t == ov::element::i32)
+        return static_cast<ov_element_type_e>(ov::element::Type_t::i32);
+    if (t == ov::element::i64)
+        return static_cast<ov_element_type_e>(ov::element::Type_t::i64);
+    if (t == ov::element::u8)
+        return static_cast<ov_element_type_e>(ov::element::Type_t::u8);
+    return static_cast<ov_element_type_e>(0);
+}
+
+inline ov::element::Type c_element_type_to_cpp(ov_element_type_e et) {
+    switch (et) {
+    case ov_element_type_e::BOOLEAN:
+        return ov::element::boolean;
+    case ov_element_type_e::BF16:
+        return ov::element::bf16;
+    case ov_element_type_e::F16:
+        return ov::element::f16;
+    case ov_element_type_e::F32:
+        return ov::element::f32;
+    case ov_element_type_e::F64:
+        return ov::element::f64;
+    case ov_element_type_e::I4:
+        return ov::element::i4;
+    case ov_element_type_e::I8:
+        return ov::element::i8;
+    case ov_element_type_e::I16:
+        return ov::element::i16;
+    case ov_element_type_e::I32:
+        return ov::element::i32;
+    case ov_element_type_e::I64:
+        return ov::element::i64;
+    case ov_element_type_e::U1:
+        return ov::element::u1;
+    case ov_element_type_e::U2:
+        return ov::element::u2;
+    case ov_element_type_e::U3:
+        return ov::element::u3;
+    case ov_element_type_e::U4:
+        return ov::element::u4;
+    case ov_element_type_e::U6:
+        return ov::element::u6;
+    case ov_element_type_e::U8:
+        return ov::element::u8;
+    case ov_element_type_e::U16:
+        return ov::element::u16;
+    case ov_element_type_e::U32:
+        return ov::element::u32;
+    case ov_element_type_e::U64:
+        return ov::element::u64;
+    case ov_element_type_e::NF4:
+        return ov::element::nf4;
+    case ov_element_type_e::F8E4M3:
+        return ov::element::f8e4m3;
+    case ov_element_type_e::F8E5M3:
+        return ov::element::f8e5m2;
+    case ov_element_type_e::STRING:
+        return ov::element::string;
+    case ov_element_type_e::F4E2M1:
+        return ov::element::f4e2m1;
+    case ov_element_type_e::F8E8M0:
+        return ov::element::f8e8m0;
+    default:
+        return ov::element::undefined;
+    }
+}
 
 #define GET_PROPERTY_FROM_ARGS_LIST                                                                            \
     std::string property_key = va_arg(args_ptr, char*);                                                        \

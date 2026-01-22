@@ -1,11 +1,10 @@
-// Copyright (C) 2026 Intel Corporation
-// SPDX-License-Identifier: Apache-2.0
-//
-
 #include "text2speech_sample_utils.h"
 
+#include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
 
 // Minimal WAV header structure
 // This removes struct padding to ensure the Wav Header matches the exact binary layout
@@ -79,17 +78,24 @@ ov_tensor_t* read_speaker_embedding(const char* file_path) {
     fclose(file);
 
     ov_tensor_t* tensor = NULL;
-    ov_shape_t shape;
-    shape.rank = 2;
+
+    ov_shape_t shape = {0, NULL};
     int64_t dims[] = {1, 512};
-    shape.dims = dims;
+    if (ov_shape_create(2, dims, &shape) != 0) {
+        fprintf(stderr, "Failed to create shape.\n");
+        free(data);
+        return NULL;
+    }
 
     // Create tensor from host ptr
     if (ov_tensor_create(F32, shape, &tensor) != 0) {
         fprintf(stderr, "Failed to create speaker embedding tensor.\n");
+        ov_shape_free(&shape);
         free(data);
         return NULL;
     }
+    ov_shape_free(&shape);
+
     void* tensor_data = NULL;
     ov_tensor_data(tensor, &tensor_data);
     memcpy(tensor_data, data, file_size);

@@ -143,22 +143,26 @@ ov_status_e ov_genai_vlm_pipeline_generate(ov_genai_vlm_pipeline* pipe,
         const ov_tensor_t* ct = rgbs[i];
 
         ov_element_type_e et;
-        ov_tensor_get_element_type(ct, &et);
+        if (ov_tensor_get_element_type(ct, &et) != 0) {
+            return ov_status_e::UNKNOW_EXCEPTION;
+        }
 
         ov_shape_t shape_c{};
-        ov_tensor_get_shape(ct, &shape_c);
+        if (ov_tensor_get_shape(ct, &shape_c) != 0) {
+            return ov_status_e::UNKNOW_EXCEPTION;
+        }
         std::vector<size_t> dims(shape_c.rank);
         for (size_t d = 0; d < shape_c.rank; ++d)
             dims[d] = shape_c.dims[d];
         ov_shape_free(&shape_c);
 
         void* data_ptr = nullptr;
-        ov_tensor_data(const_cast<ov_tensor_t*>(ct), &data_ptr);
-        if (!data_ptr) {
+        if (ov_tensor_data(const_cast<ov_tensor_t*>(ct), &data_ptr) != 0 || !data_ptr) {
             return ov_status_e::INVALID_C_PARAM;
         }
 
-        rgbs_cpp.emplace_back(ov::element::Type(static_cast<ov::element::Type_t>(et)), ov::Shape(dims), data_ptr);
+        rgbs_cpp.push_back(ov::Tensor(c_element_type_to_cpp(et), ov::Shape(dims)));
+        std::memcpy(rgbs_cpp.back().data(), data_ptr, rgbs_cpp.back().get_byte_size());
     }
 
     try {

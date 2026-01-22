@@ -4,6 +4,7 @@
 #include "openvino/genai/c/text2speech_pipeline.h"
 
 #include <cstdarg>
+#include <cstring>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -12,20 +13,6 @@
 #include "openvino/c/ov_tensor.h"
 #include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
 #include "types_c.h"
-
-static ov_element_type_e cpp_element_type_to_c(const ov::element::Type& t) {
-    if (t == ov::element::f32)
-        return static_cast<ov_element_type_e>(ov::element::Type_t::f32);
-    if (t == ov::element::f16)
-        return static_cast<ov_element_type_e>(ov::element::Type_t::f16);
-    if (t == ov::element::i32)
-        return static_cast<ov_element_type_e>(ov::element::Type_t::i32);
-    if (t == ov::element::i64)
-        return static_cast<ov_element_type_e>(ov::element::Type_t::i64);
-    if (t == ov::element::u8)
-        return static_cast<ov_element_type_e>(ov::element::Type_t::u8);
-    return static_cast<ov_element_type_e>(0);
-}
 
 ov_status_e ov_genai_text2speech_decoded_results_create(ov_genai_text2speech_decoded_results** results) {
     if (!results) {
@@ -160,20 +147,26 @@ ov_status_e ov_genai_text2speech_pipeline_generate(ov_genai_text2speech_pipeline
         ov::Tensor speaker_embedding_cpp;
         if (speaker_embedding) {
             ov_shape_t shape_c{};
-            ov_tensor_get_shape(speaker_embedding, &shape_c);
+            if (ov_tensor_get_shape(speaker_embedding, &shape_c) != 0) {
+                return ov_status_e::UNKNOW_EXCEPTION;
+            }
             std::vector<size_t> dims(shape_c.rank);
             for (size_t d = 0; d < shape_c.rank; ++d)
                 dims[d] = shape_c.dims[d];
             ov_shape_free(&shape_c);
 
             void* data_ptr = nullptr;
-            ov_tensor_data(const_cast<ov_tensor_t*>(speaker_embedding), &data_ptr);
+            if (ov_tensor_data(const_cast<ov_tensor_t*>(speaker_embedding), &data_ptr) != 0 || !data_ptr) {
+                return ov_status_e::UNKNOW_EXCEPTION;
+            }
 
             ov_element_type_e et;
-            ov_tensor_get_element_type(speaker_embedding, &et);
+            if (ov_tensor_get_element_type(speaker_embedding, &et) != 0) {
+                return ov_status_e::UNKNOW_EXCEPTION;
+            }
 
-            speaker_embedding_cpp =
-                ov::Tensor(ov::element::Type(static_cast<ov::element::Type_t>(et)), ov::Shape(dims), data_ptr);
+            speaker_embedding_cpp = ov::Tensor(c_element_type_to_cpp(et), ov::Shape(dims));
+            std::memcpy(speaker_embedding_cpp.data(), data_ptr, speaker_embedding_cpp.get_byte_size());
         }
 
         ov::AnyMap property = {};
