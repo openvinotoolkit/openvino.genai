@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2025 Intel Corporation
+# Copyright (C) 2018-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 """
@@ -51,6 +51,7 @@ from openvino_genai import (
     GenerationStatus,
     StreamingStatus,
     GenerationFinishReason,
+    ChatHistory,
 )
 
 from utils.network import retry_request
@@ -330,6 +331,7 @@ parametrize_one_model_backends = pytest.mark.parametrize(
 def ov_continious_batching_pipe() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[0])
     return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
+
 
 @pytest.fixture(scope="module")
 def ov_continious_batching_pipe_gemma() -> ContinuousBatchingPipeline:
@@ -617,6 +619,52 @@ def test_vlm_continuous_batching_vs_stateful(
             )
 
 
+@parametrize_one_model_sdpa
+def test_vlm_continuous_batching_vs_stateful_chat_history(
+    ov_pipe_model: VlmModelInfo,
+    ov_continious_batching_pipe: ContinuousBatchingPipeline,
+    cat_tensor: openvino.Tensor,
+    car_tensor: openvino.Tensor,
+):
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = get_greedy()
+    image_links_list = [[cat_tensor], [car_tensor]]
+
+    histories_batch = 2
+    histories_cb = []
+    histories_stateful = []
+
+    for i in range(histories_batch):
+        histories_cb.append(ChatHistory())
+        histories_stateful.append(ChatHistory())
+
+    # Continuous batching generation
+    results_cb = []
+    for images in image_links_list:
+        for i in range(histories_batch):
+            histories_cb[i].append({"role": "user", "content": PROMPTS[i]})
+        results = ov_continious_batching_pipe.generate(
+            histories_cb,
+            images=[images for _ in range(histories_batch)],
+            generation_config=[generation_config for _ in range(histories_batch)],
+        )
+        for i in range(histories_batch):
+            histories_cb[i].append({"role": "assistant", "content": results[i].texts[0]})
+        results_cb.append(results)
+
+    # Stateful generation + comparison
+    for i in range(histories_batch):
+        for q_i, images in enumerate(image_links_list):
+            histories_stateful[i].append({"role": "user", "content": PROMPTS[i]})
+            result_stateful = ov_pipe.generate(
+                histories_stateful[i], images=images, generation_config=generation_config
+            )
+            histories_stateful[i].append({"role": "assistant", "content": result_stateful.texts[0]})
+            for out_idx, text in enumerate(result_stateful.texts):
+                assert text == results_cb[q_i][i].texts[out_idx]
+                assert abs(result_stateful.scores[out_idx] - results_cb[q_i][i].scores[out_idx]) < DEFAULT_SCORE_EPSILON
+
+
 @pytest.fixture(scope="module", params=[
     pytest.param([[], []], id="generation with text input only"),
     pytest.param(
@@ -696,6 +744,124 @@ def test_vlm_pipeline_chat(
         assert res.texts[0] == "".join(result_from_streamer)
 
     ov_pipe.finish_chat()
+
+
+@parametrize_all_models
+def test_vlm_pipeline_start_chat_vs_chat_history(
+    ov_pipe_model: VlmModelInfo,
+    iteration_images: list[list[PIL.Image]],
+):
+    ov_pipe = ov_pipe_model.pipeline
+
+    generation_config = _setup_generation_config(ov_pipe, do_sample=False)
+
+    prompts_with_images = [
+        (PROMPTS[0], iteration_images[0]),
+        *[(PROMPTS[1], image_set) for image_set in iteration_images[1:]],
+    ]
+
+    # Collect chat_history results
+    answers_chat_history = []
+    history = ChatHistory()
+    for prompt, images in prompts_with_images:
+        history.append({"role": "user", "content": prompt})
+        messages_before = history.get_messages()
+        res = ov_pipe.generate(
+            history,
+            images=images,
+            generation_config=generation_config,
+        )
+        messages_after = history.get_messages()
+        assert messages_before == messages_after, "ChatHistory messages should not be mutated after generate."
+        answer = res.texts[0]
+        history.append({"role": "assistant", "content": answer})
+        answers_chat_history.append(answer)
+
+    # Collect start_chat results
+    answers_start_chat = []
+    ov_pipe.start_chat()
+    for prompt, images in prompts_with_images:
+        res = ov_pipe.generate(
+            prompt,
+            images=images,
+            generation_config=generation_config,
+        )
+        answers_start_chat.append(res.texts[0])
+    ov_pipe.finish_chat()
+
+    for i, (answer_start_chat, answer_chat_history) in enumerate(zip(answers_start_chat, answers_chat_history)):
+        assert answer_start_chat == answer_chat_history, (
+            f"Answer {i} does not match!\n"
+            f"answer_start_chat: {answer_start_chat}\n"
+            f"answer_chat_history: {answer_chat_history}"
+        )
+
+
+@pytest.mark.parametrize(
+    "ov_pipe_model",
+    [
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"),
+            id="qwen2.5-vl/SDPA",
+        ),
+    ],
+    indirect=["ov_pipe_model"],
+)
+def test_vlm_pipeline_chat_history_multipart_content(
+    ov_pipe_model: VlmModelInfo,
+    iteration_images: list[list[PIL.Image]],
+):
+    ov_pipe = ov_pipe_model.pipeline
+
+    generation_config = _setup_generation_config(ov_pipe, do_sample=False)
+
+    prompts_with_images = [
+        (PROMPTS[0], iteration_images[0]),
+        *[(PROMPTS[1], image_set) for image_set in iteration_images[1:]],
+    ]
+
+    # Collect chat_history results (baseline)
+    answers_chat_history = []
+    history = ChatHistory()
+    for prompt, images in prompts_with_images:
+        history.append({"role": "user", "content": prompt})
+        res = ov_pipe.generate(
+            history,
+            images=images,
+            generation_config=generation_config,
+        )
+        answer = res.texts[0]
+        history.append({"role": "assistant", "content": answer})
+        answers_chat_history.append(answer)
+
+    # Collect chat_history with multipart content (OpenAI-like) results
+    answers_chat_history_multipart_content = []
+    history_multipart_content = ChatHistory()
+    for prompt, images in prompts_with_images:
+        history_multipart_content.append(
+            {
+                "role": "user",
+                "content": [
+                    *[{"type": "image"} for _ in images],
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        )
+        res = ov_pipe.generate(
+            history_multipart_content,
+            images=images,
+            generation_config=generation_config,
+        )
+        answer = res.texts[0]
+        history_multipart_content.append({"role": "assistant", "content": answer})
+        answers_chat_history_multipart_content.append(answer)
+
+    for i, (answer_1, answer_2) in enumerate(zip(answers_chat_history, answers_chat_history_multipart_content)):
+        assert answer_1 == answer_2, (
+            f"Answer {i} does not match!\n"
+            f"answers_chat_history: {answer_1}\n"
+            f"answers_chat_history_multipart_content: {answer_2}"
+        )
 
 
 @pytest.fixture(scope="module", params=[
@@ -1617,3 +1783,145 @@ def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelI
     genai_text = genai_output.texts[0]
 
     assert optimum_text == genai_text
+
+
+# CDPruner Tests
+
+CDPRUNER_SUPPORTED_MODELS = [
+    "optimum-intel-internal-testing/tiny-random-qwen2vl",
+    "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
+]
+
+parametrize_cdpruner_models = pytest.mark.parametrize(
+    "ov_pipe_model",
+    [(m, b) for m in CDPRUNER_SUPPORTED_MODELS for b in ATTENTION_BACKEND],
+    ids=lambda p: f"{p[0]}/{p[1]}",
+    indirect=["ov_pipe_model"],
+)
+
+
+@parametrize_cdpruner_models
+@pytest.mark.parametrize("pruning_ratio", [0, 30, 50, 80])
+def test_cdpruner_functionality(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, pruning_ratio: int):
+    """Test CDPruner functionality with different pruning ratios."""
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+    generation_config.pruning_ratio = pruning_ratio
+
+    result = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+
+    # Verify result is non-empty
+    assert result.texts[0].strip() != "", f"Result with {pruning_ratio}% pruning should not be empty"
+
+    # Verify perf metrics are available
+    assert result.perf_metrics is not None, "Performance metrics should be available"
+
+
+@parametrize_cdpruner_models
+def test_cdpruner_with_multiple_images(
+    ov_pipe_model: VlmModelInfo,
+    cat_tensor: openvino.Tensor,
+    car_tensor: openvino.Tensor,
+    handwritten_tensor: openvino.Tensor,
+):
+    """Test CDPruner with multiple images."""
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=25, do_sample=False)
+
+    images = [cat_tensor, car_tensor, handwritten_tensor]
+
+    # Test with 30% pruning
+    generation_config.pruning_ratio = 30
+    result = ov_pipe.generate("Describe these images.", images=images, generation_config=generation_config)
+
+    assert result.texts[0].strip() != "", "Result with multiple images should not be empty"
+    assert result.perf_metrics is not None
+
+
+@parametrize_cdpruner_models
+@pytest.mark.xfail(condition=(sys.platform == "win32"), run=False, reason="Segfault. Ticket - 179274")
+def test_cdpruner_chat_mode(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, car_tensor: openvino.Tensor):
+    """Test CDPruner in chat mode."""
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+
+    # Enable pruning
+    generation_config.pruning_ratio = 25
+
+    # Start chat
+    ov_pipe.start_chat("You are a helpful assistant.")
+
+    # First turn with image
+    result1 = ov_pipe.generate("What is in this image?", images=[cat_tensor], generation_config=generation_config)
+    assert result1.texts[0].strip() != "", "First turn result should not be empty"
+
+    # Second turn with different image
+    result2 = ov_pipe.generate("Now describe this one.", images=[car_tensor], generation_config=generation_config)
+    assert result2.texts[0].strip() != "", "Second turn result should not be empty"
+
+    # Third turn without image
+    result3 = ov_pipe.generate("What did you see in total?", generation_config=generation_config)
+    assert result3.texts[0].strip() != "", "Third turn result should not be empty"
+
+    ov_pipe.finish_chat()
+
+
+@parametrize_cdpruner_models
+@pytest.mark.parametrize("relevance_weight", [0.0, 0.2, 0.8, 1.0])
+def test_cdpruner_with_relevance_weight(
+    ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, relevance_weight: float
+):
+    """Test CDPruner with different relevance weights."""
+    ov_pipe = ov_pipe_model.pipeline
+    generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+    generation_config.pruning_ratio = 30
+    generation_config.relevance_weight = relevance_weight
+    result = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+
+    assert result.texts[0].strip() != "", f"Result with relevance_weight={relevance_weight} should not be empty"
+
+
+@parametrize_cdpruner_models
+def test_cdpruner_disable_after_enable(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor):
+    """Test disabling CDPruner after enabling it."""
+    ov_pipe = ov_pipe_model.pipeline
+
+    # Enable pruning
+    config_with_pruning = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+    config_with_pruning.pruning_ratio = 40
+    result_with_pruning = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=config_with_pruning)
+
+    # Disable pruning
+    config_no_pruning = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
+    config_no_pruning.pruning_ratio = 0
+    result_without_pruning = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=config_no_pruning)
+
+    assert result_with_pruning.texts[0].strip() != "", "Result with pruning should not be empty"
+    assert result_without_pruning.texts[0].strip() != "", "Result without pruning should not be empty"
+
+
+@pytest.fixture(scope="module")
+def ov_continuous_batching_pipe_qwen2vl() -> ContinuousBatchingPipeline:
+    """Fixture for Qwen2VL continuous batching pipeline."""
+    model_path = _get_ov_model(CDPRUNER_SUPPORTED_MODELS[0])
+    return ContinuousBatchingPipeline(model_path, SchedulerConfig(), "CPU")
+
+
+def test_cdpruner_continuous_batching(
+    ov_continuous_batching_pipe_qwen2vl: ContinuousBatchingPipeline,
+    cat_tensor: openvino.Tensor,
+    car_tensor: openvino.Tensor,
+):
+    """Test CDPruner with continuous batching pipeline."""
+    # Enable pruning via GenerationConfig
+    generation_config = GenerationConfig()
+    generation_config.max_new_tokens = 20
+    generation_config.do_sample = False
+    generation_config.pruning_ratio = 25
+
+    # Test batch with different images
+    results = ov_continuous_batching_pipe_qwen2vl.generate(
+        [PROMPTS[0]], images=[[car_tensor]], generation_config=[generation_config]
+    )
+
+    assert results[0].texts[0].strip() != "", "Result should not be empty"

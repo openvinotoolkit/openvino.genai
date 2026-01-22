@@ -19,11 +19,12 @@ from .py_openvino_genai import (
     get_version,
     StreamingStatus,
     TextStreamer,
-    TextParserStreamer
+    TextParserStreamer,
 )
 
 from .py_openvino_genai import (
     Parser,
+    VLLMParserWrapper,
     ReasoningParser,
     DeepSeekR1ReasoningParser,
     Phi4ReasoningParser,
@@ -50,10 +51,7 @@ from .py_openvino_genai import (
 )
 
 # LoRA
-from .py_openvino_genai import (
-    Adapter,
-    AdapterConfig
-)
+from .py_openvino_genai import Adapter, AdapterConfig
 
 # Generation config
 from .py_openvino_genai import (
@@ -61,19 +59,14 @@ from .py_openvino_genai import (
     StructuralTagItem,
     StructuralTagsConfig,
     StructuredOutputConfig,
-    StopCriteria
+    StopCriteria,
 )
 
 # Chat history
-from .py_openvino_genai import (
-    ChatHistory
-)
+from .py_openvino_genai import ChatHistory
 
 # Tokenizers
-from .py_openvino_genai import (
-    TokenizedInputs,
-    Tokenizer
-)
+from .py_openvino_genai import TokenizedInputs, Tokenizer
 
 # Whisper
 from .py_openvino_genai import (
@@ -81,7 +74,8 @@ from .py_openvino_genai import (
     WhisperPipeline,
     ChunkStreamerBase,
     WhisperRawPerfMetrics,
-    WhisperPerfMetrics
+    WhisperPerfMetrics,
+    WhisperWordTiming,
 )
 
 # Image generation
@@ -105,6 +99,16 @@ from .py_openvino_genai import (
     RawImageGenerationPerfMetrics,
 )
 
+# Video generation
+from .py_openvino_genai import (
+    LTXVideoTransformer3DModel,
+    AutoencoderKLLTXVideo,
+    Text2VideoPipeline,
+    VideoGenerationConfig,
+    VideoGenerationResult,
+    VideoGenerationPerfMetrics,
+)
+
 # Continuous batching
 from .py_openvino_genai import (
     ContinuousBatchingPipeline,
@@ -117,19 +121,16 @@ from .py_openvino_genai import (
     SparseAttentionMode,
     SparseAttentionConfig,
     KVCrushAnchorPointMode,
-    KVCrushConfig
+    KVCrushConfig,
 )
 
 # RAG
-from .py_openvino_genai import (
-    TextEmbeddingPipeline,
-    TextRerankPipeline
-)
+from .py_openvino_genai import TextEmbeddingPipeline, TextRerankPipeline
 
 # Speech generation
 from .py_openvino_genai import (
     SpeechGenerationConfig,
     SpeechGenerationPerfMetrics,
     Text2SpeechDecodedResults,
-    Text2SpeechPipeline
+    Text2SpeechPipeline,
 )

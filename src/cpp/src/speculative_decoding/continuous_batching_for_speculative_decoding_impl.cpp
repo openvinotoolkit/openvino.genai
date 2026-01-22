@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "continuous_batching_for_speculative_decoding_impl.hpp"
@@ -324,7 +324,12 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
             request->set_num_validated_tokens(num_tokens_needs_kv_update);  // in generation stage
         }
         // to pause `draft_model` generation in case of `generated_len >= max_new_tokens - 1` to generate last token by `main_model`
-        if (!m_is_validation_mode_enabled && result.inserted_tokens_cnt != 0) {
+        // Start `draft_model` generation after the first `main_model` generation is finished. There are two scenarios:
+        // 1. When `main_model` generates a new token, in which case `draft_model` naturally starts its generation.
+        // 2. When `main_model` does not generate a new token, which usually happens when processing a portion of prompt (we can
+        //    slice prompt into chunks when dynamic_split_fuse is enabled),
+        //    in this case, `draft_model` can also begin processing the same portion of prompt.
+        if (!m_is_validation_mode_enabled) {
             bool pause_gen_status = false;
             generated_len -= result.removed_tokens_cnt;
             generated_len += result.inserted_tokens_cnt;

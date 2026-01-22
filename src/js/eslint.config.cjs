@@ -60,6 +60,7 @@ module.exports = defineConfig([
             "add_second_input",
             "number_of_inputs",
             "reasoning_content",
+            "top_n",
           ],
         },
       ],
