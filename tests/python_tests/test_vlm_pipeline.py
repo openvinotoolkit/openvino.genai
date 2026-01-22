@@ -41,9 +41,18 @@ import sys
 import os
 import numpy as np
 import transformers
-import openvino_genai as ov_genai
 from optimum.intel.openvino import OVModelForVisualCausalLM
 from optimum.utils.import_utils import is_transformers_version
+from openvino_genai import (
+    VLMPipeline,
+    GenerationConfig,
+    SchedulerConfig,
+    ContinuousBatchingPipeline,
+    GenerationStatus,
+    StreamingStatus,
+    GenerationFinishReason,
+    ChatHistory,
+)
 
 from utils.network import retry_request
 from utils.generation_config import (
@@ -64,7 +73,7 @@ class VlmModelInfo:
     ov_backend: str
     image_tag: Callable[[int], str]
     resolution: int
-    pipeline: ov_genai.VLMPipeline
+    pipeline: VLMPipeline
 
 
 PROMPTS: list[str] = [
@@ -156,12 +165,12 @@ NPU_UNSUPPORTED_MODELS = {
 
 
 def _setup_generation_config(
-    pipeline: ov_genai.VLMPipeline,
+    pipeline: VLMPipeline, 
     max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS, 
     ignore_eos: bool = False,
     set_eos_token: bool = True,
     do_sample: bool = True,
-) -> ov_genai.GenerationConfig:
+) -> GenerationConfig:
     generation_config = pipeline.get_generation_config()
     generation_config.max_new_tokens = max_new_tokens
     generation_config.do_sample = do_sample
@@ -259,13 +268,17 @@ GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transforme
 @pytest.fixture(scope="module")
 def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     ov_model, ov_backend = request.param
-
+    
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
 
     models_path = _get_ov_model(ov_model)
-
-    pipeline = ov_genai.VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=ov_backend)
+    
+    pipeline = VLMPipeline(
+        models_path, 
+        "CPU", 
+        ATTENTION_BACKEND=ov_backend
+    )
     return VlmModelInfo(
         ov_model, 
         ov_backend, 
@@ -315,15 +328,15 @@ parametrize_one_model_backends = pytest.mark.parametrize(
 )
 
 @pytest.fixture(scope="module")
-def ov_continious_batching_pipe() -> ov_genai.ContinuousBatchingPipeline:
+def ov_continious_batching_pipe() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[0])
-    return ov_genai.ContinuousBatchingPipeline(models_path, ov_genai.SchedulerConfig(), "CPU")
+    return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
 
 
 @pytest.fixture(scope="module")
-def ov_continious_batching_pipe_gemma() -> ov_genai.ContinuousBatchingPipeline:
+def ov_continious_batching_pipe_gemma() -> ContinuousBatchingPipeline:
     models_path = _get_ov_model(MODEL_IDS[8])
-    return ov_genai.ContinuousBatchingPipeline(models_path, ov_genai.SchedulerConfig(), "CPU")
+    return ContinuousBatchingPipeline(models_path, SchedulerConfig(), "CPU")
 
 
 def download_image(link: str) -> PIL.Image:
@@ -415,7 +428,7 @@ def cat_tensor(cat_image) -> openvino.Tensor:
 def car_tensor(pytestconfig: pytest.Config) -> openvino.Tensor:
     return openvino.Tensor(from_cache_or_download(pytestconfig, TEST_IMAGE_URLS['car'], "car.jpg"))
 
-
+ 
 @pytest.fixture(scope="module")
 def synthetic_video_32x32_tensor(synthetic_video_32x32):
     return openvino.Tensor(synthetic_video_32x32)
@@ -482,8 +495,8 @@ def test_vlm_readonly_image_tensor(ov_pipe_model: VlmModelInfo, cat_image_32x32)
 @parametrize_one_model_pa
 def test_vlm_continuous_batching_generate_vs_add_request(
     ov_pipe_model: VlmModelInfo,
-    ov_continious_batching_pipe: ov_genai.ContinuousBatchingPipeline,
-    config: ov_genai.GenerationConfig,
+    ov_continious_batching_pipe: ContinuousBatchingPipeline,
+    config: GenerationConfig, 
     request: pytest.FixtureRequest,
     cat_tensor: openvino.Tensor
 ):    
@@ -522,7 +535,7 @@ def test_vlm_continuous_batching_generate_vs_add_request(
             videos=videos, 
             generation_config=generation_config,
         )
-        while handle.get_status() != ov_genai.GenerationStatus.FINISHED:
+        while handle.get_status() != GenerationStatus.FINISHED:
             ov_continious_batching_pipe.step()
         outputs = handle.read_all()
         for out_idx, output in enumerate(outputs):
@@ -530,8 +543,8 @@ def test_vlm_continuous_batching_generate_vs_add_request(
             assert text == res_generate[idx].texts[out_idx]
             assert abs(output.score - res_generate[idx].scores[out_idx]) < DEFAULT_SCORE_EPSILON
             assert (
-                output.finish_reason == ov_genai.GenerationFinishReason.STOP
-                or output.finish_reason == ov_genai.GenerationFinishReason.LENGTH
+                output.finish_reason == GenerationFinishReason.STOP
+                or output.finish_reason == GenerationFinishReason.LENGTH
             )
 
 
@@ -543,8 +556,8 @@ def test_vlm_continuous_batching_generate_vs_add_request(
     ]
 )
 def test_vlm_continuous_batching_generate_vs_add_request_for_gemma(
-    ov_continious_batching_pipe_gemma: ov_genai.ContinuousBatchingPipeline,
-    config: ov_genai.GenerationConfig,
+    ov_continious_batching_pipe_gemma: ContinuousBatchingPipeline,
+    config: GenerationConfig, 
     cat_tensor: openvino.Tensor,
 ):
     ov_cb_pipe = ov_continious_batching_pipe_gemma
@@ -555,7 +568,7 @@ def test_vlm_continuous_batching_generate_vs_add_request_for_gemma(
         handle = ov_cb_pipe.add_request(
             idx, PROMPTS[0], images, config
         )
-        while handle.get_status() != ov_genai.GenerationStatus.FINISHED:
+        while handle.get_status() != GenerationStatus.FINISHED:
             ov_cb_pipe.step()
         outputs = handle.read_all()
         for output in outputs:
@@ -563,8 +576,8 @@ def test_vlm_continuous_batching_generate_vs_add_request_for_gemma(
             assert len(output.generated_ids) > 0, f"Should generate at least one token"
             assert text.strip() != "", f"Decoded text should not be empty"
             assert (
-                output.finish_reason == ov_genai.GenerationFinishReason.STOP
-                or output.finish_reason == ov_genai.GenerationFinishReason.LENGTH
+                output.finish_reason == GenerationFinishReason.STOP
+                or output.finish_reason == GenerationFinishReason.LENGTH
             )
 
 
@@ -578,8 +591,8 @@ def test_vlm_continuous_batching_generate_vs_add_request_for_gemma(
 @parametrize_one_model_sdpa
 def test_vlm_continuous_batching_vs_stateful(
     ov_pipe_model: VlmModelInfo,
-    ov_continious_batching_pipe: ov_genai.ContinuousBatchingPipeline,
-    config: ov_genai.GenerationConfig,
+    ov_continious_batching_pipe: ContinuousBatchingPipeline,
+    config: GenerationConfig, 
     cat_tensor: openvino.Tensor,
 ):
     ov_pipe = ov_pipe_model.pipeline
@@ -609,7 +622,7 @@ def test_vlm_continuous_batching_vs_stateful(
 @parametrize_one_model_sdpa
 def test_vlm_continuous_batching_vs_stateful_chat_history(
     ov_pipe_model: VlmModelInfo,
-    ov_continious_batching_pipe: ov_genai.ContinuousBatchingPipeline,
+    ov_continious_batching_pipe: ContinuousBatchingPipeline,
     cat_tensor: openvino.Tensor,
     car_tensor: openvino.Tensor,
 ):
@@ -622,8 +635,8 @@ def test_vlm_continuous_batching_vs_stateful_chat_history(
     histories_stateful = []
 
     for i in range(histories_batch):
-        histories_cb.append(ov_genai.ChatHistory())
-        histories_stateful.append(ov_genai.ChatHistory())
+        histories_cb.append(ChatHistory())
+        histories_stateful.append(ChatHistory())
 
     # Continuous batching generation
     results_cb = []
@@ -749,7 +762,7 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
 
     # Collect chat_history results
     answers_chat_history = []
-    history = ov_genai.ChatHistory()
+    history = ChatHistory()
     for prompt, images in prompts_with_images:
         history.append({"role": "user", "content": prompt})
         messages_before = history.get_messages()
@@ -809,7 +822,7 @@ def test_vlm_pipeline_chat_history_multipart_content(
 
     # Collect chat_history results (baseline)
     answers_chat_history = []
-    history = ov_genai.ChatHistory()
+    history = ChatHistory()
     for prompt, images in prompts_with_images:
         history.append({"role": "user", "content": prompt})
         res = ov_pipe.generate(
@@ -823,7 +836,7 @@ def test_vlm_pipeline_chat_history_multipart_content(
 
     # Collect chat_history with multipart content (OpenAI-like) results
     answers_chat_history_multipart_content = []
-    history_multipart_content = ov_genai.ChatHistory()
+    history_multipart_content = ChatHistory()
     for prompt, images in prompts_with_images:
         history_multipart_content.append(
             {
@@ -906,7 +919,7 @@ def test_vlm_pipeline_chat_npu(model_id, system_message, iteration_images_npu):
             "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 4096}
         }
     }
-    npu_pipe = ov_genai.VLMPipeline(models_path, "NPU", config=properties)
+    npu_pipe = VLMPipeline(models_path, "NPU", config=properties)
 
     run_chat(npu_pipe, system_message, iteration_images_npu)
 
@@ -997,14 +1010,14 @@ def test_perf_metrics(
     # Using non-cached model to get more accurate load time
     model_path = _get_ov_model("optimum-intel-internal-testing/tiny-random-minicpmv-2_6")
     start_time = perf_counter_ns()
-    pipe = ov_genai.VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
+    pipe = VLMPipeline(model_path, "CPU", ATTENTION_BACKEND=backend)
     start_generate = perf_counter_ns()
     load_time = (start_generate - start_time) / 1_000_000.0
     
     result = pipe.generate(
         PROMPTS[0],
         images=[cat_tensor],
-        generation_config=ov_genai.GenerationConfig(max_new_tokens=max_new_tokens),
+        generation_config=GenerationConfig(max_new_tokens=max_new_tokens),
     )
     generate_time = (perf_counter_ns() - start_generate) / 1_000_000.0
 
@@ -1068,7 +1081,7 @@ def test_vlm_npu_no_exception(model_id, backend, cat_tensor, handwritten_tensor,
         }
     }
 
-    ov_pipe = ov_genai.VLMPipeline(models_path, "NPU", ATTENTION_BACKEND=backend, config=properties)
+    ov_pipe = VLMPipeline(models_path, "NPU", ATTENTION_BACKEND=backend, config=properties)
 
     generation_config = _setup_generation_config(ov_pipe)
 
@@ -1098,7 +1111,7 @@ def test_vlm_npu_no_image():
         }
     }
 
-    ov_pipe = ov_genai.VLMPipeline(models_path, "NPU", config=properties)
+    ov_pipe = VLMPipeline(models_path, "NPU", config=properties)
 
     generation_config = _setup_generation_config(ov_pipe)
 
@@ -1126,7 +1139,11 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(
     def streamer(subword):
         nonlocal current_iter
         current_iter += 1
-        return ov_genai.StreamingStatus.CANCEL if current_iter == num_iters else ov_genai.StreamingStatus.RUNNING
+        return (
+            StreamingStatus.CANCEL
+            if current_iter == num_iters
+            else StreamingStatus.RUNNING
+        )
 
     generation_config = _setup_generation_config(ov_pipe, ignore_eos=True, do_sample=False)
 
@@ -1204,12 +1221,13 @@ def test_start_chat_clears_history(
 
 
 def test_start_chat_clears_history_cb_api(
-    ov_continious_batching_pipe: ov_genai.ContinuousBatchingPipeline, image_sequence: list[openvino.Tensor]
+    ov_continious_batching_pipe: ContinuousBatchingPipeline, 
+    image_sequence: list[openvino.Tensor]
 ):
     callback_questions = [
         "Why is the Sun yellow?"
     ]
-    generation_config = ov_genai.GenerationConfig(max_new_tokens=DEFAULT_MAX_NEW_TOKENS)
+    generation_config = GenerationConfig(max_new_tokens=DEFAULT_MAX_NEW_TOKENS)
 
     results_first_generate = ""
     ov_continious_batching_pipe.start_chat("You are helpful assistant.")
@@ -1235,7 +1253,7 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(
 ):    
     if "phi" in ov_pipe_model.model_id and ov_pipe_model.ov_backend == "SDPA":
         pytest.skip("SDPA is failing for phi models on VLM model reusing")
-
+    
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
         "Why is the Sun yellow?",
@@ -1252,7 +1270,11 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(
 
         current_iter += 1
         streamer_generation_result += subword
-        return ov_genai.StreamingStatus.CANCEL if current_iter == num_iters else ov_genai.StreamingStatus.RUNNING
+        return (
+            StreamingStatus.CANCEL
+            if current_iter == num_iters
+            else StreamingStatus.RUNNING
+        )
 
     generation_config = _setup_generation_config(
         ov_pipe, ignore_eos=True, do_sample=False
@@ -1296,7 +1318,7 @@ def retry(func, exception_type=AssertionError):
                 raise
 
 
-def generate(vlm: ov_genai.VLMPipeline, requests):
+def generate(vlm: VLMPipeline, requests):
     generation_config = _setup_generation_config(vlm, set_eos_token=False)
     vlm.set_generation_config(generation_config)
     vlm.start_chat()
@@ -1535,16 +1557,16 @@ def test_model_tags_older(ov_pipe_model: VlmModelInfo, car_tensor: openvino.Tens
     with pytest.raises(RuntimeError):
         ov_pipe.generate("<ov_genai_image_0>", images=[car_tensor])
     ov_pipe.finish_chat()
-
-
+        
+        
 @model_and_tag_parametrize()
 def test_model_tags_missing_universal(ov_pipe_model: VlmModelInfo):
     ov_pipe = ov_pipe_model.pipeline
     
     with pytest.raises(RuntimeError):
         ov_pipe.generate("<ov_genai_image_0>")
-
-
+        
+        
 @model_and_tag_parametrize()
 def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
     ov_pipe = ov_pipe_model.pipeline
@@ -1552,7 +1574,7 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo):
     
     with pytest.raises(RuntimeError):
         ov_pipe.generate(image_tag(0))
-
+            
 
 @pytest.mark.parametrize(
     "ov_pipe_model,has_image,has_video",
@@ -1879,20 +1901,20 @@ def test_cdpruner_disable_after_enable(ov_pipe_model: VlmModelInfo, cat_tensor: 
 
 
 @pytest.fixture(scope="module")
-def ov_continuous_batching_pipe_qwen2vl() -> ov_genai.ContinuousBatchingPipeline:
+def ov_continuous_batching_pipe_qwen2vl() -> ContinuousBatchingPipeline:
     """Fixture for Qwen2VL continuous batching pipeline."""
     model_path = _get_ov_model(CDPRUNER_SUPPORTED_MODELS[0])
-    return ov_genai.ContinuousBatchingPipeline(model_path, ov_genai.SchedulerConfig(), "CPU")
+    return ContinuousBatchingPipeline(model_path, SchedulerConfig(), "CPU")
 
 
 def test_cdpruner_continuous_batching(
-    ov_continuous_batching_pipe_qwen2vl: ov_genai.ContinuousBatchingPipeline,
+    ov_continuous_batching_pipe_qwen2vl: ContinuousBatchingPipeline,
     cat_tensor: openvino.Tensor,
     car_tensor: openvino.Tensor,
 ):
     """Test CDPruner with continuous batching pipeline."""
     # Enable pruning via GenerationConfig
-    generation_config = ov_genai.GenerationConfig()
+    generation_config = GenerationConfig()
     generation_config.max_new_tokens = 20
     generation_config.do_sample = False
     generation_config.pruning_ratio = 25
@@ -1910,10 +1932,10 @@ def test_vlm_pipeline_add_extension():
 
     if openvino_tokenizers._ext_path.exists():
         properties = {"extensions": [str(openvino_tokenizers._ext_path)]}
-        ov_genai.VLMPipeline(models_path, "CPU", config=properties)
+        VLMPipeline(models_path, "CPU", config=properties)
 
     properties = {"extensions": ["fake_path"]}
 
     with pytest.raises(RuntimeError) as exc_info:
-        ov_genai.VLMPipeline(models_path, "CPU", config=properties)
+        VLMPipeline(models_path, "CPU", config=properties)
     assert "Cannot find entry point to the extension library" in str(exc_info.value)

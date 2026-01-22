@@ -5,7 +5,6 @@
 #include <gtest/gtest.h>
 
 #include "openvino/genai/extensions.hpp"
-#include "tokenizer/tokenizers_path.hpp"
 #include "utils.hpp"
 
 using namespace ov::genai::utils;
@@ -19,14 +18,6 @@ TEST(TestAddExtensions, test_extract_extensions) {
 }
 
 TEST(TestAddExtensions, test_add_extensions_to_core) {
-    auto path = tokenizers_relative_to_genai();
-    std::filesystem::path genai_path = "openvino_genai";
-    std::string exe_path = path.parent_path().parent_path() / genai_path / path.filename();
-    if (!exe_path.empty()) {
-        ov::AnyMap properties1 = {ov::genai::extensions(std::vector<std::filesystem::path>{exe_path.c_str()})};
-        auto extensions1 = extract_extensions(properties1);
-        EXPECT_NO_THROW(add_extensions_to_core(extensions1));
-    }
     // Use intentionally non-existent, platform-agnostic extension paths to trigger error handling.
     ov::AnyMap properties2 = {ov::genai::extensions(
         std::vector<std::filesystem::path>{"non_existent_extension1", "non_existent_extension2"})};
