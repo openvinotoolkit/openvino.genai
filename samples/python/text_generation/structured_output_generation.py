@@ -82,8 +82,9 @@ def main():
         config.do_sample = False
         history.append({"role": "user", "content": prompt})
         decoded_results = pipe.generate(history, config)
-        res = json.loads(decoded_results.texts[0])
-        print(f"Generated JSON with item quantities: {res}")
+        json_response = decoded_results.texts[0]
+        res = json.loads(json_response)
+        print(f"Generated JSON with item quantities: {json_response}")
 
         config.do_sample = True
         config.temperature = 0.8
