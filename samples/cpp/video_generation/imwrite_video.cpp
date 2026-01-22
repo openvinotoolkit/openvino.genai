@@ -44,24 +44,9 @@ void save_video(const std::string& filename,
         for (size_t f = 0; f < F; ++f) {
             const uint8_t* frame_ptr = batch_ptr + f * frame_bytes;
 
-            cv::Mat src;
-            if (C == 1)
-                src = cv::Mat(H, W, CV_8UC1, const_cast<uint8_t*>(frame_ptr));
-            else if (C == 3)
-                src = cv::Mat(H, W, CV_8UC3, const_cast<uint8_t*>(frame_ptr));
-            else if (C == 4)
-                src = cv::Mat(H, W, CV_8UC4, const_cast<uint8_t*>(frame_ptr));
-            else
-                throw std::runtime_error("save_video(): unsupported number of channels: " + std::to_string(C));
-
+            cv::Mat src(H, W, CV_8UC3, const_cast<uint8_t*>(frame_ptr));
             cv::Mat bgr;
-            if (C == 1) {
-                cv::cvtColor(src, bgr, cv::COLOR_GRAY2BGR);
-            } else if (C == 3) {
-                cv::cvtColor(src, bgr, cv::COLOR_RGB2BGR);
-            } else {  // C == 4
-                cv::cvtColor(src, bgr, cv::COLOR_RGBA2BGR);
-            }
+            cv::cvtColor(src, bgr, cv::COLOR_RGB2BGR);
 
             writer.write(bgr);
         }
