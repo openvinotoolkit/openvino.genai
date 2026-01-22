@@ -132,7 +132,6 @@ public:
         auto embedder_device = device;
         if (m_is_npu) {
             embedder_device = m_config.embedder_device.value_or("CPU");
-            std::cout << "Run embedder on " << embedder_device << std::endl;
             utils::KVDesc kv_desc;
             update_npu_properties(models_dir, lm_properties);
             std::tie(compiled_language_model, kv_desc) = utils::compile_decoder_for_npu(language_model, lm_properties, kv_pos);
