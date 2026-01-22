@@ -45,15 +45,26 @@ int main(int argc, char* argv[]) {
     ov_tensor_t* speech_tensor = NULL;
     CHECK_STATUS(ov_genai_text2speech_decoded_results_get_speech_at(results, 0, &speech_tensor));
 
-    void* waveform_data = NULL;
-    ov_tensor_data(speech_tensor, &waveform_data);
-
-    ov_shape_t shape;
-    ov_tensor_get_shape(speech_tensor, &shape);
+    ov_shape_t shape = {0, NULL};
+    CHECK_STATUS(ov_tensor_get_shape(speech_tensor, &shape));
+    
     size_t waveform_size = 1;
-    for (size_t i = 0; i < shape.rank; ++i)
-        waveform_size *= shape.dims[i];
+    if (shape.rank > 0 && shape.dims) {
+        for (size_t i = 0; i < shape.rank; ++i)
+            waveform_size *= (size_t)shape.dims[i];
+    } else {
+        fprintf(stderr, "Invalid speech tensor shape.\n");
+        ov_shape_free(&shape);
+        goto err;
+    }
     ov_shape_free(&shape);
+
+    void* waveform_data = NULL;
+    CHECK_STATUS(ov_tensor_data(speech_tensor, &waveform_data));
+    if (!waveform_data) {
+        fprintf(stderr, "Failed to get speech tensor data (NULL pointer).\n");
+        goto err;
+    }
 
     const char* output_file = "output_audio.wav";
     save_to_wav((const float*)waveform_data, waveform_size, output_file);

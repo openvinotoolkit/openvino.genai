@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstdarg>
 #include <memory>
 #include <string>
@@ -80,7 +81,7 @@ inline ov::element::Type c_element_type_to_cpp(ov_element_type_e et) {
         return ov::element::nf4;
     case ov_element_type_e::F8E4M3:
         return ov::element::f8e4m3;
-    case ov_element_type_e::F8E5M3:
+    case ov_element_type_e::F8E5M2:
         return ov::element::f8e5m2;
     case ov_element_type_e::STRING:
         return ov::element::string;
@@ -89,7 +90,7 @@ inline ov::element::Type c_element_type_to_cpp(ov_element_type_e et) {
     case ov_element_type_e::F8E8M0:
         return ov::element::f8e8m0;
     default:
-        return ov::element::undefined;
+        return ov::element::dynamic;
     }
 }
 

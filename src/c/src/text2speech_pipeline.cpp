@@ -79,13 +79,28 @@ ov_status_e ov_genai_text2speech_decoded_results_get_speech_at(const ov_genai_te
 
         ov::Shape cpp_shape = cpp_tensor.get_shape();
         std::vector<int64_t> dims(cpp_shape.begin(), cpp_shape.end());
-        ov_shape_t shape;
-        shape.rank = dims.size();
-        shape.dims = dims.data();
+        ov_shape_t shape = {0, nullptr};
+        ov_status_e status = ov_shape_create(static_cast<int64_t>(dims.size()), dims.data(), &shape);
+        if (status != ov_status_e::OK) {
+            return status;
+        }
 
-        // Wrap the data in an ov_tensor_t. The user will be responsible for freeing it,
-        // but the data itself is owned by 'results'.
-        return ov_tensor_create_from_host_ptr(et, shape, cpp_tensor.data(), speech);
+        // Create a copy of the tensor to ensure memory safety for the C API user.
+        status = ov_tensor_create(et, shape, speech);
+        ov_shape_free(&shape);
+        if (status != ov_status_e::OK) {
+            return status;
+        }
+
+        void* data_ptr = nullptr;
+        status = ov_tensor_data(*speech, &data_ptr);
+        if (status != ov_status_e::OK || !data_ptr) {
+            ov_tensor_free(*speech);
+            *speech = nullptr;
+            return status != ov_status_e::OK ? status : ov_status_e::UNKNOW_EXCEPTION;
+        }
+        std::memcpy(data_ptr, cpp_tensor.data(), cpp_tensor.get_byte_size());
+        return ov_status_e::OK;
     } catch (const std::exception& e) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }
@@ -146,13 +161,13 @@ ov_status_e ov_genai_text2speech_pipeline_generate(ov_genai_text2speech_pipeline
 
         ov::Tensor speaker_embedding_cpp;
         if (speaker_embedding) {
-            ov_shape_t shape_c{};
+            ov_shape_t shape_c = {0, nullptr};
             if (ov_tensor_get_shape(speaker_embedding, &shape_c) != 0) {
                 return ov_status_e::UNKNOW_EXCEPTION;
             }
             std::vector<size_t> dims(shape_c.rank);
             for (size_t d = 0; d < shape_c.rank; ++d)
-                dims[d] = shape_c.dims[d];
+                dims[d] = static_cast<size_t>(shape_c.dims[d]);
             ov_shape_free(&shape_c);
 
             void* data_ptr = nullptr;
@@ -166,7 +181,9 @@ ov_status_e ov_genai_text2speech_pipeline_generate(ov_genai_text2speech_pipeline
             }
 
             speaker_embedding_cpp = ov::Tensor(c_element_type_to_cpp(et), ov::Shape(dims));
-            std::memcpy(speaker_embedding_cpp.data(), data_ptr, speaker_embedding_cpp.get_byte_size());
+            if (speaker_embedding_cpp.data() && data_ptr) {
+                std::memcpy(speaker_embedding_cpp.data(), data_ptr, speaker_embedding_cpp.get_byte_size());
+            }
         }
 
         ov::AnyMap property = {};
