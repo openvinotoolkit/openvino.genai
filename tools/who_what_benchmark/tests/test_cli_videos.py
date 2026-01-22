@@ -85,28 +85,6 @@ def test_video_model_genai(model_id, model_type, tmp_path):
     assert similarity >= 0.89
     assert (tmp_path / "target").exists()
 
-    # run_wwb([
-    #     "--target-model",
-    #     MODEL_PATH,
-    #     "--num-samples",
-    #     "1",
-    #     "--gt-data",
-    #     GT_FILE,
-    #     "--device",
-    #     "CPU",
-    #     "--model-type",
-    #     model_type,
-    #     "--output",
-    #     tmp_path,
-    #     "--genai",
-    #     "--num-inference-steps",
-    #     "2",
-    #     "--video-frames-num",
-    #     "8",
-    # ])
-    # assert (tmp_path / "target").exists()
-    # assert (tmp_path / "target.csv").exists()
-
     # test w/o models
     run_wwb(
         [
