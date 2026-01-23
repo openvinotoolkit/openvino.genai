@@ -516,7 +516,7 @@ GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGe
 EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& inputs,
                                                           const GenerationConfig& config,
                                                           StreamerVariant streamer) {
-    ManualTimer generate_timer("StatefulEagle3LLMPipeline::generate()");
+    ManualTimer generate_timer("StatefulEagle3LLMPipeline::generate(EncodedInputs)");
     generate_timer.start();
 
     std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);

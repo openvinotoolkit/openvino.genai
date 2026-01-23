@@ -59,6 +59,7 @@ TokenizedInputs StatefulSpeculativePipelineBase::tokenize(const std::string& pro
         m_chat_history.push_back({{"role", "user"}, {"content", prompt}});
         constexpr bool add_generation_prompt = true;
         auto templated_prompt = m_tokenizer.apply_chat_template(m_chat_history, add_generation_prompt);
+        // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
         tokenized_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
     } else {
         // Non-chat mode: check if chat template should be applied
@@ -175,12 +176,14 @@ DecodedResults StatefulSpeculativePipelineBase::generate(const ChatHistory& hist
 
     GenerationConfig config = resolve_generation_config(generation_config);
 
-    OPENVINO_ASSERT(config.apply_chat_template, "Chat template must be applied when using ChatHistory");
+    OPENVINO_ASSERT(config.apply_chat_template,
+                    "Chat template must be applied when using ChatHistory in generate method.");
     OPENVINO_ASSERT(!m_tokenizer.get_chat_template().empty(),
-                    "Chat template must not be empty when using ChatHistory");
-    OPENVINO_ASSERT(!history.empty(), "Chat history must not be empty");
+                    "Chat template must not be empty when using ChatHistory in generate method.");
+    OPENVINO_ASSERT(!history.empty(), "Chat history must not be empty when using ChatHistory in generate method.");
 
     constexpr bool add_generation_prompt = true;
+    // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
     auto templated_chat_history = m_tokenizer.apply_chat_template(history, add_generation_prompt);
     auto tokenized_inputs = m_tokenizer.encode(templated_chat_history, ov::genai::add_special_tokens(false));
 

@@ -404,13 +404,15 @@ GenerationConfig StatefulSpeculativeLLMPipeline::resolve_generation_config(Optio
     // requested by user.
     m_max_candidates_num = m_candidates_num * 2;
 
+    config.validate();
+
     return config;
 }
 
 EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInputs& inputs,
                                                                const GenerationConfig& config,
                                                                StreamerVariant streamer) {
-    ManualTimer generate_timer("StatefulSpeculativeLLMPipeline::generate()");
+    ManualTimer generate_timer("StatefulSpeculativeLLMPipeline::generate_tokens(EncodedInputs)");
     generate_timer.start();
     ov::Tensor input_ids;
     ov::Tensor attention_mask;
