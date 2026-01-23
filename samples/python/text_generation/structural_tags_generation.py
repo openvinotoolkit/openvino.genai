@@ -112,15 +112,16 @@ def main():
 
     print(f"User prompt: {args.prompt}")
 
+    history = ChatHistory()
+    history.append({"role": "system", "content": sys_message})
+    history.append({"role": "user", "content": args.prompt})
+
     for use_structural_tags in [False, True]:
         print("=" * 80)
         print(f"{'Using structural tags' if use_structural_tags else 'Using no structural tags':^80}")
         print("=" * 80)
         config = GenerationConfig()
         config.max_new_tokens = 300
-
-        history = ChatHistory()
-        history.append({"role": "system", "content": sys_message})
 
         if use_structural_tags:
             config.structured_output_config = SOC(
@@ -138,14 +139,11 @@ def main():
             )
             config.do_sample = True
 
-        history.append({"role": "user", "content": args.prompt})
         decoded_results = pipe.generate(history, config, streamer=streamer)
-        response = decoded_results.texts[0]
-        history.append({"role": "assistant", "content": response})
-        print("\n" + "-" * 80)
 
+        print("\n" + "-" * 80)
         print("Correct tool calls by the model:")
-        pprint(parse_tools_from_response(response))
+        pprint(parse_tools_from_response(decoded_results.texts[0]))
 
 
 if "__main__" == __name__:
