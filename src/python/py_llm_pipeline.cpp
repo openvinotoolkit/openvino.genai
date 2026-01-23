@@ -244,14 +244,14 @@ void init_llm_pipeline(py::module_& m) {
         .def("get_tokenizer", &LLMPipeline::get_tokenizer)
         .def("start_chat", [](LLMPipeline& pipe, const std::string& system_message) {
             PyErr_WarnEx(PyExc_DeprecationWarning,
-                         "start_chat() / finish_chat() API is deprecated and will be removed in future releases. "
+                         "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
                          "Please use generate() with ChatHistory argument.",
                          1);
             pipe.start_chat(system_message);
         }, py::arg("system_message") = "")
         .def("finish_chat", [](LLMPipeline& pipe) {
             PyErr_WarnEx(PyExc_DeprecationWarning,
-                         "start_chat() / finish_chat() API is deprecated and will be removed in future releases. "
+                         "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
                          "Please use generate() with ChatHistory argument.",
                          1);
             pipe.finish_chat();

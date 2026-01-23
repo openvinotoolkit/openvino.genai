@@ -380,13 +380,13 @@ ov::genai::Tokenizer ov::genai::LLMPipeline::get_tokenizer() {
 }
 
 void ov::genai::LLMPipeline::start_chat(const std::string& system_message) {
-    GENAI_WARN("start_chat() / finish_chat() API is deprecated and will be removed in future releases. "
+    GENAI_WARN("start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
                "Please, use generate() with ChatHistory argument.");
     m_pimpl->start_chat(system_message);
 }
 
 void ov::genai::LLMPipeline::finish_chat() {
-    GENAI_WARN("start_chat() / finish_chat() API is deprecated and will be removed in future releases. "
+    GENAI_WARN("start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
                "Please, use generate() with ChatHistory argument.");
     m_pimpl->finish_chat();
 }
