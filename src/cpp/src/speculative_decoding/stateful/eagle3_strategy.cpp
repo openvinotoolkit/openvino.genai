@@ -545,7 +545,7 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
     // Prepare sampling config with extended max_new_tokens to prevent premature termination
     // during draft generation. Actual length control is in the generation loop.
     auto sampling_config = config;
-    sampling_config.max_new_tokens = config.max_new_tokens + m_draft_iterations;
+    sampling_config.max_new_tokens = config.max_new_tokens + m_draft_iterations + 1;
 
     // Initialize sequences with sampling config
     m_target->initialize_sequence(input_ids, sampling_config);
