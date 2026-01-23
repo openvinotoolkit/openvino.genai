@@ -164,9 +164,7 @@ NPU_UNSUPPORTED_MODELS = {
 }
 
 DEFAULT_NPUW_PROPERTIES = {
-    "DEVICE_PROPERTIES": {
-        "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 4096}
-    }
+    "DEVICE_PROPERTIES": {"NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 4096}}
 }
 
 NPU_SUPPORTED_MODELS = [id for id in MODEL_IDS if id not in NPU_UNSUPPORTED_MODELS and id not in VIDEO_MODEL_IDS]
@@ -281,11 +279,7 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
     models_path = _get_ov_model(ov_model)
 
-    pipeline = VLMPipeline(
-        models_path,
-        "CPU",
-        ATTENTION_BACKEND=ov_backend
-    )
+    pipeline = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=ov_backend)
     return VlmModelInfo(
         ov_model,
         ov_backend,
@@ -334,17 +328,20 @@ parametrize_one_model_backends = pytest.mark.parametrize(
     indirect=["ov_pipe_model"],
 )
 
+
 def _dict_to_sorted_tuple(d):
     if isinstance(d, dict):
         return tuple([(key, _dict_to_sorted_tuple(value)) for key, value in sorted(d.items())])
 
     return d
 
+
 def _sorted_tuple_to_dict(t):
     if isinstance(t, tuple):
         return {key: _sorted_tuple_to_dict(value) for key, value in t}
 
     return t
+
 
 @pytest.fixture(scope="module")
 def ov_npu_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
@@ -355,24 +352,17 @@ def ov_npu_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
     models_path = _get_ov_model(ov_model)
 
-    pipeline = VLMPipeline(
-        models_path,
-        "NPU",
-        config=_sorted_tuple_to_dict(config)
-    )
+    pipeline = VLMPipeline(models_path, "NPU", config=_sorted_tuple_to_dict(config))
     return VlmModelInfo(
         ov_model,
         "SDPA",
         TAG_GENERATOR_BY_MODEL.get(ov_model, lambda idx: ""),
         RESOLUTION_BY_MODEL.get(ov_model, DEFAULT_RESOLUTION),
-        pipeline
+        pipeline,
     )
 
-def _parametrize_npu_models(
-    models: str | list[str],
-    config: dict | None = None,
-    config_name: str | None = None
-):
+
+def _parametrize_npu_models(models: str | list[str], config: dict | None = None, config_name: str | None = None):
     if isinstance(models, str):
         models = [models]
 
@@ -389,8 +379,14 @@ def _parametrize_npu_models(
         indirect=["ov_npu_pipe_model"],
     )
 
-parametrize_all_models_npu = _parametrize_npu_models(NPU_SUPPORTED_MODELS, DEFAULT_NPUW_PROPERTIES, "DEFAULT_NPUW_PROPERTIES")
-parametrize_one_model_npu = _parametrize_npu_models(NPU_SUPPORTED_MODELS[0], DEFAULT_NPUW_PROPERTIES, "DEFAULT_NPUW_PROPERTIES")
+
+parametrize_all_models_npu = _parametrize_npu_models(
+    NPU_SUPPORTED_MODELS, DEFAULT_NPUW_PROPERTIES, "DEFAULT_NPUW_PROPERTIES"
+)
+parametrize_one_model_npu = _parametrize_npu_models(
+    NPU_SUPPORTED_MODELS[0], DEFAULT_NPUW_PROPERTIES, "DEFAULT_NPUW_PROPERTIES"
+)
+
 
 @pytest.fixture(scope="module")
 def ov_continious_batching_pipe() -> ContinuousBatchingPipeline:
@@ -595,7 +591,8 @@ def test_vlm_continuous_batching_generate_vs_add_request(
     for idx, images in enumerate(images_list):
         videos = videos_list[idx]
         handle = ov_continious_batching_pipe.add_request(
-            idx, PROMPTS[0],
+            idx,
+            PROMPTS[0],
             images=images,
             videos=videos,
             generation_config=generation_config,
@@ -1134,16 +1131,16 @@ def test_vlm_npu_no_exception(ov_npu_pipe_model: VlmModelInfo, cat_tensor):
 
     generation_config = _setup_generation_config(ov_pipe)
 
-    ov_pipe.generate(
-        PROMPTS[0], images=[cat_tensor], generation_config=generation_config
-    )
+    ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
 
 
-
-@pytest.fixture(scope="module", params=[
-    pytest.param(["cat_tensor"], id="cat_tensor - one image"),
-    pytest.param([], id="empty"),
-])
+@pytest.fixture(
+    scope="module",
+    params=[
+        pytest.param(["cat_tensor"], id="cat_tensor - one image"),
+        pytest.param([], id="empty"),
+    ],
+)
 def image_sequence(request):
     return [request.getfixturevalue(image) for image in request.param]
 
@@ -1168,21 +1165,19 @@ def test_vlm_npu_no_image(ov_npu_pipe_model: VlmModelInfo):
     sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
-def test_vlm_npu_multiple_images(ov_npu_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, handwritten_tensor: openvino.Tensor):
+def test_vlm_npu_multiple_images(
+    ov_npu_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, handwritten_tensor: openvino.Tensor
+):
     ov_pipe = ov_npu_pipe_model.pipeline
 
     generation_config = _setup_generation_config(ov_pipe)
 
-    ov_pipe.generate(
-        PROMPTS[0], images=[cat_tensor, handwritten_tensor], generation_config=generation_config
-    )
+    ov_pipe.generate(PROMPTS[0], images=[cat_tensor, handwritten_tensor], generation_config=generation_config)
 
 
 @parametrize_all_models
 def test_vlm_pipeline_chat_streamer_cancel_second_generate(
-    request: pytest.FixtureRequest,
-    ov_pipe_model: VlmModelInfo,
-    image_sequence: list[openvino.Tensor]
+    request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, image_sequence: list[openvino.Tensor]
 ):
     ov_pipe = ov_pipe_model.pipeline
     callback_questions = [
@@ -1279,8 +1274,7 @@ def test_start_chat_clears_history(
 
 
 def test_start_chat_clears_history_cb_api(
-    ov_continious_batching_pipe: ContinuousBatchingPipeline,
-    image_sequence: list[openvino.Tensor]
+    ov_continious_batching_pipe: ContinuousBatchingPipeline, image_sequence: list[openvino.Tensor]
 ):
     callback_questions = [
         "Why is the Sun yellow?"
@@ -1387,9 +1381,7 @@ def generate(vlm: VLMPipeline, requests):
 
 @pytest.fixture(scope="module")
 def conversation_requests(
-    cat_tensor: openvino.Tensor,
-    car_tensor: openvino.Tensor,
-    handwritten_tensor: openvino.Tensor
+    cat_tensor: openvino.Tensor, car_tensor: openvino.Tensor, handwritten_tensor: openvino.Tensor
 ) -> list[tuple[str, list[openvino.Tensor]]]:
     return [
         ("Describe", [cat_tensor]),
@@ -1487,8 +1479,7 @@ def test_model_tags_representation(ov_pipe_model: VlmModelInfo, cat_tensor: open
 
 @model_and_tag_parametrize()
 def test_model_tags_prepend_native(
-    ov_pipe_model: VlmModelInfo,
-    conversation_requests: list[tuple[str, list[openvino.Tensor]]]
+    ov_pipe_model: VlmModelInfo, conversation_requests: list[tuple[str, list[openvino.Tensor]]]
 ):
     ov_pipe = ov_pipe_model.pipeline
     tag = ov_pipe_model.image_tag
@@ -1515,8 +1506,7 @@ def test_model_tags_prepend_native(
 
 @model_and_tag_parametrize()
 def test_model_tags_prepend_universal(
-    ov_pipe_model: VlmModelInfo,
-    conversation_requests: list[tuple[str, list[openvino.Tensor]]]
+    ov_pipe_model: VlmModelInfo, conversation_requests: list[tuple[str, list[openvino.Tensor]]]
 ):
     ov_pipe = ov_pipe_model.pipeline
 
@@ -1546,10 +1536,7 @@ def cat_image_384x384(cat_image):
     return cat_image.resize((384, 384))
 
 @model_and_tag_parametrize()
-def test_model_tags_append(
-    ov_pipe_model: VlmModelInfo,
-    conversation_requests: list[tuple[str, list[openvino.Tensor]]]
-):
+def test_model_tags_append(ov_pipe_model: VlmModelInfo, conversation_requests: list[tuple[str, list[openvino.Tensor]]]):
     ov_pipe = ov_pipe_model.pipeline
     tag = ov_pipe_model.image_tag
 
