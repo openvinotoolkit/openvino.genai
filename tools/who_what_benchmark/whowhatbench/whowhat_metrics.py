@@ -12,6 +12,7 @@ import numpy as np
 from sentence_transformers import SentenceTransformer, util
 from transformers import CLIPImageProcessor, CLIPModel
 from tqdm import tqdm
+from sklearn.metrics.pairwise import cosine_similarity
 
 
 def evaluate_similarity(model, data_gold, data_prediction):
@@ -230,3 +231,59 @@ class RerankingSimilarity:
 
         metric_dict = {"similarity": np.mean(similarity_per_query)}
         return metric_dict, {"similarity": similarity_per_query, "per_text_score_list": metric_per_query}
+
+
+class VideoSimilarity:
+    def __init__(self) -> None:
+        from transformers import LlavaNextVideoProcessor, LlavaNextVideoModel
+
+        self.processor = LlavaNextVideoProcessor.from_pretrained("llava-hf/LLaVA-NeXT-Video-7B-hf")
+        self.model = LlavaNextVideoModel.from_pretrained("llava-hf/LLaVA-NeXT-Video-7B-hf").eval()
+
+    def get_pixel_values_videos(self, video):
+        # according to pre processing of inputs in get_video_features of LlavaNextVideoModel
+        # https://github.com/huggingface/transformers/blob/v4.53.2/src/transformers/models/llava_next_video/modular_llava_next_video.py#L381
+        inputs = self.processor.video_processor(videos=video, return_tensors="pt")["pixel_values_videos"]
+        batch_size, frames, channels, height, width = inputs.shape
+        pixel_values_videos = inputs.reshape(batch_size * frames, channels, height, width)
+        return pixel_values_videos
+
+    def get_video_features(self, pixel_values_videos):
+        layer_idx = self.model.config.vision_feature_layer
+        with torch.no_grad():
+            # output shape (batch, patches, hidden_dim)
+            outputs = self.model.vision_tower(pixel_values_videos, output_hidden_states=True)
+        # according to post processing of outputs in get_video_features of LlavaNextVideoModel
+        # https://github.com/huggingface/transformers/blob/v4.53.2/src/transformers/models/llava_next_video/modular_llava_next_video.py#L387
+        outputs = outputs.hidden_states[layer_idx][:, 1:]
+        return outputs.mean(dim=2)
+
+    def load_video_frames(self, video_path):
+        import imageio.v3 as iio
+
+        frames = iio.imread(video_path, plugin="pyav")
+        return [Image.fromarray(frame).convert("RGB") for frame in frames]
+
+    def evaluate(self, gt, prediction):
+        videos_gold = gt["videos"].values
+        videos_prediction = prediction["videos"].values
+
+        metric_per_video = []
+        metric_per_frames_per_video = []
+        for gold, pred in tqdm(zip(videos_gold, videos_prediction), desc="Video Similarity evaluation"):
+            gold_video = self.load_video_frames(gold)
+            prediction_video = self.load_video_frames(pred)
+
+            gold_inputs_pixel_values = self.get_pixel_values_videos(gold_video)
+            prediction_inputs_pixel_values = self.get_pixel_values_videos(prediction_video)
+
+            gold_outputs = self.get_video_features(gold_inputs_pixel_values)
+            prediction_outputs = self.get_video_features(prediction_inputs_pixel_values)
+
+            cos_sim_all = cosine_similarity(prediction_outputs, gold_outputs)
+            cos_sim_frames = np.array([cos_sim_all[i, i] for i in range(len(gold_video))])
+            metric_per_video.append(np.mean(cos_sim_frames))
+            metric_per_frames_per_video.append(cos_sim_frames)
+
+        metric_dict = {"similarity": np.mean(metric_per_video)}
+        return metric_dict, {"similarity": metric_per_video, "per_frame": metric_per_frames_per_video}
