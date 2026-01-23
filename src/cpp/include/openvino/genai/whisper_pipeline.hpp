@@ -22,6 +22,7 @@ using RawSpeechInput = std::vector<float>;
 struct WhisperRawPerfMetrics {
     /** @brief Duration for each features extraction call */
     std::vector<MicroSeconds> features_extraction_durations;
+    std::vector<MicroSeconds> word_level_timestamps_processing_durations;
 };
 
 struct OPENVINO_GENAI_EXPORTS WhisperPerfMetrics : public PerfMetrics {
@@ -29,6 +30,9 @@ struct OPENVINO_GENAI_EXPORTS WhisperPerfMetrics : public PerfMetrics {
     MeanStdPair features_extraction_duration;
 
     MeanStdPair get_features_extraction_duration();
+
+    MeanStdPair word_level_timestamps_processing_duration;
+    MeanStdPair get_word_level_timestamps_processing_duration();
 
     WhisperPerfMetrics() = default;
 
