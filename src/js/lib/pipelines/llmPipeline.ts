@@ -4,18 +4,31 @@ import { GenerationConfig, StreamingStatus, LLMPipelineProperties } from "../uti
 import { DecodedResults } from "../decodedResults.js";
 import { Tokenizer } from "../tokenizer.js";
 
+/**
+ * This class is used for generation with Large Language Models (LLMs)
+ */
 export class LLMPipeline {
   modelPath: string;
   device: string;
   pipeline: LLMPipelineWrapper | null = null;
   properties: LLMPipelineProperties;
 
+  /**
+   * Construct an LLM pipeline from a folder containing tokenizer and model IRs.
+   * @param modelPath - A folder to read tokenizer and model IRs.
+   * @param device - Inference device. A tokenizer is always compiled for CPU.
+   * @param properties - Device and pipeline properties.
+   */
   constructor(modelPath: string, device: string, properties: LLMPipelineProperties) {
     this.modelPath = modelPath;
     this.device = device;
     this.properties = properties;
   }
 
+  /**
+   * Initialize the underlying native pipeline.
+   * @returns Resolves when initialization is complete.
+   */
   async init() {
     if (this.pipeline) throw new Error("LLMPipeline is already initialized");
 
@@ -28,6 +41,12 @@ export class LLMPipeline {
     return result;
   }
 
+  /**
+   * Start a chat session with an optional system message.
+   * @param systemMessage - Optional system message to initialize chat context.
+   * @returns Resolves when chat session is started.
+   * @deprecated startChat is deprecated and will be removed in future releases. Please, use generate() with ChatHistory argument.
+   */
   async startChat(systemMessage: string = "") {
     if (!this.pipeline) throw new Error("LLMPipeline is not initialized");
 
@@ -36,6 +55,12 @@ export class LLMPipeline {
 
     return result;
   }
+
+  /**
+   * Finish the current chat session and clear chat-related state.
+   * @returns Resolves when chat session is finished.
+   * @deprecated finishChat is deprecated and will be removed in future releases. Please, use generate() with ChatHistory argument.
+   */
   async finishChat() {
     if (!this.pipeline) throw new Error("LLMPipeline is not initialized");
 
@@ -45,6 +70,13 @@ export class LLMPipeline {
     return result;
   }
 
+  /**
+   * Stream generation results as an async iterator of strings.
+   * The iterator yields subword chunks.
+   * @param inputs - Input prompt string or chat history.
+   * @param generationConfig - Generation configuration parameters.
+   * @returns Async iterator producing subword chunks.
+   */
   stream(inputs: string | ChatHistory, generationConfig: GenerationConfig = {}) {
     if (!this.pipeline) throw new Error("LLMPipeline is not initialized");
 
@@ -143,6 +175,13 @@ export class LLMPipeline {
     };
   }
 
+  /**
+   * Generate sequences for LLMs.
+   * @param inputs - Input prompt string, array of prompts, or chat history.
+   * @param generationConfig - Generation configuration parameters.
+   * @param streamer - Optional streamer callback called for each chunk.
+   * @returns Resolves with decoded results once generation finishes.
+   */
   async generate(
     inputs: string | string[] | ChatHistory,
     generationConfig: GenerationConfig = {},
@@ -159,6 +198,10 @@ export class LLMPipeline {
     return new DecodedResults(result.texts, result.scores, result.perfMetrics, result.parsed);
   }
 
+  /**
+   * Get the pipeline tokenizer instance.
+   * @returns Tokenizer used by the pipeline.
+   */
   getTokenizer(): Tokenizer {
     if (!this.pipeline) throw new Error("LLMPipeline is not initialized");
     return this.pipeline.getTokenizer();
