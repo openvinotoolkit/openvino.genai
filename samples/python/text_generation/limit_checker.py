@@ -243,4 +243,3 @@ if __name__ == '__main__':
 
 
         print(f"Approximate highest throughput: {prompt_throughput} prompts")
-
