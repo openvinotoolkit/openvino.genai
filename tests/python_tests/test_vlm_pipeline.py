@@ -1805,7 +1805,9 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
     GENAI_VS_OPTIMUM_CASES,
     indirect=["ov_pipe_model"],
 )
-def test_vlm_pipeline_match_optimum_preresized(request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool):
+def test_vlm_pipeline_match_optimum_preresized(
+    request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool
+):
     resolution = ov_pipe_model.resolution
 
     resized_image = None
@@ -1837,7 +1839,11 @@ GENAI_VS_OPTIMUM_IMAGE_INPUT_RESOLUTIONS = [
 # Force VISION_PREPROCESS to be set to CPP for now.
 @pytest.mark.vision_preprocess("CPP")
 def test_vlm_pipeline_match_optimum_with_resolutions(
-    request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool, image_input_resolution: tuple[int, int]
+    request: pytest.FixtureRequest,
+    ov_pipe_model: VlmModelInfo,
+    has_image: bool,
+    has_video: bool,
+    image_input_resolution: tuple[int, int],
 ):
     resized_image = None
     resized_video = None
