@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2025 Intel Corporation
+# Copyright (C) 2018-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -12,10 +12,10 @@ if (NOT TARGET pybind11::pybind11)
         URL_HASH SHA256=741633da746b7c738bb71f1854f957b9da660bcd2dce68d71949037f0969d0ca
     )
     FetchContent_GetProperties(pybind11)
-    
+
     # search for FindPython3.cmake instead of legacy modules
     set(PYBIND11_FINDPYTHON ON)
-    
+
     if(NOT pybind11_POPULATED)
         FetchContent_Populate(pybind11)
         add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})

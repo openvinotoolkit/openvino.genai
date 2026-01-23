@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/visual_language/perf_metrics.hpp"
@@ -174,12 +174,13 @@ std::vector<ov::Tensor> InputsEmbedder::IInputsEmbedder::to_single_image_tensors
 }
 
 std::vector<ov::genai::EncodedImage> InputsEmbedder::IInputsEmbedder::encode_images(const std::vector<ov::Tensor>& images) {
-    std::vector<EncodedImage> embeds;
+    std::vector<EncodedImage> encoded_images;
     std::vector<ov::Tensor> single_images = to_single_image_tensors(images);
     for (const ov::Tensor& image : single_images) {
-        embeds.emplace_back(m_vision_encoder->encode(image));
+        encoded_images.emplace_back(m_vision_encoder->encode(image));
     }
-    return embeds;
+    OPENVINO_ASSERT(images.size() == encoded_images.size(), "Input images size and encoded images size mismatch!");
+    return encoded_images;
 }
 
 ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
@@ -438,10 +439,10 @@ NormalizedPrompt InputsEmbedder::normalize_prompt(const std::string& prompt,
      return m_impl->normalize_prompt(prompt, base_image_id, base_video_id, images, videos);
 }
 
-void verify_ids(const std::vector<size_t>& image_ids, size_t base_id, size_t n_images) {
-    for (size_t idx : image_ids) {
-        OPENVINO_ASSERT(base_id <= idx, "Referring to older images isn't implemented");
-        OPENVINO_ASSERT(idx < base_id + n_images, "Missing image ", idx);
+void verify_ids(const std::vector<size_t>& vision_indices, size_t base_idx, size_t n_visions) {
+    for (size_t idx : vision_indices) {
+        OPENVINO_ASSERT(base_idx <= idx, "Referring to older images/videos is not supported.");
+        OPENVINO_ASSERT(idx < base_idx + n_visions, "Missing image/video with index ", idx);
     }
 }
 
@@ -449,35 +450,43 @@ std::pair<std::string, std::vector<size_t>> InputsEmbedder::IInputsEmbedder::nor
     const std::string& prompt,
     const std::string& native_tag,
     const std::string& automatic_tag,
-    size_t base_id,
-    size_t n_images
+    size_t base_idx,
+    size_t n_visions,
+    VisionType vision_type
 ) const {
     size_t pos = prompt.find(native_tag);
-    auto [image_prompt, image_sequence] = universal_to_native(prompt, [&](std::ostream& os, size_t) {
-        os << automatic_tag;
-    });
-    if (!image_sequence.empty()) {
-        OPENVINO_ASSERT(pos == std::string::npos, "Prompt can contain only one type of image tags.");
-        verify_ids(image_sequence, base_id, n_images);
-        return {std::move(image_prompt), std::move(image_sequence)};
+    auto [vision_prompt, vision_sequence] = universal_to_native(
+        prompt,
+        [&](std::ostream& os, size_t) {
+            os << automatic_tag;
+        },
+        vision_type
+    );
+    if (!vision_sequence.empty()) {
+        OPENVINO_ASSERT(pos == std::string::npos,
+            "Prompt cannot mix universal tags (<ov_genai_image_i>/<ov_genai_video_i>) with native vision tags.");
+        verify_ids(vision_sequence, base_idx, n_visions);
+        return {std::move(vision_prompt), std::move(vision_sequence)};
     }
     // Restore ids from native tags
     while (pos != std::string::npos) {
-        image_sequence.push_back(base_id + image_sequence.size());
+        vision_sequence.push_back(base_idx + vision_sequence.size());
         pos = prompt.find(native_tag, pos + native_tag.length());
     }
-    if (!image_sequence.empty()) {
-        OPENVINO_ASSERT(image_sequence.size() == n_images, "The number of native image tags and provided images must match because it's ambiguous which image should be ignored.");
-        return {std::move(image_prompt), std::move(image_sequence)};
+    if (!vision_sequence.empty()) {
+        OPENVINO_ASSERT(vision_sequence.size() == n_visions,
+            "The number of native vision tags must match the number of provided images/videos"
+            " because it's ambiguous which input should be ignored.");
+        return {std::move(vision_prompt), std::move(vision_sequence)};
     }
     // Prepend automatic tags
     std::stringstream stream;
-    for (size_t relative_id = 0; relative_id < n_images; relative_id++) {
-        image_sequence.push_back(base_id + relative_id);
+    for (size_t relative_id = 0; relative_id < n_visions; relative_id++) {
+        vision_sequence.push_back(base_idx + relative_id);
         stream << automatic_tag;
     }
     stream << prompt;
-    return {stream.str(), std::move(image_sequence)};
+    return {stream.str(), std::move(vision_sequence)};
 }
 
 } // namespace ov::genai

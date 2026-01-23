@@ -1,5 +1,5 @@
 
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "visual_language/phi3_vision/classes.hpp"
@@ -559,7 +559,7 @@ std::shared_ptr<ov::Node> create_mean_scale(std::shared_ptr<ov::Node> input_u8_o
     if (input_u8_or_f32->get_element_type() == ov::element::u8) {
         input_f32 = std::make_shared<v0::Convert>(input_u8_or_f32, ov::element::f32);
     } else {
-        input_f32 = input_u8_or_f32;
+        input_f32 = std::move(input_u8_or_f32);
     }
 
     // Follow the original mean_scale() function logic exactly:
@@ -641,7 +641,7 @@ std::shared_ptr<ov::Node> create_concatenate_batch(std::shared_ptr<ov::Node> glo
     // global_processed: (1, C, H, W)
     // hd_sliced: (num_slices, C, H, W)
     // Output: (1 + num_slices, C, H, W)
-    return std::make_shared<v0::Concat>(ov::NodeVector{global_processed, hd_sliced}, 0);
+    return std::make_shared<v0::Concat>(ov::NodeVector{std::move(global_processed), std::move(hd_sliced)}, 0);
 }
 
 std::shared_ptr<ov::Node> create_pad_to_max_crops(std::shared_ptr<ov::Node> input_nchw, std::shared_ptr<ov::Node> max_crops_param) {
@@ -693,19 +693,19 @@ std::shared_ptr<ov::Model> patch_image_preprocess_into_vision_encoder_model(
 
     // Process global image (resize + normalize + channels_first)
     auto global_resized = create_bicubic_resize(hd_image, global_target_size);
-    auto global_normalized = create_mean_scale(global_resized, config);
-    auto global_processed = create_channels_first(global_normalized);
+    auto global_normalized = create_mean_scale(std::move(global_resized), config);
+    auto global_processed = create_channels_first(std::move(global_normalized));
 
     // Process HD image (normalize + channels_first + slice)
     auto hd_normalized = create_mean_scale(hd_image, config);
-    auto hd_processed = create_channels_first(hd_normalized);
-    auto hd_sliced = create_slice_image(hd_processed);
+    auto hd_processed = create_channels_first(std::move(hd_normalized));
+    auto hd_sliced = create_slice_image(std::move(hd_processed));
 
     // Concatenate global and HD results
-    auto concatenated = create_concatenate_batch(global_processed, hd_sliced);
+    auto concatenated = create_concatenate_batch(std::move(global_processed), std::move(hd_sliced));
 
     // Pad to max crops
-    auto padded_result = create_pad_to_max_crops(concatenated, max_crops);
+    auto padded_result = create_pad_to_max_crops(std::move(concatenated), max_crops);
 
     auto vision_params = vision_encoder_model->get_parameters();
     auto vision_results = vision_encoder_model->get_results();
@@ -713,8 +713,8 @@ std::shared_ptr<ov::Model> patch_image_preprocess_into_vision_encoder_model(
     vision_params[0]->output(0).replace(padded_result);
 
     return std::make_shared<Model>(
-        vision_results,
-        ParameterVector{hd_image, global_target_size, max_crops}
+        std::move(vision_results),
+        ParameterVector{std::move(hd_image), std::move(global_target_size), std::move(max_crops)}
     );
 }
 

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <filesystem>
@@ -205,8 +205,14 @@ public:
 
             ~TorchTensorAllocator() {
                 if (m_torch_tensor && Py_IsInitialized()) {
-                    py::gil_scoped_acquire acquire;
-                    m_torch_tensor = py::object();
+                    try {
+                        py::gil_scoped_acquire acquire;
+                        m_torch_tensor = py::object();
+                    } catch (...) {
+                        // Best-effort cleanup during interpreter shutdown: exceptions here
+                        // cannot be propagated (destructors must not throw) and are therefore
+                        // intentionally ignored.
+                    }
                 }
             }
 
