@@ -285,9 +285,6 @@ class AutoencoderKLLTXVideo:
         @property
         def scaling_factor(self) -> float:
             ...
-        @property
-        def shift_factor(self) -> float:
-            ...
     @typing.overload
     def __init__(self, vae_decoder_path: os.PathLike | str | bytes) -> None:
         """
