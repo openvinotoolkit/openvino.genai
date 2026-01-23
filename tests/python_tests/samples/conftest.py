@@ -432,8 +432,9 @@ def generate_test_content(request):
             logger.info(f"Removing test content: {file_path}")
             os.remove(file_path)
 
+
 @pytest.fixture(scope="session")
-def generate_image_generation_jsonl(request):
+def generate_llm_bench_input_generation_jsonl(request):
     """Generate a JSONL file for image generation prompts."""
 
     test_data = request.config.cache.get("TEST_DATA", None)

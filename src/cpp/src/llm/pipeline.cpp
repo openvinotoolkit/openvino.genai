@@ -77,11 +77,9 @@ namespace genai {
 std::pair<std::string, Any> streamer(StreamerVariant func) {
     if (auto streamer_obj = std::get_if<std::shared_ptr<StreamerBase>>(&func)) {
         return {utils::STREAMER_ARG_NAME, Any::make<std::shared_ptr<StreamerBase>>(*streamer_obj)};
-    } else if (auto streamer_obj = std::get_if<std::function<StreamingStatus(std::string)>>(&func)) {
-        return {utils::STREAMER_ARG_NAME, Any::make<std::function<StreamingStatus(std::string)>>(*streamer_obj)};
     } else {
-        auto callback = std::get<std::function<bool(std::string)>>(func);
-        return {utils::STREAMER_ARG_NAME, Any::make<std::function<bool(std::string)>>(callback)};
+        auto status_streamer_obj = std::get<std::function<StreamingStatus(std::string)>>(func);
+        return {utils::STREAMER_ARG_NAME, Any::make<std::function<StreamingStatus(std::string)>>(status_streamer_obj)};
     }
 }
 

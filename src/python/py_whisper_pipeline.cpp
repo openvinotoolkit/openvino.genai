@@ -15,7 +15,6 @@
 #include "tokenizer/tokenizers_path.hpp"
 
 namespace py = pybind11;
-using ov::genai::ChunkStreamerBase;
 using ov::genai::DecodedResults;
 using ov::genai::GenerationConfig;
 using ov::genai::OptionalWhisperGenerationConfig;
@@ -234,44 +233,6 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
     return res_config;
 }
 
-OPENVINO_SUPPRESS_DEPRECATED_START
-
-class ConstructableChunkStreamer : public ChunkStreamerBase {
-    bool put(int64_t token) override {
-        PYBIND11_OVERRIDE(bool,               // Return type
-                          ChunkStreamerBase,  // Parent class
-                          put,                // Name of function in C++ (must match Python name)
-                          token               // Argument(s)
-        );
-    }
-    bool put_chunk(std::vector<int64_t> tokens) override {
-        PYBIND11_OVERRIDE(bool,               // Return type
-                          ChunkStreamerBase,  // Parent class
-                          put_chunk,          // Name of function in C++ (must match Python name)
-                          tokens              // Argument(s)
-        );
-    }
-    StreamingStatus write(const std::vector<int64_t>& token) override {
-        PYBIND11_OVERRIDE(StreamingStatus,    // Return type
-                          ChunkStreamerBase,  // Parent class
-                          write,              // Name of function in C++ (must match Python name)
-                          token               // Argument(s)
-        );
-    }
-    StreamingStatus write(int64_t token) override {
-        PYBIND11_OVERRIDE(StreamingStatus,    // Return type
-                          ChunkStreamerBase,  // Parent class
-                          write,              // Name of function in C++ (must match Python name)
-                          token               // Argument(s)
-        );
-    }
-    void end() override {
-        PYBIND11_OVERRIDE_PURE(void, ChunkStreamerBase, end);
-    }
-};
-
-OPENVINO_SUPPRESS_DEPRECATED_END
-
 py::object call_whisper_common_generate(WhisperPipeline& pipe,
                                         const RawSpeechInput& raw_speech_input,
                                         const OptionalWhisperGenerationConfig& config,
@@ -296,27 +257,6 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
 }  // namespace
 
 void init_whisper_pipeline(py::module_& m) {
-    OPENVINO_SUPPRESS_DEPRECATED_START
-    py::class_<ChunkStreamerBase, ConstructableChunkStreamer, std::shared_ptr<ChunkStreamerBase>, StreamerBase>(
-        m,
-        "ChunkStreamerBase",
-        streamer_base_docstring)  // Change the holder form unique_ptr to shared_ptr
-        .def(py::init<>())
-        .def("put",
-             &ChunkStreamerBase::put,
-             "Put is called every time new token is generated. Returns a bool flag to indicate whether generation "
-             "should be stopped, if return true generation stops",
-             py::arg("token"))
-        .def("put_chunk",
-             &ChunkStreamerBase::put_chunk,
-             "put_chunk is called every time new token chunk is generated. Returns a bool flag to indicate whether "
-             "generation should be stopped, if return true generation stops",
-             py::arg("tokens"))
-        .def("end",
-             &ChunkStreamerBase::end,
-             "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
-    OPENVINO_SUPPRESS_DEPRECATED_END
-
     // Binding for WhisperGenerationConfig
     py::class_<WhisperGenerationConfig, GenerationConfig>(m,
                                                           "WhisperGenerationConfig",

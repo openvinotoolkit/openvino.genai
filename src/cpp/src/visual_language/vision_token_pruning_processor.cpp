@@ -734,6 +734,7 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     result.pruned_embeddings = pruned_2d_tensor;
 
     if (result.original_visual_tokens == result.pruned_visual_tokens) {
+        GENAI_INFO("Original visual tokens and pruned visual tokens are the same!");
         return std::nullopt;
     }
 
