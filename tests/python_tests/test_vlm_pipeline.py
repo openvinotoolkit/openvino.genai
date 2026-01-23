@@ -1374,7 +1374,7 @@ MODELS_TO_TAG = IMAGE_ID_IGNORANT_MODELS_TO_TAG + [
 
 def model_and_tag_parametrize(
     items=None,
-    xfail: dict[tuple[str, str], str] | None = None,  # (model, tag) -> reason
+    xfail: dict[tuple[str, str], str] | None = None,  # (model, attn_backend) -> reason
 ):
     if items is None:
         items = MODELS_TO_TAG
@@ -1384,11 +1384,11 @@ def model_and_tag_parametrize(
     params = []
     ids = []
     for item in items:
-        model_id, tag = item[0], item[1]
-        case_id = f"{model_id}/{tag}"
+        model_id, attn_backend = item[0], item[1]
+        case_id = f"{model_id}/{attn_backend}"
         ids.append(case_id)
 
-        reason = xfail.get((model_id, tag))
+        reason = xfail.get((model_id, attn_backend))
         if reason:
             params.append(pytest.param(item, marks=pytest.mark.xfail(reason=reason)))
         else:
@@ -1805,7 +1805,7 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
     GENAI_VS_OPTIMUM_CASES,
     indirect=["ov_pipe_model"],
 )
-def test_vlm_pipeline_match_optimum_preresized(request, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool):
+def test_vlm_pipeline_match_optimum_preresized(request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool):
     resolution = ov_pipe_model.resolution
 
     resized_image = None
@@ -1836,8 +1836,8 @@ GENAI_VS_OPTIMUM_IMAGE_INPUT_RESOLUTIONS = [
 # Some models fail when using OV graph pre-processing.
 # Force VISION_PREPROCESS to be set to CPP for now.
 @pytest.mark.vision_preprocess("CPP")
-def test_vlm_pipeline_match_optimum_with_resize(
-    request, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool, image_input_resolution
+def test_vlm_pipeline_match_optimum_with_resolutions(
+    request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool, image_input_resolution: tuple[int, int]
 ):
     resized_image = None
     resized_video = None
