@@ -11,7 +11,7 @@
 
 #include "profiler.hpp"
 
-#ifdef WIN32
+#if defined(_WIN32) || defined(WIN32)
 #include <intrin.h>
 #pragma intrinsic(__rdtsc)
 #else
