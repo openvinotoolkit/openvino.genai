@@ -10,12 +10,23 @@ endforeach()
 
 file(GLOB_RECURSE pyi_files ${generated_pyi_files_location}/*.pyi)
 
+# Copyright header to add to generated files
+set(COPYRIGHT_HEADER "# Copyright (C) 2025-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+")
+
 # perform comparison of generated files with committed ones
 foreach(pyi_file IN LISTS pyi_files)
     string(REPLACE ${generated_pyi_files_location} ${source_pyi_files_location} commited_pyi_file "${pyi_file}")
     if(NOT EXISTS "${commited_pyi_file}")
         message(FATAL_ERROR "${commited_pyi_file} does not exists. Please, install pybind11-stubgen and generate .pyi files")
     else()
+        # Read the generated file and add copyright header if not present
+        file(READ "${pyi_file}" pyi_content)
+        if(NOT pyi_content MATCHES "^# Copyright")
+            file(WRITE "${pyi_file}" "${COPYRIGHT_HEADER}\n${pyi_content}")
+        endif()
+        
         execute_process(COMMAND "${CMAKE_COMMAND}" -E compare_files "${pyi_file}" "${commited_pyi_file}"
                         OUTPUT_VARIABLE output_message
                         ERROR_VARIABLE error_message
