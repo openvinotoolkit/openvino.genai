@@ -386,7 +386,9 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& unified
     }
     
     ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
-    auto text_embeds = get_text_embeddings_llava_next(input_ids);
+    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
+    EmbeddingsRequest& req = embeddings_request_guard.get();
+    ov::Tensor text_embeds = m_embedding->infer(req, input_ids);
 
     if (images.empty()) {
         ov::Tensor inputs_embeds(text_embeds.get_element_type(), text_embeds.get_shape());
@@ -400,30 +402,6 @@ ov::Tensor InputsEmbedderLLaVANext::get_inputs_embeds(const std::string& unified
     metrics.raw_metrics.tokenization_durations[metrics.raw_metrics.tokenization_durations.size() - 1] += ov::genai::MicroSeconds(PerfMetrics::get_microsec(end_tokenizer_time - start_tokenizer_time));
     int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
     return utils::merge_text_and_image_embeddings_llava(input_ids, text_embeds, image_embeds, image_token_id);
-}
-
-// ref:
-// https://github.com/huggingface/optimum-intel/blob/v1.27.0/optimum/intel/openvino/modeling_visual_language.py#L1423
-ov::Tensor InputsEmbedderLLaVANext::get_text_embeddings_llava_next(const ov::Tensor& input_ids) {
-    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
-    EmbeddingsRequest& req = embeddings_request_guard.get();
-
-    ov::Tensor encoded_image_token =
-        m_tokenizer.encode(m_vlm_config.im_start, ov::genai::add_special_tokens(false)).input_ids;
-    int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
-
-    auto for_inputs_embeds_ids = ov::Tensor(input_ids.get_element_type(), input_ids.get_shape());
-    input_ids.copy_to(for_inputs_embeds_ids);
-
-    // zero out values that are equal to image_token_id
-    auto* pids = for_inputs_embeds_ids.data<int64_t>();
-    for (size_t i = 0; i < input_ids.get_size(); i++) {
-        int64_t val = pids[i];
-        pids[i] = (val == image_token_id) ? 0 : val;
-    }
-
-    ov::Tensor text_embeds = m_embedding->infer(req, for_inputs_embeds_ids);
-    return text_embeds;
 }
 
 } // namespace ov::genai

@@ -37,9 +37,6 @@ public:
     ) const override;
 
     ov::Tensor pack_image_features_llava_next(const EncodedImage& encoded_image, const ov::Tensor& image_newline) const;
-
-protected:
-    ov::Tensor get_text_embeddings_llava_next(const ov::Tensor& input_ids);
 };
 
 } // namespace ov::genai
