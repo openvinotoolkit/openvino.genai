@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "utils.hpp"
@@ -175,8 +175,6 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
         auto any_val = config_map.at(STREAMER_ARG_NAME);
         if (any_val.is<std::shared_ptr<ov::genai::StreamerBase>>()) {
             streamer = any_val.as<std::shared_ptr<ov::genai::StreamerBase>>();
-        } else if (any_val.is<std::function<bool(std::string)>>()) {
-            streamer = any_val.as<std::function<bool(std::string)>>();
         } else if (any_val.is<std::function<StreamingStatus(std::string)>>()) {
             streamer = any_val.as<std::function<StreamingStatus(std::string)>>();
         }

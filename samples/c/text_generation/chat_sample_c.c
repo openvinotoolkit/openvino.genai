@@ -137,7 +137,7 @@ static int json_escape_string(const char* input, char* output, size_t output_siz
                                 break;
                             }
                         }
-                        if (valid && j + utf8_len < output_size - 1) {
+                        if (valid && j + utf8_len <= output_size - 1) {
                             // Copy entire UTF-8 sequence
                             for (int k = 0; k < utf8_len; k++) {
                                 output[j++] = input[i + k];
