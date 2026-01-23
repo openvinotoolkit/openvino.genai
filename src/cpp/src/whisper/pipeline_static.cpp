@@ -432,14 +432,14 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model) {
     pm.run_passes(model);
 }
 
-void add_attention_mask_input(std::shared_ptr<ov::Model> model, bool transform_cross_attn, const uint32_t& hidden_state_seq_size) {
+void add_attention_mask_input(std::shared_ptr<ov::Model> model, bool transform_cross_attn, const uint32_t& hidden_state_seq_size, const size_t max_prompt_len) {
     using namespace ov::pass::pattern;
     using namespace ov::op;
     class AttentionMaskInput : public ov::pass::MatcherPass {
     public:
         OPENVINO_MATCHER_PASS_RTTI("AttentionMaskInput");
 
-        AttentionMaskInput(std::shared_ptr<ov::Model> model, bool transform_cross_attn, const uint32_t& hidden_state_seq_size) {
+        AttentionMaskInput(std::shared_ptr<ov::Model> model, bool transform_cross_attn, const uint32_t& hidden_state_seq_size, const size_t max_prompt_len) {
             std::vector<std::shared_ptr<ov::Node>> self_attn_nodes;
             std::vector<std::shared_ptr<ov::Node>> cross_attn_nodes;
             const auto kAttnMaskPort = 3;
@@ -503,13 +503,13 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model, bool transform_c
                 auto shape_cst = std::make_shared<v0::Constant>(
                     ov::element::i64,
                     ov::Shape{2},
-                    std::vector<int64_t>{MAX_PROMPT_LEN, 1}
+                    std::vector<int64_t>{static_cast<int64_t>(max_prompt_len), 1}
                 );
 
                 auto target_shape = std::make_shared<v0::Constant>(
                     ov::element::i64,
                     ov::Shape{2},
-                    std::vector<int64_t>{MAX_PROMPT_LEN, static_cast<int64_t>(hidden_state_seq_size)}
+                    std::vector<int64_t>{static_cast<int64_t>(max_prompt_len), static_cast<int64_t>(hidden_state_seq_size)}
                 );
                 // FIXME: Must be transpose if batch present
                 auto reshape = std::make_shared<v1::Reshape>(cvt->output(0), shape_cst->output(0), false);
@@ -539,7 +539,7 @@ void add_attention_mask_input(std::shared_ptr<ov::Model> model, bool transform_c
     };
 
     ov::pass::Manager pm;
-    pm.register_pass<AttentionMaskInput>(model, transform_cross_attn, hidden_state_seq_size);
+    pm.register_pass<AttentionMaskInput>(model, transform_cross_attn, hidden_state_seq_size, max_prompt_len);
     pm.run_passes(model);
 }
 
@@ -1063,16 +1063,17 @@ WhisperPipeline::StaticWhisperPipeline::StaticWhisperPipeline(const std::filesys
         add_cache_position_input(decoder_with_past_model);
     }
 
-    add_attention_mask_input(decoder_model, true /* transform_cross_attn */, last_hidden_state_shape[1].get_length());
+    const size_t max_sequence_length = 448;
+
+    // When word_timestamps is enabled, the decoder may receive tokens decoded from the entire audio chunk.
+    // We use max_sequence_length - 1 (447). Setting decoder_max_prompt_len to 448 leads to shape mismatch exception.
+    const size_t decoder_max_prompt_len = m_generation_config.word_timestamps ? (max_sequence_length - 1) : MAX_PROMPT_LEN;
+
+    add_attention_mask_input(decoder_model, true /* transform_cross_attn */, last_hidden_state_shape[1].get_length(), decoder_max_prompt_len);
     // NB: Note, there is no need to transform cross attention for decoder_with_past_model
     // as it accepts only single token and there can't be any padding.
     // "attention_mask" for "self-attention" is needed to control actual KV-cache size
     add_attention_mask_input(decoder_with_past_model);
-
-    const size_t max_sequence_length = 448;
-
-    // When word_timestamps is enabled decoder can receive tokens decoded from entire audio chunk which is 448
-    const size_t decoder_max_prompt_len = m_generation_config.word_timestamps ? max_sequence_length : MAX_PROMPT_LEN;
 
     reshape_to_static(decoder_model, decoder_max_prompt_len, decoder_max_prompt_len, last_hidden_state_shape);
     reshape_to_static(decoder_with_past_model, 1, max_sequence_length, last_hidden_state_shape, true /*with_past*/);
