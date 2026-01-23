@@ -373,7 +373,8 @@ def ov_npu_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
     return VlmModelInfo(
         ov_model,
         "SDPA",
-        TAG_GENERATOR_BY_MODEL.get(ov_model, lambda idx: ""),
+        IMAGE_TAG_GENERATOR_BY_MODEL.get(ov_model, lambda idx: ""),
+        VIDEO_TAG_GENERATOR_BY_MODEL.get(ov_model, lambda idx: ""),
         RESOLUTION_BY_MODEL.get(ov_model, DEFAULT_RESOLUTION),
         pipeline,
     )
