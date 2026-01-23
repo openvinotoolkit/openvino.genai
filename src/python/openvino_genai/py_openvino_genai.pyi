@@ -587,9 +587,6 @@ class ContinuousBatchingPipeline:
     def generate(self, prompt: str, generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
     @typing.overload
-    def generate(self, prompts: collections.abc.Sequence[ChatHistory], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
-        ...
-    @typing.overload
     def generate(self, prompts: collections.abc.Sequence[str], images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
     @typing.overload
@@ -597,6 +594,18 @@ class ContinuousBatchingPipeline:
         ...
     @typing.overload
     def generate(self, prompts: collections.abc.Sequence[str], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
+        ...
+    @typing.overload
+    def generate(self, histories: list, generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
+        ...
+    @typing.overload
+    def generate(self, histories: list, images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
+        ...
+    @typing.overload
+    def generate(self, histories: list, images: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
+        ...
+    @typing.overload
+    def generate(self, histories: list, videos: collections.abc.Sequence[collections.abc.Sequence[openvino._pyopenvino.Tensor]], generation_config: collections.abc.Sequence[GenerationConfig], streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None) -> list[GenerationResult]:
         ...
     def get_config(self) -> GenerationConfig:
         ...
@@ -906,6 +915,7 @@ class GenerationConfig:
         echo:           if set to true, the model will echo the prompt in the output.
         logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                         Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+        parsers:        list of Parser objects to parse the generated text.
         apply_chat_template: whether to apply chat_template for non-chat scenarios
     
         repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
@@ -1783,6 +1793,7 @@ class LLMPipeline:
             echo:           if set to true, the model will echo the prompt in the output.
             logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                             Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+            parsers:        list of Parser objects to parse the generated text.
             apply_chat_template: whether to apply chat_template for non-chat scenarios
         
             repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
@@ -1880,6 +1891,7 @@ class LLMPipeline:
             echo:           if set to true, the model will echo the prompt in the output.
             logprobs:       number of top logprobs computed for each position, if set to 0, logprobs are not computed and value 0.0 is returned.
                             Currently only single top logprob can be returned, so any logprobs > 1 is treated as logprobs == 1. (default: 0).
+            parsers:        list of Parser objects to parse the generated text.
             apply_chat_template: whether to apply chat_template for non-chat scenarios
         
             repetition_penalty: the parameter for repetition penalty. 1.0 means no penalty.
@@ -3964,30 +3976,10 @@ class VLMPipeline:
         """
             Generates sequences for VLMs.
         
-            :param prompt: input prompt
+            :param prompt: Input prompt
             :type prompt: str
-            The prompt can contain <ov_genai_image_i> with i replaced with
-            an actual zero based index to refer to an image. Reference to
-            images used in previous prompts isn't implemented.
-            A model's native image tag can be used instead of
-            <ov_genai_image_i>. These tags are:
-            InternVL2: <image>\\n
-            llava-1.5-7b-hf: <image>
-            LLaVA-NeXT: <image>
-            LLaVa-NeXT-Video: <image>
-            nanoLLaVA: <image>\\n
-            nanoLLaVA-1.5: <image>\\n
-            MiniCPM-o-2_6: <image>./</image>\\n
-            MiniCPM-V-2_6: <image>./</image>\\n
-            Phi-3-vision: <|image_i|>\\n - the index starts with one
-            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
-            Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-            Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-            gemma-3-4b-it: <start_of_image>
-            Model's native video tag can be used to refer to a video:
-            LLaVa-NeXT-Video: <video>
-            If the prompt doesn't contain image or video tags, but images or videos are
-            provided, the tags are prepended to the prompt.
+            For using image and video tags in prompt, see:
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -4012,30 +4004,10 @@ class VLMPipeline:
         """
             Generates sequences for VLMs.
         
-            :param prompt: input prompt
+            :param prompt: Input prompt
             :type prompt: str
-            The prompt can contain <ov_genai_image_i> with i replaced with
-            an actual zero based index to refer to an image. Reference to
-            images used in previous prompts isn't implemented.
-            A model's native image tag can be used instead of
-            <ov_genai_image_i>. These tags are:
-            InternVL2: <image>\\n
-            llava-1.5-7b-hf: <image>
-            LLaVA-NeXT: <image>
-            LLaVa-NeXT-Video: <image>
-            nanoLLaVA: <image>\\n
-            nanoLLaVA-1.5: <image>\\n
-            MiniCPM-o-2_6: <image>./</image>\\n
-            MiniCPM-V-2_6: <image>./</image>\\n
-            Phi-3-vision: <|image_i|>\\n - the index starts with one
-            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
-            Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-            Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-            gemma-3-4b-it: <start_of_image>
-            Model's native video tag can be used to refer to a video:
-            LLaVa-NeXT-Video: <video>
-            If the prompt doesn't contain image or video tags, but images or videos are
-            provided, the tags are prepended to the prompt.
+            For using image and video tags in prompt, see:
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -4060,30 +4032,10 @@ class VLMPipeline:
         """
             Generates sequences for VLMs.
         
-            :param prompt: input prompt
+            :param prompt: Input prompt
             :type prompt: str
-            The prompt can contain <ov_genai_image_i> with i replaced with
-            an actual zero based index to refer to an image. Reference to
-            images used in previous prompts isn't implemented.
-            A model's native image tag can be used instead of
-            <ov_genai_image_i>. These tags are:
-            InternVL2: <image>\\n
-            llava-1.5-7b-hf: <image>
-            LLaVA-NeXT: <image>
-            LLaVa-NeXT-Video: <image>
-            nanoLLaVA: <image>\\n
-            nanoLLaVA-1.5: <image>\\n
-            MiniCPM-o-2_6: <image>./</image>\\n
-            MiniCPM-V-2_6: <image>./</image>\\n
-            Phi-3-vision: <|image_i|>\\n - the index starts with one
-            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
-            Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-            Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-            gemma-3-4b-it: <start_of_image>
-            Model's native video tag can be used to refer to a video:
-            LLaVa-NeXT-Video: <video>
-            If the prompt doesn't contain image or video tags, but images or videos are
-            provided, the tags are prepended to the prompt.
+            For using image and video tags in prompt, see:
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -4104,34 +4056,14 @@ class VLMPipeline:
             :rtype: VLMDecodedResults
         """
     @typing.overload
-    def generate(self, prompt: str, images: openvino._pyopenvino.Tensor, generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
+    def generate(self, prompt: str, image: openvino._pyopenvino.Tensor, generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
         """
             Generates sequences for VLMs.
         
-            :param prompt: input prompt
+            :param prompt: Input prompt
             :type prompt: str
-            The prompt can contain <ov_genai_image_i> with i replaced with
-            an actual zero based index to refer to an image. Reference to
-            images used in previous prompts isn't implemented.
-            A model's native image tag can be used instead of
-            <ov_genai_image_i>. These tags are:
-            InternVL2: <image>\\n
-            llava-1.5-7b-hf: <image>
-            LLaVA-NeXT: <image>
-            LLaVa-NeXT-Video: <image>
-            nanoLLaVA: <image>\\n
-            nanoLLaVA-1.5: <image>\\n
-            MiniCPM-o-2_6: <image>./</image>\\n
-            MiniCPM-V-2_6: <image>./</image>\\n
-            Phi-3-vision: <|image_i|>\\n - the index starts with one
-            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
-            Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-            Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-            gemma-3-4b-it: <start_of_image>
-            Model's native video tag can be used to refer to a video:
-            LLaVa-NeXT-Video: <video>
-            If the prompt doesn't contain image or video tags, but images or videos are
-            provided, the tags are prepended to the prompt.
+            For using image and video tags in prompt, see:
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
         
             :param images: image or list of images
             :type images: list[ov.Tensor] or ov.Tensor
@@ -4156,31 +4088,115 @@ class VLMPipeline:
         """
             Generates sequences for VLMs.
         
-            :param prompt: input prompt
-            The prompt can contain <ov_genai_image_i> with i replaced with
-            an actual zero based index to refer to an image. Reference to
-            images used in previous prompts isn't implemented.
-            A model's native image tag can be used instead of
-            <ov_genai_image_i>. These tags are:
-            InternVL2: <image>\\n
-            llava-1.5-7b-hf: <image>
-            LLaVA-NeXT: <image>
-            LLaVa-NeXT-Video: <image>
-            nanoLLaVA: <image>\\n
-            nanoLLaVA-1.5: <image>\\n
-            MiniCPM-o-2_6: <image>./</image>\\n
-            MiniCPM-V-2_6: <image>./</image>\\n
-            Phi-3-vision: <|image_i|>\\n - the index starts with one
-            Phi-4-multimodal-instruct: <|image_i|>\\n - the index starts with one
-            Qwen2-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-            Qwen2.5-VL: <|vision_start|><|video_pad|><|vision_end|><|vision_start|><|image_pad|><|vision_end|>
-            gemma-3-4b-it: <start_of_image>
-            Model's native video tag can be used to refer to a video:
-            LLaVa-NeXT-Video: <video>
-            If the prompt doesn't contain image or video tags, but images or videos are
-            provided, the tags are prepended to the prompt.
-        
+            :param prompt: Input prompt
             :type prompt: str
+            For using image and video tags in prompt, see:
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
+        
+            Expected parameters list:
+            image: ov.Tensor - input image,
+            images: list[ov.Tensor] - input images,
+            generation_config: GenerationConfig,
+            streamer: Callable[[str], bool], ov.genai.StreamerBase - streamer either as a lambda with a boolean returning flag whether generation should be stopped
+        
+            :return: return results in decoded form
+            :rtype: VLMDecodedResults
+        """
+    @typing.overload
+    def generate(self, history: ChatHistory, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
+        """
+            Generates sequences for VLMs.
+        
+            :param history: Chat history
+            :type history: ChatHistory
+            For using image and video tags in prompt, see:
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+        
+            :param images: image or list of images
+            :type images: list[ov.Tensor] or ov.Tensor
+        
+            :param videos: list of frames
+            :type videos: list[ov.Tensor]
+        
+            :param generation_config: generation_config
+            :type generation_config: GenerationConfig or a dict
+        
+            :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
+            :type : Callable[[str], bool], ov.genai.StreamerBase
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
+            :type : dict
+        
+            :return: return results in decoded form
+            :rtype: VLMDecodedResults
+        """
+    @typing.overload
+    def generate(self, history: ChatHistory, images: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
+        """
+            Generates sequences for VLMs.
+        
+            :param history: Chat history
+            :type history: ChatHistory
+            For using image and video tags in prompt, see:
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+        
+            :param images: image or list of images
+            :type images: list[ov.Tensor] or ov.Tensor
+        
+            :param videos: list of frames
+            :type videos: list[ov.Tensor]
+        
+            :param generation_config: generation_config
+            :type generation_config: GenerationConfig or a dict
+        
+            :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
+            :type : Callable[[str], bool], ov.genai.StreamerBase
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
+            :type : dict
+        
+            :return: return results in decoded form
+            :rtype: VLMDecodedResults
+        """
+    @typing.overload
+    def generate(self, history: ChatHistory, videos: collections.abc.Sequence[openvino._pyopenvino.Tensor], generation_config: GenerationConfig, streamer: collections.abc.Callable[[str], int | None] | openvino_genai.py_openvino_genai.StreamerBase | None = None, **kwargs) -> VLMDecodedResults:
+        """
+            Generates sequences for VLMs.
+        
+            :param history: Chat history
+            :type history: ChatHistory
+            For using image and video tags in prompt, see:
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
+        
+            :param images: image or list of images
+            :type images: list[ov.Tensor] or ov.Tensor
+        
+            :param videos: list of frames
+            :type videos: list[ov.Tensor]
+        
+            :param generation_config: generation_config
+            :type generation_config: GenerationConfig or a dict
+        
+            :param streamer: streamer either as a lambda with a boolean returning flag whether generation should be stopped
+            :type : Callable[[str], bool], ov.genai.StreamerBase
+        
+            :param kwargs: arbitrary keyword arguments with keys corresponding to GenerationConfig fields.
+            :type : dict
+        
+            :return: return results in decoded form
+            :rtype: VLMDecodedResults
+        """
+    @typing.overload
+    def generate(self, history: ChatHistory, **kwargs) -> VLMDecodedResults:
+        """
+            Generates sequences for VLMs.
+        
+            :param history: Chat history
+            :type history: ChatHistory
+            For using image and video tags in prompt, see:
+            https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt
         
             :param kwargs: arbitrary keyword arguments with keys corresponding to generate params.
         
