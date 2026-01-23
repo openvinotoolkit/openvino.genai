@@ -34,7 +34,7 @@ set_target_properties(${TARGET_NAME} PROPERTIES
     # Ensure out of box LC_RPATH on macOS with SIP
     INSTALL_RPATH_USE_LINK_PATH ON)
 
-install(TARGETS ${TARGET_NAME} 
+install(TARGETS ${TARGET_NAME}
         RUNTIME DESTINATION samples_bin/
         COMPONENT tools_bin
         EXCLUDE_FROM_ALL)
