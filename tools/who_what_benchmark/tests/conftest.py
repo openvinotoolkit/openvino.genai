@@ -92,11 +92,7 @@ def convert_model(model_name: str) -> str:
         logger.info(f"Conversion command: {' '.join(command)}")
         retry_request(lambda: subprocess.run(command, check=True, text=True, capture_output=True))
 
-    try:
-        manager.execute(convert)
-    except subprocess.CalledProcessError as error:
-        logger.exception(f"optimum-cli returned {error.returncode}. Output:\n{error.stderr}")
-        raise
+    manager.execute(convert)
     return str(model_path)
 
 
@@ -123,13 +119,10 @@ def run_wwb(args: list[str], env=None):
     base_env = {"TRANSFORMERS_VERBOSITY": "debug", "PYTHONIOENCODING": "utf-8", **os.environ}
     if env:
         base_env.update(env)
-    try:
-        return subprocess.check_output(
-            command,
-            stderr=subprocess.STDOUT,
-            encoding="utf-8",
-            env=base_env,
-        )
-    except subprocess.CalledProcessError as error:
-        logger.error(f"'{' '.join(map(str, command))}' returned {error.returncode}. Output:\n{error.output}")
-        raise
+
+    return subprocess.check_output(
+        command,
+        stderr=subprocess.STDOUT,
+        encoding="utf-8",
+        env=base_env,
+    )
