@@ -90,8 +90,7 @@ int main(int argc, char* argv[]) try {
     while (std::getline(std::cin, prompt)) {
         chat_history.push_back({{"role", "user"}, {"content", prompt}});
         ov::genai::DecodedResults decoded_results = pipe.generate(chat_history, config, streamer);
-        std::string output = decoded_results.texts[0];
-        chat_history.push_back({{"role", "assistant"}, {"content", output}});
+        chat_history.push_back({{"role", "assistant"}, {"content", decoded_results.texts[0]}});
         std::cout << "\n----------\n"
             "> ";
     }
