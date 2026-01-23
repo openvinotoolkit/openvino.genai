@@ -348,7 +348,7 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
           m_sampling_params(sampling_params),
           m_block_size(block_size),
           m_sequence_group_type(SequenceGroupType::TOKENS),
-          m_generation_stream(GenerationStream::create()) { }
+          m_generation_stream(GenerationStream::create()) { sampling_params.log();}
 
     bool out_of_memory() const {
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
