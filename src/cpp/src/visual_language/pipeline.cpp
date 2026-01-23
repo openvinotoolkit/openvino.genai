@@ -47,7 +47,7 @@ VLMPipeline::Config::Config(const ov::AnyMap& properties) {
 
 void VLMPipeline::Config::validate() const {
     if (embedder_device.has_value()) {
-        OPENVINO_ASSERT(embedder_device.value() == "CPU" || embedder_device.value() == "GPU", "embedder_device should be either CPU or GPU");
+        OPENVINO_ASSERT(embedder_device.value() == "CPU" || embedder_device.value() == "GPU", "embedder_device must be either CPU or GPU");
     }
 }
 
