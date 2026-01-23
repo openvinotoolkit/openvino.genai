@@ -91,8 +91,7 @@ def test_pipelines_with_gguf_generate(
 
     prompt_len = 0 if ov_generation_config.echo else input_ids.numel()
     all_text_batch = hf_tokenizer.batch_decode(
-        [generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences],
-        skip_special_tokens=True
+        [generated_ids[prompt_len:] for generated_ids in generate_outputs.sequences], skip_special_tokens=True
     )
     res_string_input_1 = all_text_batch[0]
 
@@ -114,18 +113,13 @@ def test_pipelines_with_gguf_generate(
 @pytest.mark.parametrize(
     "prompt",
     [
-        'Why is the Sun yellow?',
+        "Why is the Sun yellow?",
         # To check that special tokens are handled correctly.
-        '<|endoftext|> <|im_end|>',
-        '<|endoftext|><|endoftext|><|im_end|>',
-        '<|endoftext|> Why the Sky is Blue? <|im_end|>',
+        "<|endoftext|> <|im_end|>",
+        "<|endoftext|><|endoftext|><|im_end|>",
+        "<|endoftext|> Why the Sky is Blue? <|im_end|>",
     ],
-    ids=[
-        "regular_prompt",
-        "only_special_tokens",
-        "multiple_special_tokens",
-        "special_tokens_with_text"
-    ],
+    ids=["regular_prompt", "only_special_tokens", "multiple_special_tokens", "special_tokens_with_text"],
 )
 @pytest.mark.parametrize("model_gguf", GGUF_MODEL_LIST, indirect=True)
 @pytest.mark.skipif(sys.platform == "win32", reason="CVS-174065")
