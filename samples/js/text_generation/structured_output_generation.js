@@ -95,6 +95,7 @@ async function main() {
 
             chatHistory.clear();
             chatHistory.push({ role: "system", content: sysMessageForItems });
+            chatHistory.push({ role: "user", content: prompt });
 
             let generateHasRun = false;
 
@@ -106,7 +107,6 @@ async function main() {
                 });
                 for (let i = 0; i < quantity; i++) {
                     generateHasRun = true;
-                    chatHistory.push({ role: "user", content: prompt });
                     const decodedResults = await pipe.generate(chatHistory, config);
                     // validate JSON
                     JSON.parse(decodedResults.toString());

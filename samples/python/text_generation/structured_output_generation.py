@@ -91,6 +91,8 @@ def main():
 
         history.clear()
         history.append({"role": "system", "content": sys_message_for_items})
+        history.append({"role": "user", "content": prompt})
+
         generate_has_run = False
         for item, quantity in res.items():
             config.structured_output_config = StructuredOutputConfig(
@@ -98,10 +100,8 @@ def main():
             )
             for _ in range(quantity):
                 generate_has_run = True
-                history.append({"role": "user", "content": prompt})
                 decoded_results = pipe.generate(history, config)
                 json_strs = decoded_results.texts[0]
-                history.append({"role": "assistant", "content": json_strs})
                 # Validate generated JSON
                 json.loads(json_strs)
                 print(json_strs)
