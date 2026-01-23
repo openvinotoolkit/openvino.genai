@@ -1,4 +1,5 @@
 import { ChatHistory, LLMPipeline } from "../dist/index.js";
+import { LLMPipeline as LLM } from "../dist/pipelines/llmPipeline.js";
 
 import assert from "node:assert/strict";
 import { describe, it, before, after } from "node:test";
@@ -73,6 +74,12 @@ describe("corner cases", async () => {
       name: "Error",
       message: "LLMPipeline is already initialized",
     });
+  });
+
+  it("should throw an error if pipeline is not initialized", async () => {
+    const pipeline = new LLM(MODEL_PATH, "CPU");
+
+    assert.rejects(pipeline.generate("prompt"), /LLMPipeline is not initialized/);
   });
 });
 

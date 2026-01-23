@@ -130,7 +130,6 @@ export interface LLMPipeline {
         scores: number[];
         perfMetrics: PerfMetrics;
         parsed: Record<string, unknown>[];
-        subword: string;
       },
     ) => void,
   ): void;

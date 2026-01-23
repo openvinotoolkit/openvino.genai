@@ -100,7 +100,6 @@ export class LLMPipeline {
         scores: number[];
         perfMetrics: any;
         parsed: Record<string, unknown>[];
-        subword: string;
       },
     ) => {
       if (error) {

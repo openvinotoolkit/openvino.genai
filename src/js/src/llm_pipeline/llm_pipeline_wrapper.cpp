@@ -17,8 +17,8 @@ struct TsfnContext {
     ~TsfnContext() {};
 
     std::thread native_thread;
-    Napi::ThreadSafeFunction callback;
-    std::optional<Napi::ThreadSafeFunction> streamer;
+    Napi::ThreadSafeFunction generate_tsfn;
+    std::optional<Napi::ThreadSafeFunction> streamer_tsfn;
 
     GenerateInputs inputs;
     std::shared_ptr<bool> is_generating;
@@ -29,7 +29,7 @@ struct TsfnContext {
 
 void performInferenceThread(TsfnContext* context) {
     auto report_error = [context](const std::string& message) {
-        auto status = context->callback.BlockingCall([message](Napi::Env env, Napi::Function jsCallback) {
+        auto status = context->generate_tsfn.BlockingCall([message](Napi::Env env, Napi::Function jsCallback) {
             try {
                 jsCallback.Call(
                     {Napi::Error::New(env, "performInferenceThread error. " + message).Value(), env.Null()});
@@ -47,9 +47,9 @@ void performInferenceThread(TsfnContext* context) {
         }
     };
     auto finalize = [context]() {
-        context->callback.Release();
-        if (context->streamer.has_value()) {
-            context->streamer->Release();
+        context->generate_tsfn.Release();
+        if (context->streamer_tsfn.has_value()) {
+            context->streamer_tsfn->Release();
         }
     };
     std::vector<std::string> streamer_exceptions;
@@ -60,10 +60,10 @@ void performInferenceThread(TsfnContext* context) {
         config.update_generation_config(*context->generation_config);
 
         ov::genai::StreamerVariant streamer = std::monostate();
-        if (context->streamer.has_value()) {
+        if (context->streamer_tsfn.has_value()) {
             streamer = [context, &streamer_exceptions](std::string word) {
                 std::promise<ov::genai::StreamingStatus> resultPromise;
-                napi_status status = context->streamer->BlockingCall(
+                napi_status status = context->streamer_tsfn->BlockingCall(
                     [word, &resultPromise, &streamer_exceptions](Napi::Env env, Napi::Function jsCallback) {
                         try {
                             auto callback_result = jsCallback.Call({Napi::String::New(env, word)});
@@ -118,7 +118,7 @@ void performInferenceThread(TsfnContext* context) {
         } else {
             // If no exceptions from streamer, call the final callback with the result
             napi_status status =
-                context->callback.BlockingCall([result, &report_error](Napi::Env env, Napi::Function jsCallback) {
+                context->generate_tsfn.BlockingCall([result, &report_error](Napi::Env env, Napi::Function jsCallback) {
                     try {
                         jsCallback.Call({
                             env.Null(),                     // Error should be null in normal case
@@ -192,21 +192,22 @@ Napi::Value LLMPipelineWrapper::generate(const Napi::CallbackInfo& info) {
         context->pipe = this->pipe;
         context->generation_config = std::make_shared<ov::AnyMap>(generation_config);
         // Create a ThreadSafeFunction
-        context->callback = Napi::ThreadSafeFunction::New(env,
-                                                          callback,
-                                                          "LLM_generate_callback",  // Name
-                                                          0,                        // Unlimited queue
-                                                          1,  // Only one thread will use this initially
-                                                          [context](Napi::Env) {  // Finalizer used to clean threads up
-                                                              context->native_thread.join();
-                                                              delete context;
-                                                          });
+        context->generate_tsfn =
+            Napi::ThreadSafeFunction::New(env,
+                                          callback,
+                                          "LLM_generate_callback",  // Name
+                                          0,                        // Unlimited queue
+                                          1,                        // Only one thread will use this initially
+                                          [context](Napi::Env) {    // Finalizer used to clean threads up
+                                              context->native_thread.join();
+                                              delete context;
+                                          });
         if (streamer.IsFunction()) {
-            context->streamer = Napi::ThreadSafeFunction::New(env,
-                                                              streamer.As<Napi::Function>(),
-                                                              "LLM_generate_streamer",  // Name
-                                                              0,                        // Unlimited queue
-                                                              1);  // Only one thread will use this initially
+            context->streamer_tsfn = Napi::ThreadSafeFunction::New(env,
+                                                                   streamer.As<Napi::Function>(),
+                                                                   "LLM_generate_streamer",  // Name
+                                                                   0,                        // Unlimited queue
+                                                                   1);  // Only one thread will use this initially
         }
         context->native_thread = std::thread(performInferenceThread, context);
     } catch (const std::exception& ex) {
