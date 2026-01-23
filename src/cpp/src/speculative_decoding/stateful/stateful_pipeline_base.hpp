@@ -105,22 +105,20 @@ protected:
     std::vector<std::string> detokenize(const std::vector<std::vector<int64_t>>& tokens);
 
     /**
-     * @brief Finalize performance metrics after generation
-     * 
-     * Aggregates per-model metrics into SDPerModelsPerfMetrics,
-     * adds timing information, and evaluates statistics.
-     * 
-     * @param results EncodedResults to update with perf metrics
+     * @brief Update decoded results with final performance metrics
+     *
+     * Updates the decoded results with metrics from encoded_results (model-level),
+     * m_sd_perf_metrics (tokenization/detokenization), and outer timing.
+     *
+     * @param decoded_results DecodedResults to update
+     * @param encoded_results EncodedResults containing model-level metrics
      * @param generate_duration_us Total generation duration in microseconds
-     * @param tokenization_duration_us Tokenization duration in microseconds
-     * @param detokenization_duration_us Detokenization duration in microseconds
-     * @param generate_start_time Start time of generation for statistics
+     * @param generate_start_time Start time of generation for statistics evaluation
      */
-    void finalize_perf_metrics(EncodedResults& results,
-                               float generate_duration_us,
-                               float tokenization_duration_us,
-                               float detokenization_duration_us,
-                               TimePoint generate_start_time);
+    void update_decoded_results_with_perf_metrics(DecodedResults& decoded_results,
+                                                  const EncodedResults& encoded_results,
+                                                  float generate_duration_us,
+                                                  TimePoint generate_start_time);
 
 protected:
     // Chat state management

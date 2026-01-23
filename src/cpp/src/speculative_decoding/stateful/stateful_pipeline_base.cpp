@@ -90,36 +90,30 @@ std::vector<std::string> StatefulSpeculativePipelineBase::detokenize(const std::
     return result;
 }
 
-void StatefulSpeculativePipelineBase::finalize_perf_metrics(EncodedResults& results,
-                                                            float generate_duration_us,
-                                                            float tokenization_duration_us,
-                                                            float detokenization_duration_us,
-                                                            TimePoint generate_start_time) {
-    // Set timing durations
-    auto& raw_counters = m_sd_perf_metrics.raw_metrics;
+void StatefulSpeculativePipelineBase::update_decoded_results_with_perf_metrics(DecodedResults& decoded_results,
+                                                                               const EncodedResults& encoded_results,
+                                                                               float generate_duration_us,
+                                                                               TimePoint generate_start_time) {
+    // Use encoded_results as base (contains model-level metrics from generate_tokens)
+    decoded_results.perf_metrics = encoded_results.perf_metrics;
+    decoded_results.extended_perf_metrics = encoded_results.extended_perf_metrics;
+
+    // Update with the latest timing data from m_sd_perf_metrics
+    auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
+
+    // Update generate_durations with total outer time
     raw_counters.generate_durations.clear();
     raw_counters.generate_durations.emplace_back(generate_duration_us);
 
-    // Tokenization/detokenization are already added during tokenize/detokenize
-    // but we ensure they're set correctly here as well
-    if (raw_counters.tokenization_durations.empty()) {
-        raw_counters.tokenization_durations.emplace_back(tokenization_duration_us);
-    }
-    if (raw_counters.detokenization_durations.empty()) {
-        raw_counters.detokenization_durations.emplace_back(detokenization_duration_us);
-    }
+    // Copy tokenization_durations from m_sd_perf_metrics (set by tokenize() or encode_timer)
+    raw_counters.tokenization_durations = m_sd_perf_metrics.raw_metrics.tokenization_durations;
 
-    // Reset evaluated flags before updating to ensure statistics are recalculated
-    m_sd_perf_metrics.m_evaluated = false;
-    m_sd_perf_metrics.main_model_metrics.m_evaluated = false;
-    m_sd_perf_metrics.draft_model_metrics.m_evaluated = false;
+    // Copy detokenization_durations from m_sd_perf_metrics (set by detokenize())
+    raw_counters.detokenization_durations = m_sd_perf_metrics.raw_metrics.detokenization_durations;
 
-    // Evaluate statistics
-    m_sd_perf_metrics.evaluate_statistics(generate_start_time);
-
-    // Copy to results
-    results.perf_metrics = m_sd_perf_metrics;
-    results.extended_perf_metrics = std::make_shared<SDPerModelsPerfMetrics>(m_sd_perf_metrics);
+    // Re-evaluate statistics with updated timings
+    decoded_results.perf_metrics.m_evaluated = false;
+    decoded_results.perf_metrics.evaluate_statistics(generate_start_time);
 }
 
 DecodedResults StatefulSpeculativePipelineBase::generate(StringInputs inputs,
@@ -159,20 +153,13 @@ DecodedResults StatefulSpeculativePipelineBase::generate(StringInputs inputs,
         }
     }
 
-    // Finalize performance metrics
     generate_timer.end();
-    float tokenization_us = m_sd_perf_metrics.raw_metrics.tokenization_durations.empty()
-                                ? 0.0f
-                                : m_sd_perf_metrics.raw_metrics.tokenization_durations.back().count();
-    float detokenization_us = m_sd_perf_metrics.raw_metrics.detokenization_durations.empty()
-                                  ? 0.0f
-                                  : m_sd_perf_metrics.raw_metrics.detokenization_durations.back().count();
 
-    finalize_perf_metrics(encoded_results, generate_timer.get_duration_microsec(), tokenization_us,
-                          detokenization_us, generate_timer.get_start_time());
-
-    decoded_results.perf_metrics = encoded_results.perf_metrics;
-    decoded_results.extended_perf_metrics = encoded_results.extended_perf_metrics;
+    // Update performance metrics with outer layer timings
+    update_decoded_results_with_perf_metrics(decoded_results,
+                                             encoded_results,
+                                             generate_timer.get_duration_microsec(),
+                                             generate_timer.get_start_time());
 
     return decoded_results;
 }
@@ -206,18 +193,13 @@ DecodedResults StatefulSpeculativePipelineBase::generate(const ChatHistory& hist
     // Detokenize
     DecodedResults decoded_results = {detokenize(encoded_results.tokens), encoded_results.scores};
 
-    // Finalize performance metrics
     generate_timer.end();
-    float tokenization_us = encode_timer.get_duration_microsec();
-    float detokenization_us = m_sd_perf_metrics.raw_metrics.detokenization_durations.empty()
-                                  ? 0.0f
-                                  : m_sd_perf_metrics.raw_metrics.detokenization_durations.back().count();
 
-    finalize_perf_metrics(encoded_results, generate_timer.get_duration_microsec(), tokenization_us,
-                          detokenization_us, generate_timer.get_start_time());
-
-    decoded_results.perf_metrics = encoded_results.perf_metrics;
-    decoded_results.extended_perf_metrics = encoded_results.extended_perf_metrics;
+    // Update performance metrics with outer layer timings
+    update_decoded_results_with_perf_metrics(decoded_results,
+                                             encoded_results,
+                                             generate_timer.get_duration_microsec(),
+                                             generate_timer.get_start_time());
 
     return decoded_results;
 }
