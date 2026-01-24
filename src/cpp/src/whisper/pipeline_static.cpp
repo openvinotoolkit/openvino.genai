@@ -1234,6 +1234,7 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
             const auto n_active_frames =
                 std::min(m_feature_extractor.nb_max_frames, input_features.n_active_frames - chunk_offset);
 
+            const auto word_timestamps_processing_start = std::chrono::steady_clock::now();
             const auto word_timestamps = add_word_level_timestamps(sot_tokens,
                                                                    chunk_output_tokens,
                                                                    m_tokenizer,
@@ -1242,6 +1243,11 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
                                                                    config,
                                                                    n_active_frames,
                                                                    chunk_time_offset);
+            const auto word_timestamps_processing_duration = ov::genai::PerfMetrics::get_microsec(
+                std::chrono::steady_clock::now() - word_timestamps_processing_start);
+
+            perf_metrics.whisper_raw_metrics.word_level_timestamps_processing_durations.emplace_back(
+                word_timestamps_processing_duration);
 
             if (!result.words.has_value()) {
                 result.words = std::vector<WhisperWordTiming>{};
