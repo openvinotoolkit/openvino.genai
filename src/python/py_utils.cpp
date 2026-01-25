@@ -417,14 +417,6 @@ ov::Any py_object_to_any(const py::object& py_obj, std::string property_name) {
     OPENVINO_THROW(py::str(py_obj.get_type()), " isn't supported for argument ", property_name);
 }
 
-void add_deprecation_warning_for_chunk_streamer(std::shared_ptr<StreamerBase> streamer) {
-    OPENVINO_SUPPRESS_DEPRECATED_START
-    if (auto chunk_streamer = std::dynamic_pointer_cast<ov::genai::ChunkStreamerBase>(streamer)) {
-        PyErr_WarnEx(PyExc_DeprecationWarning, "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.", 1);
-    }
-    OPENVINO_SUPPRESS_DEPRECATED_END
-}
-
 ov::AnyMap properties_to_any_map(const std::map<std::string, py::object>& properties) {
     ov::AnyMap properties_to_cpp;
     for (const auto& property : properties) {
@@ -509,7 +501,6 @@ ov::genai::StreamerVariant pystreamer_to_streamer(const PyBindStreamerVariant& p
             streamer = callback_wrapped;
         },
         [&streamer](std::shared_ptr<StreamerBase> streamer_cls){
-            add_deprecation_warning_for_chunk_streamer(streamer_cls);
             streamer = streamer_cls;
         },
         [](std::monostate none){ /*streamer is already a monostate */ }

@@ -557,35 +557,6 @@ def test_chat_scenario_callback_cancel(
     assert_hf_equals_genai(chat_history_hf, chat_history_ov)
 
 
-class PrinterNone(ov_genai.StreamerBase):
-    def __init__(self, tokenizer):
-        # super() may work, but once you begin mixing Python and C++
-        # multiple inheritance, things will fall apart due to
-        # differences between Python’s MRO and C++’s mechanisms.
-        ov_genai.StreamerBase.__init__(self)
-        self.tokenizer = tokenizer
-    def put(self, token_id):
-        # print(self.tokenizer.decode([token_id]))  # Incorrect way to print, but easy to implement
-        print(token_id)  # print only token because self.tokenizer.decode([token_id]) are not implemented yet
-    def end(self):
-        print('end')
-
-
-class PrinterBool(ov_genai.StreamerBase):
-    def __init__(self, tokenizer):
-        # super() may work, but once you begin mixing Python and C++
-        # multiple inheritance, things will fall apart due to
-        # differences between Python’s MRO and C++’s mechanisms.
-        ov_genai.StreamerBase.__init__(self)
-        self.tokenizer = tokenizer
-    def put(self, token_id):
-        # print(self.tokenizer.decode([token_id]))  # Incorrect way to print, but easy to implement
-        print(token_id)  # print only token because self.tokenizer.decode([token_id]) are not implemented yet
-        return False
-    def end(self):
-        print('end')
-
-
 class PrinterStatus(ov_genai.StreamerBase):
     def __init__(self, tokenizer):
         # super() may work, but once you begin mixing Python and C++
@@ -602,7 +573,7 @@ class PrinterStatus(ov_genai.StreamerBase):
 
 
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
-@pytest.mark.parametrize("streamer_base", [PrinterNone, PrinterBool, PrinterStatus])
+@pytest.mark.parametrize("streamer_base", [PrinterStatus])
 def test_streamer_one_string(
     ov_pipe: ov_genai.LLMPipeline,
     streamer_base: type,
@@ -615,20 +586,20 @@ def test_streamer_one_string(
 
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 def test_streamer_batch_throws(ov_pipe: ov_genai.LLMPipeline) -> None:
-    printer = PrinterNone(ov_pipe.get_tokenizer())
+    printer = PrinterStatus(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         ov_pipe.generate(['1', '2'], ov_pipe.get_generation_config(), printer)
 
 
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 def test_streamer_kwargs_one_string(ov_pipe: ov_genai.LLMPipeline) -> None:
-    printer = PrinterNone(ov_pipe.get_tokenizer())
+    printer = PrinterStatus(ov_pipe.get_tokenizer())
     ov_pipe.generate('table is made of', max_new_tokens=10, do_sample=False, streamer=printer)
 
 
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 def test_streamer_kwargs_batch_throws(ov_pipe: ov_genai.LLMPipeline) -> None:
-    printer = PrinterNone(ov_pipe.get_tokenizer())
+    printer = PrinterStatus(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         ov_pipe.generate('', num_beams=2, streamer=printer)
 
@@ -655,7 +626,7 @@ def test_operator_with_callback_batch_throws(
 
 
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
-@pytest.mark.parametrize("streamer_base", [PrinterNone, PrinterBool, PrinterStatus])
+@pytest.mark.parametrize("streamer_base", [PrinterStatus])
 def test_operator_with_streamer_kwargs_one_string(
     ov_pipe: ov_genai.LLMPipeline,
     streamer_base: type,
@@ -666,7 +637,7 @@ def test_operator_with_streamer_kwargs_one_string(
 
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 def test_operator_with_streamer_kwargs_batch_throws(ov_pipe: ov_genai.LLMPipeline) -> None:
-    printer = PrinterNone(ov_pipe.get_tokenizer())
+    printer = PrinterStatus(ov_pipe.get_tokenizer())
     with pytest.raises(RuntimeError):
         ov_pipe('', num_beams=2, streamer=printer)
 

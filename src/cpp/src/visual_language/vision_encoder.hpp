@@ -12,6 +12,12 @@
 
 
 namespace ov::genai {
+
+enum class VisionType {
+    IMAGE,
+    VIDEO
+};
+
 /// @brief A pair describing image size.
 struct ImageSize {
     /// @brief Height of a corresponding image.
