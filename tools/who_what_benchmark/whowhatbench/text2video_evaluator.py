@@ -22,7 +22,7 @@ class Text2VideoEvaluator(BaseEvaluator):
     DEF_WIDTH = 704
     DEF_HEIGHT = 480
     DEF_GUIDANCE_SCALE = 3  # CVS-179754: guidance_scale == 1 triggers GenAI runtime error
-    DEF_GUIDANCE_RESCALE = 0.3
+    DEF_GUIDANCE_RESCALE = 0
 
     def __init__(
         self,
@@ -168,6 +168,7 @@ class Text2VideoEvaluator(BaseEvaluator):
         for i, input in tqdm(enumerate(inputs), desc="Evaluate pipeline"):
             set_seed(self.seed)
             rng = rng.manual_seed(self.seed)
+            guidance_rescale = input[5] if len(input) > 5 else self.DEF_GUIDANCE_RESCALE
             frames = generation_fn(
                 model,
                 prompt=input[0],
@@ -178,7 +179,7 @@ class Text2VideoEvaluator(BaseEvaluator):
                 num_frames=self.num_frames,
                 frame_rate=self.frame_rate,
                 guidance_scale=input[4],
-                guidance_rescale=input[5],
+                guidance_rescale=guidance_rescale,
                 generator=openvino_genai.TorchGenerator(self.seed) if self.is_genai else rng,
             )
             video_path = os.path.join(videos_dir, f"video_{i}.mp4")

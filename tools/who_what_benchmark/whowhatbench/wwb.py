@@ -553,7 +553,7 @@ def genai_gen_text2video(
     num_frames=25,
     frame_rate=25,
     guidance_scale=3,
-    guidance_rescale=0.3,
+    guidance_rescale=0,
     generator=None,
 ):
     kwargs = {"negative_prompt": negative_prompt} if guidance_scale > 1 else {}
@@ -565,6 +565,7 @@ def genai_gen_text2video(
         num_frames=num_frames,
         frame_rate=frame_rate,
         guidance_scale=guidance_scale,
+        guidance_rescale=guidance_rescale,
         generator=generator,
         **kwargs,
     )
