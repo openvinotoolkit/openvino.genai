@@ -21,6 +21,9 @@ install(FILES
     DESTINATION samples
     COMPONENT cpp_samples_genai)
 
+install(FILES cpp/fetch_opencv.cmake
+    DESTINATION samples/cpp COMPONENT cpp_samples_genai)
+
 install(DIRECTORY
             cpp/text_generation
             cpp/image_generation
