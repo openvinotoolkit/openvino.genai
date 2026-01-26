@@ -129,6 +129,8 @@ class ModelRunner {
     ov::Tensor m_cached_max_context_len;
     ov::Tensor m_cached_score_aggregation_window;
     ov::Tensor m_cached_token_type_ids;
+    ov::Tensor m_cached_qq_bias;
+    ov::Tensor m_cached_kv_remap_indices_begins;
 public:
     /**
      * Constructs the ModelRunner.
@@ -267,6 +269,8 @@ public:
         if (hidden_state_input) {
             hidden_state_data = hidden_state_input.data<float>();
         }
+        // handle 1 sequence for now
+        ov::Tensor tree_mask_tensor = _get_or_resize_tensor(m_cached_qq_bias, "qq_bias", {num_sequence_groups, total_num_tokens, total_num_tokens}, ov::element::u8); // reuse qq_bias input for tree mask input
 
         ov::Tensor generated_ids_embeds;
         float *generated_ids_embeds_data = nullptr;
@@ -277,7 +281,7 @@ public:
         float *inputs_embeds_data = nullptr;
         int64_t *input_ids_data = nullptr;
         int64_t *token_type_ids_data = nullptr;
-
+        uint8_t *tree_mask_data = nullptr;
         ov::Tensor position_ids;
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             inputs_embeds_data = inputs_embeds.data<float>();
@@ -308,6 +312,7 @@ public:
         // sub-sequence data starts with 0
         subsequence_begins_data[0] = 0;
         block_indices_begins_data[0] = 0;
+        
 
         bool matmul_gathering_is_available = false;
         size_t gathering_current_index = 0;
@@ -355,6 +360,39 @@ public:
 
                     SequenceKey key{sequence_group->get_request_id(), sequence->get_grouped_id()};
                     m_sequence_hidden_state_mapping[key] = HiddenStateRange{start_token_idx, sequence_length};
+                    if (!_is_hs_import() && !_is_hs_internal()) {
+                        OPENVINO_ASSERT(num_running_sequences == 1,
+                                    "Eagle3 target model does not support beam search generation config.");
+                        // get tree mask info from sequence eagle metadata
+                        auto& eagle_metadata = sequence->get_eagle_metadata();
+                        auto tree_mask = eagle_metadata.tree_mask;
+                        tree_mask_data = tree_mask_tensor.data<uint8_t>();
+                        auto tree_pos_ids = sequence->get_eagle_metadata().tree_position_ids;
+                        if (tree_pos_ids.size() > 0) {
+                            // std::cout << "tree position ids " << std::endl;;
+                            for (auto id : tree_pos_ids) {
+                                // std::cout << id << " ";
+                            }
+                        }
+                        // std::cout << std::endl;
+                        
+                        // copy num_scheduled_tokens * num_scheduled_tokens tree mask into tree_mask_data
+                        // tree_mask is type of std::vector<std::vector<int8_t>>
+                        if (tree_mask.size() > 0) {
+                            auto num_speculated_tokens = tree_mask.size();
+                            OPENVINO_ASSERT(num_speculated_tokens == tree_mask[0].size(),
+                                            "Eagle3 tree mask is expected to be a square matrix.");
+                            auto offset = seq_idx * num_speculated_tokens * num_speculated_tokens; // tree mask is same shape for all sequence groups
+                            for (size_t row = 0; row < num_speculated_tokens; ++row) {
+                                for (size_t col = 0; col < num_speculated_tokens; ++col) {
+                                    tree_mask_data[offset + row * num_speculated_tokens + col] = tree_mask[row][col];
+                                }
+                            }
+                        } else {
+                            // fill with ones
+                            std::memset(tree_mask_data, 1, num_scheduled_tokens * num_scheduled_tokens * sizeof(uint8_t));
+                        }
+                    }
                 }
                 if (_is_hs_import()) {
                     auto it = m_initial_hidden_states.find(sequence_group->get_request_id());
@@ -396,10 +434,19 @@ public:
                 for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++gathering_current_index) {
                     // compute token for current sequence
                     if (sequence_group_type == SequenceGroupType::TOKENS) {
+                        auto tree_pos_ids = sequence->get_eagle_metadata().tree_position_ids;
+                        // suppose tree_pos_ids [0, 1, 1, 2, 2, 2, 2,...] means the first token is at position 0 in the tree,
+                        // the second and third tokens are at position 1, and the rest tokens are at position 2, etc.
+                        if (!tree_pos_ids.empty()) {
+                            size_t tree_pos_id = tree_pos_ids[position_ids_idx];
+                            position_ids_data[position_ids_idx] = group_position_id + static_cast<int64_t>(tree_pos_id);
+                        } else {
+                            position_ids_data[position_ids_idx] = position_id;
+                        }
                         input_ids_data[token_id] = position_id < prompt_len ?
                             sequence_group->get_prompt_ids()[position_id] :
                             sequence->get_generated_ids()[position_id - prompt_len];
-                        position_ids_data[position_ids_idx] = position_id;
+                        //std::cout << input_ids_data[token_id] << " ";
                     } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
                         const auto& generated_embeds = sequence->get_generated_ids_embeds();
                         const float* src = position_id < prompt_len ? sequence_group->get_input_embeds()[position_id].data() :  generated_embeds[position_id - prompt_len].data();
@@ -488,6 +535,10 @@ public:
         if (sequence_group_type == SequenceGroupType::TOKENS && !m_cached_input_ids) {
             m_request.set_tensor("input_ids", input_ids);
         }
+        if (tree_mask_data) {
+            m_request.set_tensor("qq_bias", tree_mask_tensor);
+            _set_cache_remap_indices(sequence_groups, scheduler_output);
+        }
         else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             if (!m_cached_inputs_embeds) {
                 m_request.set_tensor("inputs_embeds", inputs_embeds);
@@ -516,6 +567,12 @@ public:
         }
 
         _set_block_indices(sequence_groups, scheduler_output, total_num_blocks, seq_id_to_skipped_blocks_map);
+
+        if (_is_hs_export() && !_is_hs_internal()) {
+            /*auto remap_indices = _set_cache_remap_indices(sequence_groups, scheduler_output);
+            if (remap_indices.size() > 0 )
+                remap_kv_cache(remap_indices);*/
+        }
 
         if (!m_cached_block_indices_begins) {
             m_request.set_tensor("block_indices_begins", block_indices_begins);
@@ -642,6 +699,65 @@ private:
     bool _is_hs_import()   const { return m_hidden_state_flags & HS_IMPORT; }
     bool _is_hs_internal() const { return m_hidden_state_flags & HS_INTERNAL; }
 
+
+    void _set_cache_remap_indices(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                                  const Scheduler::Output& scheduler_output) {
+        std::string tensor_name = "block_update_indices";
+        std::string tensor_begin_name = "block_update_indices_begins";
+        size_t num_sequence_groups = sequence_groups.size();
+        size_t total_indices_to_remap = 0;
+        std::map<size_t, std::map<size_t, size_t>> remap_indices;
+        auto block_update_indices_begin_tensor = m_request.get_tensor(tensor_begin_name);
+        block_update_indices_begin_tensor.set_shape({num_sequence_groups + 1});
+        auto block_update_indices_begin_data = block_update_indices_begin_tensor.data<int32_t>();
+        block_update_indices_begin_data[0] = 0;
+        for (size_t i = 0; i < num_sequence_groups; ++i) {
+            //size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[i];
+            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+            size_t num_running_sequences = running_sequences.size();
+            auto validated_indices = running_sequences[0]->get_eagle_metadata().validated_indices;
+            if (validated_indices.size() == 0) {
+                continue;
+            }
+
+            OPENVINO_ASSERT(num_running_sequences == 1, "bell debug");
+
+            auto num_processed_tokens = sequence_group->get_num_processed_tokens();
+            size_t prev_num_processed_tokens = num_processed_tokens - validated_indices.size();
+            size_t index = prev_num_processed_tokens;
+            for (auto& idx : validated_indices) {
+                if (prev_num_processed_tokens + idx == index) {
+                    // skip indexes which map to themselves
+                    index++;
+                    continue;
+                }
+                remap_indices[i].emplace(prev_num_processed_tokens + idx, index);  // src idx, dst idx
+                index++;
+            }
+            auto it = remap_indices.find(i);
+            if (it != remap_indices.end() && !it->second.empty()) {
+                total_indices_to_remap += remap_indices[i].size();
+            }
+            block_update_indices_begin_data[i + 1] = static_cast<int32_t>(total_indices_to_remap);
+        }
+        m_request.get_tensor(tensor_name).set_shape({remap_indices.size() * 2}); // src and dst, block and slot
+        // fill in the tensor
+        if (remap_indices.size() > 0) {
+            int32_t* remap_data = m_request.get_tensor(tensor_name).data<int32_t>();
+            uint32_t m_kv_remap_indices_filled_count = 0;
+            for (auto & [seq_group_id, indices_map] : remap_indices) {
+                // get the actual index in block_table
+                auto running_sequences = sequence_groups[seq_group_id]->get_running_sequences();
+                // suppose all layers have the same block table structure
+                for (const auto& [src_idx, dst_idx] : indices_map) {
+                    size_t tensor_offset = 2 * (m_kv_remap_indices_filled_count++);
+                    remap_data[tensor_offset]     = static_cast<int32_t>(src_idx);
+                    remap_data[tensor_offset + 1] = static_cast<int32_t>(dst_idx);
+                }
+            }
+        }
+    }
     /**
      * @brief Retrieves a slice of the hidden state tensor corresponding to a specific request and sequence group.
      *

@@ -298,6 +298,8 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
             main_cfg.num_assistant_tokens = m_main_pipeline->default_num_assistant_tokens;
             draft_cfg.num_assistant_tokens = main_cfg.num_assistant_tokens;
         }
+        main_cfg.eagle_tree_params.tree_depth = 0; // disable tree search in main model
+
         draft_cfg.ignore_eos = true;
         draft_cfg.stop_strings = {};
         main_in = in_ids;
@@ -309,7 +311,7 @@ std::vector<EncodedGenerationResult> ContinuousBatchingPipeline::Eagle3DecodingI
                                   const std::vector<GenerationConfig>& sampling_params) {
         OPENVINO_ASSERT(!streamer_ptr->has_callback() ||
                         (input_ids.size() == 1 &&
-                         (sampling_params[0].is_greedy_decoding())),
+                         (sampling_params[0].is_greedy_decoding() || sampling_params[0].is_tree_search())),
                         "Eagle3 streaming only supports batch size=1 with greedy");
     };
     strategy.start_timer = [](){

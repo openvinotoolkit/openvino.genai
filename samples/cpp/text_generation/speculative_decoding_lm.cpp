@@ -32,7 +32,7 @@ int main(int argc, char* argv[]) try {
     // Please, set device for main model in `LLMPipeline` constructor and in `ov::genai::draft_model` for draft.
     // CPU, GPU and NPU can be used. For NPU, the preferred configuration is when both the main and draft models
     // use NPU.
-    std::string main_device = "CPU", draft_device = "CPU";
+    std::string main_device = "GPU", draft_device = "GPU";
 
     ov::genai::LLMPipeline pipe(
         main_model_path,

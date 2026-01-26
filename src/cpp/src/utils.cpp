@@ -890,6 +890,35 @@ ov::genai::GenerationConfig get_multinomial_config() {
     return multinomial_config;
 }
 
+ov::Tensor concat_tensors(const std::vector<ov::Tensor>& tensors, const size_t axis) {
+    OPENVINO_ASSERT(!tensors.empty(), "Tensors vector is empty");
+
+    ov::Shape result_shape = tensors[0].get_shape();
+    for (size_t i = 1; i < tensors.size(); ++i) {
+        OPENVINO_ASSERT(tensors[i].get_shape().size() == result_shape.size(),
+                        "All tensors must have the same rank for concatenation");
+        for (size_t d = 0; d < result_shape.size(); ++d) {
+            if (d == axis) {
+                result_shape[d] += tensors[i].get_shape()[d];
+            } else {
+                OPENVINO_ASSERT(tensors[i].get_shape()[d] == result_shape[d],
+                                "All tensors must have the same shape except for the concatenation axis");
+            }
+        }
+    }
+
+    ov::Tensor result_tensor(tensors[0].get_element_type(), result_shape);
+    size_t offset = 0;
+    for (const auto& tensor : tensors) {
+        ov::Coordinate start, end;
+        std::tie(start, end) = make_roi(result_shape, axis, offset, offset + tensor.get_shape()[axis]);
+        ov::Tensor sub_tensor(result_tensor, start, end);
+        tensor.copy_to(sub_tensor);
+        offset += tensor.get_shape()[axis];
+    }
+
+    return result_tensor;
+}
 }  // namespace utils
 }  // namespace genai
 }  // namespace ov
