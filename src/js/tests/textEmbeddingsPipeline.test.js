@@ -56,5 +56,4 @@ describe("TextEmbeddingPipeline", () => {
     });
     assert.ok(pipelineWithConfig instanceof Object);
   });
-},
-);
+});

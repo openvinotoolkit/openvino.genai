@@ -6,7 +6,6 @@ import { models } from "./models.js";
 import fs from "node:fs/promises";
 import { join } from "node:path";
 import { addon as ovAddon } from "openvino-node";
-import os from "node:os";
 
 const MODEL_PATH = process.env.MODEL_PATH || `./tests/models/${models.LLM.split("/")[1]}`;
 
@@ -353,8 +352,7 @@ describe("tokenizer functions", async () => {
 
     assert.deepEqual(decodedText, [originalText]);
   });
-},
-);
+});
 
 // Add model with paired input support CVS-176639
 describe.skip("tokenizer with paired input", () => {

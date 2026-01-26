@@ -52,7 +52,7 @@ describe("LLMPipeline methods", async () => {
     const result = await pipeline.generate(
       "Type something in English",
       { temperature: "0", max_new_tokens: "4" },
-      () => { },
+      () => {},
     );
 
     assert.ok(result.texts.length > 0);
@@ -128,7 +128,7 @@ describe("generation parameters validation", () => {
   });
 
   it("should throw an error if options specified but not an object", async () => {
-    await assert.rejects(async () => await pipeline.generate("prompt", "options", () => { }), {
+    await assert.rejects(async () => await pipeline.generate("prompt", "options", () => {}), {
       name: "Error",
       message: "Options must be an object",
     });
