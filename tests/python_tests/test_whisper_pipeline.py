@@ -8,7 +8,8 @@ import sys
 import openvino_tokenizers
 import openvino
 import datasets
-from transformers import WhisperProcessor, AutomaticSpeechRecognitionPipeline, AutoTokenizer
+from transformers import WhisperProcessor, AutoTokenizer
+from transformers.pipelines.automatic_speech_recognition import AutomaticSpeechRecognitionPipeline
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 import gc
 import json
