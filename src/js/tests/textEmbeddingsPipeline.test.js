@@ -3,6 +3,7 @@ import { TextEmbeddingPipeline, PoolingType } from "../dist/index.js";
 import { isFloat32Array } from "util/types";
 import assert from "node:assert/strict";
 import { models } from "./models.js";
+import os from "node:os";
 
 const EMBEDDING_MODEL_PATH =
   process.env.EMBEDDING_MODEL_PATH || `./tests/models/${models.Embedding.split("/")[1]}`;
@@ -60,4 +61,5 @@ describe(
       });
       assert.ok(pipelineWithConfig instanceof Object);
     });
-  });
+  },
+);

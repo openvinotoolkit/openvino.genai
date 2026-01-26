@@ -5,6 +5,7 @@ import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import { TextRerankPipeline } from "../dist/index.js";
 import { models } from "./models.js";
+import os from "node:os";
 
 const RERANK_MODEL_PATH =
   process.env.RERANK_MODEL_PATH || `./tests/models/${models.TestReranking.split("/")[1]}`;
@@ -65,7 +66,8 @@ describe(
         /Passed array must contain only strings./,
       );
     });
-  });
+  },
+);
 
 describe("TextRerankPipeline initialization", () => {
   it("respects top_n in config", async () => {
