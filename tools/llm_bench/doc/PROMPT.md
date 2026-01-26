@@ -83,7 +83,7 @@ Supported parameters that can be set are:
 * `width` - resolution width (default 512)
 * `height` - resolution height (default 512)
 * `guidance_scale` - guidance scale
-* `guidance_rescale` - guidance rescale (**Note:** Currently not supported by LTX Pipeline)
+* `guidance_rescale` - guidance rescale (**Note:** Currently not supported by LTX Pipeline with OpenVINO GenAI)
 * `prompt` - input prompt text for the video generation
 * `negative_prompt` - input negative_prompt text for the video generation
 Prompt file example：
