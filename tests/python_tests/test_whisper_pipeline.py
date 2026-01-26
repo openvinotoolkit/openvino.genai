@@ -2,27 +2,16 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import sys
-import importlib.util
 
-# Patch importlib to make 'av' module is not available for transformers on Windows
-# This prevents VideoClassificationPipeline import which requires PyAV DLLs on Windows
-# if sys.platform == "win32":
-_original_find_spec = importlib.util.find_spec  # noqa: T201
+# Workaround for Windows: Create a fake 'av' module to prevent PyAV DLL loading errors
+# transformers.pipelines.__init__ unconditionally imports VideoClassificationPipeline
+# which requires PyAV. By pre-populating sys.modules with a fake 'av' module,
+# we prevent the actual import that would fail on Windows due to missing DLLs.
+if sys.platform == "win32":
+    from types import ModuleType
 
-
-def _patched_find_spec(name, package=None):  # noqa: T201
-    print(f"\nFinding spec for module: {name}")  # noqa: T201
-    if name == "av":  # noqa: T201
-        return None  # noqa: T201 # Pretend av module doesn't exist
-    return _original_find_spec(name, package)  # noqa: T201
-
-
-importlib.util.find_spec = _patched_find_spec  # noqa: T201
-print(f"av available: {importlib.util.find_spec('av') is not None}")  # noqa: T201
-
-import transformers.utils
-
-transformers.utils.import_utils.is_av_available = lambda: False  # noqa: T201
+    sys.modules["av"] = ModuleType("av")
+    sys.modules["av"].__version__ = "0.0.0"
 
 import openvino_genai as ov_genai
 import functools
