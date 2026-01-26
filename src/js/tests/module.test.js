@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 import { ChatHistory, LLMPipeline } from "../dist/index.js";
 
 import assert from "node:assert/strict";

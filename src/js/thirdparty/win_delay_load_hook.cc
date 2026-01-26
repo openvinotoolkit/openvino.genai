@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 /*
  * When this file is linked to a DLL, it sets up a delay-load hook that
  * intervenes when the DLL is trying to load 'node.exe' or 'iojs.exe'
@@ -40,7 +43,7 @@ static FARPROC WINAPI load_exe_hook(unsigned int event, DelayLoadInfo* info) {
 
   if (_stricmp(info->szDll, "node.exe") != 0)
     return NULL;
-  
+
   // Fall back to the current process
   if(!node_dll) node_dll = GetModuleHandleA(NULL);
 
