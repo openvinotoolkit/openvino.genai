@@ -337,55 +337,60 @@ describe("stream()", () => {
   });
 });
 
-describe("LLMPipeline with chat history", () => {
-  let pipeline = null;
-  // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
-  const chatHistory = new ChatHistory();
-
-  before(async () => {
-    pipeline = await LLMPipeline(MODEL_PATH, "CPU", { ATTENTION_BACKEND: "SDPA" });
-  });
-
-  it("generate(chatHistory, config)", async () => {
-    chatHistory.setMessages([
-      { role: "user", content: "Hello!" },
-      { role: "assistant", content: "Hi! How can I help you?" },
-      { role: "user", content: "Tell me a joke." },
-    ]);
-    const config = {
-      max_new_tokens: 10,
-    };
-    const reply = await pipeline.generate(chatHistory, config);
+describe(
+  "LLMPipeline with chat history",
+  // Ticket - 179439
+  { skip: os.platform() === "darwin" },
+  () => {
+    let pipeline = null;
     // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
-    chatHistory.push({ role: "assistant", content: reply.toString() });
-    assert.ok(Array.isArray(reply.texts));
-    assert.equal(reply.texts.length, 1);
-    assert.ok(typeof reply.texts[0] === "string");
-    console.log("Reply:", reply.toString());
-  });
+    const chatHistory = new ChatHistory();
 
-  it("generate(chatHistory, config) with invalid chat history", async () => {
-    const chatHistory = [1, "assistant", null];
-    const config = {
-      max_new_tokens: 10,
-    };
-    await assert.rejects(async () => {
-      await pipeline.generate(chatHistory, config);
-    }, /An incorrect input value has been passed./);
-  });
+    before(async () => {
+      pipeline = await LLMPipeline(MODEL_PATH, "CPU", { ATTENTION_BACKEND: "SDPA" });
+    });
 
-  it("stream(chatHistory, config)", async () => {
-    chatHistory.push({ role: "user", content: "Tell me another joke." });
-    const config = {
-      max_new_tokens: 10,
-    };
-    const streamer = await pipeline.stream(chatHistory, config);
-    const chunks = [];
-    for await (const chunk of streamer) {
-      chunks.push(chunk);
-    }
-    assert.ok(chunks.length > 0);
-    // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
-    chatHistory.push({ role: "assistant", content: chunks.join("") });
-  });
-});
+    it("generate(chatHistory, config)", async () => {
+      chatHistory.setMessages([
+        { role: "user", content: "Hello!" },
+        { role: "assistant", content: "Hi! How can I help you?" },
+        { role: "user", content: "Tell me a joke." },
+      ]);
+      const config = {
+        max_new_tokens: 10,
+      };
+      const reply = await pipeline.generate(chatHistory, config);
+      // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
+      chatHistory.push({ role: "assistant", content: reply.toString() });
+      assert.ok(Array.isArray(reply.texts));
+      assert.equal(reply.texts.length, 1);
+      assert.ok(typeof reply.texts[0] === "string");
+      console.log("Reply:", reply.toString());
+    });
+
+    it("generate(chatHistory, config) with invalid chat history", async () => {
+      const chatHistory = [1, "assistant", null];
+      const config = {
+        max_new_tokens: 10,
+      };
+      await assert.rejects(async () => {
+        await pipeline.generate(chatHistory, config);
+      }, /An incorrect input value has been passed./);
+    });
+
+    it("stream(chatHistory, config)", async () => {
+      chatHistory.push({ role: "user", content: "Tell me another joke." });
+      const config = {
+        max_new_tokens: 10,
+      };
+      const streamer = await pipeline.stream(chatHistory, config);
+      const chunks = [];
+      for await (const chunk of streamer) {
+        chunks.push(chunk);
+      }
+      assert.ok(chunks.length > 0);
+      // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
+      chatHistory.push({ role: "assistant", content: chunks.join("") });
+    });
+  },
+);

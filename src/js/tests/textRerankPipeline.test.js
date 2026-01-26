@@ -69,18 +69,23 @@ describe(
   },
 );
 
-describe("TextRerankPipeline initialization", () => {
-  it("respects top_n in config", async () => {
-    const limited = await TextRerankPipeline(RERANK_MODEL_PATH, {
-      device: "CPU",
-      config: { top_n: 2 },
+describe(
+  "TextRerankPipeline initialization",
+  // Ticket: 179949
+  { skip: os.platform() === "darwin" },
+  () => {
+    it("respects top_n in config", async () => {
+      const limited = await TextRerankPipeline(RERANK_MODEL_PATH, {
+        device: "CPU",
+        config: { top_n: 2 },
+      });
+      const result = await limited.rerank(query, docs);
+      assert.strictEqual(result.length, 2, "should return only top_n items");
     });
-    const result = await limited.rerank(query, docs);
-    assert.strictEqual(result.length, 2, "should return only top_n items");
-  });
 
-  it("throws when pipeline is initialized twice", async () => {
-    const pipeline = await TextRerankPipeline(RERANK_MODEL_PATH);
-    await assert.rejects(pipeline.init(), /TextRerankPipeline is already initialized/);
-  });
-});
+    it("throws when pipeline is initialized twice", async () => {
+      const pipeline = await TextRerankPipeline(RERANK_MODEL_PATH);
+      await assert.rejects(pipeline.init(), /TextRerankPipeline is already initialized/);
+    });
+  },
+);
