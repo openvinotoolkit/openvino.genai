@@ -8,7 +8,7 @@ import sys
 import openvino_tokenizers
 import openvino
 import datasets
-from transformers import WhisperProcessor, pipeline, AutoTokenizer
+from transformers import WhisperProcessor, AutomaticSpeechRecognitionPipeline, AutoTokenizer
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 import gc
 import json
@@ -80,8 +80,7 @@ def read_whisper_model(params, word_timestamps=False):
         local_files_only=True,
     ))
 
-    hf_pipe = pipeline(
-        "automatic-speech-recognition",
+    hf_pipe = AutomaticSpeechRecognitionPipeline(
         model=opt_model,
         tokenizer=processor.tokenizer,
         feature_extractor=processor.feature_extractor,
