@@ -24,7 +24,7 @@ int main(int argc, char* argv[]) try {
 
     std::string device = "CPU";
 
-    // Prompt lookup decoding in VLM pipeline is supported only for ContinuousBatching backend.
+    // Prompt lookup decoding in VLM pipeline enforses ContinuousBatching backend.
     ov::genai::VLMPipeline pipe(
         model_path,
         device,
