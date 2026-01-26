@@ -6,21 +6,23 @@ import importlib.util
 
 # Patch importlib to make 'av' module is not available for transformers on Windows
 # This prevents VideoClassificationPipeline import which requires PyAV DLLs on Windows
-if sys.platform == "win32":
-    _original_find_spec = importlib.util.find_spec
+# if sys.platform == "win32":
+_original_find_spec = importlib.util.find_spec  # noqa: T201
 
-    def _patched_find_spec(name, package=None):
-        if name == "av":
-            return None  # Pretend av module doesn't exist
-        return _original_find_spec(name, package)
 
-    importlib.util.find_spec = _patched_find_spec
-print(f"va available: {importlib.util.find_spec('av') is not None}")  # noqa: T201
+def _patched_find_spec(name, package=None):  # noqa: T201
+    print(f"\nFinding spec for module: {name}")  # noqa: T201
+    if name == "av":  # noqa: T201
+        return None  # noqa: T201 # Pretend av module doesn't exist
+    return _original_find_spec(name, package)  # noqa: T201
+
+
+importlib.util.find_spec = _patched_find_spec  # noqa: T201
+print(f"av available: {importlib.util.find_spec('av') is not None}")  # noqa: T201
 
 import openvino_genai as ov_genai
 import functools
 import pytest
-import sys
 import openvino_tokenizers
 import openvino
 import datasets
