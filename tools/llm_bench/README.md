@@ -328,7 +328,7 @@ python benchmark.py -m models/LTX-Video/FP16 -p "A cat plays with ball on the ch
 - `--frame_rate`: Frame rate for video generation and saving.
 - `--static_reshape`: Reshape video generation pipeline to specific width & height at pipeline creation time.
 - `--guidance_scale`: guidance scale parameter for pipeline, supported via json JSON input only.
-- `--guidance_rescale`: guidance rescale parameter for pipeline, supported via json JSON input only.
+- `--guidance_rescale`: guidance rescale parameter for pipeline, supported via json JSON input only. **Note:** Currently not supported by LTX Pipeline.
 
 > **Supported Video Generation model types:** Lightricks/LTX-Video
 
