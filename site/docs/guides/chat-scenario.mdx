@@ -75,12 +75,12 @@ A simple chat example (with grouped beam search decoding):
             std::cout << "question:\n";
             while (std::getline(std::cin, prompt)) {
                 // highlight-next-line
-                chat_history.push_back({{"role", "user"}, {"content", prompt}});
+                chat_history.push_back({{"role", "user"}, {"content", std::move(prompt)}});
                 // highlight-next-line
                 auto decoded_results = pipe.generate(chat_history, config);
                 // Add assistant's response to chat history
                 // highlight-next-line
-                chat_history.push_back({{"role", "assistant"}, {"content", decoded_results.texts[0]}});
+                chat_history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
 
                 std::cout << "answer:\n";
                 std::cout << decoded_results.texts[0] << std::endl;
@@ -221,7 +221,7 @@ Additionally, `ChatHistory` manages optional metadata for consistent chat templa
         #include "openvino/genai/chat_history.hpp"
 
         ov::genai::ChatHistory chat_history;
-        chat_history.push_back({{"role", "system"}, {"content", system_prompt}});
+        chat_history.push_back({{"role", "system"}, {"content", std::move(system_prompt)}});
 
         // Load tools from JSON string
         ov::genai::JsonContainer tools = ov::genai::JsonContainer::from_json_string("...");
@@ -233,10 +233,10 @@ Additionally, `ChatHistory` manages optional metadata for consistent chat templa
         // highlight-next-line
         chat_history.set_extra_context({{"enable_thinking", true}});
 
-        chat_history.push_back({{"role", "user"}, {"content", user_prompt}});
+        chat_history.push_back({{"role", "user"}, {"content", std::move(user_prompt)}});
         auto decoded_results = pipe.generate(chat_history, config);
         // Add assistant's response to chat history
-        chat_history.push_back({{"role", "assistant"}, {"content", decoded_results.texts[0]}});
+        chat_history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
         ```
     </TabItemCpp>
     <TabItemJS>
