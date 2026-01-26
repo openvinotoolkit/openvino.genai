@@ -20,6 +20,10 @@ def _patched_find_spec(name, package=None):  # noqa: T201
 importlib.util.find_spec = _patched_find_spec  # noqa: T201
 print(f"av available: {importlib.util.find_spec('av') is not None}")  # noqa: T201
 
+import transformers.utils
+
+transformers.utils.import_utils.is_av_available = lambda: False  # noqa: T201
+
 import openvino_genai as ov_genai
 import functools
 import pytest
