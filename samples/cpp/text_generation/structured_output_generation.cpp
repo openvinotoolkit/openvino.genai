@@ -80,7 +80,7 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::ChatHistory chat_history;
 
-    chat_history.push_back({{"role", "system"}, {"content", sys_message}});
+    chat_history.push_back({{"role", "system"}, {"content", std::move(sys_message)}});
     std::cout << "This is a sample of structured output generation.\n"
               << "You can enter a mathematical equation, and the model will solve it step by step.\n"
               << "For example, try: 2*x -2 + 15 = 0\n"
@@ -88,7 +88,7 @@ int main(int argc, char* argv[]) try {
               << "> ";
 
     while (std::getline(std::cin, prompt)) {
-        chat_history.push_back({{"role", "user"}, {"content", prompt}});
+        chat_history.push_back({{"role", "user"}, {"content", std::move(prompt)}});
         ov::genai::DecodedResults decoded_results = pipe.generate(chat_history, config, streamer);
         chat_history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
         std::cout << "\n----------\n"
