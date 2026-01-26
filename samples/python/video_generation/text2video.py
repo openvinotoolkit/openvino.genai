@@ -34,7 +34,7 @@ def main():
     parser.add_argument("prompt", help="Text prompt for video generation")
     args = parser.parse_args()
 
-    pipe = openvino_genai.Text2VideoPipeline(args.model_dir, "CPU")  # GPU can be used as well
+    pipe = openvino_genai.Text2VideoPipeline(args.model_dir, "CPU")
 
     frame_rate = 25
 

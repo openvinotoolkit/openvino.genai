@@ -404,6 +404,65 @@ public:
         return guidance_scale > 1.0;
     }
 
+    // x = (images * 0.5 + 0.5).clamp(0, 1)
+    inline ov::Tensor denormalize_01(const ov::Tensor& images) {
+        const auto et = images.get_element_type();
+        const auto shape = images.get_shape();
+
+        std::vector<ov::Tensor> out{ov::Tensor(et, shape)};
+        std::vector<ov::Tensor> in;
+
+        // x = images * 0.5
+        in = {images, make_scalar(et, 0.5f)};
+        ov::op::v1::Multiply{}.evaluate(out, in);
+
+        // x = x + 0.5
+        in = {out[0], make_scalar(et, 0.5f)};
+        ov::op::v1::Add{}.evaluate(out, in);
+
+        // x = min(x, 1.0)
+        in = {out[0], make_scalar(et, 1.0f)};
+        ov::op::v1::Minimum{}.evaluate(out, in);
+
+        // x = max(x, 0.0)
+        in = {out[0], make_scalar(et, 0.0f)};
+        ov::op::v1::Maximum{}.evaluate(out, in);
+
+        return out[0];
+    }
+
+    // inp:  [B, C, F, H, W], out: [B, F, H, W, C] uint8
+    inline ov::Tensor postprocess_video(const ov::Tensor& video) {
+        const auto& shape = video.get_shape();
+        OPENVINO_ASSERT(shape.size() == 5, "postprocess_video expects [B, C, F, H, W]");
+        const auto et = video.get_element_type();
+
+        // [B, C, F, H, W] to [B, F, H, W, C]
+        const std::array<int64_t, 5> order = {0, 2, 3, 4, 1};
+        ov::Tensor perm_order(ov::element::i64, {order.size()}, const_cast<int64_t*>(order.data()));
+
+        std::vector<ov::Tensor> trans_out{ov::Tensor(et, shape)};
+        ov::op::v1::Transpose{}.evaluate(trans_out, {video, perm_order});
+        ov::Tensor transposed = trans_out[0];
+
+        // (x * 0.5 + 0.5).clamp(0, 1)
+        ov::Tensor normalized = denormalize_01(transposed);
+
+        // (x * 255)
+        std::vector<ov::Tensor> scaled{ov::Tensor(et, normalized.get_shape())};
+        ov::op::v1::Multiply{}.evaluate(scaled, {normalized, make_scalar(et, 255.0f)});
+
+        // round()
+        std::vector<ov::Tensor> rounded{ov::Tensor(et, scaled[0].get_shape())};
+        ov::op::v5::Round{}.evaluate(rounded, {scaled[0]});
+
+        // to uint8
+        std::vector<ov::Tensor> out_vec{ov::Tensor(ov::element::u8, rounded[0].get_shape())};
+        ov::op::v0::Convert{}.evaluate(out_vec, {rounded[0]});
+
+        return out_vec[0];  // [B, F, H, W, C]
+    }
+
     VideoGenerationResult generate(const std::string& positive_prompt, const ov::AnyMap& properties = {}) {
         const auto gen_start = std::chrono::steady_clock::now();
         m_perf_metrics.clean_up();
@@ -526,8 +585,7 @@ public:
             }
 
             // TODO: support guidance_rescale
-            OPENVINO_ASSERT(merged_generation_config.guidance_rescale <= 0,
-                            "Parameter 'guidance_rescale' is not currently supported by LTX Pipeline. Please, contact OpenVINO GenAI developers.");
+            // if (config.guidance_rescale > 0) {...}
 
             auto scheduler_step_result =
                 m_scheduler->step(noisy_residual_tensor, latent, inference_step, merged_generation_config.generator);
@@ -555,15 +613,15 @@ public:
 
         latent = postprocess_latents(latent);
 
-        // TODO: support timestep_conditioning for AutoencoderKLLTX
-        OPENVINO_ASSERT(!m_vae->get_config().timestep_conditioning,
-                            "Parameter 'timestep_conditioning' is not currently supported by AutoencoderKLLTX. Please, contact OpenVINO GenAI developers.");
+        // TODO: if not self.vae.config.timestep_conditioning: ... else: ...
 
         const auto decode_start = std::chrono::steady_clock::now();
         ov::Tensor video = m_vae->decode(latent);
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
+
+        video = postprocess_video(video);
 
         m_perf_metrics.generate_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - gen_start).count();
@@ -579,6 +637,7 @@ public:
         m_perf_metrics.vae_decoder_inference_duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - decode_start)
                 .count();
+        video = postprocess_video(video);
 
         return VideoGenerationResult{video, m_perf_metrics};
     }
