@@ -236,6 +236,108 @@ class LongBenchTestData:
     LongBenchTestData("samsum", 4, 1.6, 2.5),
     LongBenchTestData("trec", 3.2, 2.0, 3.3),
 ], ids=["samsum", "trec"])
+def test_optimized_generation_longbench_new_model(test_struct):
+    if os.environ.get("HF_DATASETS_OFFLINE") == "1":
+        pytest.skip("HF_DATASETS_OFFLINE=1; cannot load THUDM/LongBench")
+    if os.environ.get("HF_HUB_OFFLINE") == "1":
+        pytest.skip("HF_HUB_OFFLINE=1; cannot download/convert Hugging Face model")
+
+    seqs_per_request = 32
+    device = "CPU"
+    num_kv_blocks = 1000 if device == "CPU" else 500
+    model_id = "hf-internal-testing/tiny-random-LlamaForCausalLM"
+    _log(
+        "Test params: "
+        f"subset={test_struct.subset} device={device} seqs_per_request={seqs_per_request} num_kv_blocks={num_kv_blocks} model_id={model_id}"
+    )
+    with _stage("download_and_convert_model"):
+        models_path = download_and_convert_model(model_id).models_path
+    _log(f"Converted model path: {models_path}")
+    scheduler_config = get_scheduler_config(num_kv_blocks)
+
+    scheduler_config_opt = get_scheduler_config(num_kv_blocks)
+    scheduler_config_opt.use_cache_eviction = True
+    scheduler_config_opt.cache_eviction_config = LONGBENCH_CACHE_EVICTION_CONFIG
+
+    scheduler_config_opt.use_sparse_attention = True
+
+    _log(
+        "Cache eviction config (LongBench): "
+        f"start_size={LONGBENCH_CACHE_EVICTION_CONFIG.get_start_size()} recent_size={LONGBENCH_CACHE_EVICTION_CONFIG.get_recent_size()} "
+        f"max_cache_size={LONGBENCH_CACHE_EVICTION_CONFIG.get_max_cache_size()} aggregation_mode={LONGBENCH_CACHE_EVICTION_CONFIG.aggregation_mode}"
+    )
+
+    with _stage("init_pipelines"):
+        model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, {}, get_default_llm_properties())
+        model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, {}, get_default_llm_properties())
+
+    model_name = "/".join(models_path.parts[-2:])
+    subset = test_struct.subset
+    max_new_tokens = dataset2maxlen[subset]
+    _log(f"model_name={model_name} max_new_tokens={max_new_tokens}")
+
+    generation_config = GenerationConfig()  # expecting default greedy sampling
+    generation_config.num_return_sequences = 1
+    generation_config.max_new_tokens = max_new_tokens
+
+    with _stage("load_dataset"):
+        data = datasets.load_dataset('THUDM/LongBench', subset, split='test[:32]', trust_remote_code=True)
+    with tqdm(total=len(data)) as progress_bar:
+        batch = []
+        answers = []
+        ref_answers = []
+        for p_idx, data_sample in enumerate(data):
+            prompt = preprocess_prompt(data_sample, subset, model_name)
+            progress_bar.update(1)
+            batch.append(prompt)
+            answers.append({"answers": data_sample["answers"], "all_classes": data_sample["all_classes"]})
+            ref_answers.append({"answers": data_sample["answers"], "all_classes": data_sample["all_classes"]})
+
+            if len(batch) == seqs_per_request or p_idx == len(data) - 1:
+                _log(f"Generating batch size={len(batch)} last_index={p_idx}")
+                with _stage("opt_generate"):
+                    ans_batch = model_cb_opt.generate(
+                        batch, [generation_config] * len(batch)
+                    )
+                with _stage("ref_generate"):
+                    ref_ans_batch = model_cb_noopt.generate(
+                        batch, [generation_config] * len(batch)
+                    )
+                for i, (opt_output, ref_output) in enumerate(zip(ans_batch, ref_ans_batch), start=p_idx-len(batch)+1):
+                    answers[i]["pred"] = post_process_pred(opt_output.m_generation_ids[0], subset, model_name)
+                    ref_answers[i]["pred"] = post_process_pred(ref_output.m_generation_ids[0], subset, model_name)
+                batch.clear()
+
+    with _stage("evaluate_opt"):
+        score = evaluate(answers, subset)
+    _log(f"Score: {score}")
+
+    with _stage("evaluate_ref"):
+        ref_score = evaluate(ref_answers, subset)
+    _log(f"Reference score: {ref_score}")
+    pipeline_opt_metrics = model_cb_opt.get_metrics()
+    pipeline_noopt_metrics = model_cb_noopt.get_metrics()
+
+    _log(f"No-opt cache usage: max {pipeline_noopt_metrics.max_cache_usage:.3f}, avg {pipeline_noopt_metrics.avg_cache_usage:.3f}")
+    _log(f"Opt cache usage: max {pipeline_opt_metrics.max_cache_usage:.3f}, avg {pipeline_opt_metrics.avg_cache_usage:.3f}")
+    max_optimization_ratio = (pipeline_noopt_metrics.max_cache_usage / pipeline_opt_metrics.max_cache_usage)
+    avg_optimization_ratio = (pipeline_noopt_metrics.avg_cache_usage / pipeline_opt_metrics.avg_cache_usage)
+    _log(f"Optimization ratios: max {max_optimization_ratio:.3f}x, avg {avg_optimization_ratio:.3f}x")
+
+    del model_cb_opt
+    del model_cb_noopt
+    import gc
+    gc.collect()
+
+    assert ref_score - score <= test_struct.threshold
+    assert max_optimization_ratio >= test_struct.max_cache_usage_optimization_ratio
+    assert avg_optimization_ratio >= test_struct.avg_cache_usage_optimization_ratio
+
+
+@pytest.mark.parametrize("test_struct", [
+    LongBenchTestData("samsum", 4, 1.6, 2.5),
+    LongBenchTestData("trec", 3.2, 2.0, 3.3),
+], ids=["samsum", "trec"])
 def test_optimized_generation_longbench(test_struct):
     if os.environ.get("HF_DATASETS_OFFLINE") == "1":
         pytest.skip("HF_DATASETS_OFFLINE=1; cannot load THUDM/LongBench")
