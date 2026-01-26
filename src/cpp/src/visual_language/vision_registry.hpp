@@ -10,11 +10,6 @@ namespace ov::genai {
 
 using VisionID = uint64_t;
 
-enum class VisionType {
-    IMAGE,
-    VIDEO
-};
-
 class VisionRegistry {
 public:
     VisionRegistry() = default;

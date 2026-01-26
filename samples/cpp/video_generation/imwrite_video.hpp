@@ -6,12 +6,10 @@
 #include <string>
 #include "openvino/runtime/tensor.hpp"
 
-// /**
-//  * @brief Writes multiple images (depending on `image` tensor batch size) to BPM file(s)
-//  * @param name File name or pattern to use to write images
-//  * @param image Image(s) tensor
-//  * @param convert_bgr2rgb Convert BGR to RGB
-//  */
-//
-
-void imwrite_video(const std::string& name, const ov::Tensor& video, const uint32_t fps = 25, bool convert_bgr2rgb = false, int quality = 85);
+/**
+ * @brief Writes video(s) to AVI file(s). Input frames are assumed to be in RGB/RGBA format.
+ * @param filename Output filename. If batch size > 1, files are named with "_b{N}" suffix.
+ * @param video_tensor Video tensor of shape [B, F, H, W, C] with uint8 data (C = 1, 3, or 4).
+ * @param fps Frames per second.
+ */
+void save_video(const std::string& filename, const ov::Tensor& video_tensor, float fps = 25.0f);

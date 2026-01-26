@@ -624,9 +624,7 @@ std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::v
                                                                     const ov::Tensor& hidden_state_tensor,
                                                                     const ov::genai::WhisperGenerationConfig& config,
                                                                     const size_t n_active_frames,
-                                                                    const float chunk_time_offset
-                                                                    // todo: add raw_perf_metrics
-) {
+                                                                    const float chunk_time_offset) {
     // [text_tokens] + [eos_token]
     std::vector<int64_t> text_tokens;
     for (const auto& token : input_tokens) {
@@ -664,9 +662,7 @@ std::vector<ov::genai::WhisperWordTiming> add_word_level_timestamps(const std::v
                                                                     const ov::Tensor& hidden_state_tensor,
                                                                     const ov::genai::WhisperGenerationConfig& config,
                                                                     const size_t n_active_frames,
-                                                                    const float chunk_time_offset
-                                                                    // todo: add raw_perf_metrics
-) {
+                                                                    const float chunk_time_offset) {
     // [text_tokens] + [eos_token]
     std::vector<int64_t> text_tokens;
     for (const auto& token : input_tokens) {
