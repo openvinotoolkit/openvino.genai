@@ -1453,7 +1453,8 @@ def parametrize_model_with_vision_type(
 
 
 @parametrize_model_with_vision_type(
-    TAG_INSERTED_BY_TEMPLATE, xfail={("optimum-intel-internal-testing/tiny-random-llava", "PA", VisionType.IMAGE): "CVS-179090"}
+    TAG_INSERTED_BY_TEMPLATE,
+    xfail={("optimum-intel-internal-testing/tiny-random-llava", "PA", VisionType.IMAGE): "CVS-179090"}
 )
 def test_model_tags_representation(
     ov_pipe_model: VlmModelInfo,
