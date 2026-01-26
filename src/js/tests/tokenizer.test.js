@@ -43,321 +43,317 @@ describe("tokenizer constructors", () => {
   });
 });
 
-describe(
-  "tokenizer functions",
-  // Ticket - 179439
-  { skip: os.platform() === "darwin" },
-  async () => {
-    let pipeline = null;
-    let tokenizer = null;
+describe("tokenizer functions", async () => {
+  let pipeline = null;
+  let tokenizer = null;
 
-    before(async () => {
-      pipeline = await LLMPipeline(MODEL_PATH, "CPU");
+  before(async () => {
+    pipeline = await LLMPipeline(MODEL_PATH, "CPU");
 
-      await pipeline.startChat();
-      tokenizer = pipeline.getTokenizer();
-    });
+    await pipeline.startChat();
+    tokenizer = pipeline.getTokenizer();
+  });
 
-    after(async () => {
-      await pipeline.finishChat();
-    });
+  after(async () => {
+    await pipeline.finishChat();
+  });
 
-    it("applyChatTemplate return string", () => {
-      const template = tokenizer.applyChatTemplate(
-        [
-          {
-            role: "user",
-            content: "continue: 1 2 3",
-          },
-        ],
-        false,
-      );
-      assert.strictEqual(typeof template, "string");
-    });
-
-    it("applyChatTemplate with chat history", () => {
-      const chatHistory = new ChatHistory([
+  it("applyChatTemplate return string", () => {
+    const template = tokenizer.applyChatTemplate(
+      [
         {
           role: "user",
           content: "continue: 1 2 3",
         },
-      ]);
-      const template = tokenizer.applyChatTemplate(chatHistory, false);
-      assert.strictEqual(typeof template, "string");
-    });
+      ],
+      false,
+    );
+    assert.strictEqual(typeof template, "string");
+  });
 
-    it("applyChatTemplate with true addGenerationPrompt", () => {
-      const template = tokenizer.applyChatTemplate(
-        [
-          {
-            role: "user",
-            content: "continue: 1 2 3",
-          },
-        ],
-        true,
-      );
-      assert.ok(template.includes("assistant"));
-    });
+  it("applyChatTemplate with chat history", () => {
+    const chatHistory = new ChatHistory([
+      {
+        role: "user",
+        content: "continue: 1 2 3",
+      },
+    ]);
+    const template = tokenizer.applyChatTemplate(chatHistory, false);
+    assert.strictEqual(typeof template, "string");
+  });
 
-    it("applyChatTemplate with missed addGenerationPrompt", () => {
-      assert.throws(() =>
-        tokenizer.applyChatTemplate([
-          {
-            role: "user",
-            content: "continue: 1 2 3",
-          },
-        ]),
-      );
-    });
+  it("applyChatTemplate with true addGenerationPrompt", () => {
+    const template = tokenizer.applyChatTemplate(
+      [
+        {
+          role: "user",
+          content: "continue: 1 2 3",
+        },
+      ],
+      true,
+    );
+    assert.ok(template.includes("assistant"));
+  });
 
-    it("applyChatTemplate with incorrect type of history", () => {
-      assert.throws(() => tokenizer.applyChatTemplate("prompt", false));
-    });
+  it("applyChatTemplate with missed addGenerationPrompt", () => {
+    assert.throws(() =>
+      tokenizer.applyChatTemplate([
+        {
+          role: "user",
+          content: "continue: 1 2 3",
+        },
+      ]),
+    );
+  });
 
-    it("applyChatTemplate with unknown property", () => {
-      const testValue = "1234567890";
-      const template = tokenizer.applyChatTemplate(
-        [
-          {
-            role: "user",
-            content: "continue: 1 2 3",
-            unknownProp: testValue,
-          },
-        ],
-        false,
-      );
-      assert.ok(!template.includes(testValue));
-    });
+  it("applyChatTemplate with incorrect type of history", () => {
+    assert.throws(() => tokenizer.applyChatTemplate("prompt", false));
+  });
 
-    it("applyChatTemplate use custom chatTemplate", () => {
-      const prompt = "continue: 1 2 3";
-      const chatTemplate = `{% for message in messages %}
+  it("applyChatTemplate with unknown property", () => {
+    const testValue = "1234567890";
+    const template = tokenizer.applyChatTemplate(
+      [
+        {
+          role: "user",
+          content: "continue: 1 2 3",
+          unknownProp: testValue,
+        },
+      ],
+      false,
+    );
+    assert.ok(!template.includes(testValue));
+  });
+
+  it("applyChatTemplate use custom chatTemplate", () => {
+    const prompt = "continue: 1 2 3";
+    const chatTemplate = `{% for message in messages %}
 {{ message['content'] }}
 {% endfor %}`;
-      const template = tokenizer.applyChatTemplate(
-        [
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        false,
-        chatTemplate,
-      );
-      assert.strictEqual(template, `${prompt}\n`);
-    });
-
-    it("applyChatTemplate use tools", () => {
-      const prompt = "question";
-      const chatHistory = [
+    const template = tokenizer.applyChatTemplate(
+      [
         {
           role: "user",
           content: prompt,
         },
-      ];
-      const chatTemplate = `{% for message in messages %}
+      ],
+      false,
+      chatTemplate,
+    );
+    assert.strictEqual(template, `${prompt}\n`);
+  });
+
+  it("applyChatTemplate use tools", () => {
+    const prompt = "question";
+    const chatHistory = [
+      {
+        role: "user",
+        content: prompt,
+      },
+    ];
+    const chatTemplate = `{% for message in messages %}
 {{ message['content'] }}
 {% for tool in tools %}{{ tool | tojson }}{% endfor %}
 {% endfor %}`;
-      const tools = [{ type: "function", function: { name: "test" } }];
-      const templatedHistory = tokenizer.applyChatTemplate(chatHistory, false, chatTemplate, tools);
-      const expected = `${prompt}\n{"type": "function", "function": {"name": "test"}}`;
-      assert.strictEqual(templatedHistory, expected);
-    });
+    const tools = [{ type: "function", function: { name: "test" } }];
+    const templatedHistory = tokenizer.applyChatTemplate(chatHistory, false, chatTemplate, tools);
+    const expected = `${prompt}\n{"type": "function", "function": {"name": "test"}}`;
+    assert.strictEqual(templatedHistory, expected);
+  });
 
-    it("applyChatTemplate use tool from chat history", () => {
-      const prompt = "question";
-      const chatHistory = new ChatHistory();
-      chatHistory.push({ role: "user", content: prompt });
-      chatHistory.setTools([{ type: "function", function: { name: "test" } }]);
+  it("applyChatTemplate use tool from chat history", () => {
+    const prompt = "question";
+    const chatHistory = new ChatHistory();
+    chatHistory.push({ role: "user", content: prompt });
+    chatHistory.setTools([{ type: "function", function: { name: "test" } }]);
 
-      const chatTemplate = `{% for message in messages %}
+    const chatTemplate = `{% for message in messages %}
 {{ message['content'] }}
 {% for tool in tools %}{{ tool | tojson }}{% endfor %}
 {% endfor %}`;
-      const templatedHistory = tokenizer.applyChatTemplate(chatHistory, false, chatTemplate);
-      const expected = `${prompt}\n{"type": "function", "function": {"name": "test"}}`;
-      assert.strictEqual(templatedHistory, expected);
-    });
+    const templatedHistory = tokenizer.applyChatTemplate(chatHistory, false, chatTemplate);
+    const expected = `${prompt}\n{"type": "function", "function": {"name": "test"}}`;
+    assert.strictEqual(templatedHistory, expected);
+  });
 
-    it("applyChatTemplate use extra_context", () => {
-      const prompt = "question";
-      const chatHistory = [
-        {
-          role: "user",
-          content: prompt,
-        },
-      ];
-      const chatTemplate = `{% for message in messages %}
+  it("applyChatTemplate use extra_context", () => {
+    const prompt = "question";
+    const chatHistory = [
+      {
+        role: "user",
+        content: prompt,
+      },
+    ];
+    const chatTemplate = `{% for message in messages %}
 {{ message['content'] }}
 {% if enable_thinking is defined and enable_thinking is false %}No thinking{% endif %}
 {% endfor %}`;
-      const tools = [];
-      // eslint-disable-next-line camelcase
-      const extraContext = { enable_thinking: false };
-      const templatedHistory = tokenizer.applyChatTemplate(
-        chatHistory,
-        false,
-        chatTemplate,
-        tools,
-        extraContext,
-      );
-      const expected = `${prompt}\nNo thinking`;
-      assert.strictEqual(templatedHistory, expected);
-    });
+    const tools = [];
+    // eslint-disable-next-line camelcase
+    const extraContext = { enable_thinking: false };
+    const templatedHistory = tokenizer.applyChatTemplate(
+      chatHistory,
+      false,
+      chatTemplate,
+      tools,
+      extraContext,
+    );
+    const expected = `${prompt}\nNo thinking`;
+    assert.strictEqual(templatedHistory, expected);
+  });
 
-    it("applyChatTemplate use extra_context from chat history", () => {
-      const prompt = "question";
-      const chatHistory = new ChatHistory();
-      chatHistory.push({ role: "user", content: prompt });
-      // eslint-disable-next-line camelcase
-      chatHistory.setExtraContext({ enable_thinking: false });
+  it("applyChatTemplate use extra_context from chat history", () => {
+    const prompt = "question";
+    const chatHistory = new ChatHistory();
+    chatHistory.push({ role: "user", content: prompt });
+    // eslint-disable-next-line camelcase
+    chatHistory.setExtraContext({ enable_thinking: false });
 
-      const chatTemplate = `{% for message in messages %}
+    const chatTemplate = `{% for message in messages %}
 {{ message['content'] }}
 {% if enable_thinking is defined and enable_thinking is false %}No thinking{% endif %}
 {% endfor %}`;
-      const templatedHistory = tokenizer.applyChatTemplate(chatHistory, false, chatTemplate);
-      const expected = `${prompt}\nNo thinking`;
-      assert.strictEqual(templatedHistory, expected);
+    const templatedHistory = tokenizer.applyChatTemplate(chatHistory, false, chatTemplate);
+    const expected = `${prompt}\nNo thinking`;
+    assert.strictEqual(templatedHistory, expected);
+  });
+
+  it("getBosToken return string", () => {
+    const token = tokenizer.getBosToken();
+    assert.strictEqual(typeof token, "string");
+  });
+
+  it("getBosTokenId return number", () => {
+    const token = tokenizer.getBosTokenId();
+    assert.strictEqual(typeof token, "bigint");
+  });
+
+  it("getEosToken return string", () => {
+    const token = tokenizer.getEosToken();
+    assert.strictEqual(typeof token, "string");
+  });
+
+  it("getEosTokenId return number", () => {
+    const token = tokenizer.getEosTokenId();
+    assert.strictEqual(typeof token, "bigint");
+  });
+
+  it("getPadToken return string", () => {
+    const token = tokenizer.getPadToken();
+    assert.strictEqual(typeof token, "string");
+  });
+
+  it("getPadTokenId return number", () => {
+    const token = tokenizer.getPadTokenId();
+    assert.strictEqual(typeof token, "bigint");
+  });
+
+  it("setChatTemplate updates template", () => {
+    const originalTemplate = tokenizer.getChatTemplate();
+    assert.strictEqual(typeof originalTemplate, "string");
+
+    const customTemplate = "Custom template: {{ messages }}";
+    tokenizer.setChatTemplate(customTemplate);
+
+    const updatedTemplate = tokenizer.getChatTemplate();
+    assert.strictEqual(updatedTemplate, customTemplate);
+
+    // Restore original template
+    tokenizer.setChatTemplate(originalTemplate);
+  });
+
+  // Fix getOriginalChatTemplate issue CVS-176638
+  it.skip("getOriginalChatTemplate returns the original string", () => {
+    const originalTemplate = tokenizer.getChatTemplate();
+    tokenizer.setChatTemplate("Custom template: {{ messages }}");
+
+    const template = tokenizer.getOriginalChatTemplate();
+    assert.strictEqual(template, originalTemplate);
+
+    // Restore original template
+    tokenizer.setChatTemplate(originalTemplate);
+  });
+
+  it("encode single string returns TokenizedInputs", () => {
+    const text = "Hello world";
+    const result = tokenizer.encode(text);
+
+    assert.ok(result.input_ids, "Should have input_ids");
+    assert.ok(result.attention_mask, "Should have attention_mask");
+    assert.strictEqual(typeof result.input_ids, "object");
+    assert.strictEqual(typeof result.attention_mask, "object");
+  });
+
+  it("encode with options", () => {
+    const text = "Hello world";
+    const result = tokenizer.encode(text, {
+      add_special_tokens: false,
+      pad_to_max_length: true,
+      max_length: 1000,
+      padding_side: "left",
     });
+    // const padTokenId = tokenizer.getPadTokenId();
 
-    it("getBosToken return string", () => {
-      const token = tokenizer.getBosToken();
-      assert.strictEqual(typeof token, "string");
-    });
+    assert.ok(result.input_ids);
+    assert.strictEqual(
+      result.input_ids.getShape()[1],
+      1000,
+      "input_ids should be padded to maxLength",
+    );
+    // Uncomment after fixing padding issue CVS-176636
+    // assert.strictEqual(
+    //   result.input_ids.getData()[0],
+    //   padTokenId,
+    //   "input_ids should be left padded",
+    // );
+  });
 
-    it("getBosTokenId return number", () => {
-      const token = tokenizer.getBosTokenId();
-      assert.strictEqual(typeof token, "bigint");
-    });
+  it("encode array of strings", () => {
+    const texts = ["Hello", "World"];
+    const result = tokenizer.encode(texts);
 
-    it("getEosToken return string", () => {
-      const token = tokenizer.getEosToken();
-      assert.strictEqual(typeof token, "string");
-    });
+    assert.strictEqual(result.input_ids.getShape()[0], texts.length);
+    assert.strictEqual(result.attention_mask.getShape()[0], 2);
+  });
 
-    it("getEosTokenId return number", () => {
-      const token = tokenizer.getEosTokenId();
-      assert.strictEqual(typeof token, "bigint");
-    });
+  it("decode array of token IDs to string", () => {
+    const tokenIds = [1, 2, 3];
+    const decoded = tokenizer.decode(tokenIds);
 
-    it("getPadToken return string", () => {
-      const token = tokenizer.getPadToken();
-      assert.strictEqual(typeof token, "string");
-    });
+    assert.strictEqual(typeof decoded, "string");
+  });
 
-    it("getPadTokenId return number", () => {
-      const token = tokenizer.getPadTokenId();
-      assert.strictEqual(typeof token, "bigint");
-    });
+  // Fix skip_special_tokens functionality CVS-176639
+  it.skip("decode with skip_special_tokens option", () => {
+    const eos = tokenizer.getEosToken();
+    const eosId = tokenizer.getEosTokenId();
+    const tokenIds = [10n, 20n, 30n, eosId];
+    const decoded1 = tokenizer.decode(tokenIds, { skip_special_tokens: true });
+    const decoded2 = tokenizer.decode(tokenIds, { skip_special_tokens: false });
 
-    it("setChatTemplate updates template", () => {
-      const originalTemplate = tokenizer.getChatTemplate();
-      assert.strictEqual(typeof originalTemplate, "string");
+    assert.strictEqual(typeof decoded1, "string");
+    assert.strictEqual(typeof decoded2, "string");
+    assert.strictEqual(decoded2, decoded1 + eos);
+  });
 
-      const customTemplate = "Custom template: {{ messages }}";
-      tokenizer.setChatTemplate(customTemplate);
+  it("decode batch of token sequences", () => {
+    const batchTokens = [
+      [1, 2, 3],
+      [4, 5, 6],
+    ];
+    const decoded = tokenizer.decode(batchTokens);
 
-      const updatedTemplate = tokenizer.getChatTemplate();
-      assert.strictEqual(updatedTemplate, customTemplate);
+    assert.strictEqual(decoded.length, 2);
+  });
 
-      // Restore original template
-      tokenizer.setChatTemplate(originalTemplate);
-    });
+  it("encode and decode round trip", () => {
+    const originalText = "Hello world";
+    const encoded = tokenizer.encode(originalText);
+    const decodedText = tokenizer.decode(encoded.input_ids);
 
-    // Fix getOriginalChatTemplate issue CVS-176638
-    it.skip("getOriginalChatTemplate returns the original string", () => {
-      const originalTemplate = tokenizer.getChatTemplate();
-      tokenizer.setChatTemplate("Custom template: {{ messages }}");
-
-      const template = tokenizer.getOriginalChatTemplate();
-      assert.strictEqual(template, originalTemplate);
-
-      // Restore original template
-      tokenizer.setChatTemplate(originalTemplate);
-    });
-
-    it("encode single string returns TokenizedInputs", () => {
-      const text = "Hello world";
-      const result = tokenizer.encode(text);
-
-      assert.ok(result.input_ids, "Should have input_ids");
-      assert.ok(result.attention_mask, "Should have attention_mask");
-      assert.strictEqual(typeof result.input_ids, "object");
-      assert.strictEqual(typeof result.attention_mask, "object");
-    });
-
-    it("encode with options", () => {
-      const text = "Hello world";
-      const result = tokenizer.encode(text, {
-        add_special_tokens: false,
-        pad_to_max_length: true,
-        max_length: 1000,
-        padding_side: "left",
-      });
-      // const padTokenId = tokenizer.getPadTokenId();
-
-      assert.ok(result.input_ids);
-      assert.strictEqual(
-        result.input_ids.getShape()[1],
-        1000,
-        "input_ids should be padded to maxLength",
-      );
-      // Uncomment after fixing padding issue CVS-176636
-      // assert.strictEqual(
-      //   result.input_ids.getData()[0],
-      //   padTokenId,
-      //   "input_ids should be left padded",
-      // );
-    });
-
-    it("encode array of strings", () => {
-      const texts = ["Hello", "World"];
-      const result = tokenizer.encode(texts);
-
-      assert.strictEqual(result.input_ids.getShape()[0], texts.length);
-      assert.strictEqual(result.attention_mask.getShape()[0], 2);
-    });
-
-    it("decode array of token IDs to string", () => {
-      const tokenIds = [1, 2, 3];
-      const decoded = tokenizer.decode(tokenIds);
-
-      assert.strictEqual(typeof decoded, "string");
-    });
-
-    // Fix skip_special_tokens functionality CVS-176639
-    it.skip("decode with skip_special_tokens option", () => {
-      const eos = tokenizer.getEosToken();
-      const eosId = tokenizer.getEosTokenId();
-      const tokenIds = [10n, 20n, 30n, eosId];
-      const decoded1 = tokenizer.decode(tokenIds, { skip_special_tokens: true });
-      const decoded2 = tokenizer.decode(tokenIds, { skip_special_tokens: false });
-
-      assert.strictEqual(typeof decoded1, "string");
-      assert.strictEqual(typeof decoded2, "string");
-      assert.strictEqual(decoded2, decoded1 + eos);
-    });
-
-    it("decode batch of token sequences", () => {
-      const batchTokens = [
-        [1, 2, 3],
-        [4, 5, 6],
-      ];
-      const decoded = tokenizer.decode(batchTokens);
-
-      assert.strictEqual(decoded.length, 2);
-    });
-
-    it("encode and decode round trip", () => {
-      const originalText = "Hello world";
-      const encoded = tokenizer.encode(originalText);
-      const decodedText = tokenizer.decode(encoded.input_ids);
-
-      assert.deepEqual(decodedText, [originalText]);
-    });
-  },
+    assert.deepEqual(decodedText, [originalText]);
+  });
+},
 );
 
 // Add model with paired input support CVS-176639
