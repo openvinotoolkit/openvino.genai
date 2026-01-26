@@ -71,6 +71,16 @@ def get_results_cpu_npu(model_path, audio_sample, **config_kwargs):
     return expected, actual_out
 
 
+def get_word_timestamps_results_cpu_npu(model_path, audio_sample, **config_kwargs):
+    cpu_pipe = ov_genai.WhisperPipeline(model_path, "CPU", word_timestamps=True)
+    expected = cpu_pipe.generate(audio_sample, **config_kwargs)
+
+    npu_pipe = ov_genai.WhisperPipeline(model_path, "NPU", word_timestamps=True, **config)
+    actual_out = npu_pipe.generate(audio_sample, **config_kwargs)
+
+    return expected, actual_out
+
+
 def get_results_npu_stateful_stateless(stateful_model_path, stateless_model_path, audio_sample, **config_kwargs):
     stateful_pipe = ov_genai.WhisperPipeline(stateful_model_path, "NPU", **config)
     stateful_out = stateful_pipe.generate(audio_sample, **config_kwargs)
@@ -89,6 +99,15 @@ def compare_results_with_assert(expected, actual_out):
             print(f'expected: {expected.texts[i]}\n')
             print(f'actual_out: {actual_out.texts[i]}')
         assert expected.texts[i] == actual_out.texts[i]
+
+
+def compare_word_timestamps_results_with_assert(expected, actual_out, ts_tolerance=0.07):
+    assert len(expected.words) == len(actual_out.words)
+
+    for exp_word, act_word in zip(expected.words, actual_out.words):
+        assert exp_word.word == act_word.word
+        assert exp_word.start_ts - act_word.start_ts == pytest.approx(0.0, abs=ts_tolerance)
+        assert exp_word.end_ts - act_word.end_ts == pytest.approx(0.0, abs=ts_tolerance)
 
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
@@ -231,3 +250,15 @@ def test_static_whisper_stateful_generation_long(model_descr, sample_from_datase
     expected, actual_out = get_results_cpu_npu(model_path, sample_from_dataset)
 
     compare_results_with_assert(expected, actual_out)
+
+
+@pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
+@pytest.mark.parametrize("sample_from_dataset", [{"language": "en", "sample_id": 0, "long_form": False}], indirect=True)
+def test_static_whisper_stateful_word_timestamps(model_descr, sample_from_dataset):
+    model_id, model_path = load_and_save_whisper_model(model_descr, stateful=True)
+    sample_from_dataset = sample_from_dataset[: 16000 * 30]
+
+    expected, actual_out = get_word_timestamps_results_cpu_npu(model_path, sample_from_dataset)
+
+    compare_results_with_assert(expected, actual_out)
+    compare_word_timestamps_results_with_assert(expected, actual_out)

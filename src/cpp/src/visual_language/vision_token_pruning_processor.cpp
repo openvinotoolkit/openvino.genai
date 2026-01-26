@@ -32,9 +32,9 @@ ov::Tensor VisionTokenPruningProcessor::process(const std::vector<ov::Tensor>& v
 }
 
 void VisionTokenPruningProcessor::set_config(const cdpruner::Config& config) {
-    std::string device = m_config.device;
+    std::string device = std::move(m_config.device);
     m_config = config;
-    m_config.device = device;
+    m_config.device = std::move(device);
 
     if (!m_pruner) {
         m_pruner = std::make_unique<cdpruner::CDPruner>(m_config);
@@ -438,7 +438,7 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_3d(
     }
 
     // Normalize kept indices: convert aggregated indices to per-region format if needed
-    auto normalize_kept_indices = [&]() {
+    auto normalize_kept_indices = [&]() -> std::vector<std::vector<size_t>> {
         if (kept_indices_per_image.empty())
             return std::vector<std::vector<size_t>>(region_count);
 
@@ -601,7 +601,7 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_1d(
     }
 
     // Normalize kept indices
-    auto normalize_kept_indices = [&]() {
+    auto normalize_kept_indices = [&]() -> std::vector<std::vector<size_t>> {
         if (kept_indices_per_image.empty())
             return std::vector<std::vector<size_t>>(region_count);
 
@@ -734,6 +734,7 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     result.pruned_embeddings = pruned_2d_tensor;
 
     if (result.original_visual_tokens == result.pruned_visual_tokens) {
+        GENAI_INFO("Original visual tokens and pruned visual tokens are the same!");
         return std::nullopt;
     }
 

@@ -28,10 +28,6 @@ bool GenerationHandleImpl::is_cancelled() {
     return get_status() == GenerationStatus::CANCEL;
 }
 
-void GenerationHandleImpl::drop() {
-    m_generation_stream->stop();
-}
-
 void GenerationHandleImpl::stop() {
     m_generation_stream->stop();
 }

@@ -10,6 +10,7 @@ from .im2im_evaluator import Image2ImageEvaluator
 from .inpaint_evaluator import InpaintingEvaluator
 from .embeddings_evaluator import EmbeddingsEvaluator
 from .reranking_evaluator import RerankingEvaluator
+from .text2video_evaluator import Text2VideoEvaluator
 
 
 __all__ = [
@@ -22,5 +23,6 @@ __all__ = [
     "InpaintingEvaluator",
     "EmbeddingsEvaluator",
     "RerankingEvaluator",
+    "Text2VideoEvaluator",
     "EVALUATOR_REGISTRY",
 ]
