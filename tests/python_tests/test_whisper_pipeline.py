@@ -3,10 +3,9 @@
 
 import sys
 
-# Workaround for Windows: Create a fake 'av' module to prevent PyAV DLL loading errors
-# transformers.pipelines.__init__ unconditionally imports VideoClassificationPipeline
-# which requires PyAV. By pre-populating sys.modules with a fake 'av' module,
-# we prevent the actual import that would fail on Windows due to missing DLLs.
+# win32 fails on ffmpeg DLLs load
+# import transformers.pipeline imports VideoClassificationPipeline which requires PyAV (ffmpeg bindings)
+# wa is to create mock 'av' module to prevent DLLs loading errors
 if sys.platform == "win32":
     from types import ModuleType
 
