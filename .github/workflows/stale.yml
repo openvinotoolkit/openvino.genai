@@ -1,4 +1,4 @@
-name: Close stale PRs
+name: Mark and close stale PRs
 on:
   schedule:
     - cron: "0 0 * * 1" # Weekly on Monday at midnight UTC
