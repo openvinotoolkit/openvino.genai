@@ -7,8 +7,8 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 
 int main(int argc, char* argv[]) try {
-    if (4 != argc) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <PROMPT>");
+    if (3 != argc) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES>");
     }
 
     ov::genai::GenerationConfig config;
@@ -20,8 +20,7 @@ int main(int argc, char* argv[]) try {
 
     std::string model_path = argv[1];
     std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
-    std::string prompt = argv[3];
-
+    std::string prompt;
     std::string device = "CPU";
 
     // Prompt lookup decoding in VLM pipeline enforces ContinuousBatching backend.
@@ -37,8 +36,19 @@ int main(int argc, char* argv[]) try {
 
     // Since the streamer is set, the results are
     // printed each time a new token is generated.
-    pipe.generate(prompt, ov::genai::images(rgbs), ov::genai::generation_config(config), ov::genai::streamer(streamer));
-    std::cout << std::endl;
+    ov::genai::ChatHistory chat_history;
+
+    std::cout << "\n----------\nquestion:\n";
+    while (std::getline(std::cin, prompt)) {
+        chat_history.push_back({{"role", "user"}, {"content", prompt}});
+        auto decoded_results = pipe.generate(chat_history,
+                                             ov::genai::images(rgbs),
+                                             ov::genai::generation_config(config),
+                                             ov::genai::streamer(streamer));
+        std::string output = decoded_results.texts[0];
+        chat_history.push_back({{"role", "assistant"}, {"content", output}});
+        std::cout << "\n----------\nquestion:\n";
+    }
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';

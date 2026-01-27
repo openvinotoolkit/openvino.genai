@@ -42,7 +42,6 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("model_dir")
     parser.add_argument("image_dir", help="Image file or dir with images")
-    parser.add_argument("prompt")
     parser.add_argument(
         "--disable_lookup",
         action="store_false",
@@ -68,9 +67,16 @@ def main():
 
     rgbs = read_images(args.image_dir)
 
-    # Since the streamer is set, the results are printed
-    # every time a new token is generated and put into the streamer queue.
-    pipe.generate(args.prompt, images=rgbs, generation_config=config, streamer=streamer)
+    chat_history = openvino_genai.ChatHistory()
+    while True:
+        try:
+            prompt = input("\n----------\nquestion:\n")
+        except EOFError:
+            break
+        # New images and videos can be passed at each turn
+        chat_history.append({"role": "user", "content": prompt})
+        decoded_results: openvino_genai.DecodedResults = pipe.generate(chat_history, images=rgbs, generation_config=config, streamer=streamer)
+        chat_history.append({"role": "assistant", "content": decoded_results.texts[0]})
     print()
 
 

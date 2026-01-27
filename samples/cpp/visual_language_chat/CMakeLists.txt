@@ -75,6 +75,19 @@ install(TARGETS prompt_lookup_decoding_vlm
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
 
+# create prompt_lookup_decoding_vlm_chat executable
+add_executable(prompt_lookup_decoding_vlm_chat prompt_lookup_decoding_vlm_chat.cpp load_image.cpp ../text_generation/read_prompt_from_file.cpp)
+target_include_directories(prompt_lookup_decoding_vlm_chat PRIVATE "${CMAKE_BINARY_DIR}")
+target_link_libraries(prompt_lookup_decoding_vlm_chat PRIVATE openvino::genai)
+set_target_properties(prompt_lookup_decoding_vlm_chat PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS prompt_lookup_decoding_vlm_chat
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
 add_executable(video_to_text_chat video_to_text_chat.cpp)
 target_include_directories(video_to_text_chat PRIVATE "${CMAKE_BINARY_DIR}")
 ov_genai_link_opencv(video_to_text_chat core imgproc videoio imgcodecs)
