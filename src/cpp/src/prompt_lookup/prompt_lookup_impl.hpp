@@ -39,6 +39,7 @@ public:
                      const ov::AnyMap& properties,
                      const ov::genai::GenerationConfig& generation_config) {
         m_tokenizer = tokenizer;
+        m_vision_registry = std::make_shared<VisionRegistry>();
         m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
         m_pipeline = std::make_shared<ContinuousBatchingForPromptLookupImpl>(model,
                                                                              embedder,

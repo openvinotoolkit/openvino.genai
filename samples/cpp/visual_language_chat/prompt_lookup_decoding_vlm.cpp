@@ -7,8 +7,13 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 
 int main(int argc, char* argv[]) try {
-    if (4 != argc) {
-        throw std::runtime_error(std::string{"Usage: "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <PROMPT>");
+    if (argc < 4 || argc > 5) {
+        throw std::runtime_error(std::string{"Usage: "} + argv[0] +
+                                 " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <PROMPT> <CHAT=YES or NO>");
+    }
+    std::string chat = (argc == 5) ? argv[4] : "NO";
+    if (chat != "YES" && chat != "NO") {
+        throw std::runtime_error(std::string{"Parameter is error: "} + "<CHAT> is not YES or NO, please reset.");
     }
 
     ov::genai::GenerationConfig config;
@@ -23,6 +28,7 @@ int main(int argc, char* argv[]) try {
     std::string prompt = argv[3];
 
     std::string device = "CPU";
+    bool enable_chat = chat == "YES";
 
     // Prompt lookup decoding in VLM pipeline enforses ContinuousBatching backend.
     ov::genai::VLMPipeline pipe(
@@ -37,7 +43,35 @@ int main(int argc, char* argv[]) try {
 
     // Since the streamer is set, the results are
     // printed each time a new token is generated.
-    pipe.generate(prompt, ov::genai::images(rgbs), ov::genai::generation_config(config), ov::genai::streamer(streamer));
+    if (enable_chat) {
+        ov::genai::ChatHistory chat_history;
+
+        std::cout << "question: " << prompt << "\n";
+        chat_history.push_back({{"role", "user"}, {"content", prompt}});
+        auto decoded_results = pipe.generate(chat_history,
+                                             ov::genai::images(rgbs),
+                                             ov::genai::generation_config(config),
+                                             ov::genai::streamer(streamer));
+        std::string output = decoded_results.texts[0];
+        chat_history.push_back({{"role", "assistant"}, {"content", output}});
+
+        std::cout << "\n----------\nquestion:\n";
+        while (std::getline(std::cin, prompt)) {
+            chat_history.push_back({{"role", "user"}, {"content", prompt}});
+            auto decoded_results = pipe.generate(chat_history,
+                                                 ov::genai::images(rgbs),
+                                                 ov::genai::generation_config(config),
+                                                 ov::genai::streamer(streamer));
+            std::string output = decoded_results.texts[0];
+            chat_history.push_back({{"role", "assistant"}, {"content", output}});
+            std::cout << "\n----------\nquestion:\n";
+        }
+    } else {
+        pipe.generate(prompt,
+                      ov::genai::images(rgbs),
+                      ov::genai::generation_config(config),
+                      ov::genai::streamer(streamer));
+    }
     std::cout << std::endl;
 } catch (const std::exception& error) {
     try {
