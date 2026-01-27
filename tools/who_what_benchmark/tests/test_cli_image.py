@@ -1,13 +1,12 @@
 import itertools
-import subprocess  # nosec B404
 import os
 import sys
-import shutil
 import pytest
 import logging
 import tempfile
 import re
 
+from conftest import convert_model, run_wwb
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,37 +18,6 @@ OV_IMAGE_MODELS = [
     "optimum-intel-internal-testing/tiny-random-flux",
     "optimum-intel-internal-testing/tiny-random-flux-fill",
 ]
-
-
-def run_wwb(args, env=None):
-    command = ["wwb"] + args
-    base_env = {"TRANSFORMERS_VERBOSITY": "debug", "PYTHONIOENCODING": "utf-8", **os.environ}
-    if env:
-        base_env.update(env)
-    try:
-        return subprocess.check_output(
-            command,
-            stderr=subprocess.STDOUT,
-            encoding="utf-8",
-            env=base_env,
-        )
-    except subprocess.CalledProcessError as error:
-        logger.error(
-            f"'{' '.join(map(str, command))}' returned {error.returncode}. Output:\n"
-            f"{error.output}"
-        )
-        raise
-
-
-def setup_module():
-    for model_id in OV_IMAGE_MODELS:
-        MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "_"))
-        subprocess.run(["optimum-cli", "export", "openvino", "--model", model_id, MODEL_PATH], capture_output=True, text=True)
-
-
-def teardown_module():
-    logger.info("Remove models")
-    shutil.rmtree(MODEL_CACHE)
 
 
 def get_similarity(output: str) -> float:
@@ -131,7 +99,7 @@ def test_image_model_genai(model_id, model_type, tmp_path):
         pytest.xfail("Ticket 173169")
 
     GT_FILE = tmp_path / "gt.csv"
-    MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "_"))
+    MODEL_PATH = convert_model(model_id)
 
     run_wwb([
         "--base-model",
