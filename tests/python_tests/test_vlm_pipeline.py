@@ -1867,6 +1867,10 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     # all text+image qwen2.5-vl graph pre-processing 'real' resize cases
     "*tiny-random-qwen2.5-vl/*/GRAPH/image*": "TODO_CVS",
 
+    # all  llava-next-video graph pre-processing 'real' resize cases that include video
+    "*tiny-random-llava-next-video/*/GRAPH/video*": "TODO_CVS",
+    "*tiny-random-llava-next-video/*/GRAPH/image*/video*": "TODO_CVS",
+
     # All llava-next text-only cases
     "*tiny-random-llava-next/*/CPP/text-only": "TODO_CVS",
 
@@ -1880,7 +1884,7 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-random-minicpmv-2_6/*": "TODO_CVS",
 
     # All internvl2 cases
-    "*tiny-random-internvl2/*": "TODO_CVS"
+    "*tiny-random-internvl2/*": "TODO_CVS",
 
     # Note: phi4-mm & nanoLLaVA are skipped in _get_ov_model,
     # phi3-vision is marked as xfail in _get_ov_model
@@ -1888,16 +1892,16 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
 
 # For these models, we will add both CPP and GRAPH pre-processing tests.
 MODELS_THAT_SUPPORT_GRAPH_PREPROCESSING = [
-    "optimum-intel-internal-testing/tiny-random-llava-next-video"
-    "optimum-intel-internal-testing/tiny-random-phi3-vision"
-    "optimum-intel-internal-testing/tiny-random-phi-4-multimodal"
+    "optimum-intel-internal-testing/tiny-random-llava-next-video",
+    "optimum-intel-internal-testing/tiny-random-phi3-vision",
+    "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
     "optimum-intel-internal-testing/tiny-random-qwen2vl",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
 ]
 
 # For these models, we will only add GRAPH pre-processing tests.
 MODELS_THAT_DO_NOT_SUPPORT_CPP_PREPROCESSING = [
-    "optimum-intel-internal-testing/tiny-random-phi-4-multimodal"
+    "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
 ]
 
 # Each test will have an id in one of the following formats:
