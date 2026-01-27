@@ -103,6 +103,29 @@ void transform_hidden_state(std::shared_ptr<ov::Model>& model, const std::vector
  */
 ov::Tensor slice_hidden_state_for_last_token(const ov::Tensor& hidden_features);
 
+/**
+ * @brief Adds eagle_tree_mask input to SDPA attention mask.
+ *
+ * This transform finds all ScaledDotProductAttention (SDPA) operations in the model,
+ * locates their attention_mask inputs, and inserts an Add operation that combines
+ * the original attention_mask with a new eagle_tree_mask parameter.
+ *
+ * The eagle_tree_mask parameter has the same shape and element type as the attention_mask
+ * being used by SDPA operations. This allows for dynamic masking in EAGLE3 decoding.
+ *
+ * All SDPA nodes share the same attention_mask input, so this transform creates:
+ * - One new parameter: eagle_tree_mask
+ * - One Add operation: attention_mask + eagle_tree_mask
+ * - Updates all SDPA nodes to use the result of the Add operation
+ *
+ * Usage pattern:
+ * - During prefill phase: attention_mask contains the causal mask, eagle_tree_mask is all zeros
+ * - During generate/verify phase: attention_mask is all zeros, eagle_tree_mask constructs the EAGLE tree attention mask
+ *
+ * @param model Model to transform.
+ */
+void apply_eagle3_attention_mask_transform(std::shared_ptr<ov::Model>& model);
+
 }  // namespace eagle3
 }  // namespace utils
 }  // namespace genai

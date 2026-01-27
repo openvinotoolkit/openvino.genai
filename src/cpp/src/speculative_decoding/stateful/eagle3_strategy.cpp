@@ -146,7 +146,9 @@ void Eagle3InferWrapperBase::release_memory() {
 void Eagle3InferWrapperBase::build_model_inputs(const size_t input_token_count,
                                                 ov::Tensor& input_ids,
                                                 ov::Tensor& attention_mask,
-                                                ov::Tensor& position_ids) {
+                                                ov::Tensor& position_ids,
+                                                ov::Tensor& eagle_tree_mask,
+                                                InferencePhase phase) {
     auto current_sequence = get_current_sequence();
     OPENVINO_ASSERT(current_sequence, "SequenceGroup not initialized");
 
@@ -195,10 +197,80 @@ void Eagle3InferWrapperBase::build_model_inputs(const size_t input_token_count,
                   static_cast<int64_t>(prompt_len + generated_start));
     }
 
-    // Build attention mask
+    // Build attention mask (always all 1s)
     const size_t attention_mask_len = static_cast<size_t>(position_ids_ptr[input_token_count - 1] + 1);
     attention_mask = ov::Tensor(ov::element::i64, {1, attention_mask_len});
     std::fill_n(attention_mask.data<int64_t>(), attention_mask_len, 1);
+
+    // Build eagle_tree_mask based on inference phase
+    switch (phase) {
+    case InferencePhase::TARGET_PREFILL:
+    case InferencePhase::DRAFT_INITIAL:
+        // During prefill/initial phase: eagle_tree_mask is all zeros
+        // Minimal shape: {1, 1, 1, 1}
+        eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, 1, 1});
+        std::fill_n(eagle_tree_mask.data<float>(), 1, 0.0f);
+        eagle3::log_debug(eagle3::PipelineStep::ITER,
+                          "Eagle tree mask (TARGET_PREFILL/DRAFT_INITIAL): {1, 1, 1, 1}, all zeros",
+                          m_verbose);
+        break;
+
+    case InferencePhase::DRAFT_ITERATION:
+    case InferencePhase::TARGET_VALIDATION: {
+        // During generation/verification phase: construct EAGLE tree attention mask
+        // Shape: {1, 1, input_token_count, attention_mask_len}
+        eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, input_token_count, attention_mask_len});
+        float* mask_data = eagle_tree_mask.data<float>();
+
+        // Step 1: Get proposed_token_numb from first position_id
+        const int64_t proposed_token_numb = position_ids_ptr[0];
+        const size_t proposed_token_numb_sz = static_cast<size_t>(proposed_token_numb);
+
+        // Step 2: First proposed_token_numb positions in each row: set first {1, 1, input_token_count,
+        // proposed_token_numb} to all zeros
+        for (size_t row = 0; row < input_token_count; ++row) {
+            const size_t row_offset = row * attention_mask_len;
+            std::fill_n(mask_data + row_offset, proposed_token_numb_sz, 0.0f);
+        }
+
+        // Step 3: Remaining region [input_token_count, attention_mask_len - proposed_token_numb]
+        // This should be a triangular matrix: lower triangle = 0, upper triangle = -INF
+        const size_t tree_width = attention_mask_len - proposed_token_numb_sz;
+
+        // Verify: tree_width should theoretically equal input_token_count
+        if (tree_width != input_token_count) {
+            eagle3::log_debug(eagle3::PipelineStep::ITER,
+                              "Warning: tree_width (" + std::to_string(tree_width) + ") != input_token_count (" +
+                                  std::to_string(input_token_count) + ")",
+                              m_verbose);
+        }
+
+        // Build triangular matrix in the remaining region
+        for (size_t row = 0; row < input_token_count; ++row) {
+            const size_t row_offset = row * attention_mask_len;
+            const size_t tree_start = row_offset + proposed_token_numb_sz;
+
+            // For each column in the tree region
+            for (size_t col = 0; col < tree_width; ++col) {
+                if (col <= row) {
+                    // Lower triangle (including diagonal): 0
+                    mask_data[tree_start + col] = 0.0f;
+                } else {
+                    // Upper triangle: -INF
+                    mask_data[tree_start + col] = -std::numeric_limits<float>::infinity();
+                }
+            }
+        }
+
+        eagle3::log_debug(eagle3::PipelineStep::ITER,
+                          "Eagle tree mask (DRAFT_ITERATION/TARGET_VALIDATION): {1, 1, " +
+                              std::to_string(input_token_count) + ", " + std::to_string(attention_mask_len) +
+                              "}, proposed_token_numb=" + std::to_string(proposed_token_numb) +
+                              ", tree_width=" + std::to_string(tree_width),
+                          m_verbose);
+        break;
+    }
+    }
 
     // Log input preparation details
     eagle3::log_debug(eagle3::PipelineStep::ITER,
@@ -375,13 +447,14 @@ void Eagle3TargetWrapper::initialize_sequence(const ov::Tensor& input_ids, const
 
 InferenceOutput Eagle3TargetWrapper::infer(const ov::Tensor& input_ids,
                                            const ov::Tensor& attention_mask,
-                                           const ov::Tensor& position_ids) {
+                                           const ov::Tensor& position_ids,
+                                           const ov::Tensor& eagle_tree_mask) {
     const size_t prompt_len = input_ids.get_shape()[1];
 
     eagle3::log_debug(eagle3::PipelineStep::ITER,
                       "Target inference: " + std::to_string(prompt_len) + " tokens",
                       m_verbose);
-    eagle3::log_model_inputs(input_ids, attention_mask, position_ids, m_verbose);
+    eagle3::log_model_inputs(input_ids, attention_mask, position_ids, eagle_tree_mask, m_verbose);
 
     if (m_device == "NPU") {
         OPENVINO_ASSERT(prompt_len <= m_max_prompt_len,
@@ -395,6 +468,7 @@ InferenceOutput Eagle3TargetWrapper::infer(const ov::Tensor& input_ids,
     m_request.set_tensor("input_ids", input_ids);
     m_request.set_tensor("attention_mask", attention_mask);
     m_request.set_tensor("position_ids", position_ids);
+    m_request.set_tensor("eagle_tree_mask", eagle_tree_mask);
 
     // Execute inference
     uint64_t time_us = execute_inference();
@@ -419,11 +493,14 @@ InferResult Eagle3TargetWrapper::forward(const InferContext& ctx) {
                           std::to_string(ctx.sample_count) + ", validate=" + std::to_string(ctx.num_tokens_to_validate),
                       m_verbose);
     // 1. Prepare inputs from sequence state
-    ov::Tensor input_ids, attention_mask, position_ids;
-    build_model_inputs(ctx.input_token_count, input_ids, attention_mask, position_ids);
+    ov::Tensor input_ids, attention_mask, position_ids, eagle_tree_mask;
+    // Determine phase based on context
+    InferencePhase phase =
+        (ctx.num_tokens_to_validate > 0) ? InferencePhase::TARGET_VALIDATION : InferencePhase::TARGET_PREFILL;
+    build_model_inputs(ctx.input_token_count, input_ids, attention_mask, position_ids, eagle_tree_mask, phase);
 
     // 2. Infer
-    auto output = infer(input_ids, attention_mask, position_ids);
+    auto output = infer(input_ids, attention_mask, position_ids, eagle_tree_mask);
 
     // 3. Sample (use sample_count for number of positions to sample from)
     auto sampled = sample_tokens(output.logits, ctx.input_token_count, ctx.sample_count, ctx.num_tokens_to_validate);
@@ -465,18 +542,20 @@ void Eagle3DraftWrapper::initialize_sequence(const ov::Tensor& input_ids, const 
 InferenceOutput Eagle3DraftWrapper::infer(const ov::Tensor& input_ids,
                                           const ov::Tensor& attention_mask,
                                           const ov::Tensor& position_ids,
+                                          const ov::Tensor& eagle_tree_mask,
                                           const ov::Tensor& hidden_states) {
     const size_t input_token_count = input_ids.get_shape()[1];
 
     eagle3::log_debug(eagle3::PipelineStep::ITER,
                       "Draft inference: " + std::to_string(input_token_count) + " tokens",
                       m_verbose);
-    eagle3::log_model_inputs(input_ids, attention_mask, position_ids, m_verbose);
+    eagle3::log_model_inputs(input_ids, attention_mask, position_ids, eagle_tree_mask, m_verbose);
 
     // Set standard inputs
     m_request.set_tensor("input_ids", input_ids);
     m_request.set_tensor("attention_mask", attention_mask);
     m_request.set_tensor("position_ids", position_ids);
+    m_request.set_tensor("eagle_tree_mask", eagle_tree_mask);
 
     // Set hidden states (either from target model or internal)
     OPENVINO_ASSERT(hidden_states && hidden_states.get_size() > 0, "hidden_states must be provided");
@@ -509,8 +588,9 @@ InferResult Eagle3DraftWrapper::forward(const InferContext& ctx) {
                           ", use_target_hidden=" + std::to_string(ctx.use_target_hidden),
                       m_verbose);
     // 1. Prepare inputs
-    ov::Tensor input_ids, attention_mask, position_ids;
-    build_model_inputs(ctx.input_token_count, input_ids, attention_mask, position_ids);
+    ov::Tensor input_ids, attention_mask, position_ids, eagle_tree_mask;
+    InferencePhase phase = ctx.use_target_hidden ? InferencePhase::DRAFT_INITIAL : InferencePhase::DRAFT_ITERATION;
+    build_model_inputs(ctx.input_token_count, input_ids, attention_mask, position_ids, eagle_tree_mask, phase);
 
     // 2. Get hidden states from appropriate source
     ov::Tensor hidden_states;
@@ -524,7 +604,7 @@ InferResult Eagle3DraftWrapper::forward(const InferContext& ctx) {
     }
 
     // 3. Infer
-    auto output = infer(input_ids, attention_mask, position_ids, hidden_states);
+    auto output = infer(input_ids, attention_mask, position_ids, eagle_tree_mask, hidden_states);
 
     // 4. Sample
     auto sampled = sample_tokens(output.logits, ctx.input_token_count, 1);
@@ -565,6 +645,9 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
     auto d2t_mapping = utils::eagle3::extract_d2t_mapping_table(draft_model);
     OPENVINO_ASSERT(d2t_mapping && d2t_mapping->get_element_type() == ov::element::i64, "Invalid d2t mapping tensor");
 
+    utils::eagle3::apply_eagle3_attention_mask_transform(draft_model);
+    utils::eagle3::apply_eagle3_attention_mask_transform(target_model);
+
     utils::eagle3::transform_hidden_state(target_model, m_hidden_layers_to_abstract);
     utils::eagle3::move_fc_from_draft_to_main(draft_model, target_model);
     utils::eagle3::transform_hidden_state(draft_model, {-1});
@@ -577,6 +660,7 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
         draft_desc.properties["NPUW_EAGLE"] = "TRUE";
         draft_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = validation_window;
         draft_desc.properties["NPUW_ONLINE_PIPELINE"] = "NONE";
+        draft_desc.properties["NPUW_DEVICES"] = "CPU";
     }
     m_draft = std::make_unique<Eagle3DraftWrapper>(draft_desc);
 
@@ -588,6 +672,7 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
         target_desc.properties["NPUW_EAGLE"] = "TRUE";
         target_desc.properties["NPUW_LLM_MAX_GENERATION_TOKEN_LEN"] = validation_window;
         target_desc.properties["NPUW_SLICE_OUT"] = "NO";
+        target_desc.properties["NPUW_DEVICES"] = "CPU";
     }
     m_target = std::make_unique<Eagle3TargetWrapper>(target_desc);
 

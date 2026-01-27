@@ -16,6 +16,13 @@
 namespace ov {
 namespace genai {
 
+enum class InferencePhase {
+    TARGET_PREFILL,     // Target model prefill phase
+    TARGET_VALIDATION,  // Target model validation phase
+    DRAFT_INITIAL,      // Draft model initial inference
+    DRAFT_ITERATION     // Draft model iteration loop
+};
+
 /// @brief Eagle3 model inference output
 struct InferenceOutput {
     ov::Tensor logits;           ///< Output logits [batch, seq_len, vocab_size]
@@ -130,7 +137,9 @@ public:
     void build_model_inputs(const size_t token_count,
                             ov::Tensor& input_ids,
                             ov::Tensor& attention_mask,
-                            ov::Tensor& position_ids);
+                            ov::Tensor& position_ids,
+                            ov::Tensor& eagle_tree_mask,
+                            InferencePhase phase);
 
     /// @brief Samples tokens from logits
     /// @param num_tokens_to_validate Draft tokens to validate (0 for standard sampling)
@@ -182,7 +191,8 @@ public:
 
     InferenceOutput infer(const ov::Tensor& input_ids,
                           const ov::Tensor& attention_mask,
-                          const ov::Tensor& position_ids);
+                          const ov::Tensor& position_ids,
+                          const ov::Tensor& eagle_tree_mask);
 
     InferResult forward(const InferContext& ctx) override;
 };
@@ -205,6 +215,7 @@ public:
     InferenceOutput infer(const ov::Tensor& input_ids,
                           const ov::Tensor& attention_mask,
                           const ov::Tensor& position_ids,
+                          const ov::Tensor& eagle_tree_mask,
                           const ov::Tensor& hidden_states);
 
     InferResult forward(const InferContext& ctx) override;

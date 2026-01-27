@@ -119,7 +119,8 @@ inline void log_tensor_content(const std::string& name,
 
     const size_t total_elements = tensor.get_size();
     // For key inputs, show all elements
-    const bool show_all = (name == "input_ids" || name == "position_ids" || name == "attention_mask");
+    const bool show_all =
+        (name == "input_ids" || name == "position_ids" || name == "attention_mask" || name == "eagle_tree_mask");
     const size_t elements_to_show = show_all ? total_elements : std::min(max_elements, total_elements);
 
     std::ostringstream ss;
@@ -152,10 +153,11 @@ inline void log_tensor_content(const std::string& name,
     std::cout << ss.str() << std::endl;
 }
 
-/// @brief Log model inputs (input_ids, attention_mask, position_ids)
+/// @brief Log model inputs (input_ids, attention_mask, position_ids, eagle_tree_mask)
 inline void log_model_inputs(const ov::Tensor& input_ids,
                              const ov::Tensor& attention_mask,
                              const ov::Tensor& position_ids,
+                             const ov::Tensor& eagle_tree_mask,
                              bool verbose) {
     if (!verbose)
         return;
@@ -167,6 +169,8 @@ inline void log_model_inputs(const ov::Tensor& input_ids,
     log_tensor_content("attention_mask", attention_mask, verbose, 0);
     log_tensor_info("position_ids", position_ids, verbose);
     log_tensor_content("position_ids", position_ids, verbose, 0);
+    log_tensor_info("eagle_tree_mask", eagle_tree_mask, verbose);
+    log_tensor_content("eagle_tree_mask", eagle_tree_mask, verbose, 0);
     std::cout << "[EAGLE3-INPUT] =================================" << std::endl;
 }
 
