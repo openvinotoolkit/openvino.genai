@@ -1869,18 +1869,18 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     # all gemma3 PA cases
     "*tiny-random-gemma3/PA/*": "CVS-167316",
     # all text+image qwen2.5-vl graph pre-processing 'real' resize cases
-    "*tiny-random-qwen2.5-vl/*/GRAPH/image*": "TODO_CVS",
+    "*tiny-random-qwen2.5-vl/*/GRAPH/image*": "CVS-180070",
     # all  llava-next-video graph pre-processing 'real' resize cases that include video
-    "*tiny-random-llava-next-video/*/GRAPH/video*": "TODO_CVS",
-    "*tiny-random-llava-next-video/*/GRAPH/image*/video*": "TODO_CVS",
+    "*tiny-random-llava-next-video/*/GRAPH/video*": "CVS-180070",
+    "*tiny-random-llava-next-video/*/GRAPH/image*/video*": "CVS-180070",
     # All llava-next text-only cases
-    "*tiny-random-llava-next/*/CPP/text-only": "TODO_CVS",
+    "*tiny-random-llava-next/*/CPP/text-only": "CVS-180070",
     # All llava cases
-    "*tiny-random-llava/*": "TODO_CVS",
+    "*tiny-random-llava/*": "CVS-180070",
     # MiniCPM-o-2_6 text-only cases
-    "*tiny-random-MiniCPM-o-2_6/*/text-only": "TODO_CVS",
+    "*tiny-random-MiniCPM-o-2_6/*/text-only": "CVS-180070",
     # All minicpmv-2_6 cases with images
-    "*tiny-random-minicpmv-2_6/*/image*": "TODO_CVS",
+    "*tiny-random-minicpmv-2_6/*/image*": "CVS-180070",
 }
 
 # For these models, we will add both CPP and GRAPH pre-processing tests.
