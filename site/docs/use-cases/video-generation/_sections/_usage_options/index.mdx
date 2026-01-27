@@ -1,0 +1,81 @@
+import GenerationConfigurationWorkflow from '@site/docs/use-cases/_shared/_generation_configuration_workflow.mdx';
+
+## Additional Usage Options
+
+:::tip
+Check out [Python](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/video_generation) and [C++](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/cpp/video_generation) video generation samples.
+:::
+
+### Use Different Generation Parameters
+
+<GenerationConfigurationWorkflow />
+
+#### Video Generation Configuration
+
+You can adjust several parameters to control the video generation process, including dimensions and the number of inference steps:
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        import openvino_genai as ov_genai
+
+        pipe = ov_genai.Text2VideoPipeline(model_path, "CPU")
+        fps = 25
+        video_tensor = pipe.generate(
+          prompt,
+          # highlight-start
+          width=512,
+          height=512,
+          num_videos_per_prompt=1,
+          num_inference_steps=30,
+          num_frames=161,
+          guidance_scale=7.5,
+          frame_rate=fps
+          # highlight-end
+        ).video
+
+        save_video("genai_video.avi", video, fps)
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        #include "openvino/genai/video_generation/text2video_pipeline.hpp"
+        #include "imwrite_video.hpp"
+
+        int main(int argc, char* argv[]) {
+            const std::string models_path = argv[1], prompt = argv[2];
+
+            ov::genai::Text2VideoPipeline pipe(models_path, "CPU");
+            ov::Tensor video = pipe.generate(
+                prompt,
+                // highlight-start
+                ov::genai::width(512),
+                ov::genai::height(512),
+                ov::genai::num_videos_per_prompt(1),
+                ov::genai::num_inference_steps(30),
+                ov::genai::num_frames(161),
+                ov::genai::guidance_scale(7.5f)
+                // highlight-end
+            ).video;
+
+            imwrite_video("genai_video.avi", video);
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+:::info Understanding Video Generation Parameters
+
+- `negative_prompt`: Negative prompt for video(s) generation.
+- `width`: The width of resulting video(s).
+- `height`: The height of resulting video(s).
+- `num_frames`: Number of frames to generate for each video. Higher values produce longer videos but increase compute and memory.
+- `num_videos_per_prompt`: Specifies how many video variations to generate in a single request for the same prompt.
+- `num_inference_steps`: Defines denoising iteration count. Higher values increase quality and generation time, lower values generate faster with less detail.
+- `guidance_scale`: Balances prompt adherence vs. creativity. Higher values follow prompt more strictly, lower values allow more creative freedom.
+- `generator`: Controls randomness for reproducible results. Same generator seed produces identical videos across runs.
+- `frame_rate`: Target video FPS used by the pipeline.
+
+For the full list of generation parameters, refer to the [Video Generation Config API](https://docs.openvino.ai/2026/api/genai_api/_autosummary/openvino_genai.VideoGenerationConfig.html).
+
+:::

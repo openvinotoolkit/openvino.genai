@@ -1,0 +1,31 @@
+---
+sidebar_position: 3
+---
+import OptimumCLI from '@site/src/components/OptimumCLI';
+import ConvertModelSection from '../_shared/_convert_model.mdx';
+import RunModelSection from './_sections/_run_model/index.mdx';
+import UsageOptionsSection from './_sections/_usage_options/index.mdx';
+
+# Video Generation Using Diffusers
+
+## LTX-Video Pipeline for Video Generation
+
+LTX-Video is the DiT-based video generation model capable of generating high-quality videos.
+This video generation pipeline turns a text prompt into a sequence of video frames:
+1. **Prompt → tokens**: the prompt is tokenized (and padded to the model’s max length).
+2. **Tokens → text embeddings**: a text encoder produces embeddings used to condition generation.
+3. **Denoising loop**: a Transformer predicts and refines video latents over multiple steps, while the scheduler controls the noise level at each step.
+4. **Latents → frames**: the final latents are decoded into RGB video frames.
+
+![LTX Pipeline Workflow](/img/ltx-pipeline.png)
+*Source: [arXiv:2501.00103](https://arxiv.org/abs/2501.00103)*
+
+<ConvertModelSection>
+    Download and convert LTX model [Lightricks/LTX-Video](https://huggingface.co/Lightricks/LTX-Video) to OpenVINO format from Hugging Face:
+
+    <OptimumCLI model='Lightricks/LTX-Video' outputDir='LTX_Video_ov' weightFormat='fp16' trustRemoteCode />
+</ConvertModelSection>
+
+<RunModelSection />
+
+<UsageOptionsSection />
