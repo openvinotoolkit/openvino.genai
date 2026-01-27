@@ -9,6 +9,7 @@
 
 #include "continuous_batching/timer.hpp"
 #include "openvino/genai/text_streamer.hpp"
+#include "speculative_decoding/eagle3_debug_utils.hpp"
 #include "speculative_decoding/eagle3_model_transforms.hpp"
 #include "utils.hpp"
 
@@ -46,9 +47,14 @@ Eagle3InferWrapperBase::Eagle3InferWrapperBase(const ModelDesc& model_desc)
         auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model_desc.model, m_properties, m_kv_axes_pos);
         m_max_prompt_len = kv_desc.max_prompt_len;
         m_request = compiled.create_infer_request();
+
+        eagle3::log_debug(eagle3::PipelineStep::INIT,
+                          "NPU compiled: max_prompt=" + std::to_string(m_max_prompt_len),
+                          m_verbose);
     } else {
         m_request =
             utils::singleton_core().compile_model(model_desc.model, m_device, m_properties).create_infer_request();
+        eagle3::log_debug(eagle3::PipelineStep::INIT, m_device + " model compiled successfully", m_verbose);
     }
 
     // Initialize performance metrics
@@ -69,6 +75,11 @@ void Eagle3InferWrapperBase::append_tokens(const std::vector<int64_t>& tokens) {
     for (auto token : tokens) {
         current_sequence->append_token(token, 0.0f);
     }
+
+    eagle3::log_debug(eagle3::PipelineStep::ITER,
+                      "Appended " + std::to_string(tokens.size()) + " tokens: " + eagle3::format_tokens(tokens) +
+                          ", new seq_len=" + std::to_string(get_sequence_length()),
+                      m_verbose);
 }
 
 void Eagle3InferWrapperBase::truncate_sequence(size_t size) {
@@ -82,6 +93,11 @@ void Eagle3InferWrapperBase::truncate_sequence(size_t size) {
         OPENVINO_ASSERT(size >= prompt_len, "Cannot truncate prompt tokens");
         const size_t tokens_to_remove = current_len - size;
         current_sequence->remove_last_tokens(tokens_to_remove);
+
+        eagle3::log_debug(eagle3::PipelineStep::ITER,
+                          "Truncated sequence: " + std::to_string(current_len) + " -> " + std::to_string(size) +
+                              " (removed " + std::to_string(tokens_to_remove) + " tokens)",
+                          m_verbose);
     }
 }
 
@@ -105,6 +121,12 @@ void Eagle3InferWrapperBase::trim_kv_cache(size_t tokens_to_remove) {
         state.reset_mem_state = false;
         utils::trim_kv_cache(m_request, state, {});
     }
+
+    eagle3::log_debug(eagle3::PipelineStep::KV_CACHE,
+                      "KV cache trimmed: " + std::to_string(current_len) + " -> " +
+                          std::to_string(current_len - tokens_to_remove) + " (removed " +
+                          std::to_string(tokens_to_remove) + ")",
+                      m_verbose);
 }
 
 void Eagle3InferWrapperBase::reset_state() {
@@ -113,6 +135,8 @@ void Eagle3InferWrapperBase::reset_state() {
     m_raw_perf_metrics.m_inference_durations = {MicroSeconds(0.0f)};
     m_raw_perf_metrics.m_durations.clear();
     m_raw_perf_metrics.m_batch_sizes.clear();
+
+    eagle3::log_debug(eagle3::PipelineStep::INIT, "State reset", m_verbose);
 }
 
 void Eagle3InferWrapperBase::release_memory() {
@@ -175,6 +199,12 @@ void Eagle3InferWrapperBase::build_model_inputs(const size_t input_token_count,
     const size_t attention_mask_len = static_cast<size_t>(position_ids_ptr[input_token_count - 1] + 1);
     attention_mask = ov::Tensor(ov::element::i64, {1, attention_mask_len});
     std::fill_n(attention_mask.data<int64_t>(), attention_mask_len, 1);
+
+    // Log input preparation details
+    eagle3::log_debug(eagle3::PipelineStep::ITER,
+                      "Built model inputs: input_token_count=" + std::to_string(input_token_count) + ", start_pos=" +
+                          std::to_string(start_pos) + ", attn_mask_len=" + std::to_string(attention_mask_len),
+                      m_verbose);
 }
 
 std::vector<int64_t> Eagle3InferWrapperBase::sample_tokens(const ov::Tensor& logits,
@@ -182,7 +212,7 @@ std::vector<int64_t> Eagle3InferWrapperBase::sample_tokens(const ov::Tensor& log
                                                            size_t sample_count,
                                                            size_t num_tokens_to_validate) {
     const ov::Shape shape = logits.get_shape();
-    OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1, "Invalid logits shape");
+    OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1, "Invalid logits shape: ", eagle3::format_shape(shape));
     OPENVINO_ASSERT(sample_count > 0 && sample_count <= shape[1],
                     "Invalid sample_count: ",
                     sample_count,
@@ -191,6 +221,12 @@ std::vector<int64_t> Eagle3InferWrapperBase::sample_tokens(const ov::Tensor& log
     OPENVINO_ASSERT(input_token_count > 0, "Invalid input_token_count");
 
     const bool is_validation_mode = num_tokens_to_validate > 0;
+
+    eagle3::log_debug(eagle3::PipelineStep::SAMPLE,
+                      "sample_tokens: input_tokens=" + std::to_string(input_token_count) + ", sample_count=" +
+                          std::to_string(sample_count) + ", validate=" + std::to_string(num_tokens_to_validate) +
+                          ", logits_shape=" + eagle3::format_shape(shape),
+                      m_verbose);
 
     auto sequence_group = get_sequence_group();
     OPENVINO_ASSERT(sequence_group, "SequenceGroup not initialized");
@@ -239,6 +275,11 @@ std::vector<int64_t> Eagle3InferWrapperBase::sample_tokens(const ov::Tensor& log
 
         record_generated_tokens(sample_count);
 
+        eagle3::log_debug(
+            eagle3::PipelineStep::SAMPLE,
+            "Sampled " + std::to_string(sample_count) + " token(s): " + eagle3::format_tokens(result_tokens),
+            m_verbose);
+
         return result_tokens;
     } else {
         // Validation mode: Sampler validates draft tokens and removes rejected ones
@@ -252,6 +293,13 @@ std::vector<int64_t> Eagle3InferWrapperBase::sample_tokens(const ov::Tensor& log
 
         record_generated_tokens(result_tokens.size());
 
+        const size_t accepted_drafts = result_tokens.size() - 1;
+        eagle3::log_debug(eagle3::PipelineStep::VALID,
+                          "Validation result: accepted " + std::to_string(accepted_drafts) + "/" +
+                              std::to_string(num_tokens_to_validate) +
+                              " drafts, tokens=" + eagle3::format_tokens(result_tokens),
+                          m_verbose);
+
         return result_tokens;
     }
 }
@@ -263,7 +311,7 @@ ov::Tensor Eagle3InferWrapperBase::get_logits() const {
 ov::Tensor Eagle3InferWrapperBase::get_hidden_features() const {
     auto hidden_state = m_request.get_tensor("last_hidden_state");
     const auto shape = hidden_state.get_shape();
-    OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1, "Invalid hidden state shape");
+    OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1, "Invalid hidden state shape: ", eagle3::format_shape(shape));
 
     const size_t output_seq_len = shape[1];
     const size_t hidden_size = shape[2];
@@ -299,11 +347,15 @@ void Eagle3InferWrapperBase::record_generated_tokens(size_t actual_generated_cou
     m_raw_perf_metrics.m_batch_sizes.emplace_back(actual_generated_count);
 }
 
-Eagle3TargetWrapper::Eagle3TargetWrapper(const ov::genai::ModelDesc& model_desc) : Eagle3InferWrapperBase(model_desc) {}
+Eagle3TargetWrapper::Eagle3TargetWrapper(const ov::genai::ModelDesc& model_desc) : Eagle3InferWrapperBase(model_desc) {
+    eagle3::log_debug(eagle3::PipelineStep::INIT, "Target model wrapper initialized", m_verbose);
+}
 
 void Eagle3TargetWrapper::initialize_sequence(const ov::Tensor& input_ids, const ov::genai::GenerationConfig& config) {
     const auto shape = input_ids.get_shape();
-    OPENVINO_ASSERT(shape.size() == 2 && shape[0] == 1, "Expected input_ids shape [1, seq_len]");
+    OPENVINO_ASSERT(shape.size() == 2 && shape[0] == 1,
+                    "Expected input_ids shape [1, seq_len], got ",
+                    eagle3::format_shape(shape));
 
     const int64_t* ids_data = input_ids.data<const int64_t>();
     const size_t seq_len = shape[1];
@@ -315,12 +367,21 @@ void Eagle3TargetWrapper::initialize_sequence(const ov::Tensor& input_ids, const
     OPENVINO_ASSERT(get_running_sequence_count() == 1,
                     "Expected single sequence after initialization, got ",
                     get_running_sequence_count());
+
+    eagle3::log_debug(eagle3::PipelineStep::INIT,
+                      "Target sequence initialized: prompt_len=" + std::to_string(seq_len),
+                      m_verbose);
 }
 
 InferenceOutput Eagle3TargetWrapper::infer(const ov::Tensor& input_ids,
                                            const ov::Tensor& attention_mask,
                                            const ov::Tensor& position_ids) {
     const size_t prompt_len = input_ids.get_shape()[1];
+
+    eagle3::log_debug(eagle3::PipelineStep::ITER,
+                      "Target inference: " + std::to_string(prompt_len) + " tokens",
+                      m_verbose);
+    eagle3::log_model_inputs(input_ids, attention_mask, position_ids, m_verbose);
 
     if (m_device == "NPU") {
         OPENVINO_ASSERT(prompt_len <= m_max_prompt_len,
@@ -344,10 +405,19 @@ InferenceOutput Eagle3TargetWrapper::infer(const ov::Tensor& input_ids,
     output.logits = get_logits();
     output.hidden_features = get_hidden_features();
 
+    eagle3::log_model_outputs(output.logits, output.hidden_features, m_verbose);
+    eagle3::log_debug(eagle3::PipelineStep::ITER,
+                      "Target inference done: " + std::to_string(time_us / 1000.0) + "ms",
+                      m_verbose);
+
     return output;
 }
 
 InferResult Eagle3TargetWrapper::forward(const InferContext& ctx) {
+    eagle3::log_debug(eagle3::PipelineStep::ITER,
+                      "Target forward: input_token_count=" + std::to_string(ctx.input_token_count) + ", sample_count=" +
+                          std::to_string(ctx.sample_count) + ", validate=" + std::to_string(ctx.num_tokens_to_validate),
+                      m_verbose);
     // 1. Prepare inputs from sequence state
     ov::Tensor input_ids, attention_mask, position_ids;
     build_model_inputs(ctx.input_token_count, input_ids, attention_mask, position_ids);
@@ -364,11 +434,15 @@ InferResult Eagle3TargetWrapper::forward(const InferContext& ctx) {
     return InferResult{std::move(output), std::move(sampled)};
 }
 
-Eagle3DraftWrapper::Eagle3DraftWrapper(const ov::genai::ModelDesc& model_desc) : Eagle3InferWrapperBase(model_desc) {}
+Eagle3DraftWrapper::Eagle3DraftWrapper(const ov::genai::ModelDesc& model_desc) : Eagle3InferWrapperBase(model_desc) {
+    eagle3::log_debug(eagle3::PipelineStep::INIT, "Draft model wrapper initialized", m_verbose);
+}
 
 void Eagle3DraftWrapper::initialize_sequence(const ov::Tensor& input_ids, const ov::genai::GenerationConfig& config) {
     const auto shape = input_ids.get_shape();
-    OPENVINO_ASSERT(shape.size() == 2 && shape[0] == 1, "Expected input_ids shape [1, seq_len]");
+    OPENVINO_ASSERT(shape.size() == 2 && shape[0] == 1,
+                    "Expected input_ids shape [1, seq_len], got ",
+                    eagle3::format_shape(shape));
 
     const int64_t* ids_data = input_ids.data<const int64_t>();
     const size_t total_len = shape[1];
@@ -381,6 +455,11 @@ void Eagle3DraftWrapper::initialize_sequence(const ov::Tensor& input_ids, const 
     OPENVINO_ASSERT(get_running_sequence_count() == 1,
                     "Expected single sequence after initialization, got ",
                     get_running_sequence_count());
+
+    eagle3::log_debug(eagle3::PipelineStep::INIT,
+                      "Draft sequence initialized: prompt_len=" + std::to_string(draft_prompt_ids.size()) +
+                          " (from original " + std::to_string(total_len) + ")",
+                      m_verbose);
 }
 
 InferenceOutput Eagle3DraftWrapper::infer(const ov::Tensor& input_ids,
@@ -388,6 +467,11 @@ InferenceOutput Eagle3DraftWrapper::infer(const ov::Tensor& input_ids,
                                           const ov::Tensor& position_ids,
                                           const ov::Tensor& hidden_states) {
     const size_t input_token_count = input_ids.get_shape()[1];
+
+    eagle3::log_debug(eagle3::PipelineStep::ITER,
+                      "Draft inference: " + std::to_string(input_token_count) + " tokens",
+                      m_verbose);
+    eagle3::log_model_inputs(input_ids, attention_mask, position_ids, m_verbose);
 
     // Set standard inputs
     m_request.set_tensor("input_ids", input_ids);
@@ -397,8 +481,9 @@ InferenceOutput Eagle3DraftWrapper::infer(const ov::Tensor& input_ids,
     // Set hidden states (either from target model or internal)
     OPENVINO_ASSERT(hidden_states && hidden_states.get_size() > 0, "hidden_states must be provided");
     auto shape = hidden_states.get_shape();
-    OPENVINO_ASSERT(shape.size() == 3, "Invalid hidden states shape");
+    OPENVINO_ASSERT(shape.size() == 3, "Invalid hidden states shape: ", eagle3::format_shape(shape));
 
+    eagle3::log_debug(eagle3::PipelineStep::ITER, "Using hidden states: " + eagle3::format_shape(shape), m_verbose);
     m_request.set_tensor("hidden_states", hidden_states);
 
     // Execute inference
@@ -410,10 +495,19 @@ InferenceOutput Eagle3DraftWrapper::infer(const ov::Tensor& input_ids,
     output.logits = get_logits();
     output.hidden_features = get_hidden_features();
 
+    eagle3::log_model_outputs(output.logits, output.hidden_features, m_verbose);
+    eagle3::log_debug(eagle3::PipelineStep::ITER,
+                      "Draft inference done: " + std::to_string(time_us / 1000.0) + "ms",
+                      m_verbose);
+
     return output;
 }
 
 InferResult Eagle3DraftWrapper::forward(const InferContext& ctx) {
+    eagle3::log_debug(eagle3::PipelineStep::ITER,
+                      "Draft forward: input_token_count=" + std::to_string(ctx.input_token_count) +
+                          ", use_target_hidden=" + std::to_string(ctx.use_target_hidden),
+                      m_verbose);
     // 1. Prepare inputs
     ov::Tensor input_ids, attention_mask, position_ids;
     build_model_inputs(ctx.input_token_count, input_ids, attention_mask, position_ids);
@@ -496,6 +590,9 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
         target_desc.properties["NPUW_SLICE_OUT"] = "NO";
     }
     m_target = std::make_unique<Eagle3TargetWrapper>(target_desc);
+
+    eagle3::log_info("Pipeline initialized: draft_iterations=" + std::to_string(m_draft_iterations) +
+                     ", validation_window=" + std::to_string(validation_window));
 }
 
 StatefulEagle3LLMPipeline::~StatefulEagle3LLMPipeline() {
@@ -511,6 +608,17 @@ GenerationConfig StatefulEagle3LLMPipeline::resolve_generation_config(OptionalGe
     const size_t prev_draft_iterations = m_draft_iterations;
     ensure_num_assistant_tokens_is_set(config);
     m_draft_iterations = config.num_assistant_tokens;
+
+    // Log configuration changes
+    if (m_draft_iterations != prev_draft_iterations) {
+        if (m_draft_iterations == 0) {
+            eagle3::log_info("Speculative decoding DISABLED (num_assistant_tokens=0)");
+        } else {
+            eagle3::log_debug("Draft iterations: " + std::to_string(prev_draft_iterations) + " -> " +
+                                  std::to_string(m_draft_iterations),
+                              is_verbose());
+        }
+    }
 
     return config;
 }
@@ -540,6 +648,12 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
     ov::Tensor position_ids{ov::element::i64, input_ids.get_shape()};
     utils::initialize_position_ids(position_ids, attention_mask);
 
+    eagle3::log_debug("=== GENERATION START ===", is_verbose());
+    eagle3::log_debug("Prompt length: " + std::to_string(m_prompt_length) +
+                          ", max_new_tokens: " + std::to_string(config.max_new_tokens) +
+                          ", draft_iterations: " + std::to_string(m_draft_iterations),
+                      is_verbose());
+
     // Reset model states
     m_target->reset_state();
     m_draft->reset_state();
@@ -554,6 +668,7 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
     m_draft->initialize_sequence(input_ids, sampling_config);
 
     // Phase 1: Initial Prompt Processing (Prefill)
+    eagle3::log_generation_step("PREFILL", 0, is_verbose());
 
     // Prefill: process all prompt tokens from sequence
     InferContext prefill_ctx;
@@ -564,6 +679,15 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
 
     // Append initial token to draft model
     m_draft->append_tokens({initial_token});
+
+    eagle3::log_debug("Initial token: " + std::to_string(initial_token), is_verbose());
+    eagle3::log_sequence_state("after prefill",
+                               m_prompt_length,
+                               m_target->get_sequence_length(),
+                               m_draft->get_sequence_length(),
+                               m_target->get_generated_tokens(),
+                               m_draft->get_generated_tokens(),
+                               is_verbose());
 
     auto streaming_status = stream_generated_tokens(streamer_ptr, {initial_token});
 
@@ -578,6 +702,8 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
     while (!eos_reached && generated_tokens < config.max_new_tokens &&
            m_target->get_sequence_length() < m_prompt_length + config.max_new_tokens &&
            streaming_status == ov::genai::StreamingStatus::RUNNING) {
+        eagle3::log_generation_step("SPECULATIVE ITERATION", generated_tokens, is_verbose());
+
         auto result = run_speculative_iteration(input_token_count, static_cast<int64_t>(config.eos_token_id));
 
         streaming_status = stream_generated_tokens(streamer_ptr, result.validated_tokens);
@@ -590,6 +716,17 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
 
         // Prepare for next iteration (hidden states are stored in sequence)
         input_token_count = result.next_window_size;
+
+        eagle3::log_debug("Iteration complete: accepted=" + std::to_string(result.accepted_tokens_count) + "/" +
+                              std::to_string(m_draft_iterations) + ", eos=" + std::to_string(result.eos_reached),
+                          is_verbose());
+        eagle3::log_sequence_state("after iteration " + std::to_string(generated_tokens),
+                                   m_prompt_length,
+                                   m_target->get_sequence_length(),
+                                   m_draft->get_sequence_length(),
+                                   m_target->get_generated_tokens(),
+                                   m_draft->get_generated_tokens(),
+                                   is_verbose());
     }
 
     // Phase 3: Finalization
@@ -634,6 +771,7 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
     // Reset timer
     generate_timer.clear();
 
+    eagle3::log_debug("=== GENERATION END ===", is_verbose());
     return results;
 }
 
@@ -649,6 +787,11 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     OPENVINO_ASSERT(target_hidden_states && target_hidden_states.get_size() > 0,
                     "Target model contains invalid hidden state for speculation");
 
+    eagle3::log_debug("--- Draft Phase Start ---", is_verbose());
+    eagle3::log_debug("Input: input_token_count=" + std::to_string(input_token_count) +
+                          ", hidden_shape=" + eagle3::format_shape(target_hidden_states.get_shape()),
+                      is_verbose());
+
     // Record pre-draft sequence lengths for potential rollback
     const size_t pre_draft_token_len = m_draft->get_sequence_length();
 
@@ -661,6 +804,7 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
 
     OPENVINO_ASSERT(first_result.sampled_tokens.size() == 1, "Expected single token from first draft");
     int64_t first_draft_token = first_result.sampled_tokens[0];
+    eagle3::log_debug("First draft token: " + std::to_string(first_draft_token), is_verbose());
 
     // Collect draft candidates
     std::vector<int64_t> draft_candidates;
@@ -687,7 +831,11 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
         m_target->append_tokens({draft_token});
     }
 
+    eagle3::log_debug("Draft candidates: " + eagle3::format_tokens(draft_candidates), is_verbose());
+    eagle3::log_debug("--- Draft Phase End ---", is_verbose());
+
     // Step 3: Validate draft tokens with target model
+    eagle3::log_debug("--- Validation Phase Start ---", is_verbose());
 
     const size_t validation_window_size = m_draft_iterations + 1;
 
@@ -706,6 +854,11 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     const size_t tokens_to_remove = m_draft_iterations - accepted_count;
     const size_t total_accepted_tokens = validated_tokens.size();
 
+    eagle3::log_debug("Validation result: accepted=" + std::to_string(accepted_count) + "/" +
+                          std::to_string(m_draft_iterations) + ", new_token=" + std::to_string(target_predicted_token),
+                      is_verbose());
+    eagle3::log_debug("Validated tokens: " + eagle3::format_tokens(validated_tokens), is_verbose());
+
     // Step 4: Synchronize sequences and KV cache
     // Target model's sequence is already updated by Sampler
     // Sync draft model's sequence
@@ -716,6 +869,8 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     if (tokens_to_remove > 0) {
         m_target->trim_kv_cache(tokens_to_remove);
         m_draft->trim_kv_cache(tokens_to_remove);
+        eagle3::log_debug("KV cache trimmed: removed " + std::to_string(tokens_to_remove) + " rejected tokens",
+                          is_verbose());
     }
 
     // Step 5: Update hidden states for next iteration
@@ -725,7 +880,10 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
 
     const auto h_shape = current_hidden.get_shape();
     OPENVINO_ASSERT(h_shape.size() == 3 && h_shape[0] == 1 && h_shape[1] >= total_accepted_tokens,
-                    "Invalid hidden state shape");
+                    "Invalid hidden state shape: ",
+                    eagle3::format_shape(h_shape),
+                    ", expected seq_len >= ",
+                    total_accepted_tokens);
 
     // Store sliced hidden states (only accepted tokens) for next iteration
     auto [start_coord, end_coord] = ov::genai::utils::make_roi(h_shape, 1, 0, total_accepted_tokens);
@@ -737,6 +895,7 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     result.validated_tokens = std::move(validated_tokens);
     result.eos_reached = (target_predicted_token == eos_token_id);
 
+    eagle3::log_debug("--- Validation Phase End ---", is_verbose());
     return result;
 }
 
