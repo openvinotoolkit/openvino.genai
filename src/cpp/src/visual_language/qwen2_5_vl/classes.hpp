@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -35,9 +35,11 @@ public:
         const ov::AnyMap device_config);
 
 protected:
-    ov::Tensor run_image_embeddings_merger(
+    std::pair<ov::Tensor, ov::Tensor> run_video_image_embeddings_merger(
         const std::vector<EncodedImage>& images, 
-        const std::vector<size_t>& images_sequence) override;
+        const std::vector<size_t>& images_sequence,
+        const std::vector<EncodedVideo>& videos,
+        const std::vector<size_t>& videos_sequence) override;
 };
 
 } // namespace ov::genai

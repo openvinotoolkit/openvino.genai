@@ -13,7 +13,7 @@ import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print
 from llm_bench_utils.prompt_utils import get_text_prompt
 import llm_bench_utils.gen_output_data as gen_output_data
-from task.pipeline_utils import CommonPipeline, execution_time_in_sec
+from task.pipeline_utils import CommonPipeline, execution_time_in_sec, collect_prompts_step
 from llm_bench_utils.memory_monitor import MemMonitorWrapper
 from pathlib import Path
 from typing import Any
@@ -43,23 +43,9 @@ class TextRerankerOptimum(CommonPipeline):
         task = "Given a web search query, retrieve relevant passages that answer the query"
         max_length = self.max_length or 8192
         pairs = []
-        if self.use_case.is_qwen_causallm_arch(self.model.config):
-            for doc in self.texts:
-                pairs.append(f"<Instruct>: {task}\n<Query>: {input_text}\n<Document>: {doc}")
-
-            prefix_tokens = self.tokenizer.encode(prefix, add_special_tokens=False)
-            suffix_tokens = self.tokenizer.encode(suffix, add_special_tokens=False)
-            inputs = self.tokenizer(
-                pairs, padding=False, truncation="longest_first", return_attention_mask=False,
-                max_length=max_length - len(prefix_tokens) - len(suffix_tokens)
-            )
-            for i, ele in enumerate(inputs["input_ids"]):
-                inputs["input_ids"][i] = prefix_tokens + ele + suffix_tokens
-            inputs = self.tokenizer.pad(inputs, padding=True, return_tensors="pt", max_length=max_length, padding_side='left').to(self.model.device)
-        else:
-            for doc in self.texts:
-                pairs.append(f"{prefix}<Instruct>: {task}\n<Query>: {input_text}\n<Document>: {doc}{suffix}")
-            inputs = self.tokenizer(pairs, padding=True, truncation=True, max_length=max_length, return_tensors="pt", padding_side='left')
+        for doc in self.texts:
+            pairs.append(f"{prefix}<Instruct>: {task}\n<Query>: {input_text}\n<Document>: {doc}{suffix}")
+        inputs = self.tokenizer(pairs, padding=True, truncation=True, max_length=max_length, return_tensors="pt", padding_side='left')
         return inputs
 
     @execution_time_in_sec
@@ -384,19 +370,7 @@ def run_text_reranker_benchmark(
 ) -> tuple[list, float, dict]:
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_reranker_model(model_path, device, mem_consumption, **args)
     iter_data_list = []
-    input_text_list = get_text_prompt(args)
-    if args["prompt_index"] is None:
-        prompt_idx_list = [prompt_idx for prompt_idx, _ in enumerate(input_text_list)]
-        text_list = input_text_list
-    else:
-        prompt_idx_list = []
-        text_list = []
-        for i in args["prompt_index"]:
-            if 0 <= i < len(input_text_list):
-                text_list.append(input_text_list[i])
-                prompt_idx_list.append(i)
-    if len(input_text_list) == 0:
-        raise RuntimeError("==Failure prompts is empty ==")
+    text_list, prompt_idx_list = collect_prompts_step(args, get_text_prompt)
 
     if not use_genai:
         text_reranker_pipeline = TextRerankerOptimum(model, tokenizer, args, model_path, mem_consumption)

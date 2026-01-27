@@ -1,50 +1,23 @@
 import itertools
-import subprocess  # nosec B404
 import os
 import sys
-import shutil
 import pytest
 import logging
 import tempfile
 import re
 
+from conftest import convert_model, run_wwb
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 MODEL_CACHE = tempfile.mkdtemp()
-OV_IMAGE_MODELS = ["echarlaix/tiny-random-stable-diffusion-xl",
-                   "yujiepan/stable-diffusion-3-tiny-random",
-                   "katuni4ka/tiny-random-flux",
-                   "katuni4ka/tiny-random-flux-fill"]
-
-
-def run_wwb(args):
-    command = ["wwb"] + args
-    try:
-        return subprocess.check_output(
-            command,
-            stderr=subprocess.STDOUT,
-            encoding="utf-8",
-            env={"TRANSFORMERS_VERBOSITY": "debug", "PYTHONIOENCODING": "utf-8", **os.environ},
-        )
-    except subprocess.CalledProcessError as error:
-        logger.error(
-            f"'{' '.join(map(str, command))}' returned {error.returncode}. Output:\n"
-            f"{error.output}"
-        )
-        raise
-
-
-def setup_module():
-    for model_id in OV_IMAGE_MODELS:
-        MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "_"))
-        subprocess.run(["optimum-cli", "export", "openvino", "--model", model_id, MODEL_PATH], capture_output=True, text=True)
-
-
-def teardown_module():
-    logger.info("Remove models")
-    shutil.rmtree(MODEL_CACHE)
+OV_IMAGE_MODELS = [
+    "optimum-intel-internal-testing/tiny-random-stable-diffusion-xl",
+    "optimum-intel-internal-testing/stable-diffusion-3-tiny-random",
+    "optimum-intel-internal-testing/tiny-random-flux",
+    "optimum-intel-internal-testing/tiny-random-flux-fill",
+]
 
 
 def get_similarity(output: str) -> float:
@@ -70,6 +43,9 @@ def get_similarity(output: str) -> float:
 def test_image_model_types(model_id, model_type, backend, tmp_path):
     if 'tiny-stable-diffusion-torch' in model_id and sys.platform == 'darwin':
         pytest.xfail("Ticket 173169")
+    if (model_type == "image-to-image" or model_type == "image-inpainting") and sys.platform == "win32":
+        pytest.xfail("Ticket 178790")
+
     wwb_args = [
         "--base-model",
         model_id,
@@ -109,10 +85,10 @@ def test_image_model_types(model_id, model_type, backend, tmp_path):
 def test_image_model_genai(model_id, model_type, tmp_path):
     if ("flux-fill" in model_id) and (model_type != "image-inpainting"):
         pytest.skip(reason="FLUX-Fill is supported as inpainting only")
-    if model_type == "image-inpainting":
-        pytest.xfail("Segfault. Ticket 170877")
-    if model_id == "katuni4ka/tiny-random-flux" and model_type == "image-to-image":
+    if model_id == "optimum-intel-internal-testing/tiny-random-flux" and model_type == "image-to-image":
         pytest.xfail("Randomly wwb died with <Signals.SIGABRT: 6>. Ticket 170878")
+    if (model_type == "image-to-image" or model_type == "image-inpainting") and sys.platform == "win32":
+        pytest.xfail("Ticket 178790")
 
     mac_arm64_skip = any(substring in model_id for substring in ('stable-diffusion-xl',
                                                                  'tiny-random-stable-diffusion',
@@ -123,7 +99,7 @@ def test_image_model_genai(model_id, model_type, tmp_path):
         pytest.xfail("Ticket 173169")
 
     GT_FILE = tmp_path / "gt.csv"
-    MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "_"))
+    MODEL_PATH = convert_model(model_id)
 
     run_wwb([
         "--base-model",
@@ -207,6 +183,9 @@ def test_image_model_genai(model_id, model_type, tmp_path):
     ],
 )
 def test_image_custom_dataset(model_id, model_type, backend, tmp_path):
+    if sys.platform == "win32":
+        pytest.xfail("Ticket 178790")
+
     GT_FILE = tmp_path / "test_sd.csv"
     wwb_args = [
         "--base-model",

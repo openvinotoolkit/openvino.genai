@@ -1,13 +1,36 @@
 ---
-sidebar_position: 3
+sidebar_position: 2
 sidebar_label: Installation
 ---
 
 # Install OpenVINO GenAI
 
-OpenVINO GenAI is available for installation via [Archive](https://storage.openvinotoolkit.org/repositories/openvino_genai/packages/) and [PyPI](https://pypi.org/project/openvino-genai/) distributions and supports Linux, Windows and macOS platforms.
+OpenVINO GenAI is available for installation via [PyPI](https://pypi.org/project/openvino-genai/), [Archive](https://storage.openvinotoolkit.org/repositories/openvino_genai/packages/)
+and [npm](https://www.npmjs.com/package/openvino-genai-node) distributions and supports Linux, Windows and macOS platforms.
 
-To install OpenVINO GenAI, refer to the [Install Guide](https://docs.openvino.ai/2025/get-started/install-openvino.html).
+<Tabs>
+    <TabItem value="pypi" label="PyPI" default>
+        ```bash
+        pip install openvino-genai
+        ```
+        :::info Note
+        Some models may require additional dependencies.
+        See the [Model Preparation Guide](/docs/guides/model-preparation/convert-to-openvino) for details.
+        :::
+    </TabItem>
+    <TabItem value="archive" label="Archive">
+        1. Download [OpenVINO GenAI archive](https://storage.openvinotoolkit.org/repositories/openvino_genai/packages/).
+        2. Follow the [Archive Installation instructions](https://docs.openvino.ai/2025/get-started/install-openvino/install-openvino-genai.html#archive-installation).
+    </TabItem>
+    <TabItem value="npm" label="npm">
+        ```bash
+        npm install openvino-genai-node
+        ```
+        See the [Node.js Bindings](/docs/bindings/node-js) for more information.
+    </TabItem>
+</Tabs>
+
+Refer to the [Install Guide](https://docs.openvino.ai/2025/get-started/install-openvino.html) for detailed instructions.
 
 To build OpenVINO GenAI library from source, refer to the [Build Instructions](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/docs/BUILD.md).
 

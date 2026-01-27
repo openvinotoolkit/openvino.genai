@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -17,12 +17,15 @@
 #include "visual_language/vlm_config.hpp"
 #include "visual_language/embedding_model.hpp"
 #include "visual_language/vision_encoder.hpp"
+#include "visual_language/vision_token_pruning_processor.hpp"
 
 namespace ov::genai {
 struct VLMPerfMetrics;
-const static std::regex UNIVERSAL_PATTERN{R"(<ov_genai_image_(\d+)>)"};
 
-struct NormlizedPrompt {
+const static std::regex UNIVERSAL_IMAGE_PATTERN{R"(<ov_genai_image_(\d+)>)"};
+const static std::regex UNIVERSAL_VIDEO_PATTERN{R"(<ov_genai_video_(\d+)>)"};
+
+struct NormalizedPrompt {
     std::string unified_prompt;
     std::vector<size_t> images_sequence;
     std::vector<size_t> videos_sequence;
@@ -44,15 +47,26 @@ public:
     ov::Tensor get_inputs_embeds(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
 
     ov::Tensor get_inputs_embeds(const std::string& prompt,
-                            const std::vector<ov::genai::EncodedImage>& images,
-                            const std::vector<ov::genai::EncodedVideo>& videos,
-                            ov::genai::VLMPerfMetrics& metrics,
-                            bool recalculate_merged_embeddings = true,
-                            const std::vector<size_t>& image_sequence = {},
-                            const std::vector<size_t>& videos_sequence = {});
+                                 const std::vector<ov::genai::EncodedImage>& images,
+                                 const std::vector<ov::genai::EncodedVideo>& videos,
+                                 ov::genai::VLMPerfMetrics& metrics,
+                                 bool recalculate_merged_embeddings = true,
+                                 const std::vector<size_t>& image_sequence = {},
+                                 const std::vector<size_t>& videos_sequence = {},
+                                 const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
     // compute input embedding and token_type_ids
     std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<EncodedImage>& images, VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
+
+    std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(
+        const std::string& prompt,
+        const std::vector<ov::genai::EncodedImage>& images,
+        const std::vector<ov::genai::EncodedVideo>& videos,
+        ov::genai::VLMPerfMetrics& metrics,
+        bool recalculate_merged_embeddings = true,
+        const std::vector<size_t>& image_sequence = {},
+        const std::vector<size_t>& videos_sequence = {},
+        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
     bool has_token_type_ids() const;
 
@@ -90,19 +104,20 @@ public:
     // finishes chat and clears a chat history
     void finish_chat();
 
-    virtual NormlizedPrompt normalize_prompt(
+    // set CDPruner setting
+    virtual void set_vision_token_pruning_config(size_t pruning_ratio, float relevance_weight);
+    virtual NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_id,
         const std::vector<EncodedImage>& images
     ) const;
 
-    virtual NormlizedPrompt normalize_prompt(
+    virtual NormalizedPrompt normalize_prompt(
         const std::string& prompt,
         size_t base_image_id,
         size_t base_video_id,
         const std::vector<EncodedImage>& images,
         const std::vector<EncodedVideo>& videos) const;
-
 
 private:
     class IInputsEmbedder {
@@ -117,6 +132,8 @@ private:
         EmbeddingsModel::Ptr m_embedding;
         // A tokenizer encoding a prompt.
         Tokenizer m_tokenizer;
+        // Vision token processor for post-processing visual features (pruning, etc.)
+        std::shared_ptr<VisionTokenPruningProcessor> m_pruning_processor;
         // True if chat mode is activated to save conversation
         // history between generate() calls.
         bool m_is_chat_conversation = false;
@@ -147,9 +164,19 @@ private:
                                              ov::genai::VLMPerfMetrics& metrics,
                                              bool recalculate_merged_embeddings = true,
                                              const std::vector<size_t>& image_sequence = {},
-                                             const std::vector<size_t>& videos_sequence = {});
+                                             const std::vector<size_t>& videos_sequence = {},
+                                             const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
         virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(const std::string& prompt, const std::vector<ov::genai::EncodedImage>& images, ov::genai::VLMPerfMetrics& metrics, bool recalculate_merged_embeddings = true, const std::vector<size_t>& image_sequence = {});
+        virtual std::pair<ov::Tensor, ov::Tensor> get_inputs_embeds_with_token_type_ids(
+            const std::string& prompt,
+            const std::vector<ov::genai::EncodedImage>& images,
+            const std::vector<ov::genai::EncodedVideo>& videos,
+            ov::genai::VLMPerfMetrics& metrics,
+            bool recalculate_merged_embeddings = true,
+            const std::vector<size_t>& image_sequence = {},
+            const std::vector<size_t>& videos_sequence = {},
+            const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
         virtual bool has_token_type_ids() const;
 
@@ -177,6 +204,15 @@ private:
             return m_tokenizer;
         }
 
+        virtual void set_vision_token_pruning_config(size_t pruning_ratio, float relevance_weight) {
+            if (!m_pruning_processor)
+                return;
+            auto config = m_pruning_processor->get_config();
+            config.pruning_ratio = pruning_ratio;
+            config.relevance_weight = relevance_weight;
+            m_pruning_processor->set_config(config);
+        }
+
         utils::KVCacheState& get_kv_cache_state() {
             return m_kv_cache_state;
         }
@@ -196,13 +232,12 @@ private:
 
         virtual void finish_chat();
 
-        virtual NormlizedPrompt normalize_prompt(
+        virtual NormalizedPrompt normalize_prompt(
             const std::string& prompt,
             size_t base_id,
             const std::vector<EncodedImage>& images
         ) const = 0;
-
-        virtual NormlizedPrompt normalize_prompt(
+        virtual NormalizedPrompt normalize_prompt(
             const std::string& prompt,
             size_t base_image_id,
             size_t base_video_id,
@@ -230,12 +265,24 @@ private:
 
         ov::Tensor get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics);
 
+        /**
+         * @brief 1. Verify native and universal tags aren't mixed.
+         * 2. Replace universal tags with native and save image order.
+         * 3. If there were no universal tags, restore image order from native.
+         * 4. If no tags were found, prepend native tags and assume incremental ordering.
+         * 
+         * @param automatic_tag MiniCPM-V-2_6 inserts
+         * <image>./</image>\n per image but it only replaces
+         * <image>./</image> leaving \n untouched.
+         * automatic_tag allows to handle this by being separated from native_tag param.
+         */
         std::pair<std::string, std::vector<size_t>> normalize(
             const std::string& prompt,
             const std::string& native_tag,
             const std::string& automatic_tag,
-            size_t base_id,
-            size_t n_images
+            size_t base_idx,
+            size_t n_visions,
+            VisionType vision_type = VisionType::IMAGE
         ) const;
 
         /**
@@ -245,6 +292,30 @@ private:
         * @return A vector of tensors where each tensor represents a single image with a shape of [1, H, W, C].
         */
         std::vector<ov::Tensor> to_single_image_tensors(const std::vector<ov::Tensor>& images);
+
+        /**
+         * @brief Check if CDPruner is available and enabled.
+         * @return true if CDPruner processor exists, is available, and enabled (pruning_ratio > 0)
+         */
+        bool is_cdpruner_active() const {
+            if (!m_pruning_processor) {
+                return false;
+            }
+            auto current_pruning_config = m_pruning_processor->get_config();
+            bool pruner_enabled = current_pruning_config.pruning_ratio > 0;
+            return m_pruning_processor->is_available() && pruner_enabled;
+        }
+
+        /**
+         * @brief Execute the full CDPruner pipeline.
+         * This method orchestrates the entire pruning workflow by calling VisionTokenPruningProcessor functions.
+         * @param context PruningContext containing all necessary parameters and state
+         * @return std::optional<PruningResult> with pruned data if pruning occurred, std::nullopt otherwise
+         */
+        std::optional<VisionTokenPruningProcessor::PruningResult> execute_pruning_pipeline(
+            const PruningContext& context) {
+            return m_pruning_processor->execute(context, m_position_ids, m_kv_cache_state, m_prev_hist_length);
+        }
     };
 
     std::shared_ptr<IInputsEmbedder> m_impl;
@@ -264,42 +335,28 @@ private:
 template <typename Func>
 std::pair<std::string, std::vector<size_t>> universal_to_native(
     const std::string& prompt,
-    const Func& write_native
+    const Func& write_native,
+    VisionType vision_type = VisionType::IMAGE
 ) {
     std::stringstream stream;
-    std::vector<size_t> image_sequence;
+    std::vector<size_t> vision_sequence;
     std::smatch match;
-    std::regex_search(prompt, match, UNIVERSAL_PATTERN);
+    auto universal_pattern = vision_type == VisionType::IMAGE ?
+        UNIVERSAL_IMAGE_PATTERN :
+        UNIVERSAL_VIDEO_PATTERN;
+    std::regex_search(prompt, match, universal_pattern);
     auto search_begin = prompt.begin();
     while (!match.empty()) {
         stream.write(&*search_begin, match.position());
-        image_sequence.push_back(std::stoul(match.str(1)));
-        write_native(stream, image_sequence.back());
+        vision_sequence.push_back(std::stoul(match.str(1)));
+        write_native(stream, vision_sequence.back());
         search_begin = match.suffix().first;
-        std::regex_search(search_begin, prompt.end(), match, UNIVERSAL_PATTERN);
+        std::regex_search(search_begin, prompt.end(), match, universal_pattern);
     }
     stream.write(&*search_begin, prompt.end() - search_begin);
-    return {stream.str(), std::move(image_sequence)};
+    return {stream.str(), std::move(vision_sequence)};
 }
 
-void verify_ids(const std::vector<size_t>& image_ids, size_t base_id, size_t n_images);
-
-/// @brief 1. Verify native and universal tags aren't mixed.
-/// 2. Replace universal tags with native and save image order.
-/// 3. If there were no universal tags, restore image order from native.
-/// 4. If no tags were found, prepend native tags and assume incremental
-/// ordering.
-/// @param automatic_tag MiniCPM-V-2_6 inserts
-/// <image>./</image>\n per image but it only replaces
-/// <image>./</image> leaving \n untouched.
-/// automatic_tag allows to handle this by being separated
-/// from native_tag param.
-std::pair<std::string, std::vector<size_t>> normalize_prompt(
-    const std::string& prompt,
-    const std::string& native_tag,
-    const std::string& automatic_tag,
-    size_t base_id,
-    size_t n_images
-);
+void verify_ids(const std::vector<size_t>& vision_indices, size_t base_idx, size_t n_visions);
 
 } // namespace ov::genai

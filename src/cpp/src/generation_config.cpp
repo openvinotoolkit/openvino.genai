@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <fstream>
@@ -154,6 +154,10 @@ void GenerationConfig::update_generation_config(const ov::AnyMap& properties) {
     // Structured output
     read_anymap_param(properties, "structured_output_config", structured_output_config);
     read_anymap_param(properties, "parsers", parsers);
+
+    // CDPruner
+    read_anymap_param(properties, "pruning_ratio", pruning_ratio);
+    read_anymap_param(properties, "relevance_weight", relevance_weight);
 }
 
 
@@ -258,9 +262,6 @@ bool GenerationConfig::is_multinomial() const {
     return do_sample;
 }
 
-bool GenerationConfig::is_speculative_decoding() const {
-    return is_assisting_generation();
-}
 
 bool GenerationConfig::is_assisting_generation() const {
     return assistant_confidence_threshold > 0 || num_assistant_tokens > 0;
@@ -458,36 +459,6 @@ operator|(const ov::genai::StructuredOutputConfig::StructuralTag& lhs,
         // neither is Union: create binary Union
         return std::make_shared<SOC::Union>(lhs, rhs);
     }
-}
-
-GenerationConfig beam_search() {
-    GenerationConfig beam_search_config;
-    beam_search_config.num_beams = 4;
-    beam_search_config.num_return_sequences = 3;
-    beam_search_config.num_beam_groups = 2;
-    beam_search_config.max_new_tokens = 100;
-    beam_search_config.diversity_penalty = 2.0f;
-    return beam_search_config;
-}
-
-GenerationConfig greedy() {
-    GenerationConfig greedy_config;
-    greedy_config.max_new_tokens = 30;
-    return greedy_config;
-}
-
-GenerationConfig multinomial() {
-    GenerationConfig multinomial_config;
-    multinomial_config.do_sample = true;
-    multinomial_config.temperature = 0.9f;
-    multinomial_config.top_p = 0.9f;
-    multinomial_config.top_k = 20;
-    multinomial_config.num_return_sequences = 3;
-    multinomial_config.presence_penalty = 0.01f;
-    multinomial_config.frequency_penalty = 0.1f;
-    multinomial_config.min_new_tokens = 15;
-    multinomial_config.max_new_tokens = 30;
-    return multinomial_config;
 }
 
 }  // namespace genai

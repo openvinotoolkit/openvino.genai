@@ -1,5 +1,5 @@
 
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "visual_language/llava_next/classes.hpp"
@@ -340,7 +340,7 @@ std::vector<ov::genai::EncodedImage> InputsEmbedderLLaVANext::encode_images(cons
     return embeds;
 }
 
-NormlizedPrompt InputsEmbedderLLaVANext::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormalizedPrompt InputsEmbedderLLaVANext::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     std::string image_token = m_vlm_config.im_start;
     auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size());
     std::vector<ov::Tensor> image_embeds;

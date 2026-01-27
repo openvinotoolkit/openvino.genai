@@ -1,4 +1,4 @@
-# Copyright (C) 2023-2025 Intel Corporation
+# Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 from openvino_genai import GenerationConfig
@@ -61,7 +61,6 @@ configs = [
     dict(max_new_tokens=1, apply_chat_template=False),
 ]
 @pytest.mark.parametrize("generation_config_kwargs", configs)
-@pytest.mark.precommit
 def test_valid_configs(generation_config_kwargs):
     config = GenerationConfig(**generation_config_kwargs)
     verify_set_values(config, generation_config_kwargs)
@@ -107,7 +106,6 @@ invalid_configs = [
     # TODO: add tests for invalid properties
 ]
 @pytest.mark.parametrize("generation_config_kwargs", invalid_configs)
-@pytest.mark.precommit
 def test_invalid_generation_configs_throws(generation_config_kwargs):
     config = GenerationConfig(**generation_config_kwargs)
     with pytest.raises(RuntimeError):
@@ -123,7 +121,6 @@ def test_invalid_generation_configs_throws(generation_config_kwargs):
     dict(eos_token_id=1), # 'stop_token_ids' does not contain 'eos_token_id'
     dict(eos_token_id=1, stop_token_ids={2}), # 'stop_token_ids' is not empty, but does not contain 'eos_token_id'
 ])
-@pytest.mark.precommit
 def test_invalid_fields_assinment_rises(fields):
     config = GenerationConfig()
     for key, val in fields.items():
@@ -147,7 +144,6 @@ def load_genai_generation_config_from_file(configs: list[tuple], temp_path):
 
     return ov_generation_config
 
-@pytest.mark.precommit
 def test_multiple_eos_are_read_as_stop_token_ids(tmp_path):
     generation_config_json = {
         "eos_token_id": [

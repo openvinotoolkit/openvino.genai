@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -10,7 +10,14 @@
 #include "visual_language/processor_config.hpp"
 #include "circular_buffer_queue.hpp"
 
+
 namespace ov::genai {
+
+enum class VisionType {
+    IMAGE,
+    VIDEO
+};
+
 /// @brief A pair describing image size.
 struct ImageSize {
     /// @brief Height of a corresponding image.
@@ -63,10 +70,17 @@ struct EncodedImage {
 /// @brief Embeddings of a given video. 
 struct EncodedVideo {
     /// @brief Embeddings of a given video obtained by applying preprocessing to frames and feature extracting models (resampler, mm_projector, etc.)
-    ov::Tensor video_feautures;
+    ov::Tensor video_features;
 
     /// @brief Number of video tokens required to append to a normalized prompt
     size_t num_video_tokens;
+
+    /// @brief A size of an image used to compute embeddings for
+    /// divided by ProcessorConfig's patch_size.
+    ImageSize resized_source_size;
+
+    /// @brief A number of encoded frames.
+    size_t frame_num;
 };
 
 /// @brief A class used to infer embeddings of an image using
@@ -111,6 +125,11 @@ public:
     /// @return Resulting embeddings for the resized source image and
     /// its slices.
     virtual EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map = {}) = 0;
+
+    /// @brief Compute embeddings of a or multiple video given
+    virtual EncodedVideo encode_frames(const std::vector<ov::Tensor>& frames, const ov::AnyMap& config_map = {}) {
+        OPENVINO_THROW("The current model does not support 'video' input, please use 'images' instead.");
+    }
 
     /// @brief Gets processor config
     /// @return Processor config

@@ -1,14 +1,20 @@
+// Copyright (C) 2023-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include "include/helper.hpp"
 
 #include "include/addon.hpp"
 #include "include/chat_history.hpp"
+#include "include/parser.hpp"
 #include "include/perf_metrics.hpp"
+#include "include/vlm_pipeline/perf_metrics.hpp"
 
 namespace {
 constexpr const char* JS_SCHEDULER_CONFIG_KEY = "schedulerConfig";
 constexpr const char* CPP_SCHEDULER_CONFIG_KEY = "scheduler_config";
 constexpr const char* POOLING_TYPE_KEY = "pooling_type";
 constexpr const char* STRUCTURED_OUTPUT_CONFIG_KEY = "structured_output_config";
+constexpr const char* PARSERS_KEY = "parsers";
 
 }  // namespace
 
@@ -88,6 +94,8 @@ ov::AnyMap js_to_cpp<ov::AnyMap>(const Napi::Env& env, const Napi::Value& value)
                 ov::genai::TextEmbeddingPipeline::PoolingType(value_by_key.ToNumber().Int32Value());
         } else if (key_name == STRUCTURED_OUTPUT_CONFIG_KEY) {
             result_map[key_name] = js_to_cpp<ov::genai::StructuredOutputConfig>(env, value_by_key);
+        } else if (key_name == PARSERS_KEY) {
+            result_map[key_name] = js_to_cpp<std::vector<std::shared_ptr<ov::genai::Parser>>>(env, value_by_key);
         } else {
             result_map[key_name] = js_to_cpp<ov::Any>(env, value_by_key);
         }
@@ -100,6 +108,18 @@ template <>
 std::string js_to_cpp<std::string>(const Napi::Env& env, const Napi::Value& value) {
     OPENVINO_ASSERT(value.IsString(), "Passed argument must be of type String.");
     return value.As<Napi::String>().Utf8Value();
+}
+
+template <>
+int64_t js_to_cpp<int64_t>(const Napi::Env& env, const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsNumber() || value.IsBigInt(), "Passed argument must be of type Number or BigInt.");
+    if (value.IsNumber()) {
+        return value.As<Napi::Number>().Int64Value();
+    } 
+    bool lossless;
+    auto result = value.As<Napi::BigInt>().Int64Value(&lossless);
+    OPENVINO_ASSERT(lossless, "BigInt value is too large to fit in int64_t without precision loss.");
+    return result;
 }
 
 template <>
@@ -121,6 +141,20 @@ std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& en
     } else {
         OPENVINO_THROW("Passed argument must be of type Array or TypedArray.");
     }
+}
+
+template <>
+std::vector<int64_t> js_to_cpp<std::vector<int64_t>>(const Napi::Env& env, const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsArray(), "Passed argument must be of type Array.");
+    auto array = value.As<Napi::Array>();
+    size_t arrayLength = array.Length();
+
+    std::vector<int64_t> vector;
+    vector.reserve(arrayLength);
+    for (uint32_t i = 0; i < arrayLength; ++i) {
+        vector.push_back(js_to_cpp<int64_t>(env, array[i]));
+    }
+    return vector;
 }
 
 template <>
@@ -293,6 +327,77 @@ ov::genai::StructuredOutputConfig js_to_cpp<ov::genai::StructuredOutputConfig>(c
 }
 
 template <>
+ov::Tensor js_to_cpp<ov::Tensor>(const Napi::Env& env, const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsObject(), "Passed argument must be an object.");
+
+    auto tensor_wrap = value.As<Napi::Object>();
+    auto tensor_prototype = get_prototype_from_ov_addon(env, "Tensor");
+    OPENVINO_ASSERT(tensor_wrap.InstanceOf(tensor_prototype), "Passed argument is not of type Tensor");
+
+    Napi::Value get_external_tensor_val = tensor_wrap.Get("__getExternalTensor");
+    OPENVINO_ASSERT(get_external_tensor_val.IsFunction(), "Tensor object does not have a '__getExternalTensor' function. This may indicate an incompatible or outdated openvino-node version.");
+    auto native_tensor_func = get_external_tensor_val.As<Napi::Function>();
+    Napi::Value native_tensor_value = native_tensor_func.Call(tensor_wrap, {});
+    OPENVINO_ASSERT(native_tensor_value.IsExternal(), "__getExternalTensor() did not return an External object.");
+
+    auto external = native_tensor_value.As<Napi::External<ov::Tensor>>();
+    auto tensor_ptr = external.Data();
+    return *tensor_ptr;
+}
+
+template <>
+std::shared_ptr<ov::genai::Parser> js_to_cpp<std::shared_ptr<ov::genai::Parser>>(const Napi::Env& env,
+                                                                                 const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsObject(), "Parser must be a JS object with a 'parse' method");
+    Napi::Object obj = value.As<Napi::Object>();
+    
+    // Check if it's a native parser instance
+    auto native_parser = get_native_parser(env, obj);
+    if (native_parser) {
+        return native_parser;
+    }
+
+    // Treat as custom JS parser (including JS subclasses)
+    OPENVINO_ASSERT(obj.Has("parse"), "Parser object must have a 'parse' method");
+    Napi::Value parse_method = obj.Get("parse");
+    OPENVINO_ASSERT(parse_method.IsFunction(), "'parse' property of Parser object must be a function");
+    return std::make_shared<JSParser>(env, obj);
+}
+
+template <>
+std::vector<std::shared_ptr<ov::genai::Parser>> js_to_cpp<std::vector<std::shared_ptr<ov::genai::Parser>>>(
+    const Napi::Env& env,
+    const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsArray(), "Passed argument must be of type Array.");
+    Napi::Array arr = value.As<Napi::Array>();
+    std::vector<std::shared_ptr<ov::genai::Parser>> parsers;
+    parsers.reserve(arr.Length());
+    for (uint32_t i = 0; i < arr.Length(); ++i) {
+        parsers.push_back(js_to_cpp<std::shared_ptr<ov::genai::Parser>>(env, arr[i]));
+    }
+    return parsers;
+}
+
+template <>
+std::vector<ov::Tensor> js_to_cpp<std::vector<ov::Tensor>>(const Napi::Env& env, const Napi::Value& value) {
+    std::vector<ov::Tensor> tensors;
+    if (value.IsUndefined() || value.IsNull()) {
+        return tensors;
+    }
+    if (value.IsArray()) {
+        auto array = value.As<Napi::Array>();
+        size_t length = array.Length();
+        tensors.reserve(length);
+        for (uint32_t i = 0; i < length; ++i) {
+            tensors.push_back(js_to_cpp<ov::Tensor>(env, array[i]));
+        }
+    } else {
+        OPENVINO_THROW("Passed argument must be an array of Tensors.");
+    }
+    return tensors;
+}
+
+template <>
 ov::genai::PerfMetrics& unwrap<ov::genai::PerfMetrics>(const Napi::Env& env, const Napi::Value& value) {
     const auto obj = value.As<Napi::Object>();
     const auto& prototype = env.GetInstanceData<AddonData>()->perf_metrics;
@@ -302,6 +407,17 @@ ov::genai::PerfMetrics& unwrap<ov::genai::PerfMetrics>(const Napi::Env& env, con
                     "Passed argument is not of type PerfMetrics");
 
     const auto js_metrics = Napi::ObjectWrap<PerfMetricsWrapper>::Unwrap(obj);
+    return js_metrics->get_value();
+}
+
+template <>
+ov::genai::VLMPerfMetrics& unwrap<ov::genai::VLMPerfMetrics>(const Napi::Env& env, const Napi::Value& value) {
+    const auto obj = value.As<Napi::Object>();
+    const auto& prototype = env.GetInstanceData<AddonData>()->vlm_perf_metrics;
+    OPENVINO_ASSERT(prototype, "Invalid pointer to prototype.");
+    OPENVINO_ASSERT(obj.InstanceOf(prototype.Value().As<Napi::Function>()),
+                    "Passed argument is not of type VLMPerfMetrics");
+    const auto js_metrics = Napi::ObjectWrap<VLMPerfMetricsWrapper>::Unwrap(obj);
     return js_metrics->get_value();
 }
 
@@ -413,8 +529,66 @@ Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env, co
 }
 
 template <>
+Napi::Value cpp_to_js<std::vector<std::pair<size_t, float>>, Napi::Value>(
+    const Napi::Env& env,
+    const std::vector<std::pair<size_t, float>>& rerank_results) {
+    auto js_array = Napi::Array::New(env, rerank_results.size());
+    for (size_t i = 0; i < rerank_results.size(); ++i) {
+        const auto& [index, score] = rerank_results[i];
+        auto tuple = Napi::Array::New(env, 2);
+        tuple.Set((uint32_t)0, Napi::Number::New(env, index));
+        tuple.Set((uint32_t)1, Napi::Number::New(env, score));
+        js_array[i] = tuple;
+    }
+    return js_array;
+}
+
+template <>
 Napi::Value cpp_to_js<ov::genai::JsonContainer, Napi::Value>(const Napi::Env& env, const ov::genai::JsonContainer& json_container) {
     return json_parse(env, json_container.to_json_string());
+}
+
+template <>
+Napi::Value cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(
+    const Napi::Env& env,
+    const std::vector<ov::genai::JsonContainer>& value) {
+    auto js_array = Napi::Array::New(env, value.size());
+    for (size_t i = 0; i < value.size(); i++) {
+        js_array[i] = json_parse(env, value[i].to_json_string());
+    }
+    return js_array;
+}
+
+template <>
+Napi::Value cpp_to_js<ov::Tensor, Napi::Value>(const Napi::Env& env, const ov::Tensor& tensor) {
+    try {
+        auto prototype = get_prototype_from_ov_addon(env, "Tensor");
+
+        auto external = Napi::External<ov::Tensor>::New(env, new ov::Tensor(tensor),
+                [](Napi::Env /*env*/, ov::Tensor* external_tensor) {
+                    delete external_tensor;
+                });
+        auto tensor_wrap = prototype.New({ external });
+
+        return tensor_wrap;
+    } catch (const ov::Exception& e) {
+        Napi::Error::New(env, std::string("Cannot create Tensor wrapper: ") + e.what()).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+}
+
+template <>
+Napi::Value cpp_to_js<ov::genai::TokenizedInputs, Napi::Value>(const Napi::Env& env, const ov::genai::TokenizedInputs& tokenized_inputs) {
+    auto js_object = Napi::Object::New(env);
+
+    js_object.Set("input_ids", cpp_to_js<ov::Tensor, Napi::Value>(env, tokenized_inputs.input_ids));
+    js_object.Set("attention_mask", cpp_to_js<ov::Tensor, Napi::Value>(env, tokenized_inputs.attention_mask));
+    // token_type_ids is optional and present only for paired inputs
+    if (tokenized_inputs.token_type_ids.has_value()) {
+        js_object.Set("token_type_ids", cpp_to_js<ov::Tensor, Napi::Value>(env, tokenized_inputs.token_type_ids.value()));
+    }
+
+    return js_object;
 }
 
 bool is_napi_value_int(const Napi::Env& env, const Napi::Value& num) {
@@ -428,6 +602,53 @@ bool is_chat_history(const Napi::Env& env, const Napi::Value& value) {
     OPENVINO_ASSERT(prototype, "Invalid pointer to ChatHistory prototype.");
 
     return obj.InstanceOf(prototype.Value().As<Napi::Function>());
+}
+
+// Get native parser or return nullptr
+std::shared_ptr<ov::genai::Parser> get_native_parser(const Napi::Env& env, const Napi::Object& object) {
+    const auto addon_data = env.GetInstanceData<AddonData>();
+
+    // Check ReasoningParser
+    const auto& reasoning_parser_prototype = addon_data->reasoning_parser;
+    OPENVINO_ASSERT(reasoning_parser_prototype, "Invalid pointer to ReasoningParser prototype.");
+    if (object.Get("constructor").StrictEquals(reasoning_parser_prototype.Value())) {
+        auto parser_wrapper = Napi::ObjectWrap<ReasoningParserWrapper>::Unwrap(object);
+        return parser_wrapper->get_parser();
+    }
+
+    // Check DeepSeekR1ReasoningParser
+    const auto& deepseek_parser_prototype = addon_data->deepseek_r1_reasoning_parser;
+    OPENVINO_ASSERT(deepseek_parser_prototype, "Invalid pointer to DeepSeekR1ReasoningParser prototype.");
+    if (object.Get("constructor").StrictEquals(deepseek_parser_prototype.Value())) {
+        auto parser_wrapper = Napi::ObjectWrap<DeepSeekR1ReasoningParserWrapper>::Unwrap(object);
+        return parser_wrapper->get_parser();
+    }
+
+    // Check Phi4ReasoningParser
+    const auto& phi4_parser_prototype = addon_data->phi4_reasoning_parser;
+    OPENVINO_ASSERT(phi4_parser_prototype, "Invalid pointer to Phi4ReasoningParser prototype.");
+    if (object.Get("constructor").StrictEquals(phi4_parser_prototype.Value())) {
+        auto parser_wrapper = Napi::ObjectWrap<Phi4ReasoningParserWrapper>::Unwrap(object);
+        return parser_wrapper->get_parser();
+    }
+
+    // Check Llama3PythonicToolParser
+    const auto& llama3_pythonic_parser_prototype = addon_data->llama3_pythonic_tool_parser;
+    OPENVINO_ASSERT(llama3_pythonic_parser_prototype, "Invalid pointer to Llama3PythonicToolParser prototype.");
+    if (object.Get("constructor").StrictEquals(llama3_pythonic_parser_prototype.Value())) {
+        auto parser_wrapper = Napi::ObjectWrap<Llama3PythonicToolParserWrapper>::Unwrap(object);
+        return parser_wrapper->get_parser();
+    }
+
+    // Check Llama3JsonToolParser
+    const auto& llama3_json_parser_prototype = addon_data->llama3_json_tool_parser;
+    OPENVINO_ASSERT(llama3_json_parser_prototype, "Invalid pointer to Llama3JsonToolParser prototype.");
+    if (object.Get("constructor").StrictEquals(llama3_json_parser_prototype.Value())) {
+        auto parser_wrapper = Napi::ObjectWrap<Llama3JsonToolParserWrapper>::Unwrap(object);
+        return parser_wrapper->get_parser();
+    }
+
+    return nullptr;
 }
 
 std::string json_stringify(const Napi::Env& env, const Napi::Value& value) {
@@ -448,4 +669,36 @@ Napi::Value json_parse(const Napi::Env& env, const std::string& value) {
         .Get("parse")
         .As<Napi::Function>()
         .Call({ Napi::String::New(env, value) });
+}
+
+Napi::Function get_prototype_from_ov_addon(const Napi::Env& env, const std::string& ctor_name) {
+    auto addon_data = env.GetInstanceData<AddonData>();
+    OPENVINO_ASSERT(!addon_data->openvino_addon.IsEmpty(), "Addon data is not initialized");
+    Napi::Value ov_addon = addon_data->openvino_addon.Value();
+    OPENVINO_ASSERT(!ov_addon.IsUndefined() && !ov_addon.IsNull() && ov_addon.IsObject(), "OV addon value is not an object");
+    Napi::Object addon_obj = ov_addon.As<Napi::Object>();
+    OPENVINO_ASSERT(addon_obj.Has(ctor_name), std::string("OV addon does not export '") + ctor_name + "' class");
+    Napi::Value ctor_val = addon_obj.Get(ctor_name);
+    OPENVINO_ASSERT(ctor_val.IsFunction(), ctor_name + std::string(" is not a prototype"));
+
+    return ctor_val.As<Napi::Function>();
+}
+
+Napi::Object to_decoded_result(const Napi::Env& env, const ov::genai::DecodedResults& results) {
+    Napi::Object obj = Napi::Object::New(env);
+    obj.Set("texts", cpp_to_js<std::vector<std::string>, Napi::Value>(env, results.texts));
+    obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, results.scores));
+    obj.Set("perfMetrics", PerfMetricsWrapper::wrap(env, results.perf_metrics));
+    obj.Set("parsed", cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(env, results.parsed));
+    obj.Set("subword", Napi::String::New(env, results));
+    return obj;
+}
+
+Napi::Object to_vlm_decoded_result(const Napi::Env& env, const ov::genai::VLMDecodedResults& results) {
+    Napi::Object obj = Napi::Object::New(env);
+    obj.Set("texts", cpp_to_js<std::vector<std::string>, Napi::Value>(env, results.texts));
+    obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, results.scores));
+    obj.Set("perfMetrics", VLMPerfMetricsWrapper::wrap(env, results.perf_metrics));
+    obj.Set("parsed", cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(env, results.parsed));
+    return obj;
 }

@@ -86,6 +86,9 @@ JsonContainer ChatHistory::last() const {
 
 void ChatHistory::clear() {
     m_messages.clear();
+    m_tools.clear();
+    m_extra_context.clear();
+    m_internal_state = nullptr;
 }
 
 size_t ChatHistory::size() const {
