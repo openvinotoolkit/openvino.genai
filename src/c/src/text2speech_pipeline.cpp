@@ -180,7 +180,7 @@ ov_status_e ov_genai_text2speech_pipeline_generate(ov_genai_text2speech_pipeline
                 return ov_status_e::UNKNOW_EXCEPTION;
             }
 
-            speaker_embedding_cpp = ov::Tensor(c_element_type_to_cpp(et), ov::Shape(dims));
+            speaker_embedding_cpp = ov::Tensor(static_cast<ov::element::Type_t>(et), ov::Shape(dims));
             if (speaker_embedding_cpp.data() && data_ptr) {
                 std::memcpy(speaker_embedding_cpp.data(), data_ptr, speaker_embedding_cpp.get_byte_size());
             }
