@@ -146,6 +146,8 @@ RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "qnguyen3/nanoLLaVA": 384,
     "optimum-intel-internal-testing/tiny-random-llava-next-video": 336,
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": 448,
+    "optimum-intel-internal-testing/tiny-random-qwen2vl": 336,
+    "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": 336,
 }
 
 
@@ -283,21 +285,25 @@ GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transforme
 
 @pytest.fixture(scope="module")
 def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
-    ov_model, ov_backend = request.param
+    preprocess_method = None
+    if len(request.param) == 2:
+        ov_model, ov_backend = request.param
+    elif len(request.param) == 3:
+        ov_model, ov_backend, preprocess_method = request.param
+    else:
+        raise Exception("expected request.param must be a tuple of length 2 or 3")
     
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
 
     models_path = _get_ov_model(ov_model)
-    
-    # check and set VISION_PREPROCESS if test has been marked with vision_preprocess
-    m = request.node.get_closest_marker("vision_preprocess")
+
     vision_preprocess_env_set = False
     key = "VISION_PREPROCESS"
-    if m:
+    if preprocess_method is not None and preprocess_method=="CPP":
         # If environment is already set, don't override it.
         if key not in os.environ:
-            os.environ[key] = m.args[0]
+            os.environ[key] = "CPP"
             vision_preprocess_env_set = True
 
     try:
@@ -1703,120 +1709,6 @@ def test_model_tags_missing_native(ov_pipe_model: VlmModelInfo, vision_type: Vis
     with pytest.raises(RuntimeError):
         ov_pipe.generate(vision_tag(0))
 
-GENAI_VS_OPTIMUM_CASES = [
-    pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), True, False, id="qwen2vl/SDPA/image"),
-    pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), True, False, id="qwen2vl/PA/image"),
-    pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), False, True, id="qwen2vl/SDPA/video"),
-    pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), False, True, id="qwen2vl/PA/video"),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-qwen2vl", "SDPA"), True, True, id="qwen2vl/PA/image+video"
-    ),
-    pytest.param(("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"), True, True, id="qwen2vl/PA/image+video"),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"), True, False, id="qwen2.5-vl/SDPA/image"
-    ),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
-        True,
-        False,
-        id="qwen2.5-vl/PA/image",
-        marks=pytest.mark.xfail(reason="CVS-167316"),
-    ),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"), False, True, id="qwen2.5-vl/SDPA/video"
-    ),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
-        False,
-        True,
-        id="qwen2.5-vl/PA/video",
-        marks=pytest.mark.xfail(reason="CVS-167316"),
-    ),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"),
-        True,
-        True,
-        id="qwen2.5-vl/SDPA/image+video",
-    ),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
-        True,
-        True,
-        id="qwen2.5-vl/PA/image+video",
-        marks=pytest.mark.xfail(reason="CVS-167316"),
-    ),
-    (
-        pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
-            True,
-            False,
-            id="gemma3/SDPA/image",
-            marks=pytest.mark.xfail(reason=GEMMA3_MACOS_XFAIL_REASON),
-        )
-        if sys.platform == "darwin"
-        else pytest.param(
-            ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"), True, False, id="gemma3/SDPA/image"
-        )
-    ),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-gemma3", "PA"),
-        True,
-        False,
-        id="gemma3/PA/image",
-        marks=pytest.mark.xfail(reason="CVS-171180"),
-    ),
-    pytest.param(("qnguyen3/nanoLLaVA", "SDPA"), True, False, id="nanoLLaVA/SDPA/image"),
-    pytest.param(("qnguyen3/nanoLLaVA", "PA"), True, False, id="nanoLLaVA/PA/image"),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"),
-        True,
-        False,
-        id="llava-next-video/SDPA/image",
-    ),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
-        True,
-        False,
-        id="llava-next-video/PA/image",
-    ),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"),
-        False,
-        True,
-        id="llava-next-video/SDPA/video",
-    ),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
-        False,
-        True,
-        id="llava-next-video/PA/video",
-    ),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-llava-next-video", "SDPA"),
-        True,
-        True,
-        id="llava-next-video/SDPA/image+video",
-    ),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
-        True,
-        True,
-        id="llava-next-video/PA/image+video",
-    ),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6", "SDPA"),
-        True,
-        False,
-        id="MiniCPM-o-2_6/SDPA/image",
-    ),
-    pytest.param(
-        ("optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6", "PA"),
-        True,
-        False,
-        id="MiniCPM-o-2_6/PA/image",
-    ),
-]
-
 
 def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
     class NanollavaProcessorWrapper:
@@ -1897,51 +1789,181 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
 
     assert optimum_text == genai_text
 
-
-@pytest.mark.parametrize(
-    "ov_pipe_model,has_image,has_video",
-    GENAI_VS_OPTIMUM_CASES,
-    indirect=["ov_pipe_model"],
-)
-def test_vlm_pipeline_match_optimum_preresized(
-    request: pytest.FixtureRequest, ov_pipe_model: VlmModelInfo, has_image: bool, has_video: bool
-):
-    resolution = ov_pipe_model.resolution
-
-    resized_image = None
-    resized_video = None
-    if has_image:
-        resized_image = request.getfixturevalue(f"cat_image_{resolution}x{resolution}")
-    if has_video:
-        resized_video = request.getfixturevalue("synthetic_video_32x32")
-
-    run_compare_genai_optimum(ov_pipe_model, resized_image, resized_video)
-
-
-GENAI_VS_OPTIMUM_IMAGE_INPUT_RESOLUTIONS = [
-    pytest.param((100, 77), id="100x77"),
-    pytest.param((999, 666), id="999x666"),
-    pytest.param((1920, 1080), id="1920x1080"),
-    # This one is problematic for qwen2vl/2.5, triggers DefaultCPUAllocator: not enough memory errors. Disable for now.
-    # pytest.param((3999, 2667), id="3999x2667"),
+# (Width, Height)
+OPTIMUM_VS_GENAI_IMAGE_RESOLUTIONS = [
+    (100, 77),
+    (999, 666),
+    (1920, 1080)
 ]
 
+# (Width, Height)
+OPTIMUM_VS_GENAI_VIDEO_RESOLUTIONS = [
+    (32, 32),
+    (176, 132),
+    (640, 480)
+]
 
-@pytest.mark.parametrize("image_input_resolution", GENAI_VS_OPTIMUM_IMAGE_INPUT_RESOLUTIONS)
-@pytest.mark.parametrize(
-    "ov_pipe_model,has_image,has_video",
-    GENAI_VS_OPTIMUM_CASES,
-    indirect=["ov_pipe_model"],
-)
-# Some models fail when using OV graph pre-processing.
-# Force VISION_PREPROCESS to be set to CPP for now.
-@pytest.mark.vision_preprocess("CPP")
+# test-id glob pattern -> xfail reason
+# test-id's are of the form:
+# "<model_id>/<attn_backend>/<preprocessing>/image-<W>x<H>/video-<W>x<H>"
+OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
+    # all gemma3 PA cases
+    "*tiny-random-gemma3/PA/*": "CVS-167316",
+
+    # all text+image qwen2.5-vl graph pre-processing 'real' resize cases
+    "*tiny-random-qwen2.5-vl/*/GRAPH/image*": "TODO_CVS",
+
+    # All llava-next text-only cases
+    "*tiny-random-llava-next/*/CPP/text-only": "TODO_CVS",
+
+    # All llava cases
+    "*tiny-random-llava/*": "TODO_CVS",
+
+    # MiniCPM-o-2_6 text-only cases
+    "*tiny-random-MiniCPM-o-2_6/*/text-only": "TODO_CVS",
+
+    # All minicpmv-2_6 cases
+    "*tiny-random-minicpmv-2_6/*": "TODO_CVS",
+
+    # All internvl2 cases
+    "*tiny-random-internvl2/*": "TODO_CVS"
+
+    # Note: phi4-mm & nanoLLaVA are skipped in _get_ov_model,
+    # phi3-vision is marked as xfail in _get_ov_model
+}
+
+# For these models, we will add both CPP and GRAPH pre-processing tests.
+MODELS_THAT_SUPPORT_GRAPH_PREPROCESSING = [
+    "optimum-intel-internal-testing/tiny-random-llava-next-video"
+    "optimum-intel-internal-testing/tiny-random-phi3-vision"
+    "optimum-intel-internal-testing/tiny-random-phi-4-multimodal"
+    "optimum-intel-internal-testing/tiny-random-qwen2vl",
+    "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
+]
+
+# For these models, we will only add GRAPH pre-processing tests.
+MODELS_THAT_DO_NOT_SUPPORT_CPP_PREPROCESSING = [
+    "optimum-intel-internal-testing/tiny-random-phi-4-multimodal"
+]
+
+# Each test will have an id in one of the following formats:
+# text-only: <model_id>/<attn_backend>/<preprocessing>/text-only
+# text+image: <model_id>/<attn_backend>/<preprocessing>/image-<W>x<H>
+# text+image+video: <model_id>/<attn_backend>/<preprocessing>/image-<W>x<H>/video-<W>x<H>
+#
+# If a model-id is defined in RESOLUTION_BY_MODEL, then there will be pre-resize cases added:
+# text+image: <model_id>/<attn_backend>/<preprocessing>/preresized-image
+# text+image+video: <model_id>/<attn_backend>/<preprocessing>/preresized-image+video
+# id's that match glob patterns in OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES are marked as xfail.
+def parametrize_optimum_vs_genai(
+    models: list[str] | None = None
+) -> Callable[[Callable], Generator]:
+    if models is None:
+        models = MODEL_IDS
+
+    params = []
+    test_ids = []
+    for model_id in models:
+        supported_attn_backends = ATTENTION_BACKEND
+        supported_preprocessing = ["CPP", "GRAPH"]
+
+        if model_id not in MODELS_THAT_SUPPORT_GRAPH_PREPROCESSING:
+            supported_preprocessing = ["CPP"]
+
+        if model_id in MODELS_THAT_DO_NOT_SUPPORT_CPP_PREPROCESSING:
+            supported_preprocessing = ["GRAPH"]
+
+        supported_has_image_inputs = [False, True]
+        supported_has_video_inputs = [False]
+
+        if model_id in VIDEO_MODEL_IDS:
+            supported_has_video_inputs = [False, True]
+
+        for attn_backend in supported_attn_backends:
+            for preprocessing in supported_preprocessing:
+                for has_image in supported_has_image_inputs:
+                    for has_video in supported_has_video_inputs:
+
+                        def add_test_case(test_id, image_resolution, video_resolution):
+                            from fnmatch import fnmatch
+                            test_ids.append(test_id)
+
+                            # compare test_id against defined failure glob patterns
+                            xfail_reason = None
+                            for pattern, reason in OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES.items():
+                                if fnmatch(test_id, pattern):
+                                    xfail_reason = reason
+                                    break
+
+                            if xfail_reason is not None:
+                                params.append(
+                                    pytest.param(
+                                        (model_id, attn_backend, preprocessing),
+                                        has_image, has_video,
+                                        image_resolution, video_resolution,
+                                        marks=pytest.mark.xfail(reason=xfail_reason)
+                                    )
+                                )
+                            else:
+                                params.append(
+                                    pytest.param(
+                                        (model_id, attn_backend, preprocessing),
+                                        has_image, has_video,
+                                        image_resolution, video_resolution
+                                    )
+                                )
+
+                        # add pre-resized cases, if model is defined in RESOLUTION_BY_MODEL
+                        if has_image and model_id in RESOLUTION_BY_MODEL:
+                            test_id = f"{model_id}/{attn_backend}/{preprocessing}/preresized-image"
+
+                            res = RESOLUTION_BY_MODEL[model_id]
+                            image_resolution = (res,res)
+
+                            video_resolution = None
+                            if has_video:
+                                test_id += "+video"
+                                # for pre-resize cases, we always use 32x32 video resolution.
+                                video_resolution = (32,32)
+
+                            add_test_case(test_id, image_resolution, video_resolution)
+
+                        # 'Real' resolution cases
+                        image_resolutions = [None]
+                        if has_image:
+                            image_resolutions = OPTIMUM_VS_GENAI_IMAGE_RESOLUTIONS
+
+                        video_resolutions = [None]
+                        if has_video:
+                            video_resolutions = OPTIMUM_VS_GENAI_VIDEO_RESOLUTIONS
+
+                        for image_resolution in image_resolutions:
+                            for video_resolution in video_resolutions:
+                                test_id = f"{model_id}/{attn_backend}/{preprocessing}"
+                                if image_resolution:
+                                    test_id += f"/image-{image_resolution[0]}x{image_resolution[1]}"
+                                if video_resolution:
+                                    test_id += f"/video-{video_resolution[0]}x{video_resolution[1]}"
+                                if not image_resolution and not video_resolution:
+                                    test_id += f"/text-only"
+
+                                add_test_case(test_id, image_resolution, video_resolution)
+
+    return pytest.mark.parametrize(
+        "ov_pipe_model,has_image,has_video,image_input_resolution,video_input_resolution",
+        params,
+        indirect=["ov_pipe_model"],
+        ids=test_ids,
+    )
+
+@parametrize_optimum_vs_genai()
 def test_vlm_pipeline_match_optimum_with_resolutions(
     request: pytest.FixtureRequest,
     ov_pipe_model: VlmModelInfo,
     has_image: bool,
     has_video: bool,
     image_input_resolution: tuple[int, int],
+    video_input_resolution: tuple[int, int],
 ):
     resized_image = None
     resized_video = None
@@ -1949,9 +1971,9 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
         resized_image = request.getfixturevalue("cat_image")
         resized_image = resized_image.resize(image_input_resolution)
 
-    # TODO: Resize video?
     if has_video:
-        resized_video = request.getfixturevalue("synthetic_video_32x32")
+        resized_video = request.getfixturevalue("synthetic_video")
+        resized_video = resize_video(resized_video, video_input_resolution)
 
     run_compare_genai_optimum(ov_pipe_model, resized_image, resized_video)
 
