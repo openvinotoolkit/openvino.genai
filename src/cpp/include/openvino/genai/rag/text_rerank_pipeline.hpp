@@ -35,12 +35,6 @@ public:
         std::optional<std::string> padding_side;
 
         /**
-         * @brief LoRA tensor name prefix override.
-         * If not specified, the prefix is auto-detected based on model architecture.
-         * Common prefixes: "base_model.model", "bert", "encoder"
-         */
-        std::optional<std::string> lora_tensor_prefix;
-        /**
          * @brief Constructs text rerank pipeline configuration
          */
         Config() = default;
@@ -81,6 +75,8 @@ public:
      * Adapter lora("domain_adapter.safetensors");
      * AdapterConfig adapter_config;
      * adapter_config.add(lora, 1.0f);
+     * // Optionally set tensor prefix if auto-detection doesn't work:
+     * // adapter_config.set_tensor_name_prefix("base_model.model");
      * TextRerankPipeline pipeline(models_path, "CPU", config, ov::genai::adapters(adapter_config));
      * @endcode
      */

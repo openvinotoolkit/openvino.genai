@@ -17,7 +17,6 @@
 #include "openvino/opsets/opset1.hpp"
 #include "openvino/opsets/opset3.hpp"
 #include "openvino/opsets/opset8.hpp"
-#include "openvino/genai/rag/rag_lora_helper.hpp"
 #include "utils.hpp"
 
 namespace {
@@ -35,7 +34,6 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     properties_copy.erase(embed_instruction.name());
     properties_copy.erase(query_instruction.name());
     properties_copy.erase(padding_side.name());
-    properties_copy.erase(lora_tensor_prefix.name());
 
     return properties_copy;
 }
@@ -88,15 +86,12 @@ std::shared_ptr<op::Op> get_mean_pooling_op(std::shared_ptr<Model> model,
     auto axis_1 = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
     auto sum_hidden_state = std::make_shared<op::v1::ReduceSum>(last_hidden_node_with_applied_attention_mask, axis_1);
 
-    // f32 overflow possible
-    // ReduceMean might help with overflow but its precision diverges from LlamaIndex
     auto sum_expanded_mask = std::make_shared<op::v1::ReduceSum>(input_mask_expanded_convert, axis_1);
 
     auto nearest_to_zero =
         std::make_shared<op::v0::Constant>(ov::element::f32, ov::Shape{1}, std::vector<float>{1e-12});
     auto max_expanded_mask = std::make_shared<op::v1::Maximum>(sum_expanded_mask, nearest_to_zero);
 
-    // shape: [batch_size, hidden_state_size]
     return std::make_shared<op::v1::Divide>(sum_hidden_state, max_expanded_mask);
 }
 
@@ -105,7 +100,6 @@ std::shared_ptr<op::Op> get_last_token_pooling_op(std::shared_ptr<Model> model,
                                                   const TextEmbeddingPipeline::Config& config) {
     const auto left_padding = config.padding_side.has_value() && config.padding_side.value() == "left";
 
-    // shortcut for left padding. We can slice last token directly
     if (left_padding) {
         auto start = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
         auto stop = std::make_shared<op::v0::Constant>(ov::element::i64,
@@ -156,7 +150,6 @@ std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model, const 
 }
 
 std::optional<size_t> read_max_position_embeddings(const std::filesystem::path& models_path) {
-    // config.json not found. Skip parameters initialization from file, use defaults.
     const std::filesystem::path& json_path = models_path / "config.json";
     if (!std::filesystem::exists(json_path)) {
         return std::nullopt;
@@ -189,7 +182,6 @@ TextEmbeddingPipeline::Config::Config(const ov::AnyMap& properties) {
     read_anymap_param(properties, ov::genai::embed_instruction.name(), embed_instruction);
     read_anymap_param(properties, ov::genai::query_instruction.name(), query_instruction);
     read_anymap_param(properties, ov::genai::padding_side.name(), padding_side);
-    read_anymap_param(properties, ov::genai::lora_tensor_prefix.name(), lora_tensor_prefix);
 }
 
 void TextEmbeddingPipeline::Config::validate() const {
@@ -218,17 +210,11 @@ public:
 
         auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);
 
-        // ============================================
-        // LoRA Support: Extract adapters from properties
-        // ============================================
         auto filtered_properties = extract_adapters_from_properties(properties, &m_adapters);
-        // Setup LoRA if adapters were provided
         if (m_adapters.has_value()) {
             setup_lora(model, device);
         }
-        // ============================================
-        // Existing: Reshape model if needed
-        // ============================================
+
         const bool should_reshape = m_config.batch_size.has_value() || m_config.max_length.has_value();
         if (should_reshape) {
             reshape_model(model);
@@ -240,14 +226,8 @@ public:
                             "max_length and pad_to_max_length in the configuration.");
         }
 
-        // ============================================
-        // Existing: Apply postprocessing (pooling, normalization)
-        // ============================================
         model = apply_postprocessing(model, m_config);
 
-        // ============================================
-        // Existing: Setup tokenization parameters
-        // ============================================
         if (m_config.max_length) {
             m_tokenization_params.insert({max_length.name(), *m_config.max_length});
         }
@@ -260,20 +240,12 @@ public:
             m_tokenization_params.insert({padding_side.name(), *m_config.padding_side});
         }
 
-        // ============================================
-        // CRITICAL: Store CompiledModel as member
-        // This is required for LoRA state tensors to work correctly.
-        // Previously this was a local variable which caused state tensors
-        // to be destroyed after compilation.
-        // ============================================
         const ov::AnyMap& compile_props = *filtered_properties;
         m_compiled_model = core.compile_model(model, device, compile_props);
 
         utils::print_compiled_model_properties(m_compiled_model, "text embedding model");
         m_request = m_compiled_model.create_infer_request();
-        // ============================================
-        // LoRA Support: Apply initial LoRA weights
-        // ============================================
+
         if (m_adapters.has_value() && m_adapter_controller.has_value()) {
             m_adapter_controller->apply(m_request, *m_adapters);
         }
@@ -322,7 +294,6 @@ public:
         if (adapters.has_value()) {
             m_adapter_controller->apply(m_request, *adapters);
         } else {
-            // Disable LoRA by applying nullopt
             m_adapter_controller->apply(m_request, std::nullopt);
         }
     }
@@ -332,50 +303,34 @@ public:
 
 private:
     Tokenizer m_tokenizer;
-    ov::CompiledModel m_compiled_model;  // CRITICAL: Must be stored as member for LoRA state
+    ov::CompiledModel m_compiled_model;
     InferRequest m_request;
     Config m_config;
     AnyMap m_tokenization_params;
     std::optional<size_t> m_max_position_embeddings;
     std::filesystem::path m_models_path;
-    // LoRA support members
     std::optional<AdapterConfig> m_adapters;
     std::optional<AdapterController> m_adapter_controller;
+
     /**
      * @brief Setup LoRA adapters for the model
-     *
-     * This method:
-     * 1. Determines the appropriate LoRA tensor prefix
-     * 2. Creates the AdapterController which modifies the model
-     *    to add state variables for LoRA weights
+     * 
+     * Uses the tensor name prefix from AdapterConfig if set by user,
+     * otherwise uses empty string (no prefix stripping).
+     * 
+     * If your LoRA adapter was trained with PEFT and has "base_model.model" prefix,
+     * set it explicitly: adapter_config.set_tensor_name_prefix("base_model.model")
      */
     void setup_lora(std::shared_ptr<Model>& model, const std::string& device) {
         OPENVINO_ASSERT(m_adapters.has_value(), "setup_lora called without adapters");
-        // Determine LoRA prefix
-        std::string prefix;
-        if (m_config.lora_tensor_prefix.has_value()) {
-            // User explicitly specified prefix in config
-            prefix = *m_config.lora_tensor_prefix;
-        } else if (m_adapters->get_tensor_name_prefix().has_value()) {
-            // Prefix already set in adapter config
-            prefix = *m_adapters->get_tensor_name_prefix();
-        } else {
-            // Auto-detect based on model architecture
-            prefix = rag::detect_lora_prefix(m_models_path);
+
+        // Use user-specified prefix, or empty string if not set
+        if (!m_adapters->get_tensor_name_prefix().has_value()) {
+            m_adapters->set_tensor_name_prefix("");
         }
-        // Set prefix in adapter config
-        m_adapters->set_tensor_name_prefix(prefix);
-        // Try primary prefix first, then fallbacks if needed
-        try {
-            m_adapter_controller = AdapterController(model, *m_adapters, device);
-        } catch (const std::exception& e) {
-            m_adapter_controller = rag::setup_lora_with_fallbacks(model,
-                                           *m_adapters,
-                                           m_models_path,
-                                           device,
-                                           prefix,
-                                           rag::get_lora_prefix_fallbacks(m_models_path));
-        }
+
+
+        m_adapter_controller = AdapterController(model, *m_adapters, device);
     }
 
     void reshape_model(std::shared_ptr<Model>& model) {
@@ -416,8 +371,6 @@ private:
 
     void start_embed_async(std::vector<std::string>& texts) {
         if (m_config.batch_size.has_value()) {
-            // if batch_size is set, model shape is fixed
-            // provide user friendly error message if number of texts is not equal to batch_size
             OPENVINO_ASSERT(texts.size() == *m_config.batch_size,
                             "Number of texts passed to pipeline should be equal to batch_size(",
                             *m_config.batch_size,
@@ -429,8 +382,6 @@ private:
         m_request.set_tensor("input_ids", encoded.input_ids);
         m_request.set_tensor("attention_mask", encoded.attention_mask);
 
-        // fill token_type_ids
-        // TODO: pass token_type_ids from tokenizer
         if (has_token_type_ids_input(m_request.get_compiled_model().inputs())) {
             ov::Tensor token_type_ids{ov::element::i64, encoded.input_ids.get_shape()};
             std::fill_n(token_type_ids.data<int64_t>(), encoded.input_ids.get_size(), 0);
@@ -443,7 +394,6 @@ private:
     EmbeddingResults wait_embed() {
         m_request.wait();
 
-        // [batch_size, hidden_size]
         const Tensor last_hidden_state = m_request.get_tensor("last_hidden_state");
 
         return to_embedding_result(last_hidden_state);
