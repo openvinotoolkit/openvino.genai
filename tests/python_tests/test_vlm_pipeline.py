@@ -1787,7 +1787,7 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
     model_id = ov_pipe_model.model_id
     model_path = _get_ov_model(model_id)
     optimum_model = OVModelForVisualCausalLM.from_pretrained(model_path, trust_remote_code=True)
-    
+
     prompt_parts = []
     if image is not None:
         prompt_parts.append("image")
@@ -1844,6 +1844,7 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
 
     assert optimum_text == genai_text
 
+
 # (Width, Height)
 OPTIMUM_VS_GENAI_IMAGE_RESOLUTIONS = [(100, 77), (999, 666), (1920, 1080)]
 
@@ -1887,6 +1888,7 @@ MODELS_THAT_SUPPORT_GRAPH_PREPROCESSING = [
 # For these models, we will only add GRAPH pre-processing tests.
 MODELS_THAT_DO_NOT_SUPPORT_CPP_PREPROCESSING = ["optimum-intel-internal-testing/tiny-random-phi-4-multimodal"]
 
+
 # Each test will have an id in one of the following formats:
 # text-only: <model_id>/<attn_backend>/<preprocessing>/text-only
 # text+image: <model_id>/<attn_backend>/<preprocessing>/image-<W>x<H>
@@ -1925,6 +1927,7 @@ def parametrize_optimum_vs_genai(models: list[str] | None = None) -> Callable[[C
 
                         def add_test_case(test_id, image_resolution, video_resolution):
                             from fnmatch import fnmatch
+
                             test_ids.append(test_id)
 
                             # compare test_id against defined failure glob patterns
@@ -1942,7 +1945,7 @@ def parametrize_optimum_vs_genai(models: list[str] | None = None) -> Callable[[C
                                         has_video,
                                         image_resolution,
                                         video_resolution,
-                                        marks=pytest.mark.xfail(reason=xfail_reason)
+                                        marks=pytest.mark.xfail(reason=xfail_reason),
                                     )
                                 )
                             else:
@@ -1952,7 +1955,7 @@ def parametrize_optimum_vs_genai(models: list[str] | None = None) -> Callable[[C
                                         has_image,
                                         has_video,
                                         image_resolution,
-                                        video_resolution
+                                        video_resolution,
                                     )
                                 )
 
