@@ -1817,8 +1817,10 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
         # Gemma3 input_ids has two bos tokens when running with optimum: one in chat template + "add_bos_token" is set to True in tokenizer_config.json
         if optimum_model.config.model_type == "gemma3":
             processor.tokenizer.add_bos_token = False
+        if optimum_model.config.model_type == "internvl_chat":
+            tokenizer = transformers.AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
         inputs = optimum_model.preprocess_inputs(
-            text=prompt, image=image, video=video, processor=processor, config=optimum_model.config
+            text=prompt, image=image, video=video, processor=processor, tokenizer=tokenizer, config=optimum_model.config
         )
 
     max_new_tokens = 100
@@ -1870,10 +1872,6 @@ OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     "*tiny-random-MiniCPM-o-2_6/*/text-only": "TODO_CVS",
     # All minicpmv-2_6 cases
     "*tiny-random-minicpmv-2_6/*": "TODO_CVS",
-    # All internvl2 cases
-    "*tiny-random-internvl2/*": "TODO_CVS",
-    # Note: phi4-mm & nanoLLaVA are skipped in _get_ov_model,
-    # phi3-vision is marked as xfail in _get_ov_model
 }
 
 # For these models, we will add both CPP and GRAPH pre-processing tests.
