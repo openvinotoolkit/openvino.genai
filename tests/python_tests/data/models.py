@@ -28,7 +28,22 @@ GGUF_MODEL_LIST = (
     },
     {
         "gguf_model_id": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+        "gguf_filename": "qwen2.5-1.5b-instruct-q4_0.gguf",
+        "dynamic_quantization_group_size": None,
+    },
+    {
+        "gguf_model_id": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
         "gguf_filename": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        "dynamic_quantization_group_size": None,
+    },
+        {
+        "gguf_model_id": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+        "gguf_filename": "qwen2.5-1.5b-instruct-q8_0.gguf",
+        "dynamic_quantization_group_size": None,
+    },
+    {
+        "gguf_model_id": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+        "gguf_filename": "qwen2.5-1.5b-instruct-fp16.gguf",
         "dynamic_quantization_group_size": None,
     },
     pytest.param(
