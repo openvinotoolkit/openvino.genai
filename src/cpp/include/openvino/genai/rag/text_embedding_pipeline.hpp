@@ -80,6 +80,7 @@ public:
          * @brief Instruction to use for embedding a document
          */
         std::optional<std::string> embed_instruction;
+
         /**
 
          * @brief Constructs text embedding pipeline configuration

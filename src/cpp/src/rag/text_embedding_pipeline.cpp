@@ -329,7 +329,6 @@ private:
             m_adapters->set_tensor_name_prefix("");
         }
 
-
         m_adapter_controller = AdapterController(model, *m_adapters, device);
     }
 
