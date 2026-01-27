@@ -1,14 +1,26 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import sys
+
+# win32 fails on ffmpeg DLLs load
+# import transformers.pipeline imports VideoClassificationPipeline which requires PyAV (ffmpeg bindings)
+# wa is to create mock 'av' module to prevent DLLs loading errors
+# ticket: 179943
+if sys.platform == "win32":
+    from types import ModuleType
+
+    sys.modules["av"] = ModuleType("av")
+    sys.modules["av"].__version__ = "0.0.0"
+
 import openvino_genai as ov_genai
 import functools
 import pytest
-import sys
 import openvino_tokenizers
 import openvino
 import datasets
-from transformers import WhisperProcessor, pipeline, AutoTokenizer
+from transformers import WhisperProcessor, AutoTokenizer
+from transformers.pipelines.automatic_speech_recognition import AutomaticSpeechRecognitionPipeline
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 import gc
 import json
@@ -80,8 +92,7 @@ def read_whisper_model(params, word_timestamps=False):
         local_files_only=True,
     ))
 
-    hf_pipe = pipeline(
-        "automatic-speech-recognition",
+    hf_pipe = AutomaticSpeechRecognitionPipeline(
         model=opt_model,
         tokenizer=processor.tokenizer,
         feature_extractor=processor.feature_extractor,

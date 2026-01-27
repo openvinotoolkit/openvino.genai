@@ -1,7 +1,7 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "speculative_decoding_stateful.hpp"
+#include "fast_draft_strategy.hpp"
 #include "continuous_batching/timer.hpp"
 #include "openvino/runtime/core.hpp"
 #include "openvino/core/parallel.hpp"
@@ -42,18 +42,6 @@ void update_perf_stat_by_infer_duration(ov::genai::RawPerfMetrics& raw_perf_coun
     raw_perf_counters.m_batch_sizes.emplace_back(num_generated_tokens);
 }
 
-void ensure_num_assistant_tokens_is_set(ov::genai::GenerationConfig& generation_config) {
-    auto assistant_confidence_threshold = generation_config.assistant_confidence_threshold;
-    OPENVINO_ASSERT(assistant_confidence_threshold == 0.f,
-        "Stateful (non Continuous Batching) Speculative Decoding pipeline only supports `num_assistant_tokens` "
-        "as parameter in GenerationConfig and doesn't work with `assistant_confidence_threshold`.\nPlease "
-        "remove its specification or set it to 0.f.");
-
-    constexpr std::size_t default_num_assistant_tokens = 5;
-    if (generation_config.num_assistant_tokens == 0) {
-        generation_config.num_assistant_tokens = default_num_assistant_tokens;
-    }
-}
 }// anonymous namespace
 
 namespace ov {
@@ -355,11 +343,9 @@ std::variant<int64_t, std::vector<int64_t>>
     }
 }
 
-StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(
-    const ov::genai::ModelDesc& main_model_desc, 
-    const ov::genai::ModelDesc& draft_model_desc
-) : LLMPipelineImplBase(main_model_desc.tokenizer, main_model_desc.generation_config) {
-
+StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(const ov::genai::ModelDesc& main_model_desc,
+                                                               const ov::genai::ModelDesc& draft_model_desc)
+    : StatefulSpeculativePipelineBase(main_model_desc.tokenizer, main_model_desc.generation_config) {
     OPENVINO_ASSERT(main_model_desc.model != nullptr, "Main model cannot be null");
     OPENVINO_ASSERT(draft_model_desc.model != nullptr, "Draft model cannot be null");
 
@@ -405,151 +391,29 @@ StatefulSpeculativeLLMPipeline::StatefulSpeculativeLLMPipeline(
     }
     m_main_request = std::make_unique<LLMInferWrapper>(main_model_desc_copy);
     OPENVINO_ASSERT(m_main_request != nullptr, "Failed to create main model inference wrapper");
-   
-    m_sd_perf_metrics = ov::genai::SDPerModelsPerfMetrics();
 }
 
 GenerationConfig StatefulSpeculativeLLMPipeline::resolve_generation_config(OptionalGenerationConfig generation_config) {
-    GenerationConfig config = generation_config.value_or(m_generation_config);
-    
+    // Call base class implementation to handle common defaults
+    GenerationConfig config = StatefulSpeculativePipelineBase::resolve_generation_config(generation_config);
+
+    // Apply Fast Draft specific validations
     ensure_num_assistant_tokens_is_set(config);
     m_candidates_num = config.num_assistant_tokens;
     // We set the upper limit for candidates number as two times the number
     // requested by user.
     m_max_candidates_num = m_candidates_num * 2;
-    
-    // If stop_token_ids were not provided, take value from default m_generation_config
-    if (config.stop_token_ids.empty())
-        config.stop_token_ids = m_generation_config.stop_token_ids;
-    // If eos_token_id was not provided, take value from default m_generation_config
-    if (config.eos_token_id == -1)
-        config.set_eos_token_id(m_generation_config.eos_token_id);
+
     config.validate();
+
     return config;
 }
 
-DecodedResults StatefulSpeculativeLLMPipeline::generate(
-    StringInputs inputs,
-    OptionalGenerationConfig generation_config,
-    StreamerVariant streamer
-) {
-    ManualTimer generate_timer("StatefulSpeculativeLLMPipeline::generate()");
+EncodedResults StatefulSpeculativeLLMPipeline::generate_tokens(const EncodedInputs& inputs,
+                                                               const GenerationConfig& config,
+                                                               StreamerVariant streamer) {
+    ManualTimer generate_timer("StatefulSpeculativeLLMPipeline::generate_tokens(EncodedInputs)");
     generate_timer.start();
-    ManualTimer encode_timer("Encode");
-    encode_timer.start();
-
-    std::string prompt = std::visit(overloaded{
-        [](const std::string& prompt_str) {
-            return prompt_str;
-        },
-        [](std::vector<std::string>& prompts) {
-            OPENVINO_ASSERT(prompts.size() == 1u, "Currently only batch size=1 is supported");
-            return prompts.front();
-        }
-    }, inputs);
-
-    GenerationConfig config = resolve_generation_config(generation_config);
-
-    ov::genai::TokenizedInputs tokenized_input;
-    if (m_is_chat_conversation) {
-        m_history.push_back({{"role", "user"}, {"content", prompt}});
-        constexpr bool add_generation_prompt = true;
-        prompt = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);
-        // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
-        tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(false));
-    } else {
-        if (config.apply_chat_template && !m_tokenizer.get_chat_template().empty()) {
-            ChatHistory history({{{"role", "user"}, {"content", prompt}}});
-            constexpr bool add_generation_prompt = true;
-            const auto templated_prompt = m_tokenizer.apply_chat_template(history, add_generation_prompt);
-            tokenized_input = m_tokenizer.encode(templated_prompt, ov::genai::add_special_tokens(false));
-        } else {
-            // in case when chat_template was not found in tokenizer_config.json or set
-            tokenized_input = m_tokenizer.encode(prompt, ov::genai::add_special_tokens(true));
-        }
-    }
-
-    encode_timer.end();
-    auto encoded_results = generate(tokenized_input, config, streamer);
-
-    ManualTimer decode_timer("Decode");
-    decode_timer.start();
-    DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
-    decode_timer.end();
-
-    if (m_is_chat_conversation) {
-        const auto& answer = decoded_results.texts[0];
-        if (m_streaming_was_cancelled)
-            // If generation process was cancelled by user, let's rollback to previous state of history
-            m_history.pop_back();
-        else
-            m_history.push_back({{"role", "assistant"}, {"content", answer}});
-    }
-
-    // Update perf metrics
-    decoded_results.perf_metrics = encoded_results.perf_metrics;
-    decoded_results.extended_perf_metrics = encoded_results.extended_perf_metrics;
-    generate_timer.end();
-    auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
-    raw_counters.generate_durations.clear();
-    raw_counters.generate_durations.emplace_back(generate_timer.get_duration_microsec());
-    raw_counters.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
-    raw_counters.detokenization_durations.emplace_back(decode_timer.get_duration_microsec());
-    decoded_results.perf_metrics.m_evaluated = false;
-    decoded_results.perf_metrics.evaluate_statistics(generate_timer.get_start_time());
-    return decoded_results;
-}
-
-DecodedResults StatefulSpeculativeLLMPipeline::generate(
-    const ChatHistory& history,
-    OptionalGenerationConfig generation_config,
-    StreamerVariant streamer
-) {
-    ManualTimer generate_timer("StatefulSpeculativeLLMPipeline::generate()");
-    generate_timer.start();
-    ManualTimer encode_timer("Encode");
-    encode_timer.start();
-
-    GenerationConfig config = resolve_generation_config(generation_config);
-
-    OPENVINO_ASSERT(config.apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
-    OPENVINO_ASSERT(!m_tokenizer.get_chat_template().empty(), "Chat template must not be empty when using ChatHistory in generate method.");
-    OPENVINO_ASSERT(!history.empty(), "Chat history must not be empty when using ChatHistory in generate method.");
-
-    constexpr bool add_generation_prompt = true;
-    auto templated_chat_history = m_tokenizer.apply_chat_template(history, add_generation_prompt);
-    // for chat ov::genai::add_special_tokens(false) is aligned with stateful pipeline and HF
-    auto tokenized_inputs = m_tokenizer.encode(templated_chat_history, ov::genai::add_special_tokens(false));
-    encode_timer.end();
-    auto encoded_results = generate(tokenized_inputs, config, streamer);
-
-    ManualTimer decode_timer("Decode");
-    decode_timer.start();
-    DecodedResults decoded_results = {m_tokenizer.decode(encoded_results.tokens), encoded_results.scores};
-    decode_timer.end();
-    
-    // Update perf metrics
-    decoded_results.perf_metrics = encoded_results.perf_metrics;
-    decoded_results.extended_perf_metrics = encoded_results.extended_perf_metrics;
-    auto& raw_counters = decoded_results.perf_metrics.raw_metrics;
-    generate_timer.end();
-    raw_counters.generate_durations.clear();
-    raw_counters.generate_durations.emplace_back(generate_timer.get_duration_microsec());
-    raw_counters.tokenization_durations.emplace_back(encode_timer.get_duration_microsec());
-    raw_counters.detokenization_durations.emplace_back(decode_timer.get_duration_microsec());
-    decoded_results.perf_metrics.m_evaluated = false;
-    decoded_results.perf_metrics.evaluate_statistics(generate_timer.get_start_time());
-
-    return decoded_results;
-}
-
-EncodedResults StatefulSpeculativeLLMPipeline::generate(
-    const EncodedInputs& inputs,
-    OptionalGenerationConfig generation_config,
-    StreamerVariant streamer) {
-    ManualTimer generate_timer("StatefulSpeculativeLLMPipeline::generate()");
-    generate_timer.start();
-
     ov::Tensor input_ids;
     ov::Tensor attention_mask;
 
@@ -564,8 +428,6 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
     ov::Shape prompt_shape = input_ids.get_shape();
     const size_t batch_size = prompt_shape[0];
     OPENVINO_ASSERT(batch_size == 1u, "Currently only batch size=1 is supported");
-
-    GenerationConfig config = resolve_generation_config(generation_config);
 
     OPENVINO_ASSERT(config.is_greedy_decoding(),
         "Currently only greedy decoding is supported");
@@ -795,7 +657,7 @@ EncodedResults StatefulSpeculativeLLMPipeline::generate(
     }
 
     // If not chat conversation, then reset all states.
-    if (!m_is_chat_conversation) {
+    if (!m_is_chat_active) {
         m_candidates_num = config.num_assistant_tokens;
         m_draft_request->reset_state();
         m_main_request->reset_state();
@@ -831,16 +693,10 @@ StatefulSpeculativeLLMPipeline::get_speculative_decoding_metrics() const {
     return m_sd_metrics;
 };
 
-void StatefulSpeculativeLLMPipeline::start_chat(const std::string& system_message) {
-    if (!system_message.empty()) {
-        m_history.push_back({{"role", "system"}, {"content", system_message}});
-    }
-    m_is_chat_conversation = true;
-};
-
 void StatefulSpeculativeLLMPipeline::finish_chat() {
-    m_is_chat_conversation = false;
-    m_history.clear();
+    // Call base class implementation
+    StatefulSpeculativePipelineBase::finish_chat();
+    // Reset model states
     m_draft_request->reset_state();
     m_main_request->reset_state();
 };

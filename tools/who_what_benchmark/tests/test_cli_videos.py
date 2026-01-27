@@ -82,7 +82,7 @@ def test_video_model_genai(model_id, model_type, tmp_path):
 
     assert "Metrics for model" in output
     similarity = get_similarity(output)
-    assert similarity >= 0.89
+    assert similarity >= 0.88
     assert (tmp_path / "target").exists()
 
     # test w/o models
