@@ -75,7 +75,9 @@ def main():
             break
         # New images and videos can be passed at each turn
         chat_history.append({"role": "user", "content": prompt})
-        decoded_results: openvino_genai.DecodedResults = pipe.generate(chat_history, images=rgbs, generation_config=config, streamer=streamer)
+        decoded_results: openvino_genai.DecodedResults = pipe.generate(
+            chat_history, images=rgbs, generation_config=config, streamer=streamer
+        )
         chat_history.append({"role": "assistant", "content": decoded_results.texts[0]})
     print()
 
