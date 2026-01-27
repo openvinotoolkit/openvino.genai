@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <pybind11/functional.h>
@@ -7,15 +7,14 @@
 #include <pybind11/stl/filesystem.h>
 #include <pybind11/stl_bind.h>
 
+#include "bindings_utils.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 #include "py_utils.hpp"
-#include "bindings_utils.hpp"
 #include "tokenizer/tokenizers_path.hpp"
 
 namespace py = pybind11;
-using ov::genai::ChunkStreamerBase;
 using ov::genai::DecodedResults;
 using ov::genai::GenerationConfig;
 using ov::genai::OptionalWhisperGenerationConfig;
@@ -31,6 +30,7 @@ using ov::genai::WhisperGenerationConfig;
 using ov::genai::WhisperPerfMetrics;
 using ov::genai::WhisperPipeline;
 using ov::genai::WhisperRawPerfMetrics;
+using ov::genai::WhisperWordTiming;
 
 namespace pyutils = ov::genai::pybind::utils;
 namespace common_utils = ov::genai::common_bindings::utils;
@@ -126,6 +126,14 @@ auto whisper_generation_config_docstring = R"(
                        Note that a segment of text refers to a sequence of one or more words, rather than individual words.
     :type return_timestamps: bool
 
+    :param word_timestamps: If `true` the pipeline will return word-level timestamps.
+                            When enabled word_timestamps=True property should be passed to WhisperPipeline constructor:
+                            WhisperPipeline("model_path", "CPU", word_timestamps=True);
+    :type word_timestamps: bool
+
+    :param alignment_heads: Encoder attention alignment heads used for word-level timestamps prediction. Each pair represents (layer_index, head_index).
+    :type alignment_heads: list[tuple[int, int]]
+
     :param initial_prompt: Initial prompt tokens passed as a previous transcription (after `<|startofprev|>` token) to the first processing
     window. Can be used to steer the model to use particular spellings or styles.
 
@@ -198,6 +206,9 @@ auto raw_perf_metrics_docstring = R"(
 
     :param features_extraction_durations: Duration for each features extraction call.
     :type features_extraction_durations: list[MicroSeconds]
+
+    :param word_level_timestamps_processing_durations: Duration for each word-level timestamps processing call.
+    :type word_level_timestamps_processing_durations: list[MicroSeconds]
 )";
 
 auto perf_metrics_docstring = R"(
@@ -205,6 +216,9 @@ auto perf_metrics_docstring = R"(
 
     :param get_features_extraction_duration: Returns mean and standard deviation of features extraction duration in milliseconds
     :type get_features_extraction_duration: MeanStdPair
+
+    :param get_word_level_timestamps_processing_duration: Returns mean and standard deviation of word-level timestamps processing duration in milliseconds
+    :type get_word_level_timestamps_processing_duration: MeanStdPair
 
     :param whisper_raw_metrics: Whisper specific raw metrics
     :type WhisperRawPerfMetrics:
@@ -224,44 +238,6 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
 
     return res_config;
 }
-
-OPENVINO_SUPPRESS_DEPRECATED_START
-
-class ConstructableChunkStreamer : public ChunkStreamerBase {
-    bool put(int64_t token) override {
-        PYBIND11_OVERRIDE(bool,               // Return type
-                          ChunkStreamerBase,  // Parent class
-                          put,                // Name of function in C++ (must match Python name)
-                          token               // Argument(s)
-        );
-    }
-    bool put_chunk(std::vector<int64_t> tokens) override {
-        PYBIND11_OVERRIDE(bool,               // Return type
-                          ChunkStreamerBase,  // Parent class
-                          put_chunk,          // Name of function in C++ (must match Python name)
-                          tokens              // Argument(s)
-        );
-    }
-    StreamingStatus write(const std::vector<int64_t>& token) override {
-        PYBIND11_OVERRIDE(StreamingStatus,    // Return type
-                          ChunkStreamerBase,  // Parent class
-                          write,              // Name of function in C++ (must match Python name)
-                          token               // Argument(s)
-        );
-    }
-    StreamingStatus write(int64_t token) override {
-        PYBIND11_OVERRIDE(StreamingStatus,    // Return type
-                          ChunkStreamerBase,  // Parent class
-                          write,              // Name of function in C++ (must match Python name)
-                          token               // Argument(s)
-        );
-    }
-    void end() override {
-        PYBIND11_OVERRIDE_PURE(void, ChunkStreamerBase, end);
-    }
-};
-
-OPENVINO_SUPPRESS_DEPRECATED_END
 
 py::object call_whisper_common_generate(WhisperPipeline& pipe,
                                         const RawSpeechInput& raw_speech_input,
@@ -287,27 +263,6 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
 }  // namespace
 
 void init_whisper_pipeline(py::module_& m) {
-    OPENVINO_SUPPRESS_DEPRECATED_START
-    py::class_<ChunkStreamerBase, ConstructableChunkStreamer, std::shared_ptr<ChunkStreamerBase>, StreamerBase>(
-        m,
-        "ChunkStreamerBase",
-        streamer_base_docstring)  // Change the holder form unique_ptr to shared_ptr
-        .def(py::init<>())
-        .def("put",
-             &ChunkStreamerBase::put,
-             "Put is called every time new token is generated. Returns a bool flag to indicate whether generation "
-             "should be stopped, if return true generation stops",
-             py::arg("token"))
-        .def("put_chunk",
-             &ChunkStreamerBase::put_chunk,
-             "put_chunk is called every time new token chunk is generated. Returns a bool flag to indicate whether "
-             "generation should be stopped, if return true generation stops",
-             py::arg("tokens"))
-        .def("end",
-             &ChunkStreamerBase::end,
-             "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
-    OPENVINO_SUPPRESS_DEPRECATED_END
-
     // Binding for WhisperGenerationConfig
     py::class_<WhisperGenerationConfig, GenerationConfig>(m,
                                                           "WhisperGenerationConfig",
@@ -330,6 +285,8 @@ void init_whisper_pipeline(py::module_& m) {
         .def_readwrite("lang_to_id", &WhisperGenerationConfig::lang_to_id)
         .def_readwrite("task", &WhisperGenerationConfig::task)
         .def_readwrite("return_timestamps", &WhisperGenerationConfig::return_timestamps)
+        .def_readwrite("word_timestamps", &WhisperGenerationConfig::word_timestamps)
+        .def_readwrite("alignment_heads", &WhisperGenerationConfig::alignment_heads)
         .def_readwrite("initial_prompt", &WhisperGenerationConfig::initial_prompt)
         .def_readwrite("hotwords", &WhisperGenerationConfig::hotwords)
         .def("update_generation_config", [](ov::genai::WhisperGenerationConfig& config, const py::kwargs& kwargs) {
@@ -340,11 +297,15 @@ void init_whisper_pipeline(py::module_& m) {
         .def(py::init<>())
         .def_property_readonly("features_extraction_durations", [](const WhisperRawPerfMetrics& rw) {
             return common_utils::get_ms(rw, &WhisperRawPerfMetrics::features_extraction_durations);
+        })
+        .def_property_readonly("word_level_timestamps_processing_durations", [](const WhisperRawPerfMetrics& rw) {
+            return common_utils::get_ms(rw, &WhisperRawPerfMetrics::word_level_timestamps_processing_durations);
         });
 
     py::class_<WhisperPerfMetrics, PerfMetrics>(m, "WhisperPerfMetrics", perf_metrics_docstring)
         .def(py::init<>())
         .def("get_features_extraction_duration", &WhisperPerfMetrics::get_features_extraction_duration)
+        .def("get_word_level_timestamps_processing_duration", &WhisperPerfMetrics::get_word_level_timestamps_processing_duration)
         .def_readonly("whisper_raw_metrics", &WhisperPerfMetrics::whisper_raw_metrics);
 
     py::class_<WhisperDecodedResultChunk>(m, "WhisperDecodedResultChunk", whisper_decoded_result_chunk)
@@ -355,6 +316,13 @@ void init_whisper_pipeline(py::module_& m) {
             return pyutils::handle_utf8(chunk.text);
         });
 
+    py::class_<WhisperWordTiming>(m, "WhisperWordTiming", "Structure to store word-level timestamps")
+        .def(py::init<>())
+        .def_readonly("word", &WhisperWordTiming::word)
+        .def_readonly("token_ids", &WhisperWordTiming::token_ids)
+        .def_readonly("start_ts", &WhisperWordTiming::start_ts)
+        .def_readonly("end_ts", &WhisperWordTiming::end_ts);
+
     py::class_<WhisperDecodedResults>(m, "WhisperDecodedResults", whisper_decoded_results_docstring)
         .def_property_readonly("texts",
                                [](const WhisperDecodedResults& dr) -> py::typing::List<py::str> {
@@ -362,6 +330,7 @@ void init_whisper_pipeline(py::module_& m) {
                                })
         .def_readonly("scores", &WhisperDecodedResults::scores)
         .def_readonly("chunks", &WhisperDecodedResults::chunks)
+        .def_readonly("words", &WhisperDecodedResults::words)
         .def_readonly("perf_metrics", &WhisperDecodedResults::perf_metrics)
         .def("__str__", [](const WhisperDecodedResults& dr) -> py::str {
             auto valid_utf8_strings = pyutils::handle_utf8((std::vector<std::string>)dr);

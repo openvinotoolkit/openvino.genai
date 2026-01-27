@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -44,6 +44,7 @@ class Sequence {
     LogProbs m_generated_log_probs;
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
+    ov::Tensor m_hidden_state = ov::Tensor();
     SequenceStatus m_status = SequenceStatus::RUNNING;
     GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
     float m_cumulative_log_prob = 0.0f;
@@ -70,6 +71,7 @@ class Sequence {
         m_generated_ids(seq.m_generated_ids),
         m_generated_log_probs(seq.m_generated_log_probs),
         m_grouped_id(id),
+        m_hidden_state(seq.m_hidden_state),
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob),
         m_sequence_group(seq.m_sequence_group),
@@ -140,6 +142,14 @@ public:
         m_cumulative_log_prob += log_prob;
         m_generated_log_probs.push_back(log_prob);
         m_generated_ids.push_back(token_id);
+    }
+
+    void update_hidden_state(const ov::Tensor& tensor) {
+        m_hidden_state = tensor;
+    }
+
+    ov::Tensor get_hidden_state() const {
+        return m_hidden_state;
     }
 
     // removes n last tokens and updates cumulative log prob
@@ -237,7 +247,6 @@ public:
             m_position_ids_list.push_back(position_ids);
             return;
         }
-        int64_t* position_ids_data = position_ids.data<int64_t>();
         ov::Shape position_ids_elem_shape = position_ids.get_shape();
         position_ids_elem_shape[seq_len_shape_idx] = 1;
 
@@ -317,7 +326,7 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
     SequenceGroupType m_sequence_group_type;
 
     uint64_t m_next_sequence_id = 0;
- 
+
     // amount of processed tokens, e.g. prompt can be processed using multiple consequence inferences
     // so, we need to track which part of the prompt we have already processed
     size_t m_num_processed_tokens = 0;
@@ -354,16 +363,17 @@ public:
     using Ptr = std::shared_ptr<SequenceGroup>;
     using CPtr = std::shared_ptr<const SequenceGroup>;
 
+    // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
     SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
-        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, (void *)input_ids.data()), sampling_params, block_size, std::nullopt) {
+        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, const_cast<int64_t*>(input_ids.data())), sampling_params, block_size, std::nullopt) {
     }
 
-    SequenceGroup(uint64_t request_id, 
-                  const ov::Tensor& input_ids, 
-                  const ov::genai::GenerationConfig& sampling_params, 
-                  std::size_t block_size, 
-                  const std::optional<ov::Tensor>& token_type_ids = std::nullopt, 
-                  const std::optional<ov::Tensor>& position_ids = std::nullopt, 
+    SequenceGroup(uint64_t request_id,
+                  const ov::Tensor& input_ids,
+                  const ov::genai::GenerationConfig& sampling_params,
+                  std::size_t block_size,
+                  const std::optional<ov::Tensor>& token_type_ids = std::nullopt,
+                  const std::optional<ov::Tensor>& position_ids = std::nullopt,
                   const std::optional<int64_t>& rope_delta = std::nullopt)
         : SequenceGroup(request_id, sampling_params, block_size) {
         size_t prompt_len;
@@ -405,7 +415,7 @@ public:
         m_prompt_log_probs.reserve(prompt_len);
 
         auto sequence = Sequence::create(m_next_sequence_id++, m_sequence_group_type, hidden_size);
-        
+
         if (position_ids.has_value()) {
             sequence->append_position_ids(*position_ids);
         }
@@ -644,10 +654,10 @@ public:
         m_num_validation_tokens = k;
     }
 
-    size_t get_num_tokens_to_validate() {
+    size_t get_num_tokens_to_validate() const {
         return m_num_validation_tokens;
     }
-    
+
     void set_stream_window_size(size_t k) {
         m_stream_window_size = k;
     }
@@ -863,7 +873,7 @@ public:
         }
     }
 
-    
+
     // Special notification path for max_new_tokens == 0 where we don't expect to return any new tokens, but only process prompt
     void notify_handle_echo_only() {
         // This method is called after scheduling and before sampling,

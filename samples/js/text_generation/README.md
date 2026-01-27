@@ -1,6 +1,6 @@
 # JavaScript chat_sample that supports most popular models like LLaMA 3
 
-This example showcases inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen` and other models with the same signature. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample fearures `Pipeline.LLMPipeline` and configures it for the chat scenario.
+This example showcases inference of text-generation Large Language Models (LLMs): `chatglm`, `LLaMA`, `Qwen` and other models with the same signature. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `Pipeline.LLMPipeline` and configures it for the chat scenario.
 
 ## Download and convert the model and tokenizers
 
@@ -175,14 +175,16 @@ If the model does not generate trigger strings there will be no structural const
 The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other models may not produce the expected results or might require different system prompt.
 
 
-### 9. Compound Grammar Generation Sample (`compound_grammar_generation`)
+### 9. Compound Grammar Generation with Parsing Sample (`compound_grammar_generation`)
 - **Description:**
-  This sample demonstrates advanced structured output generation using compound grammars in OpenVINO GenAI.
-  It showcases how to combine multiple grammar types - Regex, JSONSchema and EBNF - using Union and Concat operations to strictly control LLM output.
+  This sample demonstrates advanced structured output generation and results parsing using compound grammars in OpenVINO GenAI.
+  It showcases how to combine multiple grammar types - Regex, JSONSchema and EBNF - using Union and Concat operations to strictly control LLM output and
+  also shows how to write parsing logic to extract structured data from the generated output.
   It features multi-turn chat, switching grammar constraints between turns (e.g., "yes"/"no" answers and structured tool calls).
   Union operation allows the model to choose which grammar to use during generation. 
   In the sample it is used to combine two regex grammars for `"yes"` or `"no"` answer.
-  Concat operation allows to start with one grammar and continue with another. 
+  Concat operation allows to start with one grammar and continue with another.
+  Also it demonstrates how to write custom parser to extract tool calls from the generated text.
   In the sample it used to create a `phi-4-mini-instruct` style tool calling answer - `functools[{tool_1_json}, ...]` - by combining regex and JSON schema grammars.
 
 - **Main Features:**
@@ -190,12 +192,13 @@ The sample is verified with `meta-llama/Llama-3.2-3B-Instruct` model. Other mode
   - Combine grammars with Concat and Union operations
   - Multi-turn chat with grammar switching
   - Structured tool calling using zod schemas
+  - Parse generated output to call tools from extracted structured data
 - **Run Command:**
   ```bash
   node compound_grammar_generation.js model_dir
   ```
 - **Notes:**
-  This sample is ideal for scenarios requiring strict control over LLM outputs, such as building agents that interact with APIs or require validated structured responses. It showcases how to combine regex triggers and JSON schema enforcement for robust output generation.
+  This sample is ideal for scenarios requiring strict control over LLM outputs, such as building agents that interact with APIs or require validated structured responses. It showcases how to combine regex triggers and JSON schema enforcement for robust output generation and parsing resulting output.
   The sample is verified with `microsoft/Phi-4-mini-instruct` model. Other models may not produce the expected results or might require different system prompt.
 
 #### Options

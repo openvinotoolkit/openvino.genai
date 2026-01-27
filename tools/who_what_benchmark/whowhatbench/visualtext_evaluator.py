@@ -1,34 +1,16 @@
-from typing import Any, Union
-
 import os
-import datasets
+
 import pandas as pd
-from transformers.image_utils import load_image
+
 from tqdm import tqdm
-from transformers import set_seed
+from itertools import zip_longest
+from typing import Literal, Any, Union
 
 from .registry import register_evaluator
 from .text_evaluator import TextEvaluator
-from .utils import get_ignore_parameters_flag
+from .utils import get_ignore_parameters_flag, prepare_default_data_image, prepare_default_data_video
 
-
-def preprocess_fn(example):
-    return {
-        "prompts": example["instruction"],
-        "images": load_image(example["image_url"]),
-    }
-
-
-def prepare_default_data(num_samples=None):
-    DATASET_NAME = "ucla-contextual/contextual_test"
-    NUM_SAMPLES = 24 if num_samples is None else num_samples
-    set_seed(42)
-    default_dataset = datasets.load_dataset(
-        DATASET_NAME, split="test", streaming=True
-    ).shuffle(42).take(NUM_SAMPLES)
-    return default_dataset.map(
-        lambda x: preprocess_fn(x), remove_columns=default_dataset.column_names
-    )
+DEF_VIDEO_FRAMES_AMOUNT = 10
 
 
 def fix_phi3_v_eos_token_id(model_type, tokenizer):
@@ -44,7 +26,7 @@ def fix_phi3_v_eos_token_id(model_type, tokenizer):
         return dict()
 
 
-@register_evaluator("visual-text")
+@register_evaluator("visual-text", "visual-video-text")
 class VisualTextEvaluator(TextEvaluator):
     def __init__(
         self,
@@ -60,8 +42,16 @@ class VisualTextEvaluator(TextEvaluator):
         gen_answer_fn=None,
         generation_config=None,
         seqs_per_request=None,
+        pruning_ratio=None,
+        relevance_weight=None,
+        task_type: Literal['visual-text', 'visual-video-text'] = "visual-text",
+        frames_num: int | None = None,
     ) -> None:
         self.processor = processor
+        self.is_image_input = (task_type == "visual-text")
+        self.frames_num = frames_num or DEF_VIDEO_FRAMES_AMOUNT
+        self.pruning_ratio = pruning_ratio
+        self.relevance_weight = relevance_weight
         super().__init__(
             base_model=base_model,
             tokenizer=tokenizer,
@@ -124,7 +114,16 @@ class VisualTextEvaluator(TextEvaluator):
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
         def default_gen_answer(
-            model, prompt, image, processor, tokenizer, max_new_tokens, crop_question
+            model,
+            prompt,
+            image,
+            video,
+            processor,
+            tokenizer,
+            max_new_tokens,
+            crop_question,
+            pruning_ratio,
+            relevance_weight,
         ):
 
             from optimum.intel.openvino.modeling_visual_language import \
@@ -132,7 +131,7 @@ class VisualTextEvaluator(TextEvaluator):
             preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[
                 model.config.model_type
             ].preprocess_inputs
-            inputs = preprocess_inputs(prompt, image, processor, tokenizer, config=model.config)
+            inputs = preprocess_inputs(prompt, image, processor, tokenizer, config=model.config, video=video)
             tokens = model.generate(
                 **inputs,
                 **fix_phi3_v_eos_token_id(model.config.model_type, tokenizer),
@@ -160,28 +159,35 @@ class VisualTextEvaluator(TextEvaluator):
                 if isinstance(self.test_data, dict):
                     assert "prompts" in self.test_data
                     assert "images" in self.test_data
+                    assert "videos" in self.test_data
                     data = dict(self.test_data)
                 data = pd.DataFrame.from_dict(data)
         else:
-            data = pd.DataFrame.from_dict(prepare_default_data(self.num_samples))
+            input_data = prepare_default_data_image(self.num_samples) if self.is_image_input else prepare_default_data_video(self.num_samples, self.frames_num)
+            data = pd.DataFrame.from_dict(input_data)
 
         prompt_data = data["prompts"]
         image_data = data["images"]
+        videos_data = data["videos"]
 
         answers = []
         prompts = prompt_data.values
         images = image_data.values
+        videos = videos_data.values
 
-        for p, i in tqdm(zip(prompts, images), desc="Evaluate pipeline"):
+        for p, i, v in tqdm(zip_longest(prompts, images, videos), desc="Evaluate pipeline"):
             answers.append(
                 gen_answer_fn(
                     model,
                     p,
                     i,
+                    v,
                     self.processor,
                     self.tokenizer,
                     self.max_new_tokens,
                     self._crop_question,
+                    self.pruning_ratio,
+                    self.relevance_weight,
                 )
             )
 

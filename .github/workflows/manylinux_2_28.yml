@@ -44,7 +44,7 @@ jobs:
       skip_workflow: "${{ steps.smart_ci.outputs.skip_workflow }}"
     steps:
       - name: checkout action
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         timeout-minutes: 15
         with:
           sparse-checkout: .github
@@ -94,9 +94,12 @@ jobs:
         platform: almalinux8
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
         revision: latest_available_commit
+        # Set specific revision and uncomment to use OV from its PR build:
+        # branch_name: master
+        # event_name: pull_request
 
     - name: Clone docker tag from OpenVINO repo
-      uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
       with:
         repository: 'openvinotoolkit/openvino'
         path: 'openvino'
@@ -139,7 +142,7 @@ jobs:
       MANIFEST_PATH: ${{ github.workspace }}/manifest.yml
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -173,7 +176,7 @@ jobs:
           for py_version in "3.10" "3.11" "3.12" "3.13"
           do
             rm -rf ${{ env.BUILD_DIR }}/CMakeCache.txt
-            
+
             python_exec_path=$(python$py_version -c "import sys; print(sys.executable)")
 
             echo "Configuring cmake for python$py_version"
@@ -184,12 +187,12 @@ jobs:
                   -S ${{ env.SRC_DIR }} \
                   -B ${{ env.BUILD_DIR }}
             echo "Configuring cmake done for python$py_version"
-            
+
             /usr/bin/cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
             /usr/bin/cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_DIR }}
           done
           /usr/bin/cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TOOLS_DIR }} --component tools_bin
-          /usr/bin/cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TESTS_DIR }} --component tests          
+          /usr/bin/cmake --install ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --prefix ${{ env.INSTALL_TESTS_DIR }} --component tests
         env:
           CXXFLAGS: "-Wno-dangling-reference -fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
           CFLAGS: "-Wno-dangling-reference -fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
@@ -206,7 +209,7 @@ jobs:
           name: genai_archive_${{ matrix.build-type }}
           path: ${{ env.BUILD_DIR }}/${{ env.GENAI_ARCHIVE_NAME }}
           if-no-files-found: 'error'
-      
+
       - name: Upload Tools
         if: always()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
@@ -231,10 +234,10 @@ jobs:
           path: ${{ env.MANIFEST_PATH }}
           if-no-files-found: 'error'
 
-  genai_build_wheel:
-    name: Build Wheel
+  genai_build_wheels:
+    name: Build Tokenizers & WWB Wheels
     needs: [ openvino_download ]
-    timeout-minutes: 90
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash
@@ -246,7 +249,66 @@ jobs:
         - ${{ github.workspace }}:${{ github.workspace }}
       options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
     env:
-      CMAKE_GENERATOR: Unix Makefiles
+      CMAKE_GENERATOR: Ninja
+      OV_INSTALL_DIR: ${{ github.workspace }}/ov
+      INSTALL_DIR: ${{ github.workspace }}/install
+      WHEELS_DIR: ${{ github.workspace }}/install/wheels
+      SRC_DIR: ${{ github.workspace }}/src
+
+    steps:
+      - name: Clone openvino.genai
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          path: ${{ env.SRC_DIR }}
+          submodules: recursive
+
+      - name: Download OpenVINO package
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        with:
+          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          path: ${{ env.OV_INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Build Tokenizers Wheel
+        run: |
+          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+              --config-settings='override=wheel.build_tag="${{ github.run_number }}"' \
+              ${{ needs.openvino_download.outputs.ov_wheel_source }} \
+              ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
+        working-directory: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Build WWB Wheel
+        run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
+        working-directory: ${{ env.OV_INSTALL_DIR }}
+
+      - name: Upload Wheels
+        if: ${{ always() }}
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: genai_wheels
+          path: ${{ env.INSTALL_DIR }}
+          if-no-files-found: 'error'
+
+  genai_build_genai_wheel:
+    name: Build GenAI Wheel - Python ${{ matrix.python-version }}
+    needs: [ openvino_download ]
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    defaults:
+      run:
+        shell: bash
+    runs-on: aks-linux-8-cores-16gb
+    container:
+      image: openvinogithubactions.azurecr.io/ov_build/manylinux_2_28:${{ needs.openvino_download.outputs.docker_tag }}
+      volumes:
+        - /mount:/mount
+        - ${{ github.workspace }}:${{ github.workspace }}
+      options: -e SCCACHE_AZURE_BLOB_CONTAINER -e SCCACHE_AZURE_CONNECTION_STRING
+    env:
+      CMAKE_GENERATOR: Ninja
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       INSTALL_DIR: ${{ github.workspace }}/install
       WHEELS_DIR: ${{ github.workspace }}/install/wheels
@@ -255,7 +317,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -277,34 +339,19 @@ jobs:
           build_type: Release
           save_to: ${{ github.workspace }}
 
-      - name: Build Tokenizers Wheel
-        run: |
-          python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
-              --config-settings='override=wheel.build_tag="${{ github.run_number }}"' \
-              ${{ needs.openvino_download.outputs.ov_wheel_source }} \
-              ${{ env.SRC_DIR }}/thirdparty/openvino_tokenizers
-        working-directory: ${{ env.OV_INSTALL_DIR }}
-
       - name: Build GenAI Wheel
         run: |
-          for py_version in "3.10" "3.11" "3.12" "3.13"
-          do
-            python_exec_path=$(python$py_version -c "import sys; print(sys.executable)")
-            $python_exec_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
-                ${{ needs.openvino_download.outputs.ov_wheel_source }} \
-                ${{ env.SRC_DIR }}
-          done
+          python_exec_path=$(python${{ matrix.python-version }} -c "import sys; print(sys.executable)")
+          $python_exec_path -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} \
+              ${{ needs.openvino_download.outputs.ov_wheel_source }} \
+              ${{ env.SRC_DIR }}
         working-directory: ${{ env.OV_INSTALL_DIR }}
 
-      - name: Build WWB Wheel
-        run: python -m pip wheel -v --no-deps --wheel-dir ${{ env.WHEELS_DIR }} ${{ env.SRC_DIR }}/tools/who_what_benchmark
-        working-directory: ${{ env.OV_INSTALL_DIR }}
-
-      - name: Upload Wheels
+      - name: Upload GenAI Wheel
         if: ${{ always() }}
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
-          name: ${{ env.GENAI_WHEELS_ARTIFACT_NAME }}
+          name: genai_wheel_python_${{ matrix.python-version }}
           path: ${{ env.INSTALL_DIR }}
           if-no-files-found: 'error'
 
@@ -333,7 +380,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/openvino.genai/src/js/bin
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -357,7 +404,7 @@ jobs:
           CXXFLAGS: "-Wno-dangling-reference -fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
           CFLAGS: "-Wno-dangling-reference -fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532, https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
           LDFLAGS: "-fno-lto" # bug in gcc-14: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=113485
-      
+
       - name: Build GenAI Node.js bindings
         run: /usr/bin/cmake --build ${{ env.BUILD_DIR }} --config ${{ matrix.build-type }} --parallel $(nproc) --verbose
 
@@ -377,7 +424,7 @@ jobs:
     strategy:
       matrix:
         build-type: [Release]
-    needs: [openvino_download, genai_build_wheel, genai_build_cmake, genai_build_nodejs]
+    needs: [openvino_download, genai_build_wheels, genai_build_genai_wheel, genai_build_cmake, genai_build_nodejs]
     timeout-minutes: 10
     defaults:
       run:
@@ -410,7 +457,7 @@ jobs:
       - name: Download manifest and wheels
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: '{${{ env.GENAI_WHEELS_ARTIFACT_NAME }},manifest_${{ matrix.build-type }}}'
+          pattern: '{genai_wheels,genai_wheel_python_*,manifest_${{ matrix.build-type }}}'
           path: ${{ github.workspace }}
           merge-multiple: true
 
@@ -437,10 +484,10 @@ jobs:
           storage_dir: ${{ env.BASE_PRODUCT_TYPE }}_${{ matrix.build-type }}
           storage_root: ${{ env.ARTIFACTS_SHARE }}
           product_name: ${{ github.event.repository.name }}
-  
+
   genai_tests_wheel:
     name: Python (${{ matrix.test.name}}) Tests (wheel)
-    needs: [ smart_ci, openvino_download, genai_build_wheel ]
+    needs: [ smart_ci, openvino_download, genai_build_wheels, genai_build_genai_wheel ]
     timeout-minutes: ${{ matrix.test.timeout }}
     strategy:
       fail-fast: false
@@ -463,6 +510,16 @@ jobs:
             cmd: 'python -m pytest -v ./tests/python_tests/test_llm_pipeline.py ./tests/python_tests/test_llm_pipeline_static.py ./tests/python_tests/test_vlm_pipeline.py ./tests/python_tests/test_structured_output.py --override-ini cache_dir=/mount/caches/pytest/'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
             timeout: 180
+          - name: 'Video Generation'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_video_generation.py --override-ini cache_dir=/mount/caches/pytest/'
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).video_generation.test }}
+            timeout: 60
+          - name: 'VLM (MiniCPM-o-2_6)'
+            cmd: |
+              python -m pip install transformers==4.51.3
+              python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "MiniCPM-o-2_6"
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
+            timeout: 60
           - name: 'GGUF Reader tests'
             cmd: 'python -m pytest -v ./tests/python_tests/test_gguf_reader.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
@@ -472,7 +529,7 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).tokenizers.test }}
             timeout: 60
           - name: 'API tests'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_continuous_batching.py ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "not eagle3" ./tests/python_tests/test_generation_config.py ./tests/python_tests/test_sampling.py ./tests/python_tests/test_text_streamer.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test || fromJSON(needs.smart_ci.outputs.affected_components).sampling.test || fromJSON(needs.smart_ci.outputs.affected_components).text_streamer.test }}
             timeout: 60
           - name: 'Rag tests'
@@ -488,6 +545,12 @@ jobs:
               python -m pip install transformers==4.48.0
               python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
+            timeout: 90
+          - name: 'EAGLE3 speculative decoding tests'
+            cmd: |
+              python -m pip install git+https://github.com/xufang-lisa/optimum-intel.git@ea9607daf32919024cdd4390deec9693a7b64d23
+              python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "eagle3"
+            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speculative_decoding.test }}
             timeout: 90
     defaults:
       run:
@@ -508,7 +571,7 @@ jobs:
     steps:
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -517,7 +580,7 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels}"
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
@@ -557,7 +620,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -602,7 +665,7 @@ jobs:
 
   Overall_Status:
     name: ci/gha_overall_status_manylinux_2_28
-    needs: [smart_ci, openvino_download, genai_build_cmake, genai_build_wheel, genai_build_nodejs, genai_tests_wheel, genai_nodejs_tests]
+    needs: [smart_ci, openvino_download, genai_build_cmake, genai_build_wheels, genai_build_genai_wheel, genai_build_nodejs, genai_tests_wheel, genai_nodejs_tests]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:

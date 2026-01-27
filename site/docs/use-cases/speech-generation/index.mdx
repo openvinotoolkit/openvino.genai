@@ -1,0 +1,27 @@
+---
+sidebar_position: 5
+---
+import OptimumCLI from '@site/src/components/OptimumCLI';
+import ConvertModelSection from '../_shared/_convert_model.mdx';
+import RunModelSection from './_sections/_run_model/index.mdx';
+
+
+# Speech Generation Using SpeechT5
+
+:::info Note
+Currently, speech generation pipeline supports the SpeechT5 TTS model.
+The generated audio signal is a single-channel (mono) waveform with a sampling rate of 16 kHz.
+:::
+
+<ConvertModelSection>
+    Download and convert model (e.g. [speecht5_tts](https://huggingface.co/microsoft/speecht5_tts)) and its vocoder to OpenVINO format from Hugging Face.
+    SpeechT5 requires specifying a vocoder via `--model-kwargs`:
+
+    <OptimumCLI model='microsoft/speecht5_tts' outputDir='speecht5_tts' weightFormat='int4' modelKwargs={{
+        vocoder: "microsoft/speecht5_hifigan"
+    }} />
+
+    See all supported [Speech Generation Models](/docs/supported-models/#speech-generation-models).
+</ConvertModelSection>
+
+<RunModelSection />

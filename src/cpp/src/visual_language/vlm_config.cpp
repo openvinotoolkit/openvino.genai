@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "vlm_config.hpp"
@@ -68,6 +68,7 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
 
     // Qwen2.5VL
     read_json_param(parsed, "vision_config.window_size", vision_config_window_size);
+    read_json_param(parsed, "vision_config.tokens_per_second", vision_config_tokens_per_second);
 }
 
 } // namespace ov::genai

@@ -1,5 +1,5 @@
 
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "visual_language/phi3_vision/classes.hpp"
@@ -73,6 +73,93 @@ ov::Tensor HD_transform(const ov::Tensor& uint8, size_t num_crops) {
     return padding_336(ov::Tensor{ov::element::u8, {1, new_h, new_w, 3}, dst.buf.data()});
 }
 
+void bicubic_resize_phi3(const clip_image_u8& img, clip_image_u8& dst, int target_width, int target_height) {
+    const int nx = img.nx;
+    const int ny = img.ny;
+
+    dst.nx = target_width;
+    dst.ny = target_height;
+    dst.buf.resize(3 * target_width * target_height);
+
+    const float tx = static_cast<float>(nx) / static_cast<float>(target_width);
+    const float ty = static_cast<float>(ny) / static_cast<float>(target_height);
+
+    constexpr float _1_3 = 1.0f / 3.0f;
+    constexpr float _1_6 = 1.0f / 6.0f;
+
+    float pixels[4];
+
+    auto clip_coord = [](int x, int lower, int upper) -> int {
+        return std::max(lower, std::min(x, upper));
+    };
+
+    for (int i = 0; i < target_height; i++) {
+        const float fy = ty * i;
+        const int y = static_cast<int>(fy);
+        const float dy = fy - y;
+
+        const int y_coords[4] = {
+            clip_coord(y - 1, 0, ny - 1),
+            clip_coord(y, 0, ny - 1),
+            clip_coord(y + 1, 0, ny - 1),
+            clip_coord(y + 2, 0, ny - 1)
+        };
+
+        for (int j = 0; j < target_width; j++) {
+            const float fx = tx * j;
+            const int x = static_cast<int>(fx);
+            const float dx = fx - x;
+
+            const int x_coords[4] = {
+                clip_coord(x - 1, 0, nx - 1),
+                clip_coord(x, 0, nx - 1),
+                clip_coord(x + 1, 0, nx - 1),
+                clip_coord(x + 2, 0, nx - 1)
+            };
+
+            const int dst_base_idx = (i * target_width + j) * 3;
+
+            for (int k = 0; k < 3; k++) {
+                for (int jj = 0; jj < 4; jj++) {
+                    const int row_base = y_coords[jj] * nx;
+                    const uint8_t* row_ptr = &img.buf[row_base * 3 + k];
+
+                    const float p[4] = {
+                        static_cast<float>(row_ptr[x_coords[0] * 3]),
+                        static_cast<float>(row_ptr[x_coords[1] * 3]),
+                        static_cast<float>(row_ptr[x_coords[2] * 3]),
+                        static_cast<float>(row_ptr[x_coords[3] * 3])
+                    };
+
+                    const float a0 = p[1];
+                    const float d0 = p[0] - a0;
+                    const float d2 = p[2] - a0;
+                    const float d3 = p[3] - a0;
+                    const float a1 = -_1_3 * d0 + d2 - _1_6 * d3;
+                    const float a2 = 0.5f * (d0 + d2);
+                    const float a3 = -_1_6 * d0 - 0.5f * d2 + _1_6 * d3;
+
+                    pixels[jj] = a0 + dx * (a1 + dx * (a2 + dx * a3));
+                }
+
+                const float a0 = pixels[1];
+                const float d0 = pixels[0] - a0;
+                const float d2 = pixels[2] - a0;
+                const float d3 = pixels[3] - a0;
+                const float a1 = -_1_3 * d0 + d2 - _1_6 * d3;
+                const float a2 = 0.5f * (d0 + d2);
+                const float a3 = -_1_6 * d0 - 0.5f * d2 + _1_6 * d3;
+
+                const float result = a0 + dy * (a1 + dy * (a2 + dy * a3));
+
+                dst.buf[dst_base_idx + k] = static_cast<uint8_t>(
+                    std::min(std::max(std::round(result), 0.0f), 255.0f)
+                );
+            }
+        }
+    }
+}
+
 ov::Tensor mean_scale(const ov::Tensor& uint8, const ProcessorConfig& config) {
     auto uint_8_data = uint8.data<uint8_t>();
     ov::Tensor float_normalized{ov::element::f32, uint8.get_shape()};
@@ -87,15 +174,30 @@ ov::Tensor mean_scale(const ov::Tensor& uint8, const ProcessorConfig& config) {
 }
 
 ov::Tensor channels_first(const ov::Tensor& _1hw3) {
-    ov::Shape shape = _1hw3.get_shape();
-    ov::Tensor _13hw = ov::Tensor{ov::element::f32, {1, 3, shape.at(1), shape.at(2)}};
-    auto _1hw3_data = _1hw3.data<float>();
+    const ov::Shape shape = _1hw3.get_shape();
+    const size_t height = shape.at(1);
+    const size_t width = shape.at(2);
+    const size_t hw = height * width;
+
+    ov::Tensor _13hw = ov::Tensor{ov::element::f32, {1, 3, height, width}};
+    const float* _1hw3_data = _1hw3.data<float>();
     float* _13hw_data = _13hw.data<float>();
-    for (size_t plane = 0; plane < 3; ++plane) {
-        for (size_t row = 0; row < shape.at(1); ++row) {
-            for (size_t col = 0; col < shape.at(2); ++col) {
-                _13hw_data[plane * shape.at(1) * shape.at(2) + row * shape.at(2) + col] = _1hw3_data[row * shape.at(2) * 3 + col * 3 + plane];
-            }
+
+    float* dst_channels[3] = {
+        _13hw_data,              // R channel
+        _13hw_data + hw,         // G channel
+        _13hw_data + 2 * hw      // B channel
+    };
+
+    for (size_t row = 0; row < height; ++row) {
+        const size_t row_offset = row * width;
+        const float* src_row = _1hw3_data + row_offset * 3;
+        for (size_t col = 0; col < width; ++col) {
+            const size_t dst_offset = row_offset + col;
+            const size_t src_offset = col * 3;
+            dst_channels[0][dst_offset] = src_row[src_offset];     // R
+            dst_channels[1][dst_offset] = src_row[src_offset + 1]; // G
+            dst_channels[2][dst_offset] = src_row[src_offset + 2]; // B
         }
     }
     return _13hw;
@@ -201,7 +303,7 @@ std::tuple<ov::Tensor, ImageSize> get_pixel_values_phi3_v(const ov::Tensor& imag
     ImageSize image_size{hd_image.get_shape().at(2), hd_image.get_shape().at(1)};
     clip_image_u8 img{int(hd_image.get_shape().at(2)), int(hd_image.get_shape().at(1)), {hd_image.data<uint8_t>(), hd_image.data<uint8_t>() + hd_image.get_size()}};
     clip_image_u8 dst;
-    bicubic_resize(img, dst, INPUT_IMAGE_SIZE, INPUT_IMAGE_SIZE);
+    bicubic_resize_phi3(img, dst, INPUT_IMAGE_SIZE, INPUT_IMAGE_SIZE);
     ov::Tensor global_image{ov::element::u8, {1, INPUT_IMAGE_SIZE, INPUT_IMAGE_SIZE, 3}, dst.buf.data()};
     global_image = mean_scale(global_image, config);
     hd_image = mean_scale(hd_image, config);
@@ -426,6 +528,196 @@ ov::Tensor hd_feature_transform(const EncodedImage& image_features, InferRequest
     return res;
 }
 
+std::shared_ptr<ov::Node> create_bicubic_resize(std::shared_ptr<ov::Node> input, std::shared_ptr<ov::Node> target_size) {
+    using namespace ov::op;
+
+    // Convert to float32 before interpolation (required for bicubic)
+    auto input_f32 = std::make_shared<v0::Convert>(input, ov::element::f32);
+
+    // For NHWC format, resize axes are [1, 2] (height, width dimensions)
+    auto axes = v0::Constant::create(ov::element::i64, ov::Shape{2}, std::vector<int64_t>{1, 2});
+
+    v11::Interpolate::InterpolateAttrs attrs;
+    attrs.mode = v11::Interpolate::InterpolateMode::CUBIC;
+    attrs.shape_calculation_mode = v11::Interpolate::ShapeCalcMode::SIZES;
+    attrs.coordinate_transformation_mode = v11::Interpolate::CoordinateTransformMode::ASYMMETRIC;
+    attrs.cube_coeff = -0.5f;  // Standard coefficient for bicubic interpolation (Catmull-Rom)
+    attrs.nearest_mode = v11::Interpolate::NearestMode::FLOOR;
+    attrs.pads_begin = {0, 0};
+    attrs.pads_end = {0, 0};
+    attrs.antialias = false;
+
+    return std::make_shared<v11::Interpolate>(input_f32, target_size, axes, attrs);
+}
+
+std::shared_ptr<ov::Node> create_mean_scale(std::shared_ptr<ov::Node> input_u8_or_f32, const ProcessorConfig& config) {
+    using namespace ov::op;
+
+    std::shared_ptr<ov::Node> input_f32;
+
+    // Convert to float32 if input is uint8, otherwise use as-is
+    if (input_u8_or_f32->get_element_type() == ov::element::u8) {
+        input_f32 = std::make_shared<v0::Convert>(input_u8_or_f32, ov::element::f32);
+    } else {
+        input_f32 = std::move(input_u8_or_f32);
+    }
+
+    // Follow the original mean_scale() function logic exactly:
+    // (float(uint8_data[idx]) / 255.0f - config.image_mean[c]) / config.image_std[c]
+    // Step 1: x / 255.0
+    auto scale_255 = v0::Constant::create(ov::element::f32, ov::Shape{}, std::vector<float>{255.0f});
+    auto divided_by_255 = std::make_shared<v1::Divide>(input_f32, scale_255);
+
+    // Step 2: Create mean and std constants [R, G, B] - broadcasted along channel dimension
+    // For NHWC format, we need shape [1, 1, 1, 3] to broadcast correctly
+    auto mean_const = v0::Constant::create(ov::element::f32, ov::Shape{1, 1, 1, 3},
+        std::vector<float>{config.image_mean[0], config.image_mean[1], config.image_mean[2]});
+    auto std_const = v0::Constant::create(ov::element::f32, ov::Shape{1, 1, 1, 3},
+        std::vector<float>{config.image_std[0], config.image_std[1], config.image_std[2]});
+
+    // Step 3: (x/255.0 - mean)
+    auto mean_subtracted = std::make_shared<v1::Subtract>(divided_by_255, mean_const);
+
+    // Step 4: (x/255.0 - mean) / std
+    auto result = std::make_shared<v1::Divide>(mean_subtracted, std_const);
+
+    return result;
+}
+
+std::shared_ptr<ov::Node> create_channels_first(std::shared_ptr<ov::Node> input_nhwc) {
+    using namespace ov::op;
+
+    // Transpose from NHWC (0,1,2,3) to NCHW (0,3,1,2)
+    auto transpose_order = v0::Constant::create(ov::element::i64, ov::Shape{4}, std::vector<int64_t>{0, 3, 1, 2});
+    return std::make_shared<v1::Transpose>(input_nhwc, transpose_order);
+}
+
+std::shared_ptr<ov::Node> create_slice_image(std::shared_ptr<ov::Node> input_nchw) {
+    using namespace ov::op;
+
+    // Input: (N, C, H, W) -> Output: (N*num_h_slices*num_w_slices, C, 336, 336)
+    auto shape_node = std::make_shared<v3::ShapeOf>(input_nchw);
+    // Index constants for gathering shape dimensions
+    auto axis_0 = v0::Constant::create(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0}); // N
+    auto axis_1 = v0::Constant::create(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1}); // C
+    auto axis_2 = v0::Constant::create(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{2}); // H
+    auto axis_3 = v0::Constant::create(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{3}); // W
+    auto axis_0_node = v0::Constant::create(ov::element::i64, ov::Shape{}, std::vector<int64_t>{0}); // Gather axis
+
+    auto N = std::make_shared<v8::Gather>(shape_node, axis_0, axis_0_node);
+    auto C = std::make_shared<v8::Gather>(shape_node, axis_1, axis_0_node);
+    auto H = std::make_shared<v8::Gather>(shape_node, axis_2, axis_0_node);
+    auto W = std::make_shared<v8::Gather>(shape_node, axis_3, axis_0_node);
+
+    // Patch size constant (336)
+    auto patch_size = v0::Constant::create(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{INPUT_IMAGE_SIZE});
+
+    // Calculate number of slices (num_h = H / patch_size, num_w = W / patch_size)
+    auto num_h = std::make_shared<v1::Divide>(H, patch_size);
+    auto num_w = std::make_shared<v1::Divide>(W, patch_size);
+
+    // Reshape to 6D [N, C, num_h, patch_size, num_w, patch_size]
+    auto target_shape_6d = std::make_shared<v0::Concat>(ov::NodeVector{N, C, num_h, patch_size, num_w, patch_size}, 0);
+    auto reshape_6d = std::make_shared<v1::Reshape>(input_nchw, target_shape_6d, false);
+
+    // Transpose (Permute)
+    // Current: 0:N, 1:C, 2:num_h, 3:S, 4:num_w, 5:S
+    // Target:  0:N, 2:num_h, 4:num_w, 1:C, 3:S, 5:S
+    auto permute_order = v0::Constant::create(ov::element::i64, ov::Shape{6}, std::vector<int64_t>{0, 2, 4, 1, 3, 5});
+    auto permuted = std::make_shared<v1::Transpose>(reshape_6d, permute_order);
+
+    // Flatten to 4D [N * num_h * num_w, C, S, S]
+    auto minus_one = v0::Constant::create(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{-1});
+    auto target_shape_4d = std::make_shared<v0::Concat>(ov::NodeVector{minus_one, C, patch_size, patch_size}, 0);
+    auto final_reshape = std::make_shared<v1::Reshape>(permuted, target_shape_4d, false);
+
+    return final_reshape;
+}
+
+std::shared_ptr<ov::Node> create_concatenate_batch(std::shared_ptr<ov::Node> global_processed, std::shared_ptr<ov::Node> hd_sliced) {
+    using namespace ov::op;
+
+    // Concatenate along batch dimension (axis 0)
+    // global_processed: (1, C, H, W)
+    // hd_sliced: (num_slices, C, H, W)
+    // Output: (1 + num_slices, C, H, W)
+    return std::make_shared<v0::Concat>(ov::NodeVector{std::move(global_processed), std::move(hd_sliced)}, 0);
+}
+
+std::shared_ptr<ov::Node> create_pad_to_max_crops(std::shared_ptr<ov::Node> input_nchw, std::shared_ptr<ov::Node> max_crops_param) {
+    using namespace ov::op;
+
+    // Get current input batch size (num_crops)
+    auto shape_of = std::make_shared<v3::ShapeOf>(input_nchw);
+    auto axis_0 = v0::Constant::create(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0});
+    auto axis_0_scalar = v0::Constant::create(ov::element::i64, ov::Shape{}, std::vector<int64_t>{0}); // Axis for Gather
+    auto num_crops = std::make_shared<v8::Gather>(shape_of, axis_0, axis_0_scalar);
+
+    // Calculate required padding amount: padding_needed = max(0, max_crops - num_crops)
+    auto diff = std::make_shared<v1::Subtract>(max_crops_param, num_crops);
+    auto zero = v0::Constant::create(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{0});
+    auto padding_needed = std::make_shared<v1::Maximum>(diff, zero);
+
+    // Configure Pad operation arguments (pads_end)
+    auto zero_3 = v0::Constant::create(ov::element::i64, ov::Shape{3}, std::vector<int64_t>{0, 0, 0}); // Zeros for C, H, W dimensions
+    auto zero_4 = v0::Constant::create(ov::element::i64, ov::Shape{4}, std::vector<int64_t>{0, 0, 0, 0}); // pads_begin
+    auto pads_end = std::make_shared<v0::Concat>(ov::OutputVector{padding_needed, zero_3}, 0);
+
+    // Execute Pad operation (Constant mode, fill with 0)
+    auto pad_value = v0::Constant::create(ov::element::f32, ov::Shape{}, std::vector<float>{0.0f});
+    auto padded = std::make_shared<v1::Pad>(
+        input_nchw,
+        zero_4,      // pads_begin
+        pads_end,    // pads_end
+        pad_value,   // pad_value
+        ov::op::PadMode::CONSTANT
+    );
+
+    return padded;
+}
+
+std::shared_ptr<ov::Model> patch_image_preprocess_into_vision_encoder_model(
+    const std::shared_ptr<ov::Model>& vision_encoder_model,
+    const ProcessorConfig& config) {
+
+    using namespace ov;
+    using namespace ov::op;
+
+    // Input: HD transformed image in NHWC format (uint8)
+    // Shape: {1, -1, -1, 3} => {batch=1, height=dynamic, width=dynamic, channels=3 (RGB)}
+    auto hd_image = std::make_shared<v0::Parameter>(element::u8, PartialShape{1, -1, -1, 3});
+    // Target size for global image resize [height, width]
+    auto global_target_size = std::make_shared<v0::Parameter>(element::i64, PartialShape{2});
+    // Max crops parameter for dynamic padding
+    auto max_crops = std::make_shared<v0::Parameter>(element::i64, PartialShape{});
+
+    // Process global image (resize + normalize + channels_first)
+    auto global_resized = create_bicubic_resize(hd_image, global_target_size);
+    auto global_normalized = create_mean_scale(std::move(global_resized), config);
+    auto global_processed = create_channels_first(std::move(global_normalized));
+
+    // Process HD image (normalize + channels_first + slice)
+    auto hd_normalized = create_mean_scale(hd_image, config);
+    auto hd_processed = create_channels_first(std::move(hd_normalized));
+    auto hd_sliced = create_slice_image(std::move(hd_processed));
+
+    // Concatenate global and HD results
+    auto concatenated = create_concatenate_batch(std::move(global_processed), std::move(hd_sliced));
+
+    // Pad to max crops
+    auto padded_result = create_pad_to_max_crops(std::move(concatenated), max_crops);
+
+    auto vision_params = vision_encoder_model->get_parameters();
+    auto vision_results = vision_encoder_model->get_results();
+
+    vision_params[0]->output(0).replace(padded_result);
+
+    return std::make_shared<Model>(
+        std::move(vision_results),
+        ParameterVector{std::move(hd_image), std::move(global_target_size), std::move(max_crops)}
+    );
+}
+
 } // namespace
 
 namespace phi_utils {
@@ -559,11 +851,12 @@ std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::
             text_start = offset;
             chunks.push_back(size_t(-(last_token + 1)));
         } else if (last_token >= 0 && next_token < 0) {
+            // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
             chunks.emplace_back(
                 std::in_place_type<ov::Tensor>,
                 ov::element::i64,
                 ov::Shape{1, offset - text_start},
-                tokens.data<int64_t>() + text_start
+                const_cast<int64_t*>(tokens.data<int64_t>()) + text_start
             );
         } else if (last_token < 0 && next_token < 0 && last_token != next_token) {
             chunks.push_back(size_t(-(last_token + 1)));
@@ -573,11 +866,12 @@ std::vector<std::variant<ov::Tensor, size_t>> drop_image_placeholders(const ov::
     // Add the last chunk
     size_t full_length = tokens.get_shape().at(1);
     if (last_token >= 0) {
+        // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
         chunks.emplace_back(
             std::in_place_type<ov::Tensor>,
             ov::element::i64,
             ov::Shape{1, full_length - text_start},
-            tokens.data<int64_t>() + text_start
+            const_cast<int64_t*>(tokens.data<int64_t>()) + text_start
         );
     } else {
         chunks.push_back(size_t(-(last_token + 1)));
@@ -592,8 +886,27 @@ EncodedImage VisionEncoderPhi3V::encode(const ov::Tensor& image, const ov::AnyMa
     ov::InferRequest& encoder = infer_request_guard.get();
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
-    const auto& [pixel_values, image_size] = get_pixel_values_phi3_v(image, config);
-    encoder.set_input_tensor(pixel_values);
+    ImageSize image_size;
+
+    if (use_ov_vision_preprocess) {
+        ov::Tensor hd_image = HD_transform(image, config.phi3_v.num_crops);
+        image_size = ImageSize{hd_image.get_shape().at(2), hd_image.get_shape().at(1)};
+
+        int64_t global_size[2] = {INPUT_IMAGE_SIZE, INPUT_IMAGE_SIZE};
+        ov::Tensor global_target_size(ov::element::i64, ov::Shape{2}, global_size);
+
+        int64_t max_crops_value = static_cast<int64_t>(config.phi3_v.num_crops);
+        ov::Tensor max_crops_tensor(ov::element::i64, ov::Shape{}, &max_crops_value);
+
+        encoder.set_input_tensor(0, hd_image);
+        encoder.set_input_tensor(1, global_target_size);
+        encoder.set_input_tensor(2, max_crops_tensor);
+    } else {
+        const auto& [pixel_values, is] = get_pixel_values_phi3_v(image, config);
+        image_size = is;
+        encoder.set_input_tensor(pixel_values);
+    }
+
     ov::Tensor res{ov::element::f32, encoder.get_output_tensor().get_shape()};
     encoder.set_output_tensor(res);
     encoder.infer();
@@ -608,10 +921,27 @@ EncodedImage VisionEncoderPhi3V::encode(const ov::Tensor& image, const ov::AnyMa
     return encoded_image;
 }
 
-VisionEncoderPhi3V::VisionEncoderPhi3V(
-    const std::filesystem::path& model_dir,
-    const std::string& device,
-    const ov::AnyMap properties) : VisionEncoder(model_dir, device, properties) {
+bool can_use_ov_vision_preprocess() {
+    const char* env = std::getenv("VISION_PREPROCESS");
+    return !(env && std::string(env) == "CPP");
+}
+
+VisionEncoderPhi3V::VisionEncoderPhi3V(const std::filesystem::path& model_dir,
+                                       const std::string& device,
+                                       const ov::AnyMap properties)
+    : VisionEncoder(model_dir, device, properties),
+      use_ov_vision_preprocess(can_use_ov_vision_preprocess()) {
+    if (use_ov_vision_preprocess) {
+        auto vision_encoder_model = utils::singleton_core().read_model(model_dir / "openvino_vision_embeddings_model.xml");
+        auto model = patch_image_preprocess_into_vision_encoder_model(vision_encoder_model, m_processor_config);
+        auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
+        m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+            compiled_model.get_property(ov::optimal_number_of_infer_requests),
+            [&compiled_model]() -> ov::InferRequest {
+                return compiled_model.create_infer_request();
+            });
+    }
+
     auto compiled_model = create_hd_feature_transformer();
     m_ireq_queue_hd_feature_transformer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -628,11 +958,25 @@ VisionEncoderPhi3V::VisionEncoderPhi3V(
     m_vlm_config = utils::from_config_json_if_exists<VLMConfig>(model_dir, "config.json");
 }
 
-VisionEncoderPhi3V::VisionEncoderPhi3V(
-    const ModelsMap& models_map,
-    const std::filesystem::path& config_dir_path,
-    const std::string& device,
-    const ov::AnyMap properties) : VisionEncoder(models_map, config_dir_path, device, properties) {
+VisionEncoderPhi3V::VisionEncoderPhi3V(const ModelsMap& models_map,
+                                       const std::filesystem::path& config_dir_path,
+                                       const std::string& device,
+                                       const ov::AnyMap properties)
+    : VisionEncoder(models_map, config_dir_path, device, properties),
+      use_ov_vision_preprocess(can_use_ov_vision_preprocess()) {
+    if (use_ov_vision_preprocess) {
+        const auto& [vision_encoder_model, vision_encoder_weights] = utils::get_model_weights_pair(models_map, "vision_embeddings");
+        auto model_org = utils::singleton_core().read_model(vision_encoder_model, vision_encoder_weights);
+        auto model = patch_image_preprocess_into_vision_encoder_model(model_org, m_processor_config);
+        auto compiled_model = utils::singleton_core().compile_model(model, device, properties);
+
+        m_ireq_queue_vision_encoder = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
+            compiled_model.get_property(ov::optimal_number_of_infer_requests),
+            [&compiled_model]() -> ov::InferRequest {
+                return compiled_model.create_infer_request();
+            });
+    }
+
     auto compiled_model = create_hd_feature_transformer();
     m_ireq_queue_hd_feature_transformer = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -668,7 +1012,7 @@ InputsEmbedderPhi3V::InputsEmbedderPhi3V(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
-NormlizedPrompt InputsEmbedderPhi3V::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormalizedPrompt InputsEmbedderPhi3V::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     return {phi_utils::normalize_prompt(prompt, base_id, images.size(), NATIVE_PATTERN, write_native), {}};
 }
 

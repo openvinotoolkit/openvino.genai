@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2025 Intel Corporation
+# Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import os
 import json
@@ -34,13 +34,14 @@ def get_param_from_file(args, input_key):
                     data_list.append('What is OpenVINO?')
                 elif args['use_case'].task in ['text_rerank']:
                     data_list.append("What are the main features of Intel Core Ultra processors?")
-                elif args['use_case'].task == 'code_gen':
-                    data_list.append('def print_hello_world():')
-                elif args['use_case'].task == 'image_gen':
-                    data_list.append('sailing ship in storm by Leonardo da Vinci')
+                elif args["use_case"].task == "code_gen":
+                    data_list.append("def print_hello_world():")
+                elif args["use_case"].task == "image_gen":
+                    data_list.append("sailing ship in storm by Leonardo da Vinci")
+                elif args["use_case"].task == "video_gen":
+                    data_list.append({"prompt": "cat plays with ball on the christmas tree"})
                 else:
                     raise RuntimeError(f'== {input_key} and prompt file is empty ==')
-
             elif args[input_key] is not None and args['prompt_file'] is not None:
                 raise RuntimeError(f'== {input_key} and prompt file should not exist together ==')
             else:
@@ -50,24 +51,35 @@ def get_param_from_file(args, input_key):
                     else:
                         raise RuntimeError(f'== {input_key} path should not be empty string ==')
         else:
-            if args["use_case"].task != "visual_text_gen" and args["use_case"].task != "image_gen":
+            if args["use_case"].task not in ["visual_text_gen", "image_gen", "video_gen"]:
                 raise RuntimeError("Multiple sources for benchmarking supported for Visual Language Models / Image To Image Models / Inpainting Models")
             data_dict = {}
             if "media" in input_key:
                 if args["media"] is None and args["images"] is None:
                     if args["use_case"].task == "visual_text_gen":
-                        log.warn("Input image is not provided. Only text generation part will be evaluated")
+                        if args["video"] is None:
+                            log.warn("Input image/video is not provided. Only text generation part will be evaluated")
                     elif args["use_case"].task != "image_gen":
                         raise RuntimeError("No input image. ImageToImage/Inpainting Models cannot start generation without one. Please, provide an image.")
                 else:
                     data_dict["media"] = args["media"] if args["media"] is not None else args["images"]
+            if "video" in input_key and args["video"] is not None:
+                data_dict["video"] = args["video"]
+
             if args["prompt"] is None:
                 if args["use_case"].task == "visual_text_gen":
                     data_dict["prompt"] = "What is OpenVINO?" if data_dict.get("media") is None else "Describe image"
-                elif args['use_case'].task == 'image_gen':
-                    data_dict["prompt"] = 'sailing ship in storm by Leonardo da Vinci'
+                elif args["use_case"].task == "image_gen":
+                    data_dict["prompt"] = "sailing ship in storm by Leonardo da Vinci"
+                elif args["use_case"].task == "video_gen":
+                    data_dict["prompt"] = "A cat plays with ball on the christmas tree"
             else:
                 data_dict["prompt"] = args["prompt"]
+            if "negative_prompt" in input_key:
+                if args.get("negative_prompt"):
+                    data_dict["negative_prompt"] = args["negative_prompt"]
+                else:
+                    data_dict["negative_prompt"] = "worst quality, inconsistent motion, blurry, jittery, distorted"
             if "mask_image" in input_key:
                 if args.get("mask_image"):
                     data_dict["mask_image"] = args["mask_image"]
@@ -112,6 +124,7 @@ def analyze_args(args):
     model_args["height"] = args.height
     model_args["width"] = args.width
     model_args['images'] = args.images
+    model_args['video'] = args.video
     model_args['seed'] = args.seed
     model_args['mem_consumption'] = args.memory_consumption
     model_args['batch_size'] = args.batch_size
@@ -123,6 +136,9 @@ def analyze_args(args):
     model_args['media'] = args.media
     model_args["disable_prompt_permutation"] = args.disable_prompt_permutation
     model_args["static_reshape"] = args.static_reshape
+    model_args["num_frames"] = args.num_frames
+    model_args["frame_rate"] = args.frame_rate
+    model_args["negative_prompt"] = args.negative_prompt
     model_args['mask_image'] = args.mask_image
     model_args['task'] = args.task
     model_args['strength'] = args.strength
@@ -135,7 +151,9 @@ def analyze_args(args):
     model_args["rerank_texts"] = args.texts
     model_args["rerank_texts_file"] = args.texts_file
     model_args["apply_chat_template"] = args.apply_chat_template
-
+    model_args["video_frames"] = args.video_frames
+    model_args["pruning_ratio"] = args.pruning_ratio
+    model_args["relevance_weight"] = args.relevance_weight
     optimum = args.optimum
 
     if optimum and args.genai:

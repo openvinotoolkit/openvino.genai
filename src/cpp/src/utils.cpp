@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "utils.hpp"
@@ -175,8 +175,6 @@ ov::genai::StreamerVariant get_streamer_from_map(const ov::AnyMap& config_map) {
         auto any_val = config_map.at(STREAMER_ARG_NAME);
         if (any_val.is<std::shared_ptr<ov::genai::StreamerBase>>()) {
             streamer = any_val.as<std::shared_ptr<ov::genai::StreamerBase>>();
-        } else if (any_val.is<std::function<bool(std::string)>>()) {
-            streamer = any_val.as<std::function<bool(std::string)>>();
         } else if (any_val.is<std::function<StreamingStatus(std::string)>>()) {
             streamer = any_val.as<std::function<StreamingStatus(std::string)>>();
         }
@@ -846,6 +844,50 @@ bool has_input(const std::shared_ptr<ov::Model>& model, const std::string& name)
         return port.get_names().count(name) != 0;
     });
     return it != inputs.end();
+}
+
+std::pair<ov::Coordinate, ov::Coordinate> make_roi(const std::vector<size_t>& shape, const size_t dim, const size_t range_start, const size_t range_end) {
+    ov::Coordinate start(shape.size(), 0), end(shape.begin(), shape.end());
+    for (size_t d = 0; d < shape.size(); ++d) {
+        if (d == dim) {
+            start[d] = range_start;
+            end[d] = range_end;
+        } else {
+            start[d] = 0;
+            end[d] = shape[d];
+        }
+    }
+    return std::make_pair(start, end);
+}
+
+ov::genai::GenerationConfig get_beam_search_config() {
+    ov::genai::GenerationConfig beam_search_config;
+    beam_search_config.num_beams = 4;
+    beam_search_config.num_return_sequences = 3;
+    beam_search_config.num_beam_groups = 2;
+    beam_search_config.max_new_tokens = 100;
+    beam_search_config.diversity_penalty = 2.0f;
+    return beam_search_config;
+}
+
+ov::genai::GenerationConfig get_greedy_config() {
+    ov::genai::GenerationConfig greedy_config;
+    greedy_config.max_new_tokens = 30;
+    return greedy_config;
+}
+
+ov::genai::GenerationConfig get_multinomial_config() {
+    ov::genai::GenerationConfig multinomial_config;
+    multinomial_config.do_sample = true;
+    multinomial_config.temperature = 0.9f;
+    multinomial_config.top_p = 0.9f;
+    multinomial_config.top_k = 20;
+    multinomial_config.num_return_sequences = 3;
+    multinomial_config.presence_penalty = 0.01f;
+    multinomial_config.frequency_penalty = 0.1f;
+    multinomial_config.min_new_tokens = 15;
+    multinomial_config.max_new_tokens = 30;
+    return multinomial_config;
 }
 
 }  // namespace utils

@@ -300,7 +300,7 @@ private:
                         << ")."
                         << " Some models may fail with such configuration."
                         << " Remove max_position_embeddings from config.json to silence this warning.";
-                Logger::warn(message.str());
+                GENAI_WARN(message.str());
             }
 
             if (m_config.pad_to_max_length.has_value() && *m_config.pad_to_max_length) {

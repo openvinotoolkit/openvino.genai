@@ -1,10 +1,11 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "visual_language/inputs_embedder.hpp"
+#include "visual_language/vision_registry.hpp"
 
 #include "continuous_batching/cache_manager.hpp"
 #include "sampling/sampler.hpp"
@@ -55,6 +56,7 @@ protected:
     std::vector<size_t> m_history_image_ids;
     std::vector<ov::genai::EncodedVideo> m_history_videos;
     std::vector<size_t> m_history_video_ids;
+    std::vector<std::pair<std::size_t, std::size_t>> m_history_vision_count;  // pair<video count, image count>
     size_t m_image_id = 0;
     size_t m_video_id = 0;
 
@@ -65,6 +67,8 @@ protected:
     ModelInputType m_model_input_type = ModelInputType::TOKENS;
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
     std::mutex m_embeddings_mutex;
+
+    std::shared_ptr<VisionRegistry> m_vision_registry;
 
     void stream_tokens(const std::shared_ptr<ThreadedStreamerWrapper>& streamer_ptr, const GenerationHandle& handle);
 public:
@@ -145,7 +149,7 @@ public:
 
     virtual std::vector<VLMDecodedResults> generate(const std::vector<std::string>& prompts,
                                                     const std::vector<std::vector<ov::Tensor>>& images,
-                                                    const std::vector<std::vector<ov::Tensor>>& video,
+                                                    const std::vector<std::vector<ov::Tensor>>& videos,
                                                     const std::vector<GenerationConfig>& sampling_params,
                                                     const StreamerVariant& streamer);
 
@@ -157,6 +161,19 @@ public:
     generate(const std::vector<ChatHistory>& histories,
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer);
+
+    virtual std::vector<VLMDecodedResults>
+    generate(
+             const std::vector<ChatHistory>& histories,
+             const std::vector<std::vector<ov::Tensor>>& rgbs,
+             const std::vector<GenerationConfig>& sampling_params,
+             const StreamerVariant& streamer);
+
+    virtual std::vector<VLMDecodedResults> generate(const std::vector<ChatHistory>& histories,
+                                                    const std::vector<std::vector<ov::Tensor>>& images,
+                                                    const std::vector<std::vector<ov::Tensor>>& videos,
+                                                    const std::vector<GenerationConfig>& sampling_params,
+                                                    const StreamerVariant& streamer);
 
     /**
      * Starts chat with a given system prompt

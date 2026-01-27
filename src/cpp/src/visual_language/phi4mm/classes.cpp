@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "visual_language/phi4mm/classes.hpp"
@@ -18,7 +18,7 @@ void write_native(std::ostream& os, size_t idx) {
     os << "<|image_" << idx + 1 << "|>";
 }
 
-std::unique_ptr<ov::genai::CircularBufferQueue<ov::InferRequest>> create_image_preprocessors() {
+std::unique_ptr<ov::genai::CircularBufferQueue<ov::InferRequest>> create_image_preprocessors(const std::string& device) {
     using namespace ov;
     using namespace element;
     using namespace opset13;
@@ -206,9 +206,9 @@ std::unique_ptr<ov::genai::CircularBufferQueue<ov::InferRequest>> create_image_p
     ResultVector results{t165, t164, t163, t162, t161};
     SinkVector sinks{};
     ParameterVector parameters{t0, t1, t2, t3, t4};
-    auto model = make_shared<Model>(results, sinks, parameters);
+    auto model = make_shared<Model>(std::move(results), std::move(sinks), std::move(parameters));
     using namespace ov::genai;
-    CompiledModel compiled = utils::singleton_core().compile_model(model, "CPU");
+    CompiledModel compiled = utils::singleton_core().compile_model(model, device);
     return make_unique<CircularBufferQueue<InferRequest>>(
         compiled.get_property(ov::optimal_number_of_infer_requests),
         [&compiled]() -> ov::InferRequest {
@@ -347,7 +347,7 @@ ov::Tensor calculate_patch_position_ids(
     return position_ids;
 }
 
-std::unique_ptr<ov::genai::CircularBufferQueue<ov::InferRequest>> create_separator_inserters() {
+std::unique_ptr<ov::genai::CircularBufferQueue<ov::InferRequest>> create_separator_inserters(const std::string& device) {
     using namespace ov;
     using namespace element;
     using namespace opset13;
@@ -494,12 +494,12 @@ std::unique_ptr<ov::genai::CircularBufferQueue<ov::InferRequest>> create_separat
     auto t132 = make_shared<Result>(t131);                      // f32[1,?,?] -> f32[1,?,?]
     t132->output(0).get_tensor().set_names({"img_features_with_separators"});
 
-    ResultVector results{t132};
+    ResultVector results{std::move(t132)};
     SinkVector sinks{};
-    ParameterVector parameters{t0, t1, t2, t3, t4, t5};
-    auto model = make_shared<Model>(results, sinks, parameters);
+    ParameterVector parameters{std::move(t0), std::move(t1), std::move(t2), std::move(t3), std::move(t4), std::move(t5)};
+    auto model = make_shared<Model>(std::move(results), std::move(sinks), std::move(parameters));
     using namespace ov::genai;
-    CompiledModel compiled = utils::singleton_core().compile_model(model, "CPU");
+    CompiledModel compiled = utils::singleton_core().compile_model(model, device);
     return make_unique<CircularBufferQueue<InferRequest>>(
         compiled.get_property(ov::optimal_number_of_infer_requests),
         [&compiled]() -> ov::InferRequest {
@@ -634,8 +634,8 @@ VisionEncoderPhi4MM::VisionEncoderPhi4MM(
     const ov::AnyMap properties
 ) :
 VisionEncoder(model_dir, device, properties),
-m_image_preprocessors{create_image_preprocessors()},
-m_separator_inserters{create_separator_inserters()} {
+m_image_preprocessors{create_image_preprocessors(device)},
+m_separator_inserters{create_separator_inserters(device)} {
     auto compiled_model = utils::singleton_core().compile_model(model_dir / "openvino_vision_projection_model.xml", device, {});
     m_ireq_queue_vision_projection = std::make_unique<CircularBufferQueue<ov::InferRequest>>(
         compiled_model.get_property(ov::optimal_number_of_infer_requests),
@@ -652,8 +652,8 @@ VisionEncoderPhi4MM::VisionEncoderPhi4MM(
     const ov::AnyMap properties
 ) :
 VisionEncoder(models_map, config_dir_path, device, properties),
-m_image_preprocessors{create_image_preprocessors()},
-m_separator_inserters{create_separator_inserters()} {
+m_image_preprocessors{create_image_preprocessors(device)},
+m_separator_inserters{create_separator_inserters(device)} {
     const auto& vision_projection_model = utils::get_model_weights_pair(models_map, "vision_projection").first;
     const auto& vision_projection_weights = utils::get_model_weights_pair(models_map, "vision_projection").second;
     auto compiled_model = utils::singleton_core().compile_model(vision_projection_model, vision_projection_weights, device, properties);
@@ -728,8 +728,9 @@ EncodedImage VisionEncoderPhi4MM::encode(const ov::Tensor& image, const ov::AnyM
     {
         ov::Tensor height{ov::element::i32, {}};
         ov::Tensor width{ov::element::i32, {}};
-        ov::Tensor sub_GN{ov::element::f32, {1, 1, 1, m_vlm_config.sub_GN.size()}, m_vlm_config.sub_GN.data()};
-        ov::Tensor glb_GN{ov::element::f32, {1, 1, m_vlm_config.glb_GN.size()}, m_vlm_config.glb_GN.data()};
+        // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
+        ov::Tensor sub_GN{ov::element::f32, {1, 1, 1, m_vlm_config.sub_GN.size()}, const_cast<float*>(m_vlm_config.sub_GN.data())};
+        ov::Tensor glb_GN{ov::element::f32, {1, 1, m_vlm_config.glb_GN.size()}, const_cast<float*>(m_vlm_config.glb_GN.data())};
         height.data<int32_t>()[0] = image_height;
         width.data<int32_t>()[0] = image_width;
         CircularBufferQueueElementGuard<ov::InferRequest> lock{m_separator_inserters.get()};
@@ -777,7 +778,7 @@ InputsEmbedderPhi4MM::InputsEmbedderPhi4MM(
     const ov::AnyMap device_config) :
     IInputsEmbedder(vlm_config, models_map, tokenizer, config_dir_path, device, device_config) {}
 
-NormlizedPrompt InputsEmbedderPhi4MM::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
+NormalizedPrompt InputsEmbedderPhi4MM::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     return {phi_utils::normalize_prompt(prompt, base_id, images.size(), NATIVE_PATTERN, write_native), {}, {}};
 }
 

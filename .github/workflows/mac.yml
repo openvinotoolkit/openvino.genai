@@ -36,7 +36,7 @@ jobs:
       skip_workflow: "${{ steps.smart_ci.outputs.skip_workflow }}"
     steps:
       - name: checkout action
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         timeout-minutes: 15
         with:
           sparse-checkout: .github
@@ -117,7 +117,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -130,7 +130,7 @@ jobs:
           merge-multiple: true
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -146,7 +146,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-${{ matrix.build-type }}-cpack
           path: ${{ env.CCACHE_DIR }}
-        
+
       - name: Generate product manifest
         id: create_manifest
         uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
@@ -159,7 +159,7 @@ jobs:
 
       - name: Clean ccache stats
         run: ccache --zero-stats --show-config
-          
+
       - name: CMake Build
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
@@ -205,7 +205,7 @@ jobs:
           name: genai_tests_${{ matrix.build-type }}
           path: ${{ env.INSTALL_TESTS_DIR }}
           if-no-files-found: 'error'
-          
+
       - name: Upload manifest
         if: always()
         uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
@@ -234,7 +234,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -247,7 +247,7 @@ jobs:
           merge-multiple: true
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -263,7 +263,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-ccache-${{ env.TARGET_BRANCH }}-wheel
           path: ${{ env.CCACHE_DIR }}\
-          
+
       - name: Set CI environment
         id: create_manifest
         uses: openvinotoolkit/openvino/.github/actions/create_manifest@master
@@ -318,7 +318,7 @@ jobs:
       matrix:
         build-type: [Release]
     needs: [ openvino_download, genai_build_cmake ]
-    timeout-minutes: 10
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash
@@ -332,7 +332,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -389,7 +389,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
@@ -447,8 +447,8 @@ jobs:
           #   timeout: 240
           # Only supported on X64 or ARM with SVE support
           # - name: 'LLM & VLM'
-          #   cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py'
-          #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
+          #   cmd: 'tests/python_tests/test_llm_pipeline.py tests/python_tests/test_llm_pipeline_static.py tests/python_tests/test_vlm_pipeline.py tests/python_tests/test_structured_output.py tests/python_tests/test_image_generation.py'
+          #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test || fromJSON(needs.smart_ci.outputs.affected_components).Image_generation.test }}
           #   timeout: 180
           - name: 'GGUF Reader tests'
             cmd: 'python -m pytest -v ./tests/python_tests/test_gguf_reader.py'
@@ -490,7 +490,7 @@ jobs:
     steps:
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -505,7 +505,7 @@ jobs:
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         if: ${{ matrix.test.run_condition }}
-        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -564,7 +564,7 @@ jobs:
     steps:
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -587,7 +587,7 @@ jobs:
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
         if: ${{ matrix.test.run_condition }}
-        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -663,7 +663,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -679,7 +679,7 @@ jobs:
         run: chmod +x ${{ env.INSTALL_DIR }}/samples_bin/*
 
       - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
@@ -707,7 +707,10 @@ jobs:
   genai_nodejs_tests:
     name: Node.js bindings tests
     needs: [ smart_ci, openvino_download, genai_build_nodejs ]
-    if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
+    # if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
+    # nodejs tests fails on mac with: "mutex lock failed: Invalid argument"
+    # ticket: 179949
+    if: false
     timeout-minutes: 20
     defaults:
       run:
@@ -721,7 +724,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive

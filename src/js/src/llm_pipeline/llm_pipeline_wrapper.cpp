@@ -22,15 +22,6 @@ struct TsfnContext {
     std::shared_ptr<ov::AnyMap> options = nullptr;
 };
 
-Napi::Object create_decoded_results_object(Napi::Env env, const ov::genai::DecodedResults& result) {
-    Napi::Object obj = Napi::Object::New(env);
-    obj.Set("texts", cpp_to_js<std::vector<std::string>, Napi::Value>(env, result.texts));
-    obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, result.scores));
-    obj.Set("perfMetrics", PerfMetricsWrapper::wrap(env, result.perf_metrics));
-    obj.Set("subword", Napi::String::New(env, result));
-    return obj;
-}
-
 void performInferenceThread(TsfnContext* context) {
     try {
         ov::genai::GenerationConfig config;
@@ -89,7 +80,7 @@ void performInferenceThread(TsfnContext* context) {
         }, context->inputs);
 
         napi_status status = context->tsfn.BlockingCall([result](Napi::Env env, Napi::Function jsCallback) {
-            jsCallback.Call({Napi::Boolean::New(env, true), create_decoded_results_object(env, result)});
+            jsCallback.Call({Napi::Boolean::New(env, true), to_decoded_result(env, result)});
         });
 
         if (status != napi_ok) {

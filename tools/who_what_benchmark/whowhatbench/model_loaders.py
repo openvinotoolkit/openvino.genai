@@ -1,14 +1,21 @@
+from pathlib import Path
 import logging
-import json
 import torch
 
-from transformers import AutoConfig, AutoModelForCausalLM, AutoModel, AutoModelForVision2Seq, AutoTokenizer
+from transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+    AutoModel,
+    AutoModelForVision2Seq,
+    AutoTokenizer,
+)
 
 from .embeddings_evaluator import DEFAULT_MAX_LENGTH as EMBED_DEFAULT_MAX_LENGTH
-from .reranking_evaluator import DEFAULT_MAX_LENGTH as RERANK_DEFAULT_MAX_LENGTH, DEFAULT_TOP_K as RERANK_DEFAULT_TOP_K, reranking_base_on_causallm_arch
+from .reranking_evaluator import DEFAULT_MAX_LENGTH as RERANK_DEFAULT_MAX_LENGTH, DEFAULT_TOP_K as RERANK_DEFAULT_TOP_K, is_qwen3_causallm
 from .utils import mock_torch_cuda_is_available, mock_AwqQuantizer_validate_environment
 import os
 
+from whowhatbench.utils import get_json_config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,12 +30,18 @@ class GenAIModelWrapper:
         self.model = model
         self.model_type = model_type
 
-        if model_type in ["text", "visual-text", "text-embedding", "text-reranking"]:
+        if model_type in (
+            "text",
+            "visual-text",
+            "visual-video-text",
+            "text-embedding",
+            "text-reranking",
+        ):
             try:
                 self.config = AutoConfig.from_pretrained(model_dir)
             except Exception:
                 self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
-        elif model_type == "text-to-image":
+        elif model_type in ("text-to-image", "text-to-video"):
             from diffusers import DiffusionPipeline
             try:
                 self.config = DiffusionPipeline.load_config(model_dir)
@@ -98,6 +111,17 @@ def load_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
         for adapter, alpha in zip(kwargs['adapters'], kwargs['alphas']):
             ov_adapter = openvino_genai.Adapter(adapter)
             adapter_config.add(ov_adapter, alpha)
+
+    draft_model_path = kwargs.get("draft_model", '')
+    if draft_model_path:
+        if not Path(draft_model_path).exists():
+            raise RuntimeError(f"Error: Draft model path does not exist: {draft_model_path}")
+        draft_device = kwargs.get("draft_device", None) or device
+        draft_model_load_kwargs = (
+            {"scheduler_config": get_scheduler_config_genai(kwargs["draft_cb_config"])}
+            if kwargs["draft_cb_config"] is not None else {}
+        )
+        ov_config["draft_model"] = openvino_genai.draft_model(draft_model_path, draft_device.upper(), **draft_model_load_kwargs)
 
     is_continuous_batching = kwargs.get("cb_config", None) is not None
 
@@ -210,6 +234,7 @@ def load_text_model(
                     use_cache=True,
                     device=device,
                     ov_config=ov_config,
+                    **kwargs
                 )
             except Exception:
                 config = AutoConfig.from_pretrained(model_id)
@@ -219,6 +244,7 @@ def load_text_model(
                     use_cache=True,
                     device=device,
                     ov_config=ov_config,
+                    **kwargs
                 )
 
     return model
@@ -270,18 +296,18 @@ def load_text2image_model(
         if 'adapters' in kwargs and kwargs['adapters'] is not None:
             raise ValueError("Adapters are not supported for OVPipelineForText2Image.")
 
+        model_kwargs = {"ov_config": ov_config, "safety_checker": None}
+        if kwargs.get('from_onnx'):
+            model_kwargs['from_onnx'] = kwargs['from_onnx']
         try:
-            model = TEXT2IMAGEPipeline.from_pretrained(
-                model_id, device=device, ov_config=ov_config, safety_checker=None,
-            )
+            model = TEXT2IMAGEPipeline.from_pretrained(model_id, device=device, **model_kwargs)
         except ValueError:
             model = TEXT2IMAGEPipeline.from_pretrained(
                 model_id,
                 trust_remote_code=True,
                 use_cache=True,
                 device=device,
-                ov_config=ov_config,
-                safety_checker=None,
+                **model_kwargs
             )
 
     return model
@@ -307,7 +333,7 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
     return GenAIModelWrapper(
         pipeline,
         model_dir,
-        "visual-text"
+        kwargs.get("model_type", "visual-text")
     )
 
 
@@ -323,13 +349,27 @@ def load_visual_text_model(
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
             trust_remote_code = True
 
+        # force downloading to .cache image_processing file, as it is not happened by default
+        if config.model_type.lower() in ["minicpmo"]:
+            from transformers import AutoImageProcessor
+
+            AutoImageProcessor.from_pretrained(model_id, trust_remote_code=True)
+
         try:
             model = AutoModelForVision2Seq.from_pretrained(
                 model_id, trust_remote_code=trust_remote_code, device_map=device.lower()
             )
         except ValueError:
             try:
-                model = AutoModel.from_pretrained(
+                model_cls = AutoModel
+                if config.model_type in ["smolvlm"]:
+                    from transformers import AutoModelForImageTextToText
+
+                    model_cls = AutoModelForImageTextToText
+                elif config.model_type in ["gemma3"]:
+                    model_cls = AutoModelForCausalLM
+
+                model = model_cls.from_pretrained(
                     model_id, trust_remote_code=trust_remote_code, device_map=device.lower()
                 )
             except ValueError:
@@ -410,7 +450,7 @@ def load_image2image_genai_pipeline(model_dir, device="CPU", ov_config=None):
 
 
 def load_imagetext2image_model(
-    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
+    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs
 ):
     if use_hf:
         from diffusers import AutoPipelineForImage2Image
@@ -424,18 +464,18 @@ def load_imagetext2image_model(
     else:
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVPipelineForImage2Image
+        model_kwargs = {"ov_config": ov_config, "safety_checker": None}
+        if kwargs.get('from_onnx'):
+            model_kwargs['from_onnx'] = kwargs['from_onnx']
         try:
-            model = OVPipelineForImage2Image.from_pretrained(
-                model_id, device=device, ov_config=ov_config, safety_checker=None,
-            )
+            model = OVPipelineForImage2Image.from_pretrained(model_id, device=device, **model_kwargs)
         except ValueError:
             model = OVPipelineForImage2Image.from_pretrained(
                 model_id,
                 trust_remote_code=True,
                 use_cache=True,
                 device=device,
-                ov_config=ov_config,
-                safety_checker=None,
+                **model_kwargs
             )
     return model
 
@@ -455,7 +495,7 @@ def load_inpainting_genai_pipeline(model_dir, device="CPU", ov_config=None):
 
 
 def load_inpainting_model(
-    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False
+    model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs
 ):
     if use_hf:
         from diffusers import AutoPipelineForInpainting
@@ -469,10 +509,11 @@ def load_inpainting_model(
     else:
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVPipelineForInpainting
+        model_kwargs = {"ov_config": ov_config, "safety_checker": None}
+        if kwargs.get('from_onnx'):
+            model_kwargs['from_onnx'] = kwargs['from_onnx']
         try:
-            model = OVPipelineForInpainting.from_pretrained(
-                model_id, device=device, ov_config=ov_config, safety_checker=None,
-            )
+            model = OVPipelineForInpainting.from_pretrained(model_id, device=device, **model_kwargs)
         except ValueError as e:
             logger.error("Failed to load inpaiting pipeline. Details:\n", e)
             model = OVPipelineForInpainting.from_pretrained(
@@ -480,8 +521,7 @@ def load_inpainting_model(
                 trust_remote_code=True,
                 use_cache=True,
                 device=device,
-                ov_config=ov_config,
-                safety_checker=None,
+                **model_kwargs
             )
     return model
 
@@ -504,6 +544,7 @@ def load_embedding_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwa
     config.max_length = EMBED_DEFAULT_MAX_LENGTH
     config.normalize = kwargs.get("embeds_normalize", False)
     config.pad_to_max_length = True
+    config.batch_size = kwargs.get("embeds_batch_size", config.batch_size)
 
     logger.info("Using OpenVINO GenAI TextEmbeddingPipeline API")
     pipeline = openvino_genai.TextEmbeddingPipeline(model_dir, device.upper(), config, **ov_config)
@@ -530,8 +571,7 @@ def load_embedding_model(model_id, device="CPU", ov_config=None, use_hf=False, u
             model = OVModelForFeatureExtraction.from_pretrained(
                 model_id, device=device, ov_config=ov_config, safety_checker=None,
             )
-        except ValueError as e:
-            logger.error("Failed to load embedding pipeline. Details:\n", e)
+        except ValueError:
             model = OVModelForFeatureExtraction.from_pretrained(
                 model_id,
                 trust_remote_code=True,
@@ -573,7 +613,7 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
 
     if use_hf:
         logger.info("Using HF Transformers API")
-        if reranking_base_on_causallm_arch(config):
+        if is_qwen3_causallm(config):
             from transformers import AutoModelForCausalLM
             model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True)
         else:
@@ -585,7 +625,7 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
     else:
         logger.info("Using Optimum API")
         model_cls = None
-        if reranking_base_on_causallm_arch(config):
+        if is_qwen3_causallm(config):
             from optimum.intel.openvino import OVModelForCausalLM
             model_cls = OVModelForCausalLM
         else:
@@ -596,8 +636,7 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
             model = model_cls.from_pretrained(
                 model_id, device=device, ov_config=ov_config, safety_checker=None,
             )
-        except ValueError as e:
-            logger.error("Failed to load reranking pipeline, an attempt will be made again with updated parameters. Details:\n", e)
+        except ValueError:
             model = model_cls.from_pretrained(
                 model_id,
                 trust_remote_code=True,
@@ -610,6 +649,43 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
     return model
 
 
+def load_text2video_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
+    import openvino_genai
+
+    return GenAIModelWrapper(
+        openvino_genai.Text2VideoPipeline(model_dir, device=device, **ov_config), model_dir, "text-to-video"
+    )
+
+
+def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
+    if use_genai:
+        logger.info("Using OpenVINO GenAI API")
+        model = load_text2video_genai_pipeline(model_id, device, ov_config, **kwargs)
+    elif use_hf:
+        from diffusers import LTXPipeline
+
+        logger.info("Using HF Transformers API")
+        try:
+            model = LTXPipeline.from_pretrained(model_id)
+        except ValueError:
+            model = LTXPipeline.from_pretrained(model_id, trust_remote_code=True)
+    else:
+        logger.info("Using Optimum API")
+        from optimum.intel import OVLTXPipeline
+
+        model_kwargs = {"ov_config": ov_config, "safety_checker": None}
+        if kwargs.get("from_onnx"):
+            model_kwargs["from_onnx"] = kwargs["from_onnx"]
+        try:
+            model = OVLTXPipeline.from_pretrained(model_id, device=device, **model_kwargs)
+        except ValueError:
+            model = OVLTXPipeline.from_pretrained(
+                model_id, trust_remote_code=True, use_cache=True, device=device, **model_kwargs
+            )
+
+    return model
+
+
 def load_model(
     model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False, **kwargs
 ):
@@ -617,8 +693,8 @@ def load_model(
         return None
 
     if ov_config:
-        with open(ov_config) as f:
-            ov_options = json.load(f)
+        ov_options = get_json_config(ov_config)
+        logger.info(f"OpenVINO Config: {ov_options}")
     else:
         ov_options = {}
 
@@ -628,15 +704,18 @@ def load_model(
         return load_text2image_model(
             model_id, device, ov_options, use_hf, use_genai, **kwargs
         )
-    elif model_type == "visual-text":
+    elif model_type == "visual-text" or model_type == "visual-video-text":
+        kwargs["model_type"] = model_type
         return load_visual_text_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     elif model_type == "image-to-image":
-        return load_imagetext2image_model(model_id, device, ov_options, use_hf, use_genai)
+        return load_imagetext2image_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     elif model_type == "image-inpainting":
-        return load_inpainting_model(model_id, device, ov_options, use_hf, use_genai)
+        return load_inpainting_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     elif model_type == "text-embedding":
         return load_embedding_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     elif model_type == "text-reranking":
         return load_reranking_model(model_id, device, ov_options, use_hf, use_genai)
+    elif model_type == "text-to-video":
+        return load_text2video_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")

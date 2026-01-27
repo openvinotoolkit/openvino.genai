@@ -28,6 +28,8 @@ The prompt can contain `<ov_genai_image_i>` with `i` replaced with an actual zer
 
 Model's native video tag can be used to refer to a video. These tags are:
 1. LLaVa-NeXT-Video: `<video>`
+2. Qwen2-VL: `<|vision_start|><|video_pad|><|vision_end|>`
+2. Qwen2.5-VL: `<|vision_start|><|video_pad|><|vision_end|>`
 
 If the prompt doesn't contain image or video tags, but images or videos are provided, the tags are prepended to the prompt.
 
@@ -79,6 +81,28 @@ Similar to [text generation](/docs/use-cases/text-generation/#use-different-gene
           }
           ```
       </TabItemCpp>
+      <TabItemJS>
+          ```javascript
+          import { VLMPipeline }  from 'openvino-genai-node';
+
+          const pipe = await VLMPipeline(modelPath, "CPU", {});
+
+          // Create custom generation configuration
+          const config = {
+              max_new_tokens: 100,
+              temperature: 0.7,
+              top_k: 50,
+              top_p: 0.9,
+              repetition_penalty: 1.2
+          };
+
+          // Generate text with custom configuration
+          const output = await pipe.generate(prompt, {
+              images: images,
+              generationConfig: config
+          });
+          ```
+      </TabItemJS>
   </LanguageTabs>
 </BasicGenerationConfiguration>
 
