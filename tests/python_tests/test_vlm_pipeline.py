@@ -290,13 +290,10 @@ GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transforme
 
 @pytest.fixture(scope="module")
 def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
-    preprocess_method = None
-    if len(request.param) == 2:
-        ov_model, ov_backend = request.param
-    elif len(request.param) == 3:
-        ov_model, ov_backend, preprocess_method = request.param
-    else:
-        raise Exception("expected request.param must be a tuple of length 2 or 3")
+    if not (2 <= len(request.param) <= 3):
+        raise ValueError("expected request.param must be a tuple of length 2 or 3")
+    ov_model, ov_backend = request.param[:2]
+    preprocess_method = request.param[2] if len(request.param) == 3 else None
 
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
@@ -305,7 +302,7 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
     vision_preprocess_env_set = False
     key = "VISION_PREPROCESS"
-    if preprocess_method is not None and preprocess_method == "CPP":
+    if preprocess_method == "CPP":
         # If environment is already set, don't override it.
         if key not in os.environ:
             os.environ[key] = "CPP"
@@ -1866,20 +1863,20 @@ OPTIMUM_VS_GENAI_VIDEO_RESOLUTIONS = [(32, 32), (176, 132), (640, 480)]
 # test-id's are of the form:
 # "<model_id>/<attn_backend>/<preprocessing>/image-<W>x<H>/video-<W>x<H>"
 OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
-    # all gemma3 PA cases
+    # gemma3 PA cases
     "*tiny-random-gemma3/PA/*": "CVS-167316",
-    # all text+image qwen2.5-vl graph pre-processing 'real' resize cases
+    # text+image qwen2.5-vl graph pre-processing 'real' resize cases
     "*tiny-random-qwen2.5-vl/*/GRAPH/image*": "CVS-180070",
-    # all  llava-next-video graph pre-processing 'real' resize cases that include video
+    # llava-next-video graph pre-processing 'real' resize cases that include video
     "*tiny-random-llava-next-video/*/GRAPH/video*": "CVS-180070",
     "*tiny-random-llava-next-video/*/GRAPH/image*/video*": "CVS-180070",
-    # All llava-next text-only cases
+    # llava-next text-only cases
     "*tiny-random-llava-next/*/CPP/text-only": "CVS-180070",
-    # All llava cases
+    # llava cases
     "*tiny-random-llava/*": "CVS-180070",
     # MiniCPM-o-2_6 text-only cases
     "*tiny-random-MiniCPM-o-2_6/*/text-only": "CVS-180070",
-    # All minicpmv-2_6 cases with images
+    # minicpmv-2_6 cases with images
     "*tiny-random-minicpmv-2_6/*/image*": "CVS-180070",
 }
 
