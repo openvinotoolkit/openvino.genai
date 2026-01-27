@@ -305,7 +305,7 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
     vision_preprocess_env_set = False
     key = "VISION_PREPROCESS"
-    if preprocess_method is not None and preprocess_method=="CPP":
+    if preprocess_method is not None and preprocess_method == "CPP":
         # If environment is already set, don't override it.
         if key not in os.environ:
             os.environ[key] = "CPP"
@@ -1491,6 +1491,7 @@ def parametrize_model_with_vision_type(
     params: list[tuple[tuple[str, str], VisionType]] = []
     ids = []
     for item in items:
+
         def append_param(item, vision_type):
             model_id, attn_backend = item[0], item[1]
             ids.append(f"{model_id}/{attn_backend}/{vision_type.value}")
@@ -1514,7 +1515,7 @@ def parametrize_model_with_vision_type(
 
 @parametrize_model_with_vision_type(
     TAG_INSERTED_BY_TEMPLATE,
-    xfail={("optimum-intel-internal-testing/tiny-random-llava", "PA", VisionType.IMAGE): "CVS-179090"}
+    xfail={("optimum-intel-internal-testing/tiny-random-llava", "PA", VisionType.IMAGE): "CVS-179090"},
 )
 def test_model_tags_representation(
     ov_pipe_model: VlmModelInfo,
@@ -1844,18 +1845,10 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
     assert optimum_text == genai_text
 
 # (Width, Height)
-OPTIMUM_VS_GENAI_IMAGE_RESOLUTIONS = [
-    (100, 77),
-    (999, 666),
-    (1920, 1080)
-]
+OPTIMUM_VS_GENAI_IMAGE_RESOLUTIONS = [(100, 77), (999, 666), (1920, 1080)]
 
 # (Width, Height)
-OPTIMUM_VS_GENAI_VIDEO_RESOLUTIONS = [
-    (32, 32),
-    (176, 132),
-    (640, 480)
-]
+OPTIMUM_VS_GENAI_VIDEO_RESOLUTIONS = [(32, 32), (176, 132), (640, 480)]
 
 # test-id glob pattern -> xfail reason
 # test-id's are of the form:
@@ -1863,29 +1856,21 @@ OPTIMUM_VS_GENAI_VIDEO_RESOLUTIONS = [
 OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     # all gemma3 PA cases
     "*tiny-random-gemma3/PA/*": "CVS-167316",
-
     # all text+image qwen2.5-vl graph pre-processing 'real' resize cases
     "*tiny-random-qwen2.5-vl/*/GRAPH/image*": "TODO_CVS",
-
     # all  llava-next-video graph pre-processing 'real' resize cases that include video
     "*tiny-random-llava-next-video/*/GRAPH/video*": "TODO_CVS",
     "*tiny-random-llava-next-video/*/GRAPH/image*/video*": "TODO_CVS",
-
     # All llava-next text-only cases
     "*tiny-random-llava-next/*/CPP/text-only": "TODO_CVS",
-
     # All llava cases
     "*tiny-random-llava/*": "TODO_CVS",
-
     # MiniCPM-o-2_6 text-only cases
     "*tiny-random-MiniCPM-o-2_6/*/text-only": "TODO_CVS",
-
     # All minicpmv-2_6 cases
     "*tiny-random-minicpmv-2_6/*": "TODO_CVS",
-
     # All internvl2 cases
     "*tiny-random-internvl2/*": "TODO_CVS",
-
     # Note: phi4-mm & nanoLLaVA are skipped in _get_ov_model,
     # phi3-vision is marked as xfail in _get_ov_model
 }
@@ -1900,9 +1885,7 @@ MODELS_THAT_SUPPORT_GRAPH_PREPROCESSING = [
 ]
 
 # For these models, we will only add GRAPH pre-processing tests.
-MODELS_THAT_DO_NOT_SUPPORT_CPP_PREPROCESSING = [
-    "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
-]
+MODELS_THAT_DO_NOT_SUPPORT_CPP_PREPROCESSING = ["optimum-intel-internal-testing/tiny-random-phi-4-multimodal"]
 
 # Each test will have an id in one of the following formats:
 # text-only: <model_id>/<attn_backend>/<preprocessing>/text-only
@@ -1913,9 +1896,7 @@ MODELS_THAT_DO_NOT_SUPPORT_CPP_PREPROCESSING = [
 # text+image: <model_id>/<attn_backend>/<preprocessing>/preresized-image
 # text+image+video: <model_id>/<attn_backend>/<preprocessing>/preresized-image+video
 # id's that match glob patterns in OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES are marked as xfail.
-def parametrize_optimum_vs_genai(
-    models: list[str] | None = None
-) -> Callable[[Callable], Generator]:
+def parametrize_optimum_vs_genai(models: list[str] | None = None) -> Callable[[Callable], Generator]:
     if models is None:
         models = MODEL_IDS
 
@@ -1957,8 +1938,10 @@ def parametrize_optimum_vs_genai(
                                 params.append(
                                     pytest.param(
                                         (model_id, attn_backend, preprocessing),
-                                        has_image, has_video,
-                                        image_resolution, video_resolution,
+                                        has_image,
+                                        has_video,
+                                        image_resolution,
+                                        video_resolution,
                                         marks=pytest.mark.xfail(reason=xfail_reason)
                                     )
                                 )
@@ -1966,8 +1949,10 @@ def parametrize_optimum_vs_genai(
                                 params.append(
                                     pytest.param(
                                         (model_id, attn_backend, preprocessing),
-                                        has_image, has_video,
-                                        image_resolution, video_resolution
+                                        has_image,
+                                        has_video,
+                                        image_resolution,
+                                        video_resolution
                                     )
                                 )
 
@@ -1976,13 +1961,13 @@ def parametrize_optimum_vs_genai(
                             test_id = f"{model_id}/{attn_backend}/{preprocessing}/preresized-image"
 
                             res = RESOLUTION_BY_MODEL[model_id]
-                            image_resolution = (res,res)
+                            image_resolution = (res, res)
 
                             video_resolution = None
                             if has_video:
                                 test_id += "+video"
                                 # for pre-resize cases, we always use 32x32 video resolution.
-                                video_resolution = (32,32)
+                                video_resolution = (32, 32)
 
                             add_test_case(test_id, image_resolution, video_resolution)
 
@@ -2013,6 +1998,7 @@ def parametrize_optimum_vs_genai(
         indirect=["ov_pipe_model"],
         ids=test_ids,
     )
+
 
 @parametrize_optimum_vs_genai()
 def test_vlm_pipeline_match_optimum_with_resolutions(
