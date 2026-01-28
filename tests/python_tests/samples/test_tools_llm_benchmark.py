@@ -51,7 +51,6 @@ video_generation_json = [
         "width": 256,
         "height": 256,
         "guidance_scale": 3.0,
-        "guidance_rescale": 0.3,
         "prompt": "A cat plays with ball on the christmas tree.",
         "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
         "num_frames": 9,
