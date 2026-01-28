@@ -1854,10 +1854,24 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
 
 
 # (Width, Height)
-OPTIMUM_VS_GENAI_IMAGE_RESOLUTIONS = [(100, 77), (999, 666), (1920, 1080)]
+OPTIMUM_VS_GENAI_DEFAULT_IMAGE_RESOLUTIONS = [(100, 77), (999, 666), (1920, 1080)]
 
 # (Width, Height)
-OPTIMUM_VS_GENAI_VIDEO_RESOLUTIONS = [(32, 32), (176, 132), (640, 480)]
+OPTIMUM_VS_GENAI_DEFAULT_VIDEO_RESOLUTIONS = [(32, 32), (176, 132), (640, 480)]
+
+# For qwen2-series models, we use smaller image / video resolutions.
+# This is because running with larger image and/or video resolutions allocates,
+# a ton of memory. And in the case of optimum, there seems to be a big chunk that
+# is not freed after test completion. See ticket: CVS-180177
+OPTIMUM_VS_GENAI_PER_MODEL_IMAGE_RESOLUTIONS = {
+    "optimum-intel-internal-testing/tiny-random-qwen2vl": [(100, 77), (350, 350), (480, 512)],
+    "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": [(100, 77), (350, 350), (480, 512)],
+}
+
+OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS = {
+    "optimum-intel-internal-testing/tiny-random-qwen2vl": [(32, 32), (70, 70)],
+    "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": [(32, 32), (70, 70)],
+}
 
 # test-id glob pattern -> xfail reason
 # test-id's are of the form:
@@ -1865,8 +1879,11 @@ OPTIMUM_VS_GENAI_VIDEO_RESOLUTIONS = [(32, 32), (176, 132), (640, 480)]
 OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES = {
     # gemma3 PA cases
     "*tiny-random-gemma3/PA/*": "CVS-167316",
-    # text+image qwen2.5-vl graph pre-processing 'real' resize cases
-    "*tiny-random-qwen2.5-vl/*/GRAPH/image*": "CVS-180070",
+    # qwen2vl cases that use 70x70 video resolution
+    "*tiny-random-qwen2vl/*/video-70x70": "CVS-180070",
+    # qwen2.5-vl cases that use 350x350 image, or 70x70 video resolutions
+    "*tiny-random-qwen2.5-vl/*/image-350x350*": "CVS-180070",
+    "*tiny-random-qwen2.5-vl/*/video-70x70": "CVS-180070",
     # llava-next-video graph pre-processing 'real' resize cases that include video
     "*tiny-random-llava-next-video/*/GRAPH/video*": "CVS-180070",
     "*tiny-random-llava-next-video/*/GRAPH/image*/video*": "CVS-180070",
@@ -1981,11 +1998,15 @@ def parametrize_optimum_vs_genai(models: list[str] | None = None) -> Callable[[C
                         # 'Real' resolution cases
                         image_resolutions = [None]
                         if has_image:
-                            image_resolutions = OPTIMUM_VS_GENAI_IMAGE_RESOLUTIONS
+                            image_resolutions = OPTIMUM_VS_GENAI_PER_MODEL_IMAGE_RESOLUTIONS.get(
+                                model_id, OPTIMUM_VS_GENAI_DEFAULT_IMAGE_RESOLUTIONS
+                            )
 
                         video_resolutions = [None]
                         if has_video:
-                            video_resolutions = OPTIMUM_VS_GENAI_VIDEO_RESOLUTIONS
+                            video_resolutions = OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS.get(
+                                model_id, OPTIMUM_VS_GENAI_DEFAULT_VIDEO_RESOLUTIONS
+                            )
 
                         for image_resolution in image_resolutions:
                             for video_resolution in video_resolutions:
