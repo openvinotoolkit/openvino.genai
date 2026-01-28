@@ -1,179 +1,18 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
-#include "speculative_decoding_eagle3_impl.hpp"
+
+#include "eagle3_strategy.hpp"
+#include "speculative_decoding/eagle3_model_transforms.hpp"
 #include "logger.hpp"
 
 namespace ov::genai {
-// sharing embedding weights between main and draft models
-// for current supported models, e.g, llama3 and qwen3 EAGLE3 models are found to have no embedding weights in the torch weights, and use the same one as in the target model.
-// for future model support with its own embedding layer, e.g. gpt-oss, will need to use its own embedding weights.
-void share_embedding_weights(const std::shared_ptr<ov::Model>& main_model, const std::shared_ptr<ov::Model>& draft_model) {
-    // extract embedding weight from main model
-    auto find_embedding_gather = [](const std::shared_ptr<ov::Model>& model)
-        -> std::shared_ptr<ov::Node> {
-        constexpr size_t MIN_VOCAB_SIZE_THRESHOLD = 1000;
-        for (const auto& node : model->get_ordered_ops()) {
-            auto gather = std::dynamic_pointer_cast<ov::op::util::GatherBase>(node);
-            if (!gather) continue;
-            // [vocab, hidden_size] * [batch, seq_len] -> [batch, seq_len, hidden_size]
-            auto data_node = gather->input_value(0).get_node_shared_ptr();
-            auto indices_node = gather->input_value(1).get_node_shared_ptr();
-            if (!data_node || !indices_node) continue;
-            // indices_node should be on parameter path, maybe this is better rule
-            ov::PartialShape ps = data_node->get_output_partial_shape(0);
-            if (ps.rank().is_static() && ps.rank().get_length() >= 2) {
-                if (ps[0].is_static() && ps[0].get_length() > MIN_VOCAB_SIZE_THRESHOLD) { // Heuristic: vocab size > 1000
-                    return gather;
-                }
-            }
-            std::string fname = data_node->get_friendly_name();
-            if (fname.find("embed_tokens") != std::string::npos ||
-                fname.find("embedding") != std::string::npos) {
-                return gather;
-            }
-        }
-        return nullptr;
-    };
-    auto main_gather  = find_embedding_gather(main_model);
-    auto draft_gather = find_embedding_gather(draft_model);
-    if (!main_gather || !draft_gather) {
-        return;
-    }
-    auto main_weight_node = main_gather->input_value(0).get_node_shared_ptr();
-    auto draft_weight_node = draft_gather->input_value(0).get_node_shared_ptr();
-
-    if (main_weight_node.get() == draft_weight_node.get()) {
-        return;
-    }
-
-    GENAI_INFO("Sharing embedding weights between main and draft models for eagle3 speculative decoding.");
-    draft_weight_node->output(0).replace(main_weight_node->output(0));
-}
-
-void shift_fc_from_draft_to_main(std::shared_ptr<ov::Model>& main_model, std::shared_ptr<ov::Model>& draft_model) {
-    // extract the FC transform weight from draft model
-    auto remove_fc_and_rewire = [](const std::shared_ptr<ov::Model>& model) -> std::shared_ptr<ov::Node> {
-        for (const auto& node : model->get_ordered_ops()) {
-            auto matmul_node = ov::as_type_ptr<ov::op::v0::MatMul>(node);
-            if (!matmul_node) continue;
-            auto input_node = matmul_node->get_input_node_shared_ptr(0);
-            auto param_node = ov::as_type_ptr<ov::op::v0::Parameter>(input_node);
-            if (!param_node || input_node->get_friendly_name().find("hidden_states") == std::string::npos) continue;
-            // Rewire all outputs of this MatMul to use the input_node directly
-            for (auto& output : matmul_node->outputs()) {
-                for (auto& target : output.get_target_inputs()) {
-                    target.replace_source_output(input_node);
-                }
-            }
-            return matmul_node->input_value(1).get_node_shared_ptr();
-        }
-        return nullptr;
-    };
-    auto fc_weights = remove_fc_and_rewire(draft_model);
-    if (!fc_weights)
-        OPENVINO_THROW("Failed to locate FC weights in eagle3 draft model for shifting to main model.");
-    // now we create the fc into main model
-    for (const auto& result : main_model->get_results()) {
-        auto input_node = result->input_value(0).get_node_shared_ptr();
-        if (input_node && input_node->get_friendly_name().find("eagle3_hidden_states_concat") != std::string::npos) {
-            auto matmul = std::make_shared<ov::op::v0::MatMul>(input_node, fc_weights, false, true);
-            matmul->set_friendly_name("eagle3_hidden_state_fc");
-            result->input(0).replace_source_output(matmul);
-            break;
-        }
-    }
-}
-
-std::shared_ptr<ov::op::v0::Constant> extract_d2t_mapping_table(const std::shared_ptr<ov::Model>& model) {
-    // extract result nodes from model
-    for (const auto& result : model->get_results()) {
-        auto input_node = result->input_value(0).get_node_shared_ptr();
-        auto constant = ov::as_type_ptr<ov::op::v0::Constant>(input_node);
-        if (constant && constant->get_friendly_name().find("d2t") != std::string::npos) {
-            model->remove_result(result);
-            model->validate_nodes_and_infer_types();
-            return constant;
-        }
-    }
-    return nullptr;
-}
-
-/* Transforms the given OpenVINO model to extract hidden states from specified layers.
- *
- * This function modifies the provided model by identifying and extracting the outputs of residual Add nodes
- * corresponding to the specified hidden layers. The extracted hidden states are then added as new result nodes
- * to the model, either concatenated (if multiple layers are specified) or as a single output.
- *
- */
-void hidden_state_transform(std::shared_ptr<ov::Model>& model,
-                                  const std::vector<int32_t>& hidden_layers_to_abstract) {
-    if (hidden_layers_to_abstract.empty()) {
-        return;
-    }
-    OPENVINO_ASSERT(
-        hidden_layers_to_abstract.size() == 3 || hidden_layers_to_abstract.size() == 1,
-        "Expected exactly 1 or 3 hidden layers for extraction: 1 for draft model, 3 for main model (early/middle/late stages)."
-    );
-
-    std::vector<std::string> patterns;
-    if (hidden_layers_to_abstract.size() > 1) {
-        patterns.reserve(hidden_layers_to_abstract.size());
-        for (int32_t idx : hidden_layers_to_abstract) {
-            patterns.emplace_back("layers." + std::to_string(idx) + "/"); // main description
-        }
-    } else {
-        patterns.emplace_back("midlayer"); // draft description
-    }
-
-    // Helper: check if node is a residual Add node with expected structure
-    auto is_residual_node = [](const std::shared_ptr<ov::Node>& node) -> bool {
-        if (const auto& add = ov::as_type_ptr<ov::op::v1::Add>(node)) {
-            auto input1 = add->get_input_node_shared_ptr(1);
-            auto matmul = ov::as_type_ptr<ov::op::v0::MatMul>(input1);
-            if (!matmul) return false;
-            auto matmul_input = matmul->get_input_node_shared_ptr(0);
-            return matmul_input && ov::is_type<ov::op::v1::Multiply>(matmul_input);
-        }
-        return false;
-    };
-
-    std::vector<ov::Output<ov::Node>> residual_outputs;
-    for (const auto& node : model->get_ordered_ops()) {
-        if (!is_residual_node(node)) continue;
-        const std::string& name = node->get_friendly_name();
-        for (const auto& pattern : patterns) {
-            if (name.find(pattern) != std::string::npos) {
-                residual_outputs.push_back(node->output(0));
-                break;
-            }
-        }
-    }
-
-    if (!residual_outputs.empty()) {
-        OPENVINO_ASSERT(residual_outputs.size() == patterns.size(),
-                        "Number of extracted hidden states does not match the requested number.");
-        std::shared_ptr<ov::Node> node_to_operate;
-        if (residual_outputs.size() > 1) {
-            auto concat = std::make_shared<ov::op::v0::Concat>(residual_outputs, -1);
-            concat->set_friendly_name("eagle3_hidden_states_concat");
-            node_to_operate = concat;
-        } else {
-            node_to_operate = residual_outputs[0].get_node_shared_ptr();
-        }
-        auto result = std::make_shared<ov::op::v0::Result>(node_to_operate);
-        const std::string output_name = "last_hidden_state";
-        result->output(0).set_names({output_name});
-        result->set_friendly_name(output_name);
-        model->add_results({result});
-    }
-}
-
 ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::genai::ModelDesc& main_model_desc,
                                                                  const ov::genai::ModelDesc& draft_model_desc,
                                                                  const std::vector<int32_t>& hidden_layers) {
     auto scheduler_configs = init_speculative_models(main_model_desc, draft_model_desc);
     auto main_model = main_model_desc.model;
     auto draft_model = draft_model_desc.model;
+    OPENVINO_ASSERT(main_model && draft_model);
 
     auto main_device = main_model_desc.device;
     std::string draft_device = draft_model_desc.device.empty() ? main_model_desc.device : draft_model_desc.device;
@@ -188,11 +27,11 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
     m_tokenizer = main_model_tokenizer;
     // for eagle model, we need to obtain hidden layer state as extra output
     // apply transformations needed to run eagle model
-    share_embedding_weights(main_model, draft_model);
-    hidden_state_transform(main_model, hidden_layers);
+    utils::eagle3::share_vocabulary(main_model, draft_model);
+    utils::eagle3::transform_hidden_state(main_model, hidden_layers);
     // move the FC layer from draft model to main model
-    shift_fc_from_draft_to_main(main_model, draft_model);
-    hidden_state_transform(draft_model, { -1 });
+    utils::eagle3::move_fc_from_draft_to_main(draft_model, main_model);
+    utils::eagle3::transform_hidden_state(draft_model, {-1});
 
     // to create `main_pipeline` with enabled validation_mode and `draft_pipeline` with disabled validation mode
     m_main_pipeline = std::make_shared<ContinuousBatchingForEagle3DecodingImpl>(main_model,
@@ -215,7 +54,7 @@ ContinuousBatchingPipeline::Eagle3DecodingImpl::Eagle3DecodingImpl(const ov::gen
 
     // specific params update for eagle pipeline
     // check draft_model, retrieve d2t table if exists
-    auto d2t_tensor = extract_d2t_mapping_table(draft_model);
+    auto d2t_tensor = utils::eagle3::extract_d2t_mapping_table(draft_model);
     update_eagle_pipeline_params(d2t_tensor);
 }
 

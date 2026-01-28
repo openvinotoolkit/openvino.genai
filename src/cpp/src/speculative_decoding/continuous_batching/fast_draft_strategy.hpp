@@ -1,13 +1,13 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
-#include "speculative_decoding/continuous_batching_for_speculative_decoding_impl.hpp"
-#include "speculative_decoding/speculative_decoding_metrics.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
+#include "speculative_decoding/continuous_batching/pipeline_impl.hpp"
+#include "speculative_decoding/speculative_decoding_metrics.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
@@ -150,6 +150,7 @@ protected:
     bool is_requests_empty();
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
     std::pair<ov::genai::SchedulerConfig, ov::genai::SchedulerConfig> init_speculative_models(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc);
+    std::map<uint64_t, GenerationHandle>& draft_generations() { return m_draft_generations; }
 public:
     template<class Impl>
     friend std::vector<EncodedGenerationResult> generate_common(
@@ -192,7 +193,6 @@ public:
     const Tokenizer& tokenizer() const { return m_tokenizer; }
 
     std::mutex& draft_generations_mutex() { return m_draft_generations_mutex; }
-    std::map<uint64_t, GenerationHandle>& draft_generations() { return m_draft_generations; }
 };
 
 }  // namespace ov::genai

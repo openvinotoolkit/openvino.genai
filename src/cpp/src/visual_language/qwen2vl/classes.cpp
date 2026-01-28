@@ -1,5 +1,5 @@
 
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "visual_language/qwen2vl/classes.hpp"
@@ -1013,7 +1013,7 @@ NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prom
                                                          const std::vector<EncodedImage>& images,
                                                          const std::vector<EncodedVideo>& videos) const {
     // Images
-    auto [unified_prompt, images_sequence] = normalize(prompt, NATIVE_TAG, NATIVE_TAG, image_base_id, images.size());
+    auto [unified_prompt, images_sequence] = normalize(prompt, NATIVE_TAG, NATIVE_TAG, image_base_id, images.size(), VisionType::IMAGE);
     std::vector<std::array<size_t, 3>> images_grid_thw;
     images_grid_thw.reserve(images.size());
 
@@ -1044,7 +1044,7 @@ NormalizedPrompt InputsEmbedderQwen2VL::normalize_prompt(const std::string& prom
     // Video
     std::vector<size_t> videos_sequence;
     std::tie(unified_prompt, videos_sequence) =
-        normalize(unified_prompt, NATIVE_VIDEO_TAG, NATIVE_VIDEO_TAG, video_base_id, videos.size());
+        normalize(unified_prompt, NATIVE_VIDEO_TAG, NATIVE_VIDEO_TAG, video_base_id, videos.size(), VisionType::VIDEO);
     std::vector<std::array<size_t, 3>> video_grid_thw;
     video_grid_thw.reserve(videos.size());
 

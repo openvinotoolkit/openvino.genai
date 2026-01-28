@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "visual_language/llava_next_video/classes.hpp"
@@ -42,7 +42,7 @@ std::shared_ptr<ov::Node> create_mean_scale(std::shared_ptr<ov::Node> input_u8_o
     if (input_u8_or_f32->get_element_type() == ov::element::u8) {
         input_f32 = std::make_shared<v0::Convert>(input_u8_or_f32, ov::element::f32);
     } else {
-        input_f32 = input_u8_or_f32;
+        input_f32 = std::move(input_u8_or_f32);
     }
 
     // Follow the original mean_scale() function logic exactly, in tensor form:
@@ -409,7 +409,7 @@ EncodedImage VisionEncoderLLaVANextVideo::encode(const ov::Tensor& image, const 
 
 NormalizedPrompt InputsEmbedderLLaVANextVideo::normalize_prompt(const std::string& prompt, size_t base_id, const std::vector<EncodedImage>& images) const {
     std::string image_token = m_vlm_config.im_start;
-    auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size());
+    auto [unified_prompt, images_sequence] = normalize(prompt, image_token, image_token, base_id, images.size(), VisionType::IMAGE);
     size_t searched_pos = 0;
     for (size_t new_image_id : images_sequence) {
         const EncodedImage& encoded_image = images.at(new_image_id - base_id);
@@ -594,12 +594,10 @@ NormalizedPrompt InputsEmbedderLLaVANextVideo::normalize_prompt(const std::strin
     size_t base_image_id,
     size_t base_video_id,
     const std::vector<EncodedImage>& images,
-    const std::vector<EncodedVideo>& videos) const {
-    if (!videos.size()) {
-        return normalize_prompt(prompt, base_image_id, images);
-    }
+    const std::vector<EncodedVideo>& videos) const
+{
     std::string video_token = m_vlm_config.video_start;
-    auto [unified_prompt, video_sequence] = normalize(prompt, video_token, video_token, base_video_id, videos.size());
+    auto [unified_prompt, video_sequence] = normalize(prompt, video_token, video_token, base_video_id, videos.size(), VisionType::VIDEO);
     size_t searched_pos = 0;
     for (size_t new_image_id : video_sequence) {
         const EncodedVideo& encoded_video = videos.at(new_image_id - base_video_id);
@@ -616,11 +614,9 @@ NormalizedPrompt InputsEmbedderLLaVANextVideo::normalize_prompt(const std::strin
     }
     std::vector<size_t> images_sequence;
     // normalize images after videos to make sure image tokens appended at the start of prompt before video tokens
-    if (images.size()) {
-        auto normalize_res = normalize_prompt(unified_prompt, base_image_id, images);
-        unified_prompt = normalize_res.unified_prompt;
-        images_sequence = normalize_res.images_sequence;
-    }
+    auto normalize_res = normalize_prompt(unified_prompt, base_image_id, images);
+    unified_prompt = normalize_res.unified_prompt;
+    images_sequence = normalize_res.images_sequence;
     return {std::move(unified_prompt), std::move(images_sequence), std::move(video_sequence)};
 }
 

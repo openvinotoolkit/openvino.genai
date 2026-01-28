@@ -1,21 +1,10 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 
-#include "speculative_decoding_impl.hpp"
-#include "openvino/op/add.hpp"
+#include "fast_draft_strategy.hpp"
 #include "openvino/op/constant.hpp"
-#include "openvino/op/result.hpp"
-#include "openvino/op/multiply.hpp"
-#include "openvino/op/convert.hpp"
-#include "openvino/op/gather.hpp"
-#include "openvino/op/matmul.hpp"
-#include "openvino/op/concat.hpp"
-#include "openvino/pass/pattern/matcher.hpp"
-#include "openvino/pass/pattern/op/wrap_type.hpp"
-#include "openvino/pass/graph_rewrite.hpp"
-#include "openvino/pass/manager.hpp"
 
 namespace ov::genai {
 class ContinuousBatchingPipeline::Eagle3DecodingImpl : public ContinuousBatchingPipeline::SpeculativeDecodingImpl {

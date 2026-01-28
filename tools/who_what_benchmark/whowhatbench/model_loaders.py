@@ -8,7 +8,6 @@ from transformers import (
     AutoModel,
     AutoModelForVision2Seq,
     AutoTokenizer,
-    AutoModelForImageTextToText,
 )
 
 from .embeddings_evaluator import DEFAULT_MAX_LENGTH as EMBED_DEFAULT_MAX_LENGTH
@@ -31,12 +30,18 @@ class GenAIModelWrapper:
         self.model = model
         self.model_type = model_type
 
-        if model_type in ["text", "visual-text", "visual-video-text", "text-embedding", "text-reranking"]:
+        if model_type in (
+            "text",
+            "visual-text",
+            "visual-video-text",
+            "text-embedding",
+            "text-reranking",
+        ):
             try:
                 self.config = AutoConfig.from_pretrained(model_dir)
             except Exception:
                 self.config = AutoConfig.from_pretrained(model_dir, trust_remote_code=True)
-        elif model_type == "text-to-image":
+        elif model_type in ("text-to-image", "text-to-video"):
             from diffusers import DiffusionPipeline
             try:
                 self.config = DiffusionPipeline.load_config(model_dir)
@@ -344,13 +349,26 @@ def load_visual_text_model(
             config = AutoConfig.from_pretrained(model_id, trust_remote_code=True)
             trust_remote_code = True
 
+        # force downloading to .cache image_processing file, as it is not happened by default
+        if config.model_type.lower() in ["minicpmo"]:
+            from transformers import AutoImageProcessor
+
+            AutoImageProcessor.from_pretrained(model_id, trust_remote_code=True)
+
         try:
             model = AutoModelForVision2Seq.from_pretrained(
                 model_id, trust_remote_code=trust_remote_code, device_map=device.lower()
             )
         except ValueError:
             try:
-                model_cls = AutoModelForImageTextToText if config.model_type in ["smolvlm"] else AutoModel
+                model_cls = AutoModel
+                if config.model_type in ["smolvlm"]:
+                    from transformers import AutoModelForImageTextToText
+
+                    model_cls = AutoModelForImageTextToText
+                elif config.model_type in ["gemma3"]:
+                    model_cls = AutoModelForCausalLM
+
                 model = model_cls.from_pretrained(
                     model_id, trust_remote_code=trust_remote_code, device_map=device.lower()
                 )
@@ -631,6 +649,43 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
     return model
 
 
+def load_text2video_genai_pipeline(model_dir, device="CPU", ov_config=None, **kwargs):
+    import openvino_genai
+
+    return GenAIModelWrapper(
+        openvino_genai.Text2VideoPipeline(model_dir, device=device, **ov_config), model_dir, "text-to-video"
+    )
+
+
+def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, **kwargs):
+    if use_genai:
+        logger.info("Using OpenVINO GenAI API")
+        model = load_text2video_genai_pipeline(model_id, device, ov_config, **kwargs)
+    elif use_hf:
+        from diffusers import LTXPipeline
+
+        logger.info("Using HF Transformers API")
+        try:
+            model = LTXPipeline.from_pretrained(model_id)
+        except ValueError:
+            model = LTXPipeline.from_pretrained(model_id, trust_remote_code=True)
+    else:
+        logger.info("Using Optimum API")
+        from optimum.intel import OVLTXPipeline
+
+        model_kwargs = {"ov_config": ov_config, "safety_checker": None}
+        if kwargs.get("from_onnx"):
+            model_kwargs["from_onnx"] = kwargs["from_onnx"]
+        try:
+            model = OVLTXPipeline.from_pretrained(model_id, device=device, **model_kwargs)
+        except ValueError:
+            model = OVLTXPipeline.from_pretrained(
+                model_id, trust_remote_code=True, use_cache=True, device=device, **model_kwargs
+            )
+
+    return model
+
+
 def load_model(
     model_type, model_id, device="CPU", ov_config=None, use_hf=False, use_genai=False, use_llamacpp=False, **kwargs
 ):
@@ -660,5 +715,7 @@ def load_model(
         return load_embedding_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     elif model_type == "text-reranking":
         return load_reranking_model(model_id, device, ov_options, use_hf, use_genai)
+    elif model_type == "text-to-video":
+        return load_text2video_model(model_id, device, ov_options, use_hf, use_genai, **kwargs)
     else:
         raise ValueError(f"Unsupported model type: {model_type}")

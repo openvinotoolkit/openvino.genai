@@ -1,11 +1,11 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <thread>
 
 #include "openvino/genai/text_streamer.hpp"
 #include "openvino/pass/sdpa_to_paged_attention.hpp"
-#include "speculative_decoding_impl.hpp"
+#include "fast_draft_strategy.hpp"
 #include "continuous_batching/paged_attention_transformations.hpp"
 #include "utils.hpp"
 

@@ -1,12 +1,11 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 
-#include "openvino/genai/continuous_batching_pipeline.hpp"
-
 #include "continuous_batching/pipeline_impl.hpp"
-#include "speculative_decoding/update_request_structs.hpp"
+#include "openvino/genai/continuous_batching_pipeline.hpp"
+#include "update_request_structs.hpp"
 
 namespace ov::genai {
 class ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl : public ContinuousBatchingPipeline::ContinuousBatchingImpl {
