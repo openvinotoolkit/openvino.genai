@@ -40,7 +40,7 @@ jobs:
       skip_workflow: "${{ steps.smart_ci.outputs.skip_workflow }}"
     steps:
       - name: checkout action
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         timeout-minutes: 15
         with:
           sparse-checkout: .github
@@ -118,7 +118,7 @@ jobs:
 
     steps:
       - name: Clone genai
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
@@ -302,7 +302,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
@@ -406,7 +406,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
@@ -563,7 +563,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           path: ${{ env.SRC_DIR }}
 
@@ -616,7 +616,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: recursive
           path: ${{ env.SRC_DIR }}
@@ -731,7 +731,7 @@ jobs:
     steps:
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
@@ -819,7 +819,7 @@ jobs:
     steps:
       - name: Clone openvino.genai
         if: ${{ matrix.test.run_condition }}
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           path: ${{ env.SRC_DIR }}
 
@@ -909,7 +909,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           path: ${{ env.SRC_DIR }}
 
@@ -965,7 +965,7 @@ jobs:
 
     steps:
       - name: Clone openvino.genai
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
