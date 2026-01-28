@@ -159,22 +159,46 @@ def test_text_language(tmp_path):
     assert "马克" in data["prompts"].values[0]
 
 
-hf_model_scope = [
-    (model_id),
-]
-if sys.platform != 'darwin' and sys.platform != 'win32':
-    hf_model_scope += [
-        # model load failed in optimum, ticket: 178940
-        # (gptq_model_id),
-        (awq_model_id),
-    ]
+# hf_model_scope = [
+#     (model_id),
+# ]
+# if sys.platform != 'darwin' and sys.platform != 'win32':
+#     hf_model_scope += [
+#         # model load failed in optimum, ticket: 178940
+#         # (gptq_model_id),
+#         (awq_model_id),
+#     ]
 
 
 @pytest.mark.parametrize(
     ("model_id"),
-    hf_model_scope,
+    [model_id],
 )
 def test_text_hf_model(model_id, tmp_path):
+    temp_file_name = tmp_path / "gt.csv"
+    run_wwb([
+        "--base-model",
+        model_id,
+        "--gt-data",
+        temp_file_name,
+        "--num-samples",
+        "1",
+        "--device",
+        "CPU",
+        "--hf",
+    ])
+    data = pd.read_csv(temp_file_name)
+    assert len(data["prompts"].values) == 1
+
+
+@pytest.mark.quantized
+@pytest.mark.parametrize(
+    ("model_id"),
+    [awq_model_id],
+)
+def test_text_hf_quantized_model(model_id, tmp_path):
+    if sys.platform != 'darwin' and sys.platform != 'win32':
+        pytest.xfail("Ticket 178940")
     temp_file_name = tmp_path / "gt.csv"
     run_wwb([
         "--base-model",

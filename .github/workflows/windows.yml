@@ -704,13 +704,17 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
             timeout: 30
           - name: 'WWB tests'
-            cmd: 'python -m pytest -s -v tools/who_what_benchmark/tests -m "not nanollava"'
+            cmd: 'python -m pytest -s -v tools/who_what_benchmark/tests -m "not nanollava and not quantized"'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 120
           - name: 'WWB tests (nanollava)'
             cmd: |
               python -m pip install transformers==4.48.0
               python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
+          - name: 'WWB tests (quantized)'
+            cmd: |
+              python -m pip install gptqmodel@git+https://github.com/alexsu52/GPTQModel.git#egg=gptqmodel
+              python -m pytest -v ./tools/who_what_benchmark/tests -m quantized
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 90
           - name: 'EAGLE3 speculative decoding tests'
