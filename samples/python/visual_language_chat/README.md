@@ -5,6 +5,7 @@ This example showcases inference of text-generation Vision Language Models (VLMs
 There are three sample files:
  - [`visual_language_chat.py`](./visual_language_chat.py) demonstrates basic usage of the VLM pipeline.
  - [`video_to_text_chat.py`](./video_to_text_chat.py) demonstrates video to text usage of the VLM pipeline.
+ - [`prompt_lookup_decoding_vlm.py`](./prompt_lookup_decoding_vlm.py) demonstrates accelerated inference using prompt lookup decoding in the VLM pipeline.
  - [`benchmark_vlm.py`](./benchmark_vlm.py) shows how to benchmark a VLM in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text and calculating various performance metrics.
  - [`milebench_eval_vlm.py`](./milebench_eval_vlm.py) provides MileBench validation for VLMs, enabling evaluation of image–text reasoning and visual QA tasks across multiple subsets designed to assess the MultImodal Long-contExt capabilities of MLLMs.
 
