@@ -21,7 +21,7 @@ def filter_word_level_timestamps(text: str) -> str:
     [1.06, 1.40]:  today?
     """
     pattern = r"\[\d+\.\d{2}, \d+\.\d{2}\]:\s+\S+"
-    filtered_text = re.sub(pattern, "", text)
+    filtered_text = re.sub(pattern, "", text).strip()
     return filtered_text
 
 
