@@ -89,8 +89,7 @@ public:
                               const ov::AnyMap& properties = {})
         : m_config{config},
           m_tokenizer{models_path},
-          m_max_position_embeddings{read_max_position_embeddings(models_path)},
-          m_models_path{models_path} {
+          m_max_position_embeddings{read_max_position_embeddings(models_path)} {
         m_config.validate();
 
         ov::Core core = utils::singleton_core();
@@ -204,6 +203,8 @@ private:
     Config m_config;
     AnyMap m_tokenization_params;
     std::optional<size_t> m_max_position_embeddings;
+    std::optional<AdapterConfig> m_adapters;
+    std::optional<AdapterController> m_adapter_controller;
     ov::Tensor m_attention_mask;
   
     /**
