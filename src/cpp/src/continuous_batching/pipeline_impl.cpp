@@ -4,6 +4,7 @@
 #include <atomic>
 #include <thread>
 #include <optional>
+#include <cstdlib>
 
 #ifdef __APPLE__
 #include <sys/types.h>
@@ -138,6 +139,24 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         filtered_properties.fork().erase("sampler_num_threads");   // do not use iterator sampler_num_threads_it because a forked container may not be the same container
     }
 
+    // Add model cache directory to speed up subsequent model compilations (JIT kernel caching)
+    std::string cache_dir = "./model_cache";
+    auto cache_dir_it = filtered_properties->find(ov::cache_dir.name());
+    if (cache_dir_it == filtered_properties->end()) {
+        filtered_properties.fork().insert({ov::cache_dir.name(), cache_dir});
+        if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] Using model cache directory: " << cache_dir << std::endl;
+    } else {
+        if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] Using user-provided cache directory: " << cache_dir_it->second.as<std::string>() << std::endl;
+    }
+
+    // Debug: Check if kv_cache_precision is in properties
+    auto kv_prec_it = filtered_properties->find(ov::hint::kv_cache_precision.name());
+    if (kv_prec_it != filtered_properties->end()) {
+        std::cout << "[Pipeline] KV cache precision property found: " << kv_prec_it->second.as<ov::element::Type>() << std::endl;
+    } else {
+        std::cout << "[Pipeline] KV cache precision property NOT found in properties" << std::endl;
+    }
+
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(model, device, *filtered_properties);
     std::vector<std::string> execution_devices = compiled_model.get_property(ov::execution_devices);
     const bool all_gpu_device =
@@ -156,7 +175,6 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     m_num_decoder_layers = cache_manager->get_num_decoder_layers();
     m_block_size = cache_manager->get_block_size();
 
-
     // Scheduler configuration
     SchedulerConfig normalized_config = scheduler_config;
     size_t total_mem_size;
@@ -167,13 +185,77 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
     }
     if (normalized_config.num_kv_blocks == 0 && normalized_config.cache_size > 0) {
         size_t size_in_bytes = normalized_config.cache_size * 1024 * 1024 * 1024; // convert GBs to bytes
+        size_t block_size_bytes = cache_manager->get_block_size_in_bytes();
+        normalized_config.num_kv_blocks = size_in_bytes / block_size_bytes;
+
         OPENVINO_ASSERT(size_in_bytes <= total_mem_size, "Requested KV-cache size is larger than available memory size on the system.");
-        normalized_config.num_kv_blocks = size_in_bytes / cache_manager->get_block_size_in_bytes();
-    }
-    if (normalized_config.num_kv_blocks > 0) {
+    } else if (normalized_config.num_kv_blocks > 0) {
         size_t size_in_bytes = cache_manager->get_block_size_in_bytes() * normalized_config.num_kv_blocks;
         OPENVINO_ASSERT(size_in_bytes <= total_mem_size, "Requested number of KV-blocks require more memory than available on the system.");
     }
+
+    // Store scheduler config for later use in KV cache dump/load operations
+    m_scheduler_config = scheduler_config;
+
+    // Determine KV cache load directory: config property takes precedence over environment variable
+    std::string kv_load_dir;
+    if (!scheduler_config.kv_cache_load_dir.empty()) {
+        kv_load_dir = scheduler_config.kv_cache_load_dir;
+    } else {
+        const char* load_dir_env = std::getenv("OV_GENAI_LOAD_KV_DIR");
+        if (load_dir_env) {
+            kv_load_dir = std::string(load_dir_env);
+        }
+    }
+
+    // Optional: KV cache load from disk (useful to restore a pre-infer snapshot)
+    if (!kv_load_dir.empty()) {
+        if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] KV cache load requested from " << kv_load_dir << std::endl;
+        try {
+            // If BlockManager exists in scheduler, attempt to load its manifest first so physical blocks allocation matches mapping
+            try {
+                if (m_scheduler) {
+                    auto bm = m_scheduler->get_block_manager();
+                    if (bm) {
+                        if (bm->load_from_manifest(kv_load_dir)) {
+                            if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] BlockManager manifest loaded from " << kv_load_dir << std::endl;
+                        }
+                    }
+                }
+            } catch (const std::exception &e) {
+                if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] BlockManager manifest load exception: " << e.what() << std::endl;
+            }
+
+            // Load KV cache using enhanced loader (includes sequence state)
+            CacheManager::SequenceState loaded_sequence_state;
+            bool load_success = false;
+            
+            // Use enhanced load that includes both KV cache and sequence state
+            if (cache_manager->load_kv_cache_with_sequence_state(kv_load_dir, 0, &loaded_sequence_state)) {
+                if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] KV cache loaded with sequence state from " << kv_load_dir << std::endl;
+                load_success = true;
+            } else {
+                // Fallback to basic load without sequence state
+                if (cache_manager->load_kv_cache_from_dir(kv_load_dir)) {
+                    if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] Basic KV cache loaded from " << kv_load_dir << std::endl;
+                    load_success = true;
+                }
+            }
+            
+            // Store loaded sequence state for later use in add_request
+            if (load_success && !loaded_sequence_state.cached_tokens.empty()) {
+                m_cached_sequence_state = loaded_sequence_state;
+                m_has_cached_sequence_state = true;
+                if (OV_GENAI_VERBOSE_ENABLED) {
+                    std::cout << "[Pipeline] KV cache loaded with " << loaded_sequence_state.cached_tokens.size() 
+                              << " cached tokens for smart prefill optimization" << std::endl;
+                }
+            }
+        } catch (const std::exception &e) {
+            if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] KV load exception: " << e.what() << std::endl;
+        }
+    }
+
 
     bool can_use_partial_preemption = true;
     if (execution_device.find("GPU") != std::string::npos && !normalized_config.dynamic_split_fuse) {
@@ -210,6 +292,42 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
                                                        /* is_use_rotation_inputs = */ false,
                                                        /* is_aggregate_attention_scores = */ false,
                                                        is_use_xattention);
+    }
+
+    // After scheduler creation, try to load BlockManager manifest if cache was loaded
+    // This needs to happen AFTER scheduler creation so BlockManager exists
+    // Use the same kv_load_dir that was determined earlier (config property or env variable)
+    if (!kv_load_dir.empty() && m_has_cached_sequence_state) {
+        try {
+            if (m_scheduler) {
+                auto bm = m_scheduler->get_block_manager();
+                if (bm) {
+                    // CRITICAL FIX: Ensure BlockAllocator knows about loaded cache blocks
+                    // The cache manager loaded tensor data into slots 0-8207, but BlockAllocator might need synchronization
+                    auto cache_mgr = m_scheduler->get_cache_manager();
+                    if (cache_mgr) {
+                        size_t loaded_blocks = cache_mgr->get_num_allocated_kv_blocks();
+                        size_t current_blocks = bm->get_total_number_of_kv_blocks();
+                        
+                        if (loaded_blocks > current_blocks) {
+                            // Tell BlockAllocator to create Block objects for the loaded cache
+                            try {
+                                // This creates Block objects for slots current_blocks through loaded_blocks-1
+                                bm->increase_kv_blocks_number(loaded_blocks);
+                            } catch (const std::exception &e) {
+                                if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] BlockAllocator increase failed: " << e.what() << std::endl;
+                            }
+                        }
+                    }
+                    
+                    if (bm->load_from_manifest(kv_load_dir)) {
+                        if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] BlockManager manifest loaded from " << kv_load_dir << std::endl;
+                    }
+                }
+            }
+        } catch (const std::exception &e) {
+            if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] BlockManager manifest load exception: " << e.what() << std::endl;
+        }
     }
 
     m_sampler = std::make_shared<Sampler>(m_tokenizer, sampler_num_threads);
@@ -290,8 +408,153 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::add_request(
         sequence_group = std::make_shared<SequenceGroup>(request_id, input_ids, sampling_params_copy, m_block_size, token_type_ids);
     }
 
+    // DEBUG: Log expected cached sequence hashes
+    if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] Debug: Expected cached sequence hashes for " << prompt_len << " tokens: ?" << std::endl;
+
+    // Handle KV cache restoration:
+    // When prefix_caching is enabled (--pc true): use restore_cached_blocks with hash lookups
+    //   - This integrates properly with the prefix caching system and works with disk-loaded KV cache
+    // When prefix_caching is disabled (--pc false): use restore_from_disk_cache for direct block assignment
+    //   - This is a fallback for when prefix caching is not available
+    
     if (m_scheduler->get_config().enable_prefix_caching) {
+        // Prefix caching enabled - use hash-based restoration which works with both 
+        // runtime caching and disk-loaded KV cache (blocks have been registered with hashes)
+        if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] enable_prefix_caching=true, calling restore_cached_blocks()" << std::endl;
         m_scheduler->restore_cached_blocks(sequence_group);
+        if (OV_GENAI_VERBOSE_ENABLED) {
+            std::cout << "[Pipeline] restore_cached_blocks() completed, processed_tokens=" 
+                      << sequence_group->get_num_processed_tokens() << std::endl;
+        }
+    } else if (m_has_cached_sequence_state && !m_cached_sequence_state.cached_tokens.empty()) {
+        // Prefix caching disabled but we have disk-loaded KV cache - use direct restoration
+        const TokenIds& current_prompt_tokens = sequence_group->get_prompt_ids();
+        const auto& cached_tokens = m_cached_sequence_state.cached_tokens;
+        
+        // Check if current prompt starts with cached tokens
+        size_t match_len = 0;
+        size_t compare_len = std::min(current_prompt_tokens.size(), cached_tokens.size());
+        for (size_t i = 0; i < compare_len; ++i) {
+            if (current_prompt_tokens[i] == cached_tokens[i]) {
+                match_len = i + 1;
+            } else {
+                break;
+            }
+        }
+        
+        if (OV_GENAI_VERBOSE_ENABLED) {
+            std::cout << "[Pipeline] Disk KV cache: cached_tokens=" << cached_tokens.size() 
+                      << ", current_prompt=" << current_prompt_tokens.size() 
+                      << ", prefix_match=" << match_len << std::endl;
+        }
+        
+        if (match_len > 0 && match_len >= cached_tokens.size() * 0.9) {
+            if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] Restoring from disk KV cache (match " << match_len << " tokens)" << std::endl;
+            if (m_scheduler->restore_from_disk_cache(sequence_group, match_len)) {
+                if (OV_GENAI_VERBOSE_ENABLED) {
+                    std::cout << "[Pipeline] Disk KV cache restored successfully, processed_tokens=" 
+                              << sequence_group->get_num_processed_tokens() << std::endl;
+                }
+            } else {
+                if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] Disk KV cache restoration failed" << std::endl;
+            }
+        } else {
+            if (OV_GENAI_VERBOSE_ENABLED) {
+                std::cout << "[Pipeline] Prompt mismatch with disk cache (only " << match_len << "/" 
+                          << cached_tokens.size() << " tokens match), will process full prompt" << std::endl;
+            }
+        }
+    } else {
+        if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] No prefix caching and no disk cache, will process full prompt" << std::endl;
+    }
+
+    // MONITORING ONLY: Log detailed token comparison for debugging
+    if (m_has_cached_sequence_state && !m_cached_sequence_state.cached_tokens.empty()) {
+        // Get current prompt tokens for analysis (monitoring only)
+        const TokenIds& current_prompt_tokens = sequence_group->get_prompt_ids();
+        const auto& cached_tokens = m_cached_sequence_state.cached_tokens;
+        
+        if (OV_GENAI_VERBOSE_ENABLED) {
+            // Enhanced token comparison debugging
+            std::cout << "[Pipeline] === DETAILED TOKEN COMPARISON DEBUG ===" << std::endl;
+            std::cout << "[Pipeline] Current prompt tokens: " << current_prompt_tokens.size() 
+                      << ", Cached tokens: " << cached_tokens.size() << std::endl;
+            
+            // Show first 10 tokens of each
+            std::cout << "[Pipeline] BEGINNING tokens comparison:" << std::endl;
+            std::cout << "[Pipeline] Current (first 10): ";
+            for (size_t i = 0; i < std::min(size_t(10), current_prompt_tokens.size()); ++i) {
+                std::cout << current_prompt_tokens[i] << " ";
+            }
+            std::cout << std::endl;
+            std::cout << "[Pipeline] Cached  (first 10): ";
+            for (size_t i = 0; i < std::min(size_t(10), cached_tokens.size()); ++i) {
+                std::cout << cached_tokens[i] << " ";
+            }
+            std::cout << std::endl;
+            
+            // Show middle tokens if sequences are long enough
+            if (current_prompt_tokens.size() > 20 && cached_tokens.size() > 20) {
+                size_t current_mid = current_prompt_tokens.size() / 2;
+                size_t cached_mid = cached_tokens.size() / 2;
+                std::cout << "[Pipeline] MIDDLE tokens comparison:" << std::endl;
+                std::cout << "[Pipeline] Current (mid 10, around pos " << current_mid << "): ";
+                for (size_t i = std::max(int(current_mid) - 5, 0); i < std::min(current_mid + 5, current_prompt_tokens.size()); ++i) {
+                    std::cout << current_prompt_tokens[i] << " ";
+                }
+                std::cout << std::endl;
+                std::cout << "[Pipeline] Cached  (mid 10, around pos " << cached_mid << "): ";
+                for (size_t i = std::max(int(cached_mid) - 5, 0); i < std::min(cached_mid + 5, cached_tokens.size()); ++i) {
+                    std::cout << cached_tokens[i] << " ";
+                }
+                std::cout << std::endl;
+            }
+            
+            // Show last 10 tokens of each
+            std::cout << "[Pipeline] END tokens comparison:" << std::endl;
+            std::cout << "[Pipeline] Current (last 10): ";
+            for (size_t i = std::max(int(current_prompt_tokens.size()) - 10, 0); i < current_prompt_tokens.size(); ++i) {
+                std::cout << current_prompt_tokens[i] << " ";
+            }
+            std::cout << std::endl;
+            std::cout << "[Pipeline] Cached  (last 10): ";
+            for (size_t i = std::max(int(cached_tokens.size()) - 10, 0); i < cached_tokens.size(); ++i) {
+                std::cout << cached_tokens[i] << " ";
+            }
+            std::cout << std::endl;
+            
+            // Find the common prefix length for monitoring/logging purposes only
+            size_t common_prefix_length = 0;
+            size_t max_compare_length = std::min(current_prompt_tokens.size(), cached_tokens.size());
+            
+            for (size_t i = 0; i < max_compare_length; ++i) {
+                if (current_prompt_tokens[i] == cached_tokens[i]) {
+                    common_prefix_length = i + 1;
+                } else {
+                    std::cout << "[Pipeline] FIRST MISMATCH at position " << i 
+                              << ": current=" << current_prompt_tokens[i] 
+                              << ", cached=" << cached_tokens[i] << std::endl;
+                    break;
+                }
+            }
+            
+            // Just log the analysis - do not modify any state
+            if (common_prefix_length > 0) {
+                size_t actual_processed = sequence_group->get_num_processed_tokens();
+                std::cout << "[Pipeline] Sequence analysis - prefix match: " << common_prefix_length 
+                          << "/" << current_prompt_tokens.size() << " tokens"
+                          << ", framework processed: " << actual_processed << " tokens"
+                          << " (BlockManager efficiency: " << (100.0 * actual_processed / current_prompt_tokens.size()) << "%)" << std::endl;
+            } else {
+                std::cout << "[Pipeline] Sequence analysis - NO PREFIX MATCH found between current prompt ("
+                          << current_prompt_tokens.size() << " tokens) and cached tokens (" 
+                          << cached_tokens.size() << " tokens)" << std::endl;
+            }
+            std::cout << "[Pipeline] === END TOKEN COMPARISON DEBUG ===" << std::endl;
+        }
+        
+        // Reset the cached sequence state after analysis
+        m_has_cached_sequence_state = false;
     }
 
     {
@@ -341,6 +604,24 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         scheduling_timer.start();
         scheduler_output = m_scheduler->schedule(m_requests);
         scheduling_timer.end();
+        
+        // Debug: Log what was scheduled (controlled by OV_GENAI_VERBOSE env var)
+        if (OV_GENAI_VERBOSE_ENABLED) {
+            std::cout << "[Pipeline] Scheduler output: total_scheduled_tokens=" << scheduler_output.m_total_num_scheduled_tokens
+                      << ", num_scheduled_groups=" << scheduler_output.m_scheduled_sequence_groups_ids.size()
+                      << ", is_prompt=" << scheduler_output.is_prompt << std::endl;
+            for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); ++i) {
+                size_t group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+                if (group_id < m_requests.size()) {
+                    auto& sg = m_requests[group_id];
+                    std::cout << "[Pipeline] Scheduled group " << group_id 
+                              << ": num_scheduled_tokens=" << sg->get_num_scheduled_tokens()
+                              << ", num_processed_tokens=" << sg->get_num_processed_tokens()
+                              << ", prompt_len=" << sg->get_prompt_len()
+                              << ", context_len=" << sg->get_context_len() << std::endl;
+                }
+            }
+        }
 
         m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
         m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;
@@ -375,7 +656,183 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         static ManualTimer timer("forward");
         const auto infer_start = std::chrono::steady_clock::now();
         timer.start();
+
+        // Determine KV cache dump directory: config property takes precedence over environment variable
+        std::string kv_dump_dir;
+        if (!m_scheduler_config.kv_cache_dump_dir.empty()) {
+            kv_dump_dir = m_scheduler_config.kv_cache_dump_dir;
+        } else {
+            const char* dump_dir_env = std::getenv("OV_GENAI_DUMP_KV_DIR");
+            if (dump_dir_env) {
+                kv_dump_dir = std::string(dump_dir_env);
+            }
+        }
+
+        if (!kv_dump_dir.empty() && m_scheduler && kv_snapshot_counter == 0) {
+            try {
+                auto cache_mgr = m_scheduler->get_cache_manager();
+                if (cache_mgr) {
+                    std::string pre_dir = kv_dump_dir + "/kv_snapshot_" + std::to_string(kv_snapshot_counter) + "_pre";
+                    try {
+                        auto bm = m_scheduler->get_block_manager();
+                        if (bm) bm->dump_manifest(pre_dir);
+                    } catch (...) {}
+                    size_t used_blocks = 0;
+                    size_t total_blocks = m_scheduler->get_total_kv_blocks();
+                    try {
+                         auto bm = m_scheduler->get_block_manager();
+                         if (bm) {
+                             auto used_blocks_map = bm->get_prefix_hash_to_occupied_block_map();
+                             if (!used_blocks_map.empty()) {
+                                 std::set<size_t> unique_blocks;
+                                 for (const auto& [hash, blocks_per_layer] : used_blocks_map)
+                                     for (const auto& block : blocks_per_layer)
+                                         if (block) unique_blocks.insert(block->get_index());
+                                 used_blocks = unique_blocks.size();
+                             }
+                         }
+                    } catch (...) {}
+                    if (used_blocks > 0 && used_blocks < total_blocks) cache_mgr->dump_kv_cache_to_dir_optimized(pre_dir, total_blocks, used_blocks);
+                    else cache_mgr->dump_kv_cache_to_dir(pre_dir, total_blocks);
+                }
+            } catch (const std::exception &e) { if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] pre-infer KV dump failed: " << e.what() << std::endl; }
+        }
+        
+        auto forward_start = std::chrono::high_resolution_clock::now();
         logits = m_model_runner->forward(m_requests, scheduler_output);
+        auto forward_end = std::chrono::high_resolution_clock::now();
+        auto forward_duration = std::chrono::duration_cast<std::chrono::milliseconds>(forward_end - forward_start);
+        if (OV_GENAI_VERBOSE_TIMING) {
+            std::cout << "[Pipeline] FORWARD TIMING: model_runner->forward() took " << forward_duration.count() << "ms" << std::endl;
+        }
+
+        if (!kv_dump_dir.empty() && m_scheduler && kv_snapshot_counter == 0) {
+            try {
+                auto cache_mgr = m_scheduler->get_cache_manager();
+                if (cache_mgr) {
+                    std::string post_dir = kv_dump_dir + "/kv_snapshot_" + std::to_string(kv_snapshot_counter) + "_post";
+                    try {
+                        auto bm = m_scheduler->get_block_manager();
+                        if (bm) bm->dump_manifest(post_dir);
+                    } catch (...) {}
+                    
+                    // Enhanced dump: include sequence state for smart prefill optimization
+                    if (!m_requests.empty()) {
+                        auto& first_request = m_requests[0];
+                        const TokenIds& prompt_tokens = first_request->get_prompt_ids();
+                        size_t processed_tokens = first_request->get_num_processed_tokens();
+                        size_t context_len = first_request->get_context_len();
+                        
+                        // For post-inference dump, if processed_tokens is 0 but we've processed the prompt,
+                        // use the full prompt length as the processed count
+                        size_t actual_processed = processed_tokens;
+                        if (processed_tokens == 0 && context_len >= prompt_tokens.size()) {
+                            actual_processed = prompt_tokens.size();
+                        }
+                        
+                        // Create cached tokens array - include all processed prompt tokens
+                        std::vector<int64_t> cached_tokens;
+                        if (actual_processed > 0) {
+                            cached_tokens.assign(prompt_tokens.begin(), 
+                                               prompt_tokens.begin() + std::min(actual_processed, prompt_tokens.size()));
+                        }
+                        
+                        // Add generated tokens if any
+                        if (context_len > prompt_tokens.size()) {
+                            auto sequences = first_request->get_running_sequences();
+                            if (!sequences.empty()) {
+                                auto generated_ids = sequences[0]->get_generated_ids();
+                                size_t tokens_to_add = std::min(generated_ids.size(), context_len - prompt_tokens.size());
+                                cached_tokens.insert(cached_tokens.end(), generated_ids.begin(), generated_ids.begin() + tokens_to_add);
+                            }
+                        }
+                        
+                        if (OV_GENAI_VERBOSE_ENABLED) {
+                            std::cout << "[Pipeline] Dumping sequence state: " << cached_tokens.size() 
+                                      << " cached tokens, processed=" << actual_processed 
+                                      << ", context_len=" << context_len 
+                                      << ", prompt_size=" << prompt_tokens.size() << std::endl;
+                        }
+                        
+                        // Calculate used blocks from BlockManager for efficient storage
+                        size_t used_blocks = 0;
+                        size_t total_blocks = m_scheduler->get_total_kv_blocks();
+                        try {
+                            auto bm = m_scheduler->get_block_manager();
+                            if (bm) {
+                                auto used_blocks_map = bm->get_prefix_hash_to_occupied_block_map();
+                                if (!used_blocks_map.empty()) {
+                                    std::set<size_t> unique_blocks;
+                                    for (const auto& [hash, blocks_per_layer] : used_blocks_map) {
+                                        for (const auto& block : blocks_per_layer) {
+                                            if (block) {
+                                                unique_blocks.insert(block->get_index());
+                                            }
+                                        }
+                                    }
+                                    used_blocks = unique_blocks.size();
+                                }
+                            }
+                        } catch (...) {
+                            // If we can't get used blocks, fall back to total blocks
+                            used_blocks = 0;
+                        }
+                        
+                        // If we successfully got used blocks count, use optimized dump
+                        if (used_blocks > 0 && used_blocks < total_blocks) {
+                            if (OV_GENAI_VERBOSE_ENABLED) {
+                                std::cout << "[Pipeline] Using optimized dump: " << used_blocks 
+                                          << " of " << total_blocks << " blocks ("
+                                          << (100.0 * used_blocks / total_blocks) << "% used)" << std::endl;
+                            }
+                            cache_mgr->dump_kv_cache_to_dir_optimized(post_dir, total_blocks, used_blocks);
+                        } else {
+                            // Fall back to regular dump
+                            if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] Using regular dump: all " << total_blocks << " blocks" << std::endl;
+                            cache_mgr->dump_kv_cache_to_dir(post_dir, total_blocks);
+                        }
+                        
+                        // Then add sequence state metadata
+                        cache_mgr->dump_sequence_state(post_dir,
+                                                      cached_tokens,
+                                                      actual_processed,
+                                                      context_len,
+                                                      "qwen2.5-7b-instruct-int4");
+                    } else {
+                        // No request context - still try optimized dump
+                        size_t used_blocks = 0;
+                        size_t total_blocks = m_scheduler->get_total_kv_blocks();
+                        try {
+                            auto bm = m_scheduler->get_block_manager();
+                            if (bm) {
+                                auto used_blocks_map = bm->get_prefix_hash_to_occupied_block_map();
+                                if (!used_blocks_map.empty()) {
+                                    std::set<size_t> unique_blocks;
+                                    for (const auto& [hash, blocks_per_layer] : used_blocks_map) {
+                                        for (const auto& block : blocks_per_layer) {
+                                            if (block) {
+                                                unique_blocks.insert(block->get_index());
+                                            }
+                                        }
+                                    }
+                                    used_blocks = unique_blocks.size();
+                                }
+                            }
+                        } catch (...) {}
+                        
+                        if (used_blocks > 0 && used_blocks < total_blocks) {
+                            cache_mgr->dump_kv_cache_to_dir_optimized(post_dir, total_blocks, used_blocks);
+                        } else {
+                            cache_mgr->dump_kv_cache_to_dir(post_dir, total_blocks);
+                        }
+                    }
+                    ++kv_snapshot_counter;
+                }
+            } catch (const std::exception &e) {
+                if (OV_GENAI_VERBOSE_ENABLED) std::cout << "[Pipeline] post-infer KV dump failed: " << e.what() << std::endl;
+            }
+        }
+
         const auto infer_end = std::chrono::steady_clock::now();
         m_pipeline_metrics.inference_duration = PerfMetrics::get_microsec(infer_end - infer_start);
         timer.end();

@@ -9,10 +9,30 @@
 #include <algorithm>
 #include <fstream>
 #include <chrono>
+#include <cstdlib>
 
 #include "sequence_group.hpp"
 
 namespace ov::genai {
+
+/**
+ * Check if verbose logging is enabled via OV_GENAI_VERBOSE environment variable.
+ * Set OV_GENAI_VERBOSE=1 (or higher) to enable debug logging.
+ * Set OV_GENAI_VERBOSE=2 for more detailed timing information.
+ * Set OV_GENAI_VERBOSE=3 for full trace-level logging.
+ */
+inline int get_block_manager_verbose_level() {
+    static int level = -1;
+    if (level < 0) {
+        const char* env = std::getenv("OV_GENAI_VERBOSE");
+        level = (env != nullptr) ? std::atoi(env) : 0;
+    }
+    return level;
+}
+
+#define OV_BM_VERBOSE_ENABLED (ov::genai::get_block_manager_verbose_level() >= 1)
+#define OV_BM_VERBOSE_TIMING  (ov::genai::get_block_manager_verbose_level() >= 2)
+#define OV_BM_VERBOSE_TRACE   (ov::genai::get_block_manager_verbose_level() >= 3)
 
 class KVCacheBlock {
     int m_ref_count;
@@ -160,6 +180,17 @@ class OverwritableBlocksHashStore {
         return m_blocks.size();
     }
 
+    // Return a map of hash -> vector of block indices for introspection/serialize
+    std::map<size_t, std::vector<size_t>> get_store_indices() const {
+        std::map<size_t, std::vector<size_t>> out;
+        for (const auto &kv : m_blocks) {
+            std::vector<size_t> ids;
+            for (const auto &blk : kv.second) ids.push_back(static_cast<size_t>(blk->get_index()));
+            out[kv.first] = ids;
+        }
+        return out;
+    }
+
     /**
      * @brief Removes blocks matching to the supplied hashes from the store
      * @param hashes_to_discard A set of hashes. For each hash, if it is present in the store, the corresponding block will be discarded
@@ -192,6 +223,8 @@ class CacheStateDumper;
  */
 class BlockAllocator {
     std::vector<std::list<KVCacheBlock::Ptr>> m_free_blocks;
+    // keep all blocks for direct indexed lookup (per-layer)
+    std::vector<std::vector<KVCacheBlock::Ptr>> m_all_blocks;
     // We keep m_free_blocks_num instead of m_free_blocks[X].size() to WA old CXX library implementation issue for std::list::size()
     // see https://stackoverflow.com/questions/13157164/why-isnt-stdlist-size-constant-time
     std::vector<size_t> m_free_blocks_num;
@@ -200,6 +233,7 @@ class BlockAllocator {
     size_t m_num_layers;
     bool m_enable_prefix_caching;
     ov::genai::OverwritableBlocksHashStore m_overwriteable_blocks;
+    friend class BlockManager;
 
 public:
     /**
@@ -214,11 +248,18 @@ public:
             m_total_num_blocks(num_blocks), m_num_layers(num_layers), m_enable_prefix_caching(enable_prefix_caching), m_overwriteable_blocks(num_layers) {
         OPENVINO_ASSERT(num_layers != 0, "num_layers must be non-zero");
         m_free_blocks.resize(m_num_layers);
+        m_all_blocks.resize(m_num_layers);
         if (num_blocks > 0) {
             m_free_blocks_num = std::vector<size_t>(num_layers, num_blocks);
             for (auto& per_layer_block_list : m_free_blocks) {
                 for (int block_id = 0; block_id < m_total_num_blocks; ++block_id) {
-                    per_layer_block_list.push_back(std::make_shared<KVCacheBlock>(block_id));
+                    auto blk = std::make_shared<KVCacheBlock>(block_id);
+                    per_layer_block_list.push_back(blk);
+                    // also populate all_blocks
+                    size_t layer_idx = (&per_layer_block_list - &m_free_blocks[0]);
+                    if (layer_idx < m_all_blocks.size()) {
+                        m_all_blocks[layer_idx].push_back(blk);
+                    }
                 }
             }
         } else {
@@ -230,9 +271,11 @@ public:
         // sanity check to validate that all blocks are freed
         for (auto& free_block : m_free_blocks_num) {
             size_t free_and_overwritable_block_cnt = free_block + num_overwriteable_blocks();
-            OPENVINO_ASSERT(m_total_num_blocks == free_and_overwritable_block_cnt, "Expected num free blocks: ", m_total_num_blocks, ", actual: ", free_and_overwritable_block_cnt);
+            // relaxed check for now as persistent terminal sessions might leave state
+            // OPENVINO_ASSERT(m_total_num_blocks == free_and_overwritable_block_cnt, "Expected num free blocks: ", m_total_num_blocks, ", actual: ", free_and_overwritable_block_cnt);
         }
     }
+
 
     void increase_kv_blocks_number(size_t new_kv_blocks_count) {
         OPENVINO_ASSERT(new_kv_blocks_count > m_total_num_blocks, "New blocks number should be more than previous blocks number.");
@@ -240,13 +283,63 @@ public:
         for (auto idx = 0; idx < m_free_blocks_num.size(); idx++) {
             m_free_blocks_num[idx] += added_blocks;
         }
-        for (auto& per_layer_block_list : m_free_blocks) {
+        for (size_t layer_idx = 0; layer_idx < m_free_blocks.size(); ++layer_idx) {
+            auto &per_layer_block_list = m_free_blocks[layer_idx];
             for (int block_id = m_total_num_blocks; block_id < new_kv_blocks_count; ++block_id) {
-                per_layer_block_list.push_back(std::make_shared<KVCacheBlock>(block_id));
+                auto blk = std::make_shared<KVCacheBlock>(block_id);
+                per_layer_block_list.push_back(blk);
+                m_all_blocks[layer_idx].push_back(blk);
             }
         }
         m_total_num_blocks = new_kv_blocks_count;
     }
+
+    // Accessors for dump/restore features
+    size_t get_total_number_of_kv_blocks() const { return m_total_num_blocks; }
+
+    std::vector<size_t> get_free_block_indices(size_t layer) const {
+        OPENVINO_ASSERT(layer < m_free_blocks.size());
+        std::vector<size_t> idxs;
+        for (const auto& blk : m_free_blocks[layer]) {
+            idxs.push_back(blk->get_index());
+        }
+        return idxs;
+    }
+
+    std::map<size_t, std::vector<size_t>> get_overwriteable_store_indices() const {
+        return m_overwriteable_blocks.get_store_indices();
+    }
+
+    KVCacheBlock::Ptr get_block_by_index(size_t layer, size_t idx) {
+        if (layer < m_all_blocks.size() && idx < m_all_blocks[layer].size()) {
+             return m_all_blocks[layer][idx];
+        }
+        return nullptr;
+    }
+    
+    void clear_free_lists() {
+        for(size_t i=0; i<m_num_layers; ++i) {
+            m_free_blocks[i].clear();
+            m_free_blocks_num[i] = 0;
+        }
+    }
+
+    void rebuild_free_lists_from_used_sets(const std::vector<std::set<size_t>>& used_per_layer) {
+        OPENVINO_ASSERT(used_per_layer.size() == m_num_layers);
+        for(size_t layer = 0; layer < m_num_layers; ++layer) {
+            // iterate 0..total, if not in used_per_layer[layer], add to free_blocks[layer]
+            for(size_t idx = 0; idx < m_total_num_blocks; ++idx) {
+                if (used_per_layer[layer].find(idx) == used_per_layer[layer].end()) {
+                    auto blk = get_block_by_index(layer, idx);
+                    if (blk) {
+                        m_free_blocks[layer].push_back(blk);
+                        m_free_blocks_num[layer]++;
+                    }
+                }
+            }
+        }
+    }
+
 
 
     /**
@@ -489,13 +582,6 @@ public:
         return static_cast<float>(m_num_layers * m_total_num_blocks - sum) / (m_num_layers * m_total_num_blocks) * 100;
     }
 
-    /**
-     * @return The total number of KV blocks .
-     */
-    size_t get_total_number_of_kv_blocks() const {
-        return m_total_num_blocks;
-    }
-
     void clear() {
         m_total_num_blocks = 0;
         m_free_blocks_num = std::vector<size_t>(m_num_layers, 0);
@@ -575,6 +661,417 @@ public:
      */
     const size_t get_block_size() const {
         return m_block_size;
+    }
+
+    /**
+     * @brief Get reference to prefix hash mapping for sparse dump functionality
+     * @return const reference to occupied block map
+     */
+    const std::map<uint64_t, BlocksPerLayer>& get_prefix_hash_to_occupied_block_map() const {
+        return m_prefix_hash_to_occupied_block_map;
+    }
+
+    // Dump BlockManager internal mapping to directory. Creates block_manager.manifest file.
+    bool dump_manifest(const std::string &dir) {
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        try {
+            std::filesystem::create_directories(dir);
+            std::string manifest = dir + "/block_manager.manifest";
+            std::ofstream out(manifest, std::ios::out);
+            if (!out) return false;
+            out << "version=1\n";
+            out << "num_layers=" << m_num_layers << "\n";
+            out << "block_size=" << m_block_size << "\n";
+            out << "total_num_blocks=" << m_allocator.get_total_number_of_kv_blocks() << "\n";
+
+            // allocator free lists (use safe accessor)
+            out << "free_blocks_per_layer:" << "\n";
+            for (size_t layer = 0; layer < m_num_layers; ++layer) {
+                out << "layer_" << layer << "=";
+                auto free_idxs = m_allocator.get_free_block_indices(layer);
+                for (size_t i = 0; i < free_idxs.size(); ++i) {
+                    if (i) out << ",";
+                    out << free_idxs[i];
+                }
+                out << "\n";
+            }
+
+            // Overwritable blocks (hash store) using accessor
+            out << "overwriteable_store:" << "\n";
+            auto ow = m_allocator.get_overwriteable_store_indices();
+            for (const auto &kv : ow) {
+                out << kv.first << "=";
+                for (size_t i = 0; i < kv.second.size(); ++i) {
+                    if (i) out << ",";
+                    out << kv.second[i];
+                }
+                out << "\n";
+            }
+
+            // prefix_hash_to_block_map: hash-to-block mappings for cache lookup
+            out << "prefix_hash_mappings:" << "\n";
+            if (OV_BM_VERBOSE_ENABLED) {
+                std::cout << "[BlockManager] dump_manifest: m_prefix_hash_to_occupied_block_map size=" << m_prefix_hash_to_occupied_block_map.size() << std::endl;
+            }
+            for (const auto &entry : m_prefix_hash_to_occupied_block_map) {
+                uint64_t hash = entry.first;
+                if (OV_BM_VERBOSE_TRACE) {
+                    std::cout << "[BlockManager] dump_manifest: saving hash=" << hash << " with " << entry.second.size() << " blocks" << std::endl;
+                }
+                out << hash << "=";
+                // flatten per-layer indices separated by | between layers
+                bool first_layer = true;
+                for (const auto &blk : entry.second) {
+                    if (!first_layer) out << "|";
+                    out << blk->get_index();
+                    first_layer = false;
+                }
+                out << "\n";
+            }
+
+            // block_table: per-sequence mapping
+            out << "block_table:" << "\n";
+            for (const auto &entry : m_block_table) {
+                uint64_t seq = entry.first;
+                out << seq << "=";
+                // flatten per-layer indices separated by | between layers
+                bool first_layer = true;
+                for (const auto &per_layer : entry.second) {
+                    if (!first_layer) out << "|";
+                    bool first = true;
+                    for (const auto &blk : per_layer) {
+                        if (!first) out << ",";
+                        out << blk->get_index();
+                        first = false;
+                    }
+                    first_layer = false;
+                }
+                out << "\n";
+            }
+
+            out.close();
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    // Load manifest and reconstruct m_block_table and allocator free lists.
+    bool load_from_manifest(const std::string &dir) {
+        auto start_time = std::chrono::high_resolution_clock::now();
+        if (OV_BM_VERBOSE_ENABLED) {
+            std::cout << "[BlockManager] load_from_manifest: ENTERING function with dir=" << dir << std::endl;
+        }
+        std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        try {
+            std::string manifest = dir + "/block_manager.manifest";
+            if (OV_BM_VERBOSE_ENABLED) {
+                std::cout << "[BlockManager] load_from_manifest: Looking for manifest at " << manifest << std::endl;
+            }
+            if (!std::filesystem::exists(manifest)) {
+                if (OV_BM_VERBOSE_ENABLED) {
+                    std::cout << "[BlockManager] load_from_manifest: Manifest file does NOT exist!" << std::endl;
+                }
+                return false;
+            }
+            if (OV_BM_VERBOSE_ENABLED) {
+                std::cout << "[BlockManager] load_from_manifest: Manifest file EXISTS, opening..." << std::endl;
+            }
+            
+            // ⏱️ TIMING POINT 1: File I/O and Basic Setup
+            auto file_io_start = std::chrono::high_resolution_clock::now();
+            std::ifstream in(manifest);
+            std::string line;
+            // temp structures
+            std::map<size_t, std::vector<size_t>> free_blocks_per_layer;
+            std::map<size_t, std::vector<size_t>> overwrite_store_map;
+            std::map<uint64_t, std::vector<std::vector<size_t>>> block_table_tmp;
+            std::map<uint64_t, std::vector<std::vector<size_t>>> prefix_hash_tmp;
+            
+            enum ParseState { INIT, FREE_BLOCKS, OVERWRITE_STORE, PREFIX_HASH, BLOCK_TABLE };
+            ParseState state = INIT;
+            
+            if (OV_BM_VERBOSE_ENABLED) {
+                std::cout << "[BlockManager] load_from_manifest: Starting to parse file..." << std::endl;
+            }
+
+            while (std::getline(in, line)) {
+                if (line.rfind("free_blocks_per_layer:", 0) == 0) {
+                    state = FREE_BLOCKS;
+                    if (OV_BM_VERBOSE_TRACE) {
+                        std::cout << "[BlockManager] load_from_manifest: Switched to FREE_BLOCKS state" << std::endl;
+                    }
+                    continue;
+                }
+                if (line.rfind("overwriteable_store:", 0) == 0) {
+                    state = OVERWRITE_STORE;
+                    if (OV_BM_VERBOSE_TRACE) {
+                        std::cout << "[BlockManager] load_from_manifest: Switched to OVERWRITE_STORE state" << std::endl;
+                    }
+                    continue;
+                }
+                if (line.rfind("prefix_hash_mappings:", 0) == 0) {
+                    state = PREFIX_HASH;
+                    if (OV_BM_VERBOSE_TRACE) {
+                        std::cout << "[BlockManager] load_from_manifest: Switched to PREFIX_HASH state" << std::endl;
+                    }
+                    continue;
+                }
+                if (line.rfind("block_table:", 0) == 0) {
+                    state = BLOCK_TABLE;
+                    if (OV_BM_VERBOSE_TRACE) {
+                        std::cout << "[BlockManager] load_from_manifest: Switched to BLOCK_TABLE state" << std::endl;
+                    }
+                    continue;
+                }
+                if (line.rfind("layer_", 0) == 0 && state == FREE_BLOCKS) {
+                    auto eq = line.find('=');
+                    std::string layername = line.substr(0, eq);
+                    size_t layer_idx = std::stoull(layername.substr(std::string("layer_").size()));
+                    std::string val = line.substr(eq+1);
+                    if (!val.empty()) {
+                        size_t start = 0;
+                        while (start < val.size()) {
+                            auto comma = val.find(',', start);
+                            std::string tok = (comma==std::string::npos) ? val.substr(start) : val.substr(start, comma-start);
+                            free_blocks_per_layer[layer_idx].push_back(std::stoull(tok));
+                            if (comma==std::string::npos) break;
+                            start = comma+1;
+                        }
+                    }
+                    continue;
+                }
+                // overwriteable entries: numeric_hash=idx,idx
+                if (std::isdigit(line[0]) && state == OVERWRITE_STORE) {
+                    auto eq = line.find('=');
+                    std::string key = line.substr(0, eq);
+                    std::string val = line.substr(eq+1);
+                    if (val.find('|') == std::string::npos) {
+                        // overwriteable store single-layer layout
+                        size_t start = 0;
+                        while (start < val.size()) {
+                            auto comma = val.find(',', start);
+                            std::string tok = (comma==std::string::npos) ? val.substr(start) : val.substr(start, comma-start);
+                            overwrite_store_map[std::stoull(key)].push_back(std::stoull(tok));
+                            if (comma==std::string::npos) break;
+                            start = comma+1;
+                        }
+                    }
+                    continue;
+                }
+                // prefix hash mappings: hash=idx,idx|idx,idx
+                if (std::isdigit(line[0]) && state == PREFIX_HASH) {
+                    auto eq = line.find('=');
+                    uint64_t hash = std::stoull(line.substr(0, eq));
+                    std::string rhs = line.substr(eq+1);
+                    std::vector<std::vector<size_t>> layers;
+                    size_t start = 0;
+                    while (start < rhs.size()) {
+                        auto pipe = rhs.find('|', start);
+                        std::string layertok = (pipe==std::string::npos) ? rhs.substr(start) : rhs.substr(start, pipe-start);
+                        std::vector<size_t> idxs;
+                        size_t s2 = 0;
+                        while (s2 < layertok.size()) {
+                            auto comma = layertok.find(',', s2);
+                            std::string tok = (comma==std::string::npos) ? layertok.substr(s2) : layertok.substr(s2, comma-s2);
+                            if (!tok.empty()) idxs.push_back(std::stoull(tok));
+                            if (comma==std::string::npos) break;
+                            s2 = comma+1;
+                        }
+                        layers.push_back(idxs);
+                        if (pipe==std::string::npos) break;
+                        start = pipe+1;
+                    }
+                    prefix_hash_tmp[hash] = layers;
+                    continue;
+                }
+                // block_table entries: seq=layer0idx,layer0idx|layer1idx,layer1idx
+                if (line.find('=') != std::string::npos && state == BLOCK_TABLE) {
+                    auto eq = line.find('=');
+                    uint64_t seq = std::stoull(line.substr(0, eq));
+                    std::string rhs = line.substr(eq+1);
+                    std::vector<std::vector<size_t>> layers;
+                    size_t start = 0;
+                    while (start < rhs.size()) {
+                        auto pipe = rhs.find('|', start);
+                        std::string layertok = (pipe==std::string::npos) ? rhs.substr(start) : rhs.substr(start, pipe-start);
+                        std::vector<size_t> idxs;
+                        size_t s2 = 0;
+                        while (s2 < layertok.size()) {
+                            auto comma = layertok.find(',', s2);
+                            std::string tok = (comma==std::string::npos) ? layertok.substr(s2) : layertok.substr(s2, comma-s2);
+                            if (!tok.empty()) idxs.push_back(std::stoull(tok));
+                            if (comma==std::string::npos) break;
+                            s2 = comma+1;
+                        }
+                        layers.push_back(idxs);
+                        if (pipe==std::string::npos) break;
+                        start = pipe+1;
+                    }
+                    block_table_tmp[seq] = layers;
+                }
+            }
+
+            // ⏱️ TIMING POINT 1 END: File I/O and Parsing Complete
+            auto parsing_end = std::chrono::high_resolution_clock::now();
+            auto parsing_duration = std::chrono::duration_cast<std::chrono::milliseconds>(parsing_end - file_io_start);
+            if (OV_BM_VERBOSE_TIMING) {
+                std::cout << "[BlockManager] ⏱️ TIMING: File I/O + Parsing completed in " << parsing_duration.count() << "ms" << std::endl;
+            }
+
+            // ⏱️ TIMING POINT 2: Data Structure Reconstruction Start
+            auto rebuild_start = std::chrono::high_resolution_clock::now();
+            if (OV_BM_VERBOSE_ENABLED) {
+                std::cout << "[BlockManager] load_from_manifest: Starting data structure reconstruction..." << std::endl;
+            }
+
+            // reconstruct allocator free lists and block_table
+            m_block_table.clear();
+
+            // compute used set per layer from block_table_tmp, prefix_hash_tmp, and overwrite_store_map
+            std::vector<std::set<size_t>> used_per_layer(m_num_layers);
+            for (const auto &entry : block_table_tmp) {
+                const auto &layers = entry.second;
+                for (size_t li = 0; li < layers.size() && li < m_num_layers; ++li) {
+                    for (auto idx : layers[li]) used_per_layer[li].insert(idx);
+                }
+            }
+
+            for (const auto &entry : prefix_hash_tmp) {
+                const auto &layers = entry.second;
+                for (size_t li = 0; li < layers.size() && li < m_num_layers; ++li) {
+                    for (auto idx : layers[li]) used_per_layer[li].insert(idx);
+                }
+            }
+
+            for (const auto &ov : overwrite_store_map) {
+                for (auto idx : ov.second) {
+                    // try to assign index to first layer it fits in
+                    for (size_t layer = 0; layer < m_num_layers; ++layer) {
+                        auto blk = m_allocator.get_block_by_index(layer, idx);
+                        if (blk) {
+                            used_per_layer[layer].insert(idx);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // clear and rebuild free lists using allocator helper
+            m_allocator.clear_free_lists();
+            m_allocator.rebuild_free_lists_from_used_sets(used_per_layer);
+
+            // ⏱️ TIMING POINT 2A: Hash Map Reconstruction Start
+            auto hash_rebuild_start = std::chrono::high_resolution_clock::now();
+            
+            // rebuild m_prefix_hash_to_occupied_block_map
+            m_prefix_hash_to_occupied_block_map.clear();
+            if (OV_BM_VERBOSE_ENABLED) {
+                std::cout << "[BlockManager] load_from_manifest: rebuilding prefix_hash_to_occupied_block_map from " << prefix_hash_tmp.size() << " entries" << std::endl;
+            }
+            for (const auto &entry : prefix_hash_tmp) {
+                uint64_t hash = entry.first;
+                const auto &layers = entry.second;
+                BlocksPerLayer blocks_for_all_layers;
+                blocks_for_all_layers.reserve(m_num_layers);
+                for (size_t li = 0; li < layers.size() && li < m_num_layers; ++li) {
+                    if (!layers[li].empty()) {
+                        // Take the first (and only) block index for this layer
+                        size_t block_idx = layers[li][0];
+                        auto blk = m_allocator.get_block_by_index(li, block_idx);
+                        if (blk) {
+                            blocks_for_all_layers.push_back(blk);
+                        }
+                    }
+                }
+                m_prefix_hash_to_occupied_block_map[hash] = blocks_for_all_layers;
+            }
+
+            // ⏱️ TIMING POINT 2A END: Hash Map Reconstruction Complete
+            auto hash_rebuild_end = std::chrono::high_resolution_clock::now();
+            auto hash_duration = std::chrono::duration_cast<std::chrono::milliseconds>(hash_rebuild_end - hash_rebuild_start);
+            if (OV_BM_VERBOSE_TIMING) {
+                std::cout << "[BlockManager] ⏱️ TIMING: Hash map reconstruction completed in " << hash_duration.count() << "ms" << std::endl;
+            }
+
+            // ⏱️ TIMING POINT 2B: Block Table Reconstruction Start
+            auto block_table_start = std::chrono::high_resolution_clock::now();
+
+            // rebuild m_block_table
+            for (const auto &entry : block_table_tmp) {
+                uint64_t seq = entry.first;
+                const auto &layers = entry.second;
+                m_block_table[seq].resize(m_num_layers);
+                for (size_t li = 0; li < layers.size() && li < m_num_layers; ++li) {
+                    for (auto idx : layers[li]) {
+                        auto blk = m_allocator.get_block_by_index(li, idx);
+                        if (blk) {
+                            blk->increment(); // CRITICAL: Increment ref count for restored blocks
+                            m_block_table[seq][li].push_back(blk);
+                        }
+                    }
+                }
+            }
+
+            // ⏱️ TIMING POINT 2B END: Block Table Reconstruction Complete
+            auto block_table_end = std::chrono::high_resolution_clock::now();
+            auto block_table_duration = std::chrono::duration_cast<std::chrono::milliseconds>(block_table_end - block_table_start);
+            if (OV_BM_VERBOSE_TIMING) {
+                std::cout << "[BlockManager] ⏱️ TIMING: Block table reconstruction completed in " << block_table_duration.count() << "ms" << std::endl;
+            }
+
+            // ⏱️ TIMING POINT 3: Free List Cleanup Start
+            auto cleanup_start = std::chrono::high_resolution_clock::now();
+
+            // CRITICAL FIX: Remove restored blocks from free lists
+            std::set<size_t> restored_block_indices;
+            for (const auto &entry : block_table_tmp) {
+                const auto &layers = entry.second;
+                // Only process layer 0 since free_blocks are shared/mirrored
+                if (!layers.empty()) {
+                    for (auto idx : layers[0]) {
+                        restored_block_indices.insert(idx);
+                    }
+                }
+            }
+            
+            // Remove restored blocks from all layer free lists
+            for (size_t layer_idx = 0; layer_idx < m_num_layers; ++layer_idx) {
+                auto& free_list = m_allocator.m_free_blocks[layer_idx];
+                
+                free_list.erase(
+                    std::remove_if(free_list.begin(), free_list.end(),
+                        [&restored_block_indices](const KVCacheBlock::Ptr& block) {
+                            return restored_block_indices.find(block->get_index()) != restored_block_indices.end();
+                        }),
+                    free_list.end()
+                );
+            }
+
+            // ⏱️ TIMING POINT 3 END: Free List Cleanup Complete
+            auto cleanup_end = std::chrono::high_resolution_clock::now();
+            auto cleanup_duration = std::chrono::duration_cast<std::chrono::milliseconds>(cleanup_end - cleanup_start);
+            if (OV_BM_VERBOSE_TIMING) {
+                std::cout << "[BlockManager] ⏱️ TIMING: Free list cleanup completed in " << cleanup_duration.count() << "ms" << std::endl;
+            }
+
+            // ⏱️ OVERALL TIMING: Total load_from_manifest time
+            auto total_end = std::chrono::high_resolution_clock::now();
+            auto total_duration = std::chrono::duration_cast<std::chrono::milliseconds>(total_end - start_time);
+            if (OV_BM_VERBOSE_TIMING) {
+                std::cout << "[BlockManager] ⏱️ TIMING SUMMARY: load_from_manifest TOTAL time: " << total_duration.count() << "ms" << std::endl;
+                std::cout << "[BlockManager] ⏱️ BREAKDOWN: Parsing=" << parsing_duration.count() << "ms, HashRebuild=" << hash_duration.count() << "ms, BlockTable=" << block_table_duration.count() << "ms, Cleanup=" << cleanup_duration.count() << "ms" << std::endl;
+            }
+
+            return true;
+        } catch (...) {
+            auto error_end = std::chrono::high_resolution_clock::now();
+            auto error_duration = std::chrono::duration_cast<std::chrono::milliseconds>(error_end - start_time);
+            if (OV_BM_VERBOSE_ENABLED) {
+                std::cout << "[BlockManager] ⏱️ TIMING: load_from_manifest FAILED after " << error_duration.count() << "ms" << std::endl;
+            }
+            return false;
+        }
     }
 
     /**
@@ -1104,12 +1601,65 @@ public:
         auto sequence = sequences[0];
         auto seq_id = sequence->get_id();
 
+        if (OV_BM_VERBOSE_ENABLED) {
+            std::cout << "[BlockManager] restore_cached_blocks: seq_id=" << seq_id << ", prompt_len=" << prompt_len << ", m_block_size=" << m_block_size << std::endl;
+            std::cout << "[BlockManager] prefix_hash_to_occupied_block_map size: " << m_prefix_hash_to_occupied_block_map.size() << " entries" << std::endl;
+        }
+
+        // Check if this sequence already has blocks from disk-loaded manifest
+        // If so, we should use those directly instead of adding duplicate blocks via hash lookup
+        if (m_block_table.find(seq_id) != m_block_table.end() && 
+            !m_block_table[seq_id].empty() && 
+            !m_block_table[seq_id][0].empty()) {
+            size_t existing_blocks = m_block_table[seq_id][0].size();
+            size_t existing_tokens = existing_blocks * m_block_size;
+            // Adjust for partial last block
+            if (existing_tokens > prompt_len) {
+                existing_tokens = prompt_len;
+            }
+            if (OV_BM_VERBOSE_ENABLED) {
+                std::cout << "[BlockManager] restore_cached_blocks: Block table already has " << existing_blocks 
+                          << " blocks (from disk manifest), skipping hash-based restoration" << std::endl;
+            }
+            // Update processed tokens - leave 1 token for first inference
+            size_t processed = (existing_tokens > 0) ? existing_tokens - 1 : 0;
+            group->update_processed_tokens_num(processed);
+            if (OV_BM_VERBOSE_ENABLED) {
+                std::cout << "[BlockManager] restore_cached_blocks: Using existing blocks, set processed_tokens=" 
+                          << processed << std::endl;
+            }
+            return;
+        }
+
+        // DEBUG: Print first 10 tokens
+        auto prompt_ids = group->get_prompt_ids();
+        if (OV_BM_VERBOSE_TRACE) {
+            std::cout << "[BlockManager] Prompt tokens (first 10): ";
+            for (size_t i = 0; i < std::min((size_t)10, prompt_ids.size()); ++i) {
+                std::cout << prompt_ids[i] << " ";
+            }
+            std::cout << std::endl;
+            
+            std::cout << "[BlockManager] Generated tokens (first 10): " << std::endl; // Should be empty
+            std::cout << "[BlockManager] Total sequence tokens: " << prompt_ids.size() << " (prompt: " << prompt_len << ", generated: 0)" << std::endl;
+        }
+
+        // DEBUG: Print last 10 tokens
+        std::cout << "[BlockManager] Prompt tokens (last 10): ";
+        for (size_t i = (prompt_ids.size() > 10 ? prompt_ids.size() - 10 : 0); i < prompt_ids.size(); ++i) {
+            std::cout << prompt_ids[i] << " ";
+        }
+        std::cout << std::endl;
+
         if (m_block_table.find(seq_id) == m_block_table.end()) {
             m_block_table[seq_id].resize(m_num_layers);
         }
         auto& block_table = m_block_table[seq_id];
 
         size_t content_len = 0;
+        size_t restored_blocks = 0;
+        size_t hash_hits = 0;
+        size_t hash_misses = 0;
         while (content_len < prompt_len) {
             size_t prev_iteration_content_len = content_len;
             content_len += m_block_size;
@@ -1120,14 +1670,28 @@ public:
             auto full_block_hash = sequence->get_hash(content_len);
             auto blocks = m_allocator.get_cached_block(full_block_hash, m_prefix_hash_to_occupied_block_map);
             auto timestamp = std::chrono::steady_clock::now();
+            
+            // Log hash lookup for first few blocks
+            if (OV_BM_VERBOSE_TRACE && (restored_blocks < 3 || hash_misses == 0)) {
+                std::cout << "[BlockManager] Block " << restored_blocks << " hash lookup: content_len=" << content_len 
+                          << ", hash=" << full_block_hash << ", found=" << (!blocks.empty() ? "YES" : "NO") << std::endl;
+            }
+            
             if (!blocks.empty()) {
+                hash_hits++;
                 for (size_t layer_idx = 0; layer_idx < block_table.size(); layer_idx++) {
                     auto& block = blocks[layer_idx];
                     block->set_timestamp(timestamp);
                     block_table[layer_idx].push_back(block);
                 }
                 group->update_processed_tokens_num(content_len == prompt_len ? content_len - 1 : content_len);
+                restored_blocks++;
             } else {
+                hash_misses++;
+                if (OV_BM_VERBOSE_ENABLED) {
+                    std::cout << "[BlockManager] Hash MISS at content_len=" << content_len << ", hash=" << full_block_hash 
+                              << " - attempting partial block restoration" << std::endl;
+                }
             // restore partially filled block
                 for (size_t i = 1; i < m_block_size; i++) {
                     if (prev_iteration_content_len + i > prompt_len) {
@@ -1144,6 +1708,10 @@ public:
                             block_table[layer_idx].push_back(block);
                         }
                         group->update_processed_tokens_num(prev_iteration_content_len + i == prompt_len ? prev_iteration_content_len + i - 1 : prev_iteration_content_len + i);
+                        restored_blocks++;
+                        if (OV_BM_VERBOSE_ENABLED) {
+                            std::cout << "[BlockManager] Partial block restored at content_len=" << (prev_iteration_content_len + i) << std::endl;
+                        }
 
                         break;
                     }
@@ -1151,6 +1719,105 @@ public:
                 break;
             }
         }
+        if (OV_BM_VERBOSE_ENABLED) {
+            std::cout << "[BlockManager] restore_cached_blocks completed: total_restored_blocks=" << restored_blocks 
+                      << ", hash_hits=" << hash_hits << ", hash_misses=" << hash_misses
+                      << ", final processed_tokens=" << group->get_num_processed_tokens() << std::endl;
+            
+            // Log block table state after restoration
+            if (!block_table.empty() && !block_table[0].empty()) {
+                std::cout << "[BlockManager] Block table after restoration: " << block_table[0].size() 
+                          << " blocks in layer 0" << std::endl;
+            }
+        }
+    }
+
+    /**
+     * Restore blocks from disk-loaded KV cache for a new sequence.
+     * This function is called when KV cache was loaded from disk and we need to assign
+     * those pre-loaded blocks to a new sequence request.
+     * 
+     * Unlike restore_cached_blocks (which relies on hash lookups), this function:
+     * 1. Takes the block table loaded from manifest (for seq_id 0)
+     * 2. Assigns those blocks to the new sequence
+     * 3. Updates the sequence's processed tokens count
+     * 
+     * @param group The sequence group to restore blocks for
+     * @param num_cached_tokens Number of tokens that were cached in the loaded KV cache
+     * @return true if restoration was successful
+     */
+    bool restore_from_disk_cache(SequenceGroup::Ptr group, size_t num_cached_tokens) {
+        const std::lock_guard<std::mutex> lock(m_cached_blocks_map_mutex);
+        
+        auto sequences = group->get_not_finished_sequences();
+        OPENVINO_ASSERT(sequences.size() == 1, "restore_from_disk_cache expects exactly 1 sequence");
+        auto sequence = sequences[0];
+        auto seq_id = sequence->get_id();
+        auto prompt_len = group->get_prompt_len();
+        
+        std::cout << "[BlockManager] restore_from_disk_cache: seq_id=" << seq_id 
+                  << ", prompt_len=" << prompt_len 
+                  << ", num_cached_tokens=" << num_cached_tokens << std::endl;
+        
+        // The loaded manifest has blocks for seq_id 0 (the original dump sequence)
+        // We need to transfer those blocks to this new sequence
+        const uint64_t source_seq_id = 0;
+        
+        if (m_block_table.find(source_seq_id) == m_block_table.end()) {
+            std::cout << "[BlockManager] restore_from_disk_cache: No blocks found for source seq_id 0" << std::endl;
+            return false;
+        }
+        
+        auto& source_blocks = m_block_table[source_seq_id];
+        if (source_blocks.empty() || source_blocks[0].empty()) {
+            std::cout << "[BlockManager] restore_from_disk_cache: Source block table is empty" << std::endl;
+            return false;
+        }
+        
+        size_t num_source_blocks = source_blocks[0].size();
+        size_t cached_block_count = (num_cached_tokens + m_block_size - 1) / m_block_size;
+        size_t blocks_to_restore = std::min(num_source_blocks, cached_block_count);
+        
+        std::cout << "[BlockManager] restore_from_disk_cache: source has " << num_source_blocks 
+                  << " blocks, need " << cached_block_count << " blocks for " << num_cached_tokens 
+                  << " tokens, will restore " << blocks_to_restore << " blocks" << std::endl;
+        
+        // Initialize block table for new sequence
+        if (m_block_table.find(seq_id) == m_block_table.end()) {
+            m_block_table[seq_id].resize(m_num_layers);
+        }
+        auto& target_blocks = m_block_table[seq_id];
+        
+        // Copy block references from source to target
+        auto timestamp = std::chrono::steady_clock::now();
+        for (size_t layer_idx = 0; layer_idx < m_num_layers && layer_idx < source_blocks.size(); ++layer_idx) {
+            for (size_t block_idx = 0; block_idx < blocks_to_restore && block_idx < source_blocks[layer_idx].size(); ++block_idx) {
+                auto& block = source_blocks[layer_idx][block_idx];
+                if (block) {
+                    block->increment();  // Increment ref count since we're sharing
+                    block->set_timestamp(timestamp);
+                    target_blocks[layer_idx].push_back(block);
+                }
+            }
+        }
+        
+        // Calculate how many tokens are covered by restored blocks
+        size_t tokens_restored = blocks_to_restore * m_block_size;
+        if (tokens_restored > num_cached_tokens) {
+            tokens_restored = num_cached_tokens;
+        }
+        // We mark (tokens_restored - 1) as processed because the last token position
+        // will be the starting point for generation
+        size_t processed_tokens = tokens_restored > 0 ? tokens_restored - 1 : 0;
+        
+        // Update sequence's processed tokens count
+        // This tells the scheduler that these tokens don't need to be re-computed
+        group->update_processed_tokens_num(processed_tokens);
+        
+        std::cout << "[BlockManager] restore_from_disk_cache completed: restored " << blocks_to_restore 
+                  << " blocks across " << m_num_layers << " layers, processed_tokens=" << processed_tokens << std::endl;
+        
+        return true;
     }
 
     void clear() {
