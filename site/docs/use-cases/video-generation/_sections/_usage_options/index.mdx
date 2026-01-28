@@ -21,7 +21,7 @@ You can adjust several parameters to control the video generation process, inclu
 
         pipe = ov_genai.Text2VideoPipeline(model_path, "CPU")
         fps = 25
-        video_tensor = pipe.generate(
+        video = pipe.generate(
           prompt,
           # highlight-start
           width=512,
@@ -46,6 +46,7 @@ You can adjust several parameters to control the video generation process, inclu
             const std::string models_path = argv[1], prompt = argv[2];
 
             ov::genai::Text2VideoPipeline pipe(models_path, "CPU");
+            float fps = 25;
             ov::Tensor video = pipe.generate(
                 prompt,
                 // highlight-start
@@ -54,11 +55,12 @@ You can adjust several parameters to control the video generation process, inclu
                 ov::genai::num_videos_per_prompt(1),
                 ov::genai::num_inference_steps(30),
                 ov::genai::num_frames(161),
-                ov::genai::guidance_scale(7.5f)
+                ov::genai::guidance_scale(7.5f),
+                ov::genai::frame_rate(fps)
                 // highlight-end
             ).video;
 
-            imwrite_video("genai_video.avi", video);
+            imwrite_video("genai_video.avi", video, fps);
         }
         ```
     </TabItemCpp>

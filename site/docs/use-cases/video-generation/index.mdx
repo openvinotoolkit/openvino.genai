@@ -23,7 +23,7 @@ This video generation pipeline turns a text prompt into a sequence of video fram
 <ConvertModelSection>
     Download and convert LTX model [Lightricks/LTX-Video](https://huggingface.co/Lightricks/LTX-Video) to OpenVINO format from Hugging Face:
 
-    <OptimumCLI model='Lightricks/LTX-Video' outputDir='LTX_Video_ov' weightFormat='fp16' trustRemoteCode />
+    <OptimumCLI model='Lightricks/LTX-Video' outputDir='LTX_Video_ov' weightFormat='int8' trustRemoteCode />
 </ConvertModelSection>
 
 <RunModelSection />

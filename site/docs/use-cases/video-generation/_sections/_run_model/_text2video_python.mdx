@@ -26,7 +26,7 @@ def save_video(filename: str, video_tensor, fps: int = 25):
 
 
 pipe = ov_genai.Text2VideoPipeline(model_path, "${props.device || 'CPU'}")
-video = pipe.generate(args.prompt).video
+video = pipe.generate(prompt).video
 
 save_video("genai_video.avi", video)
 `}
