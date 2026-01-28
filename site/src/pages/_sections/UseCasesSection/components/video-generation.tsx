@@ -10,7 +10,7 @@ export const VideoGeneration = () => (
   <UseCaseCard>
     <UseCaseCard.Title>Video Generation Using Diffusers</UseCaseCard.Title>
     <UseCaseCard.Description>
-      Create videos with LTX-Video model using a diffusion-based generation pipeline 
+      Create videos with LTX-Video model using a diffusion-based generation pipeline
       to produce high-quality clips for creative storytelling, marketing content, product demos, and rapid visual prototyping.
     </UseCaseCard.Description>
     <UseCaseCard.Features>
