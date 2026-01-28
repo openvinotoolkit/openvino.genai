@@ -13,16 +13,20 @@ enum class ImageGenerationModelType {
     ZIMAGE
 };
 
-inline ImageGenerationModelType to_image_generation_model_type(const std::string &value) {
-    static const std::unordered_map<std::string, ImageGenerationModelType> model_types_map = {
+static const std::unordered_map<std::string, ImageGenerationModelType> image_generation_model_types_map = {
         {"zimage", ImageGenerationModelType::ZIMAGE},
-    };
+};
 
-    auto it = model_types_map.find(value);
-    if (it != model_types_map.end()) {
+inline ImageGenerationModelType to_image_generation_model_type(const std::string &value) {
+    auto it = image_generation_model_types_map.find(value);
+    if (it != image_generation_model_types_map.end()) {
         return it->second;
     }
     OPENVINO_THROW("Unsupported '", value, "' image generation model type");
+}
+
+inline bool is_image_generation_model(const std::string &value) {
+    return image_generation_model_types_map.find(value) != image_generation_model_types_map.end();
 }
 
 }

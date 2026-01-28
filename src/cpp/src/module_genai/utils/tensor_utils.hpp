@@ -16,7 +16,7 @@ ov::Tensor unsqueeze(const ov::Tensor& tensor, size_t dim);
 
 std::vector<ov::Tensor> split(const ov::Tensor& tensor);
 
-ov::Tensor stack(const std::vector<ov::Tensor>& tensors);
+ov::Tensor stack(const std::vector<ov::Tensor>& tensors, size_t axis = 0);
 
 ov::Tensor slice_tensor_with_model(const ov::Tensor& tensor, ov::Coordinate begin, ov::Coordinate end, InferRequest infer_request);
 
