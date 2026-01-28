@@ -50,6 +50,6 @@ class TestWhisperSpeechRecognition:
         assert py_result.stdout == cpp_result.stdout, "Python and C++ results should match"
         # C API has no word-level timestamps support which enabled in Python and CPP samples
         # ticket to enable C API: 180115
-        assert filter_word_level_timestamps(py_result.stdout) == c_result.stdout, (
+        assert filter_word_level_timestamps(py_result.stdout) == c_result.stdout.strip(), (
             "Python and C results should match without word-level timestamps"
         )
