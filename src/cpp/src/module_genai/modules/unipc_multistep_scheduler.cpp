@@ -1,10 +1,15 @@
 // Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+// _USE_MATH_DEFINES must be defined before any header that might include <cmath>
+#ifndef _USE_MATH_DEFINES
+#define _USE_MATH_DEFINES
+#include <cmath>
+#endif
+
 #include "unipc_multistep_scheduler.hpp"
 #include <filesystem>
 #include <fstream>
-#include <cmath>
 #include <functional>
 #include "json_utils.hpp"
 #include "image_generation/numpy_utils.hpp"
