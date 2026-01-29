@@ -163,6 +163,7 @@ jobs:
       - name: CMake Build
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          pip install numpy
           cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
                 -DENABLE_PYTHON=ON \
                 -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
@@ -407,6 +408,7 @@ jobs:
       - name: Build GenAI Node.js bindings
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
+          pip install numpy
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
             -DENABLE_JS=ON -DCPACK_GENERATOR=NPM \
             -DENABLE_PYTHON=OFF -DENABLE_WHEEL=OFF \
@@ -770,9 +772,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check status of all jobs
-        if: >-
-          ${{
-            contains(needs.*.result, 'failure') ||
-            contains(needs.*.result, 'cancelled')
-          }}
-        run: exit 1
+        if: always()
+        run: |
+          echo "All dependent job results:"
+          echo '${{ toJSON(needs) }}' | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+
+          # List failed / cancelled jobs
+          failed_jobs=$(echo '${{ toJSON(needs) }}' | jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | .key' || true)
+
+          if [ -n "$failed_jobs" ]; then
+            echo "Failed or cancelled jobs:"
+            echo "$failed_jobs"
+            # Optionally show more info for each failed job
+            echo '${{ toJSON(needs) }}' | jq -r --argjson _ "$(echo '{}' )" \
+              'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | "\(.key): \(.value | tojson)"'
+            exit 1
+          fi

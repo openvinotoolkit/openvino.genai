@@ -84,7 +84,7 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
 
                 if (status != napi_ok) {
                     streamer_exceptions.push_back("The streamer callback BlockingCall failed with the status: " +
-                                                  status);
+                                                  std::to_string(status));
                     return ov::genai::StreamingStatus::CANCEL;
                 }
 
@@ -118,7 +118,7 @@ void vlmPerformInferenceThread(VLMTsfnContext* context) {
                 });
 
             if (status != napi_ok) {
-                report_error("The final BlockingCall failed with status " + status);
+                report_error("The final BlockingCall failed with status " + std::to_string(status));
             }
         }
         finalize();

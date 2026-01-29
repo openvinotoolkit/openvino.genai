@@ -4,7 +4,10 @@
 
 set(TARGET_NAME openvino_genai_c)
 
-file(GLOB SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp")
+file(GLOB_RECURSE SOURCE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+                         "${CMAKE_CURRENT_SOURCE_DIR}/src/*.h"
+                         "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h"
+                         "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp")
 
 # shared library
 
