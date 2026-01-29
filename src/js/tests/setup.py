@@ -75,5 +75,5 @@ if __name__ == "__main__":
             f.writelines(result)
         print(f"Environment variables saved to: {args.to_env_file}")
     else:
-        print("\nPathes to the test models:")
+        print("\nPaths to the test models:")
         print("".join(result))
