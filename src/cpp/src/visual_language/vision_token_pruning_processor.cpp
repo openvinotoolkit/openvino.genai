@@ -81,6 +81,91 @@ std::vector<std::vector<size_t>> VisionTokenPruningProcessor::get_last_selected_
     }
 }
 
+std::string VisionTokenPruningProcessor::get_last_updated_prompt(const std::string& original_prompt,
+                                                                 const std::string& vision_start_token,
+                                                                 const std::string& vision_end_token,
+                                                                 const std::string& image_pad_token,
+                                                                 const std::string& video_pad_token) const {
+    if (m_last_keep_flags.empty()) {
+        return original_prompt;
+    }
+
+    const auto& keep_flags = m_last_keep_flags;
+    std::string result;
+    result.reserve(original_prompt.size());
+
+    size_t pos = 0;
+    bool inside_vision_region = false;
+    size_t region_idx = 0;
+    size_t pad_idx = 0;
+    const size_t region_count = keep_flags.size();
+    size_t total_pads_processed = 0;
+    size_t total_pads_kept = 0;
+
+    while (pos < original_prompt.size()) {
+        // Find the next nearest special token position
+        size_t next_vision_start = original_prompt.find(vision_start_token, pos);
+        size_t next_vision_end = original_prompt.find(vision_end_token, pos);
+        size_t next_image_pad = inside_vision_region ? original_prompt.find(image_pad_token, pos) : std::string::npos;
+        size_t next_video_pad = inside_vision_region ? original_prompt.find(video_pad_token, pos) : std::string::npos;
+
+        // Determine which token comes first
+        size_t next_token_pos = std::min({next_vision_start, next_vision_end, next_image_pad, next_video_pad});
+
+        // If no special tokens found, copy remaining text and exit
+        if (next_token_pos == std::string::npos) {
+            result.append(original_prompt, pos, std::string::npos);
+            break;
+        }
+
+        // Copy regular text before the next special token
+        if (next_token_pos > pos) {
+            result.append(original_prompt, pos, next_token_pos - pos);
+            pos = next_token_pos;
+        }
+
+        // Process the special token found at current position
+        if (next_token_pos == next_vision_start) {
+            result.append(vision_start_token);
+            pos += vision_start_token.size();
+            inside_vision_region = true;
+            pad_idx = 0;
+        } else if (next_token_pos == next_vision_end) {
+            result.append(vision_end_token);
+            pos += vision_end_token.size();
+            inside_vision_region = false;
+            region_idx++;
+        } else if (next_token_pos == next_image_pad) {
+            if (region_idx < region_count && pad_idx < keep_flags[region_idx].size()) {
+                total_pads_processed++;
+                if (keep_flags[region_idx][pad_idx]) {
+                    result.append(image_pad_token);
+                    total_pads_kept++;
+                }
+                pad_idx++;
+            }
+            pos += image_pad_token.size();
+        } else if (next_token_pos == next_video_pad) {
+            if (region_idx < region_count && pad_idx < keep_flags[region_idx].size()) {
+                total_pads_processed++;
+                if (keep_flags[region_idx][pad_idx]) {
+                    result.append(video_pad_token);
+                    total_pads_kept++;
+                }
+                pad_idx++;
+            }
+            pos += video_pad_token.size();
+        }
+    }
+
+    GENAI_DEBUG("Prompt update (len=%zu, regions=%zu): processed %zu pad tokens, kept %zu",
+                original_prompt.size(),
+                region_count,
+                total_pads_processed,
+                total_pads_kept);
+    return result;
+}
+
 // Extract text features by averaging instruction token embeddings
 ov::Tensor VisionTokenPruningProcessor::extract_text_features(const ov::Tensor& text_embeds,
                                                               const ov::Tensor& input_ids,
@@ -695,7 +780,8 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     const PruningContext& context,
     ov::Tensor& position_ids,
     utils::KVCacheState& kv_cache_state,
-    size_t prev_hist_length) {
+    bool is_chat_conversation,
+    size_t& prev_hist_length_inout) {
     auto pruning_start = std::chrono::high_resolution_clock::now();
 
     PruningResult result;
@@ -771,7 +857,10 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     OPENVINO_ASSERT(result.keep_flags_per_region.size() == context.visions_sequence.size(),
                     "Kept visual token mask count mismatch with vision regions");
 
-    // Step 7: Generate pruned input_ids with visual tokens removed
+    // Step 7: Cache keep_flags for prompt synchronization
+    m_last_keep_flags = result.keep_flags_per_region;
+
+    // Step 8: Generate pruned input_ids with visual tokens removed
     result.pruned_input_ids = generate_pruned_input_ids(context.input_ids,
                                                         result.keep_flags_per_region,
                                                         context.vision_pad_token_id,
@@ -796,11 +885,30 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     auto& kv_history = kv_cache_state.get_state();
     OPENVINO_ASSERT(kv_history.size() >= context.input_ids.get_size(),
                     "KV cache history does not contain expected original prompt length");
-    OPENVINO_ASSERT(kv_history.size() >= prev_hist_length,
-                    "KV cache history is shorter than recorded previous history length");
-    kv_history.resize(prev_hist_length);
+    // In chat mode, calculate the correct history boundary that includes generated tokens
+    // History boundary = current kv_cache size - current input size
+    GENAI_DEBUG("KV cache before resize: size=%zu, prev_hist_length=%zu, input_size=%zu",
+                kv_history.size(),
+                prev_hist_length_inout,
+                context.input_ids.get_size());
+
+    if (is_chat_conversation) {
+        size_t retained_history_size = kv_history.size() - context.input_ids.get_size();
+        // Chat mode: preserve complete history (input + generated tokens)
+        kv_history.resize(retained_history_size);
+    } else {
+        // First turn: clear kv_cache
+        kv_history.resize(prev_hist_length_inout);
+    }
+
     kv_cache_state.add_inputs(result.pruned_input_ids);
 
+    // Step 11: Update prev_hist_length for next iteration
+    prev_hist_length_inout = kv_cache_state.get_state().size();
+
+    GENAI_DEBUG("[CDPruner] KV cache after update: size=%zu, prev_hist_length=%zu",
+                kv_cache_state.get_state().size(),
+                prev_hist_length_inout);
     auto pruning_end = std::chrono::high_resolution_clock::now();
     auto pruning_duration = std::chrono::duration_cast<std::chrono::milliseconds>(pruning_end - pruning_start).count();
 

@@ -265,7 +265,17 @@ public:
 
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation) {
-            m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status);
+            // Get original prompt from history and update with pruning if needed
+            std::string original_prompt = m_history.last()["content"].get_string();
+
+            auto pruned_prompt = m_inputs_embedder->update_chat_history(decoded_results,
+                                                                        finish_info.streaming_finish_status,
+                                                                        original_prompt);
+
+            if (pruned_prompt.has_value()) {
+                m_history.pop_back();
+                m_history.push_back({{"role", "user"}, {"content", pruned_prompt.value()}});
+            }
 
             if (finish_info.streaming_finish_status != ov::genai::GenerationStatus::CANCEL) {
                 // using here images.size() instead of encoded_images.size() since
