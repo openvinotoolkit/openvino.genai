@@ -1377,8 +1377,7 @@ ov::Tensor InputsEmbedderQwen2VL::get_rotary_pos_emb(const std::vector<std::arra
     // Calculate rotary embeddings for max_grid_size
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_embeddings_merger.get());
     ov::InferRequest& vision_embeddings_merger = infer_request_guard.get();
-    const size_t dim =
-        vision_embeddings_merger.get_compiled_model().input("rotary_pos_emb").get_partial_shape()[1].get_length();
+    const size_t dim = vision_embeddings_merger.get_tensor("rotary_pos_emb").get_shape().at(1);
     const float theta = 10000.0f;
     
     std::vector<float> inv_freq(dim / 2);
