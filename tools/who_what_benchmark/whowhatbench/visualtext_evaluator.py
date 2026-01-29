@@ -131,6 +131,15 @@ class VisualTextEvaluator(TextEvaluator):
             preprocess_inputs = MODEL_TYPE_TO_CLS_MAPPING[
                 model.config.model_type
             ].preprocess_inputs
+
+            # OV GenAI will use the chat_template from tokenizer.
+            # Optimum (within preprocess_inputs) will use the chat_template only if it has been defined for processor.
+            # So, if the chat_template hasn't been set for processor, try to set it from the tokenizer.
+            if (
+                getattr(processor, "chat_template", None) is None
+                and getattr(tokenizer, "chat_template", None) is not None
+            ):
+                processor.chat_template = tokenizer.chat_template
             inputs = preprocess_inputs(prompt, image, processor, tokenizer, config=model.config, video=video)
             tokens = model.generate(
                 **inputs,
