@@ -2,15 +2,12 @@ import { describe, it, before } from "node:test";
 import { TextEmbeddingPipeline, PoolingType } from "../dist/index.js";
 import { isFloat32Array } from "util/types";
 import assert from "node:assert/strict";
-import { models } from "./models.js";
 
-const EMBEDDING_MODEL_PATH =
-  process.env.EMBEDDING_MODEL_PATH || `./tests/models/${models.Embedding.split("/")[1]}`;
+const { EMBEDDING_MODEL_PATH } = process.env;
 
-if (!EMBEDDING_MODEL_PATH)
-  throw new Error(
-    "Set the path to the model directory in the " + "EMBEDDING_MODEL_PATH environment variable.",
-  );
+if (!EMBEDDING_MODEL_PATH) {
+  throw new Error("Please set EMBEDDING_MODEL_PATH environment variable to run the tests.");
+}
 
 describe("TextEmbeddingPipeline", () => {
   let pipeline = null;
