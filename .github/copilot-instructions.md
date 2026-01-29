@@ -18,7 +18,7 @@ When analyzing a Pull Request, follow this protocol:
 2. Avoid copies: Ensure that large data structures (like tensors) are passed by reference or moved, not copied.
 3. Python Bindings: If C++ APIs are changed, check if the corresponding Python pybind11 wrappers in src/python need updates.
 4. Exceptions: Use OPENVINO_ASSERT(condition, ...) for checks instead of if + throw.
-5. Documentation: Ensure that any new public APIs have docstrings in C++ headers and Python bindings. Ensure that new public APIs has documentation updated in /site.
+5. Documentation: Ensure that any new public APIs have docstrings in C++ headers and Python bindings. Ensure that new public APIs have documentation updated in /site.
 6. Test Coverage: Ensure that new features or changes have corresponding tests.
 7. Formatting & Safety:
     * No using namespace std;.
