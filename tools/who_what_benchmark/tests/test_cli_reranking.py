@@ -4,10 +4,9 @@
 import subprocess  # nosec B404
 import sys
 import pytest
-import shutil
 import logging
 import tempfile
-from test_cli_image import run_wwb
+from conftest import convert_model, run_wwb
 from pathlib import Path
 
 
@@ -22,21 +21,6 @@ OV_RERANK_MODELS = {
 }
 
 
-def setup_module():
-    for model_info in OV_RERANK_MODELS:
-        model_id = model_info[0]
-        task = model_info[1]
-        MODEL_PATH = Path(tmp_dir, model_id.replace("/", "_"))
-        subprocess.run(["optimum-cli", "export", "openvino", "--model", model_id, MODEL_PATH, "--task", task, "--trust-remote-code"],
-                       capture_output=True,
-                       text=True)
-
-
-def teardown_module():
-    logger.info("Remove models")
-    shutil.rmtree(tmp_dir)
-
-
 @pytest.mark.parametrize(("model_info"), OV_RERANK_MODELS)
 def test_reranking_genai(model_info, tmp_path):
     if sys.platform == 'darwin':
@@ -46,7 +30,7 @@ def test_reranking_genai(model_info, tmp_path):
 
     GT_FILE = Path(tmp_dir) / "gt.csv"
     model_id = model_info[0]
-    MODEL_PATH = Path(tmp_dir) / model_id.replace("/", "_")
+    MODEL_PATH = convert_model(model_id)
 
     # test GenAI
     run_wwb([
@@ -76,7 +60,7 @@ def test_reranking_optimum(model_info, tmp_path):
 
     GT_FILE = Path(tmp_dir) / "gt.csv"
     model_id = model_info[0]
-    MODEL_PATH = Path(tmp_dir, model_id.replace("/", "_"))
+    MODEL_PATH = convert_model(model_id)
 
     # Collect reference with HF model
     run_wwb([

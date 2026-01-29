@@ -444,16 +444,13 @@ def generate_llm_bench_input_generation_jsonl(request):
     file_name, json_entries = request.param
     file_path = os.path.join(test_data, file_name)
 
-    if not os.path.exists(file_path):
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
-        with open(file_path, "w", encoding="utf-8") as f:
-            for entry in json_entries:
-                f.write(json.dumps(entry) + "\n")
+    with open(file_path, "w", encoding="utf-8") as f:
+        for entry in json_entries:
+            f.write(json.dumps(entry) + "\n")
 
-        logger.info(f"Generated image generation JSONL file at {file_path}")
-    else:
-        logger.info(f"Image generation JSONL file already exists at {file_path}")
+    logger.info(f"Generated JSONL file at {file_path}")
 
     yield file_path
 
