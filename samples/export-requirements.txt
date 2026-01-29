@@ -1,10 +1,10 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-openvino-tokenizers[transformers]~=2026.0.0.0.dev
+openvino-tokenizers[transformers]~=2026.1.0.0.dev
 optimum-intel[nncf]==1.27.0
 numpy==1.26.4; platform_system == "Darwin" and platform_machine == "x86_64"
 safetensors==0.6.2; platform_system == "Darwin" and platform_machine == "x86_64"
-einops==0.8.1  # For Qwen
+einops==0.8.2  # For Qwen
 transformers_stream_generator==0.0.5  # For Qwen
 diffusers==0.35.2 # For image generation pipelines
 timm==1.0.22  # For exporting InternVL2

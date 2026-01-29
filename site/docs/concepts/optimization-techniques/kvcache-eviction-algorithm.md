@@ -10,7 +10,7 @@ The cache eviction algorithm is designed to manage KV (Key-Value) cache memory f
 
 The cache eviction algorithm allows for average and maximum KV cache consumption savings since it effectively imposes a configurable hard limit on the amount of KV cache blocks that each sequence can occupy.
 A fixed, relatively small value of KV cache block limit means that there is less compute spent on generating next token, when compared to the no-eviction case where the entire KV cache history of the sequence, including prompt tokens, would have to be processed; token latency would also remain stable.
-This effect only comes into play during the generation stage and is most noticeable for longer generation lengths. 
+This effect only comes into play during the generation stage and is most noticeable for longer generation lengths.
 
 No eviction is done during prefill stage, therefore no speedups would be achieved during the prefill using cache eviction alone and the reduction in maximum KV cache consumption over the entire generation process is limited from below by the amount of KV cache blocks occupied by the full prompt. To achieve prefill stage speedup, the [sparse attention prefill algorithms](./sparse-attention-prefill.md) can be used, either separately or along with cache eviction.
 
@@ -24,7 +24,7 @@ The KV cache for each sequence is divided into three logical areas:
 * Recent Area: Most recent tokens that are preserved (not evicted while in this area, but naturally migrating toward the evictable area as the text generation goes on)
 
 The sizes of all three areas can be configured by modifying corresponding fields in a `CacheEvictionConfig` struct, which itself is a part of the pipeline-wide `SchedulerConfig`.
-As the generation starts, the blocks in respective logical areas are filled token-by-token, and once at least one block past the "recent" area is filled, eviction may take place. 
+As the generation starts, the blocks in respective logical areas are filled token-by-token, and once at least one block past the "recent" area is filled, eviction may take place.
 The tokens are evicted based on accumulated importance scores following the [H2O](https://arxiv.org/abs/2306.14048) approach.
 The scores are accumulated throughout the entire generation process and their weighting may be changed by adjusting the `CacheEvictionConfig.aggregation_mode` parameter.
 Eviction occurs with a block-wise granularity, and only the completely filled blocks from the "evictable" area are evicted.
@@ -35,30 +35,41 @@ The downside of the eviction procedure is potential loss of generation accuracy,
 The user can adjust the individual sizes of the eviction sub-areas to hit the optimal point of accuracy/memory usage tradeoff in their particular case.
 
 Note that currently the eviction only starts after the full prompt has been processed, i.e. no eviction takes place during the prefill phase.
-This means that for longer prompt sizes the maximum cache usage may exceed the limit defined by the `CacheEvictionConfig` parameters. 
+This means that for longer prompt sizes the maximum cache usage may exceed the limit defined by the `CacheEvictionConfig` parameters.
 
-After the prefill phase, however, the maximum cache occupancy for each sequence currently being processed is strictly limited by the combined sizes of the 3 areas described above. 
+After the prefill phase, however, the maximum cache occupancy for each sequence currently being processed is strictly limited by the combined sizes of the 3 areas described above.
 `CacheEvictionConfig.get_max_cache_size_after_eviction()` can be queried to get this cache size limit in tokens.
 
+### (Optional) Adaptive R-KV score aggregation
+Along with the more straightforward `AggregationMode.SUM` and `AggregationMode.NORM_SUM`, there is an option to set `CacheEvictionConfig.aggregation_mode = AggregationMode.ADAPTIVE_RKV` to enable the [R-KV](https://arxiv.org/pdf/2505.24133v3)-based scoring for the blocks to be evicted.
+
+Whenever the eviction should occur, the R-KV approach uses the same per-token, block-accumulated attention scores to determine the subset of KV cache blocks that comprises a configurable portion of the total attention scores across currently retained blocks (i.e. "attention mass", as controlled `CacheEvictionConfig.adaptive_rkv_config.attention_mass`).
+This block subset (up to the limits imposed by the higher-level config's `start_size`, `recent_size` and `max_cache_size`) will be retained after eviction.
+The rest of the blocks that would need to be retained during current eviction step will be taken from the most "diverse" remaining blocks in the evictable area.
+The "diversity" is calculated as the negative of the block-aggregated cross-token cosine similarity; the aim is to find the most dissimilar blocks among the non-attention-mass subset and keep only those as most representative ones.
+
+In addition to the above, the attention scores are aggregated across generation step by a running average with a window size controlled by the `CacheEvictionConfig.adaptive_rkv_config.window_size`.
+
+The Adaptive R-KV aggregation mode is generally recommended LLM usage scenarios with reasoning enabled, as promoting diversity helps reduce repetitive or redundant reasoning patterns.
 
 ## Sample - impact of cache eviction on possible generation length and prompt throughput
 [limit_checker.py](https://github.com/openvinotoolkit/openvino.genai/tree/master/samples/python/text_generation/limit_checker.py) can be used to visualize the impact of the cache eviction algorithm on the end performance of the generation pipeline.
 The script is parameterized to allow specifying own model (by its `huggingface_hub` ID) and the base cache size.
 
-With `--mode gen_length`, the script will run the generation pipeline with increasing requested length of generation until it either hits 100% maximum cache usage or times out. 
-With cache eviction disabled, the pipeline will eventually exhaust the cache size, and the generation length will be capped at the output token count determined by the base cache size. 
+With `--mode gen_length`, the script will run the generation pipeline with increasing requested length of generation until it either hits 100% maximum cache usage or times out.
+With cache eviction disabled, the pipeline will eventually exhaust the cache size, and the generation length will be capped at the output token count determined by the base cache size.
 With eviction enabled, however, the pipeline is able to generate sequences of arbitrary length (as long as the cache size is at least `max(prompt_size, max_cache_size_after_eviction)`, and the script will instead finish with a timeout.
 
 With `--mode gen_throughput`, the script will run a binary search to determine the minimum number of concurrently processed sequences to hit the 100% cache utilization.
 
 
 ## (Optional) Cache Rotation
-By default, no additional cache modification is performed during eviction. 
-Most LLMs employ some kind of positional embedding at some point in the inferencing, which effectively becomes associated with each per-token KV cache vector as well. 
+By default, no additional cache modification is performed during eviction.
+Most LLMs employ some kind of positional embedding at some point in the inferencing, which effectively becomes associated with each per-token KV cache vector as well.
 The popular RoPE positional embedding is more or less continuous in the linear space of the token positions, but when token eviction takes place, the continuity of the remaining blocks is disrupted.
 This may impact the ability of the model to correctly recognize the relative positions of the remaining blocks and degrade the generation accuracy.
 
-Cache rotation seeks to alleviate this by "re-rotating" corresponding blocks so that the blocks that remain after each eviction are once again "continuous" in terms of the effective RoPE embedding. 
+Cache rotation seeks to alleviate this by "re-rotating" corresponding blocks so that the blocks that remain after each eviction are once again "continuous" in terms of the effective RoPE embedding.n
 It can be enabled by setting the `CacheEvictionConfig.apply_rotation` field to `true` (default is `false`).
 
 ## Current limitations
@@ -86,9 +97,9 @@ const ov::genai::CacheEvictionConfig EXAMPLE_CACHE_EVICTION_CONFIG =
 ```
 ```python
 CacheEvictionConfig(
-        start_size=32, 
-        recent_size=128, 
-        max_cache_size=448, 
+        start_size=32,
+        recent_size=128,
+        max_cache_size=448,
         aggregation_mode=AggregationMode.NORM_SUM,
         apply_rotation=False,
         snapkv_window_size=8,
@@ -98,7 +109,7 @@ CacheEvictionConfig(
 
 **Anchor Point Modes:**
 - `RANDOM`: Random binary pattern
-- `ZEROS`: All zeros pattern  
+- `ZEROS`: All zeros pattern
 - `ONES`: All ones pattern
 - `MEAN`: Mean of indicators across blocks
 - `ALTERNATING`: Alternating 0-1 pattern

@@ -12,6 +12,20 @@
 namespace ov {
 namespace genai {
 
+//
+// Enable NPU dynamic prompt input support, which allows text-embedding models to handle long-context inputs more
+// effectively. The following properties can determine how NPUW behaves.
+//
+// NPUW_LLM_PREFILL_CHUNK_SIZE:
+//     Controls the chunk size for prompt prefill, which determines the granularity of input dynamism.
+//     Default value: 1024.
+//
+// NPUW_F16IC:
+//     Forces subgraph interconnect tensors to use FP16 precision when they would otherwise be FP32, provided that the
+//     partitioning pipeline is enabled. Setting this property to False may improve accuracy.
+//     Default value: True
+//
+
 using EmbeddingResult = std::variant<std::vector<float>, std::vector<int8_t>, std::vector<uint8_t>>;
 using EmbeddingResults =
     std::variant<std::vector<std::vector<float>>, std::vector<std::vector<int8_t>>, std::vector<std::vector<uint8_t>>>;
