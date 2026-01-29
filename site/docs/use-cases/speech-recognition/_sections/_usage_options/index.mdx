@@ -243,6 +243,11 @@ Whisper can predict timestamps for each word of speech, which provides more gran
     </TabItemCpp>
 </LanguageTabs>
 
+:::info
+NPU device require `STATIC_PIPELINE=True` property passed to `WhisperPipeline` constructor:
+`openvino_genai.WhisperPipeline(model_path, "NPU", word_timestamps=True, STATIC_PIPELINE=True)`
+:::
+
 ### Long-Form Audio Processing
 
 Whisper models are designed for audio segments up to 30 seconds in length.
