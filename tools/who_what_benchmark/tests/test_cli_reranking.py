@@ -3,12 +3,28 @@ import pytest
 import logging
 import tempfile
 from conftest import convert_model, run_wwb
+import time
+from datetime import datetime, timezone
+from test_cli_image import run_wwb
 from pathlib import Path
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 tmp_dir = tempfile.mkdtemp()
+
+
+def _ts() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+
+
+def _log(message: str) -> None:
+    print(f"[{_ts()}] [wwb-reranking] {message}", flush=True)
+
+
+def _require_optimum_cli() -> None:
+    if shutil.which("optimum-cli") is None:
+        pytest.skip("Missing required executable 'optimum-cli' for reranking export.")
 
 
 OV_RERANK_MODELS = {
@@ -23,6 +39,8 @@ def test_reranking_genai(model_info, tmp_path):
         pytest.xfail("Ticket 175534")
     if sys.platform == "win32":
         pytest.xfail("Ticket 178790")
+
+    _log(f"Test params: model_info={model_info} tmp_path={tmp_path}")
 
     GT_FILE = Path(tmp_dir) / "gt.csv"
     model_id = model_info[0]
@@ -54,6 +72,8 @@ def test_reranking_optimum(model_info, tmp_path):
     if sys.platform == "win32":
         pytest.xfail("Ticket 178790")
 
+    _require_optimum_cli()
+    _log(f"Test params: model_info={model_info} tmp_path={tmp_path}")
     GT_FILE = Path(tmp_dir) / "gt.csv"
     model_id = model_info[0]
     MODEL_PATH = convert_model(model_id)
