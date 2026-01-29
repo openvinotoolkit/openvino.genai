@@ -33,6 +33,7 @@ namespace module {
         X(VAEDecoderModule, 42) \
         X(ResultModule, 50) \
         X(SaveImageModule, 51) \
+        X(SaveVideoModule, 52) \
         X(Unknown, 99) \
         X(DummyModule, 10000)
 
