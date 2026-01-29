@@ -1,7 +1,6 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import subprocess  # nosec B404
 import pytest
 import logging
 import sys
