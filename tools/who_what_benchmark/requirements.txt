@@ -16,3 +16,9 @@ scipy
 opencv-python
 imageio[pyav]
 imageio-ffmpeg
+torchaudio
+torchvision
+soundfile
+librosa
+vocos
+vector_quantize_pytorch
