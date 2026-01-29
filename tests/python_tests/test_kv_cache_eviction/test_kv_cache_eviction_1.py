@@ -8,7 +8,13 @@ from pathlib import Path
 import datasets
 from tqdm import tqdm
 
-from openvino_genai import ContinuousBatchingPipeline, GenerationConfig, CacheEvictionConfig, AggregationMode
+from openvino_genai import (
+    ContinuousBatchingPipeline,
+    GenerationConfig,
+    CacheEvictionConfig,
+    AggregationMode,
+    SparseAttentionMode,
+)
 
 from utils.ov_genai_pipelines import PipelineType, generate_and_compare
 from utils.constants import get_default_llm_properties
@@ -188,7 +194,8 @@ class LongBenchTestData:
     LongBenchTestData("samsum", 4, 1.6, 2.5),
     LongBenchTestData("trec", 3.2, 2.0, 3.3),
 ], ids=["samsum", "trec"])
-def test_optimized_generation_longbench(test_struct):
+@pytest.mark.parametrize("use_xattention", [False, True])
+def test_optimized_generation_longbench(test_struct, use_xattention):
     seqs_per_request = 32
     device = "CPU"
     num_kv_blocks = 1000 if device == "CPU" else 500
@@ -201,6 +208,8 @@ def test_optimized_generation_longbench(test_struct):
     scheduler_config_opt.cache_eviction_config = LONGBENCH_CACHE_EVICTION_CONFIG
 
     scheduler_config_opt.use_sparse_attention = True
+    if use_xattention:
+        scheduler_config_opt.sparse_attention_config.mode = SparseAttentionMode.XATTENTION
 
     model_cb_noopt = ContinuousBatchingPipeline(models_path, scheduler_config, device, {}, get_default_llm_properties())
     model_cb_opt = ContinuousBatchingPipeline(models_path, scheduler_config_opt, device, {}, get_default_llm_properties())
