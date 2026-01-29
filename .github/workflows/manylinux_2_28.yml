@@ -523,7 +523,6 @@ jobs:
           - name: 'GGUF Reader tests'
             cmd: 'python -m pytest -v ./tests/python_tests/test_gguf_reader.py'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
-            runner: 'aks-linux-16-cores-64gb' # Until CVS-179725 will be fixed
             timeout: 360
           - name: 'Tokenizer tests'
             cmd: 'python -m pytest -v ./tests/python_tests/test_tokenizer.py'
@@ -556,7 +555,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: ${{ matrix.test.runner || 'aks-linux-8-cores-32gb' }}
+    runs-on: aks-linux-8-cores-32gb
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
