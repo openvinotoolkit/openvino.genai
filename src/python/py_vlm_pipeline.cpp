@@ -114,6 +114,14 @@ auto decoded_results_docstring = R"(
     metrics:    performance metrics with tpot, ttft, etc. of type openvino_genai.VLMPerfMetrics.
 )";
 
+auto vlm_config_docstring = R"(
+    Structure to keep VLMPipeline configuration parameters.
+
+    Attributes:
+        embedder_device (str, optional):
+            Device to run the embedder model on (e.g., CPU, GPU). If not set, the main device is used.
+)";
+
 py::object call_vlm_generate(
     ov::genai::VLMPipeline& pipe,
     const std::string& prompt,
@@ -182,21 +190,42 @@ void init_vlm_pipeline(py::module_& m) {
             return res;
         });
 
-    py::class_<ov::genai::VLMPipeline>(m, "VLMPipeline", "This class is used for generation with VLMs")
+    auto vlm_pipeline_class = py::class_<ov::genai::VLMPipeline>(m, "VLMPipeline", "This class is used for generation with VLMs");
+
+    py::class_<ov::genai::VLMPipeline::Config>(vlm_pipeline_class, "Config", vlm_config_docstring)
+        .def(py::init<>())
+        .def(py::init([](py::kwargs kwargs) {
+            return ov::genai::VLMPipeline::Config(pyutils::kwargs_to_any_map(kwargs));
+        }))
+        .def("validate",
+             &ov::genai::VLMPipeline::Config::validate,
+             "Checks that are no conflicting parameters. Raises exception if config is invalid.")
+        .def_readwrite("embedder_device", &ov::genai::VLMPipeline::Config::embedder_device);
+
+    vlm_pipeline_class
         .def(py::init([](
             const std::filesystem::path& models_path,
             const std::string& device,
+            const std::optional<ov::genai::VLMPipeline::Config>& config,
             const py::kwargs& kwargs
         ) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
+            if (config.has_value()) {
+                return std::make_unique<ov::genai::VLMPipeline>(models_path,
+                                                               device,
+                                                               *config,
+                                                               pyutils::kwargs_to_any_map(kwargs));
+            }
             return std::make_unique<ov::genai::VLMPipeline>(models_path, device, pyutils::kwargs_to_any_map(kwargs));
         }),
         py::arg("models_path"), "folder with exported model files",
         py::arg("device"), "device on which inference will be done",
+        py::arg("config") = std::nullopt, "Optional pipeline configuration",
         R"(
             VLMPipeline class constructor.
             models_path (os.PathLike): Path to the folder with exported model files.
             device (str): Device to run the model on (e.g., CPU, GPU). Default is 'CPU'.
+            config: (VLMPipeline.Config): Optional pipeline configuration
             kwargs: Device properties
         )")
 

@@ -3968,8 +3968,28 @@ class VLMPipeline:
     """
     This class is used for generation with VLMs
     """
+    class Config:
+        """
+
+        Structure to keep VLMPipeline configuration parameters.
+
+        Attributes:
+            embedder_device (str, optional):
+                Execution device for embedder models of visual language modeling pipeline when executing language models on NPU.
+        """
+        embedder_device: str | None
+        @typing.overload
+        def __init__(self) -> None:
+            ...
+        @typing.overload
+        def __init__(self, **kwargs) -> None:
+            ...
+        def validate(self) -> None:
+            """
+            Checks that are no conflicting parameters. Raises exception if config is invalid.
+            """
     @typing.overload
-    def __init__(self, models_path: os.PathLike | str | bytes, device: str, **kwargs) -> None:
+    def __init__(self, models_path: os.PathLike | str | bytes, device: str, config: openvino_genai.py_openvino_genai.VLMPipeline.Config | None = None, **kwargs) -> None:
         """
                     VLMPipeline class constructor.
                     models_path (os.PathLike): Path to the folder with exported model files.

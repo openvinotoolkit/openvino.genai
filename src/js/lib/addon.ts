@@ -106,11 +106,17 @@ export interface TextRerankPipeline {
   ): void;
 }
 
+export type VLMPipelineConfig = {
+  /** Execution device for embedder models in the visual language modeling pipeline when executing the language model on NPU */
+  embedder_device?: string;
+};
+
 export interface VLMPipeline {
   new (): VLMPipeline;
   init(
     modelPath: string,
     device: string,
+    config: VLMPipelineConfig,
     ovProperties: VLMPipelineProperties,
     callback: (err: Error | null) => void,
   ): void;

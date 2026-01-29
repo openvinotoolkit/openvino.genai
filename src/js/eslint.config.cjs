@@ -48,6 +48,7 @@ module.exports = defineConfig([
             "cache_size",
             "dynamic_split_fuse",
             "pooling_type",
+            "embedder_device",
             "json_schema",
             "structured_output_config",
             "structural_tags_config",
