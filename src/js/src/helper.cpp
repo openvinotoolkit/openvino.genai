@@ -690,7 +690,6 @@ Napi::Object to_decoded_result(const Napi::Env& env, const ov::genai::DecodedRes
     obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, results.scores));
     obj.Set("perfMetrics", PerfMetricsWrapper::wrap(env, results.perf_metrics));
     obj.Set("parsed", cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(env, results.parsed));
-    obj.Set("subword", Napi::String::New(env, results));
     return obj;
 }
 
