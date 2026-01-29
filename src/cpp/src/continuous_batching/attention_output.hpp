@@ -6,3 +6,8 @@
 using AttentionScoresForCacheOfSubsequence = ov::Tensor;
 using AttentionScoresForEachDecoderLayer = std::vector<AttentionScoresForCacheOfSubsequence>;
 using AttentionScoresForEachSubsequence = std::map<size_t, AttentionScoresForEachDecoderLayer>;
+
+
+using BlockDiversityForSubsequence = ov::Tensor;
+using BlockDiversityForEachDecoderLayer = std::vector<BlockDiversityForSubsequence>;
+using BlockDiversityForEachSubsequence = std::map<size_t, BlockDiversityForEachDecoderLayer>;
