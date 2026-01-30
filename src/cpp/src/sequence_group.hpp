@@ -3,25 +3,21 @@
 
 #pragma once
 
-#include <vector>
 #include <cassert>
-#include <set>
 #include <cstdlib>
-#include <string_view>
 #include <memory>
 #include <optional>
+#include <set>
+#include <string_view>
+#include <vector>
 
-#include "openvino/genai/generation_handle.hpp"
-#include "openvino/genai/generation_config.hpp"
 #include "generation_stream.hpp"
+#include "openvino/genai/generation_config.hpp"
+#include "openvino/genai/generation_handle.hpp"
+#include "utils.hpp"
 
 namespace ov::genai {
-enum class SequenceStatus {
-    RUNNING = 0,
-    FINISHED = 1,
-    OUT_OF_MEMORY = 2,
-    WAITING = 3
-};
+enum class SequenceStatus { RUNNING = 0, FINISHED = 1, OUT_OF_MEMORY = 2, WAITING = 3, CACHING = 4 };
 
 enum class SequenceGroupType {
     TOKENS,
@@ -40,6 +36,7 @@ class Sequence {
         return m_counter++;
     }
 
+    ov::genai::utils::EagleMetaData m_eagle_metadata;
     TokenIds m_generated_ids;
     LogProbs m_generated_log_probs;
     uint64_t m_grouped_id;
@@ -125,6 +122,10 @@ public:
         return m_status == SequenceStatus::WAITING;
     }
 
+    bool is_caching() const {
+        return m_status == SequenceStatus::CACHING;
+    }
+
     void set_status(SequenceStatus status) {
         m_status = status;
     }
@@ -150,6 +151,14 @@ public:
 
     ov::Tensor get_hidden_state() const {
         return m_hidden_state;
+    }
+
+    void set_eagle_metadata(const ov::genai::utils::EagleMetaData& metadata) {
+        m_eagle_metadata = metadata;
+    }
+
+    const ov::genai::utils::EagleMetaData& get_eagle_metadata() const {
+        return m_eagle_metadata;
     }
 
     // removes n last tokens and updates cumulative log prob

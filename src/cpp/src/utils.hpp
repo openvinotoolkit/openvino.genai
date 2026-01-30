@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2026 Intel Corporation
+// Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -75,6 +75,13 @@ struct GenerationFinishInfo
 {
     EncodedResults results;
     GenerationStatus streaming_finish_status;
+};
+
+struct EagleMetaData {
+    std::vector<std::vector<uint8_t>> tree_mask;
+    std::vector<std::vector<int64_t>> retrieve_indices;
+    std::vector<int> tree_position_ids;
+    std::vector<int64_t> validated_indices = {};
 };
 
 Tensor init_attention_mask(const Tensor& position_ids);
@@ -332,6 +339,7 @@ bool has_input(const std::shared_ptr<Model>& model, const std::string& name);
  */
 std::pair<ov::Coordinate, ov::Coordinate> make_roi(const std::vector<size_t>& shape, const size_t dim, const size_t range_start, const size_t range_end);
 
+ov::Tensor concat_tensors(const std::vector<ov::Tensor>& tensors, const size_t axis);
 ov::genai::GenerationConfig get_beam_search_config();
 ov::genai::GenerationConfig get_greedy_config();
 ov::genai::GenerationConfig get_multinomial_config();
