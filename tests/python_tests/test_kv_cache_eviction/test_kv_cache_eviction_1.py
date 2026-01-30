@@ -185,14 +185,14 @@ class LongBenchTestData:
 
 
 @pytest.mark.parametrize("test_struct", [
-    LongBenchTestData("samsum", 4, 1.6, 2.5),
-    LongBenchTestData("trec", 3.2, 2.0, 3.3),
+    LongBenchTestData("samsum", 4, 1.3, 2.5),
+    LongBenchTestData("trec", 3.2, 2.0, 3.2),
 ], ids=["samsum", "trec"])
 def test_optimized_generation_longbench(test_struct):
     seqs_per_request = 32
     device = "CPU"
     num_kv_blocks = 1000 if device == "CPU" else 500
-    model_id = "Qwen/Qwen2-0.5B-Instruct"
+    model_id = "hf-internal-testing/tiny-random-LlamaForCausalLM"
     models_path = download_and_convert_model(model_id).models_path
     scheduler_config = get_scheduler_config(num_kv_blocks)
 
