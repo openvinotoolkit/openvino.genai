@@ -173,7 +173,7 @@ protected:
     SequenceGroup::Ptr m_sequence_group;
     Sampler m_sampler;
     ov::genai::RawPerfMetrics m_raw_perf_metrics;
-    bool m_verbose = false;
+    bool m_verbose = true;
 };
 
 /**

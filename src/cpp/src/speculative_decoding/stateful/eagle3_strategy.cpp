@@ -748,9 +748,23 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
     auto sampling_config = config;
     sampling_config.max_new_tokens = config.max_new_tokens + m_draft_iterations + 1;
 
+    m_draft->initialize_sequence(input_ids, sampling_config);
+
+    // For tree search mode, temporarily disable tree expansion during initial token generation
+    // We need to modify the GenerationConfig inside the SequenceGroup (not the local sampling_config)
+    const bool is_tree_search_mode = sampling_config.is_tree_search();
+    size_t original_tree_depth = 0;
+    if (is_tree_search_mode) {
+        original_tree_depth = sampling_config.eagle_tree_params.tree_depth;
+        sampling_config.eagle_tree_params.tree_depth = 0;
+        eagle3::log_debug(eagle3::PipelineStep::ITER,
+                          "Prefill: temporarily set tree_depth to 0 (original: " + std::to_string(original_tree_depth) +
+                              ") for initial token generation",
+                          is_verbose());
+    }
+
     // Initialize sequences with sampling config
     m_target->initialize_sequence(input_ids, sampling_config);
-    m_draft->initialize_sequence(input_ids, sampling_config);
 
     // Phase 1: Initial Prompt Processing (Prefill)
     eagle3::log_generation_step("PREFILL", 0, is_verbose());
@@ -764,6 +778,16 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
 
     // Append initial token to draft model
     m_draft->append_tokens({initial_token});
+
+    // Restore original tree_depth after initial token generation
+    if (is_tree_search_mode) {
+        auto& target_params =
+            const_cast<ov::genai::GenerationConfig&>(m_target->get_sequence_group()->get_sampling_parameters());
+        target_params.eagle_tree_params.tree_depth = original_tree_depth;
+        eagle3::log_debug(eagle3::PipelineStep::ITER,
+                          "Prefill: restored tree_depth to " + std::to_string(original_tree_depth),
+                          is_verbose());
+    }
 
     eagle3::log_debug("Initial token: " + std::to_string(initial_token), is_verbose());
     eagle3::log_sequence_state("after prefill",
