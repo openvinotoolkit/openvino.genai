@@ -610,7 +610,7 @@ void init_flux_transformer_2d_model(py::module_& m) {
         py::arg("root_dir"), "Model root directory",
         py::arg("device"), "Device on which inference will be done",
         R"(
-            UNet2DConditionModel class
+            FluxTransformer2DModel class
             root_dir (os.PathLike): Model root directory.
             device (str): Device on which inference will be done.
             kwargs: Device properties.
