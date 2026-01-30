@@ -138,7 +138,7 @@ install(TARGETS stable_diffusion_export_import
 
 # create encrypted_stable_diffusion sample executable
 
-add_executable(encrypted_stable_diffusion stable_diffusion_encrypt_decrypt.cpp load_image.cpp imwrite.cpp)
+add_executable(encrypted_stable_diffusion encrypted_stable_diffusion.cpp load_image.cpp imwrite.cpp)
 
 target_include_directories(encrypted_stable_diffusion PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(encrypted_stable_diffusion PRIVATE openvino::genai indicators::indicators)
