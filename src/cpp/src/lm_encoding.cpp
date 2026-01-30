@@ -84,7 +84,8 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     utils::KVCacheState& kv_cache_state,
     EmbeddingsModel::Ptr m_embedding,
     std::optional<int64_t> rope_delta,
-    const size_t max_kv_cache_size
+    const size_t max_kv_cache_size,
+    const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs
 ) {
     std::vector<GenerationHandle> generations;
     for (SequenceGroup::Ptr sequence_group : sequence_groups) {
@@ -137,6 +138,10 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         m_llm.set_tensor("inputs_embeds", input_ids);
         if (token_type_ids.has_value())
             m_llm.set_tensor("token_type_ids", *token_type_ids);
+        // Set extra inputs for LLM if any
+        for (const auto& [name, tensor] : lm_extra_inputs) {
+            m_llm.set_tensor(name, tensor);
+        }
     } else {
         kv_cache_state.add_inputs(input_ids);
         m_llm.set_tensor("input_ids", input_ids);
@@ -238,6 +243,22 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
                 int64_t* token_type_data = new_token_type_ids.data<int64_t>();
                 std::fill(token_type_data, token_type_data + total_num_tokens, 0);
                 m_llm.set_tensor("token_type_ids", new_token_type_ids);
+            }
+            // Update extra inputs for LLM if any
+            for (const auto& [name, tensor] : lm_extra_inputs) {
+                // TODO Consider moving token_type_ids input to lm_extra_inputs
+                if (name == "deepstack_visual_embeds") {
+                    ov::Shape new_shape = tensor.get_shape();
+                    new_shape[1] = 1;
+                    ov::Tensor new_deepstack_visual_embeds{tensor.get_element_type(), new_shape};
+                    std::fill_n(new_deepstack_visual_embeds.data<float>(), new_deepstack_visual_embeds.get_size(), 0.0f);
+                    m_llm.set_tensor(name, new_deepstack_visual_embeds);
+                }
+                if (name == "visual_pos_masks") {
+                    ov::Tensor new_visual_pos_masks{tensor.get_element_type(), {batch_size, 1}};
+                    std::fill_n(new_visual_pos_masks.data<bool>(), new_visual_pos_masks.get_size(), false);
+                    m_llm.set_tensor(name, new_visual_pos_masks);
+                }
             }
         } else {
             m_llm.set_tensor("input_ids", new_input_ids);
