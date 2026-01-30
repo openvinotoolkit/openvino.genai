@@ -25,6 +25,10 @@ std::string ZImage_Turbo_fp16_ov() {
     return get_model_path() + "/Z-Image-Turbo-fp16-ov/";
 }
 
+std::string Wan_2_1() {
+    return get_model_path() + "/Wan2.1-T2V-1.3B-Diffusers/";
+}
+
 std::string get_qwen2_5_vl_config_yaml(const std::string& model_path, const std::string& device) {
     YAML::Node config;
 

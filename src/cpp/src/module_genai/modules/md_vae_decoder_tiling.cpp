@@ -51,8 +51,8 @@ void VAEDecoderTilingModule::print_static_config() {
 
 VAEDecoderTilingModule::VAEDecoderTilingModule(const IBaseModuleDesc::PTR& desc, const PipelineDesc::PTR& pipeline_desc)
     : IBaseModule(desc, pipeline_desc) {
-    m_model_type = to_image_generation_model_type(desc->model_type);
-    if (m_model_type != ImageGenerationModelType::ZIMAGE) {
+    m_model_type = to_diffusion_model_type(desc->model_type);
+    if (m_model_type != DiffusionModelType::ZIMAGE) {
         GENAI_ERR("TransformerModule[" + desc->name + "]: Unsupported model type: " + desc->model_type);
         return;
     }

@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "md_zimage_denoiser_loop.hpp"
+#include "md_denoiser_loop.hpp"
 
 #include "module_genai/module_factory.hpp"
 #include "module_genai/transformer_config.hpp"
@@ -17,12 +17,12 @@ namespace ov {
 namespace genai {
 namespace module {
 
-GENAI_REGISTER_MODULE_SAME(ZImageDenoiserLoopModule);
+GENAI_REGISTER_MODULE_SAME(DenoiserLoopModule);
 
-void ZImageDenoiserLoopModule::print_static_config() {
+void DenoiserLoopModule::print_static_config() {
     std::cout << R"(
   denoiser_loop:
-    type: "ZImageDenoiserLoopModule"
+    type: "DenoiserLoopModule"
     device: "GPU"
     inputs:
       - name: "latents"                                    
@@ -54,11 +54,11 @@ void ZImageDenoiserLoopModule::print_static_config() {
     )" << std::endl;
 }
 
-ZImageDenoiserLoopModule::ZImageDenoiserLoopModule(const IBaseModuleDesc::PTR& desc,
+DenoiserLoopModule::DenoiserLoopModule(const IBaseModuleDesc::PTR& desc,
                                                    const PipelineDesc::PTR& pipeline_desc)
     : IBaseModule(desc, pipeline_desc), m_cfg_truncation(1.0f), m_cfg_normalization(false) {
-    m_model_type = to_image_generation_model_type(desc->model_type);
-    if (m_model_type != ImageGenerationModelType::ZIMAGE) {
+    m_model_type = to_diffusion_model_type(desc->model_type);
+    if (m_model_type == DiffusionModelType::UNKNOWN) {
         GENAI_ERR("TransformerModule[" + desc->name + "]: Unsupported model type: " + desc->model_type);
         return;
     }
@@ -67,9 +67,9 @@ ZImageDenoiserLoopModule::ZImageDenoiserLoopModule(const IBaseModuleDesc::PTR& d
     }
 }
 
-ZImageDenoiserLoopModule::~ZImageDenoiserLoopModule() {}
+DenoiserLoopModule::~DenoiserLoopModule() {}
 
-bool ZImageDenoiserLoopModule::initialize() {
+bool DenoiserLoopModule::initialize() {
     const auto &params = module_desc->params;
     auto it_path = params.find("model_path");
     if (it_path == params.end()) {
@@ -78,14 +78,17 @@ bool ZImageDenoiserLoopModule::initialize() {
     }
 
     std::filesystem::path model_path = module_desc->get_full_path(it_path->second);
-
-    if (m_model_type == ImageGenerationModelType::ZIMAGE) {
+    auto transformer_model_path = model_path / "transformer/openvino_model.xml";
+    if (m_model_type == DiffusionModelType::ZIMAGE) {
         std::string device = module_desc->device.empty() ? "CPU" : module_desc->device;
         m_scheduler = std::make_shared<ZImageFlowMatchEulerDiscreteScheduler>(model_path / "scheduler/scheduler_config.json", device);
+    } else if (m_model_type == DiffusionModelType::WAN_2_1) {
+        // Force to use CPU for scheduler, since the Inverse(opset14) is not supported on GPU
+        m_scheduler = std::make_shared<UniPCMultistepScheduler>(model_path / "scheduler/scheduler_config.json", "CPU");
+        transformer_model_path = model_path / "transformer/transformer.xml";
     } else {
         OPENVINO_THROW("Unsupported '", module_desc->model_type, "' Transformer model type");
     }
-    auto transformer_model_path = model_path / "transformer/openvino_model.xml";
     if (!std::filesystem::exists(transformer_model_path)) {
         GENAI_ERR("TransformerModule[" + module_desc->name + "]: model file not found at " + transformer_model_path.string());
         return false;
@@ -100,7 +103,7 @@ bool ZImageDenoiserLoopModule::initialize() {
     return true;
 }
 
-void ZImageDenoiserLoopModule::run() {
+void DenoiserLoopModule::run() {
     GENAI_INFO("Running module: " + module_desc->name);
     prepare_inputs();
     std::vector<ov::Tensor> prompt_embeds;
@@ -158,10 +161,23 @@ void ZImageDenoiserLoopModule::run() {
     } else {
         m_cfg_normalization = false;
     }
-    this->outputs["latents"].data = run(latents, prompt_embeds, negative_prompt_embeds, generation_config);
+    if (m_model_type == DiffusionModelType::ZIMAGE) {
+        this->outputs["latents"].data = run(latents, prompt_embeds, negative_prompt_embeds, generation_config);
+    } else {
+        int num_inference_steps = 10;
+        if (exists_input("num_inference_steps")) {
+            num_inference_steps = this->inputs["num_inference_steps"].data.as<int>();
+        }
+        float guidance_scale = 7.5f;
+        if (exists_input("guidance_scale")) {
+            guidance_scale = this->inputs["guidance_scale"].data.as<float>();
+        }
+        this->outputs["latents"].data = run(latents, prompt_embeds, negative_prompt_embeds, num_inference_steps, guidance_scale);
+    }
 }
 
-ov::Tensor ZImageDenoiserLoopModule::run(
+// Image generation
+ov::Tensor DenoiserLoopModule::run(
         ov::Tensor latents,
         const std::vector<ov::Tensor>& prompt_embeds,
         const std::vector<ov::Tensor>& negative_prompt_embeds,
@@ -192,12 +208,12 @@ ov::Tensor ZImageDenoiserLoopModule::run(
 
     auto actual_batch_size = batch_size * generation_config.num_images_per_prompt;
     auto image_seq_len = (latents.get_shape()[2] / 2) * (latents.get_shape()[3] / 2);
-    std::dynamic_pointer_cast<ZImageFlowMatchEulerDiscreteScheduler>(m_scheduler)->set_sigma_min(0.0f);
-    m_scheduler->set_timesteps(
+    std::dynamic_pointer_cast<ZImageFlowMatchEulerDiscreteScheduler>(std::get<std::shared_ptr<IScheduler>>(m_scheduler))->set_sigma_min(0.0f);
+    std::get<std::shared_ptr<IScheduler>>(m_scheduler)->set_timesteps(
         image_seq_len,
         generation_config.num_inference_steps,
          generation_config.strength);
-    std::vector<float> timesteps = m_scheduler->get_float_timesteps();
+    std::vector<float> timesteps = std::get<std::shared_ptr<IScheduler>>(m_scheduler)->get_float_timesteps();
     ov::Tensor prompt_tensor = tensor_utils::stack(processed_embeds);
     std::vector<ov::Tensor> all_prompt_embeds;
     ov::Tensor all_prompt_tensor;
@@ -274,9 +290,59 @@ ov::Tensor ZImageDenoiserLoopModule::run(
             noise_pred = m_request.get_output_tensor();
         }
 
-        auto scheduler_step_result = m_scheduler->step(
+        auto scheduler_step_result = std::get<std::shared_ptr<IScheduler>>(m_scheduler)->step(
             noise_pred, latents, inference_step, generation_config.generator);
         latents = scheduler_step_result["latent"];
+    }
+    return latents;
+}
+
+ov::Tensor DenoiserLoopModule::run(
+        ov::Tensor latents,
+        const std::vector<ov::Tensor>& prompt_embeds,
+        const std::vector<ov::Tensor>& negative_prompt_embeds,
+        int num_inference_steps,
+        float guidance_scale) {
+    ov::Tensor prompt_tensor = tensor_utils::stack(prompt_embeds);
+    std::optional<ov::Tensor> negative_prompt_tensor = std::nullopt;
+    if (!negative_prompt_embeds.empty()) {
+        negative_prompt_tensor = tensor_utils::stack(negative_prompt_embeds);
+    }
+    std::get<std::shared_ptr<UniPCMultistepScheduler>>(m_scheduler)->set_timesteps(num_inference_steps);
+    auto timesteps = std::get<std::shared_ptr<UniPCMultistepScheduler>>(m_scheduler)->get_timesteps();
+    ov::Tensor noise_pred(latents.get_element_type(),
+                         latents.get_shape());
+    ov::Tensor noise_uncond(latents.get_element_type(),
+                         latents.get_shape());
+    auto noise_pred_data = noise_pred.data<float>();
+    auto noise_uncond_data = noise_uncond.data<float>();
+    for (size_t i = 0; i < timesteps.size(); i++) {
+        int64_t t = timesteps[i];
+        ov::Tensor timestep(ov::element::f32, {latents.get_shape()[0]});
+        auto *timestep_data = timestep.data<float>();
+        for (size_t j = 0; j < timestep.get_size(); j++) {
+            timestep_data[j] = static_cast<float>(t);
+        }
+        m_request.set_tensor("hidden_states", latents);
+        m_request.set_tensor("timestep", timestep);
+        m_request.set_tensor("encoder_hidden_states", prompt_tensor);
+        m_request.set_output_tensor(0, noise_pred);
+        m_request.infer();
+
+        if (guidance_scale > 1.0f && negative_prompt_tensor.has_value()) {
+            m_request.set_tensor("hidden_states", latents);
+            m_request.set_tensor("timestep", timestep);
+            m_request.set_tensor("encoder_hidden_states", negative_prompt_tensor.value());
+            m_request.set_output_tensor(0, noise_uncond);
+            m_request.infer();
+
+            for (size_t j = 0; j < noise_pred.get_size(); j++) {
+                noise_pred_data[j] = noise_uncond_data[j] + guidance_scale * (noise_pred_data[j] - noise_uncond_data[j]);
+            }
+        }
+
+        latents = std::get<std::shared_ptr<UniPCMultistepScheduler>>(m_scheduler)->step(
+            noise_pred, t, latents)["prev_sample"];
     }
     return latents;
 }

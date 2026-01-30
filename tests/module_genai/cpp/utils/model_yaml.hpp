@@ -37,6 +37,8 @@ std::string Qwen2_5_VL_3B_Instruct_INT4();
 // Return model full path for Z-Image-Turbo-fp16-ov model.
 std::string ZImage_Turbo_fp16_ov();
 
+std::string Wan_2_1();
+
 // Return yaml content string for Qwen2.5-VL-3B-Instruct model pipeline configuration.
 std::string get_qwen2_5_vl_config_yaml(const std::string& model_path, const std::string& device = "CPU");
 };  // namespace TEST_MODEL

@@ -4,7 +4,7 @@
 #pragma once
 
 #include "openvino/genai/visibility.hpp"
-#include "image_generation_model_type.hpp"
+#include "diffusion_model_type.hpp"
 #include <openvino/runtime/properties.hpp>
 #include <filesystem>
 

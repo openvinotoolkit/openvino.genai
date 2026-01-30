@@ -214,7 +214,7 @@ class TransformerPipeline():
                     }
                 },
                 'denoiser_loop': {
-                    'type': 'ZImageDenoiserLoopModule',
+                    'type': 'DenoiserLoopModule',
                     'device': self.device,
                     'description': 'Z-Image denoiser loop.',
                     'inputs': [

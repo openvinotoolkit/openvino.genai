@@ -27,7 +27,7 @@ private:
     ov::InferRequest pp_infer_request;
     bool init_post_process();
 
-    ImageGenerationModelType m_model_type;
+    DiffusionModelType m_model_type;
     float m_tile_overlap_factor = 0.25f;
     int m_sample_size;
     int m_tile_latent_min_size;

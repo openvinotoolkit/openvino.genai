@@ -5,5 +5,8 @@ pillow
 torch
 torchvision
 transformers
+imageio
+imageio-ffmpeg
+ftfy
 git+https://github.com/huggingface/diffusers
 git+https://github.com/openvino-dev-samples/optimum-intel.git@zimage

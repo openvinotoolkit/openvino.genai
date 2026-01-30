@@ -29,7 +29,7 @@ namespace module {
         X(FeatureFusionModule, 31) \
         X(VAEDecoderTilingModule, 32) \
         X(LLMInferenceModule, 40) \
-        X(ZImageDenoiserLoopModule, 41) \
+        X(DenoiserLoopModule, 41) \
         X(VAEDecoderModule, 42) \
         X(ResultModule, 50) \
         X(SaveImageModule, 51) \

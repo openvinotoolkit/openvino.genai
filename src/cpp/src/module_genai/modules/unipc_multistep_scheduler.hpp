@@ -86,6 +86,9 @@ public:
     
     explicit UniPCMultistepScheduler(const Config &config, const std::string &device = "CPU");
 
+    UniPCMultistepScheduler(const UniPCMultistepScheduler &) = delete;
+    UniPCMultistepScheduler &operator=(const UniPCMultistepScheduler &) = delete;
+
     void set_timesteps(size_t num_inference_steps, std::optional<float> mu = std::nullopt);
 
     std::map<std::string, ov::Tensor> step(ov::Tensor &model_output, int64_t timestep, ov::Tensor sample);

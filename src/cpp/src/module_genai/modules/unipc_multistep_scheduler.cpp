@@ -35,101 +35,101 @@ UniPCMultistepScheduler::Config::Config(const std::filesystem::path &config_path
 
     std::ifstream config_file(config_path);
     nlohmann::json parsed = nlohmann::json::parse(config_file);
-    if (parsed.contains("num_train_timesteps")) {
+    if (parsed.contains("num_train_timesteps") && !parsed["num_train_timesteps"].is_null()) {
         utils::read_json_param(parsed, "num_train_timesteps", num_train_timesteps);
     }
-    if (parsed.contains("beta_start")) {
+    if (parsed.contains("beta_start") && !parsed["beta_start"].is_null()) {
         utils::read_json_param(parsed, "beta_start", beta_start);
     }
-    if (parsed.contains("beta_end")) {
+    if (parsed.contains("beta_end") && !parsed["beta_end"].is_null()) {
         utils::read_json_param(parsed, "beta_end", beta_end);
     }
-    if (parsed.contains("beta_schedule")) {
+    if (parsed.contains("beta_schedule") && !parsed["beta_schedule"].is_null()) {
         std::string beta_schedule_str;
         utils::read_json_param(parsed, "beta_schedule", beta_schedule_str);
         beta_schedule = parse_beta_schedule(beta_schedule_str);
     }
-    if (parsed.contains("trained_betas")) {
+    if (parsed.contains("trained_betas") && !parsed["trained_betas"].is_null()) {
         std::vector<float> trained_betas_vec;
         utils::read_json_param(parsed, "trained_betas", trained_betas_vec);
         ov::Shape shape = {trained_betas_vec.size()};
         trained_betas = ov::Tensor(ov::element::f32, shape);
         std::memcpy(trained_betas->data<float>(), trained_betas_vec.data(), trained_betas_vec.size() * sizeof(float));
     }
-    if (parsed.contains("solver_order")) {
+    if (parsed.contains("solver_order") && !parsed["solver_order"].is_null()) {
         utils::read_json_param(parsed, "solver_order", solver_order);
     }
-    if (parsed.contains("prediction_type")) {
+    if (parsed.contains("prediction_type") && !parsed["prediction_type"].is_null()) {
         std::string prediction_type_str;
         utils::read_json_param(parsed, "prediction_type", prediction_type_str);
         prediction_type = parse_prediction_type(prediction_type_str);
     }
-    if (parsed.contains("thresholding")) {
+    if (parsed.contains("thresholding") && !parsed["thresholding"].is_null()) {
         utils::read_json_param(parsed, "thresholding", thresholding);
     }
-    if (parsed.contains("dynamic_thresholding_ratio")) {
+    if (parsed.contains("dynamic_thresholding_ratio") && !parsed["dynamic_thresholding_ratio"].is_null()) {
         utils::read_json_param(parsed, "dynamic_thresholding_ratio", dynamic_thresholding_ratio);
     }
-    if (parsed.contains("sample_max_value")) {
+    if (parsed.contains("sample_max_value") && !parsed["sample_max_value"].is_null()) {
         utils::read_json_param(parsed, "sample_max_value", sample_max_value);
     }
-    if (parsed.contains("predict_x0")) {
+    if (parsed.contains("predict_x0") && !parsed["predict_x0"].is_null()) {
         utils::read_json_param(parsed, "predict_x0", predict_x0);
     }
-    if (parsed.contains("solver_type")) {
+    if (parsed.contains("solver_type") && !parsed["solver_type"].is_null()) {
         std::string solver_type_str;
         utils::read_json_param(parsed, "solver_type", solver_type_str);
         solver_type = parse_solver_type(solver_type_str);
     }
-    if (parsed.contains("lower_order_final")) {
+    if (parsed.contains("lower_order_final") && !parsed["lower_order_final"].is_null()) {
         utils::read_json_param(parsed, "lower_order_final", lower_order_final);
     }
-    if (parsed.contains("disable_corrector")) {
+    if (parsed.contains("disable_corrector") && !parsed["disable_corrector"].is_null()) {
         utils::read_json_param(parsed, "disable_corrector", disable_corrector);
     }
-    if (parsed.contains("use_karras_sigmas")) {
+    if (parsed.contains("use_karras_sigmas") && !parsed["use_karras_sigmas"].is_null()) {
         utils::read_json_param(parsed, "use_karras_sigmas", use_karras_sigmas);
     }
-    if (parsed.contains("use_exponential_sigmas")) {
+    if (parsed.contains("use_exponential_sigmas") && !parsed["use_exponential_sigmas"].is_null()) {
         utils::read_json_param(parsed, "use_exponential_sigmas", use_exponential_sigmas);
     }
-    if (parsed.contains("use_beta_sigmas")) {
+    if (parsed.contains("use_beta_sigmas") && !parsed["use_beta_sigmas"].is_null()) {
         utils::read_json_param(parsed, "use_beta_sigmas", use_beta_sigmas);
     }
-    if (parsed.contains("use_flow_sigmas")) {
+    if (parsed.contains("use_flow_sigmas") && !parsed["use_flow_sigmas"].is_null()) {
         utils::read_json_param(parsed, "use_flow_sigmas", use_flow_sigmas);
     }
-    if (parsed.contains("flow_shift")) {
+    if (parsed.contains("flow_shift") && !parsed["flow_shift"].is_null()) {
         utils::read_json_param(parsed, "flow_shift", flow_shift);
     }
-    if (parsed.contains("timestep_spacing")) {
+    if (parsed.contains("timestep_spacing") && !parsed["timestep_spacing"].is_null()) {
         std::string timestep_spacing_str;
         utils::read_json_param(parsed, "timestep_spacing", timestep_spacing_str);
         timestep_spacing = parse_timestep_spacing(timestep_spacing_str);
     }
-    if (parsed.contains("steps_offset")) {
+    if (parsed.contains("steps_offset") && !parsed["steps_offset"].is_null()) {
         utils::read_json_param(parsed, "steps_offset", steps_offset);
     }
-    if (parsed.contains("final_sigma_type")) {
+    if (parsed.contains("final_sigma_type") && !parsed["final_sigma_type"].is_null()) {
         std::string final_sigma_type_str;
         utils::read_json_param(parsed, "final_sigma_type", final_sigma_type_str);
         final_sigma_type = parse_final_sigma_type(final_sigma_type_str);
     }
-    if (parsed.contains("rescale_betas_zero_snr")) {
+    if (parsed.contains("rescale_betas_zero_snr") && !parsed["rescale_betas_zero_snr"].is_null()) {
         utils::read_json_param(parsed, "rescale_betas_zero_snr", rescale_betas_zero_snr);
     }
-    if (parsed.contains("use_dynamic_shifting")) {
+    if (parsed.contains("use_dynamic_shifting") && !parsed["use_dynamic_shifting"].is_null()) {
         utils::read_json_param(parsed, "use_dynamic_shifting", use_dynamic_shifting);
     }
-    if (parsed.contains("time_shift_type")) {
+    if (parsed.contains("time_shift_type") && !parsed["time_shift_type"].is_null()) {
         std::string time_shift_type_str;
         utils::read_json_param(parsed, "time_shift_type", time_shift_type_str);
         time_shift_type = parse_time_shift_type(time_shift_type_str);
     }
-    if (parsed.contains("sigma_min")) {
+    if (parsed.contains("sigma_min") && !parsed["sigma_min"].is_null()) {
         utils::read_json_param(parsed, "sigma_min", sigma_min);
     }
-    if (parsed.contains("sigma_max")) {
+    if (parsed.contains("sigma_max") && !parsed["sigma_max"].is_null()) {
         utils::read_json_param(parsed, "sigma_max", sigma_max);
     }
 }
@@ -154,6 +154,7 @@ UniPCMultistepScheduler::UniPCMultistepScheduler(const Config &config, const std
     }
 
     if (m_config.trained_betas.has_value()) {
+        m_betas = ov::Tensor(m_config.trained_betas->get_element_type(), m_config.trained_betas->get_shape());
         m_config.trained_betas.value().copy_to(m_betas);
     } else if (m_config.beta_schedule == BetaSchedule::LINEAR) {
         auto betas = numpy_utils::linspace<float>(
