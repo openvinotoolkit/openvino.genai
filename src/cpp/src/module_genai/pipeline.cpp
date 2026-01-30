@@ -151,17 +151,69 @@ ModulePipeline::ValidationResult ModulePipeline::validate_config_string(const st
     return result;
 }
 
+namespace {
+
+// Helper function to convert parsed JSON to YAML
+std::string convert_parsed_json_to_yaml(
+    comfyui::ComfyUIJsonParser& parser,
+    ov::AnyMap& pipeline_inputs) {
+
+    GENAI_INFO("JSON parsed successfully");
+
+    const auto& nodes = parser.get_nodes();
+    comfyui::log_parsed_nodes(nodes);
+
+    // Get the API JSON (parser handles workflow->API conversion internally)
+    const auto& api_json = parser.get_api_json();
+
+    // Validate the prompt before conversion
+    auto validation_result = parser.validate_prompt();
+    if (!validation_result.success) {
+        parser.get_validation_errors_string(validation_result);
+        return "";
+    }
+    GENAI_INFO("Prompt validation passed");
+
+    // Convert to YAML using ComfyUIToGenAIConverter with pipeline_inputs extraction
+    // This will also extract pipeline parameters from the JSON
+    auto options = comfyui::create_conversion_options(pipeline_inputs);
+    comfyui::ComfyUIToGenAIConverter converter;
+    std::string yaml_content = converter.convert_to_yaml(api_json, pipeline_inputs, options);
+
+    // Validate the generated YAML before returning
+    auto yaml_validation_result = ModulePipeline::validate_config_string(yaml_content);
+    if (!yaml_validation_result.valid) {
+        GENAI_ERR("Generated YAML validation failed:");
+        for (const auto& err : yaml_validation_result.errors) {
+            GENAI_ERR("  - %s", err.c_str());
+        }
+        return "";
+    }
+
+    return yaml_content;
+}
+
+}  // anonymous namespace
+
 std::string ModulePipeline::comfyui_json_to_yaml(
     const std::filesystem::path& comfyui_json_path,
     ov::AnyMap& pipeline_inputs) {
 
-    std::ifstream file(comfyui_json_path);
-    if (!file.is_open()) {
+    try {
+        // Parse and validate JSON using ComfyUIJsonParser
+        comfyui::ComfyUIJsonParser parser;
+
+        if (!parser.load_json_file(comfyui_json_path)) {
+            GENAI_DEBUG("Failed to parse JSON file: %s", comfyui_json_path.string().c_str());
+            return "";
+        }
+
+        return convert_parsed_json_to_yaml(parser, pipeline_inputs);
+
+    } catch (const std::exception& e) {
+        GENAI_ERR("ComfyUI JSON to YAML conversion failed: %s", e.what());
         return "";
     }
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    return comfyui_json_string_to_yaml(buffer.str(), pipeline_inputs);
 }
 
 std::string ModulePipeline::comfyui_json_string_to_yaml(
@@ -177,42 +229,7 @@ std::string ModulePipeline::comfyui_json_string_to_yaml(
             return "";
         }
 
-        GENAI_INFO("JSON parsed successfully");
-
-        const auto& nodes = parser.get_nodes();
-        comfyui::log_parsed_nodes(nodes);
-
-        GENAI_INFO("Validating prompt...");
-
-        auto result = parser.validate_prompt("validation");
-
-        if (!result.success) {
-            comfyui::log_validation_errors(result);
-            return "";
-        }
-
-        GENAI_INFO("Validation passed");
-
-        // Get the API JSON (parser handles workflow->API conversion internally)
-        const auto& api_json = parser.get_api_json();
-
-        // Convert to YAML using ComfyUIToGenAIConverter with pipeline_inputs extraction
-        auto options = comfyui::create_conversion_options(pipeline_inputs);
-
-        comfyui::ComfyUIToGenAIConverter converter;
-        std::string yaml_content = converter.convert_to_yaml(api_json, pipeline_inputs, options);
-
-        // Validate the generated YAML before returning
-        auto validation_result = validate_config_string(yaml_content);
-        if (!validation_result.valid) {
-            GENAI_ERR("Generated YAML validation failed:");
-            for (const auto& err : validation_result.errors) {
-                GENAI_ERR("  - %s", err.c_str());
-            }
-            return "";
-        }
-
-        return yaml_content;
+        return convert_parsed_json_to_yaml(parser, pipeline_inputs);
 
     } catch (const std::exception& e) {
         GENAI_ERR("ComfyUI JSON to YAML conversion failed: %s", e.what());

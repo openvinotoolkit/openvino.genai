@@ -149,8 +149,12 @@ public:
                             const std::vector<std::string>& return_types,
                             bool is_output_node = false);
 
-    // Get validation errors as string
-    std::string get_validation_errors_string() const;
+    /**
+     * @brief Log validation errors and return error string
+     * @param validation_result The validation result from validate_prompt()
+     * @return Error details as formatted string
+     */
+    std::string get_validation_errors_string(const PromptValidationResult& validation_result) const;
 
     // Check if JSON is workflow format (has "nodes" array) or API format
     bool is_workflow_json(const json& j) const;
@@ -186,8 +190,6 @@ private:
 
     // Node class mappings: class_type -> (required_inputs, optional_inputs, return_types, is_output_node)
     std::map<std::string, NodeClassInfo> node_class_mappings_;
-
-    std::vector<ValidationError> errors_;
 };
 
 // ============================================================================

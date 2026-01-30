@@ -19,6 +19,7 @@
 #include <iostream>
 #include <functional>
 #include <set>
+#include <queue>
 #include <yaml-cpp/yaml.h>
 #include "logger.hpp"
 
@@ -120,6 +121,97 @@ void log_parsed_nodes(const std::map<std::string, Node>& nodes) {
     for (const auto& [node_id, node] : nodes) {
         GENAI_DEBUG("  - Node %s: %s", node_id.c_str(), node.class_type.c_str());
     }
+}
+
+/**
+ * @brief Topological sort of nodes in API JSON
+ *
+ * Similar to ComfyUI's TopologicalSort in graph.py, this function sorts nodes
+ * by their dependencies using Kahn's algorithm. Nodes with no dependencies
+ * are processed first, followed by nodes that depend on them.
+ *
+ * @param api_json The API JSON containing node definitions
+ * @return Vector of node IDs in topological order (dependencies first)
+ */
+std::vector<std::string> topological_sort_nodes(const json& api_json) {
+    // blockCount: number of nodes this node is directly blocked by (dependencies)
+    // blocking: which nodes are blocked by this node (dependents)
+    std::map<std::string, int> block_count;
+    std::map<std::string, std::set<std::string>> blocking;
+
+    // Initialize all nodes
+    for (const auto& [node_id, node_data] : api_json.items()) {
+        block_count[node_id] = 0;
+        blocking[node_id] = {};
+    }
+
+    // Build dependency graph by analyzing inputs
+    // In ComfyUI API JSON, a link is represented as [from_node_id, from_socket_index]
+    for (const auto& [node_id, node_data] : api_json.items()) {
+        if (!node_data.contains("inputs")) continue;
+
+        for (const auto& [input_name, input_value] : node_data["inputs"].items()) {
+            // Check if input is a link (array with 2 elements: [from_node_id, from_socket])
+            if (input_value.is_array() && input_value.size() == 2) {
+                std::string from_node_id = input_value[0].get<std::string>();
+
+                // Add dependency: from_node_id -> node_id
+                // node_id depends on from_node_id, so from_node_id blocks node_id
+                if (blocking.find(from_node_id) != blocking.end()) {
+                    if (blocking[from_node_id].find(node_id) == blocking[from_node_id].end()) {
+                        blocking[from_node_id].insert(node_id);
+                        block_count[node_id]++;
+                        GENAI_DEBUG("[TOPO] %s[%s] -> %s (block_count=%d)",
+                                   from_node_id.c_str(), input_name.c_str(), node_id.c_str(), block_count[node_id]);
+                    }
+                }
+            }
+        }
+    }
+
+    // Topological sort using Kahn's algorithm
+    std::vector<std::string> sorted_node_ids;
+    std::queue<std::string> ready_queue;
+
+    // Find all nodes with no dependencies (block_count == 0)
+    for (const auto& [node_id, count] : block_count) {
+        if (count == 0) {
+            ready_queue.push(node_id);
+            GENAI_DEBUG("[TOPO] Initial ready node: %s", node_id.c_str());
+        }
+    }
+
+    // Process nodes in topological order
+    while (!ready_queue.empty()) {
+        std::string node_id = ready_queue.front();
+        ready_queue.pop();
+        sorted_node_ids.push_back(node_id);
+
+        // Unblock dependent nodes
+        for (const auto& blocked_node_id : blocking[node_id]) {
+            block_count[blocked_node_id]--;
+            GENAI_DEBUG("[TOPO] Unblocking %s: block_count=%d", blocked_node_id.c_str(), block_count[blocked_node_id]);
+            if (block_count[blocked_node_id] == 0) {
+                ready_queue.push(blocked_node_id);
+            }
+        }
+    }
+
+    // Check for cycles
+    if (sorted_node_ids.size() != api_json.size()) {
+        GENAI_ERR("[TOPO] Dependency cycle detected! Sorted %zu nodes out of %zu",
+                 sorted_node_ids.size(), api_json.size());
+    }
+
+    // Log sorted order
+    GENAI_INFO("[TOPO] Topological order (%zu nodes):", sorted_node_ids.size());
+    for (size_t i = 0; i < sorted_node_ids.size(); ++i) {
+        const auto& nid = sorted_node_ids[i];
+        std::string class_type = api_json[nid]["class_type"].get<std::string>();
+        GENAI_DEBUG("[TOPO]   %zu: %s (%s)", i, nid.c_str(), class_type.c_str());
+    }
+
+    return sorted_node_ids;
 }
 
 // ============================================================================
@@ -304,8 +396,12 @@ std::string ComfyUIToGenAIConverter::generate_yaml(
     auto& generator_registry = YamlModuleGeneratorRegistry::instance();
     generator_registry.initialize_defaults();
 
-    // 3. Iterate over api_json.items() and call each node's generator
-    for (const auto& [node_id, node_data] : api_json.items()) {
+    // 3. Topological sort of nodes (similar to ComfyUI's TopologicalSort in graph.py)
+    std::vector<std::string> sorted_node_ids = topological_sort_nodes(api_json);
+
+    // 4. Iterate over sorted nodes and call each node's generator
+    for (const auto& node_id : sorted_node_ids) {
+        const auto& node_data = api_json[node_id];
         std::string class_type = node_data["class_type"].get<std::string>();
 
         // Get generator for this node type
@@ -328,6 +424,7 @@ std::string ComfyUIToGenAIConverter::generate_yaml(
                 // Create context and call generator
                 YamlGeneratorContext ctx(pipeline_modules, root, params, options, node_info);
                 generator->generate(ctx);
+                GENAI_DEBUG("[YAML] Generated module for %s (%s)", node_id.c_str(), class_type.c_str());
                 break;
             }
         }

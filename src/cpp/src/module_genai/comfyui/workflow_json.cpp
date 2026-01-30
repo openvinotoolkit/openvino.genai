@@ -22,6 +22,21 @@ namespace comfyui {
 // Helper Functions
 // ============================================================================
 
+// Pretty names for node titles when title is not specified in workflow JSON
+static const std::unordered_map<std::string, std::string>& get_pretty_names() {
+    static const std::unordered_map<std::string, std::string> pretty_names = {
+        {"SaveImage", "Save Image"},
+        {"UNETLoader", "Load Diffusion Model"},
+        {"VAELoader", "Load VAE"},
+        {"CLIPLoader", "Load CLIP"},
+        {"VAEDecodeSwitcher", "VAE Decode Switch"},
+        {"StringConcatenate", "Concatenate"},
+        {"VAEDecode", "VAE Decode"},
+        {"CLIPTextEncode", "CLIP Text Encode (Prompt)"},
+    };
+    return pretty_names;
+}
+
 bool WorkflowToApiConverter::is_uuid(const std::string& str) {
     // Simple check: UUID contains hyphens and is 36 characters
     return str.find('-') != std::string::npos && str.length() == 36;
@@ -249,17 +264,7 @@ void WorkflowToApiConverter::expand_subgraph(
         if (sub_node.contains("title")) {
             title = sub_node["title"];
         } else {
-            static const std::unordered_map<std::string, std::string> pretty_names = {
-                {"SaveImage", "Save Image"},
-                {"UNETLoader", "Load Diffusion Model"},
-                {"VAELoader", "Load VAE"},
-                {"CLIPLoader", "Load CLIP"},
-                {"VAEDecodeSwitcher", "VAE Decode Switch"},
-                {"StringConcatenate", "Concatenate"},
-                {"VAEDecode", "VAE Decode"},
-                {"CLIPTextEncode", "CLIP Text Encode (Prompt)"},
-            };
-
+            const auto& pretty_names = get_pretty_names();
             auto it = pretty_names.find(sub_node_type);
             if (it != pretty_names.end()) {
                 title = it->second;
@@ -273,7 +278,6 @@ void WorkflowToApiConverter::expand_subgraph(
         api_node["class_type"] = sub_node_type;
         api_node["_meta"] = json::object();
         api_node["_meta"]["title"] = title;
-        api_node["node_id"] = composite_id;
 
         GENAI_DEBUG("[WORKFLOW] Subgraph node: node_id=%s, class_type=%s, title=%s",
                     composite_id.c_str(), sub_node_type.c_str(), title.c_str());
@@ -457,17 +461,7 @@ std::vector<std::pair<std::string, json>> WorkflowToApiConverter::convert_to_nod
             if (node.contains("title")) {
                 title = node["title"];
             } else {
-                static const std::unordered_map<std::string, std::string> pretty_names = {
-                    {"SaveImage", "Save Image"},
-                    {"UNETLoader", "Load Diffusion Model"},
-                    {"VAELoader", "Load VAE"},
-                    {"CLIPLoader", "Load CLIP"},
-                    {"VAEDecodeSwitcher", "VAE Decode Switch"},
-                    {"StringConcatenate", "Concatenate"},
-                    {"VAEDecode", "VAE Decode"},
-                    {"CLIPTextEncode", "CLIP Text Encode (Prompt)"},
-                };
-
+                const auto& pretty_names = get_pretty_names();
                 auto it = pretty_names.find(node_type);
                 if (it != pretty_names.end()) {
                     title = it->second;
@@ -574,7 +568,6 @@ std::vector<std::pair<std::string, json>> WorkflowToApiConverter::convert_to_nod
             api_node["class_type"] = node_type;
             api_node["_meta"] = json::object();
             api_node["_meta"]["title"] = title;
-            api_node["node_id"] = node_id_str;
 
             GENAI_DEBUG("[WORKFLOW] Regular node: node_id=%s, class_type=%s, title=%s",
                         node_id_str.c_str(), node_type.c_str(), title.c_str());

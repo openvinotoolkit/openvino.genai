@@ -52,7 +52,21 @@ bool ComfyUIJsonParser::load_json_file(const std::filesystem::path& file_path) {
         }
 
         json source_json = json::parse(file);
-        return process_json(source_json);
+        bool result = process_json(source_json);
+
+        // Debug: Save converted API JSON to file if it was workflow format
+        if (result && json_format_ == JsonFormat::WORKFLOW) {
+            std::filesystem::path debug_filepath = file_path.parent_path() / (file_path.stem().string() + "_converted_api.json");
+            std::ofstream debug_file(debug_filepath);
+            if (debug_file.is_open()) {
+                debug_file << prompt_.dump(2);
+                debug_file.close();
+                std::cout << "Saved converted API JSON to " << debug_filepath.string() << std::endl;
+                GENAI_DEBUG("Saved converted API JSON to %s", debug_filepath.string().c_str());
+            }
+        }
+
+        return result;
     } catch (const json::exception& e) {
         GENAI_DEBUG("JSON parsing error: %s", e.what());
         return false;
@@ -474,11 +488,57 @@ void ComfyUIJsonParser::register_node_class(
     node_class_mappings_[class_name] = info;
 }
 
-std::string ComfyUIJsonParser::get_validation_errors_string() const {
+std::string ComfyUIJsonParser::get_validation_errors_string(const PromptValidationResult& validation_result) const {
     std::stringstream ss;
-    for (const auto& error : errors_) {
-        ss << "[" << error.type << "] " << error.message << ": " << error.details << "\n";
+
+    // Get node title for the main error message if available
+    std::string main_error_node_title;
+    std::string details = validation_result.error.details;
+    size_t start = details.find("#");
+    size_t end = details.find("'", start);
+    if (start != std::string::npos && end != std::string::npos) {
+        std::string error_node_id = details.substr(start + 1, end - start - 1);
+        auto it = nodes_.find(error_node_id);
+        if (it != nodes_.end()) {
+            if (it->second.meta.contains("title")) {
+                main_error_node_title = " (title: " + it->second.meta["title"].get<std::string>() + ")";
+            } else {
+                main_error_node_title = " (class: " + it->second.class_type + ")";
+            }
+        }
     }
+
+    GENAI_ERR("Prompt validation failed: %s", validation_result.error.message.c_str());
+    GENAI_ERR("  Type: %s", validation_result.error.type.c_str());
+    GENAI_ERR("  Details: %s%s", validation_result.error.details.c_str(), main_error_node_title.c_str());
+
+    ss << "[" << validation_result.error.type << "] " << validation_result.error.message
+       << ": " << validation_result.error.details << main_error_node_title << "\n";
+
+    // Print node errors with titles
+    for (const auto& [node_id, node_error] : validation_result.node_errors) {
+        std::string title = node_error.contains("class_type")
+            ? node_error["class_type"].get<std::string>()
+            : "unknown";
+        auto it = nodes_.find(node_id);
+        if (it != nodes_.end() && it->second.meta.contains("title")) {
+            title = it->second.meta["title"].get<std::string>();
+        }
+        GENAI_ERR("  Node #%s (%s):", node_id.c_str(), title.c_str());
+        ss << "  Node #" << node_id << " (" << title << "):\n";
+
+        // Print detailed errors for this node
+        if (node_error.contains("errors") && node_error["errors"].is_array()) {
+            for (const auto& err : node_error["errors"]) {
+                std::string err_type = err.contains("type") ? err["type"].get<std::string>() : "";
+                std::string err_msg = err.contains("message") ? err["message"].get<std::string>() : "";
+                std::string err_details = err.contains("details") ? err["details"].get<std::string>() : "";
+                GENAI_ERR("    [%s] %s: %s", err_type.c_str(), err_msg.c_str(), err_details.c_str());
+                ss << "    [" << err_type << "] " << err_msg << ": " << err_details << "\n";
+            }
+        }
+    }
+
     return ss.str();
 }
 
