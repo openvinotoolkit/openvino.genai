@@ -16,7 +16,7 @@ export const VideoGeneration = () => (
     <UseCaseCard.Features>
       <li>Support for text-to-video pipeline</li>
       <li>Control video generation by adjusting parameters (dimensions, iterations, etc.)</li>
-      <li>Generate videos per one request</li>
+      <li>Generate multiple videos per one request</li>
     </UseCaseCard.Features>
     <UseCaseCard.Code>
       <LanguageTabs>

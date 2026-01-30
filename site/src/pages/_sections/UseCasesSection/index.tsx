@@ -19,13 +19,13 @@ export const UseCasesSection = () => (
     </Heading>
     <div className={styles.sectionContent}>
       <TextGeneration />
-      <ImageGeneration />
       <ImageProcessing />
+      <ImageGeneration />
+      <VideoGeneration />
       <SpeechRecognition />
       <SpeechGeneration />
       <TextEmbedding />
       <TextRerank />
-      <VideoGeneration />
     </div>
     <div className={styles.useCasesFooter}>
       <strong>Looking for more?</strong>&nbsp;See all{' '}
