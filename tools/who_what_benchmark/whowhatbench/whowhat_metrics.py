@@ -7,7 +7,6 @@ from transformers import AutoTokenizer
 from PIL import Image
 import torch
 import torch.nn.functional as F
-from sklearn.metrics.pairwise import cosine_similarity
 
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
@@ -232,7 +231,7 @@ class RerankingSimilarity:
             similarity_per_query.append(1 / (1 + dist))
 
         metric_dict = {"similarity": np.mean(similarity_per_query)}
-        return metric_dict, {"similarity": similarity_per_query, "per_text_score_list": metric_per_query}
+        return metric_dict, {"similarity": similarity_per_query, "per_text_scores_diff": metric_per_query}
 
 
 class VideoSimilarity:

@@ -1,9 +1,11 @@
 import sys
 import pytest
+import shutil
 import logging
 import tempfile
-from conftest import convert_model, run_wwb
 from pathlib import Path
+from test_cli_image import get_similarity
+from conftest import convert_model, run_wwb
 
 
 logging.basicConfig(level=logging.INFO)
@@ -11,60 +13,30 @@ logger = logging.getLogger(__name__)
 tmp_dir = tempfile.mkdtemp()
 
 
-def download_model(model_id, task, tmp_path):
-    MODEL_PATH = Path(tmp_path, model_id.replace("/", "_"))
-    subprocess.run(["optimum-cli", "export", "openvino", "--model", model_id, MODEL_PATH, "--task", task],
-                   capture_output=True,
-                   text=True)
-    return MODEL_PATH
+OV_RERANK_MODELS = {
+    ("cross-encoder/ms-marco-TinyBERT-L2-v2", 0.6),
+    ("Qwen/Qwen3-Reranker-0.6B", 0.6),
+    ("tomaarsen/Qwen3-Reranker-0.6B-seq-cls", 0.6),
+}
 
 
-@pytest.mark.parametrize(("model_info"), OV_RERANK_MODELS)
-def test_reranking_genai(model_info, tmp_path):
-    if sys.platform == 'darwin':
-        pytest.xfail("Ticket 175534")
-    if sys.platform == "win32":
-        pytest.xfail("Ticket 178790")
-
-    GT_FILE = Path(tmp_dir) / "gt.csv"
-    model_id = model_info[0]
-    MODEL_PATH = convert_model(model_id)
-
-    # test GenAI
-    run_wwb([
-        "--base-model",
-        MODEL_PATH,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        "text-reranking",
-        "--genai"
-    ])
-
-    assert Path(tmp_dir, "reference").exists()
+def remove_artifacts(artifacts_path: Path):
+    shutil.rmtree(artifacts_path)
 
 
 @pytest.mark.wwb_rerank
 @pytest.mark.parametrize(
-    ("model_id", "model_task", "threshold"),
-    [
-        ("cross-encoder/ms-marco-TinyBERT-L2-v2", "text-classification", 0.6),
-        ("tomaarsen/Qwen3-Reranker-0.6B-seq-cls", "text-classification", 0.6),
-        ("Qwen/Qwen3-Reranker-0.6B", "text-generation", 0.6),
-    ],
+    ("model_info"),
+    [OV_RERANK_MODELS],
 )
-@pytest.mark.xfail(sys.platform == 'darwin', reason="Hangs. Ticket 175534", run=False)
+@pytest.mark.xfail(sys.platform == "darwin", reason="Hangs. Ticket 175534", run=False)
+@pytest.mark.xfail(sys.platform == "win32", reason="Ticket 178790", run=False)
 def test_reranking_optimum(model_info, tmp_path):
-    if sys.platform == "win32":
-        pytest.xfail("Ticket 178790")
-
     GT_FILE = Path(tmp_dir) / "gt.csv"
     model_id = model_info[0]
     MODEL_PATH = convert_model(model_id)
+
+    threshold = model_info[1]
 
     # Collect reference with HF model
     run_wwb([
@@ -154,4 +126,3 @@ def test_reranking_optimum(model_info, tmp_path):
     ])
 
     remove_artifacts(outputs_path)
-    remove_artifacts(MODEL_PATH, "model")
