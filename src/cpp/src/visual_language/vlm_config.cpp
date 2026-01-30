@@ -70,6 +70,10 @@ VLMConfig::VLMConfig(const std::filesystem::path& json_path) {
     // Qwen2.5VL
     read_json_param(parsed, "vision_config.window_size", vision_config_window_size);
     read_json_param(parsed, "vision_config.tokens_per_second", vision_config_tokens_per_second);
+    
+    // Qwen3-VL
+    read_json_param(parsed, "vision_config.num_position_embeddings", vision_config_num_position_embeddings);
+    read_json_param(parsed, "vision_config.deepstack_visual_indexes", vision_config_deepstack_visual_indexes);
 }
 
 } // namespace ov::genai

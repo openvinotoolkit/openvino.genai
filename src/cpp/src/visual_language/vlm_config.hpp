@@ -98,6 +98,12 @@ public:
     /// @brief A string token denoting start of video embeddings 
     std::string video_start = "<video>";
 
+    // Qwen3-VL specific config
+    /// @brief Number of position embeddings in vision encoder for Qwen3-VL model.
+    size_t vision_config_num_position_embeddings = 2304;
+    /// @brief DeepStack visual indexes for Qwen3-VL model.
+    std::vector<size_t> vision_config_deepstack_visual_indexes;
+
     /// @brief Default constructor.
     VLMConfig() = default;
     /// @brief Construct VLMConfig from values in json_path.
