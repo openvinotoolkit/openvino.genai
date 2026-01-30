@@ -30,7 +30,6 @@ void update_npu_properties(const std::filesystem::path& models_dir, ov::AnyMap& 
     switch (vlm_config.model_type) {
         case VLMModelType::GEMMA3:
             properties.insert({"NPUW_LLM_PREFILL_HINT", "STATIC"});
-            properties.insert({"NPUW_F16IC", "NO"});
             break;
         default:
             break;
