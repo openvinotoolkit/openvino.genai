@@ -622,7 +622,8 @@ bool requires_sdpa(const std::filesystem::path& models_dir) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
     return vlm_config.model_type == VLMModelType::QWEN2_VL ||
            vlm_config.model_type == VLMModelType::QWEN2_5_VL ||
-           vlm_config.model_type == VLMModelType::GEMMA3;
+           vlm_config.model_type == VLMModelType::GEMMA3 ||
+           vlm_config.model_type == VLMModelType::MLLAMA;
 }
 
 VLMPipeline::VLMPipeline(

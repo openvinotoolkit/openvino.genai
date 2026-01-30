@@ -330,6 +330,7 @@ private:
     friend class InputsEmbedderQwen2VL;
     friend class InputsEmbedderQwen2_5_VL;
     friend class InputsEmbedderGemma3;
+    friend class InputsEmbedderMLlamma;
 };
 
 template <typename Func>
