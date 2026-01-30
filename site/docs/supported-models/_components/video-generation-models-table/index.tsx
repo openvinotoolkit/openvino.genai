@@ -7,17 +7,19 @@ export default function VideoGenerationModelsTable(): React.JSX.Element {
     'Architecture',
     'Text to Video',
     'Image to Video',
+    'LoRA Support',
     'Example HuggingFace Models',
   ];
 
   const rows = VIDEO_GENERATION_MODELS.map(
-    ({ architecture, textToVideo, imageToVideo, links }) => (
+    ({ architecture, textToVideo, imageToVideo, loraSupport, links }) => (
       <tr key={architecture}>
         <td>
           <code style={{ whiteSpace: 'pre' }}>{architecture}</code>
         </td>
         <StatusCell value={textToVideo} />
         <StatusCell value={imageToVideo} />
+        <StatusCell value={loraSupport} />
         <LinksCell links={links} />
       </tr>
     )
