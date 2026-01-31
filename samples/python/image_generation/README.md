@@ -6,6 +6,7 @@ There are several sample files:
  - [`text2image.py`](./text2image.py) demonstrates basic usage of the text to image pipeline
  - [`lora_text2image.py`](./lora_text2image.py) shows how to apply LoRA adapters to the pipeline
  - [`heterogeneous_stable_diffusion.py`](./heterogeneous_stable_diffusion.py) shows how to assemble a heterogeneous text2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
+ - [`encrypted_stable_diffusion.py`](./encrypted_stable_diffusion.py) demonstrates how to use the text to image pipeline with encrypted models and cache encryption callbacks
  - [`image2image.py`](./image2image.py) demonstrates basic usage of the image to image pipeline
  - [`inpainting.py`](./inpainting.py) demonstrates basic usage of the inpainting pipeline
  - [`benchmark_image_gen.py`](./benchmark_image_gen.py) demonstrates how to benchmark the text to image / image to image / inpainting pipeline
@@ -135,6 +136,50 @@ For example:
 `python heterogeneous_stable_diffusion.py ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting' CPU NPU GPU`
 
 The sample will create a stable diffusion pipeline such that the text encoder is executed on the CPU, UNet on the NPU, and VAE decoder on the GPU.
+
+## Run text to image with encrypted models
+
+The `encrypted_stable_diffusion.py` sample demonstrates how to load and use the text to image pipeline with encrypted models. The Text2ImagePipeline and individual model components can be initialized directly from memory buffers when decrypting models on-the-fly.
+
+The following code snippet demonstrates how to load model components from memory buffers:
+
+```python
+text_encoder_model, text_encoder_weights = decrypt_model(
+    model_dir / "text_encoder", 'openvino_model.xml', 'openvino_model.bin')
+text_encoder_tokenizer = read_tokenizer(model_dir / "tokenizer")
+
+text_encoder = openvino_genai.CLIPTextModel(
+    text_encoder_model,
+    text_encoder_weights,
+    openvino_genai.CLIPTextModel.Config(model_dir / "text_encoder" / "config.json"), 
+    text_encoder_tokenizer, device, **config)
+
+# Initialize stable diffusion xl pipeline
+pipe = openvino_genai.Text2ImagePipeline.stable_diffusion_xl(
+    scheduler=openvino_genai.Scheduler.from_config(model_dir / "scheduler" / "scheduler_config.json"),
+    clip_text_model=text_encoder,
+    clip_text_model_with_projection=text_encoder_2,
+    unet=unet,
+    vae=vae,
+)
+```
+
+The sample also demonstrates how to enable user-defined encryption for plugin cache using custom encryption callbacks (base64 encoding as an example).
+
+**Main Features:**
+- Read model and tokenizer directly from memory buffers
+- Support for encrypted model files with custom decryption
+- Cache encryption callbacks for secure compiled model storage
+
+**Run Command:**
+```bash
+python encrypted_stable_diffusion.py <MODEL_DIR> "<PROMPT>" [DEVICE]
+```
+
+**Example:**
+```bash
+python encrypted_stable_diffusion.py ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting'
+```
 
 ## Run image to image pipeline
 
