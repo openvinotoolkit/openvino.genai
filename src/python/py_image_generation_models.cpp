@@ -67,13 +67,13 @@ void init_clip_text_model(py::module_& m) {
             ScopedVar env_manager(pyutils::ov_tokenizers_module_path());
             return std::make_unique<ov::genai::CLIPTextModel>(model, weights, config, clip_tokenizer);
         }),
-        py::arg("model"), "Serialized model in OpenVINO IR format",
+        py::arg("model"), "string with pre-read model",
         py::arg("weights"), "Model weights tensor",
         py::arg("config"), "CLIPTextModel config",
         py::arg("clip_tokenizer"), "Tokenizer for text encoding",
         R"(
             CLIPTextModel class initialized from model string and weights tensor
-            model (str): Serialized model in OpenVINO IR format.
+            model (str): string with pre-read model.
             weights (ov.Tensor): Model weights tensor.
             config (CLIPTextModel.Config): CLIPTextModel configuration.
             clip_tokenizer (Tokenizer): Tokenizer for text encoding.
