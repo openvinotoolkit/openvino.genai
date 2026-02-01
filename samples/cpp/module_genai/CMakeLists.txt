@@ -15,33 +15,33 @@ else()
     message(FATAL_ERROR "OpenCV not found! Check your installation and environment.")
 endif()
 
-file(GLOB SRC_FILES CONFIGURE_DEPENDS *.cpp ut_modules/*.cpp)
-# Exclude module_pipeline_comfyui.cpp as it has its own main function
-list(FILTER SRC_FILES EXCLUDE REGEX ".*module_pipeline_comfyui\\.cpp$")
-add_executable(${TARGET_NAME} ${SRC_FILES})
+function(add_sample_executable target_name)
+    add_executable(${target_name}
+        ${target_name}.cpp
+        utils/utils.cpp
+        utils/vision_utils.cpp
+    )
+    target_link_libraries(${target_name} PRIVATE openvino::genai ${OpenCV_LIBS} ${YAML_CPP_LIBRARIES})
+    set_target_properties(${target_name} PROPERTIES
+        # Ensure out-of-box LC_RPATH on macOS with SIP
+        INSTALL_RPATH_USE_LINK_PATH ON)
+    install(TARGETS ${target_name}
+            RUNTIME DESTINATION samples_bin/
+            COMPONENT samples_bin
+            EXCLUDE_FROM_ALL)
+endfunction()
 
-target_include_directories(${TARGET_NAME} PRIVATE "${CMAKE_CURRENT_SOUCE_DIR}" "${CMAKE_BINARY_DIR}" "${OpenCV_INCLUDE_DIRS}")
+set (SAMPLE_LIST
+    md_image_generation
+    md_video_generation
+    md_visual_language_chat)
 
-target_link_libraries(${TARGET_NAME} PRIVATE openvino::genai ${OpenCV_LIBS} ${YAML_CPP_LIBRARIES})
+foreach(sample IN LISTS SAMPLE_LIST)
+    add_sample_executable(${sample})
+endforeach()
 
-# ============================================================================
-# MODULE PIPELINE COMFYUI - Standalone tool for running pipelines
-# ============================================================================
-# Supports both ComfyUI JSON and YAML config input
-set(MODULE_PIPELINE_COMFYUI_TARGET "module_pipeline_comfyui")
-add_executable(${MODULE_PIPELINE_COMFYUI_TARGET}
-  ut_pipelines/comfyui/module_pipeline_comfyui.cpp
-  utils_image.cpp
-)
-target_include_directories(${MODULE_PIPELINE_COMFYUI_TARGET} PRIVATE
-  "${CMAKE_CURRENT_SOURCE_DIR}"
-  "${OpenCV_INCLUDE_DIRS}"
-)
-target_link_libraries(${MODULE_PIPELINE_COMFYUI_TARGET} PRIVATE
-  openvino::genai
-  ${OpenCV_LIBS}
-)
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
+endif()
 
-install(TARGETS ${MODULE_PIPELINE_COMFYUI_TARGET}
-        RUNTIME DESTINATION bin/
-        COMPONENT tools)
+add_subdirectory(comfyui)

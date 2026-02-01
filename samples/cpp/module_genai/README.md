@@ -1,25 +1,37 @@
-# UT For module_genai pipeline
+# Module GenAI Samples
 
-This is UT for modular GenAI. Please verify the correctness of [pipeline](./ut_pipelines/config.yaml) before merging code.
+Build samples, refer: openvino.genai/README_Module_GenAI.md
 
-#### Build GenAI
+<details>
+<summary>visual_language_chat</summary>
 
-Refer [Guide](https://github.com/openvinotoolkit/openvino.genai/blob/master/src/docs/BUILD.md)
 
+#### Test model: Qwen2.5-VL-3B-Instruct
 ```
-ut_build.sh
+cd openvino.genai
+app=./build/samples/cpp/module_genai/md_visual_language_chat
+cfg=./samples/cpp/module_genai/config_yaml/Qwen2.5-VL-3B-Instruct/config.yaml
+prompt="Please describe the image"
+img=./tests/module_genai/cpp/test_data/cat_120_100.png
+
+"$app" -cfg "$cfg" -prompt "$prompt" -img "$img"
 ```
+`Note:` update model_path based on your local path.
 
-#### Module Unit Test
+</details>
 
-Preprare your model, take qwen2.5-vl as example: `openvino.genai/samples/cpp/module_genai/ut_pipelines/Qwen2.5-VL-3B-Instruct/INT4/`
+<details>
+<summary>image_generation</summary>
 
+#### Test model: Z-Image-Turbo
 ```
-./ut_modules.sh
-```
+cd openvino.genai
+app=./build/samples/cpp/module_genai/md_image_generation
+cfg=./samples/cpp/module_genai/config_yaml/Z-Image-Turbo-fp16-ov/config.yaml
+prompt="A beautiful landscape painting by Claude Monet"
 
-#### Pipeline Unit test
-
-```bash
-./ut_pipelines.sh
+"$app" -cfg "$cfg" -prompt "$prompt" --height 512 --width 512 --num_inference_steps 9 --guidance_scale 2.5 --max_sequence_length 512
 ```
+`Note:` update model_path based on your local path.
+
+</details>

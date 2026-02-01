@@ -24,7 +24,7 @@
 
 // OpenVINO GenAI ModulePipeline
 #include "openvino/genai/module_genai/pipeline.hpp"
-#include "utils_image.hpp"
+#include "../utils/vision_utils.hpp"
 
 namespace fs = std::filesystem;
 

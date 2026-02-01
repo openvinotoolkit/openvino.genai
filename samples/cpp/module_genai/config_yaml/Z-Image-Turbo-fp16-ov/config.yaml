@@ -44,7 +44,7 @@ pipeline_modules:
       - name: "prompt_embeds"
         type: "VecOVTensor"
     params:
-      model_path: "./test_models/Z-Image-Turbo-fp16-ov/"
+      model_path: "tests/module_genai/cpp/test_models/Z-Image-Turbo-fp16-ov/"
 
   # --- 2. Init Random Latent ---
   random_latent_image:
@@ -60,7 +60,7 @@ pipeline_modules:
       - name: "latents"
         type: "OVTensor"
     params:
-      model_path: "./test_models/Z-Image-Turbo-fp16-ov/"
+      model_path: "tests/module_genai/cpp/test_models/Z-Image-Turbo-fp16-ov/"
 
   # --- 3. Z-Image transformer ---
   denoising_loop:
@@ -80,7 +80,7 @@ pipeline_modules:
       - name: "latents"
         type: "OVTensor"
     params:
-      model_path: "./test_models/Z-Image-Turbo-fp16-ov/"
+      model_path: "tests/module_genai/cpp/test_models/Z-Image-Turbo-fp16-ov/"
 
   # --- 4. vae.decode ---
   vae_decoder:
@@ -95,7 +95,7 @@ pipeline_modules:
       - name: "image"
         type: "OVTensor"
     params:
-      model_path: "./test_models/Z-Image-Turbo-fp16-ov/"
+      model_path: "tests/module_genai/cpp/test_models/Z-Image-Turbo-fp16-ov/"
       enable_postprocess: true
   
   # --- 6. Result Module ---
