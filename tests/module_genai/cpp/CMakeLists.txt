@@ -27,7 +27,8 @@ else()
     message(FATAL_ERROR "OpenCV not found! Check your installation and environment.")
 endif()
 
-find_package(yaml-cpp REQUIRED)
+# yaml-cpp dependency (use centralized cmake module)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/yaml-cpp.cmake)
 
 file(GLOB src_modules CONFIGURE_DEPENDS "./modules/*.cpp")
 file(GLOB src_pipelines CONFIGURE_DEPENDS "./pipelines/*.cpp")

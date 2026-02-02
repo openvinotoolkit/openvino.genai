@@ -16,7 +16,9 @@ if(NOT TARGET nlohmann_json)
     FetchContent_MakeAvailable(nlohmann_json)
 endif()
 
-find_package(yaml-cpp REQUIRED)
+# yaml-cpp dependency (use centralized cmake module)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/yaml-cpp.cmake)
+
 find_package(TBB REQUIRED)
 
 if(NOT TARGET minja)
@@ -132,7 +134,8 @@ add_library(${TARGET_NAME_OBJ} OBJECT ${SOURCE_FILES})
 target_include_directories(${TARGET_NAME_OBJ}
     PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
            "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>"
-    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src"
+            "${YAML_CPP_INCLUDE_DIRS}")
 
 if(ENABLE_XGRAMMAR)
     target_link_libraries(${TARGET_NAME_OBJ} PRIVATE xgrammar)
@@ -145,7 +148,7 @@ endif()
 
 target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")
 
-target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::runtime openvino::threading nlohmann_json::nlohmann_json minja ${YAML_CPP_LIBRARIES} PRIVATE TBB::tbb)
+target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::runtime openvino::threading nlohmann_json::nlohmann_json minja ${YAML_CPP_TARGET} PRIVATE TBB::tbb)
 
 target_compile_features(${TARGET_NAME_OBJ} PRIVATE cxx_std_17)
 
@@ -171,7 +174,7 @@ target_include_directories(${TARGET_NAME} INTERFACE "$<INSTALL_INTERFACE:runtime
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
                                                     "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>")
 
-target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE openvino::threading nlohmann_json::nlohmann_json ${YAML_CPP_LIBRARIES} minja ${CMAKE_DL_LIBS})
+target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE openvino::threading nlohmann_json::nlohmann_json ${YAML_CPP_TARGET} minja ${CMAKE_DL_LIBS})
 
 if(ENABLE_XGRAMMAR)
     target_link_libraries(${TARGET_NAME} PRIVATE xgrammar)

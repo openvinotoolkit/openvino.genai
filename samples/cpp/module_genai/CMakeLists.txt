@@ -7,7 +7,9 @@ project($TARGET_NAME)
 find_package(OpenVINO REQUIRED)
 find_package(OpenVINOGenAI REQUIRED)
 find_package(OpenCV REQUIRED)
-find_package(yaml-cpp REQUIRED)
+
+# yaml-cpp dependency (use centralized cmake module or fetch if standalone)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/yaml-cpp.cmake)
 
 if(OpenCV_FOUND)
     message(STATUS "OpenCV found. Version: ${OpenCV_VERSION}")
@@ -21,7 +23,7 @@ function(add_sample_executable target_name)
         utils/utils.cpp
         utils/vision_utils.cpp
     )
-    target_link_libraries(${target_name} PRIVATE openvino::genai ${OpenCV_LIBS} ${YAML_CPP_LIBRARIES})
+    target_link_libraries(${target_name} PRIVATE openvino::genai ${OpenCV_LIBS} ${YAML_CPP_TARGET})
     set_target_properties(${target_name} PROPERTIES
         # Ensure out-of-box LC_RPATH on macOS with SIP
         INSTALL_RPATH_USE_LINK_PATH ON)
