@@ -30,7 +30,6 @@ void update_npu_properties(const std::filesystem::path& models_dir, ov::AnyMap& 
     switch (vlm_config.model_type) {
         case VLMModelType::GEMMA3:
             properties.insert({"NPUW_LLM_PREFILL_HINT", "STATIC"});
-            properties.insert({"NPUW_F16IC", "NO"});
             break;
         default:
             break;
@@ -334,11 +333,11 @@ public:
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
         auto& raw_counters = perf_metrics.raw_metrics;
-        
+
         m_is_chat_conversation = true;
-        
+
         setup_generation_config(generation_config);
-        
+
         if (m_is_npu) {
             validate_inputs_for_npu(images, videos, generation_config);
         }
@@ -362,19 +361,19 @@ public:
 
         ov::genai::utils::GenerationFinishInfo generation_finish_info;
 
-        const auto& images_embeds = use_full_history 
-            ? processed_chat_data.encoded_images 
+        const auto& images_embeds = use_full_history
+            ? processed_chat_data.encoded_images
             : processed_chat_data.new_encoded_images;
-        const auto& videos_embeds = use_full_history 
-            ? processed_chat_data.encoded_videos 
+        const auto& videos_embeds = use_full_history
+            ? processed_chat_data.encoded_videos
             : processed_chat_data.new_encoded_videos;
-        const auto& image_seq = use_full_history 
-            ? processed_chat_data.image_sequence 
+        const auto& image_seq = use_full_history
+            ? processed_chat_data.image_sequence
             : processed_chat_data.new_image_sequence;
-        const auto& video_seq = use_full_history 
-            ? processed_chat_data.video_sequence 
+        const auto& video_seq = use_full_history
+            ? processed_chat_data.video_sequence
             : processed_chat_data.new_video_sequence;
-        
+
         generation_finish_info = prepare_inputs_and_generate(
             templated_history,
             images_embeds,
@@ -397,7 +396,7 @@ public:
         auto decode_end_time = std::chrono::steady_clock::now();
 
         std::string decoded_text = decoded.texts.at(0);
-        
+
         m_inputs_embedder->update_chat_history(decoded_text, generation_finish_info.streaming_finish_status);
 
         if (generation_finish_info.streaming_finish_status == ov::genai::GenerationStatus::CANCEL) {
@@ -498,7 +497,6 @@ private:
         const std::vector<ov::Tensor>& videos,
         const GenerationConfig& generation_config
     ) {
-        OPENVINO_ASSERT(images.size() <= 1u && videos.size() <= 1u, "Currently only batch size equal to 1 is supported for NPU device!");
         OPENVINO_ASSERT(generation_config.is_greedy_decoding() || generation_config.is_multinomial(),
             "Currently only greedy and multinomial decoding are supported for NPU device!");
         OPENVINO_ASSERT(generation_config.num_return_sequences == 1u,
@@ -569,7 +567,7 @@ private:
         OPENVINO_ASSERT(prompt_ids.get_size() >= tokenized_history.size(), "Prompt ids size is less than tokenized history size");
         std::fill_n(prompt_ids.data<int64_t>(), prompt_ids.get_size(), m_tokenizer.get_pad_token_id());
         std::copy(tokenized_history.begin(), tokenized_history.end(), prompt_ids.data<int64_t>());
-        
+
         // Update perf metrics with num_input_tokens
         perf_metrics.num_input_tokens = prompt_ids.get_size();
 

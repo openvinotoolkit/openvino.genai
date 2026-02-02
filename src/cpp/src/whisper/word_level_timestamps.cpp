@@ -262,7 +262,11 @@ std::vector<std::pair<size_t, size_t>> dtw_and_backtrace(const std::vector<std::
     size_t i = N, j = M;
 
     while (i > 0 || j > 0) {
-        path.push_back({i - 1, j - 1});  // Store zero-indexed coordinates
+        // Python appends (i-1, j-1) before following trace direction
+        // We need to handle underflow safely since i or j might be 0
+        size_t path_i = (i > 0) ? i - 1 : 0;
+        size_t path_j = (j > 0) ? j - 1 : 0;
+        path.push_back({path_i, path_j});
         int t = trace[i][j];
         if (t == 0) {
             i--;
