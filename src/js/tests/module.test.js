@@ -1,29 +1,28 @@
-import { ChatHistory, LLMPipeline } from "../dist/index.js";
+import { ChatHistory, LLMPipeline, StructuredOutputConfig } from "../dist/index.js";
 
 import assert from "node:assert/strict";
-import { describe, it, before, after } from "node:test";
-import { models } from "./models.js";
+import { describe, it, before } from "node:test";
 import { hrtime } from "node:process";
 import os from "node:os";
 
-const MODEL_PATH = process.env.MODEL_PATH || `./tests/models/${models.LLM.split("/")[1]}`;
+const { LLM_PATH } = process.env;
 
-describe("LLMPipeline construction", async () => {
-  await it("test LLMPipeline(modelPath)", async () => {
-    const pipe = await LLMPipeline(MODEL_PATH);
+if (!LLM_PATH) {
+  throw new Error("Please set LLM_PATH environment variable to run the tests.");
+}
+
+describe("LLMPipeline construction", () => {
+  it("test LLMPipeline(modelPath)", async () => {
+    const pipe = await LLMPipeline(LLM_PATH);
     assert.strictEqual(typeof pipe, "object");
   });
 
-  await it("test error LLMPipeline(modelPath, LLMPipelineProperties)", async () => {
+  it("test error LLMPipeline(modelPath, LLMPipelineProperties)", async () => {
     // Test for JS. In TS it won't be possible to call LLMPipeline with wrong types.
-    await assert.rejects(async () => await LLMPipeline(MODEL_PATH, {}), {
-      name: "Error",
-      message:
-        "The second argument must be a device string. If you want to pass LLMPipelineProperties, please use the third argument.",
-    });
+    await assert.rejects(LLMPipeline(LLM_PATH, {}), /The second argument must be a device string./);
   });
 
-  await it("test SchedulerConfig", async (t) => {
+  it("test SchedulerConfig", async (t) => {
     if (os.platform() === "darwin") {
       t.skip("only support x64 platform or ARM with SVE support");
       return;
@@ -31,149 +30,201 @@ describe("LLMPipeline construction", async () => {
     const schedulerConfig = {
       max_num_batched_tokens: 32,
     };
-    assert.ok(await LLMPipeline(MODEL_PATH, "CPU", { schedulerConfig: schedulerConfig }));
+    await assert.doesNotReject(LLMPipeline(LLM_PATH, "CPU", { schedulerConfig: schedulerConfig }));
   });
 });
 
-describe("LLMPipeline methods", async () => {
-  let pipeline = null;
-
-  await before(async () => {
-    pipeline = await LLMPipeline(MODEL_PATH, "CPU");
-
-    await pipeline.startChat();
-  });
-
-  await after(async () => {
-    await pipeline.finishChat();
-  });
-
-  await it("should generate non empty result", async () => {
-    const result = await pipeline.generate(
-      "Type something in English",
-      { temperature: "0", max_new_tokens: "4" },
-      () => {},
-    );
-
-    assert.ok(result.texts.length > 0);
-    assert.strictEqual(typeof result.texts[0], "string");
-  });
-
-  it("should include tokenizer", async () => {
-    const tokenizer = pipeline.getTokenizer();
-    assert.strictEqual(typeof tokenizer, "object");
-  });
-});
-
-describe("corner cases", async () => {
-  it("should throw an error if pipeline is already initialized", async () => {
-    const pipeline = await LLMPipeline(MODEL_PATH, "CPU");
-
-    await assert.rejects(async () => await pipeline.init(), {
-      name: "Error",
-      message: "LLMPipeline is already initialized",
-    });
-  });
-
-  it("should throw an error if chat is already started", async () => {
-    const pipeline = await LLMPipeline(MODEL_PATH, "CPU");
-
-    await pipeline.startChat();
-
-    await assert.rejects(() => pipeline.startChat(), {
-      name: "Error",
-      message: "Chat is already started",
-    });
-  });
-
-  it("should throw an error if chat is not started", async () => {
-    const pipeline = await LLMPipeline(MODEL_PATH, "CPU");
-
-    await assert.rejects(() => pipeline.finishChat(), {
-      name: "Error",
-      message: "Chat is not started",
-    });
-  });
-});
-
-describe("generation parameters validation", () => {
+describe("General LLM tests", () => {
   let pipeline = null;
 
   before(async () => {
-    pipeline = await LLMPipeline(MODEL_PATH, "CPU");
-
-    await pipeline.startChat();
+    pipeline = await LLMPipeline(LLM_PATH, "CPU");
   });
 
-  after(async () => {
-    await pipeline.finishChat();
-  });
+  describe("LLMPipeline methods", () => {
+    it("should generate non empty result", async () => {
+      const result = await pipeline.generate(
+        "Type something in English",
+        { temperature: 0, max_new_tokens: 4 },
+        () => {},
+      );
 
-  it("should throw an error if no arguments passed to generate", async () => {
-    await assert.rejects(
-      async () => await pipeline.generate(),
-      /Passed argument must be a string, ChatHistory or an array of strings./,
-    );
-  });
+      assert.ok(result.texts.length > 0);
+      assert.strictEqual(typeof result.texts[0], "string");
+    });
 
-  it("should throw an error if generationCallback is not a function", async () => {
-    const pipeline = await LLMPipeline(MODEL_PATH, "CPU");
+    it("should include tokenizer", async () => {
+      const tokenizer = pipeline.getTokenizer();
+      assert.strictEqual(typeof tokenizer, "object");
+    });
 
-    await pipeline.startChat();
-
-    await assert.rejects(async () => await pipeline.generate("prompt", {}, false), {
-      name: "Error",
-      message: "Callback must be a function",
+    it("should throw an error if pipeline is already initialized", async () => {
+      await assert.rejects(async () => await pipeline.init(), /LLMPipeline is already initialized/);
     });
   });
 
-  it("should throw an error if options specified but not an object", async () => {
-    await assert.rejects(async () => await pipeline.generate("prompt", "options", () => {}), {
-      name: "Error",
-      message: "Options must be an object",
+  describe("generation parameters validation", () => {
+    it("should throw an error if no arguments passed to generate", async () => {
+      await assert.rejects(
+        async () => await pipeline.generate(),
+        /Passed argument must be a string, ChatHistory or an array of strings./,
+      );
+    });
+
+    it("should throw an error if generationCallback is not a function", async () => {
+      await assert.rejects(async () => await pipeline.generate("prompt", {}, false), {
+        name: "Error",
+        message: "Callback must be a function",
+      });
+    });
+
+    it("should throw an error if options specified but not an object", async () => {
+      await assert.rejects(async () => await pipeline.generate("prompt", "options", () => {}), {
+        name: "Error",
+        message: "Options must be an object",
+      });
+    });
+
+    it("should perform generation with default options", async () => {
+      await assert.doesNotReject(pipeline.generate("prompt", { max_new_tokens: 1 }));
+    });
+
+    it("should call generationCallback with string chunk", async () => {
+      await pipeline.generate("prompt", { max_new_tokens: 1 }, (chunk) => {
+        assert.strictEqual(typeof chunk, "string");
+      });
+    });
+
+    it("should convert Set", async () => {
+      const generationConfig = {
+        max_new_tokens: 100,
+        stop_strings: new Set(["1", "2", "3", "4", "5"]),
+        include_stop_str_in_output: true,
+      };
+      const result = await pipeline.generate("continue: 1 2 3", generationConfig);
+      assert.strictEqual(result.texts.length, 1);
+      assert.ok(result.texts[0].length > 0);
     });
   });
 
-  it("should perform generation with default options", async () => {
-    try {
-      await pipeline.generate("prompt", { max_new_tokens: 1 });
-    } catch (error) {
-      assert.fail(error);
-    }
+  describe("stream()", () => {
+    it("stream() with max_new_tokens", async () => {
+      const streamer = pipeline.stream("Print hello world", {
+        max_new_tokens: 5,
+      });
+      const chunks = [];
+      for await (const chunk of streamer) {
+        chunks.push(chunk);
+      }
+      assert.ok(chunks.length < 5);
+    });
 
-    assert.ok(true);
-  });
+    it("stream() with stop_strings", async () => {
+      const generationConfig = {
+        stop_strings: new Set(["C"]),
+        include_stop_str_in_output: true,
+        max_new_tokens: 100,
+        structured_output_config: {
+          structural_tags_config: StructuredOutputConfig.Concat(
+            StructuredOutputConfig.ConstString("_A_"),
+            StructuredOutputConfig.ConstString("_B_"),
+            StructuredOutputConfig.ConstString("_C_"),
+            StructuredOutputConfig.ConstString("_D_"),
+            StructuredOutputConfig.ConstString("_E_"),
+          ),
+        },
+      };
+      const prompt = "Print alphabet";
+      const streamer = pipeline.stream(prompt, generationConfig);
+      const chunks = [];
+      for await (const chunk of streamer) {
+        chunks.push(chunk);
+      }
+      assert.ok(chunks[chunks.length - 1].includes("C"));
 
-  it("should call generationCallback with string chunk", async () => {
-    await pipeline.generate("prompt", { max_new_tokens: 1 }, (chunk) => {
-      assert.strictEqual(typeof chunk, "string");
+      generationConfig.include_stop_str_in_output = false;
+      const streamer2 = pipeline.stream(prompt, generationConfig);
+      const chunks2 = [];
+      for await (const chunk of streamer2) {
+        chunks2.push(chunk);
+      }
+      assert.ok(!chunks2[chunks2.length - 1].includes("C"));
+    });
+
+    it("early break of stream", async () => {
+      const streamer = pipeline.stream("Print hello world");
+      const chunks = [];
+      for await (const chunk of streamer) {
+        chunks.push(chunk);
+        if (chunks.length >= 5) {
+          break;
+        }
+      }
+      assert.equal(chunks.length, 5);
+    });
+
+    it("stream() with array of strings", async () => {
+      assert.throws(() => {
+        pipeline.stream(["prompt1", "prompt2", "prompt3"]);
+      }, /Streaming is not supported for array of inputs/);
     });
   });
+});
 
-  it("should convert Set", async () => {
-    const generationConfig = {
-      max_new_tokens: 100,
-      stop_strings: new Set(["1", "2", "3", "4", "5"]),
-      include_stop_str_in_output: true,
+describe("LLMPipeline with chat history", () => {
+  let pipeline = null;
+  // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
+  const chatHistory = new ChatHistory();
+
+  before(async () => {
+    pipeline = await LLMPipeline(LLM_PATH, "CPU", { ATTENTION_BACKEND: "SDPA" });
+  });
+
+  it("generate(chatHistory, config)", async () => {
+    chatHistory.setMessages([
+      { role: "user", content: "Hello!" },
+      { role: "assistant", content: "Hi! How can I help you?" },
+      { role: "user", content: "Tell me a joke." },
+    ]);
+    const config = {
+      max_new_tokens: 10,
     };
-    const result = await pipeline.generate("continue: 1 2 3", generationConfig);
-    assert.strictEqual(result.texts.length, 1);
-    assert.ok(result.texts[0].length > 0);
+    const reply = await pipeline.generate(chatHistory, config);
+    // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
+    chatHistory.push({ role: "assistant", content: reply.toString() });
+    assert.ok(Array.isArray(reply.texts));
+    assert.equal(reply.texts.length, 1);
+    assert.ok(typeof reply.texts[0] === "string");
+    console.log("Reply:", reply.toString());
+  });
+
+  it("generate(chatHistory, config) with invalid chat history", async () => {
+    const chatHistory = [1, "assistant", null];
+    const config = {
+      max_new_tokens: 10,
+    };
+    await assert.rejects(async () => {
+      await pipeline.generate(chatHistory, config);
+    }, /An incorrect input value has been passed./);
+  });
+
+  it("stream(chatHistory, config)", async (t) => {
+    chatHistory.push({ role: "user", content: "Tell me another joke." });
+    const config = {
+      max_new_tokens: 10,
+    };
+    const streamer = await pipeline.stream(chatHistory, config);
+    const chunks = [];
+    for await (const chunk of streamer) {
+      chunks.push(chunk);
+    }
+    assert.ok(chunks.length > 0);
+    // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
+    chatHistory.push({ role: "assistant", content: chunks.join("") });
   });
 });
 
-describe("LLMPipeline.generate()", () => {
-  let pipeline = null;
-
-  before(async () => {
-    pipeline = await LLMPipeline(MODEL_PATH, "CPU");
-    await pipeline.startChat();
-  });
-
-  after(async () => {
-    await pipeline.finishChat();
-  });
-
+describe("LLMPipeline perf metrics", () => {
   it("DecodedResults.perfMetrics", async (t) => {
     if (os.platform() === "darwin") {
       t.skip("Skipping perfMetrics test on macOS. Ticket - 173286");
@@ -185,8 +236,7 @@ describe("LLMPipeline.generate()", () => {
     };
     const prompt = "The Sky is blue because";
     const start = hrtime.bigint();
-    pipeline = await LLMPipeline(MODEL_PATH, "CPU");
-    await pipeline.startChat();
+    const pipeline = await LLMPipeline(LLM_PATH, "CPU");
     const res = await pipeline.generate(prompt, config);
     const totalTime = Number(hrtime.bigint() - start) / 1e6;
 
@@ -267,6 +317,7 @@ describe("LLMPipeline.generate()", () => {
   });
 
   it("test perfMetrics.add()", async () => {
+    const pipeline = await LLMPipeline(LLM_PATH, "CPU");
     const config = {
       max_new_tokens: 5,
     };
@@ -285,107 +336,5 @@ describe("LLMPipeline.generate()", () => {
     assert.throws(() => perfMetrics1.add({}), {
       message: /Passed argument is not of type PerfMetrics/,
     });
-  });
-});
-
-describe("stream()", () => {
-  let pipeline = null;
-
-  before(async () => {
-    pipeline = await LLMPipeline(MODEL_PATH, "CPU");
-  });
-
-  it("stream() with max_new_tokens", async () => {
-    const streamer = pipeline.stream("Print hello world", {
-      max_new_tokens: 5,
-    });
-    const chunks = [];
-    for await (const chunk of streamer) {
-      chunks.push(chunk);
-    }
-    assert.ok(chunks.length < 5);
-  });
-
-  it("stream() with stop_strings", async () => {
-    const streamer = pipeline.stream("Print hello world", {
-      stop_strings: new Set(["world"]),
-      include_stop_str_in_output: true,
-    });
-    const chunks = [];
-    for await (const chunk of streamer) {
-      chunks.push(chunk);
-    }
-    assert.ok(chunks[chunks.length - 1].includes("world"));
-  });
-
-  it("early break of stream", async () => {
-    const streamer = pipeline.stream("Print hello world");
-    const chunks = [];
-    for await (const chunk of streamer) {
-      chunks.push(chunk);
-      if (chunks.length >= 5) {
-        break;
-      }
-    }
-    assert.equal(chunks.length, 5);
-  });
-
-  it("stream() with array of strings", async () => {
-    assert.throws(() => {
-      pipeline.stream(["prompt1", "prompt2", "prompt3"]);
-    }, /Streaming is not supported for array of inputs/);
-  });
-});
-
-describe("LLMPipeline with chat history", () => {
-  let pipeline = null;
-  // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
-  const chatHistory = new ChatHistory();
-
-  before(async () => {
-    pipeline = await LLMPipeline(MODEL_PATH, "CPU", { ATTENTION_BACKEND: "SDPA" });
-  });
-
-  it("generate(chatHistory, config)", async () => {
-    chatHistory.setMessages([
-      { role: "user", content: "Hello!" },
-      { role: "assistant", content: "Hi! How can I help you?" },
-      { role: "user", content: "Tell me a joke." },
-    ]);
-    const config = {
-      max_new_tokens: 10,
-    };
-    const reply = await pipeline.generate(chatHistory, config);
-    // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
-    chatHistory.push({ role: "assistant", content: reply.toString() });
-    assert.ok(Array.isArray(reply.texts));
-    assert.equal(reply.texts.length, 1);
-    assert.ok(typeof reply.texts[0] === "string");
-    console.log("Reply:", reply.toString());
-  });
-
-  it("generate(chatHistory, config) with invalid chat history", async () => {
-    const chatHistory = [1, "assistant", null];
-    const config = {
-      max_new_tokens: 10,
-    };
-    await assert.rejects(async () => {
-      await pipeline.generate(chatHistory, config);
-    }, /An incorrect input value has been passed./);
-  });
-
-  it("stream(chatHistory, config)", async () => {
-    chatHistory.push({ role: "user", content: "Tell me another joke." });
-    const config = {
-      max_new_tokens: 10,
-    };
-    const streamer = await pipeline.stream(chatHistory, config);
-    const chunks = [];
-    for await (const chunk of streamer) {
-      chunks.push(chunk);
-    }
-    assert.ok(chunks.length > 0);
-    // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
-    chatHistory.push({ role: "assistant", content: chunks.join("") });
   });
 });

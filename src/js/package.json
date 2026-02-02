@@ -31,7 +31,7 @@
     "lint": "eslint .",
     "postinstall": "node ./scripts/download-runtime.cjs --ignore-if-exists",
     "prepare": "npm run build",
-    "test": "npm run test_setup && node --test ./tests/*.test.js",
+    "test": "python ./tests/setup.py --to-env-file test.env && node --env-file=test.env --test ./tests/*.test.js",
     "test_setup": "node ./tests/setup.js"
   },
   "dependencies": {
