@@ -2094,5 +2094,5 @@ def test_vlm_prompt_lookup_functionality(cat_tensor):
     results_pld = ov_pipe_pld.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
 
     assert results.texts[0].strip() == results_pld.texts[0].strip(), (
-        "Result should be same for enable prompt_lookup and disable prompt_lookup."
+        "Result should be the same when prompt_lookup is enabled and disabled."
     )

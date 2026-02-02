@@ -10,7 +10,6 @@ from test_utils import run_sample
 
 
 class TestPromptLookupDecodingVLMChat:
-
     @pytest.mark.vlm
     @pytest.mark.samples
     @pytest.mark.parametrize(
