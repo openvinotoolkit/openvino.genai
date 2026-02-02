@@ -4,7 +4,6 @@
 #include <fstream>
 #include <limits>
 #include <sstream>
-#include <iostream>
 
 #include <nlohmann/json.hpp>
 #include <openvino/runtime/core.hpp>
@@ -379,8 +378,8 @@ std::string GenerationConfig::to_string() const {
     oss << "GenerationConfig { \n";
 
     // Generic parameters
-    oss << "  max_new_tokens: " << (max_new_tokens == SIZE_MAX ? "SIZE_MAX" : std::to_string(max_new_tokens)) << "\n";
-    oss << "  max_length: " << (max_length == SIZE_MAX ? "SIZE_MAX" : std::to_string(max_length)) << "\n";
+    oss << "  max_new_tokens: " << max_new_tokens << "\n";
+    oss << "  max_length: " << max_length << "\n";
     oss << "  ignore_eos: " << std::boolalpha << ignore_eos << "\n";
     oss << "  min_new_tokens: " << min_new_tokens << "\n";
     oss << "  echo: " << std::boolalpha << echo << "\n";
@@ -417,7 +416,7 @@ std::string GenerationConfig::to_string() const {
     oss << "  diversity_penalty: " << diversity_penalty << "\n";
     oss << "  length_penalty: " << length_penalty << "\n";
     oss << "  num_return_sequences: " << num_return_sequences << "\n";
-    oss << "  no_repeat_ngram_size: " << (no_repeat_ngram_size == std::numeric_limits<size_t>::max() ? "SIZE_MAX" : std::to_string(no_repeat_ngram_size)) << "\n";
+    oss << "  no_repeat_ngram_size: " << no_repeat_ngram_size "\n";
     oss << "  stop_criteria: " << stop_criteria_to_string(stop_criteria) << "\n";
 
     // Multinomial sampling parameters
