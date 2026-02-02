@@ -19,8 +19,8 @@ import task.speech_to_text_generation as bench_speech
 import task.text_embeddings as bench_text_embed
 import task.text_to_speech_generation as bench_text_to_speech
 import task.text_reranker as bench_text_rerank
+from llm_bench_utils.model_utils import analyze_args, get_ir_conversion_frontend, get_model_precision
 from llm_bench_utils.memory_monitor import MemoryDataSummarizer
-from llm_bench_utils.model_utils import get_ir_conversion_frontend, get_model_precision, analyze_args
 
 DEFAULT_TORCH_THREAD_NUMS = 16
 
@@ -489,7 +489,6 @@ def main():
     memory_data_collector = None
     if args.memory_consumption:
         memory_data_collector = MemoryDataSummarizer(args)
-
     try:
         if model_args['use_case'].task in ['text_gen', 'code_gen']:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case'].task](

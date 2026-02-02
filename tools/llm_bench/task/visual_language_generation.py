@@ -93,7 +93,7 @@ def run_visual_language_generation_optimum(
         )
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
+        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
         memory_metrics = mem_consumption.get_data(dict_format=True)
     else:
         memory_metrics = {}
@@ -198,10 +198,7 @@ def run_visual_language_generation_genai(
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
     gen_config.ignore_eos = True
-    if args["pruning_ratio"] is not None:
-        gen_config.pruning_ratio = args["pruning_ratio"]
-    if args["relevance_weight"] is not None:
-        gen_config.relevance_weight = args["relevance_weight"]
+
     kwargs = {}
     prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
     log.info(f'{prefix}[P{prompt_index}] Input image nums: {len(images)}')
@@ -218,7 +215,7 @@ def run_visual_language_generation_genai(
     generated_text = generation_result.texts
     perf_metrics = generation_result.perf_metrics
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
+        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
         memory_metrics = mem_consumption.get_data(dict_format=True)
     else:
         memory_metrics = {}

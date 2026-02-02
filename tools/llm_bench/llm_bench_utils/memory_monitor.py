@@ -12,6 +12,7 @@ import atexit
 import queue
 import threading
 import time
+import os
 from enum import Enum
 from functools import lru_cache
 from functools import partial
@@ -89,6 +90,7 @@ class MemoryMonitor:
             provided, child processes are counted.
         """
         self.interval = interval
+        self.timestamp = int(time.time())
         self.memory_type = memory_type
         if memory_type == MemoryType.SYSTEM:
             system_memory_warning()
@@ -107,6 +109,9 @@ class MemoryMonitor:
         self._memory_values_queue = None
         self._stop_logging_atexit_fn = None
 
+    def set_timestamp(self):
+        self.timestamp = int(time.time())
+        
     def start(self, at_exit_fn: Optional[Callable] = None) -> "MemoryMonitor":
         """
         Start memory monitoring.
@@ -200,6 +205,7 @@ class MemoryMonitor:
 
             log_file.writelines(
                 [
+                    f"Timestamp: {self.timestamp}\n",
                     f"Total time: {time_values[-1] - time_values[0]}\n",
                     f"Max memory: {max(memory_values):.3f} ({self.memory_unit.value})",
                 ]
@@ -220,7 +226,7 @@ class MemoryMonitor:
         with open(log_filepath, "r") as f:
             lines = f.readlines()
             time_values, memory_values = [], []
-            for line in lines[:-2]:
+            for line in lines[:-3]:
                 time_value, memory_value = tuple(map(float, line.split(" ")))
                 time_values.append(time_value)
                 memory_values.append(memory_value)
@@ -243,6 +249,7 @@ class MemoryMonitor:
 
     @staticmethod
     def get_system_memory():
+        print("!!!!")
         return psutil.virtual_memory().total - psutil.virtual_memory().available
 
     @staticmethod
@@ -304,6 +311,8 @@ class MemMonitorWrapper():
             time.sleep(self.interval * 3)
 
     def stop_and_collect_data(self, dir_name='mem_monitor_log'):
+        proc_id = os.getpid()
+        dir_name = f"{dir_name}_{proc_id}"
         self.stop()
 
         for mt, mm in self.memory_monitors.items():
