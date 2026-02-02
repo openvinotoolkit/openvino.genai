@@ -10,6 +10,7 @@ from test_utils import run_sample
 
 
 class TestPromptLookupDecodingVLMChat:
+
     @pytest.mark.vlm
     @pytest.mark.samples
     @pytest.mark.parametrize(
@@ -22,7 +23,8 @@ class TestPromptLookupDecodingVLMChat:
         ],
         indirect=["convert_model", "download_test_content"],
     )
-    @pytest.mark.parametrize("prompts",
+    @pytest.mark.parametrize(
+        "prompts",
         [
             ["Who drew this painting?", "When did the painter live?"],
         ],
@@ -34,11 +36,11 @@ class TestPromptLookupDecodingVLMChat:
         # Test Python sample
         py_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/prompt_lookup_decoding_vlm_chat.py")
         py_command = [sys.executable, py_script, convert_model, download_test_content]
-        py_result = run_sample(py_command, '\n'.join(prompts), env=env)
+        py_result = run_sample(py_command, "\n".join(prompts), env=env)
 
         # Test Python sample, disable lookup decoding.
         py_command_ref = [sys.executable, py_script, convert_model, download_test_content, "--disable_lookup"]
-        py_result_ref = run_sample(py_command_ref, '\n'.join(prompts), env=env)
+        py_result_ref = run_sample(py_command_ref, "\n".join(prompts), env=env)
 
         # Compare results
         assert py_result.stdout == py_result_ref.stdout, (
