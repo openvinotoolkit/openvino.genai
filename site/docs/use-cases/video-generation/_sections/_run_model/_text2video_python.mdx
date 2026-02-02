@@ -19,7 +19,8 @@ def save_video(filename: str, video_tensor, fps: int = 25):
         writer = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
         for f in range(num_frames):
-            writer.write(video_data[b, f])
+            frame_bgr = cv2.cvtColor(video_data[b, f], cv2.COLOR_RGB2BGR)
+            writer.write(frame_bgr)
 
         writer.release()
         print(f"Wrote {output_path} ({num_frames} frames, {width}x{height} @ {fps} fps)")
