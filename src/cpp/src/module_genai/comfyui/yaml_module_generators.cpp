@@ -62,7 +62,7 @@ void YamlModuleGeneratorRegistry::initialize_defaults() {
     static const std::vector<std::pair<std::string, std::shared_ptr<YamlModuleGeneratorBase>>> default_generators = {
         {"EmptySD3LatentImage",  std::make_shared<RandomLatentImageModuleGenerator>()},
         {"CLIPTextEncode",       std::make_shared<ClipTextEncoderModuleGenerator>()},
-        {"KSampler",             std::make_shared<ZImageDenoiserLoopModuleGenerator>()},
+        {"KSampler",             std::make_shared<DenoiserLoopModuleGenerator>()},
         {"VAEDecode",            std::make_shared<VAEDecoderModuleGenerator>()},
         {"VAEDecodeSwitcher",    std::make_shared<VAEDecoderTilingModuleGenerator>()},
         {"SaveImage",            std::make_shared<SaveImageModuleGenerator>()},
@@ -168,11 +168,11 @@ void ClipTextEncoderModuleGenerator::generate(YamlGeneratorContext& ctx) {
 }
 
 // ============================================================================
-// ZImageDenoiserLoopModule Generator (KSampler)
+// DenoiserLoopModule Generator (KSampler)
 // ============================================================================
 
-void ZImageDenoiserLoopModuleGenerator::generate(YamlGeneratorContext& ctx) {
-    // KSampler -> ZImageDenoiserLoopModule
+void DenoiserLoopModuleGenerator::generate(YamlGeneratorContext& ctx) {
+    // KSampler -> DenoiserLoopModule
     const auto& node = ctx.current_node;
     GENAI_DEBUG("[KSampler] Processing node: node_id_str=%s, title=%s",
                 node.node_id_str.c_str(), node.title.c_str());
@@ -196,7 +196,7 @@ void ZImageDenoiserLoopModuleGenerator::generate(YamlGeneratorContext& ctx) {
     }
 
     std::string module_name = node.node_id_str;
-    GENAI_DEBUG("[YAML] Adding ZImageDenoiserLoopModule (%s)", module_name.c_str());
+    GENAI_DEBUG("[YAML] Adding DenoiserLoopModule (%s)", module_name.c_str());
 
     YAML::Node module = ctx.pipeline_modules[module_name];
     module["device"] = ctx.options.device;
@@ -221,7 +221,7 @@ void ZImageDenoiserLoopModuleGenerator::generate(YamlGeneratorContext& ctx) {
     module["outputs"] = outputs;
 
     module["params"]["model_path"] = ctx.options.model_path;
-    module["type"] = "ZImageDenoiserLoopModule";
+    module["type"] = "DenoiserLoopModule";
 }
 
 // ============================================================================

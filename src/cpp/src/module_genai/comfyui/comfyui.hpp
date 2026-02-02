@@ -329,11 +329,11 @@ struct ConversionOptions {
  * Converts ComfyUI API JSON files to OpenVINO GenAI modular pipeline YAML configuration.
  *
  * A Sample ZImage Mapping rules as example:
- * - KSampler (node 3) -> ZImageDenoiserLoopModule
+ * - KSampler (node 3) -> DenoiserLoopModule
  * - CLIPTextEncode (nodes 6, 7) -> ClipTextEncoderModule
  * - SaveImage (node 9) -> SaveImageModule
  * - EmptySD3LatentImage (node 13) -> RandomLatentImageModule (width, height)
- * - UNETLoader (node 16) -> ZImageDenoiserLoopModule params.model_path
+ * - UNETLoader (node 16) -> DenoiserLoopModule params.model_path
  * - VAELoader (node 17) -> VAEDecoderModule params.model_path
  * - CLIPLoader (node 18) -> ClipTextEncoderModule params.model_path
  * - VAEDecodeSwitcher (node 28) -> VAEDecoderTilingModule

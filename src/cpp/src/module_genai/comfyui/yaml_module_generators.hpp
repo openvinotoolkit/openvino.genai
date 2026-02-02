@@ -91,9 +91,9 @@ public:
 };
 
 /**
- * @brief Generator for KSampler -> ZImageDenoiserLoopModule
+ * @brief Generator for KSampler -> DenoiserLoopModule
  */
-class ZImageDenoiserLoopModuleGenerator : public YamlModuleGeneratorBase {
+class DenoiserLoopModuleGenerator : public YamlModuleGeneratorBase {
 public:
     void generate(YamlGeneratorContext& ctx) override;
 };
