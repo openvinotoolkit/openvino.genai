@@ -568,6 +568,14 @@ void print_scheduler_config_info(const SchedulerConfig &scheduler_config) {
     std::cout << scheduler_config.to_string() << std::endl;
 }
 
+void print_generation_config_info(const GenerationConfig &generation_config) {
+    if (!env_setup_for_print_debug_info()) {
+        return;
+    }
+
+    std::cout << generation_config.to_string() << std::endl;
+}
+
 std::pair<ov::CompiledModel, KVDesc>
 compile_decoder_for_npu(const std::shared_ptr<ov::Model>& model,
                         const ov::AnyMap& config,

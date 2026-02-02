@@ -365,7 +365,7 @@ void GenerationConfig::validate() const {
     }
 }
 
-void GenerationConfig::log() const {
+std::string GenerationConfig::to_string() const {
     auto stop_criteria_to_string = [](StopCriteria criteria) -> std::string {
         switch (criteria) {
             case StopCriteria::EARLY: return "EARLY";
@@ -375,78 +375,78 @@ void GenerationConfig::log() const {
         }
     };
 
-    std::ostringstream ss;
-    ss << "GenerationConfig:\n";
+    std::ostringstream oss;
+    oss << "GenerationConfig { \n";
 
     // Generic parameters
-    ss << "  max_new_tokens: " << (max_new_tokens == SIZE_MAX ? "SIZE_MAX" : std::to_string(max_new_tokens)) << "\n";
-    ss << "  max_length: " << (max_length == SIZE_MAX ? "SIZE_MAX" : std::to_string(max_length)) << "\n";
-    ss << "  ignore_eos: " << (ignore_eos ? "true" : "false") << "\n";
-    ss << "  min_new_tokens: " << min_new_tokens << "\n";
-    ss << "  echo: " << (echo ? "true" : "false") << "\n";
-    ss << "  logprobs: " << logprobs << "\n";
+    oss << "  max_new_tokens: " << (max_new_tokens == SIZE_MAX ? "SIZE_MAX" : std::to_string(max_new_tokens)) << "\n";
+    oss << "  max_length: " << (max_length == SIZE_MAX ? "SIZE_MAX" : std::to_string(max_length)) << "\n";
+    oss << "  ignore_eos: " << std::boolalpha << ignore_eos << "\n";
+    oss << "  min_new_tokens: " << min_new_tokens << "\n";
+    oss << "  echo: " << std::boolalpha << echo << "\n";
+    oss << "  logprobs: " << logprobs << "\n";
 
     // EOS and stop conditions
-    ss << "  eos_token_id: " << eos_token_id << "\n";
-    ss << "  stop_strings: [";
+    oss << "  eos_token_id: " << eos_token_id << "\n";
+    oss << "  stop_strings: [";
     bool first = true;
     for (const auto& s : stop_strings) {
-        if (!first) ss << ", ";
-        ss << "\"" << s << "\"";
+        if (!first) oss << ", ";
+        oss << "\"" << s << "\"";
         first = false;
     }
-    ss << "]\n";
-    ss << "  include_stop_str_in_output: " << (include_stop_str_in_output ? "true" : "false") << "\n";
-    ss << "  stop_token_ids: [";
+    oss << "]\n";
+    oss << "  include_stop_str_in_output: " << std::boolalpha << include_stop_str_in_output << "\n";
+    oss << "  stop_token_ids: [";
     first = true;
     for (const auto& id : stop_token_ids) {
-        if (!first) ss << ", ";
-        ss << id;
+        if (!first) oss << ", ";
+        oss << id;
         first = false;
     }
-    ss << "]\n";
+    oss << "]\n";
 
     // Penalties
-    ss << "  repetition_penalty: " << repetition_penalty << "\n";
-    ss << "  presence_penalty: " << presence_penalty << "\n";
-    ss << "  frequency_penalty: " << frequency_penalty << "\n";
+    oss << "  repetition_penalty: " << repetition_penalty << "\n";
+    oss << "  presence_penalty: " << presence_penalty << "\n";
+    oss << "  frequency_penalty: " << frequency_penalty << "\n";
 
     // Beam search parameters
-    ss << "  num_beam_groups: " << num_beam_groups << "\n";
-    ss << "  num_beams: " << num_beams << "\n";
-    ss << "  diversity_penalty: " << diversity_penalty << "\n";
-    ss << "  length_penalty: " << length_penalty << "\n";
-    ss << "  num_return_sequences: " << num_return_sequences << "\n";
-    ss << "  no_repeat_ngram_size: " << (no_repeat_ngram_size == std::numeric_limits<size_t>::max() ? "SIZE_MAX" : std::to_string(no_repeat_ngram_size)) << "\n";
-    ss << "  stop_criteria: " << stop_criteria_to_string(stop_criteria) << "\n";
+    oss << "  num_beam_groups: " << num_beam_groups << "\n";
+    oss << "  num_beams: " << num_beams << "\n";
+    oss << "  diversity_penalty: " << diversity_penalty << "\n";
+    oss << "  length_penalty: " << length_penalty << "\n";
+    oss << "  num_return_sequences: " << num_return_sequences << "\n";
+    oss << "  no_repeat_ngram_size: " << (no_repeat_ngram_size == std::numeric_limits<size_t>::max() ? "SIZE_MAX" : std::to_string(no_repeat_ngram_size)) << "\n";
+    oss << "  stop_criteria: " << stop_criteria_to_string(stop_criteria) << "\n";
 
     // Multinomial sampling parameters
-    ss << "  temperature: " << temperature << "\n";
-    ss << "  top_p: " << top_p << "\n";
-    ss << "  top_k: " << (top_k == std::numeric_limits<size_t>::max() ? "SIZE_MAX" : std::to_string(top_k)) << "\n";
-    ss << "  do_sample: " << (do_sample ? "true" : "false") << "\n";
-    ss << "  rng_seed: " << rng_seed << "\n";
+    oss << "  temperature: " << temperature << "\n";
+    oss << "  top_p: " << top_p << "\n";
+    oss << "  top_k: " << (top_k == std::numeric_limits<size_t>::max() ? "SIZE_MAX" : std::to_string(top_k)) << "\n";
+    oss << "  do_sample: " << std::boolalpha << do_sample << "\n";
+    oss << "  rng_seed: " << rng_seed << "\n";
 
     // CDPruner parameters
-    ss << "  pruning_ratio: " << pruning_ratio << "\n";
-    ss << "  relevance_weight: " << relevance_weight << "\n";
+    oss << "  pruning_ratio: " << pruning_ratio << "\n";
+    oss << "  relevance_weight: " << relevance_weight << "\n";
 
     // Assistant generation parameters
-    ss << "  assistant_confidence_threshold: " << assistant_confidence_threshold << "\n";
-    ss << "  num_assistant_tokens: " << num_assistant_tokens << "\n";
-    ss << "  max_ngram_size: " << max_ngram_size << "\n";
+    oss << "  assistant_confidence_threshold: " << assistant_confidence_threshold << "\n";
+    oss << "  num_assistant_tokens: " << num_assistant_tokens << "\n";
+    oss << "  max_ngram_size: " << max_ngram_size << "\n";
 
     // Structured output
-    ss << "  structured_output_config: " << (structured_output_config.has_value() ? "set" : "not set") << "\n";
+    oss << "  structured_output_config: " << (structured_output_config.has_value() ? "set" : "not set") << "\n";
 
     // Adapters
-    ss << "  adapters: " << (adapters.has_value() ? "set" : "not set") << "\n";
+    oss << "  adapters: " << (adapters.has_value() ? "set" : "not set") << "\n";
 
     // Chat template
-    ss << "  apply_chat_template: " << (apply_chat_template ? "true" : "false") << "\n";
+    oss << "  apply_chat_template: " << std::boolalpha << apply_chat_template << "\n";
 
-    //GENAI_DEBUG("%s", ss.str().c_str());
-    std::cout << ss.str() << std::endl;
+    oss << " }";
+    return oss.str();
 }
 
 void StructuredOutputConfig::validate() const {
