@@ -303,15 +303,6 @@ std::vector<int64_t> Eagle3InferWrapperBase::sample_tokens(const ov::Tensor& log
     auto sequence_group = get_sequence_group();
     OPENVINO_ASSERT(sequence_group, "SequenceGroup not initialized");
 
-    OPENVINO_ASSERT(get_running_sequence_count() == 1,
-                    "Eagle3 currently only supports single sequence, got ",
-                    get_running_sequence_count(),
-                    " sequences");
-
-    auto current_seq = get_current_sequence();
-    OPENVINO_ASSERT(current_seq, "No running sequence at index 0");
-
-    const size_t prev_generated_len = current_seq->get_generated_len();
     const size_t logits_seq_len = shape[1];
     const size_t vocab_size = shape[2];
 
@@ -332,44 +323,59 @@ std::vector<int64_t> Eagle3InferWrapperBase::sample_tokens(const ov::Tensor& log
     m_sampler.sample({sequence_group}, sliced_logits, is_validation_mode);
     sequence_group->finish_iteration();
 
-    // Extract results based on mode
-    const auto& generated_ids = current_seq->get_generated_ids();
-    const size_t new_generated_len = generated_ids.size();
+    // Extract results from all sequences
+    // Note: Get num_sequences AFTER sampling, as sample() may update the sequence group
+    auto running_sequences = sequence_group->get_running_sequences();
+    const size_t num_sequences = running_sequences.size();
+    OPENVINO_ASSERT(num_sequences > 0, "No running sequences after sampling");
+
+    eagle3::log_debug(eagle3::PipelineStep::SAMPLE,
+                      "Processing " + std::to_string(num_sequences) + " sequence(s) after sampling",
+                      m_verbose);
+
+    std::vector<int64_t> result_tokens;
 
     if (!is_validation_mode) {
-        OPENVINO_ASSERT(new_generated_len - prev_generated_len == sample_count,
-                        "Sampled token count mismatch: expected ",
-                        sample_count,
-                        ", got ",
-                        new_generated_len - prev_generated_len);
+        // Non-validation mode: collect last token from each sequence
+        for (size_t seq_idx = 0; seq_idx < num_sequences; ++seq_idx) {
+            auto seq = running_sequences[seq_idx];
+            OPENVINO_ASSERT(seq, "Invalid sequence at index ", seq_idx);
 
-        std::vector<int64_t> result_tokens(generated_ids.end() - sample_count, generated_ids.end());
+            const auto& generated_ids = seq->get_generated_ids();
+            OPENVINO_ASSERT(!generated_ids.empty(), "Sequence ", seq_idx, " has no generated tokens");
 
-        record_generated_tokens(sample_count);
+            // Add the last token from this sequence
+            result_tokens.push_back(generated_ids.back());
+        }
 
-        eagle3::log_debug(
-            eagle3::PipelineStep::SAMPLE,
-            "Sampled " + std::to_string(sample_count) + " token(s): " + eagle3::format_tokens(result_tokens),
-            m_verbose);
+        record_generated_tokens(num_sequences);
+
+        eagle3::log_debug(eagle3::PipelineStep::SAMPLE,
+                          "Sampled " + std::to_string(num_sequences) + " token(s) from " +
+                              std::to_string(num_sequences) + " sequence(s): " + eagle3::format_tokens(result_tokens),
+                          m_verbose);
 
         return result_tokens;
     } else {
-        // Validation mode: Sampler validates draft tokens and removes rejected ones
-        // Calculate result_count to extract the final validated sequence:
-        //   - Result contains: accepted_draft_tokens + new_token_from_target (total = num_accepted + 1)
-        //   - prev_generated_len = previously validated tokens + unvalidated draft tokens (num_tokens_to_validate)
-        //   - new_generated_len = prev_generated_len - num_tokens_to_validate + (num_accepted + 1)
-        //   - Therefore: result_count = new_generated_len - prev_generated_len + num_tokens_to_validate
-        const size_t result_count = new_generated_len - prev_generated_len + num_tokens_to_validate;
-        std::vector<int64_t> result_tokens(generated_ids.end() - result_count, generated_ids.end());
+        // Validation mode: collect last token from each sequence
+        // In validation mode, sampler has already updated sequences, we just need to collect the last tokens
+        for (size_t seq_idx = 0; seq_idx < num_sequences; ++seq_idx) {
+            auto seq = running_sequences[seq_idx];
+            OPENVINO_ASSERT(seq, "Invalid sequence at index ", seq_idx);
+
+            const auto& generated_ids = seq->get_generated_ids();
+            OPENVINO_ASSERT(!generated_ids.empty(), "Sequence ", seq_idx, " has no generated tokens");
+
+            // Add the last token from this sequence
+            result_tokens.push_back(generated_ids.back());
+        }
 
         record_generated_tokens(result_tokens.size());
 
-        const size_t accepted_drafts = result_tokens.size() - 1;
         eagle3::log_debug(eagle3::PipelineStep::VALID,
-                          "Validation result: accepted " + std::to_string(accepted_drafts) + "/" +
-                              std::to_string(num_tokens_to_validate) +
-                              " drafts, tokens=" + eagle3::format_tokens(result_tokens),
+                          "Validation result: collected " + std::to_string(result_tokens.size()) + " token(s) from " +
+                              std::to_string(num_sequences) +
+                              " sequence(s), tokens=" + eagle3::format_tokens(result_tokens),
                           m_verbose);
 
         return result_tokens;
