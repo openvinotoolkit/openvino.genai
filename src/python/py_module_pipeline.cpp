@@ -271,6 +271,13 @@ void init_module_pipeline(py::module_& m) {
             },
             py::arg("output_name"),
             "Get output by name.\n\n:param output_name: Name of the output.\n:return: Output value.")
+        .def(
+            "get_output",
+            [](ov::genai::module::ModulePipeline& pipe) -> py::object {
+                ov::Any result = pipe.get_output();
+                return output_to_pyobject(result);
+            },
+            "Get the only output when there is a single output.\n\n:return: Output value.")
         // Static method: validate_config (file path)
         .def_static(
             "validate_config",

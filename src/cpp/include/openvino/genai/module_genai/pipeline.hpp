@@ -43,6 +43,8 @@ public:
 
     ov::Any get_output(const std::string& output_name);
 
+    ov::Any get_output();
+
     void start_chat(const std::string& system_message = {});
 
     void finish_chat();

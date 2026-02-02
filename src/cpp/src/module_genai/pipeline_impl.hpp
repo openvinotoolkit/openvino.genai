@@ -36,6 +36,7 @@ public:
     void generate_async(ov::AnyMap& inputs, StreamerVariant streamer = std::monostate());
 
     ov::Any get_output(const std::string& output_name);
+    ov::Any get_output();
 
     void start_chat(const std::string& system_message = {});
 

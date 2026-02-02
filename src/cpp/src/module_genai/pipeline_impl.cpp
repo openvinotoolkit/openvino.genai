@@ -148,6 +148,11 @@ ov::Any ModulePipelineImpl::get_output(const std::string& output_name) {
     return m_outputs[output_name];
 }
 
+ov::Any ModulePipelineImpl::get_output() {
+    OPENVINO_ASSERT(m_outputs.size() == 1u, "Multiple outputs exist, please specify output_name.");
+    return m_outputs.begin()->second;
+}
+
 void ModulePipelineImpl::start_chat(const std::string& system_message) {}
 
 void ModulePipelineImpl::finish_chat() {}

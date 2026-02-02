@@ -13,9 +13,9 @@ pipeline_modules:
   pipeline_params:
     type: "ParameterModule"
     outputs:
-      - name: "img1"
+      - name: "image"
         type: "OVTensor"
-      - name: "prompt_data"
+      - name: "prompt"
         type: "String"
 
   # --- 1. Image Preprocessing Module ---
@@ -26,7 +26,7 @@ pipeline_modules:
     inputs:
       - name: "image"           # single image
         type: "OVTensor"        # Support DataType: [OVTensor, OVRemoteTensor]
-        source: "pipeline_params.img1"
+        source: "pipeline_params.image"
     outputs:
       - name: "raw_data"        # Output port name
         type: "OVTensor"        # Support DataType: [OVTensor, OVRemoteTensor]
@@ -42,7 +42,7 @@ pipeline_modules:
     inputs:
       - name: "prompt"
         type: "String"
-        source: "pipeline_params.prompt_data"
+        source: "pipeline_params.prompt"
       - name: "encoded_image"
         type: "OVTensor"
         source: "image_preprocessor.raw_data"

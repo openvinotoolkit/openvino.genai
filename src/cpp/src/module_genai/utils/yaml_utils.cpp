@@ -11,6 +11,7 @@
 #include "module_genai/modules/md_img_preprocess.hpp"
 #include "module_genai/modules/md_io.hpp"
 #include "module_genai/modules/md_text_encoder.hpp"
+#include "module_genai/utils/com_utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -203,8 +204,10 @@ PipelineDesc::PTR load_config_from_string(const std::string& content) {
         YAML::Node config = YAML::Load(content);
 
         yaml_cfg_auto_padding(config);
-        // dump to file
-        save_yaml_to_file(config, "dumped_config.yaml");
+
+        if (check_env_variable("DUMP_YAML")) {
+            save_yaml_to_file(config, "dumped_config.yaml");
+        }
 
         parse_global_context(config["global_context"], pipeline_desc);
         parse_main_pipeline_config_internal(config["pipeline_modules"], pipeline_desc);

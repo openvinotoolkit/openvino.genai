@@ -64,6 +64,11 @@ ov::Any ModulePipeline::get_output(const std::string& output_name) {
     return pImpl->get_output(output_name);
 }
 
+ov::Any ModulePipeline::get_output() {
+    auto* pImpl = (ModulePipelineImpl*)m_pipeline_impl;
+    return pImpl->get_output();
+}
+
 void ModulePipeline::start_chat(const std::string& system_message) {
     auto* pImpl = (ModulePipelineImpl*)m_pipeline_impl;
     return pImpl->start_chat(system_message);

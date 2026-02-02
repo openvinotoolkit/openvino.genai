@@ -64,7 +64,7 @@ pipeline_modules:
 
   # --- 3. Z-Image transformer ---
   denoising_loop:
-    type: "ZImageDenoiserLoopModule"
+    type: "DenoiserLoopModule"
     device: "GPU"
     inputs:
       - name: "latents"
