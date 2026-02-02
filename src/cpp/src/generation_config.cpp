@@ -416,7 +416,7 @@ std::string GenerationConfig::to_string() const {
     oss << "  diversity_penalty: " << diversity_penalty << "\n";
     oss << "  length_penalty: " << length_penalty << "\n";
     oss << "  num_return_sequences: " << num_return_sequences << "\n";
-    oss << "  no_repeat_ngram_size: " << no_repeat_ngram_size "\n";
+    oss << "  no_repeat_ngram_size: " << no_repeat_ngram_size << "\n";
     oss << "  stop_criteria: " << stop_criteria_to_string(stop_criteria) << "\n";
 
     // Multinomial sampling parameters
