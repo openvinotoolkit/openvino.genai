@@ -269,8 +269,6 @@ public:
         if (hidden_state_input) {
             hidden_state_data = hidden_state_input.data<float>();
         }
-        // handle 1 sequence for now
-        ov::Tensor tree_mask_tensor = _get_or_resize_tensor(m_cached_qq_bias, "qq_bias", {num_sequence_groups, total_num_tokens, total_num_tokens}, ov::element::u8); // reuse qq_bias input for tree mask input
 
         ov::Tensor generated_ids_embeds;
         float *generated_ids_embeds_data = nullptr;
@@ -281,7 +279,6 @@ public:
         float *inputs_embeds_data = nullptr;
         int64_t *input_ids_data = nullptr;
         int64_t *token_type_ids_data = nullptr;
-        uint8_t *tree_mask_data = nullptr;
         ov::Tensor position_ids;
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             inputs_embeds_data = inputs_embeds.data<float>();
@@ -360,39 +357,6 @@ public:
 
                     SequenceKey key{sequence_group->get_request_id(), sequence->get_grouped_id()};
                     m_sequence_hidden_state_mapping[key] = HiddenStateRange{start_token_idx, sequence_length};
-                    if (!_is_hs_import() && !_is_hs_internal()) {
-                        OPENVINO_ASSERT(num_running_sequences == 1,
-                                    "Eagle3 target model does not support beam search generation config.");
-                        // get tree mask info from sequence eagle metadata
-                        auto& eagle_metadata = sequence->get_eagle_metadata();
-                        auto tree_mask = eagle_metadata.tree_mask;
-                        tree_mask_data = tree_mask_tensor.data<uint8_t>();
-                        auto tree_pos_ids = sequence->get_eagle_metadata().tree_position_ids;
-                        if (tree_pos_ids.size() > 0) {
-                            // std::cout << "tree position ids " << std::endl;;
-                            for (auto id : tree_pos_ids) {
-                                // std::cout << id << " ";
-                            }
-                        }
-                        // std::cout << std::endl;
-                        
-                        // copy num_scheduled_tokens * num_scheduled_tokens tree mask into tree_mask_data
-                        // tree_mask is type of std::vector<std::vector<int8_t>>
-                        if (tree_mask.size() > 0) {
-                            auto num_speculated_tokens = tree_mask.size();
-                            OPENVINO_ASSERT(num_speculated_tokens == tree_mask[0].size(),
-                                            "Eagle3 tree mask is expected to be a square matrix.");
-                            auto offset = seq_idx * num_speculated_tokens * num_speculated_tokens; // tree mask is same shape for all sequence groups
-                            for (size_t row = 0; row < num_speculated_tokens; ++row) {
-                                for (size_t col = 0; col < num_speculated_tokens; ++col) {
-                                    tree_mask_data[offset + row * num_speculated_tokens + col] = tree_mask[row][col];
-                                }
-                            }
-                        } else {
-                            // fill with ones
-                            std::memset(tree_mask_data, 1, num_scheduled_tokens * num_scheduled_tokens * sizeof(uint8_t));
-                        }
-                    }
                 }
                 if (_is_hs_import()) {
                     auto it = m_initial_hidden_states.find(sequence_group->get_request_id());
@@ -535,9 +499,8 @@ public:
         if (sequence_group_type == SequenceGroupType::TOKENS && !m_cached_input_ids) {
             m_request.set_tensor("input_ids", input_ids);
         }
-        if (tree_mask_data) {
-            m_request.set_tensor("qq_bias", tree_mask_tensor);
-            _set_cache_remap_indices(sequence_groups, scheduler_output);
+        if (!_is_hs_import() && !_is_hs_internal()) {
+            _set_query_to_query_tensors(sequence_groups, scheduler_output);
         }
         else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             if (!m_cached_inputs_embeds) {
@@ -567,12 +530,6 @@ public:
         }
 
         _set_block_indices(sequence_groups, scheduler_output, total_num_blocks, seq_id_to_skipped_blocks_map);
-
-        if (_is_hs_export() && !_is_hs_internal()) {
-            /*auto remap_indices = _set_cache_remap_indices(sequence_groups, scheduler_output);
-            if (remap_indices.size() > 0 )
-                remap_kv_cache(remap_indices);*/
-        }
 
         if (!m_cached_block_indices_begins) {
             m_request.set_tensor("block_indices_begins", block_indices_begins);
@@ -699,21 +656,65 @@ private:
     bool _is_hs_import()   const { return m_hidden_state_flags & HS_IMPORT; }
     bool _is_hs_internal() const { return m_hidden_state_flags & HS_INTERNAL; }
 
+    void _set_query_to_query_tensors(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                                     const Scheduler::Output& scheduler_output) {
+        std::string qq_bias_name = "qq_bias";
+        std::string qq_bias_begin_name = "qq_bias_begins";
+        std::string remap_name = "block_update_indices";
+        std::string remap_begin_name = "block_update_indices_begins";
+        size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
+        size_t total_spec_tokens = 0;
+        auto qq_bias_begin_tensor = m_request.get_tensor(qq_bias_begin_name);
+        qq_bias_begin_tensor.set_shape({num_sequence_groups + 1});
+        auto qq_bias_begin_data = qq_bias_begin_tensor.data<int32_t>();
+        qq_bias_begin_data[0] = 0;
+        for (size_t i = 0; i < num_sequence_groups; ++i) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[i];
+            size_t num_running_sequences = sequence_group->num_running_seqs();
+            OPENVINO_ASSERT(num_running_sequences == 1, "only support 1 running sequence in eagle3 mode");
+            // skip the prompt tokens
+            auto num_processed_tokens = sequence_group->get_num_processed_tokens();
+            if (num_processed_tokens >= sequence_group->get_prompt_len()) {
+                total_spec_tokens += sequence_group->get_num_scheduled_tokens();
+            }
+            qq_bias_begin_data[i + 1] = static_cast<int32_t>(total_spec_tokens);
+        }
 
-    void _set_cache_remap_indices(const std::vector<SequenceGroup::Ptr>& sequence_groups,
-                                  const Scheduler::Output& scheduler_output) {
-        std::string tensor_name = "block_update_indices";
-        std::string tensor_begin_name = "block_update_indices_begins";
-        size_t num_sequence_groups = sequence_groups.size();
+        if (total_spec_tokens > 0) {
+            m_request.get_tensor(qq_bias_name).set_shape({total_spec_tokens * total_spec_tokens});
+            auto qq_bias_tensor = m_request.get_tensor(qq_bias_name);
+            auto tree_mask_data = qq_bias_tensor.data<uint8_t>();
+            // fill in the tree mask tensor if we have tokens to speculate
+            for (size_t i = 0; i < num_sequence_groups; ++i) {
+                size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+                SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+                auto sequence = sequence_group->get_running_sequences()[0];
+                auto& eagle_metadata = sequence->get_eagle_metadata();
+                auto tree_mask = eagle_metadata.tree_mask;
+                if (tree_mask.size() > 0) {
+                    auto num_speculated_tokens = tree_mask.size();
+                    OPENVINO_ASSERT(num_speculated_tokens == tree_mask[0].size(),
+                                    "Eagle3 tree mask is expected to be a square matrix.");
+                    auto offset = qq_bias_begin_data[i] * num_speculated_tokens * num_speculated_tokens;
+                    for (size_t row = 0; row < num_speculated_tokens; ++row) {
+                        for (size_t col = 0; col < num_speculated_tokens; ++col) {
+                            tree_mask_data[offset + row * num_speculated_tokens + col] = tree_mask[row][col];
+                        }
+                    }
+                }
+            }
+        }
+
         size_t total_indices_to_remap = 0;
         std::map<size_t, std::map<size_t, size_t>> remap_indices;
-        auto block_update_indices_begin_tensor = m_request.get_tensor(tensor_begin_name);
+        auto block_update_indices_begin_tensor = m_request.get_tensor(remap_begin_name);
         block_update_indices_begin_tensor.set_shape({num_sequence_groups + 1});
         auto block_update_indices_begin_data = block_update_indices_begin_tensor.data<int32_t>();
         block_update_indices_begin_data[0] = 0;
         for (size_t i = 0; i < num_sequence_groups; ++i) {
-            //size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
-            SequenceGroup::CPtr sequence_group = sequence_groups[i];
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
             std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
             size_t num_running_sequences = running_sequences.size();
             auto validated_indices = running_sequences[0]->get_eagle_metadata().validated_indices;
@@ -721,7 +722,7 @@ private:
                 continue;
             }
 
-            OPENVINO_ASSERT(num_running_sequences == 1, "bell debug");
+            OPENVINO_ASSERT(num_running_sequences == 1, "only support 1 running sequence in eagle3 mode");
 
             auto num_processed_tokens = sequence_group->get_num_processed_tokens();
             size_t prev_num_processed_tokens = num_processed_tokens - validated_indices.size();
@@ -741,15 +742,13 @@ private:
             }
             block_update_indices_begin_data[i + 1] = static_cast<int32_t>(total_indices_to_remap);
         }
-        m_request.get_tensor(tensor_name).set_shape({remap_indices.size() * 2}); // src and dst, block and slot
+        m_request.get_tensor(remap_name).set_shape({remap_indices.size() * 2}); // src and dst, block and slot
         // fill in the tensor
         if (remap_indices.size() > 0) {
-            int32_t* remap_data = m_request.get_tensor(tensor_name).data<int32_t>();
+            int32_t* remap_data = m_request.get_tensor(remap_name).data<int32_t>();
             uint32_t m_kv_remap_indices_filled_count = 0;
             for (auto & [seq_group_id, indices_map] : remap_indices) {
-                // get the actual index in block_table
                 auto running_sequences = sequence_groups[seq_group_id]->get_running_sequences();
-                // suppose all layers have the same block table structure
                 for (const auto& [src_idx, dst_idx] : indices_map) {
                     size_t tensor_offset = 2 * (m_kv_remap_indices_filled_count++);
                     remap_data[tensor_offset]     = static_cast<int32_t>(src_idx);

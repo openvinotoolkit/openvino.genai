@@ -46,7 +46,7 @@ int main(int argc, char* argv[]) try {
     std::string main_device = "GPU", eagle_device = "GPU"; // currently only GPU is used during developing
 
     // Eagle Speculative settings
-    ov::genai::GenerationConfig config = ov::genai::greedy();
+    ov::genai::GenerationConfig config;
     config.max_new_tokens = max_new_tokens;
     // Eagle specific parameters
     config.eagle_tree_params.branching_factor = branching_factor; // Number of candidate tokens to consider at each level
