@@ -11,4 +11,4 @@ export LD_LIBRARY_PATH=${GENAI_ROOT_DIR}/../runtime/lib/intel64/:$LD_LIBRARY_PAT
 cd ${SCRIPT_DIR_GENAI_MODULE_PY}
 
 
-python module_pipeline_wan_2_1.py
+python md_video_generation.py

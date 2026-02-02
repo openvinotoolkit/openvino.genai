@@ -7,6 +7,7 @@
 #include "diffusion_model_type.hpp"
 #include <openvino/runtime/properties.hpp>
 #include <filesystem>
+#include <variant>
 
 namespace ov::genai {
 
@@ -25,7 +26,7 @@ public:
     int n_layers {30};
     int n_refiner_layers {2};
     double norm_eps {1e-05};
-    bool qk_norm {true};
+    std::variant<bool, std::string> qk_norm {true};
     double rope_theta {256.0};
     double t_scale {1000.0};
 

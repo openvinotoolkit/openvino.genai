@@ -43,6 +43,9 @@ void ClipTextEncoderModule::print_static_config() {
       - name: "max_sequence_length"
         type: "Int"               # [Optional] Support DataType: [Int]
         source: "ParentModuleName.OutputPortName"
+      - name: "num_images_per_prompt"
+        type: "Int"               # [Optional] Support DataType: [Int]
+        source: "ParentModuleName.OutputPortName"
     outputs:
       - name: "prompt_embeds"
         type: "VecOVTensor"       # Support DataType: [VecOVTensor]
@@ -69,6 +72,8 @@ bool ClipTextEncoderModule::initialize() {
         GENAI_ERR("ClipTextEncoderModule[" + module_desc->name + "]: 'model_path' not found in params")
         return false;
     }
+
+    m_model_type = to_diffusion_model_type(module_desc->model_type);
     
     std::filesystem::path root_dir = module_desc->get_full_path(it_path->second);
     std::string device = module_desc->device.empty() ? "CPU" : module_desc->device;
@@ -87,6 +92,9 @@ bool ClipTextEncoderModule::initialize() {
 
     try {
         auto text_encoder_path = root_dir / "text_encoder/openvino_model.xml";
+        if (m_model_type == DiffusionModelType::WAN_2_1) {
+            text_encoder_path = root_dir / "text_encoder/text_encoder.xml";
+        }
         auto model = utils::singleton_core().read_model(text_encoder_path);
         auto compiled_model = utils::singleton_core().compile_model(
             model,
@@ -126,6 +134,21 @@ void ClipTextEncoderModule::run() {
         m_negative_prompts.insert(m_negative_prompts.begin(), single_negative_prompt);
     }
 
+    if (m_model_type == DiffusionModelType::WAN_2_1) {
+        if (m_negative_prompts.empty()) {
+            for (size_t i = 0; i < m_prompts.size(); i++) {
+                m_negative_prompts.push_back("");
+            }
+        }
+        if (m_prompts.size() > 1 && m_negative_prompts.size() == 1) {
+            std::string negative_prompt = m_negative_prompts[0];
+            m_negative_prompts.clear();
+            for (size_t i = 0; i < m_prompts.size(); i++) {
+                m_negative_prompts.push_back(negative_prompt);
+            }
+        }
+    }
+
     if (!m_prompts.empty() && !m_negative_prompts.empty() && m_negative_prompts.size() != m_prompts.size()) {
         GENAI_ERR("Either prompts or negative_prompts size is 0, or they are both equal");
     }
@@ -140,6 +163,11 @@ void ClipTextEncoderModule::run() {
         generation_config.max_sequence_length = this->inputs["max_sequence_length"].data.as<int>();
     } else {
         generation_config.max_sequence_length = 512;
+    }
+    if (exists_input("num_images_per_prompt")) {
+        generation_config.num_images_per_prompt = this->inputs["num_images_per_prompt"].data.as<int>();
+    } else {
+        generation_config.num_images_per_prompt = 1;
     }
 
     auto [prompt_embeds, negative_prompt_embeds] = run(m_prompts, m_negative_prompts, generation_config);
@@ -184,27 +212,77 @@ ov::Tensor ClipTextEncoderModule::encode_prompt(
     std::vector<std::string> templated_prompts = {};
     templated_prompts.reserve(prompts.size());
     for (const auto& s : prompts) {
-        ChatHistory history({{{"role", "user"}, {"content", s}}});
-        bool add_generation_prompt = true;
-        auto templated_s = m_tokenizer_impl->apply_chat_template(history, add_generation_prompt, {}, std::nullopt, std::nullopt, m_minja_template);
-        templated_prompts.push_back(templated_s);
+        if (m_model_type == DiffusionModelType::WAN_2_1) {
+            templated_prompts.push_back(s);
+        } else {
+            ChatHistory history({{{"role", "user"}, {"content", s}}});
+            bool add_generation_prompt = true;
+            auto templated_s = m_tokenizer_impl->apply_chat_template(history, add_generation_prompt, {}, std::nullopt, std::nullopt, m_minja_template);
+            templated_prompts.push_back(templated_s);
+        }
     }
 
     ov::AnyMap tokenization_params = {};
-    auto text_inputs = m_tokenizer_impl->encode(templated_prompts, tokenization_params);
-    m_request.set_tensor("input_ids", text_inputs.input_ids);
-    m_request.set_tensor("attention_mask", text_inputs.attention_mask);
-    {
-        PROFILE(pm, "infer");
-        m_request.infer();
+    if (m_model_type == DiffusionModelType::WAN_2_1) {
+        tokenization_params["add_special_tokens"] = true;
+        tokenization_params["max_length"] = generation_config.max_sequence_length;
+        tokenization_params["pad_to_max_length"] = true;
     }
     
 
-    size_t idx = m_encoder_config.num_hidden_layers;
-    ov::Tensor prompt_embed = m_request.get_output_tensor(idx);
-    ov::Tensor prompt_embed_out = ov::Tensor(prompt_embed.get_element_type(), prompt_embed.get_shape());
-    prompt_embed.copy_to(prompt_embed_out);
-    return prompt_embed_out;
+    auto text_inputs = m_tokenizer_impl->encode(templated_prompts, tokenization_params);
+    if (m_model_type == DiffusionModelType::ZIMAGE) {
+        m_request.set_tensor("input_ids", text_inputs.input_ids);
+        m_request.set_tensor("attention_mask", text_inputs.attention_mask);
+        {
+            PROFILE(pm, "infer");
+            m_request.infer();
+        }
+
+        size_t idx = m_encoder_config.num_hidden_layers;
+        ov::Tensor prompt_embed = m_request.get_output_tensor(idx);
+        ov::Tensor prompt_embed_out = ov::Tensor(prompt_embed.get_element_type(), prompt_embed.get_shape());
+        prompt_embed.copy_to(prompt_embed_out);
+        return prompt_embed_out;
+    } else if (m_model_type == DiffusionModelType::WAN_2_1) {
+        m_request.set_tensor("input_ids", text_inputs.input_ids);
+        {
+            PROFILE(pm, "infer");
+            m_request.infer();
+        }
+
+        ov::Tensor prompt_embed = m_request.get_output_tensor();
+        size_t batch_size = prompt_embed.get_shape()[0];
+        std::vector<int64_t> seq_lens;
+        auto attention_mask_data = text_inputs.attention_mask.data<int64_t>();
+        for (size_t i = 0; i < batch_size; i++) {
+            int64_t sum = 0;
+            for (size_t j = 0; j < text_inputs.attention_mask.get_shape()[1]; j++) {
+                sum += attention_mask_data[i * text_inputs.attention_mask.get_shape()[1] + j];
+            }
+            seq_lens.push_back(sum);
+        }
+
+        ov::Shape output_shape = prompt_embed.get_shape();
+        output_shape[0] = batch_size * generation_config.num_images_per_prompt;
+        output_shape[1] = generation_config.max_sequence_length;
+        ov::Tensor prompt_embed_out = ov::Tensor(prompt_embed.get_element_type(), output_shape);
+        auto prompt_embed_data = prompt_embed.data<float>();
+        auto prompt_embed_out_data = prompt_embed_out.data<float>();
+        size_t embed_size = output_shape[1] * output_shape[2];
+        std::memset(prompt_embed_out_data, 0, prompt_embed_out.get_byte_size());
+        for (size_t i = 0; i < generation_config.num_images_per_prompt; i++) {
+            for (size_t j = 0; j < batch_size; j++) {
+                size_t seq_len = seq_lens[j];
+                std::memcpy(prompt_embed_out_data + (i * (embed_size * batch_size) + j * embed_size),
+                            prompt_embed_data + (j * embed_size),
+                            seq_len * output_shape[2] * sizeof(float));
+            }
+        }
+        return prompt_embed_out;
+    } else {
+        OPENVINO_THROW("Unsupported model type in ClipTextEncoderModule: " + module_desc->model_type);
+    }
 }
 
 }  // namespace module

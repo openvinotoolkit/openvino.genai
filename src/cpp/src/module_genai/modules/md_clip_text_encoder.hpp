@@ -23,6 +23,7 @@ class ClipTextEncoderModule : public IBaseModule {
 private:
     bool initialize();
     bool do_classifier_free_guidance(float guidance_scale);
+    DiffusionModelType m_model_type;
     TransformerConfig m_encoder_config;
     ov::InferRequest m_request;
     std::shared_ptr<Tokenizer::TokenizerImpl> m_tokenizer_impl;

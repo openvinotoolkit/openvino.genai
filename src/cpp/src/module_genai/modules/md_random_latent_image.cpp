@@ -131,6 +131,10 @@ ov::Tensor RandomLatentImageModule::prepare_latents(
                         static_cast<size_t>(height),
                         static_cast<size_t>(width)};
     } else if (is_video_generation_model(module_desc->model_type)) {
+        if (num_frames % m_vae_scale_factor_temporal != 1) {
+            num_frames = num_frames / m_vae_scale_factor_temporal * m_vae_scale_factor_temporal + 1;
+        }
+        num_frames = std::max(num_frames, static_cast<size_t>(1));
         size_t num_latent_frames = (num_frames - 1) / m_vae_scale_factor_temporal + 1;
         width = width / m_vae_scale_factor_spatial;
         height = height / m_vae_scale_factor_spatial;

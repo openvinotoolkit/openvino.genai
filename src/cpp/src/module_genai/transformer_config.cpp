@@ -26,7 +26,17 @@ TransformerConfig::TransformerConfig(const std::filesystem::path &config_path) {
     read_json_param(parsed, "num_hidden_layers", num_hidden_layers);
     read_json_param(parsed, "n_refiner_layers", n_refiner_layers);
     read_json_param(parsed, "norm_eps", norm_eps);
-    read_json_param(parsed, "qk_norm", qk_norm);
+    if (parsed.contains("qk_norm")) {
+        if (parsed["qk_norm"].is_boolean()) {
+            bool qk_norm_bool;
+            read_json_param(parsed, "qk_norm", qk_norm_bool);
+            qk_norm = qk_norm_bool;
+        } else if (parsed["qk_norm"].is_string()) {
+            std::string qk_norm_str;
+            read_json_param(parsed, "qk_norm", qk_norm_str);
+            qk_norm = qk_norm_str;
+        }
+    }
     read_json_param(parsed, "rope_theta", rope_theta);
     read_json_param(parsed, "t_scale", t_scale);
 }
