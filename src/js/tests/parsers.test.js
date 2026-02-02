@@ -293,7 +293,7 @@ describe("LLMPipeline with ReasoningParser", () => {
       openTag: "<2>",
       closeTag: "</2>",
     });
-    // Use StructuredOutputConfig to garantee that the tags are in the output
+    // Use StructuredOutputConfig to guarantee that the tags are in the output
     const config = {
       max_new_tokens: 100,
       structured_output_config: new StructuredOutputConfig({

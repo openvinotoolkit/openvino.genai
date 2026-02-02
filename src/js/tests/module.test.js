@@ -208,7 +208,7 @@ describe("LLMPipeline with chat history", () => {
     }, /An incorrect input value has been passed./);
   });
 
-  it("stream(chatHistory, config)", async (t) => {
+  it("stream(chatHistory, config)", async () => {
     chatHistory.push({ role: "user", content: "Tell me another joke." });
     const config = {
       max_new_tokens: 10,
