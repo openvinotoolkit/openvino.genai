@@ -31,14 +31,14 @@ optimum-cli export openvino --model dreamlike-art/dreamlike-anime-1.0 --task tex
 
 ## Build Instructions
 
-Linux :
+Linux:
 ```bash
 mkdir build && cd build
 cmake ..
 make
 ```
 
-Windows :
+Windows:
 ```bash
 mkdir build && cd build
 cmake .. -DOpenCV_DIR="C:\path\to\opencv\build"
