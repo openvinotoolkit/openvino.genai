@@ -2014,8 +2014,11 @@ def test_cdpruner_chat_mode(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Te
 
     ov_pipe.finish_chat()
 
+
 @parametrize_cdpruner_models
-def test_cdpruner_chat_history_api(ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, car_tensor: openvino.Tensor):
+def test_cdpruner_chat_history_api(
+    ov_pipe_model: VlmModelInfo, cat_tensor: openvino.Tensor, car_tensor: openvino.Tensor
+):
     """Test CDPruner with ChatHistory API to verify pruned content is used in subsequent turns."""
     ov_pipe = ov_pipe_model.pipeline
     generation_config = _setup_generation_config(ov_pipe, max_new_tokens=20, do_sample=False)
@@ -2046,7 +2049,7 @@ def test_cdpruner_chat_history_api(ov_pipe_model: VlmModelInfo, cat_tensor: open
 
     # Verify all generations succeeded with pruning enabled
     assert len(history) == 6, "Should have 3 user messages and 3 assistant messages"
-    
+
     ov_pipe.finish_chat()
 
 
@@ -2178,9 +2181,7 @@ def test_cdpruner_continuous_batching_chat_history(
 
     # Third turn without image (returns GenerationResult, not VLMDecodedResults)
     history.append({"role": "user", "content": "What did you see in total?"})
-    result3 = ov_continuous_batching_pipe_qwen2vl.generate(
-        [history], generation_config=[generation_config]
-    )
+    result3 = ov_continuous_batching_pipe_qwen2vl.generate([history], generation_config=[generation_config])
     assert result3[0].m_generation_ids[0].strip() != "", "Third turn result should not be empty"
     history.append({"role": "assistant", "content": result3[0].m_generation_ids[0]})
 
