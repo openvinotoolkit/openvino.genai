@@ -12,12 +12,10 @@ def parse_args():
                         help="Path to the directory of models")
     parser.add_argument('--device', default="GPU", help="Device, default `GPU`, 'CPU' is also supported.")
     parser.add_argument('--enable_tiling', action='store_true', help="Enable tiling. default false.")
-    parser.add_argument('--json', default=None, help="Optional: Path to ComfyUI JSON file to convert and use")
-    parser.add_argument('--prompt', default=None,
-                        help="The prompt for generation (if not provided and --json is used, will be extracted from JSON)")
-    parser.add_argument('--height', type=int, default=None, help="Image height (must be divisible by 32, default from JSON or 1040)")
-    parser.add_argument('--width', type=int, default=None, help="Image width (must be divisible by 32, default from JSON or 1040)")
-    parser.add_argument('--steps', type=int, default=None, help="Number of inference steps (default from JSON or 9)")
+    parser.add_argument('--prompt', default=None, help="The prompt for generation")
+    parser.add_argument('--height', type=int, default=None, help="Image height (must be divisible by 32, default 1040)")
+    parser.add_argument('--width', type=int, default=None, help="Image width (must be divisible by 32, default 1040)")
+    parser.add_argument('--steps', type=int, default=None, help="Number of inference steps (default 9)")
     parser.add_argument('--tile_size', type=int, default=None, help="VAE decoder tile size (sample_size for tiling)")
     parser.add_argument('--debug', action='store_true', help="Enable debug output")
     return parser.parse_args()
@@ -68,31 +66,6 @@ def validate_and_print_config(yaml_content: str, config_name: str = "config") ->
     print(f"{'='*60}\n")
     return result.valid
 
-
-def load_from_comfyui_json(json_path: str, **kwargs) -> tuple:
-    """
-    Load pipeline configuration from ComfyUI JSON file.
-
-    :param json_path: Path to ComfyUI JSON file
-    :param kwargs: Optional parameters (model_path, device, tile_size, etc.)
-    :return: Tuple of (yaml_content, extracted_params)
-    """
-    print(f"\n{'='*60}")
-    print(f"Converting ComfyUI JSON: {json_path}")
-    print(f"{'='*60}")
-
-    yaml_content, params = openvino_genai.ModulePipeline.comfyui_json_to_yaml(
-        json_path,
-        **kwargs
-    )
-
-    print(f"Conversion successful!")
-    print(f"Extracted parameters:")
-    for key, value in params.items():
-        print(f"  {key}: {value}")
-    print(f"{'='*60}\n")
-
-    return yaml_content, params
 
 class TransformerPipeline():
     def __init__(
@@ -419,7 +392,7 @@ def main():
     # Use global args parsed at module load time
     global args
 
-    # Default values when ComfyUI JSON is not provided
+    # Default values
     DEFAULT_PROMPT = "Young Chinese woman in red Hanfu, intricate embroidery. Impeccable makeup, red floral forehead pattern. Elaborate high bun, golden phoenix headdress, red flowers, beads. Holds round folding fan with lady, trees, bird. Neon lightning-bolt lamp, bright yellow glow, above extended left palm. Soft-lit outdoor night background, silhouetted tiered pagoda, blurred colorful distant lights."
     DEFAULT_HEIGHT = 1040
     DEFAULT_WIDTH = 1040
@@ -434,142 +407,34 @@ def main():
         print(f"  Model path (absolute): {os.path.abspath(args.model_path)}")
         print()
 
-    # Variables to hold final values (may come from JSON or args)
-    final_prompt = args.prompt
-    final_height = args.height
-    final_width = args.width
-    final_steps = args.steps
-    comfyui_yaml_content = None  # Will hold converted YAML if --json is provided
-    comfyui_params = {}  # Will hold extracted params if --json is provided
-
-    # Demo: Using ComfyUI JSON conversion if provided
-    if args.json and os.path.exists(args.json):
-        print("\n" + "="*60)
-        print("Demo: ComfyUI JSON to YAML Conversion")
-        print("="*60)
-
-        # Build conversion kwargs, include tile_size if provided via command line
-        conversion_kwargs = {
-            "model_path": args.model_path,
-            "device": args.device
-        }
-        if args.tile_size is not None:
-            conversion_kwargs["tile_size"] = args.tile_size
-
-        yaml_content, params = load_from_comfyui_json(
-            args.json,
-            **conversion_kwargs
-        )
-
-        if yaml_content:
-            # Validate the converted YAML
-            validate_and_print_config(yaml_content, "Converted ComfyUI Config")
-
-            # Dump the converted YAML content
-            print(f"\n{'='*60}")
-            print("Converted YAML content:")
-            print(f"{'='*60}")
-            print(yaml_content)
-            print(f"{'='*60}\n")
-
-            # Extract parameters from JSON if not provided via command line
-            if final_prompt is None:
-                final_prompt = params.get("prompt", DEFAULT_PROMPT)
-            if final_height is None:
-                final_height = params.get("height", DEFAULT_HEIGHT)
-            if final_width is None:
-                final_width = params.get("width", DEFAULT_WIDTH)
-            if final_steps is None:
-                final_steps = params.get("num_inference_steps", DEFAULT_STEPS)
-
-            # tile_size: command line overrides JSON value
-            final_tile_size = args.tile_size if args.tile_size is not None else params.get("tile_size")
-
-            print(f"\nUsing parameters from ComfyUI JSON:")
-            print(f"  prompt: {final_prompt[:50]}..." if len(final_prompt) > 50 else f"  prompt: {final_prompt}")
-            negative_prompt = params.get("negative_prompt", "")
-            print(f"  negative_prompt: {negative_prompt[:50]}..." if len(negative_prompt) > 50 else f"  negative_prompt: {negative_prompt}")
-            print(f"  width: {final_width}")
-            print(f"  height: {final_height}")
-            print(f"  steps: {final_steps}")
-            print(f"  seed: {params.get('seed', 0)}")
-            print(f"  tile_size: {final_tile_size}")
-
-            # Save yaml_content and params to use for pipeline creation
-            comfyui_yaml_content = yaml_content
-            comfyui_params = params
-
-            print("\nComfyUI JSON successfully converted to YAML!")
-        else:
-            print("ComfyUI JSON conversion returned empty YAML")
-
-    # Apply defaults if still None (no ComfyUI JSON or params not found)
-    if final_prompt is None:
-        final_prompt = DEFAULT_PROMPT
-    if final_height is None:
-        final_height = DEFAULT_HEIGHT
-    if final_width is None:
-        final_width = DEFAULT_WIDTH
-    if final_steps is None:
-        final_steps = DEFAULT_STEPS
+    # Apply defaults if not provided via command line
+    final_prompt = args.prompt if args.prompt else DEFAULT_PROMPT
+    final_height = args.height if args.height else DEFAULT_HEIGHT
+    final_width = args.width if args.width else DEFAULT_WIDTH
+    final_steps = args.steps if args.steps else DEFAULT_STEPS
 
     try:
-        if comfyui_yaml_content:
-            # Use the converted YAML from ComfyUI JSON
-            print("[INFO] Creating ModulePipeline from ComfyUI YAML...")
-            pipe = openvino_genai.ModulePipeline(config_yaml_content=comfyui_yaml_content)
-            print("[INFO] ModulePipeline created successfully")
+        # Create pipeline using TransformerPipeline config
+        print("[INFO] Creating TransformerPipeline...")
+        pipeline = TransformerPipeline(
+            args.model_path,
+            args.device,
+            args.enable_tiling,
+            args.tile_size)
+        print("[INFO] Pipeline created successfully")
 
-            print("[INFO] Starting generation...")
-            pipe.generate(
-                prompt=final_prompt,
-                negative_prompt=comfyui_params.get("negative_prompt", ""),
-                guidance_scale=comfyui_params.get("guidance_scale", 1.0),
-                max_sequence_length=comfyui_params.get("max_sequence_length", 512),
-                num_inference_steps=final_steps,
-                width=final_width,
-                height=final_height,
-                batch_size=comfyui_params.get("batch_size", 1),
-                seed=comfyui_params.get("seed", 0)
-            )
-            print("[INFO] Generation completed")
+        print("[INFO] Starting generation...")
+        images = pipeline(
+            prompt=final_prompt,
+            height=final_height,
+            width=final_width,
+            num_inference_steps=final_steps
+        )
+        print("[INFO] Generation completed")
 
-            # Get output - check for saved_image first (SaveImageModule), then image
-            try:
-                output_path = pipe.get_output("saved_image")
-                print(f"Image saved by pipeline to: {output_path}")
-            except:
-                output = pipe.get_output("image")
-                latents = torch.from_numpy(output.data).to(torch.uint8)
-                image = latents.cpu().numpy()
-                if image.ndim == 3:
-                    image = image[None, ...]
-                pil_image = Image.fromarray(image[0].astype("uint8"))
-                out_name = "output_zimage_comfyui.png"
-                pil_image.save(out_name)
-                print(f"Image saved to: {out_name}")
-        else:
-            # Create pipeline using standard TransformerPipeline config
-            print("[INFO] Creating TransformerPipeline...")
-            pipeline = TransformerPipeline(
-                args.model_path,
-                args.device,
-                args.enable_tiling,
-                args.tile_size)
-            print("[INFO] Pipeline created successfully")
-
-            print("[INFO] Starting generation...")
-            images = pipeline(
-                prompt=final_prompt,
-                height=final_height,
-                width=final_width,
-                num_inference_steps=final_steps
-            )
-            print("[INFO] Generation completed")
-
-            out_name = "output_zimage_tiling.png" if args.enable_tiling else "output_zimage.png"
-            images[0].save(out_name)
-            print(f"Image saved to: {out_name}")
+        out_name = "output_zimage_tiling.png" if args.enable_tiling else "output_zimage.png"
+        images[0].save(out_name)
+        print(f"Image saved to: {out_name}")
 
     except Exception as e:
         print(f"\n[ERROR] Pipeline execution failed:")
