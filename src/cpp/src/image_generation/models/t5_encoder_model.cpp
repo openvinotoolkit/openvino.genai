@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/image_generation/t5_encoder_model.hpp"
@@ -81,21 +81,39 @@ T5EncoderModel& T5EncoderModel::compile(const std::string& device, const ov::Any
     return *this;
 }
 
-ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance, int max_sequence_length) {
+ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, const std::string& neg_prompt, bool do_classifier_free_guidance, int max_sequence_length, const ov::AnyMap& tokenization_params) {
     OPENVINO_ASSERT(m_request, "T5 encoder model must be compiled first. Cannot infer non-compiled model");
 
     const int32_t pad_token_id = m_tokenizer.get_pad_token_id();
+    auto perform_tokenization = [&](const std::string& prompt,
+                                ov::Tensor input_ids,
+                                std::optional<ov::Tensor> prompt_attention_mask = std::nullopt) {
+        auto m_tokenizer_output = m_tokenizer.encode(prompt, tokenization_params);
+        ov::Tensor input_ids_token = m_tokenizer_output.input_ids;
+        ov::Tensor prompt_attention_mask_token = m_tokenizer_output.attention_mask;
 
-    auto perform_tokenization = [&](const std::string& prompt, ov::Tensor input_ids) {
-        ov::Tensor input_ids_token = m_tokenizer.encode(prompt).input_ids;
         size_t min_length = std::min(input_ids.get_size(), input_ids_token.get_size());
 
         if (input_ids.get_element_type() == ov::element::i32) {
             std::fill_n(input_ids.data<int32_t>(), input_ids.get_size(), pad_token_id);
             std::copy_n(input_ids_token.data<int64_t>(), min_length, input_ids.data<int32_t>());
+
+            if (prompt_attention_mask.has_value()) {
+                ov::Tensor& mask = prompt_attention_mask.value();
+                size_t min_mask_len = std::min(mask.get_size(), prompt_attention_mask_token.get_size());
+                std::fill_n(mask.data<int32_t>(), mask.get_size(), 0);
+                std::copy_n(prompt_attention_mask_token.data<int64_t>(), min_mask_len, mask.data<int32_t>());
+            }
         } else {
             std::fill_n(input_ids.data<int64_t>(), input_ids.get_size(), pad_token_id);
             std::copy_n(input_ids_token.data<int64_t>(), min_length, input_ids.data<int64_t>());
+
+            if (prompt_attention_mask.has_value()) {
+                ov::Tensor& mask = prompt_attention_mask.value();
+                size_t min_mask_len = std::min(mask.get_size(), prompt_attention_mask_token.get_size());
+                std::fill_n(mask.data<int64_t>(), mask.get_size(), 0);
+                std::copy_n(prompt_attention_mask_token.data<int64_t>(), min_mask_len, mask.data<int64_t>());
+            }
         }
     };
 
@@ -103,6 +121,8 @@ ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, const std::strin
 
     // reshape in case of dynamic model
     ov::Shape input_ids_shape = input_ids.get_shape();
+    m_prompt_attention_mask = ov::Tensor(input_ids.get_element_type(), input_ids_shape);
+
 
     OPENVINO_ASSERT(input_ids_shape[1] == 0 || max_sequence_length == input_ids_shape[1],
         "In case of T5EncoderModel was reshaped before, reshape's max_sequence_length ", input_ids_shape[1], " must be equal to ",
@@ -111,12 +131,15 @@ ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, const std::strin
     if (input_ids_shape[0] == 0 || input_ids_shape[1] == 0) {
         size_t batch_size = do_classifier_free_guidance ? 2 : 1;
         input_ids.set_shape({batch_size, static_cast<size_t>(max_sequence_length)});
+        m_prompt_attention_mask.set_shape({batch_size, static_cast<size_t>(max_sequence_length)});
     }
 
     size_t current_batch_idx = 0;
     if (do_classifier_free_guidance) {
         perform_tokenization(neg_prompt,
                              ov::Tensor(input_ids, {current_batch_idx    , 0},
+                                                   {current_batch_idx + 1, input_ids.get_shape()[1]}),
+                             ov::Tensor(m_prompt_attention_mask, {current_batch_idx    , 0},
                                                    {current_batch_idx + 1, input_ids.get_shape()[1]}));
         ++current_batch_idx;
     } else {
@@ -126,6 +149,8 @@ ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, const std::strin
     // perform_tokenization(pos_prompt, input_ids);
     perform_tokenization(pos_prompt,
                          ov::Tensor(input_ids, {current_batch_idx    , 0},
+                                               {current_batch_idx + 1, input_ids.get_shape()[1]}),
+                         ov::Tensor(m_prompt_attention_mask, {current_batch_idx    , 0},
                                                {current_batch_idx + 1, input_ids.get_shape()[1]}));
 
     // text embeddings
@@ -136,6 +161,12 @@ ov::Tensor T5EncoderModel::infer(const std::string& pos_prompt, const std::strin
 
 ov::Tensor T5EncoderModel::get_output_tensor(const size_t idx) {
     return m_request.get_output_tensor(idx);
+}
+
+ov::Tensor T5EncoderModel::get_prompt_attention_mask() const {
+    OPENVINO_ASSERT(m_prompt_attention_mask,
+                    "Prompt attention mask must be initialized before use.  You must call infer.");
+    return m_prompt_attention_mask;
 }
 
 } // namespace genai

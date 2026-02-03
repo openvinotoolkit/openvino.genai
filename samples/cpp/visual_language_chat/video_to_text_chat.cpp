@@ -68,8 +68,9 @@ std::vector<ov::Tensor> load_videos(const std::filesystem::path& input_path) {
     return {load_video(input_path)};
 }
 
-bool print_subword(std::string&& subword) {
-    return !(std::cout << subword << std::flush);
+ov::genai::StreamingStatus print_subword(std::string&& subword) {
+    std::cout << subword << std::flush;
+    return ov::genai::StreamingStatus::RUNNING;
 }
 
 int main(int argc, char* argv[]) try {
@@ -105,6 +106,7 @@ int main(int argc, char* argv[]) try {
     std::cout << "\n----------\n"
         "question:\n";
     while (std::getline(std::cin, prompt)) {
+        // New images and videos can be passed at each turn
         pipe.generate(prompt,
                       ov::genai::generation_config(generation_config),
                       ov::genai::streamer(print_subword));

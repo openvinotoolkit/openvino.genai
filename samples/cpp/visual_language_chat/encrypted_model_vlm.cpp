@@ -63,8 +63,9 @@ auto get_config_for_cache_encryption() {
     return config;
 }
 
-bool print_subword(std::string&& subword) {
-    return !(std::cout << subword << std::flush);
+ov::genai::StreamingStatus print_subword(std::string&& subword) {
+    std::cout << subword << std::flush;
+    return ov::genai::StreamingStatus::RUNNING;
 }
 
 int main(int argc, char* argv[]) try {

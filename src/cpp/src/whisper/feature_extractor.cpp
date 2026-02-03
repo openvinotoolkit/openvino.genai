@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #ifdef _WIN32
@@ -360,6 +360,7 @@ WhisperFeatures mel_spectrogram_convert_audio(const std::vector<float>& raw_spee
     // https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/SpectralOps.cpp#L936
     // Calculate number of frames + remove the last frame
     features.n_frames = (padded_raw_speech.size() - n_fft) / hop_length;
+    features.n_active_frames = (raw_speech.size()) / hop_length;
     features.data.resize(features.feature_size * features.n_frames);
 
     {

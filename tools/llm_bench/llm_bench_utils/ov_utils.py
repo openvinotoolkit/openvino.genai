@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2025 Intel Corporation
+# Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 from pathlib import Path
 from transformers import AutoConfig, AutoProcessor, AutoTokenizer
@@ -22,6 +22,7 @@ from llm_bench_utils.config_class import (
 from transformers import pipeline
 import queue
 from transformers.generation.streamers import BaseStreamer
+from openvino_genai import StreamingStatus
 
 
 def build_ov_tokenizer(hf_tokenizer):
@@ -268,11 +269,11 @@ def create_genai_text_gen_model(model_path, device, ov_config, memory_data_colle
             self.generated_tokens = []
             self.start_time = time.perf_counter()
 
-        def put(self, token_id):
+        def write(self, token_id) -> openvino_genai.StreamingStatus:
             self.token_generation_time.append(time.perf_counter() - self.start_time)
             self.generated_tokens.append(token_id)
             self.start_time = time.perf_counter()
-            return False
+            return openvino_genai.StreamingStatus.RUNNING
 
         def reset(self):
             self.token_generation_time = []
@@ -666,9 +667,14 @@ def create_genai_text_embed_model(model_path, device, memory_data_collector, **k
 
     pooling_type = kwargs.get("emb_pooling_type")
     max_length = kwargs.get("emb_max_length")
-    padding_side = kwargs.get("embedding_padding_side")
+    padding_side = kwargs.get("emb_padding_side")
+    ov_config = kwargs["config"]
 
     config = openvino_genai.TextEmbeddingPipeline.Config()
+    config.normalize = kwargs.get("emb_normalize", False)
+    config.pad_to_max_length = kwargs.get("emb_pad_to_max_length")
+    config.batch_size = kwargs.get("batch_size", config.batch_size)
+
     if pooling_type is not None:
         if pooling_type == "mean":
             config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.MEAN
@@ -676,15 +682,12 @@ def create_genai_text_embed_model(model_path, device, memory_data_collector, **k
             config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.LAST_TOKEN
         else:
             config.pooling_type = openvino_genai.TextEmbeddingPipeline.PoolingType.CLS
+
     if max_length is not None:
         config.max_length = max_length
-        config.pad_to_max_length = True
-    config.normalize = kwargs.get("emb_normalize", False)
+
     if padding_side:
         config.padding_side = padding_side
-
-    config.batch_size = kwargs.get("batch_size", config.batch_size)
-    ov_config = kwargs['config']
 
     if kwargs.get("mem_consumption"):
         memory_data_collector.start()
@@ -1005,7 +1008,7 @@ def get_genai_chunk_streamer():
             """
             self.text_queue.put(word)
 
-        def put(self, token_id: int) -> bool:
+        def write(self, token_id: int) -> StreamingStatus:
             """
             Processes a token and manages the decoding buffer. Adds decoded text to the queue.
 
@@ -1038,11 +1041,11 @@ def get_genai_chunk_streamer():
                 if self.get_stop_flag():
                     # When generation is stopped from streamer then end is not called, need to call it here manually.
                     self.end()
-                    return True  # True means stop  generation
+                    return StreamingStatus.STOP  # stop generation
                 else:
-                    return False  # False means continue generation
+                    return StreamingStatus.RUNNING  # continue generation
             else:
-                return False
+                return StreamingStatus.RUNNING
 
         def end(self):
             """
@@ -1251,3 +1254,67 @@ def create_text_reranker_model(model_path: Path, device: str, memory_monitor: Me
     from_pretrained_time = end - start
     log.info(f'From pretrained time: {from_pretrained_time:.2f}s')
     return ov_model, tokenizer, from_pretrained_time, bench_hook, False
+
+
+def create_genai_video_gen_model(model_path, device, ov_config, memory_data_collector, **kwargs):
+    import openvino_genai
+
+    orig_tokenizer = AutoTokenizer.from_pretrained(model_path, subfolder="tokenizer")
+
+    if kwargs.get("mem_consumption"):
+        memory_data_collector.start()
+    start = time.perf_counter()
+
+    if kwargs.get("static_reshape", False):
+        video_gen_pipe = openvino_genai.Text2VideoPipeline(model_path)
+        height = kwargs.get("height", 512)
+        width = kwargs.get("width", 512)
+        num_frames = kwargs.get("num_frames", 25)
+        guidance_scale = kwargs.get("guidance_scale", 3.0)
+        log.info(f"Video Pipeline reshape(height={height}, width={width}, num_frames={num_frames})")
+        video_gen_pipe.reshape(1, num_frames, height, width, guidance_scale)
+        video_gen_pipe.compile(device.upper(), **ov_config)
+    else:
+        video_gen_pipe = openvino_genai.Text2VideoPipeline(model_path, device.upper(), **ov_config)
+
+    end = time.perf_counter()
+    if kwargs.get("mem_consumption"):
+        memory_data_collector.stop_and_collect_data("compilation_phase")
+        memory_data_collector.log_data(compilation_phase=True)
+    log.info(f"Pipeline initialization time: {end - start:.2f}s")
+    return video_gen_pipe, orig_tokenizer, end - start, None, True
+
+
+def create_video_gen_model(model_path, device, memory_data_collector, **kwargs):
+    model_class = kwargs["use_case"].ov_cls
+
+    model_path = Path(model_path)
+    ov_config = kwargs["config"]
+    if not Path(model_path).exists():
+        raise RuntimeError(f"==Failure ==: model path:{model_path} does not exist")
+    else:
+        if kwargs.get("genai", True) and is_genai_available(log_msg=True):
+            log.info("Selected OpenVINO GenAI for benchmarking")
+            return create_genai_video_gen_model(model_path, device, ov_config, memory_data_collector, **kwargs)
+
+        if kwargs.get("mem_consumption"):
+            memory_data_collector.start()
+        log.info("Selected Optimum Intel for benchmarking")
+        start = time.perf_counter()
+        if kwargs.get("static_reshape", False):
+            ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config, compile=False)
+            height = kwargs.get("height", 512)
+            width = kwargs.get("width", 512)
+            num_frames = kwargs.get("num_frames", 25)
+            log.info(f"Video Pipeline reshape(batch_size=1, height={height}, width={width}, num_frames={num_frames})")
+            ov_model.reshape(batch_size=1, height=height, width=width, num_frames=num_frames, num_images_per_prompt=1)
+            ov_model.compile()
+        else:
+            ov_model = model_class.from_pretrained(model_path, device=device, ov_config=ov_config)
+        end = time.perf_counter()
+        if kwargs.get("mem_consumption"):
+            memory_data_collector.stop_and_collect_data("compilation_phase")
+            memory_data_collector.log_data(compilation_phase=True)
+    from_pretrained_time = end - start
+    log.info(f"From pretrained time: {from_pretrained_time:.2f}s")
+    return ov_model, ov_model.tokenizer, from_pretrained_time, None, False

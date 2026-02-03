@@ -14,3 +14,11 @@ sentencepiece
 jinja2>=3.1.0
 scipy
 opencv-python
+imageio[pyav]
+imageio-ffmpeg
+torchaudio
+torchvision
+soundfile
+librosa
+vocos
+vector_quantize_pytorch
