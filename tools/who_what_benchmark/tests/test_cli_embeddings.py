@@ -107,7 +107,7 @@ def test_embeddings_basic(model_id, model_type, tmp_path):
     run_wwb(
         [
             "--target-data",
-            tmp_path / "target.csv",
+            outputs_path / "target.csv",
             "--num-samples",
             "1",
             "--gt-data",
@@ -221,7 +221,7 @@ def test_embeddings_with_batch(model_id, model_type, batch_size, tmp_path):
     run_wwb(
         [
             "--target-data",
-            tmp_path / "target.csv",
+            outputs_path / "target.csv",
             "--num-samples",
             "1",
             "--gt-data",
