@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2025 Intel Corporation
+# Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 
@@ -8,10 +8,8 @@ import numpy as np
 from PIL import Image
 import logging as log
 from transformers.image_utils import load_image
-from .model_utils import get_param_from_file
-from .model_utils import resolve_media_file_path
-from .parse_json_data import parse_text_json_data
-from .parse_json_data import parse_vlm_json_data
+from .model_utils import get_param_from_file, resolve_media_file_path
+from .parse_json_data import parse_text_json_data, parse_vlm_json_data, parse_image_json_data, parse_video_json_data
 from pathlib import Path
 import openvino as ov
 import math
@@ -127,7 +125,7 @@ def extract_prompt_data(inputs, required_frames, genai_flag):
     return prompts, images, videos
 
 
-def get_image_text_prompt(args):
+def get_vlm_prompt(args):
     vlm_file_list = []
     output_data_list, is_json_data = get_param_from_file(args, ["video", "media", "prompt"])
     if is_json_data:
@@ -142,3 +140,43 @@ def get_image_text_prompt(args):
     else:
         vlm_file_list.append(output_data_list)
     return vlm_file_list
+
+
+def get_image_prompt(args):
+    input_image_list = []
+
+    input_key = ["prompt"]
+    if args.get("task") == args["use_case"].TASK["inpainting"]["name"] or (
+        (args.get("media") or args.get("images")) and args.get("mask_image")
+    ):
+        input_key = ["media", "mask_image", "prompt"]
+    elif args.get("task") == args["use_case"].TASK["img2img"]["name"] or args.get("media") or args.get("images"):
+        input_key = ["media", "prompt"]
+
+    output_data_list, is_json_data = get_param_from_file(args, input_key)
+    if is_json_data is True:
+        image_param_list = parse_image_json_data(output_data_list)
+        if len(image_param_list) > 0:
+            for image_data in image_param_list:
+                if args["prompt_file"] is not None and len(args["prompt_file"]) > 0:
+                    image_data["media"] = resolve_media_file_path(image_data.get("media"), args["prompt_file"][0])
+                    image_data["mask_image"] = resolve_media_file_path(
+                        image_data.get("mask_image"), args["prompt_file"][0]
+                    )
+                input_image_list.append(image_data)
+    else:
+        input_image_list.append(output_data_list[0])
+    return input_image_list
+
+
+def get_video_gen_prompt(args):
+    input_list = []
+    output_data_list, is_json_data = get_param_from_file(args, ["prompt", "negative_prompt"])
+    if is_json_data is True:
+        media_param_list = parse_video_json_data(output_data_list)
+        if len(media_param_list) > 0:
+            for text in media_param_list:
+                input_list.append(text)
+    else:
+        input_list.append(output_data_list[0])
+    return input_list

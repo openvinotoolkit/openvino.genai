@@ -1,7 +1,15 @@
-# Copyright (C) 2024-2025 Intel Corporation
+# Copyright (C) 2024-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-from openvino_genai import GenerationConfig, Tokenizer, LLMPipeline, StreamerBase, ChatHistory, TokenizedInputs
+from openvino_genai import (
+    GenerationConfig,
+    Tokenizer,
+    LLMPipeline,
+    StreamerBase,
+    ChatHistory,
+    TokenizedInputs,
+    StreamingStatus,
+)
 from pathlib import Path
 
 import openvino as ov
@@ -167,6 +175,7 @@ def test_generation_compare_with_stateful_chat_history(
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("npu_config", PIPELINE_CONFIGS, indirect=True)
 @pytest.mark.parametrize("with_weights", BLOB_WITH_WEIGHTS)
+@pytest.mark.xfail(reason="180345: No available devices. Reproduced on CI only.")
 def test_pipeline_cache_dir(
     llm_model: OVConvertedModelSchema, 
     ov_model: LLMPipeline, 
@@ -355,10 +364,11 @@ def test_terminate_by_sampler(
     class TestStreamer(StreamerBase):
         def __init__(self):
             StreamerBase.__init__(self)
-        def put(self, token_id):
+
+        def write(self, token_id) -> StreamingStatus:
             nonlocal current_iter
             current_iter += 1
-            return current_iter == num_iters
+            return StreamingStatus.RUNNING if current_iter != num_iters else StreamingStatus.STOP
         def end(self):
             pass
 

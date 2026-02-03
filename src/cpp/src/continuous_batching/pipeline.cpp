@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <cstdint>
@@ -10,10 +10,11 @@
 #include "openvino/genai/generation_handle.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
-#include "speculative_decoding/speculative_decoding_impl.hpp"
-#include "speculative_decoding/speculative_decoding_eagle3_impl.hpp"
 #include "prompt_lookup/prompt_lookup_impl.hpp"
 #include "continuous_batching/timer.hpp"
+#include "speculative_decoding/continuous_batching/eagle3_strategy.hpp"
+#include "speculative_decoding/continuous_batching/fast_draft_strategy.hpp"
+#include "speculative_decoding/eagle3_model_transforms.hpp"
 #include "utils.hpp"
 #include "visual_language/inputs_embedder.hpp"
 #include "json_utils.hpp"
@@ -21,48 +22,6 @@
 using namespace ov::genai;
 
 namespace {
-struct Eagle3RTInfo {
-    bool eagle3_mode = false;
-    std::vector<int32_t> hidden_layers_list;
-    std::filesystem::path dt_mapping_table;
-};
-
-Eagle3RTInfo
-extract_eagle3_mode_from_config(ov::AnyMap& config, const std::filesystem::path& models_path) {
-    Eagle3RTInfo eagle_rt_info;
-    if (config.find("eagle3_mode") != config.end()) {
-        eagle_rt_info.eagle3_mode = config.at("eagle3_mode").as<bool>();
-        config.erase("eagle3_mode");
-        auto it = config.find("hidden_layers_list");
-        if (it != config.end()) {
-            try {
-                eagle_rt_info.hidden_layers_list = it->second.as<std::vector<int32_t>>();
-                config.erase("hidden_layers_list");
-            } catch (const std::exception&) {
-                OPENVINO_THROW("please check the hidden layers input");
-            }
-        } else {
-            // compute the layers from number of hidden layers
-            auto config_file_path = models_path / "config.json";
-            OPENVINO_ASSERT(std::filesystem::exists(config_file_path), "Cannot deduce layers for hidden layer extraction because the file is missing: ", config_file_path);
-            std::ifstream file(config_file_path);
-
-            nlohmann::json data = nlohmann::json::parse(file);
-            using ov::genai::utils::read_json_param;
-            int num_decoder_layers = 0;
-            read_json_param(data, "num_hidden_layers", num_decoder_layers);
-            OPENVINO_ASSERT(num_decoder_layers > 3, "num_decoder_layers is too small to deduce hidden layers for extraction");
-            // The following default hidden layer selection corresponds to the EAGLE reference implementation:
-            // https://github.com/SafeAILab/EAGLE/blob/0ea94696/eagle/model/modeling_llama_kv.py#L1138
-            // These layers (2, num_decoder_layers / 2, num_decoder_layers - 3) are chosen to capture features from
-            // early, middle, and late stages of the decoder, as recommended by the EAGLE authors.
-            // If you wish to use different layers, provide the "hidden_layers_list" parameter in the config.
-            eagle_rt_info.hidden_layers_list = { 2, num_decoder_layers / 2, num_decoder_layers - 3 };
-        }
-        OPENVINO_ASSERT(eagle_rt_info.hidden_layers_list.size() == 3, "Eagle3 is expected to provide exactly three layers for extraction");
-    }
-    return eagle_rt_info;
-}
 
 bool
 extract_prompt_lookup_from_config(ov::AnyMap& config) {
@@ -90,7 +49,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline( const std::filesystem::p
     auto properties_without_draft_model = properties;
     auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
-    auto eagle_rt_info = extract_eagle3_mode_from_config(draft_model_desr.properties, models_path);
+    auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_desr.properties, models_path);
 
     auto model = utils::read_model(models_path, properties);
     auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
@@ -137,7 +96,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto properties_without_draft_model = properties;
     auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
-    auto eagle_rt_info = extract_eagle3_mode_from_config(draft_model_desr.properties, models_path);
+    auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_desr.properties, models_path);
     auto model = utils::read_model(models_path, properties_without_draft_model);
     auto [properties_without_draft_model_without_gguf, enable_save_ov_model] = utils::extract_gguf_properties(properties_without_draft_model);
     properties_without_draft_model_without_gguf[ov::cache_model_path.name()] = models_path;
@@ -187,7 +146,7 @@ ContinuousBatchingPipeline::ContinuousBatchingPipeline(
     auto properties_without_draft_model = properties;
     auto draft_model_desr = utils::extract_draft_model_from_config(properties_without_draft_model);
     auto is_prompt_lookup_enabled = extract_prompt_lookup_from_config(properties_without_draft_model);
-    auto eagle_rt_info = extract_eagle3_mode_from_config(draft_model_desr.properties, std::filesystem::path(model_str));
+    auto eagle_rt_info = utils::eagle3::extract_eagle3_info_from_config(draft_model_desr.properties, std::filesystem::path(model_str));
     auto model = utils::singleton_core().read_model(model_str, weights_tensor);
 
     auto rt_info = model->get_rt_info();
@@ -336,8 +295,7 @@ std::vector<GenerationResult> ContinuousBatchingPipeline::generate(const std::ve
 
 std::vector<GenerationResult> ContinuousBatchingPipeline::generate(
     const std::vector<ChatHistory>& histories,
-    const std::vector<ov::genai::GenerationConfig>&
-    sampling_params,
+    const std::vector<ov::genai::GenerationConfig>& sampling_params,
     const StreamerVariant& streamer
 ) {
     auto decoded_results = m_impl->generate(histories, sampling_params, streamer);
@@ -364,6 +322,25 @@ std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
     const std::vector<GenerationConfig>& sampling_params,
     const StreamerVariant& streamer) {
     return m_impl->generate(prompts, images, videos, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
+    const std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    return m_impl->generate(histories, images, sampling_params, streamer);
+}
+
+std::vector<VLMDecodedResults> ContinuousBatchingPipeline::generate(
+    const std::vector<ChatHistory>& histories,
+    const std::vector<std::vector<ov::Tensor>>& images,
+    const std::vector<std::vector<ov::Tensor>>& videos,
+    const std::vector<GenerationConfig>& sampling_params,
+    const StreamerVariant& streamer
+) {
+    return m_impl->generate(histories, images, videos, sampling_params, streamer);
 }
 
 void ContinuousBatchingPipeline::start_chat(const std::string& system_message) {

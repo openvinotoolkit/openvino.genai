@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2025 Intel Corporation
+# Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 def create_base_prompt(json_data, key='prompt'):
@@ -24,10 +24,10 @@ def parse_vlm_json_data(json_data_list):
     text_param_list = []
     for json_data in json_data_list:
         prompt_data = create_base_prompt(json_data)
-        if "media" in json_data:
-            prompt_data["media"] = json_data["media"]
-        if "video" in json_data:
-            prompt_data["video"] = json_data["video"]
+        for param in ["media", "video"]:
+            if param in json_data:
+                prompt_data[param] = json_data[param]
+
         text_param_list.append(prompt_data)
     return text_param_list
 
@@ -36,20 +36,35 @@ def parse_image_json_data(json_data_list):
     image_param_list = []
     for json_data in json_data_list:
         image_param = create_base_prompt(json_data)
-        if 'width' in json_data:
-            image_param['width'] = int(json_data['width'])
-        if 'height' in json_data:
-            image_param['height'] = int(json_data['height'])
-        if 'steps' in json_data:
-            image_param['steps'] = int(json_data['steps'])
+        for param in ["width", "height", "steps"]:
+            if param in json_data:
+                image_param[param] = int(json_data[param])
+
+        for param in ["media", "mask_image"]:
+            if param in json_data:
+                image_param[param] = json_data[param]
+
         if 'guidance_scale' in json_data:
             image_param['guidance_scale'] = float(json_data['guidance_scale'])
-        if 'media' in json_data:
-            image_param['media'] = json_data['media']
-        if 'mask_image' in json_data:
-            image_param['mask_image'] = json_data['mask_image']
+
         image_param_list.append(image_param)
     return image_param_list
+
+
+def parse_video_json_data(json_data_list):
+    video_param_list = []
+    for json_data in json_data_list:
+        video_param = create_base_prompt(json_data)
+        for param in ["width", "height", "num_steps", "num_frames", "frame_rate"]:
+            if param in json_data:
+                video_param[param] = int(json_data[param])
+
+        for param in ["guidance_scale", "guidance_rescale"]:
+            if param in json_data:
+                video_param[param] = float(json_data[param])
+
+        video_param_list.append(video_param)
+    return video_param_list
 
 
 def parse_speech_json_data(json_data_list):

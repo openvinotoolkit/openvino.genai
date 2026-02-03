@@ -10,7 +10,7 @@ import sys
 from transformers import AutoTokenizer
 from optimum.intel.openvino import OVModelForCausalLM, OVWeightQuantizationConfig
 
-from test_cli_image import run_wwb
+from conftest import run_wwb
 
 
 logging.basicConfig(level=logging.INFO)
@@ -164,7 +164,8 @@ hf_model_scope = [
 ]
 if sys.platform != 'darwin' and sys.platform != 'win32':
     hf_model_scope += [
-        (gptq_model_id),
+        # model load failed in optimum, ticket: 178940
+        # (gptq_model_id),
         (awq_model_id),
     ]
 

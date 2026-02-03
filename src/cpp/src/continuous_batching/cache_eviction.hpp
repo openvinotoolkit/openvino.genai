@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -7,6 +7,7 @@
 #include <vector>
 #include <cstdlib>
 #include <cmath>
+#include <deque>
 
 #include "openvino/openvino.hpp"
 #include "continuous_batching/attention_output.hpp"
@@ -14,6 +15,7 @@
 #include "continuous_batching/kvcrush.hpp"
 
 namespace ov::genai {
+
 
 /**
  * @brief Keeps track of the accumulated token scores across model inferences and their lifetime.
@@ -39,8 +41,10 @@ public:
      * where `S` is equal to `snapkv_window_size`. In contrast, if this is set to 0, then the initial counter state would be
      * `| L | L - 1 | ... | 2 | 1 |`,
      * where L is the prompt size of the sequence in tokens.
+     * @param adaptive_rkv_window_size AggregationMode::ADAPTIVE_RKV only - Number of last token scores that will be aggregated (using mean)
+     * for purposes of determining blocks in the evictable area that comprise the most attention mass.
      */
-    explicit EvictionScoreManager(size_t block_size, size_t num_decoder_layers, size_t max_pool_window_size, AggregationMode aggregation_mode, size_t ignore_first_n_blocks = 0, size_t snapkv_window_size = 0) : m_block_size(block_size), m_num_decoder_layers(num_decoder_layers), m_scores(num_decoder_layers), m_cache_counter(num_decoder_layers), m_max_pool_window_size(max_pool_window_size), m_aggregation_mode(aggregation_mode), m_ignore_first_n_blocks(ignore_first_n_blocks), m_snapkv_window_size(snapkv_window_size), m_num_registered_snapkv_aggregated_scores(0) {}
+    explicit EvictionScoreManager(size_t block_size, size_t num_decoder_layers, size_t max_pool_window_size, AggregationMode aggregation_mode, size_t ignore_first_n_blocks = 0, size_t snapkv_window_size = 0, size_t adaptive_rkv_window_size = 8) : m_block_size(block_size), m_num_decoder_layers(num_decoder_layers), m_scores(num_decoder_layers), m_cache_counter(num_decoder_layers), m_max_pool_window_size(max_pool_window_size), m_aggregation_mode(aggregation_mode), m_ignore_first_n_blocks(ignore_first_n_blocks), m_snapkv_window_size(snapkv_window_size), m_num_registered_snapkv_aggregated_scores(0), m_adaptive_rkv_window_size(adaptive_rkv_window_size), m_previous_scores_queues(num_decoder_layers) {}
 
     /**
      * Registers new token scores and aggregates them internally as necessary. The token scores provided may be corresponding not to all
@@ -100,6 +104,22 @@ private:
     std::size_t m_ignore_first_n_blocks;
     std::size_t m_snapkv_window_size;
     std::size_t m_num_registered_snapkv_aggregated_scores;
+    size_t m_adaptive_rkv_window_size = 8;
+
+    struct EvictionScoreRecord {
+        EvictionScoreRecord(const std::vector<double>& score_, const std::set<size_t>& skips_) : score(score_), skips(skips_) {};
+        std::vector<double> score;
+        std::set<size_t> skips;
+    };
+
+    std::vector<std::deque<EvictionScoreRecord>> m_previous_scores_queues;
+
+    void _initialize_score_with_skips(std::vector<double>& dst, const std::vector<double>& src, const std::set<size_t> skipped_logical_block_ids);
+    void _accumulate_initial_scores(const std::vector<double>& max_pooled_hh_scores, size_t decoder_layer_idx, size_t num_snapkv_scores, const std::set<size_t>& skipped_logical_block_ids);
+
+    void _accumulate_layer_scores_to(size_t decoder_layer_idx, const std::vector<double>& src, const std::set<size_t>& skipped_logical_block_ids, std::vector<double>& dst);
+    void _accumulate_with_existing_scores(const std::vector<double>& max_pooled_hh_scores, size_t decoder_layer_idx, size_t num_snapkv_scores, const std::set<size_t>& skipped_logical_block_ids);
+    void _adjust_norm_sum_counters(size_t decoder_layer_idx, size_t old_size_in_tokens, size_t new_size_in_tokens);
 };
 
 class SnapKVScoreAggregationCalculator {
@@ -201,6 +221,8 @@ public:
      */
     std::vector<std::set<std::size_t>> evict_logical_blocks();
 
+    void register_block_diversity(const BlockDiversityForEachDecoderLayer& token_similarity_for_all_decoder_layers);
+
 
 private:
     std::size_t get_num_blocks(std::size_t num_tokens) const;
@@ -221,6 +243,8 @@ private:
     std::size_t m_num_evicted_tokens = 0;
     std::size_t m_num_decoder_layers;
     EvictionScoreManager m_score_manager;
+
+    std::vector<std::vector<double>> m_last_block_diversity;
 };
 
 
@@ -308,6 +332,56 @@ private:
     size_t m_head_size;
     std::vector<std::vector<float>> m_rope_sin_lut;  // dimensions: [ max_context_length, head_size / 2]
     std::vector<std::vector<float>> m_rope_cos_lut;  // dimensions: [ max_context_length, head_size / 2]
+};
+
+
+class AdaptiveRKVBlockCalculator {
+public:
+
+    AdaptiveRKVBlockCalculator(double attention_mass, size_t block_size) : m_attention_mass(attention_mass), m_block_size(block_size) {}
+
+    /**
+     * Computes the set of blocks that will NOT be retained as part of preserving the predefined attention mass and are therefore
+     * candidates for eviction based on diversity. Also returns the number of blocks kept for attention mass preservation.
+     * @param max_num_blocks_kept Maximum number of blocks to keep for purposes of preserving the attention mass.
+     * @param evictable_area_token_scores Vector of per-token attention scores from the currently evictable blocks.
+     * @param deltas_only If true, the sines and cosines fields in each returned BlockRotationData will be left empty.
+     * @return The set of block indices that will NOT be retained for preserving attention mass (indexed from the beginning of the block area corresponding
+     * to evictable_area_token_scores) and the number of blocks that WERE kept for preserving attention mass.
+     */
+    std::pair<std::set<size_t>, size_t> get_diversity_block_set(size_t max_num_blocks_kept, const std::vector<double>& evictable_area_token_scores);
+
+
+    /**
+     * Filters and reduces the kernel-provided diversity values so that the resulting values provide correct diversity
+     * over the non-retained-by-attention-mass block set. The kernel-provided diversity is given for the entire eviction area
+     * as an array with shape [eviction_size / block_size, eviction_size] and requires masked reduction on the diversity block set
+     * along the last dimension, since the kernel currently does not use the information about the selected/non-selected blocks to do
+     * this masked reduction on its own.
+     *
+     * @param unfiltered_diversity Diversity values as output by the kernel (model), corresponding to shape [eviction_size / block_size, eviction_size]
+     * @param eviction_size The size, in tokens, of the currently evictable area of the sequence KV cache.
+     * @param diversity_blocks The set of block indices that correspond to the diversity block set in this eviction area, i.e. the block indices along
+     * which the masked reduction will occur.
+     * @return The vector of size [eviction_size / block_size] with final per-block diversity values for each block of the eviction area.
+     */
+    std::vector<double> get_filtered_block_diversity(const std::vector<double>& unfiltered_diversity, size_t eviction_size, const std::set<size_t>& diversity_blocks);
+
+
+    /**
+     * Computes the set of blocks that will be retained as most diverse blocks in addition to those that were already selected to be retained
+     * to preserve the predefined attention mass.
+     * @param num_blocks_left_to_fill Number of blocks remaining to preserve after the attention mass-retaining blocks have been selected.
+     * @param diversity_set Indices of blocks in the eviction area (indexed from the eviction area start) that are candidates for diversity-based
+     * selection.
+     * @param filtered_block_diversity Per-block diversity values for each block in eviction area.
+     * @return The set of block indices that should be retained as most diverse in addition to the attention-mass-preserving blocks.
+     */
+    std::set<size_t> get_most_diverse_blocks(size_t num_blocks_left_to_fill, const std::set<size_t>& diversity_set, const std::vector<double>& filtered_block_diversity);
+
+private:
+    double m_attention_mass;
+    size_t m_block_size;
 };
 
 } // namespace ov::genai
