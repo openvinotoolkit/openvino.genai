@@ -227,3 +227,123 @@ def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 
     assert res_string_input_1 == res_string_input_2
+
+
+@pytest.mark.parametrize("model_gguf", [GGUF_MODEL_LIST[0]], indirect=True)
+@pytest.mark.parametrize(
+    "config_mode,save_file,expected_log",
+    [
+        ("ORIGINAL", True, "quantization_mode=ORIGINAL, save_file=YES"),
+        ("ORIGINAL", False, "quantization_mode=ORIGINAL, save_file=NO"),
+        ("ORIGINAL", None, "quantization_mode=ORIGINAL, save_file=YES"),
+        ("OPTIMIZED", True, "quantization_mode=OPTIMIZED, save_file=YES"),
+        ("OPTIMIZED", False, "quantization_mode=OPTIMIZED, save_file=NO"),
+        ("OPTIMIZED", None, "quantization_mode=OPTIMIZED, save_file=YES"),
+        (None, True, "quantization_mode=ORIGINAL, save_file=YES"),
+        (None, False, "quantization_mode=ORIGINAL, save_file=NO"),
+        (None, None, "quantization_mode=ORIGINAL, save_file=NO"),
+        ("optimized", True, "quantization_mode=OPTIMIZED, save_file=YES"),
+    ],
+    ids=[
+        "ORIGINAL_save",
+        "ORIGINAL_no_save",
+        "ORIGINAL_default_save",
+        "OPTIMIZED_save",
+        "OPTIMIZED_no_save",
+        "OPTIMIZED_default_save",
+        "default_ORIGINAL_save",
+        "default_ORIGINAL_no_save",
+        "all_defaults",
+        "lowercase_test",
+    ]
+)
+def test_ov_model_quantize_mode_log_verification(
+    model_gguf: ModelInfo, 
+    config_mode: str,
+    save_file: bool,
+    expected_log: str,
+    capfd,
+    monkeypatch
+):
+    """Configuration Validation Test: Verifies config_mode × save_file matrix via log output
+    
+    Objectives:
+    1. Integration: String-based config (pipe_config dict, following OV PerformanceMode) → C++ extract_gguf_properties → correct processing
+    2. Independence: save_ov_model_config ⊥ enable_save_ov_model (decoupled control)
+       - "OPTIMIZED_no_save": OPTIMIZED processing WITHOUT file saving for model encryption
+    3. Default Behavior (critical findings from test):
+       - config_mode SET + save_file UNSET → save_file=YES (auto-save when mode specified)
+       - config_mode UNSET + save_file UNSET → save_file=NO (no save by default)
+    4. Case-insensitive: "OPTIMIZED"/"optimized" → same result
+    
+    Test Matrix (10 scenarios):
+    - config_mode ∈ {ORIGINAL, OPTIMIZED, None} × save_file ∈ {True, False, None}
+    - + 1 lowercase test ("optimized")
+    
+    Tools: monkeypatch (OPENVINO_LOG_LEVEL=3) + capfd (capture logs)
+    """
+    if sys.platform == 'darwin':
+        pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
+    
+    gguf_full_path = model_gguf.gguf_full_path
+    monkeypatch.setenv("OPENVINO_LOG_LEVEL", "3")
+    
+    pipe_config = {}
+    if config_mode is not None:
+        pipe_config["save_ov_model_config"] = config_mode
+    if save_file is not None:
+        pipe_config["enable_save_ov_model"] = save_file
+    
+    pipe = ov_genai.LLMPipeline(gguf_full_path, "CPU", pipe_config)
+    del pipe
+    gc.collect()
+    
+    captured = capfd.readouterr()
+    output = captured.out + captured.err
+    
+    assert expected_log in output, \
+        f"Expected log '{expected_log}' not found in output:\n{output}"
+    
+    print(f"✓ Test passed: mode={config_mode}, save_file={save_file}")
+
+
+@pytest.mark.parametrize("model_gguf", [GGUF_MODEL_LIST[0]], indirect=True)
+def test_full_gguf_pipeline_quantize_mode(
+    model_gguf: ModelInfo,
+):
+    """E2E Inference Test: Validates OPTIMIZED maintains output consistency in short generation
+    
+    Verifies that OPTIMIZED mode (larger group-size requantization) produces identical outputs
+    as ORIGINAL in short-text scenario (30 tokens), proving requant functionality works correctly.
+    Note: Single model test is sufficient to validate requant mechanism. Minor differences with
+    other models/prompts or longer outputs are acceptable due to quantization precision trade-offs.
+    """
+    if sys.platform == 'darwin':
+        pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
+    
+    gguf_full_path = model_gguf.gguf_full_path
+    prompt = 'Why is the Sun yellow?'
+    
+    ov_generation_config = ov_genai.GenerationConfig()
+    ov_generation_config.max_new_tokens = 30
+    ov_generation_config.apply_chat_template = False
+    
+    outputs = {}
+    for mode in ["ORIGINAL", "OPTIMIZED"]:
+        pipe_config = {
+            "save_ov_model_config": mode,
+            "enable_save_ov_model": False
+        }
+        
+        pipe = ov_genai.LLMPipeline(gguf_full_path, "CPU", pipe_config)
+        output = pipe.generate(prompt, generation_config=ov_generation_config)
+        outputs[mode] = output
+        del pipe
+        gc.collect()
+        
+        print(f"✓ {mode}: output_length={len(output)}")
+    
+    assert outputs["ORIGINAL"] == outputs["OPTIMIZED"], \
+        f"Outputs must be identical!\nORIGINAL: {outputs['ORIGINAL']}\nOPTIMIZED: {outputs['OPTIMIZED']}"
+    
+    print(f"✓ Inference correctness validated: ORIGINAL == OPTIMIZED")
