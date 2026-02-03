@@ -33,7 +33,7 @@ void VAEDecoderModule::print_static_config() {
 VAEDecoderModule::VAEDecoderModule(const IBaseModuleDesc::PTR& desc, const PipelineDesc::PTR& pipeline_desc)
     : IBaseModule(desc, pipeline_desc) {
     if (!initialize()) {
-    	 GENAI_ERR("Failed to initialize VAEDecoderModule");
+    	 OPENVINO_THROW("Failed to initialize VAEDecoderModule");
     }
 }
 
@@ -46,6 +46,8 @@ bool VAEDecoderModule::initialize() {
         GENAI_ERR("VAEDecoderModule[" + module_desc->name + "]: 'model_path' not found in params");
         return false;
     }
+
+    m_model_type = to_diffusion_model_type(module_desc->model_type);
 
     std::filesystem::path model_path = module_desc->get_full_path(it_path->second);
     std::string device = module_desc->device.empty() ? "CPU" : module_desc->device;
@@ -63,11 +65,11 @@ bool VAEDecoderModule::initialize() {
 
     try {
         if (std::filesystem::exists(model_path / "vae_decoder")) {
-             m_vae = std::make_shared<AutoencoderKL>(model_path / "vae_decoder", device, properties);
+             create_vae_decoder(model_path / "vae_decoder", device, properties);
         } else if (std::filesystem::exists(model_path / "vae")) {
-             m_vae = std::make_shared<AutoencoderKL>(model_path / "vae", device, properties);
+             create_vae_decoder(model_path / "vae", device, properties);
         } else {
-             m_vae = std::make_shared<AutoencoderKL>(model_path, device, properties);
+             create_vae_decoder(model_path, device, properties);
         }
     } catch (const std::exception& e) {
         GENAI_ERR("VAEDecoderModule[" + module_desc->name + "]: Failed to load AutoencoderKL: " + e.what());
@@ -77,10 +79,24 @@ bool VAEDecoderModule::initialize() {
     return true;
 }
 
+void VAEDecoderModule::create_vae_decoder(const std::filesystem::path &model_path,
+                            const std::string &device,
+                            const ov::AnyMap &properties) {
+    if (m_model_type == DiffusionModelType::WAN_2_1) {
+        m_vae = std::make_shared<AutoencoderKLWan>(model_path, device, properties);
+    } else if (m_model_type == DiffusionModelType::ZIMAGE) {
+        m_vae = std::make_shared<AutoencoderKL>(model_path, device, properties);
+    } else {
+        OPENVINO_THROW("VAEDecoderModule[" + module_desc->name + "]: Unsupported model type for VAE decoder");
+    }
+}
+
 void VAEDecoderModule::run() {
     GENAI_INFO("Running module: " + module_desc->name);
 
-    OPENVINO_ASSERT(m_vae, "VAEDecoderModule[VAE_decoder]: VAE model not initialized");
+    OPENVINO_ASSERT(
+        std::visit([](const auto& ptr) { return static_cast<bool>(ptr); }, m_vae),
+        "VAEDecoderModule[VAE_decoder]: VAE model not initialized");
 
     prepare_inputs();
     
@@ -91,14 +107,21 @@ void VAEDecoderModule::run() {
 
     ov::Tensor image;
     auto& latent_data = this->inputs["latents"].data.as<ov::Tensor>();
-    if (latent_data.get_shape().size() == 3u) {
+    if (m_model_type == DiffusionModelType::ZIMAGE) {
+        if (latent_data.get_shape().size() == 3u) {
+            PROFILE(pm, "vae infer");
+            ov::Tensor latent = tensor_utils::unsqueeze(this->inputs["latents"].data.as<ov::Tensor>(), 0);
+            image = std::get<std::shared_ptr<AutoencoderKL>>(m_vae)->decode(latent);
+        } else {
+            PROFILE(pm, "vae infer");
+            image = std::get<std::shared_ptr<AutoencoderKL>>(m_vae)->decode(latent_data);
+        }
+    } else if (m_model_type == DiffusionModelType::WAN_2_1) {
         PROFILE(pm, "vae infer");
-        ov::Tensor latent = tensor_utils::unsqueeze(this->inputs["latents"].data.as<ov::Tensor>(), 0);
-        image = m_vae->decode(latent);
+        image = std::get<std::shared_ptr<AutoencoderKLWan>>(m_vae)->decode(latent_data);
     } else {
-        PROFILE(pm, "vae infer");
-        image = m_vae->decode(this->inputs["latents"].data.as<ov::Tensor>());
-    }
+        OPENVINO_THROW("VAEDecoderModule[" + module_desc->name + "]: Unsupported model type for VAE decoder");
+    }    
 
     this->outputs["image"].data = image;
 }

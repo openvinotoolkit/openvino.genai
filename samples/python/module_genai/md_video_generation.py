@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import sys
 import argparse
 
 # Parse arguments early to fail fast on invalid arguments
@@ -26,109 +25,18 @@ def parse_args():
 args = parse_args()
 
 import torch
-# from diffusers import AutoencoderKLWan, WanPipeline, DiffusionPipeline, UniPCMultistepScheduler
-from diffusers.video_processor import VideoProcessor
-# from transformers import AutoTokenizer
-from diffusers.utils import export_to_video
-
 import openvino as ov
-from openvino import Tensor
-
-# from openvino.frontend.pytorch.ts_decoder import TorchScriptPythonDecoder
-# from openvino.frontend.pytorch.patch_model import __make_16bit_traceable
-from dataclasses import dataclass
 from typing import Optional, Union
-from diffusers.utils import BaseOutput
-# from diffusers.utils.torch_utils import randn_tensor
-import ftfy
-import regex as re
-import html
 import openvino_genai
 import yaml
 
-
-def cleanup_torchscript_cache():
-    """
-    Helper for removing cached model representation
-    """
-    torch._C._jit_clear_class_registry()
-    torch.jit._recursive.concrete_type_store = torch.jit._recursive.ConcreteTypeStore()
-    torch.jit._state._clear_class_state()
-
-
-TEXT_ENCODER_PATH = "text_encoder/text_encoder.xml"
-VAE_DECODER_PATH = "vae/vae_decoder.xml"
-TRANSFORMER_PATH = "transformer/transformer.xml"
-
-@dataclass
-class WanPipelineOutput(BaseOutput):
-    r"""
-    Output class for Wan pipelines.
-
-    Args:
-        frames (`torch.Tensor`, `np.ndarray`, or List[List[PIL.Image.Image]]):
-            List of video outputs - It can be a nested list of length `batch_size,` with each sub-list containing
-            denoised PIL image sequences of length `num_frames.` It can also be a NumPy array or Torch tensor of shape
-            `(batch_size, num_frames, channels, height, width)`.
-    """
-
-    frames: torch.Tensor
-
-
-def basic_clean(text):
-    text = ftfy.fix_text(text)
-    text = html.unescape(html.unescape(text))
-    return text.strip()
-
-
-def whitespace_clean(text):
-    text = re.sub(r"\s+", " ", text)
-    text = text.strip()
-    return text
-
-
-def prompt_clean(text):
-    text = whitespace_clean(basic_clean(text))
-    return text
-
-
 core = ov.Core()
-
-
 class OVWanPipeline:
-    def __init__(self, model_dir, device_map="CPU", ov_config=None):
+    def __init__(self, model_dir, device_map="CPU", fps: int = 10):
         model_dir = Path(model_dir)
         if isinstance(device_map, str):
             device_map = {"transformer": device_map, "text_encoder": device_map, "vae": device_map}
-        self.vae = core.compile_model(model_dir / VAE_DECODER_PATH, device_map["vae"], ov_config)
-        # super().__init__()
-
-        # self.register_modules(
-        #     vae=vae,
-        # )
-
-        self.vae_scale_factor_spatial = 8
-        self.video_processor = VideoProcessor(vae_scale_factor=self.vae_scale_factor_spatial)
-        self.z_dim = 16
-        self.latents_mean = [
-            -0.7571,
-            -0.7089,
-            -0.9113,
-            0.1075,
-            -0.1745,
-            0.9653,
-            -0.1517,
-            1.5508,
-            0.4134,
-            -0.0715,
-            0.5517,
-            -0.3632,
-            -0.1922,
-            -0.9497,
-            0.2503,
-            -0.2921,
-        ]
-        self.latents_std = [2.8184, 1.4541, 2.3275, 2.6558, 1.2196, 1.7708, 2.6052, 2.0743, 3.2687, 2.1526, 2.8652, 1.5579, 1.6382, 1.1253, 2.8251, 1.916]
+        self.fps = fps
         cfg_data = {
             'global_context': {
                 'model_type': 'wan2.1'
@@ -312,13 +220,57 @@ class OVWanPipeline:
                         'model_path': str(model_dir),
                     }
                 },
-                'pipeline_result': {
-                    'type': 'ResultModule',
+                'vae_decoder': {
+                    'type': 'VAEDecoderModule',
+                    'device': device_map['vae'],
                     'inputs': [
                         {
                             'name': 'latents',
                             'type': 'OVTensor',
                             'source': 'denoiser_loop.latents'
+                        }
+                    ],
+                    'outputs': [
+                        {
+                            'name': 'image',
+                            'type': 'OVTensor'
+                        }
+                    ],
+                    'params': {
+                        'model_path': str(model_dir),
+                        'enable_postprocess': True
+                    }
+                },
+                'video_saver': {
+                    'type': 'SaveVideoModule',
+                    'inputs': [
+                        {
+                            'name': 'raw_data',
+                            'type': 'OVTensor',
+                            'source': 'vae_decoder.image'
+                        }
+                    ],
+                    'outputs': [
+                        {
+                            'name': 'saved_video',
+                            'type': 'String'
+                        },
+                        {
+                            'name': 'saved_videos',
+                            'type': 'VecString'
+                        }
+                    ],
+                    'params': {
+                        'fps': self.fps
+                    }
+                },
+                'pipeline_result': {
+                    'type': 'ResultModule',
+                    'inputs': [
+                        {
+                            'name': 'saved_video',
+                            'type': 'String',
+                            'source': 'video_saver.saved_video'
                         }
                     ]
                 }
@@ -353,8 +305,6 @@ class OVWanPipeline:
         num_inference_steps: int = 50,
         guidance_scale: float = 5.0,
         num_videos_per_prompt: Optional[int] = 1,
-        output_type: Optional[str] = "np",
-        return_dict: bool = True,
         max_sequence_length: int = 512,
     ):
         self.check_inputs(
@@ -385,29 +335,15 @@ class OVWanPipeline:
             max_sequence_length=max_sequence_length
         )
 
-        latents = torch.from_numpy(self.pipe.get_output("latents").data)
+        saved_video = self.pipe.get_output("saved_video")
 
-        if not output_type == "latent":
-            latents_mean = torch.tensor(self.latents_mean).view(1, self.z_dim, 1, 1, 1).to(latents.device, latents.dtype)
-            latents_std = 1.0 / torch.tensor(self.latents_std).view(1, self.z_dim, 1, 1, 1).to(latents.device, latents.dtype)
-            latents = latents / latents_std + latents_mean
-            video = torch.from_numpy(self.vae(latents)[0])
-            video = self.video_processor.postprocess_video(video, output_type=output_type)
-        else:
-            video = latents
-
-        if not return_dict:
-            return (video,)
-
-        return WanPipelineOutput(frames=video)
+        return saved_video
 
 device_map = {
     "text_encoder": "CPU",
     "transformer": args.device,
     "vae": args.device,
 }
-
-ov_pipe = OVWanPipeline(args.model_path, device_map=device_map)
 
 DEFAULT_PROMPT = "A cat and a dog baking a cake together in a kitchen. The cat is carefully measuring flour, while the dog is stirring the batter with a wooden spoon. The kitchen is cozy, with sunlight streaming through the window."
 DEFAULT_NEGATIVE_PROMPT = "Bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards"
@@ -427,6 +363,8 @@ guidance_scale = args.guidance_scale if args.guidance_scale is not None else DEF
 num_frames = args.num_frames if args.num_frames is not None else DEFAULT_NUM_FRAMES
 fps = args.fps if args.fps is not None else DEFAULT_FPS
 
+ov_pipe = OVWanPipeline(args.model_path, device_map=device_map, fps=fps)
+
 output = ov_pipe(
     prompt=prompt,
     negative_prompt=negative_prompt,
@@ -434,6 +372,5 @@ output = ov_pipe(
     width=width,
     num_frames=num_frames,
     guidance_scale=guidance_scale,
-    num_inference_steps=num_inference_steps).frames[0]
-export_to_video(output, "output.mp4", fps=fps)
-print("Video saved to output.mp4")
+    num_inference_steps=num_inference_steps)
+print(f"Video saved to {output}")
