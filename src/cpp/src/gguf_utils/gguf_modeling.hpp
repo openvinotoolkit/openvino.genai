@@ -8,4 +8,4 @@
 #include "openvino/openvino.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 
-std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const ov::genai::OVModelSaveMode& save_mode);
+std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path, const ov::genai::OVModelQuantizeMode& quantize_mode, bool should_save_file);

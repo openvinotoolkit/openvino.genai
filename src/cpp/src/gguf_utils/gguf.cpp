@@ -425,9 +425,9 @@ void load_arrays(gguf_ctx* ctx,
         if ((tensor.type == GGUF_TYPE_Q4_K || tensor.type == GGUF_TYPE_Q6_K) && dequantize_to_fp16) {
             std::string name(tensor.name, tensor.namelen);
             ov::Tensor fp16_tensor = extract_tensor_data(&tensor);
-            printf("[DEBUG EXTRACT] Tensor: %s, extracted element_type: %s\n",
-                   name.c_str(),
-                   fp16_tensor.get_element_type().to_string().c_str());
+            // printf("[DEBUG EXTRACT] Tensor: %s, extracted element_type: %s\n",
+            //        name.c_str(),
+            //        fp16_tensor.get_element_type().to_string().c_str());
 
             constexpr std::string_view weight_suffix = ".weight";
             const std::string name_prefix = name.substr(0, name.length() - weight_suffix.length());
@@ -443,9 +443,9 @@ void load_arrays(gguf_ctx* ctx,
                 // strategy)");
 
                 if (force_q8_0) {
-                    printf("[DEBUG REQUANT] TEST MODE: Force all tensors to Q8_0_C\n");
+                    // printf("[DEBUG REQUANT] TEST MODE: Force all tensors to Q8_0_C\n");
                 } else if (force_q4_0) {
-                    printf("[DEBUG REQUANT] TEST MODE: Force all tensors to Q4_0_128\n");
+                    // printf("[DEBUG REQUANT] TEST MODE: Force all tensors to Q4_0_128\n");
                 }
 
                 // Determine requantization type based on tensor name
@@ -491,7 +491,7 @@ void load_arrays(gguf_ctx* ctx,
                 //        should_requant, use_q8_0, block_size);
 
                 if (should_requant) {
-                    printf("[DEBUG REQUANT] Starting requantization for %s\n", name.c_str());
+                    // printf("[DEBUG REQUANT] Starting requantization for %s\n", name.c_str());
 
                     // Convert FP16 → FP32
                     auto shape = fp16_tensor.get_shape();
