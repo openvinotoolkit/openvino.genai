@@ -20,7 +20,6 @@
 #include "openvino/op/tile.hpp"
 #include "openvino/op/if.hpp"
 #include "openvino/op/concat.hpp"
-#include "logger.hpp"
 
 #include "visual_language/vl_sdpa_transformations.hpp"
 

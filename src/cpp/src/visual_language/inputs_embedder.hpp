@@ -96,8 +96,7 @@ public:
     void start_chat(const std::string& system_message);
 
     // adds currently generated text to chat history
-    void update_chat_history(const std::string& decoded_results,
-                             const ov::genai::GenerationStatus generation_finish_status);
+    void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
 
     // gets last updated prompt after vision token pruning
     std::optional<std::string> get_last_updated_prompt(const std::string& original_prompt) const;
