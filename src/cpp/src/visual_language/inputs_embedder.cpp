@@ -3,6 +3,7 @@
 
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "visual_language/inputs_embedder.hpp"
+#include <iostream>
 
 #include "visual_language/clip.hpp"
 #include "visual_language/vision_encoder.hpp"
@@ -19,6 +20,7 @@
 #include "visual_language/llava_next_video/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
+#include "logger.hpp"
 
 #include "utils.hpp"
 
@@ -405,13 +407,8 @@ void InputsEmbedder::start_chat(const std::string& system_message) {
     return m_impl->start_chat(system_message);
 }
 
-std::optional<std::string> InputsEmbedder::update_chat_history(
-    const std::string& decoded_results,
-    const ov::genai::GenerationStatus generation_finish_status,
-    const std::string& original_prompt) {
-    auto updated_prompt = m_impl->get_last_updated_prompt(original_prompt);
-    m_impl->update_chat_history(decoded_results, generation_finish_status);
-    return updated_prompt;
+void InputsEmbedder::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
+    return m_impl->update_chat_history(decoded_results, generation_finish_status);
 }
 
 void InputsEmbedder::set_apply_chat_template_status(bool apply_chat_template) {
@@ -424,6 +421,10 @@ void InputsEmbedder::finish_chat() {
 
 void InputsEmbedder::set_vision_token_pruning_config(size_t pruning_ratio, float relevance_weight) {
     return m_impl->set_vision_token_pruning_config(pruning_ratio, relevance_weight);
+}
+
+std::optional<std::string> InputsEmbedder::get_last_updated_prompt(const std::string& original_prompt) const {
+    return m_impl->get_last_updated_prompt(original_prompt);
 }
 
 NormalizedPrompt InputsEmbedder::normalize_prompt(
