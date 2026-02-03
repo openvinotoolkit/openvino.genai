@@ -3,7 +3,6 @@
 
 #include "openvino/genai/visual_language/perf_metrics.hpp"
 #include "visual_language/inputs_embedder.hpp"
-#include <iostream>
 
 #include "visual_language/clip.hpp"
 #include "visual_language/vision_encoder.hpp"
@@ -20,7 +19,6 @@
 #include "visual_language/llava_next_video/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
-#include "logger.hpp"
 
 #include "utils.hpp"
 

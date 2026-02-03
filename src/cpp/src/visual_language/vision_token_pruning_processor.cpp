@@ -135,26 +135,18 @@ std::string VisionTokenPruningProcessor::get_last_updated_prompt(const std::stri
             pos += vision_end_token.size();
             inside_vision_region = false;
             region_idx++;
-        } else if (next_token_pos == next_image_pad) {
+        } else if (next_token_pos == next_image_pad || next_token_pos == next_video_pad) {
+            const std::string& pad_token = (next_token_pos == next_image_pad) ? image_pad_token : video_pad_token;
+
             if (region_idx < region_count && pad_idx < keep_flags[region_idx].size()) {
                 total_pads_processed++;
                 if (keep_flags[region_idx][pad_idx]) {
-                    result.append(image_pad_token);
+                    result.append(pad_token);
                     total_pads_kept++;
                 }
                 pad_idx++;
             }
-            pos += image_pad_token.size();
-        } else if (next_token_pos == next_video_pad) {
-            if (region_idx < region_count && pad_idx < keep_flags[region_idx].size()) {
-                total_pads_processed++;
-                if (keep_flags[region_idx][pad_idx]) {
-                    result.append(video_pad_token);
-                    total_pads_kept++;
-                }
-                pad_idx++;
-            }
-            pos += video_pad_token.size();
+            pos += pad_token.size();
         }
     }
 
@@ -885,19 +877,11 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     auto& kv_history = kv_cache_state.get_state();
     OPENVINO_ASSERT(kv_history.size() >= context.input_ids.get_size(),
                     "KV cache history does not contain expected original prompt length");
-    // In chat mode, calculate the correct history boundary that includes generated tokens
-    // History boundary = current kv_cache size - current input size
-    GENAI_DEBUG("KV cache before resize: size=%zu, prev_hist_length=%zu, input_size=%zu",
-                kv_history.size(),
-                prev_hist_length_inout,
-                context.input_ids.get_size());
-
     if (is_chat_conversation) {
         size_t retained_history_size = kv_history.size() - context.input_ids.get_size();
         // Chat mode: preserve complete history (input + generated tokens)
         kv_history.resize(retained_history_size);
     } else {
-        // First turn: clear kv_cache
         kv_history.resize(prev_hist_length_inout);
     }
 
