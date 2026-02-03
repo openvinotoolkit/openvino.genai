@@ -177,6 +177,7 @@ public:
           m_tokenizer(tokenizer) {
     }
 };
+
 class Sampler::TreeSearcher : public Sampler::Searcher {
     void tree_reset(SequenceGroup::Ptr& sequence_group);
     struct CandidateNode {
@@ -405,7 +406,6 @@ public:
     explicit TreeSearcher(SequenceGroup::Ptr sequence_group, ov::Tensor d2t);
 
     void select_top_k(const ov::Tensor& logits, SamplerOutput& sampler_output, LogitProcessor& logit_processor);
-    void finalize_eagle2_candidates(SamplerOutput& sampler_output);
 };
 
 class Sampler::GroupBeamSearcher : public Sampler::Searcher {

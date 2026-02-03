@@ -99,7 +99,7 @@ std::pair<size_t, size_t>
 get_prefix_len(
     const std::vector<Sequence::Ptr>& running_sequences,
     const GeneratedSequences& candidates,
-    bool tree_mode_enabled = false) {
+    bool need_adjust = false) {
     size_t min_generated_tokens = std::numeric_limits<size_t>::max(),
            min_candidate_len = std::numeric_limits<size_t>::max();
     for (const auto& running_sequence : running_sequences) {
@@ -126,7 +126,7 @@ get_prefix_len(
         }
         // adjust the len of prefix in tree mode
         // handle situation of token match but position mismatch
-        if (tree_mode_enabled) {
+        if (need_adjust) {
             auto eagle_metadata = running_sequence->get_eagle_metadata();
             const auto& position_ids = eagle_metadata.tree_position_ids;
             const auto prev_generated_len = running_sequence->get_generated_len() - position_ids.size();
@@ -281,7 +281,8 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
         } else {
             // update existing sequences by the candidates
             auto& logit_processor = m_sampler->get_logit_processor(request_id);
-            std::tie(min_generated_tokens, min_candidate_len) = get_prefix_len(running_sequences, candidates, eagle_mode_enabled && !m_is_validation_mode_enabled);
+            auto need_prefix_adjustion = eagle_mode_enabled && request->get_sampling_parameters().is_tree_search(); // always effective in draft model in eagle tree mode
+            std::tie(min_generated_tokens, min_candidate_len) = get_prefix_len(running_sequences, candidates, need_prefix_adjustion);
             if (running_sequences.size() != 1)
                 std::cout << "break" << std::endl;
             OPENVINO_ASSERT(running_sequences.size() == 1);
@@ -462,7 +463,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::m
                 request->pause_generation(true);
             } else if (is_stop_token_id_hit_in_sequence_group(request, sampling_params.stop_token_ids)) {
                 request->pause_generation(true);
-            } else if (sampling_params.eagle_tree_params.tree_depth > 0 && sampling_params.eagle_tree_params.tree_depth + 1 <= generated_tokens_cnt) {
+            } else if (sampling_params.eagle_tree_params.tree_depth > 1 && sampling_params.eagle_tree_params.tree_depth + 1 <= generated_tokens_cnt) {
                 request->pause_generation(true);
             }
             to_generate |= request->can_generate_tokens();

@@ -243,15 +243,15 @@ ov::genai::LLMPipeline::LLMPipeline(
         m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, scheduler_config, device, device_properties);
     } else if (attention_backend == PA_BACKEND) {
         // try to call CB adapter one more time, but with safe guard to silent exception
-        try {
+        //try {
             // we need use CB only for x86 and arm64, as for other architectures like risc-v we can create Paged Attention based model
             // but cannot perform its inference later
 #if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
             m_pimpl = std::make_unique<ContinuousBatchingAdapter>(models_path, utils::get_latency_oriented_scheduler_config(), device, properties);
 #endif
-        } catch (ov::Exception&) {
+        //} catch (ov::Exception&) {
             // ignore exceptions from PA
-        }
+        //}
     }
 
     if (m_pimpl == nullptr) {
