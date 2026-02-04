@@ -799,6 +799,8 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         working-directory: ${{ env.SRC_DIR }}/samples/js/text_generation
         run: |
+          npm install ${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* --ignore-scripts
+          cp -R ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install ${{ env.SRC_DIR }}/src/js
           npm install --verbose
 

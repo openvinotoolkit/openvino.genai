@@ -12,6 +12,7 @@ allow-licenses:
   - "CC-BY-NC-4.0"
   - "GPL-1.0-or-later"
   - "LGPL-2.0-or-later"
+  - "LGPL-3.0-or-later"
   - "LicenseRef-scancode-proprietary-license"
 fail-on-scopes:
   - "runtime"
