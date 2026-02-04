@@ -1,4 +1,5 @@
 import { ChatHistory, LLMPipeline } from "../dist/index.js";
+import { LLMPipeline as LLM } from "../dist/pipelines/llmPipeline.js";
 
 import assert from "node:assert/strict";
 import { describe, it, before, after } from "node:test";
@@ -75,24 +76,10 @@ describe("corner cases", async () => {
     });
   });
 
-  it("should throw an error if chat is already started", async () => {
-    const pipeline = await LLMPipeline(MODEL_PATH, "CPU");
+  it("should throw an error if pipeline is not initialized", async () => {
+    const pipeline = new LLM(MODEL_PATH, "CPU");
 
-    await pipeline.startChat();
-
-    await assert.rejects(() => pipeline.startChat(), {
-      name: "Error",
-      message: "Chat is already started",
-    });
-  });
-
-  it("should throw an error if chat is not started", async () => {
-    const pipeline = await LLMPipeline(MODEL_PATH, "CPU");
-
-    await assert.rejects(() => pipeline.finishChat(), {
-      name: "Error",
-      message: "Chat is not started",
-    });
+    assert.rejects(pipeline.generate("prompt"), /LLMPipeline is not initialized/);
   });
 });
 
@@ -123,7 +110,7 @@ describe("generation parameters validation", () => {
 
     await assert.rejects(async () => await pipeline.generate("prompt", {}, false), {
       name: "Error",
-      message: "Callback must be a function",
+      message: "Streamer must be a function",
     });
   });
 
@@ -285,6 +272,12 @@ describe("LLMPipeline.generate()", () => {
     assert.throws(() => perfMetrics1.add({}), {
       message: /Passed argument is not of type PerfMetrics/,
     });
+  });
+
+  it("throw error if generate called during another generation", async () => {
+    const promise = pipeline.generate("prompt1");
+    await assert.rejects(pipeline.generate("prompt2"), /Another generation is already in progress/);
+    await promise;
   });
 });
 

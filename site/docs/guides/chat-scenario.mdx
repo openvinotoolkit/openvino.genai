@@ -9,12 +9,265 @@ For chat applications, OpenVINO GenAI provides special optimizations to maintain
 
 Refer to the [How It Works](/docs/concepts/how-it-works) for more information about KV-cache.
 
-:::tip
-Use `start_chat()` and `finish_chat()` to properly manage the chat session's KV-cache. This improves performance by reusing context between messages.
-:::
-
 :::info
 Chat mode is supported for both `LLMPipeline` and `VLMPipeline`.
+:::
+
+## `ChatHistory`
+
+[`ChatHistory`](https://docs.openvino.ai/2025/api/genai_api/_autosummary/openvino_genai.ChatHistory.html) stores conversation messages and optional metadata for chat templates.
+Messages are stored as JSON-like objects, so it supports various nested message structures with any field names your model or chat template requires (not just simple `"role"` and `"content"` fields).
+
+A simple chat example (with grouped beam search decoding):
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python showLineNumbers
+        import openvino_genai as ov_genai
+
+        pipe = ov_genai.LLMPipeline(model_path, 'CPU')
+
+        config = {'max_new_tokens': 100, 'num_beam_groups': 3, 'num_beams': 15, 'diversity_penalty': 1.5}
+        pipe.set_generation_config(config)
+
+        # highlight-next-line
+        chat_history = ov_genai.ChatHistory()
+
+        while True:
+            try:
+                prompt = input('question:\n')
+            except EOFError:
+                break
+
+            # highlight-next-line
+            chat_history.append({"role": "user", "content": prompt})
+            # highlight-next-line
+            decoded_results = pipe.generate(chat_history)
+            # Add assistant's response to chat history
+            # highlight-next-line
+            chat_history.append({"role": "assistant", "content": decoded_results.texts[0]})
+
+            print('answer:\n')
+            print(decoded_results.texts[0])
+            print('\n----------\n')
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp showLineNumbers
+        #include "openvino/genai/llm_pipeline.hpp"
+        #include <iostream>
+
+        int main(int argc, char* argv[]) {
+            std::string prompt;
+
+            std::string model_path = argv[1];
+            ov::genai::LLMPipeline pipe(model_path, "CPU");
+
+            ov::genai::GenerationConfig config;
+            config.max_new_tokens = 100;
+            config.num_beam_groups = 3;
+            config.num_beams = 15;
+            config.diversity_penalty = 1.0f;
+
+            // highlight-next-line
+            ov::genai::ChatHistory chat_history;
+
+            std::cout << "question:\n";
+            while (std::getline(std::cin, prompt)) {
+                // highlight-next-line
+                chat_history.push_back({{"role", "user"}, {"content", std::move(prompt)}});
+                // highlight-next-line
+                auto decoded_results = pipe.generate(chat_history, config);
+                // Add assistant's response to chat history
+                // highlight-next-line
+                chat_history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
+
+                std::cout << "answer:\n";
+                std::cout << decoded_results.texts[0] << std::endl;
+                std::cout << "\n----------\n"
+                    "question:\n";
+            }
+        }
+        ```
+    </TabItemCpp>
+    <TabItemJS>
+        ```js showLineNumbers
+        import { LLMPipeline, ChatHistory } from "openvino-genai-node";
+        import readline from 'readline';
+
+        const pipe = await LLMPipeline(model_path, 'CPU');
+
+        const config = {
+            max_new_tokens: 100,
+            num_beam_groups: 3,
+            num_beams: 15,
+            diversity_penalty: 1.5
+        };
+
+        // highlight-next-line
+        const chatHistory = new ChatHistory();
+
+        const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout,
+        });
+
+        console.log('question:');
+        rl.on('line', async (prompt) => {
+            // highlight-next-line
+            chatHistory.push({ role: 'user', content: prompt });
+            // highlight-next-line
+            const decodedResults = await pipe.generate(chatHistory, config);
+            // Add assistant's response to chat history
+            // highlight-next-line
+            chatHistory.push({ role: 'assistant', content: decodedResults.toString() });
+
+            console.log('answer:');
+            console.log(decodedResults.toString());
+            console.log('\n----------\nquestion:');
+        });
+
+        rl.on('close', async () => {
+            process.exit(0);
+        });
+        ```
+    </TabItemJS>
+</LanguageTabs>
+
+:::info
+`ChatHistory` messages are not updated automatically when using `pipe.generate()`.
+You need to manually append user prompts and model responses to the `ChatHistory` instance as shown in the examples above.
+:::
+
+### System Prompt
+
+Add a system message at the beginning to set the assistant's behavior:
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python showLineNumbers
+        import openvino_genai as ov_genai
+
+        chat_history = ov_genai.ChatHistory()
+        chat_history.append({"role": "system", "content": "You are a helpful assistant."})
+
+        # Or using constructor
+        chat_history = ov_genai.ChatHistory([
+            {"role": "system", "content": "You are a helpful assistant."}
+        ])
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp showLineNumbers
+        #include "openvino/genai/chat_history.hpp"
+
+        ov::genai::ChatHistory chat_history;
+        chat_history.push_back({{"role", "system"}, {"content", "You are a helpful assistant."}});
+
+        // Or using constructor
+        ov::genai::ChatHistory chat_history({
+            {{"role", "system"}, {"content", "You are a helpful assistant."}}
+        });
+        ```
+    </TabItemCpp>
+    <TabItemJS>
+        ```js showLineNumbers
+        import { ChatHistory } from "openvino-genai-node";
+
+        const chatHistory = new ChatHistory();
+        chatHistory.push({ role: 'system', content: 'You are a helpful assistant.' });
+
+        // Or using constructor
+        const chatHistory = new ChatHistory([
+            { role: 'system', content: 'You are a helpful assistant.' }
+        ]);
+        ```
+    </TabItemJS>
+</LanguageTabs>
+
+### Chat History Metadata
+
+Additionally, `ChatHistory` manages optional metadata for consistent chat template application:
+ - Tools definitions for function calling and agentic scenarios
+ - Custom chat template variables (e.g. `enable_thinking` for models with extended reasoning like Qwen3)
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python showLineNumbers
+        import openvino_genai as ov_genai
+        import json
+
+        chat_history = ov_genai.ChatHistory()
+        chat_history.append({"role": "system", "content": system_prompt})
+
+        # Load tools from JSON string
+        tools: list[dict] = json.loads("...")
+
+        # Set tools definitions
+        # highlight-next-line
+        chat_history.set_tools(tools)
+        # Set custom chat template variables
+        # highlight-next-line
+        chat_history.set_extra_context({ "enable_thinking": True })
+
+        chat_history.append({"role": "user", "content": user_prompt})
+        decoded_results = pipe.generate(chat_history, config)
+        # Add assistant's response to chat history
+        chat_history.append({"role": "assistant", "content": decoded_results.texts[0]})
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp showLineNumbers
+        #include "openvino/genai/chat_history.hpp"
+
+        ov::genai::ChatHistory chat_history;
+        chat_history.push_back({{"role", "system"}, {"content", std::move(system_prompt)}});
+
+        // Load tools from JSON string
+        ov::genai::JsonContainer tools = ov::genai::JsonContainer::from_json_string("...");
+
+        // Set tools definitions
+        // highlight-next-line
+        chat_history.set_tools(tools);
+        // Set custom chat template variables
+        // highlight-next-line
+        chat_history.set_extra_context({{"enable_thinking", true}});
+
+        chat_history.push_back({{"role", "user"}, {"content", std::move(user_prompt)}});
+        auto decoded_results = pipe.generate(chat_history, config);
+        // Add assistant's response to chat history
+        chat_history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
+        ```
+    </TabItemCpp>
+    <TabItemJS>
+        ```js showLineNumbers
+        import { ChatHistory } from "openvino-genai-node";
+
+        const chatHistory = new ChatHistory();
+        chatHistory.push({ role: 'system', content: systemPrompt });
+
+        // Load tools from JSON string
+        const tools = JSON.parse("...");
+
+        // Set tools definitions
+        // highlight-next-line
+        chatHistory.setTools(tools);
+        // Set custom chat template variables
+        // highlight-next-line
+        chatHistory.setExtraContext({ enable_thinking: true });
+
+        chatHistory.push({ role: 'user', content: userPrompt });
+        const decodedResults = await pipe.generate(chatHistory, config);
+        // Add assistant's response to chat history
+        chatHistory.push({ role: 'assistant', content: decodedResults.toString() });
+        ```
+    </TabItemJS>
+</LanguageTabs>
+
+## `start_chat()` / `finish_chat()` API
+
+:::warning Deprecation Notice
+`start_chat()` / `finish_chat()` API is deprecated and will be removed in the next major release. It is recommended to use `ChatHistory` for managing chat conversations.
 :::
 
 A simple chat example (with grouped beam search decoding):
@@ -23,6 +276,7 @@ A simple chat example (with grouped beam search decoding):
     <TabItemPython>
         ```python showLineNumbers
         import openvino_genai as ov_genai
+
         pipe = ov_genai.LLMPipeline(model_path, 'CPU')
 
         config = {'max_new_tokens': 100, 'num_beam_groups': 3, 'num_beams': 15, 'diversity_penalty': 1.5}
@@ -82,16 +336,16 @@ A simple chat example (with grouped beam search decoding):
 
         const pipe = await LLMPipeline(model_path, 'CPU');
 
-        const config = { 
-            max_new_tokens: 100, 
-            num_beam_groups: 3, 
-            num_beams: 15, 
-            diversity_penalty: 1.5 
+        const config = {
+            max_new_tokens: 100,
+            num_beam_groups: 3,
+            num_beams: 15,
+            diversity_penalty: 1.5
         };
 
         // highlight-next-line
         await pipe.startChat();
-        
+
         const rl = readline.createInterface({
             input: process.stdin,
             output: process.stdout,

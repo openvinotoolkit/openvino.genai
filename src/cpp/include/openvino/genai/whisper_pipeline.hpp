@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -19,65 +19,10 @@ using OptionalWhisperGenerationConfig = std::optional<WhisperGenerationConfig>;
 
 using RawSpeechInput = std::vector<float>;
 
-/**
- * Base class for chunk streamers. In order to use inherit from from this class and implement put, and methods
- */
-class OPENVINO_DEPRECATED(
-    "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
-    OPENVINO_GENAI_EXPORTS ChunkStreamerBase : public StreamerBase {
-public:
-    /// @brief put_chunk is called every time new token chunk is generated,
-    /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
-    OPENVINO_DEPRECATED("ChunkStreamerBase is deprecated and will be removed in 2026.0.0 "
-                        "release. Use StreamerBase instead.")
-    virtual bool put_chunk(std::vector<int64_t> tokens) {
-        OPENVINO_THROW(
-            "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.");
-        return true;
-    };
-
-    /// @brief put is called every time new token is decoded. Deprecated. Please, use write instead.
-    /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
-    OPENVINO_DEPRECATED(
-        "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
-    bool put(int64_t token) override {
-        OPENVINO_THROW(
-            "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.");
-        return true;
-    };
-
-    /// @brief write is called every time new vector of tokens is decoded, in case of assisting or prompt lookup
-    /// decoding
-    /// @return StreamingStatus flag to indicate whether generation should continue to run, be stopped, or be cancelled
-    OPENVINO_DEPRECATED(
-        "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
-    StreamingStatus write(const std::vector<int64_t>& tokens) override {
-        OPENVINO_SUPPRESS_DEPRECATED_START
-        return put_chunk(tokens) ? StreamingStatus::STOP : StreamingStatus::RUNNING;
-        OPENVINO_SUPPRESS_DEPRECATED_END
-    };
-
-    /// @brief write is called every time new token is decoded
-    /// @return StreamingStatus flag to indicate whether generation should continue to run, be stopped, or be cancelled
-    OPENVINO_DEPRECATED(
-        "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
-    StreamingStatus write(int64_t token) override {
-        OPENVINO_SUPPRESS_DEPRECATED_START
-        return put(token) ? StreamingStatus::STOP : StreamingStatus::RUNNING;
-        OPENVINO_SUPPRESS_DEPRECATED_END
-    };
-
-    /// @brief end is called at the end of generation. It can be used to flush cache if your own streamer has one
-    OPENVINO_DEPRECATED(
-        "ChunkStreamerBase is deprecated and will be removed in 2026.0.0 release. Use StreamerBase instead.")
-    virtual void end() override = 0;
-
-    ~ChunkStreamerBase() override;
-};
-
 struct WhisperRawPerfMetrics {
     /** @brief Duration for each features extraction call */
     std::vector<MicroSeconds> features_extraction_durations;
+    std::vector<MicroSeconds> word_level_timestamps_processing_durations;
 };
 
 struct OPENVINO_GENAI_EXPORTS WhisperPerfMetrics : public PerfMetrics {
@@ -85,6 +30,9 @@ struct OPENVINO_GENAI_EXPORTS WhisperPerfMetrics : public PerfMetrics {
     MeanStdPair features_extraction_duration;
 
     MeanStdPair get_features_extraction_duration();
+
+    MeanStdPair word_level_timestamps_processing_duration;
+    MeanStdPair get_word_level_timestamps_processing_duration();
 
     WhisperPerfMetrics() = default;
 
@@ -96,6 +44,13 @@ struct OPENVINO_GENAI_EXPORTS WhisperPerfMetrics : public PerfMetrics {
     WhisperPerfMetrics& operator+=(const WhisperPerfMetrics& right);
 
     WhisperRawPerfMetrics whisper_raw_metrics;
+};
+
+struct WhisperWordTiming {
+    std::string word;
+    std::vector<int64_t> token_ids;
+    float start_ts;
+    float end_ts;
 };
 
 struct WhisperDecodedResultChunk {
@@ -113,6 +68,7 @@ struct WhisperDecodedResults {
     std::vector<std::string> texts;
     std::vector<float> scores;
     std::optional<std::vector<WhisperDecodedResultChunk>> chunks = std::nullopt;
+    std::optional<std::vector<WhisperWordTiming>> words = std::nullopt;
     WhisperPerfMetrics perf_metrics;
 
     operator std::string() const {
