@@ -1919,11 +1919,43 @@ MODELS_THAT_DO_NOT_SUPPORT_CPP_PREPROCESSING = ["optimum-intel-internal-testing/
 # text+image+video: <model_id>/<attn_backend>/<preprocessing>/preresized-image+video
 # id's that match glob patterns in OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES are marked as xfail.
 def parametrize_optimum_vs_genai(models: list[str] | None = None) -> Callable[[Callable], Generator]:
+    from itertools import product
+    from fnmatch import fnmatch
+
     if models is None:
         models = MODEL_IDS
 
     params = []
-    test_ids = []
+    def append_test_case(
+        *,
+        model_id: str,
+        attn_backend: str,
+        preprocessing: str,
+        has_image: bool,
+        has_video: bool,
+        image_resolution: tuple[int, int],
+        video_resolution: tuple[int, int],
+        test_id: str,
+    ):
+        xfail_reason = None
+        for pattern, reason in OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES.items():
+            if fnmatch(test_id, pattern):
+                xfail_reason = reason
+                break
+
+        marks = pytest.mark.xfail(reason=xfail_reason) if xfail_reason else ()
+        params.append(
+            pytest.param(
+                (model_id, attn_backend, preprocessing),
+                has_image,
+                has_video,
+                image_resolution,
+                video_resolution,
+                marks=marks,
+                id=test_id,
+            )
+        )
+
     for model_id in models:
         supported_attn_backends = ATTENTION_BACKEND
         supported_preprocessing = ["CPP", "GRAPH"]
@@ -1940,90 +1972,73 @@ def parametrize_optimum_vs_genai(models: list[str] | None = None) -> Callable[[C
         if model_id in VIDEO_MODEL_IDS:
             supported_has_video_inputs = [False, True]
 
-        for attn_backend in supported_attn_backends:
-            for preprocessing in supported_preprocessing:
-                for has_image in supported_has_image_inputs:
-                    for has_video in supported_has_video_inputs:
+        for attn_backend, preprocessing, has_image, has_video in product(
+            ATTENTION_BACKEND,
+            supported_preprocessing,
+            supported_has_image_inputs,
+            supported_has_video_inputs,
+        ):
+            # add pre-resized cases, if model is defined in RESOLUTION_BY_MODEL
+            if has_image and model_id in RESOLUTION_BY_MODEL:
+                test_id = f"{model_id}/{attn_backend}/{preprocessing}/preresized-image"
 
-                        def add_test_case(test_id, image_resolution, video_resolution):
-                            from fnmatch import fnmatch
+                res = RESOLUTION_BY_MODEL[model_id]
+                image_resolution = (res, res)
 
-                            test_ids.append(test_id)
+                video_resolution = None
+                if has_video:
+                    test_id += "+video"
+                    # for pre-resize cases, we always use 32x32 video resolution.
+                    video_resolution = (32, 32)
 
-                            # compare test_id against defined failure glob patterns
-                            xfail_reason = None
-                            for pattern, reason in OPTIMUM_VS_GENAI_MODEL_EXPECTED_FAIL_CASES.items():
-                                if fnmatch(test_id, pattern):
-                                    xfail_reason = reason
-                                    break
+                append_test_case(
+                    model_id=model_id,
+                    attn_backend=attn_backend,
+                    preprocessing=preprocessing,
+                    has_image=has_image,
+                    has_video=has_video,
+                    image_resolution=image_resolution,
+                    video_resolution=video_resolution,
+                    test_id=test_id,
+                )
 
-                            if xfail_reason is not None:
-                                params.append(
-                                    pytest.param(
-                                        (model_id, attn_backend, preprocessing),
-                                        has_image,
-                                        has_video,
-                                        image_resolution,
-                                        video_resolution,
-                                        marks=pytest.mark.xfail(reason=xfail_reason),
-                                    )
-                                )
-                            else:
-                                params.append(
-                                    pytest.param(
-                                        (model_id, attn_backend, preprocessing),
-                                        has_image,
-                                        has_video,
-                                        image_resolution,
-                                        video_resolution,
-                                    )
-                                )
+            # 'Real' resolution cases
+            image_resolutions = [None]
+            if has_image:
+                image_resolutions = OPTIMUM_VS_GENAI_PER_MODEL_IMAGE_RESOLUTIONS.get(
+                    model_id, OPTIMUM_VS_GENAI_DEFAULT_IMAGE_RESOLUTIONS
+                )
 
-                        # add pre-resized cases, if model is defined in RESOLUTION_BY_MODEL
-                        if has_image and model_id in RESOLUTION_BY_MODEL:
-                            test_id = f"{model_id}/{attn_backend}/{preprocessing}/preresized-image"
+            video_resolutions = [None]
+            if has_video:
+                video_resolutions = OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS.get(
+                    model_id, OPTIMUM_VS_GENAI_DEFAULT_VIDEO_RESOLUTIONS
+                )
 
-                            res = RESOLUTION_BY_MODEL[model_id]
-                            image_resolution = (res, res)
+            for image_resolution, video_resolution in product(image_resolutions, video_resolutions):
+                test_id = f"{model_id}/{attn_backend}/{preprocessing}"
+                if image_resolution:
+                    test_id += f"/image-{image_resolution[0]}x{image_resolution[1]}"
+                if video_resolution:
+                    test_id += f"/video-{video_resolution[0]}x{video_resolution[1]}"
+                if not image_resolution and not video_resolution:
+                    test_id += f"/text-only"
 
-                            video_resolution = None
-                            if has_video:
-                                test_id += "+video"
-                                # for pre-resize cases, we always use 32x32 video resolution.
-                                video_resolution = (32, 32)
-
-                            add_test_case(test_id, image_resolution, video_resolution)
-
-                        # 'Real' resolution cases
-                        image_resolutions = [None]
-                        if has_image:
-                            image_resolutions = OPTIMUM_VS_GENAI_PER_MODEL_IMAGE_RESOLUTIONS.get(
-                                model_id, OPTIMUM_VS_GENAI_DEFAULT_IMAGE_RESOLUTIONS
-                            )
-
-                        video_resolutions = [None]
-                        if has_video:
-                            video_resolutions = OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS.get(
-                                model_id, OPTIMUM_VS_GENAI_DEFAULT_VIDEO_RESOLUTIONS
-                            )
-
-                        for image_resolution in image_resolutions:
-                            for video_resolution in video_resolutions:
-                                test_id = f"{model_id}/{attn_backend}/{preprocessing}"
-                                if image_resolution:
-                                    test_id += f"/image-{image_resolution[0]}x{image_resolution[1]}"
-                                if video_resolution:
-                                    test_id += f"/video-{video_resolution[0]}x{video_resolution[1]}"
-                                if not image_resolution and not video_resolution:
-                                    test_id += f"/text-only"
-
-                                add_test_case(test_id, image_resolution, video_resolution)
+                append_test_case(
+                    model_id=model_id,
+                    attn_backend=attn_backend,
+                    preprocessing=preprocessing,
+                    has_image=has_image,
+                    has_video=has_video,
+                    image_resolution=image_resolution,
+                    video_resolution=video_resolution,
+                    test_id=test_id,
+                )
 
     return pytest.mark.parametrize(
         "ov_pipe_model,has_image,has_video,image_input_resolution,video_input_resolution",
         params,
         indirect=["ov_pipe_model"],
-        ids=test_ids,
     )
 
 
