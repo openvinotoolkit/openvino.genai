@@ -1926,6 +1926,7 @@ def parametrize_optimum_vs_genai(models: list[str] | None = None) -> Callable[[C
         models = MODEL_IDS
 
     params = []
+
     def append_test_case(
         *,
         model_id: str,
