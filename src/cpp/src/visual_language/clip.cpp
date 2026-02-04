@@ -24,10 +24,6 @@ ov::Tensor clip_image_f32_to_tensor(const clip_image_f32& image) {
     return image_tensor;
 }
 
-static inline int clip_int(int v, int lo, int hi) {
-    return (v < lo) ? lo : (v > hi) ? hi : v;
-}
-
 // Pillow's bicubic kernel (a = -0.5).
 static inline double pillow_bicubic_filter(double x) {
     // a = -0.5
@@ -59,6 +55,11 @@ struct Coeffs1D {
 };
 
 // ref: https://github.com/python-pillow/Pillow/blob/12.1.0/src/libImaging/Resample.c#L92
+// For fixed-point integer (32-bit) math, 22 fractional bits (32 - 8 - 2) are used.
+// (32 - 8 - 2) because:
+// 32: Number of bits in an int32_t
+// 8: Number of bits to preserve for the uint8_t result
+// 2: A couple of extra bits for overflow / sign.
 static constexpr int PRECISION_BITS = (32 - 8 - 2);
 
 static inline uint8_t clip8_from_fixed(int ss) {
@@ -68,7 +69,7 @@ static inline uint8_t clip8_from_fixed(int ss) {
     return static_cast<uint8_t>(v);
 }
 
-// Generic coefficient precompute in the same Pillow-ish style:
+// Generic coefficient precompute, using Pillow's style:
 // center = (xx + 0.5)*scale, filterscale=max(1,scale), widened support when downscaling.
 template <typename FilterFn>
 static Coeffs1D precompute_pillow_coeffs_1d(int inSize, int outSize, double base_support, FilterFn filter_fn) {
@@ -139,6 +140,12 @@ static Coeffs1D precompute_pillow_coeffs_1d(int inSize, int outSize, double base
     return c;
 }
 
+// base_support is a factor for determining the kernel size of the filter to use.
+// See it's use within precompute_pillow_coeffs_1d above.
+// For bilinear, it is set to 1.0.
+// For bicubic, it is set to 2.0.
+// ref:
+// https://github.com/python-pillow/Pillow/blob/12.1.0/src/libImaging/Resample.c#L82C1-L86C54
 template <typename FilterFn>
 static void resize_pillow_like(const clip_image_u8& img,
                                clip_image_u8& dst,
@@ -150,6 +157,11 @@ static void resize_pillow_like(const clip_image_u8& img,
     const int inH = img.ny;
     const int outW = target_width;
     const int outH = target_height;
+
+    OPENVINO_ASSERT(inW > 0);
+    OPENVINO_ASSERT(inH > 0);
+    OPENVINO_ASSERT(outW > 0);
+    OPENVINO_ASSERT(outH > 0);
 
     dst.nx = outW;
     dst.ny = outH;
