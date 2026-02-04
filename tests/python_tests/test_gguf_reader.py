@@ -183,7 +183,9 @@ def test_full_gguf_pipeline(
 
     if enable_save_ov_model:
         gguf_full_path = Path(gguf_full_path)
-        ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type, dynamic_quantization_group_size=dynamic_quantization_group_size)
+        # Model is saved to ov_model_original/ subdirectory (default mode when enable_save_ov_model=True)
+        saved_model_dir = gguf_full_path.parent / "ov_model_original"
+        ov_pipe_native = create_ov_pipeline(saved_model_dir, pipeline_type=pipeline_type, dynamic_quantization_group_size=dynamic_quantization_group_size)
         res_string_input_3  = ov_pipe_native.generate(prompt, generation_config=ov_generation_config)
         del ov_pipe_native
         gc.collect()
