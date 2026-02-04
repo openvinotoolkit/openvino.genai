@@ -675,7 +675,9 @@ private:
             OPENVINO_ASSERT(num_running_sequences == 1, "only support 1 running sequence in eagle3 mode");
             // skip the prompt tokens
             auto num_processed_tokens = sequence_group->get_num_processed_tokens();
-            if (num_processed_tokens >= sequence_group->get_prompt_len()) {
+            auto is_tree_decoding = sequence_group->get_running_sequences()[0]->get_eagle_metadata().tree_mask.size() > 0;
+            // only count speculated tokens after the prompt for qq bias
+            if (is_tree_decoding && num_processed_tokens >= sequence_group->get_prompt_len()) {
                 total_spec_tokens += sequence_group->get_num_scheduled_tokens();
             }
             qq_bias_begin_data[i + 1] = static_cast<int32_t>(total_spec_tokens);
