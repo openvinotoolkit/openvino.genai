@@ -73,51 +73,91 @@ bool ClipTextEncoderModule::initialize() {
         return false;
     }
 
-    m_model_type = to_diffusion_model_type(module_desc->model_type);
-    
     std::filesystem::path root_dir = module_desc->get_full_path(it_path->second);
     std::string device = module_desc->device.empty() ? "CPU" : module_desc->device;
-    ov::AnyMap properties = {};
 
-    m_encoder_config = utils::from_config_json_if_exists<TransformerConfig>(
-        root_dir, "text_encoder/config.json");
+    // Determine text encoder XML path
+    auto text_encoder_path = root_dir / "text_encoder/openvino_model.xml";
+    DiffusionModelType model_type = to_diffusion_model_type(module_desc->model_type);
+    if (model_type == DiffusionModelType::WAN_2_1) {
+        text_encoder_path = root_dir / "text_encoder/text_encoder.xml";
+    }
 
-    try {
-        auto tokenizer_path = root_dir / "tokenizer";
-        m_tokenizer_impl = std::make_shared<Tokenizer::TokenizerImpl>(tokenizer_path, properties);
-    } catch (const std::exception& e) {
-        GENAI_ERR("ClipTextEncoderModule[" + module_desc->name + "]: Failed to load tokenizer: " + e.what());
+    // Create cache key hash from model XML content and device
+    std::size_t cache_key = compute_cache_key(text_encoder_path, device);
+
+    // Check if resources already exist in cache
+    bool is_cached = ClipTextEncoderResourceCache::instance().exists(cache_key);
+    if (is_cached) {
+        GENAI_INFO("ClipTextEncoderModule: Reusing cached model for: " + root_dir.string() + " on device: " + device);
+    }
+
+    // Get or create shared resources
+    m_shared_resources = ClipTextEncoderResourceCache::instance().get_or_create(
+        cache_key,
+        [this, &root_dir, &device, &text_encoder_path, model_type]() -> std::shared_ptr<ClipTextEncoderSharedResources> {
+            GENAI_INFO("ClipTextEncoderModule: Loading model from: " + root_dir.string() + " to device: " + device);
+
+            auto resources = std::make_shared<ClipTextEncoderSharedResources>();
+            resources->model_type = model_type;
+
+            ov::AnyMap properties = {};
+
+            resources->encoder_config = utils::from_config_json_if_exists<TransformerConfig>(
+                root_dir, "text_encoder/config.json");
+
+            // Load tokenizer
+            try {
+                auto tokenizer_path = root_dir / "tokenizer";
+                resources->tokenizer_impl = std::make_shared<Tokenizer::TokenizerImpl>(tokenizer_path, properties);
+            } catch (const std::exception& e) {
+                GENAI_ERR("ClipTextEncoderModule: Failed to load tokenizer: " + std::string(e.what()));
+                return nullptr;
+            }
+
+            // Load and compile text encoder model
+            try {
+                auto model = utils::singleton_core().read_model(text_encoder_path);
+                resources->compiled_model = utils::singleton_core().compile_model(
+                    model,
+                    device,
+                    ov::AnyMap{});
+            } catch (const std::exception& e) {
+                GENAI_ERR("ClipTextEncoderModule: Failed to load text encoder model: " + std::string(e.what()));
+                return nullptr;
+            }
+
+            resources->minja_template = std::make_shared<minja::chat_template>(
+                resources->tokenizer_impl->get_chat_template(),
+                resources->tokenizer_impl->m_bos_token,
+                resources->tokenizer_impl->m_eos_token);
+
+            return resources;
+        });
+
+    if (!m_shared_resources) {
+        GENAI_ERR("ClipTextEncoderModule[" + module_desc->name + "]: Failed to initialize shared resources");
         return false;
     }
 
+    // Each module instance creates its own InferRequest from the shared compiled model
     try {
-        auto text_encoder_path = root_dir / "text_encoder/openvino_model.xml";
-        if (m_model_type == DiffusionModelType::WAN_2_1) {
-            text_encoder_path = root_dir / "text_encoder/text_encoder.xml";
-        }
-        auto model = utils::singleton_core().read_model(text_encoder_path);
-        auto compiled_model = utils::singleton_core().compile_model(
-            model,
-            device,
-            ov::AnyMap{});
-        m_request = compiled_model.create_infer_request();
+        m_request = m_shared_resources->compiled_model.create_infer_request();
     } catch (const std::exception& e) {
-        GENAI_ERR("ClipTextEncoderModule[" + module_desc->name + "]: Failed to initiate text tokenizer: " + e.what());
+        GENAI_ERR("ClipTextEncoderModule[" + module_desc->name + "]: Failed to create infer request: " + std::string(e.what()));
         return false;
     }
 
-    m_minja_template = std::make_shared<minja::chat_template>(m_tokenizer_impl->get_chat_template(), m_tokenizer_impl->m_bos_token, m_tokenizer_impl->m_eos_token);
-    
     return true;
 }
 
 void ClipTextEncoderModule::run() {
     GENAI_INFO("Running module: " + module_desc->name);
-    
+
     prepare_inputs();
     std::vector<std::string> m_prompts = {};
     std::vector<std::string> m_negative_prompts = {};
-    
+
     if (exists_input("prompts")) {
         m_prompts = this->inputs["prompts"].data.as<std::vector<std::string>>();
     }
@@ -134,7 +174,7 @@ void ClipTextEncoderModule::run() {
         m_negative_prompts.insert(m_negative_prompts.begin(), single_negative_prompt);
     }
 
-    if (m_model_type == DiffusionModelType::WAN_2_1) {
+    if (m_shared_resources->model_type == DiffusionModelType::WAN_2_1) {
         if (m_negative_prompts.empty()) {
             for (size_t i = 0; i < m_prompts.size(); i++) {
                 m_negative_prompts.push_back("");
@@ -191,7 +231,7 @@ std::pair<ov::Tensor, ov::Tensor> ClipTextEncoderModule::run(
         const std::vector<std::string>& negative_prompts,
         const ImageGenerationConfig &generation_config) {
     const bool use_cfg = do_classifier_free_guidance(generation_config.guidance_scale);
-    
+
     ov::Tensor prompt_embed, negative_prompt_embed;
     if (!prompts.empty()) {
         prompt_embed = encode_prompt(prompts, generation_config);
@@ -212,26 +252,26 @@ ov::Tensor ClipTextEncoderModule::encode_prompt(
     std::vector<std::string> templated_prompts = {};
     templated_prompts.reserve(prompts.size());
     for (const auto& s : prompts) {
-        if (m_model_type == DiffusionModelType::WAN_2_1) {
+        if (m_shared_resources->model_type == DiffusionModelType::WAN_2_1) {
             templated_prompts.push_back(s);
         } else {
             ChatHistory history({{{"role", "user"}, {"content", s}}});
             bool add_generation_prompt = true;
-            auto templated_s = m_tokenizer_impl->apply_chat_template(history, add_generation_prompt, {}, std::nullopt, std::nullopt, m_minja_template);
+            auto templated_s = m_shared_resources->tokenizer_impl->apply_chat_template(history, add_generation_prompt, {}, std::nullopt, std::nullopt, m_shared_resources->minja_template);
             templated_prompts.push_back(templated_s);
         }
     }
 
     ov::AnyMap tokenization_params = {};
-    if (m_model_type == DiffusionModelType::WAN_2_1) {
+    if (m_shared_resources->model_type == DiffusionModelType::WAN_2_1) {
         tokenization_params["add_special_tokens"] = true;
         tokenization_params["max_length"] = generation_config.max_sequence_length;
         tokenization_params["pad_to_max_length"] = true;
     }
-    
 
-    auto text_inputs = m_tokenizer_impl->encode(templated_prompts, tokenization_params);
-    if (m_model_type == DiffusionModelType::ZIMAGE) {
+
+    auto text_inputs = m_shared_resources->tokenizer_impl->encode(templated_prompts, tokenization_params);
+    if (m_shared_resources->model_type == DiffusionModelType::ZIMAGE) {
         m_request.set_tensor("input_ids", text_inputs.input_ids);
         m_request.set_tensor("attention_mask", text_inputs.attention_mask);
         {
@@ -239,12 +279,12 @@ ov::Tensor ClipTextEncoderModule::encode_prompt(
             m_request.infer();
         }
 
-        size_t idx = m_encoder_config.num_hidden_layers;
+        size_t idx = m_shared_resources->encoder_config.num_hidden_layers;
         ov::Tensor prompt_embed = m_request.get_output_tensor(idx);
         ov::Tensor prompt_embed_out = ov::Tensor(prompt_embed.get_element_type(), prompt_embed.get_shape());
         prompt_embed.copy_to(prompt_embed_out);
         return prompt_embed_out;
-    } else if (m_model_type == DiffusionModelType::WAN_2_1) {
+    } else if (m_shared_resources->model_type == DiffusionModelType::WAN_2_1) {
         m_request.set_tensor("input_ids", text_inputs.input_ids);
         {
             PROFILE(pm, "infer");
