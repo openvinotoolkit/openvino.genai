@@ -1,0 +1,126 @@
+# ----------------------------------------------------------------------
+# GLOBAL CONFIGURATION
+# ----------------------------------------------------------------------
+global_context:
+  model_type: "zimage"
+
+# ----------------------------------------------------------------------
+# MODULES DEFINITION
+# ----------------------------------------------------------------------
+pipeline_modules:
+
+  # --- 0. Parameter ---
+  pipeline_params:
+    type: "ParameterModule"
+    outputs:
+      - name: "prompt"
+        type: "String"
+      - name: "width"
+        type: "Int"
+      - name: "height"
+        type: "Int"
+      - name: "num_inference_steps"
+        type: "Int"
+      - name: "guidance_scale"
+        type: "Float"
+      - name: "max_sequence_length"
+        type: "Int"
+
+  # --- 1. Prompt Encode  ---
+  clip_text_encoder:
+    type: "ClipTextEncoderModule"
+    device: "CPU"
+    inputs:
+      - name: "prompt"
+        type: "String"
+        source: "pipeline_params.prompt"
+      - name: "guidance_scale"
+        type: "Float"
+        source: "pipeline_params.guidance_scale"
+      - name: "max_sequence_length"
+        type: "Int"
+        source: "pipeline_params.max_sequence_length"
+    outputs:
+      - name: "prompt_embeds"
+        type: "VecOVTensor"
+    params:
+      model_path: "tests/module_genai/cpp/test_models/Z-Image-Turbo-fp16-ov/"
+
+  # --- 2. Init Random Latent ---
+  random_latent_image:
+    type: "RandomLatentImageModule"
+    inputs:
+      - name: "width"
+        type: "Int"
+        source: "pipeline_params.width"
+      - name: "height"
+        type: "Int"
+        source: "pipeline_params.height"
+    outputs:
+      - name: "latents"
+        type: "OVTensor"
+    params:
+      model_path: "tests/module_genai/cpp/test_models/Z-Image-Turbo-fp16-ov/"
+
+  # --- 3. Z-Image transformer ---
+  denoising_loop:
+    type: "DenoiserLoopModule"
+    device: "GPU"
+    inputs:
+      - name: "latents"
+        type: "OVTensor"
+        source: "random_latent_image.latents"
+      - name: "prompt_embeds"
+        type: "VecOVTensor"
+        source: "clip_text_encoder.prompt_embeds"
+      - name: "num_inference_steps"
+        type: "Int"
+        source: "pipeline_params.num_inference_steps"
+    outputs:
+      - name: "latents"
+        type: "OVTensor"
+    params:
+      model_path: "tests/module_genai/cpp/test_models/Z-Image-Turbo-fp16-ov/"
+
+  
+  # --- 4. vae.decode with tiling---
+  vae_decoder_tiling:
+    type: "VAEDecoderTilingModule"
+    device: "GPU"
+    inputs:
+      - name: "latent"
+        type: "OVTensor"
+        source: "denoising_loop.latents"
+    outputs:
+      - name: "image"
+        type: "OVTensor"
+    params:
+      model_path: "tests/module_genai/cpp/test_models/Z-Image-Turbo-fp16-ov/"
+      tile_overlap_factor: 0.25
+      sample_size: 256
+      sub_module_name: "vae_decoder_submodule"
+
+  # --- 5. Result Module ---
+  pipeline_result:
+    type: "ResultModule"
+    device: "CPU"
+    inputs:
+      - name: "generated_image"
+        type: "OVTensor"
+        source: "vae_decoder_tiling.image"
+
+sub_modules:
+- name: vae_decoder_submodule
+  vae_decoder:
+    type: VAEDecoderModule
+    device: GPU
+    inputs:
+    - name: latents
+      type: OVTensor
+    outputs:
+    - name: image
+      type: OVTensor
+    params:
+      enable_postprocess: 'false'
+      model_path: "tests/module_genai/cpp/test_models/Z-Image-Turbo-fp16-ov/"
+    

@@ -37,7 +37,7 @@ Use the Z-Image pipeline Python sample.
 cd openvino.genai
 ./build/samples/cpp/module_genai/md_image_generation    \
     -cfg ./samples/cpp/module_genai/config_yaml/Z-Image-Turbo-fp16-ov/config.yaml   \
-    -prompt "A beautiful landscape painting by Claude Monet"    \ 
+    -prompt "A beautiful landscape painting by Claude Monet"    \
     --height 512    \
     --width 512     \
     --num_inference_steps 9 \
@@ -46,4 +46,16 @@ cd openvino.genai
 ```
 `Note:` Update **model_path** inside the config YAML if you keep models in a different location.
 
+``Z-Image with tiling``: sample_size(tiling_size) 256
+```
+cd openvino.genai
+./build/samples/cpp/module_genai/md_image_generation    \
+    -cfg ./samples/cpp/module_genai/config_yaml/Z-Image-Turbo-fp16-ov/config_tiling.yaml   \
+    -prompt "A beautiful landscape painting by Claude Monet"    \
+    --height 512    \
+    --width 512     \
+    --num_inference_steps 9 \
+    --guidance_scale 2.5    \
+    --max_sequence_length 512
+```
 </details>
