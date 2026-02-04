@@ -25,4 +25,5 @@ When analyzing a Pull Request, follow this protocol:
 7. Formatting & Safety:
     * No using namespace std;.
     * No auto for primitive types where it obscures readability.
-    * Use const and constexpr wherever possible.
+    * User `const` and `constexpr` wherever possible.
+8. Assumptions on user behalf aren't allowed. For example, the implementation shouldn't adjust config values silently or with a warning; it should throw an exception instead.
