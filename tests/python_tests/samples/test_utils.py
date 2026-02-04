@@ -42,15 +42,15 @@ def run_js_chat(
         )
 
         output_lines: list[str] = []
-        i = 0
+        input_index = 0
         for line in proc.stdout:
             output_lines.append(line)
             if "question:" in line:
-                if i < len(inputs):
-                    proc.stdin.write(inputs[i])
+                if input_index < len(inputs):
+                    proc.stdin.write(inputs[input_index])
                     proc.stdin.write("\n")
                     proc.stdin.flush()
-                    i += 1
+                    input_index += 1
                 else:
                     break
 
