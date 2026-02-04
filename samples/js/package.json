@@ -3,15 +3,18 @@
   "version": "1.0.0",
   "license": "Apache-2.0",
   "type": "module",
-  "devDependencies": {
-    "openvino-genai-node": "^2025.4.0",
-    "yargs": "^18.0.0",
-    "zod": "^4.1.13"
-  },
   "engines": {
     "node": ">=21.0.0"
   },
   "scripts": {
     "test": "node tests/usage.test.js"
+  },
+  "dependencies": {
+    "ffmpeg-static": "^5.3.0",
+    "ffprobe-static": "^3.1.0",
+    "openvino-genai-node": "^2025.4.0",
+    "sharp": "^0.34.5",
+    "yargs": "^18.0.0",
+    "zod": "^4.1.13"
   }
 }
