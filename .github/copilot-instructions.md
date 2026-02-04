@@ -27,3 +27,7 @@ When analyzing a Pull Request, follow this protocol:
     * No auto for primitive types where it obscures readability.
     * User `const` and `constexpr` wherever possible.
 8. Assumptions on user behalf aren't allowed. For example, the implementation shouldn't adjust config values silently or with a warning; it should throw an exception instead.
+10. Verify that the result of every newly added function is used in at least one call site.
+11. Samples:
+    * Avoid adding new samples unless there is a strong, clearly justified reason.
+    * Keep command‑line arguments in samples minimal.
