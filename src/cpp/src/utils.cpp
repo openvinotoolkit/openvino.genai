@@ -577,7 +577,7 @@ void print_gguf_debug_info(const std::string &debug_info) {
         return;
     }
 
-    GENAI_DEBUG("[GGUF Reader]: %s", debug_info);
+    GENAI_DEBUG("[GGUF Reader]: %s", debug_info.c_str());
 }
 
 void print_scheduler_config_info(const SchedulerConfig &scheduler_config) {

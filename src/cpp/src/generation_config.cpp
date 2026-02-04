@@ -422,7 +422,7 @@ std::string GenerationConfig::to_string() const {
     // Multinomial sampling parameters
     oss << "  temperature: " << temperature << "\n";
     oss << "  top_p: " << top_p << "\n";
-    oss << "  top_k: " << (top_k == std::numeric_limits<size_t>::max() ? "SIZE_MAX" : std::to_string(top_k)) << "\n";
+    oss << "  top_k: " << top_k << "\n";
     oss << "  do_sample: " << std::boolalpha << do_sample << "\n";
     oss << "  rng_seed: " << rng_seed << "\n";
 
