@@ -33,4 +33,4 @@ peft==0.18.1
 # - openbmb/MiniCPM-o-2_6
 vocos==0.1.0
 torchaudio==2.8.0
-vector-quantize-pytorch==1.27.15
+vector-quantize-pytorch==1.27.20
