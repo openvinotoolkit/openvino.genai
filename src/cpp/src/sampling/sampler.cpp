@@ -768,7 +768,9 @@ void Sampler::TreeSearcher::select_top_k(const ov::Tensor& logits,
             Beam new_candidate = beam;
             new_candidate.m_log_prob = it->first - max_logit - log_sum;
             new_candidate.m_score += new_candidate.m_log_prob;
+            std::cout << "D2T1 mapping applied before: " << it->second << std::endl;
             new_candidate.m_token_id = (it->second + (m_d2t ? m_d2t[it->second] : 0));
+            std::cout << "D2T1 mapping applied after: " << new_candidate.m_token_id << std::endl;
             m_eagle2_candidate_graph->add_candidate(new_candidate, beam.m_node_id);
             candidates.push_back(new_candidate);
         }
@@ -1497,7 +1499,9 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
                         m_d2t_mapping) {  // compute token offset for draft model in speculative sampling
                         ov::Tensor d2t_tensor = m_d2t_mapping->get_tensor_view();
                         auto d2t = d2t_tensor.data<int64_t>();
+                        std::cout << "D2T mapping applied before: " << sampled_token.m_index << std::endl;
                         sampled_token.m_index = sampled_token.m_index + (d2t ? d2t[sampled_token.m_index] : 0);
+                        std::cout << "D2T mapping applied after: " << sampled_token.m_index << std::endl;
                     }
                     // flag to add sampled token to generated sequence or extend logit processors only
                     bool is_extend_sequence = logit_token_offset == 0 || is_generate_n_tokens || !is_validation_passed;

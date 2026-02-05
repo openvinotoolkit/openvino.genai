@@ -36,6 +36,9 @@ struct InferContext {
     bool use_target_hidden = false;           ///< Whether to use hidden states from target_sequence
     Sequence::Ptr target_sequence = nullptr;  ///< Source sequence for hidden states
     size_t num_tokens_to_validate = 0;        ///< Number of draft tokens to validate
+    size_t iteration_id = 0;                  ///< Draft iteration index (0 = first iteration)
+    std::shared_ptr<std::vector<int64_t>> iteration_history =
+        nullptr;  ///< History of all generated tokens across iterations
 };
 
 /// @brief Result from a forward pass
@@ -139,7 +142,9 @@ public:
                             ov::Tensor& attention_mask,
                             ov::Tensor& position_ids,
                             ov::Tensor& eagle_tree_mask,
-                            InferencePhase phase);
+                            InferencePhase phase,
+                            size_t iteration_id = 0,
+                            std::shared_ptr<std::vector<int64_t>> iteration_history = nullptr);
 
     /// @brief Samples tokens from logits
     /// @param num_tokens_to_validate Draft tokens to validate (0 for standard sampling)

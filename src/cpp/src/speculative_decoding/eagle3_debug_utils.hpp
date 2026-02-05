@@ -174,6 +174,30 @@ inline void log_model_inputs(const ov::Tensor& input_ids,
     std::cout << "[EAGLE3-INPUT] =================================" << std::endl;
 }
 
+/// @brief Log model inputs including hidden_states (for draft model)
+inline void log_model_inputs(const ov::Tensor& input_ids,
+                             const ov::Tensor& attention_mask,
+                             const ov::Tensor& position_ids,
+                             const ov::Tensor& eagle_tree_mask,
+                             const ov::Tensor& hidden_states,
+                             bool verbose) {
+    if (!verbose)
+        return;
+
+    std::cout << "[EAGLE3-INPUT] ========== MODEL INPUTS ==========" << std::endl;
+    log_tensor_info("input_ids", input_ids, verbose);
+    log_tensor_content("input_ids", input_ids, verbose, 0);
+    log_tensor_info("attention_mask", attention_mask, verbose);
+    log_tensor_content("attention_mask", attention_mask, verbose, 0);
+    log_tensor_info("position_ids", position_ids, verbose);
+    log_tensor_content("position_ids", position_ids, verbose, 0);
+    log_tensor_info("eagle_tree_mask", eagle_tree_mask, verbose);
+    log_tensor_content("eagle_tree_mask", eagle_tree_mask, verbose, 0);
+    log_tensor_info("hidden_states", hidden_states, verbose);
+    // Don't log content for hidden_states as it's too large
+    std::cout << "[EAGLE3-INPUT] =================================" << std::endl;
+}
+
 /// @brief Log model outputs (logits with top-k, hidden_features)
 inline void log_model_outputs(const ov::Tensor& logits, 
                               const ov::Tensor& hidden_features,

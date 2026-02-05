@@ -21,15 +21,20 @@ def main():
     # User can run main and draft model on different devices.
     # Please, set device for main model in `openvino_genai.LLMPipeline` constructor and in `openvino_genai.draft_model` for draft.
     # CPU, GPU and NPU can be used. For NPU, the preferred configuration is when both the main and draft models use NPU.
-    main_device = 'CPU'
-    draft_device = 'CPU'
+    main_device = 'NPU'
+    draft_device = 'NPU'
 
-    draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device)
+    draft_model = openvino_genai.draft_model(args.draft_model_dir, draft_device, MAX_PROMPT_LEN=2048, MIN_RESPONSE_LEN=512, NPU_COMPILER_TYPE="DRIVER")
 
-    pipe = openvino_genai.LLMPipeline(args.model_dir, main_device, draft_model=draft_model)
+    # pipeline_config = {
+    #     "MAX_PROMPT_LEN": 2048,
+    #     "MIN_RESPONSE_LEN": 512,
+    #     "NPU_COMPILER_TYPE": "DRIVER"
+    # }
+    pipe = openvino_genai.LLMPipeline(args.model_dir, main_device, draft_model=draft_model, MAX_PROMPT_LEN=2048, MIN_RESPONSE_LEN=512, NPU_COMPILER_TYPE="DRIVER")
     
     config = openvino_genai.GenerationConfig()
-    config.max_new_tokens = 100
+    config.max_new_tokens = 512
     # Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded.
     # Add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration.
     # NOTE: ContinuousBatching backend uses `num_assistant_tokens` as is. Stateful backend uses `num_assistant_tokens`'s copy as initial
@@ -40,6 +45,10 @@ def main():
     # `assistant_confidence_threshold`.
     # NOTE: `assistant_confidence_threshold` is supported only by ContinuousBatching backend.
     # config.assistant_confidence_threshold = 0.4
+
+    config.eagle_tree_params.branching_factor = 3
+    config.eagle_tree_params.tree_depth = 2
+    config.eagle_tree_params.total_tokens = 8
 
     # Since the streamer is set, the results will be printed 
     # every time a new token is generated and put into the streamer queue.
