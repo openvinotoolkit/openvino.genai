@@ -36,9 +36,10 @@ def test_video_model_genai(model_id, model_type, tmp_path):
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "_"))
 
+    base_model = MODEL_PATH if sys.platform == "win32" else model_id
     base_args = [
         "--base-model",
-        model_id,
+        base_model,
         "--num-samples",
         "1",
         "--gt-data",
@@ -53,7 +54,7 @@ def test_video_model_genai(model_id, model_type, tmp_path):
         "9",
     ]
     if sys.platform == "win32":
-        base_args.append("--hf")
+        base_args.append("--genai")
     run_wwb(base_args)
     assert GT_FILE.exists()
     assert (tmp_path / "reference").exists()
