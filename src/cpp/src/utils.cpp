@@ -770,14 +770,13 @@ bool explicitly_requires_paged_attention(const ov::AnyMap& properties, bool is_n
     return false;
 }
 
-bool clear_false_prompt_lookup_from_config(ov::AnyMap& properties) {
+void clear_false_prompt_lookup_from_config(ov::AnyMap& properties) {
     bool res = false;
     if (properties.find(ov::genai::prompt_lookup.name()) != properties.end()) {
         res = properties.at(ov::genai::prompt_lookup.name()).as<bool>();
         if (!res)
             properties.erase(ov::genai::prompt_lookup.name());
     }
-    return res;
 }
 
 std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& external_properties,

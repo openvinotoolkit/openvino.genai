@@ -113,7 +113,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
     }
 }
 
-void ContinuousBatchingPipeline::ContinuousBatchingImpl::generate_candidates() {}
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::generate_candidates_for_prompt_lookup() {}
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_pull_awaiting_requests() {
     std::lock_guard<std::mutex> lock{m_awaiting_requests_mutex};
@@ -440,10 +440,9 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     }
 
     {
-        // Generating candidates is only for prompt lookup
-        static ManualTimer candidates_timer("generate_candidates()");
+        static ManualTimer candidates_timer("generate_candidates_for_prompt_lookup()");
         candidates_timer.start();
-        generate_candidates();
+        generate_candidates_for_prompt_lookup();
         candidates_timer.end();
     }
 

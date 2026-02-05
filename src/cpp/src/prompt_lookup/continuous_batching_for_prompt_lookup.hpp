@@ -45,7 +45,7 @@ public:
                                  generation_config,
                                  true} {};
 
-    void generate_candidates() override;
+    void generate_candidates_for_prompt_lookup() override;
 
     // { generated_len, validation_len }
     using SequenceLen = std::pair<uint64_t, uint64_t>;

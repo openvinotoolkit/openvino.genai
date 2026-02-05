@@ -4,7 +4,6 @@
 #include "continuous_batching_for_prompt_lookup.hpp"
 
 #include "logger.hpp"
-#include "debug_utils.hpp"
 
 namespace ov::genai {
 
@@ -28,13 +27,12 @@ TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::gene
     }
 
     const size_t input_length = input_ids.size();
-    int32_t adjusted_ngram_size = max_ngram_size;
     if (max_ngram_size >= input_length) {
-        // Comparing them is not very meaningful until the ngram length reaches half the length of `input_ids`, because
-        // the ngrams will overlap with `input_ids`.
-        adjusted_ngram_size = static_cast<int32_t>(input_length / 2);
+        // Comparing the whole input_ids is not very meaningful until the ngram length reaches half the length of
+        // `input_ids`, because the ngrams will overlap with `input_ids`.
+        max_ngram_size = static_cast<int32_t>(input_length / 2);
     }
-    for (int32_t ngram_size = adjusted_ngram_size; ngram_size > 0; ngram_size--) {
+    for (int32_t ngram_size = max_ngram_size; ngram_size > 0; ngram_size--) {
         // extract last ngram_size tokens as search ngram
         std::vector<int64_t> ngram = std::vector<int64_t>{input_ids.cend() - ngram_size, input_ids.cend()};
 
@@ -54,7 +52,7 @@ TokenIds ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::gene
     return std::vector<int64_t>{};
 }
 
-void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate_candidates() {
+void ContinuousBatchingPipeline::ContinuousBatchingForPromptLookupImpl::generate_candidates_for_prompt_lookup() {
     for (auto& request : m_requests) {
         const auto prompt = request->get_prompt_ids();
 

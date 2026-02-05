@@ -132,10 +132,15 @@ public:
 
     bool has_non_finished_requests() override;
 
-    virtual void generate_candidates();
+    virtual void generate_candidates_for_prompt_lookup();
 
     void step() override;
 
+    /**
+     * input_ids is a batch of input ids for generation, which can be either raw prompts or already encoded token ids,
+     * depending on the pipeline configuration. prompt_ids is an optional batch of prompt ids, which represents the
+     * token IDs of the prompt portion for each sequence in the batch.
+     */
     std::vector<EncodedGenerationResult>
     generate(const std::vector<ov::Tensor>& input_ids,
              const std::vector<GenerationConfig>& sampling_params,
