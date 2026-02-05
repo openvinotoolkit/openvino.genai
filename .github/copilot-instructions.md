@@ -31,7 +31,7 @@ When analyzing a Pull Request, follow this protocol:
 10. Follow constructors and member initializer lists style instead of direct assignments in the constructor body.
 11. Verify that the result of every newly introduced function is used in at least one call site except for `void` functions.
 12. Make sure the function names are descriptive.
-13. Check for duplicate variables.
+13. Check for variables with different names but similar meaning or aliasing.
 14. Avoid duplicate code. Ensure that common functionality is extracted into reusable functions or utilities.
 15. Avoid pronouns in comments and names to make the statements concise.
 16. Unused functions and constructors aren't allowed except for in `debug_utils.hpp`.
