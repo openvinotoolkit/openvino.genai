@@ -1182,11 +1182,11 @@ def test_vlm_npu_no_image(ov_npu_pipe_model: VlmModelInfo):
     reason="NPU plugin is available only on Linux and Windows x86_64",
 )
 def test_vlm_npu_auto_config(cat_tensor):
-    models_path = _get_ov_model(MODEL_IDS[0])
+    models_path = _get_ov_model(NPU_SUPPORTED_MODELS[0])
     properties = {
         "DEVICE_PROPERTIES": {
             "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048},
-            "AUTO": {openvino.properties.device.priorities: "CPU"},
+            "AUTO": {openvino.properties.device.priorities: "CPU,GPU"},
         }
     }
 
