@@ -9,8 +9,12 @@
 
 #include "openvino/c/openvino.h"
 
+#ifndef OK
+#    define OK 0
+#endif
+
 #define CHECK_STATUS(return_status)                                                           \
-    if (return_status != 0) {                                                                 \
+    if (return_status != OK) {                                                                \
         fprintf(stderr, "[ERROR] return status %d, line %d\n", (int)return_status, __LINE__); \
         goto err;                                                                             \
     }

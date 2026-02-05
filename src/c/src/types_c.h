@@ -4,8 +4,10 @@
 #pragma once
 
 #include <cstdarg>
+#include <functional>
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "openvino/genai/chat_history.hpp"
 #include "openvino/genai/generation_config.hpp"
@@ -18,6 +20,8 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
+#include "openvino/runtime/properties.hpp"
+
 
 #define GET_PROPERTY_FROM_ARGS_LIST                                                                            \
     std::string property_key = va_arg(args_ptr, char*);                                                        \

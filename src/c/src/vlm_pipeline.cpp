@@ -6,6 +6,7 @@
 #include <cstdarg>
 #include <cstring>
 #include <filesystem>
+#include <memory>
 
 #include "openvino/c/ov_tensor.h"
 #include "openvino/genai/generation_config.hpp"
@@ -158,7 +159,11 @@ ov_status_e ov_genai_vlm_pipeline_generate(ov_genai_vlm_pipeline* pipe,
             return ov_status_e::INVALID_C_PARAM;
         }
 
-        rgbs_cpp.emplace_back(ov::element::Type(static_cast<ov::element::Type_t>(et)), ov::Shape(dims), data_ptr);
+        ov::Tensor image_cpp = ov::Tensor(ov::element::Type(static_cast<ov::element::Type_t>(et)), ov::Shape(dims));
+        if (image_cpp.get_byte_size() > 0 && data_ptr) {
+            std::memcpy(image_cpp.data(), data_ptr, image_cpp.get_byte_size());
+        }
+        rgbs_cpp.push_back(image_cpp);
     }
 
     try {

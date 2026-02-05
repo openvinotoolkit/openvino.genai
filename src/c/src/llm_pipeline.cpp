@@ -6,6 +6,7 @@
 #include <cstdarg>
 #include <cstring>
 #include <filesystem>
+#include <string>
 
 #include "openvino/genai/chat_history.hpp"
 #include "openvino/genai/generation_config.hpp"

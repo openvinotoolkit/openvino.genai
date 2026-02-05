@@ -4,6 +4,7 @@
 #include "openvino/genai/c/text2speech_pipeline.h"
 
 #include <cstdarg>
+#include <cstring>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -18,13 +19,21 @@ static ov_element_type_e cpp_element_type_to_c(const ov::element::Type& t) {
         return static_cast<ov_element_type_e>(ov::element::Type_t::f32);
     if (t == ov::element::f16)
         return static_cast<ov_element_type_e>(ov::element::Type_t::f16);
+    if (t == ov::element::f64)
+        return static_cast<ov_element_type_e>(ov::element::Type_t::f64);
     if (t == ov::element::i32)
         return static_cast<ov_element_type_e>(ov::element::Type_t::i32);
     if (t == ov::element::i64)
         return static_cast<ov_element_type_e>(ov::element::Type_t::i64);
     if (t == ov::element::u8)
         return static_cast<ov_element_type_e>(ov::element::Type_t::u8);
-    return static_cast<ov_element_type_e>(0);
+    if (t == ov::element::u16)
+        return static_cast<ov_element_type_e>(ov::element::Type_t::u16);
+    if (t == ov::element::u32)
+        return static_cast<ov_element_type_e>(ov::element::Type_t::u32);
+    if (t == ov::element::u64)
+        return static_cast<ov_element_type_e>(ov::element::Type_t::u64);
+    return static_cast<ov_element_type_e>(ov::element::Type_t::undefined);
 }
 
 ov_status_e ov_genai_text2speech_decoded_results_create(ov_genai_text2speech_decoded_results** results) {
@@ -96,9 +105,18 @@ ov_status_e ov_genai_text2speech_decoded_results_get_speech_at(const ov_genai_te
         shape.rank = dims.size();
         shape.dims = dims.data();
 
-        // Wrap the data in an ov_tensor_t. The user will be responsible for freeing it,
-        // but the data itself is owned by 'results'.
-        return ov_tensor_create_from_host_ptr(et, shape, cpp_tensor.data(), speech);
+        ov_status_e status = ov_tensor_create(et, shape, speech);
+        if (status != 0) {
+            return status;
+        }
+
+        void* data_ptr = nullptr;
+        ov_tensor_data(*speech, &data_ptr);
+        if (data_ptr && cpp_tensor.get_byte_size() > 0) {
+            std::memcpy(data_ptr, cpp_tensor.data(), cpp_tensor.get_byte_size());
+        }
+
+        return status;
     } catch (const std::exception& e) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }
@@ -160,20 +178,24 @@ ov_status_e ov_genai_text2speech_pipeline_generate(ov_genai_text2speech_pipeline
         ov::Tensor speaker_embedding_cpp;
         if (speaker_embedding) {
             ov_shape_t shape_c{};
-            ov_tensor_get_shape(speaker_embedding, &shape_c);
-            std::vector<size_t> dims(shape_c.rank);
-            for (size_t d = 0; d < shape_c.rank; ++d)
-                dims[d] = shape_c.dims[d];
-            ov_shape_free(&shape_c);
+            if (ov_tensor_get_shape(speaker_embedding, &shape_c) == 0) {
+                std::vector<size_t> dims(shape_c.rank);
+                for (size_t d = 0; d < shape_c.rank; ++d)
+                    dims[d] = shape_c.dims[d];
+                ov_shape_free(&shape_c);
 
-            void* data_ptr = nullptr;
-            ov_tensor_data(const_cast<ov_tensor_t*>(speaker_embedding), &data_ptr);
+                ov_element_type_e et;
+                if (ov_tensor_get_element_type(speaker_embedding, &et) == 0) {
+                    void* data_ptr = nullptr;
+                    ov_tensor_data(const_cast<ov_tensor_t*>(speaker_embedding), &data_ptr);
 
-            ov_element_type_e et;
-            ov_tensor_get_element_type(speaker_embedding, &et);
-
-            speaker_embedding_cpp =
-                ov::Tensor(ov::element::Type(static_cast<ov::element::Type_t>(et)), ov::Shape(dims), data_ptr);
+                    speaker_embedding_cpp =
+                        ov::Tensor(ov::element::Type(static_cast<ov::element::Type_t>(et)), ov::Shape(dims));
+                    if (speaker_embedding_cpp.get_byte_size() > 0 && data_ptr) {
+                        std::memcpy(speaker_embedding_cpp.data(), data_ptr, speaker_embedding_cpp.get_byte_size());
+                    }
+                }
+            }
         }
 
         ov::AnyMap property = {};
