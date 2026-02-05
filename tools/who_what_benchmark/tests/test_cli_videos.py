@@ -36,24 +36,25 @@ def test_video_model_genai(model_id, model_type, tmp_path):
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "_"))
 
-    run_wwb(
-        [
-            "--base-model",
-            model_id,
-            "--num-samples",
-            "1",
-            "--gt-data",
-            GT_FILE,
-            "--device",
-            "CPU",
-            "--model-type",
-            model_type,
-            "--num-inference-steps",
-            "2",
-            "--video-frames-num",
-            "9",
-        ]
-    )
+    base_args = [
+        "--base-model",
+        model_id,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--num-inference-steps",
+        "2",
+        "--video-frames-num",
+        "9",
+    ]
+    if sys.platform == "win32":
+        base_args.append("--hf")
+    run_wwb(base_args)
     assert GT_FILE.exists()
     assert (tmp_path / "reference").exists()
 
