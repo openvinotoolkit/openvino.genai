@@ -177,14 +177,7 @@ void ClipTextEncoderModuleGenerator::generate(YamlGeneratorContext& ctx) {
                 module_name.c_str(), is_negative ? "negative" : "positive");
 
     YAML::Node module = ctx.pipeline_modules[module_name];
-    // Force CPU for T5/UMT5 text encoders in Wan 2.1 models to avoid NaN issues on GPU
-    // GPU inference of T5 models may produce NaN outputs on some hardware
-    if (ctx.model_type == "wan2.1") {
-        std::cout << "[WARNING] [ClipTextEncoderModule] Forcing CPU device for Wan 2.1 T5 text encoder to avoid NaN issues on GPU" << std::endl;
-        module["device"] = "CPU";
-    } else {
-        module["device"] = ctx.options.device;
-    }
+    module["device"] = ctx.options.device;
 
     YAML::Node inputs;
     if (is_negative) {

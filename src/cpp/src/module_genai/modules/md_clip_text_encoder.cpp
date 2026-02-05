@@ -118,10 +118,20 @@ bool ClipTextEncoderModule::initialize() {
             // Load and compile text encoder model
             try {
                 auto model = utils::singleton_core().read_model(text_encoder_path);
+
+                // Set compile properties based on model type and device
+                ov::AnyMap compile_properties = {};
+                if (model_type == DiffusionModelType::WAN_2_1 && device.find("GPU") != std::string::npos) {
+                    // Force FP32 precision on GPU for Wan 2.1 T5 encoder to avoid NaN issues
+                    // NOTE: First compilation may take several minutes due to GPU JIT
+                    compile_properties[ov::hint::inference_precision.name()] = ov::element::f32;
+                    GENAI_INFO("Wan 2.1 T5 encoder: Compiling for GPU with FP32 precision (may take a few minutes on first run)...");
+                }
+
                 resources->compiled_model = utils::singleton_core().compile_model(
                     model,
                     device,
-                    ov::AnyMap{});
+                    compile_properties);
             } catch (const std::exception& e) {
                 GENAI_ERR("ClipTextEncoderModule: Failed to load text encoder model: " + std::string(e.what()));
                 return nullptr;
