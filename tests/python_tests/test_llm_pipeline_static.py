@@ -175,7 +175,6 @@ def test_generation_compare_with_stateful_chat_history(
 @pytest.mark.parametrize("llm_model", MODELS_LIST, indirect=True)
 @pytest.mark.parametrize("npu_config", PIPELINE_CONFIGS, indirect=True)
 @pytest.mark.parametrize("with_weights", BLOB_WITH_WEIGHTS)
-@pytest.mark.xfail(reason="180345: No available devices. Reproduced on CI only.")
 def test_pipeline_cache_dir(
     llm_model: OVConvertedModelSchema, 
     ov_model: LLMPipeline, 
