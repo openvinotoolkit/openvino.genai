@@ -40,3 +40,4 @@ When analyzing a Pull Request, follow this protocol:
 19. Samples:
     * Avoid adding new samples unless there is a strong, clearly justified reason.
     * Keep command‑line arguments in samples minimal.
+    * Ensure new samples have corresponding tests.
