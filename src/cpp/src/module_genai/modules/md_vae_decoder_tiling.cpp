@@ -166,7 +166,11 @@ void VAEDecoderTilingModule::run() {
     if (this->inputs.find("latent") != this->inputs.end()) {
         latents.push_back(this->inputs["latent"].data.as<ov::Tensor>());
     } else if (this->inputs.find("latents") != this->inputs.end()) {
-        latents = this->inputs["latents"].data.as<std::vector<ov::Tensor>>();
+        if (this->inputs["latents"].data.is<ov::Tensor>()) {
+            latents.push_back(this->inputs["latents"].data.as<ov::Tensor>());
+        } else {
+            latents = this->inputs["latents"].data.as<std::vector<ov::Tensor>>();
+        }
     } else {
         GENAI_ERR("TransformerModule[" + module_desc->name + "]: 'latent' or 'latents' input not found");
         return;

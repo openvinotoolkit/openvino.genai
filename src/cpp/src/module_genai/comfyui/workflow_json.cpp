@@ -33,6 +33,7 @@ static const std::unordered_map<std::string, std::string>& get_pretty_names() {
         {"StringConcatenate", "Concatenate"},
         {"VAEDecode", "VAE Decode"},
         {"CLIPTextEncode", "CLIP Text Encode (Prompt)"},
+        {"EmptyHunyuanLatentVideo", "Empty HunyuanVideo 1.0 Latent"},
     };
     return pretty_names;
 }
@@ -48,17 +49,21 @@ std::vector<std::string> WorkflowToApiConverter::get_widget_input_names(
     // Common node types and their widget parameters
     static const std::unordered_map<std::string, std::vector<std::string>> node_widgets = {
         {"SaveImage", {"filename_prefix"}},
+        {"SaveAnimatedWEBP", {"filename_prefix", "fps", "lossless", "quality", "method"}},
+        {"SaveWEBM", {"filename_prefix", "codec", "fps", "crf"}},
         {"KSampler", {"seed", "steps", "cfg", "sampler_name", "scheduler", "denoise"}},
         {"CLIPTextEncode", {"text"}},
         {"CheckpointLoaderSimple", {"ckpt_name"}},
         {"EmptyLatentImage", {"width", "height", "batch_size"}},
         {"EmptySD3LatentImage", {"width", "height", "batch_size"}},
+        {"EmptyHunyuanLatentVideo", {"width", "height", "length", "batch_size"}},
         {"VAEDecode", {}},
         {"VAELoader", {"vae_name"}},
         {"UNETLoader", {"unet_name", "weight_dtype"}},
         {"CLIPLoader", {"clip_name", "type", "device"}},
         {"ModelSamplingFlux", {"max_shift", "base_shift", "width", "height"}},
         {"ModelSamplingAuraFlow", {"shift"}},
+        {"ModelSamplingSD3", {"shift"}},
         {"VAEDecodeSwitcher", {"select_decoder", "tile_size", "overlap", "temporal_size", "temporal_overlap"}},
         {"PrimitiveStringMultiline", {"value"}},
         {"StringConcatenate", {"string_a", "string_b", "delimiter"}},

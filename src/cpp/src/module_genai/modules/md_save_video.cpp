@@ -32,7 +32,10 @@ void SaveVideoModule::print_static_config() {
     std::cout << R"(
   save_video:          # Module Name
     type: "SaveVideoModule"
-    description: "Save video tensor to AVI file. Input: [B, F, H, W, C] tensor. Supported DataType: [OVTensor]"
+    description: "Save video tensor to AVI file. Supports two input formats:
+                  1. [B, F, H, W, C] channels-last (e.g., from VideoProcessor)
+                  2. [B, C, F, H, W] channels-first (e.g., from VAE decoder)
+                  Supported DataTypes: [u8, f32, f16]"
     device: "CPU"
     inputs:
       - name: "raw_data"
@@ -345,7 +348,7 @@ static inline std::string batch_name(const std::string& base, size_t b) {
     return base.substr(0, dot) + "_b" + std::to_string(b) + base.substr(dot);
 }
 
-// Convert frame data to RGB u8 format
+// Convert frame data to RGB u8 format (channels-last input)
 static inline void pack_to_rgb_u8(const uint8_t* src, size_t H, size_t W, size_t C,
                                   bool bgr2rgb, std::vector<uint8_t>& out_rgb) {
     const size_t HW = H * W;
@@ -371,6 +374,162 @@ static inline void pack_to_rgb_u8(const uint8_t* src, size_t H, size_t W, size_t
         for (size_t i = 0; i < HW; ++i) { *dst++ = s[0]; *dst++ = s[1]; *dst++ = s[2]; s += C; }
     } else {
         for (size_t i = 0; i < HW; ++i) { *dst++ = s[2]; *dst++ = s[1]; *dst++ = s[0]; s += C; }
+    }
+}
+
+// Convert channels-first float frame [C, H, W] to RGB u8 [H, W, 3]
+// Applies denormalization: (val * 0.5 + 0.5).clamp(0, 1) * 255
+// - For VAE decoder output in [-1, 1]: maps to full [0, 255] range (expected use case)
+// - For values already in [0, 1]: maps to [127.5, 255] (brighter output)
+// - Values outside [-1, 1] are clamped after transformation
+template<typename T>
+static inline void pack_chw_float_to_rgb_u8(const T* src, size_t C, size_t H, size_t W,
+                                            bool bgr2rgb, std::vector<uint8_t>& out_rgb) {
+    const size_t HW = H * W;
+    out_rgb.resize(HW * 3);
+    uint8_t* dst = out_rgb.data();
+
+    auto float_to_u8 = [](T val) -> uint8_t {
+        float f = static_cast<float>(val);
+        f = f * 0.5f + 0.5f;
+        // Clamp to [0, 1]
+        f = std::max(0.0f, std::min(1.0f, f));
+        // Convert to [0, 255]
+        return static_cast<uint8_t>(f * 255.0f + 0.5f);
+    };
+
+    if (C == 1) {  // grayscale
+        const T* gray = src;
+        for (size_t i = 0; i < HW; ++i) {
+            uint8_t g = float_to_u8(gray[i]);
+            *dst++ = g; *dst++ = g; *dst++ = g;
+        }
+    } else if (C >= 3) {
+        const T* r_plane = src;
+        const T* g_plane = src + HW;
+        const T* b_plane = src + 2 * HW;
+        if (!bgr2rgb) {
+            for (size_t i = 0; i < HW; ++i) {
+                *dst++ = float_to_u8(r_plane[i]);
+                *dst++ = float_to_u8(g_plane[i]);
+                *dst++ = float_to_u8(b_plane[i]);
+            }
+        } else {
+            for (size_t i = 0; i < HW; ++i) {
+                *dst++ = float_to_u8(b_plane[i]);
+                *dst++ = float_to_u8(g_plane[i]);
+                *dst++ = float_to_u8(r_plane[i]);
+            }
+        }
+    }
+}
+
+// Convert channels-first uint8 frame [C, H, W] to RGB u8 [H, W, 3]
+static inline void pack_chw_u8_to_rgb_u8(const uint8_t* src, size_t C, size_t H, size_t W,
+                                         bool bgr2rgb, std::vector<uint8_t>& out_rgb) {
+    const size_t HW = H * W;
+    out_rgb.resize(HW * 3);
+    uint8_t* dst = out_rgb.data();
+
+    if (C == 1) {  // grayscale
+        for (size_t i = 0; i < HW; ++i) {
+            uint8_t g = src[i];
+            *dst++ = g; *dst++ = g; *dst++ = g;
+        }
+    } else if (C >= 3) {
+        const uint8_t* r_plane = src;
+        const uint8_t* g_plane = src + HW;
+        const uint8_t* b_plane = src + 2 * HW;
+        if (!bgr2rgb) {
+            for (size_t i = 0; i < HW; ++i) {
+                *dst++ = r_plane[i];
+                *dst++ = g_plane[i];
+                *dst++ = b_plane[i];
+            }
+        } else {
+            for (size_t i = 0; i < HW; ++i) {
+                *dst++ = b_plane[i];
+                *dst++ = g_plane[i];
+                *dst++ = r_plane[i];
+            }
+        }
+    }
+}
+
+// Convert channels-first float frame with stride to RGB u8 [H, W, 3]
+// Operates directly on source data without intermediate copy
+// channel_stride: distance between channels in the source (e.g., F * H * W for [B, C, F, H, W])
+template<typename T>
+static inline void pack_chw_float_strided_to_rgb_u8(const T* src, size_t C, size_t H, size_t W,
+                                                     size_t channel_stride, bool bgr2rgb,
+                                                     std::vector<uint8_t>& out_rgb) {
+    const size_t HW = H * W;
+    out_rgb.resize(HW * 3);
+    uint8_t* dst = out_rgb.data();
+
+    auto float_to_u8 = [](T val) -> uint8_t {
+        float f = static_cast<float>(val);
+        f = f * 0.5f + 0.5f;
+        f = std::max(0.0f, std::min(1.0f, f));
+        return static_cast<uint8_t>(f * 255.0f + 0.5f);
+    };
+
+    if (C == 1) {
+        const T* gray = src;
+        for (size_t i = 0; i < HW; ++i) {
+            uint8_t g = float_to_u8(gray[i]);
+            *dst++ = g; *dst++ = g; *dst++ = g;
+        }
+    } else if (C >= 3) {
+        const T* r_plane = src;
+        const T* g_plane = src + channel_stride;
+        const T* b_plane = src + 2 * channel_stride;
+        if (!bgr2rgb) {
+            for (size_t i = 0; i < HW; ++i) {
+                *dst++ = float_to_u8(r_plane[i]);
+                *dst++ = float_to_u8(g_plane[i]);
+                *dst++ = float_to_u8(b_plane[i]);
+            }
+        } else {
+            for (size_t i = 0; i < HW; ++i) {
+                *dst++ = float_to_u8(b_plane[i]);
+                *dst++ = float_to_u8(g_plane[i]);
+                *dst++ = float_to_u8(r_plane[i]);
+            }
+        }
+    }
+}
+
+// Convert channels-first uint8 frame with stride to RGB u8 [H, W, 3]
+static inline void pack_chw_u8_strided_to_rgb_u8(const uint8_t* src, size_t C, size_t H, size_t W,
+                                                  size_t channel_stride, bool bgr2rgb,
+                                                  std::vector<uint8_t>& out_rgb) {
+    const size_t HW = H * W;
+    out_rgb.resize(HW * 3);
+    uint8_t* dst = out_rgb.data();
+
+    if (C == 1) {
+        for (size_t i = 0; i < HW; ++i) {
+            uint8_t g = src[i];
+            *dst++ = g; *dst++ = g; *dst++ = g;
+        }
+    } else if (C >= 3) {
+        const uint8_t* r_plane = src;
+        const uint8_t* g_plane = src + channel_stride;
+        const uint8_t* b_plane = src + 2 * channel_stride;
+        if (!bgr2rgb) {
+            for (size_t i = 0; i < HW; ++i) {
+                *dst++ = r_plane[i];
+                *dst++ = g_plane[i];
+                *dst++ = b_plane[i];
+            }
+        } else {
+            for (size_t i = 0; i < HW; ++i) {
+                *dst++ = b_plane[i];
+                *dst++ = g_plane[i];
+                *dst++ = r_plane[i];
+            }
+        }
     }
 }
 
@@ -472,33 +631,55 @@ std::vector<std::string> SaveVideoModule::save_tensor_as_video(const ov::Tensor&
     auto shape = tensor.get_shape();
     auto element_type = tensor.get_element_type();
 
-    // Expect tensor shape to be [B, F, H, W, C] (5D video tensor)
+    // Expect tensor shape to be 5D
     if (shape.size() != 5) {
-        GENAI_ERR("SaveVideoModule: Expected 5D tensor [B, F, H, W, C], got " + std::to_string(shape.size()) + "D");
+        GENAI_ERR("SaveVideoModule: Expected 5D tensor, got " + std::to_string(shape.size()) + "D");
         return saved_paths;
     }
 
-    const size_t B = shape[0];  // Batch
-    const size_t F = shape[1];  // Frames
-    const size_t H = shape[2];  // Height
-    const size_t W = shape[3];  // Width
-    const size_t C = shape[4];  // Channels
+    // Detect format: channels-first [B, C, F, H, W] vs channels-last [B, F, H, W, C]
+    // Heuristic: if shape[1] <= 4 (typical channel count) and shape[4] > 4 (typical spatial dim),
+    // then it's channels-first format from VAE decoder
+    bool is_channels_first = (shape[1] <= 4 && shape[4] > 4);
+
+    size_t B, C, F, H, W;
+    if (is_channels_first) {
+        // [B, C, F, H, W] - VAE decoder output format
+        B = shape[0];
+        C = shape[1];
+        F = shape[2];
+        H = shape[3];
+        W = shape[4];
+        GENAI_INFO("SaveVideoModule: Detected channels-first format [B=" + std::to_string(B) +
+                   ", C=" + std::to_string(C) + ", F=" + std::to_string(F) +
+                   ", H=" + std::to_string(H) + ", W=" + std::to_string(W) + "]");
+    } else {
+        // [B, F, H, W, C] - Standard video format
+        B = shape[0];
+        F = shape[1];
+        H = shape[2];
+        W = shape[3];
+        C = shape[4];
+        GENAI_INFO("SaveVideoModule: Detected channels-last format [B=" + std::to_string(B) +
+                   ", F=" + std::to_string(F) + ", H=" + std::to_string(H) +
+                   ", W=" + std::to_string(W) + ", C=" + std::to_string(C) + "]");
+    }
 
     if (!(C == 1 || C == 3 || C == 4)) {
         GENAI_ERR("SaveVideoModule: Unsupported number of channels: " + std::to_string(C) + ". Expected 1, 3, or 4.");
         return saved_paths;
     }
 
-    // Currently only support uint8 tensor
-    if (element_type != ov::element::u8) {
-        GENAI_ERR("SaveVideoModule: Unsupported tensor element type: " + element_type.get_type_name() + ". Expected u8.");
+    // Support float32, float16, and uint8
+    bool is_float = (element_type == ov::element::f32 || element_type == ov::element::f16);
+    if (element_type != ov::element::u8 && element_type != ov::element::f32 && element_type != ov::element::f16) {
+        GENAI_ERR("SaveVideoModule: Unsupported tensor element type: " + element_type.get_type_name() +
+                  ". Expected u8, f32, or f16.");
         return saved_paths;
     }
 
-    const size_t elems_per_frame = H * W * C;
-    const uint8_t* base = tensor.data<uint8_t>();
-
     std::vector<uint8_t> rgb;
+
     for (size_t b = 0; b < B; ++b) {
         std::string current_filepath = filepath;
         if (B > 1) {
@@ -508,10 +689,38 @@ std::vector<std::string> SaveVideoModule::save_tensor_as_video(const ov::Tensor&
         try {
             AVIMJPEGWriter avi(current_filepath, static_cast<uint32_t>(W), static_cast<uint32_t>(H), m_fps);
 
-            const uint8_t* batch_ptr = base + b * F * elems_per_frame;
             for (size_t f = 0; f < F; ++f) {
-                const uint8_t* frame_ptr = batch_ptr + f * elems_per_frame;
-                pack_to_rgb_u8(frame_ptr, H, W, C, m_convert_bgr2rgb, rgb);
+                if (is_channels_first) {
+                    // [B, C, F, H, W] format - use strided access to avoid copying
+                    // For frame f, data starts at: base + b * C * F * H * W + f * H * W
+                    // Channel stride is F * H * W (distance between channels)
+                    const size_t channel_stride = F * H * W;
+                    const size_t frame_start = b * C * F * H * W + f * H * W;
+
+                    if (element_type == ov::element::f32) {
+                        const float* frame_ptr = tensor.data<float>() + frame_start;
+                        pack_chw_float_strided_to_rgb_u8(frame_ptr, C, H, W, channel_stride, m_convert_bgr2rgb, rgb);
+                    } else if (element_type == ov::element::f16) {
+                        const ov::float16* frame_ptr = tensor.data<ov::float16>() + frame_start;
+                        pack_chw_float_strided_to_rgb_u8(frame_ptr, C, H, W, channel_stride, m_convert_bgr2rgb, rgb);
+                    } else {  // u8
+                        const uint8_t* frame_ptr = tensor.data<uint8_t>() + frame_start;
+                        pack_chw_u8_strided_to_rgb_u8(frame_ptr, C, H, W, channel_stride, m_convert_bgr2rgb, rgb);
+                    }
+                } else {
+                    // [B, F, H, W, C] format - original code path
+                    const size_t elems_per_frame = H * W * C;
+                    if (element_type == ov::element::u8) {
+                        const uint8_t* base = tensor.data<uint8_t>();
+                        const uint8_t* frame_ptr = base + b * F * elems_per_frame + f * elems_per_frame;
+                        pack_to_rgb_u8(frame_ptr, H, W, C, m_convert_bgr2rgb, rgb);
+                    } else {
+                        GENAI_ERR("SaveVideoModule: Float tensors with channels-last format not supported. "
+                                  "Please convert to uint8 or use channels-first format.");
+                        return saved_paths;
+                    }
+                }
+
                 avi.add_rgb_frame_as_jpeg(rgb.data(), m_quality);
             }
 

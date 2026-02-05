@@ -1,0 +1,162 @@
+{
+  "3": {
+    "inputs": {
+      "seed": 839327983272663,
+      "steps": 30,
+      "cfg": 6,
+      "sampler_name": "uni_pc",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "48",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "40",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "6": {
+    "inputs": {
+      "text": "a majestic old white-robed wizard casting a spell under a starlit sky, standing on an ancient stone altar in a ruined medieval forest temple, glowing magic symbols, celestial energy swirling around, long silver beard, ornate staff with glowing crystal, cinematic lighting, volumetric fog, fantasy atmosphere, ultra detailed, 4K, highly realistic, by greg rutkowski, artgerm, cinematic fantasy, animation of swirling energy, slow motion magical aura forming, glowing runes pulsing, cloak flowing in the wind",
+      "clip": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Positive Prompt)"
+    }
+  },
+  "7": {
+    "inputs": {
+      "text": "low quality, blurry, ugly, poorly drawn hands, deformed face, extra limbs, bad anatomy, low resolution, disfigured, unrealistic, cartoonish, watermark, text, signature, distorted proportions, creepy, glitch, jpeg artifacts\n",
+      "clip": [
+        "38",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Negative Prompt)"
+    }
+  },
+  "8": {
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "39",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "28": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "fps": 16,
+      "lossless": false,
+      "quality": 90,
+      "method": "default",
+      "images": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "SaveAnimatedWEBP",
+    "_meta": {
+      "title": "SaveAnimatedWEBP"
+    }
+  },
+  "37": {
+    "inputs": {
+      "unet_name": "wan2.1_t2v_1.3B_fp16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "38": {
+    "inputs": {
+      "clip_name": "umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+      "type": "wan",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "39": {
+    "inputs": {
+      "vae_name": "wan_2.1_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "40": {
+    "inputs": {
+      "width": 832,
+      "height": 480,
+      "length": 33,
+      "batch_size": 1
+    },
+    "class_type": "EmptyHunyuanLatentVideo",
+    "_meta": {
+      "title": "Empty HunyuanVideo 1.0 Latent"
+    }
+  },
+  "47": {
+    "inputs": {
+      "filename_prefix": "video/wan2.1",
+      "codec": "vp9",
+      "fps": 24.000000000000004,
+      "crf": 32,
+      "images": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "SaveWEBM",
+    "_meta": {
+      "title": "SaveWEBM"
+    }
+  },
+  "48": {
+    "inputs": {
+      "shift": 8,
+      "model": [
+        "37",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingSD3",
+    "_meta": {
+      "title": "ModelSamplingSD3"
+    }
+  }
+}

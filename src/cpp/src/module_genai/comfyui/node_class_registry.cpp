@@ -147,6 +147,18 @@ void NodeClassRegistry::register_latent_nodes() {
         register_node_class("EmptySD3LatentImage", info);
     }
 
+    // EmptyHunyuanLatentVideo - Creates empty latent video for HunyuanVideo
+    {
+        NodeClassInfo info;
+        info.required_inputs["width"] = InputTypeInfo{"INT", "required", make_extra_info({{"default", 848}, {"min", 16}, {"max", 16384}, {"step", 16}})};
+        info.required_inputs["height"] = InputTypeInfo{"INT", "required", make_extra_info({{"default", 480}, {"min", 16}, {"max", 16384}, {"step", 16}})};
+        info.required_inputs["length"] = InputTypeInfo{"INT", "required", make_extra_info({{"default", 25}, {"min", 1}, {"max", 16384}, {"step", 4}})};
+        info.required_inputs["batch_size"] = InputTypeInfo{"INT", "required", make_extra_info({{"default", 1}, {"min", 1}, {"max", 4096}})};
+        info.return_types = {"LATENT"};
+        info.is_output_node = false;
+        register_node_class("EmptyHunyuanLatentVideo", info);
+    }
+
     // Add more latent nodes here as needed
     // Example: EmptyLatentImage, LatentUpscale, etc.
 }
@@ -239,6 +251,33 @@ void NodeClassRegistry::register_output_nodes() {
         register_node_class("SaveImage", info);
     }
 
+    // SaveAnimatedWEBP - Saves animated WEBP image
+    {
+        NodeClassInfo info;
+        info.required_inputs["images"] = InputTypeInfo{"IMAGE", "required", {}};
+        info.optional_inputs["filename_prefix"] = InputTypeInfo{"STRING", "optional", make_extra_info({{"default", std::string("ComfyUI")}})};
+        info.optional_inputs["fps"] = InputTypeInfo{"FLOAT", "optional", make_extra_info({{"default", 6.0}, {"min", 0.01}, {"max", 1000.0}})};
+        info.optional_inputs["lossless"] = InputTypeInfo{"BOOLEAN", "optional", make_extra_info({{"default", std::string("true")}})};
+        info.optional_inputs["quality"] = InputTypeInfo{"INT", "optional", make_extra_info({{"default", 80}, {"min", 0}, {"max", 100}})};
+        info.optional_inputs["method"] = InputTypeInfo{"STRING", "optional", make_extra_info({{"default", std::string("default")}})};
+        info.return_types = {};
+        info.is_output_node = true;
+        register_node_class("SaveAnimatedWEBP", info);
+    }
+
+    // SaveWEBM - Saves video as WEBM format
+    {
+        NodeClassInfo info;
+        info.required_inputs["images"] = InputTypeInfo{"IMAGE", "required", {}};
+        info.optional_inputs["filename_prefix"] = InputTypeInfo{"STRING", "optional", make_extra_info({{"default", std::string("ComfyUI")}})};
+        info.optional_inputs["codec"] = InputTypeInfo{"STRING", "optional", make_extra_info({{"default", std::string("vp9")}})};
+        info.optional_inputs["fps"] = InputTypeInfo{"FLOAT", "optional", make_extra_info({{"default", 24.0}, {"min", 0.01}, {"max", 1000.0}})};
+        info.optional_inputs["crf"] = InputTypeInfo{"FLOAT", "optional", make_extra_info({{"default", 32.0}, {"min", 0.0}, {"max", 63.0}})};
+        info.return_types = {};
+        info.is_output_node = true;
+        register_node_class("SaveWEBM", info);
+    }
+
     // Add more output nodes here as needed
     // Example: PreviewImage, SaveImageWebsocket, etc.
 }
@@ -276,6 +315,16 @@ void NodeClassRegistry::register_utility_nodes() {
         info.return_types = {"MODEL"};
         info.is_output_node = false;
         register_node_class("ModelSamplingAuraFlow", info);
+    }
+
+    // ModelSamplingSD3 - Modifies model sampling for SD3
+    {
+        NodeClassInfo info;
+        info.required_inputs["model"] = InputTypeInfo{"MODEL", "required", {}};
+        info.required_inputs["shift"] = InputTypeInfo{"FLOAT", "required", make_extra_info({{"default", 3.0}, {"min", 0.0}, {"max", 100.0}})};
+        info.return_types = {"MODEL"};
+        info.is_output_node = false;
+        register_node_class("ModelSamplingSD3", info);
     }
 
     // Add more utility nodes here as needed

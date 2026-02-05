@@ -25,36 +25,23 @@
 // OpenVINO GenAI ModulePipeline
 #include "openvino/genai/module_genai/pipeline.hpp"
 #include "../utils/vision_utils.hpp"
+#include "../utils/log_utils.hpp"
 
 namespace fs = std::filesystem;
-
-// ============================================================================
-// Verbose Logging
-// ============================================================================
-
-enum class LogLevel { QUIET = 0, ERROR = 1, INFO = 2, DEBUG = 3 };
-
-static LogLevel g_log_level = LogLevel::INFO;  // Default log level
-
-#define LOG_ERROR(msg) do { if (g_log_level >= LogLevel::ERROR) { std::cerr << "[ERROR] " << msg << std::endl; } } while(0)
-#define LOG_INFO(msg)  do { if (g_log_level >= LogLevel::INFO)  { std::cout << "[INFO] " << msg << std::endl; } } while(0)
-#define LOG_DEBUG(msg) do { if (g_log_level >= LogLevel::DEBUG) { std::cout << "[DEBUG] " << msg << std::endl; } } while(0)
-#define LOG_SUCCESS(msg) do { if (g_log_level >= LogLevel::INFO) { std::cout << "[SUCCESS] " << msg << std::endl; } } while(0)
-#define LOG_WARNING(msg) do { if (g_log_level >= LogLevel::INFO) { std::cout << "[WARNING] " << msg << std::endl; } } while(0)
 
 // ============================================================================
 // Command Line Arguments
 // ============================================================================
 
 struct ProgramOptions {
-    std::string json_file;
-    std::string yaml_file;
-    std::string model_path = "./ut_pipelines/Z-Image-Turbo-fp16-ov";
+    std::string json_file;  // Required parameter
+    std::string model_path;  // Required parameter
     std::string device = "CPU";
     std::string prompt;
     std::string output_file;
     int width = 0;
     int height = 0;
+    int num_frames = 0;
     int steps = 0;
     float guidance = 0.0f;
     int max_seq_len = 0;
@@ -68,30 +55,28 @@ void print_help(const char* program_name) {
               << "OpenVINO GenAI ModulePipeline for ComfyUI\n"
               << "Runs image generation pipeline from ComfyUI both workflow  and API JSON config.\n\n"
               << "Options:\n"
-              << "  --json <file>           ComfyUI JSON file (API or workflow format)\n"
-              << "  --yaml <file>           YAML pipeline config file\n"
-              << "  --model-path <path>     Model path base (default: ./models/)\n"
-              << "  --device <device>       Device to run on (default: GPU.1)\n"
+              << "  --json <file>           ComfyUI JSON file (required, API or workflow format)\n"
+              << "  --model_path <path>     Model path base (required)\n"
+              << "  --device <device>       Device to run on (default: CPU)\n"
               << "  --prompt <text>         Text prompt for generation\n"
               << "  --output <file>         Output image filename (auto-generated if not specified)\n"
               << "  --width <int>           Image width (default: 1024)\n"
               << "  --height <int>          Image height (default: 1024)\n"
+              << "  --num_frames <int>      Number of video frames (for video generation)\n"
               << "  --steps <int>           Number of inference steps (default: 4)\n"
               << "  --guidance <float>      Guidance scale (default: 0.0)\n"
-              << "  --max-seq-len <int>     Max sequence length (default: 512)\n"
+              << "  --max_seq_len <int>     Max sequence length (default: 512)\n"
               << "  --tile_size <int>       VAE decoder tile size (sample_size)\n"
               << "  --verbose <level>       Verbosity: 0=quiet, 1=error, 2=info (default), 3=debug\n"
               << "  --help                  Show this help message\n\n"
               << "Examples:\n"
-              << "  " << program_name << " --json workflow_api.json --prompt \"a cat\"\n"
-              << "  " << program_name << " --yaml pipeline.yaml --output result.bmp\n"
+              << "  " << program_name << " --json workflow.json --model_path ./models/Z-Image-Turbo-fp16-ov\n"
+              << "  " << program_name << " --json workflow.json --model_path ./models/Wan2.1-T2V --device GPU\n"
               << std::endl;
 }
 
 // Forward declarations
 bool parse_arguments(int argc, char* argv[], ProgramOptions& opts);
-std::string read_file_content(const std::string& filepath);
-bool load_and_validate_yaml(const std::string& yaml_file, std::string& yaml_content, ov::AnyMap& extracted_inputs);
 ov::AnyMap build_pipeline_inputs(const ov::AnyMap& extracted_inputs, const ProgramOptions& opts);
 void print_pipeline_inputs(const ov::AnyMap& inputs);
 void print_extracted_inputs(const ov::AnyMap& extracted_inputs);
@@ -115,50 +100,56 @@ int main(int argc, char* argv[]) {
         return EXIT_SUCCESS;
     }
 
+    // Validate required parameters
+    if (opts.json_file.empty()) {
+        LOG_ERROR("--json is required. Please specify the ComfyUI JSON file.");
+        print_help(argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    if (opts.model_path.empty()) {
+        LOG_ERROR("--model_path is required. Please specify the path to the model directory.");
+        print_help(argv[0]);
+        return EXIT_FAILURE;
+    }
+
     try {
         std::string yaml_content;
         ov::AnyMap extracted_inputs;  // Inputs extracted from ComfyUI JSON
 
         // ====================================================================
-        // Step 1: Get YAML content (from JSON conversion or direct YAML file)
+        // Step 1: Get YAML content from JSON conversion
         // ====================================================================
 
-        if (!opts.json_file.empty()) {
-            // Convert ComfyUI JSON to YAML using ModulePipeline API
-            LOG_INFO("Loading ComfyUI JSON from: " << opts.json_file);
+        // Convert ComfyUI JSON to YAML using ModulePipeline API
+        LOG_INFO("Loading ComfyUI JSON from: " << opts.json_file);
 
-            if (!fs::exists(opts.json_file)) {
-                LOG_ERROR("JSON file not found: " << opts.json_file);
-                return EXIT_FAILURE;
-            }
-
-            // Set conversion options via pipeline_inputs
-            extracted_inputs["model_path"] = opts.model_path;
-            extracted_inputs["device"] = opts.device;
-            if (opts.tile_size != 0) {
-                extracted_inputs["tile_size"] = opts.tile_size;
-            }
-
-            // Use the new ModulePipeline API for conversion and input extraction
-            yaml_content = ov::genai::module::ModulePipeline::comfyui_json_to_yaml(
-                opts.json_file, extracted_inputs);
-
-            if (yaml_content.empty()) {
-                LOG_ERROR("Failed to convert JSON to YAML");
-                return EXIT_FAILURE;
-            }
-
-            LOG_INFO("Converted to YAML successfully");
-            print_extracted_inputs(extracted_inputs);
-
-            // Save and print YAML for debugging
-            save_and_print_yaml_debug(yaml_content, opts.json_file);
-        } else if (!opts.yaml_file.empty()) {
-            // Direct YAML input - load and validate
-            if (!load_and_validate_yaml(opts.yaml_file, yaml_content, extracted_inputs)) {
-                return EXIT_FAILURE;
-            }
+        if (!fs::exists(opts.json_file)) {
+            LOG_ERROR("JSON file not found: " << opts.json_file);
+            return EXIT_FAILURE;
         }
+
+        // Set conversion options via pipeline_inputs
+        extracted_inputs["model_path"] = opts.model_path;
+        extracted_inputs["device"] = opts.device;
+        if (opts.tile_size != 0) {
+            extracted_inputs["tile_size"] = opts.tile_size;
+        }
+
+        // Use the new ModulePipeline API for conversion and input extraction
+        yaml_content = ov::genai::module::ModulePipeline::comfyui_json_to_yaml(
+            opts.json_file, extracted_inputs);
+
+        if (yaml_content.empty()) {
+            LOG_ERROR("Failed to convert JSON to YAML");
+            return EXIT_FAILURE;
+        }
+
+        LOG_INFO("Converted to YAML successfully");
+        print_extracted_inputs(extracted_inputs);
+
+        // Save and print YAML for debugging
+        save_and_print_yaml_debug(yaml_content, opts.json_file);
 
         // ====================================================================
         // Step 2: Create ModulePipeline
@@ -214,9 +205,7 @@ bool parse_arguments(int argc, char* argv[], ProgramOptions& opts) {
             return true;
         } else if (arg == "--json" && i + 1 < argc) {
             opts.json_file = argv[++i];
-        } else if (arg == "--yaml" && i + 1 < argc) {
-            opts.yaml_file = argv[++i];
-        } else if (arg == "--model-path" && i + 1 < argc) {
+        } else if (arg == "--model_path" && i + 1 < argc) {
             opts.model_path = argv[++i];
         } else if (arg == "--device" && i + 1 < argc) {
             opts.device = argv[++i];
@@ -228,11 +217,13 @@ bool parse_arguments(int argc, char* argv[], ProgramOptions& opts) {
             opts.width = std::stoi(argv[++i]);
         } else if (arg == "--height" && i + 1 < argc) {
             opts.height = std::stoi(argv[++i]);
+        } else if (arg == "--num_frames" && i + 1 < argc) {
+            opts.num_frames = std::stoi(argv[++i]);
         } else if (arg == "--steps" && i + 1 < argc) {
             opts.steps = std::stoi(argv[++i]);
         } else if (arg == "--guidance" && i + 1 < argc) {
             opts.guidance = std::stof(argv[++i]);
-        } else if (arg == "--max-seq-len" && i + 1 < argc) {
+        } else if (arg == "--max_seq_len" && i + 1 < argc) {
             opts.max_seq_len = std::stoi(argv[++i]);
         } else if (arg == "--tile_size" && i + 1 < argc) {
             opts.tile_size = std::stoi(argv[++i]);
@@ -245,74 +236,7 @@ bool parse_arguments(int argc, char* argv[], ProgramOptions& opts) {
     }
 
     // Set global log level based on verbose option
-    g_log_level = static_cast<LogLevel>(opts.verbose);
-
-    if (!opts.show_help && opts.json_file.empty() && opts.yaml_file.empty()) {
-        std::cerr << "[ERROR] Either --json or --yaml must be specified" << std::endl;
-        return false;
-    }
-
-    return true;
-}
-
-// ============================================================================
-// Read YAML file content
-// ============================================================================
-
-std::string read_file_content(const std::string& filepath) {
-    std::ifstream file(filepath);
-    if (!file.is_open()) {
-        throw std::runtime_error("Failed to open file: " + filepath);
-    }
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    return buffer.str();
-}
-
-// ============================================================================
-// Load and validate YAML config file
-// ============================================================================
-
-bool load_and_validate_yaml(const std::string& yaml_file,
-                            std::string& yaml_content,
-                            ov::AnyMap& extracted_inputs) {
-    LOG_INFO("Loading YAML config from: " << yaml_file);
-
-    if (!fs::exists(yaml_file)) {
-        LOG_ERROR("YAML file not found: " << yaml_file);
-        return false;
-    }
-
-    yaml_content = read_file_content(yaml_file);
-    LOG_INFO("YAML config loaded successfully");
-
-    // Validate YAML config
-    LOG_INFO("Validating YAML config...");
-    auto validation_result = ov::genai::module::ModulePipeline::validate_config_string(yaml_content);
-
-    if (!validation_result.valid) {
-        LOG_ERROR("YAML config validation failed:");
-        for (const auto& error : validation_result.errors) {
-            LOG_ERROR("  - " << error);
-        }
-        return false;
-    }
-
-    // Print warnings if any
-    for (const auto& warning : validation_result.warnings) {
-        LOG_WARNING(warning);
-    }
-
-    LOG_INFO("YAML config validation passed!");
-
-    // Set default inputs for YAML mode
-    extracted_inputs["width"] = 128;
-    extracted_inputs["height"] = 128;
-    extracted_inputs["num_inference_steps"] = 9;
-    extracted_inputs["prompt"] = std::string("A chinese man with white T-shirt and blue jeans, "
-        "standing in the forest, draw the light and shadow of the scene clearly, "
-        "photo taken by Nikon D850, high resolution, detailed texture, draw full person.");
-    extracted_inputs["negative_prompt"] = std::string("blurry ugly bad");
+    log_utils::set_log_level(opts.verbose);
 
     return true;
 }
@@ -344,6 +268,9 @@ ov::AnyMap build_pipeline_inputs(const ov::AnyMap& extracted_inputs,
     if (extracted_inputs.count("height")) {
         inputs["height"] = extracted_inputs.at("height").as<int>();
     }
+    if (extracted_inputs.count("num_frames")) {
+        inputs["num_frames"] = extracted_inputs.at("num_frames").as<int>();
+    }
     if (extracted_inputs.count("max_sequence_length")) {
         inputs["max_sequence_length"] = extracted_inputs.at("max_sequence_length").as<int>();
     }
@@ -366,6 +293,9 @@ ov::AnyMap build_pipeline_inputs(const ov::AnyMap& extracted_inputs,
     }
     if (opts.height != 0) {
         inputs["height"] = opts.height;
+    }
+    if (opts.num_frames != 0) {
+        inputs["num_frames"] = opts.num_frames;
     }
     if (opts.steps != 0) {
         inputs["num_inference_steps"] = opts.steps;
@@ -413,53 +343,55 @@ ov::AnyMap build_pipeline_inputs(const ov::AnyMap& extracted_inputs,
 }
 
 void print_pipeline_inputs(const ov::AnyMap& inputs) {
-    if (g_log_level >= LogLevel::INFO) {
-        std::cout << "[INFO] Final pipeline inputs:" << std::endl;
-        std::cout << "  - prompt: \"" << inputs.at("prompt").as<std::string>() << "\"" << std::endl;
-        std::cout << "  - negative_prompt: \"" << inputs.at("negative_prompt").as<std::string>() << "\"" << std::endl;
-        std::cout << "  - width: " << inputs.at("width").as<int>() << std::endl;
-        std::cout << "  - height: " << inputs.at("height").as<int>() << std::endl;
-        std::cout << "  - batch_size: " << inputs.at("batch_size").as<int>() << std::endl;
-        std::cout << "  - seed: " << inputs.at("seed").as<int64_t>() << std::endl;
-        std::cout << "  - steps: " << inputs.at("num_inference_steps").as<int>() << std::endl;
-        std::cout << "  - guidance: " << inputs.at("guidance_scale").as<float>() << std::endl;
-        std::cout << "  - max_seq_len: " << inputs.at("max_sequence_length").as<int>() << std::endl;
-        if (inputs.count("tile_size")) {
-            std::cout << "  - tile_size: " << inputs.at("tile_size").as<int>() << std::endl;
-        }
+    LOG_INFO("Final pipeline inputs:");
+    LOG_INFO("  - prompt: \"" << inputs.at("prompt").as<std::string>() << "\"");
+    LOG_INFO("  - negative_prompt: \"" << inputs.at("negative_prompt").as<std::string>() << "\"");
+    LOG_INFO("  - width: " << inputs.at("width").as<int>());
+    LOG_INFO("  - height: " << inputs.at("height").as<int>());
+    if (inputs.count("num_frames")) {
+        LOG_INFO("  - num_frames: " << inputs.at("num_frames").as<int>());
+    }
+    LOG_INFO("  - batch_size: " << inputs.at("batch_size").as<int>());
+    LOG_INFO("  - seed: " << inputs.at("seed").as<int64_t>());
+    LOG_INFO("  - steps: " << inputs.at("num_inference_steps").as<int>());
+    LOG_INFO("  - guidance: " << inputs.at("guidance_scale").as<float>());
+    LOG_INFO("  - max_seq_len: " << inputs.at("max_sequence_length").as<int>());
+    if (inputs.count("tile_size")) {
+        LOG_INFO("  - tile_size: " << inputs.at("tile_size").as<int>());
     }
 }
 
 void print_extracted_inputs(const ov::AnyMap& extracted_inputs) {
-    if (g_log_level >= LogLevel::DEBUG) {
-        std::cout << "[DEBUG] Extracted default inputs from ComfyUI JSON:" << std::endl;
-        if (extracted_inputs.count("prompt")) {
-            std::cout << "  - prompt: \"" << extracted_inputs.at("prompt").as<std::string>() << "\"" << std::endl;
-        }
-        if (extracted_inputs.count("negative_prompt")) {
-            std::cout << "  - negative_prompt: \"" << extracted_inputs.at("negative_prompt").as<std::string>() << "\"" << std::endl;
-        }
-        if (extracted_inputs.count("width")) {
-            std::cout << "  - width: " << extracted_inputs.at("width").as<int>() << std::endl;
-        }
-        if (extracted_inputs.count("height")) {
-            std::cout << "  - height: " << extracted_inputs.at("height").as<int>() << std::endl;
-        }
-        if (extracted_inputs.count("batch_size")) {
-            std::cout << "  - batch_size: " << extracted_inputs.at("batch_size").as<int>() << std::endl;
-        }
-        if (extracted_inputs.count("seed")) {
-            std::cout << "  - seed: " << extracted_inputs.at("seed").as<int64_t>() << std::endl;
-        }
-        if (extracted_inputs.count("num_inference_steps")) {
-            std::cout << "  - steps: " << extracted_inputs.at("num_inference_steps").as<int>() << std::endl;
-        }
-        if (extracted_inputs.count("guidance_scale")) {
-            std::cout << "  - guidance: " << extracted_inputs.at("guidance_scale").as<float>() << std::endl;
-        }
-        if (extracted_inputs.count("tile_size")) {
-            std::cout << "  - tile_size: " << extracted_inputs.at("tile_size").as<int>() << std::endl;
-        }
+    LOG_DEBUG("Extracted default inputs from ComfyUI JSON:");
+    if (extracted_inputs.count("prompt")) {
+        LOG_DEBUG("  - prompt: \"" << extracted_inputs.at("prompt").as<std::string>() << "\"");
+    }
+    if (extracted_inputs.count("negative_prompt")) {
+        LOG_DEBUG("  - negative_prompt: \"" << extracted_inputs.at("negative_prompt").as<std::string>() << "\"");
+    }
+    if (extracted_inputs.count("width")) {
+        LOG_DEBUG("  - width: " << extracted_inputs.at("width").as<int>());
+    }
+    if (extracted_inputs.count("height")) {
+        LOG_DEBUG("  - height: " << extracted_inputs.at("height").as<int>());
+    }
+    if (extracted_inputs.count("num_frames")) {
+        LOG_DEBUG("  - num_frames: " << extracted_inputs.at("num_frames").as<int>());
+    }
+    if (extracted_inputs.count("batch_size")) {
+        LOG_DEBUG("  - batch_size: " << extracted_inputs.at("batch_size").as<int>());
+    }
+    if (extracted_inputs.count("seed")) {
+        LOG_DEBUG("  - seed: " << extracted_inputs.at("seed").as<int64_t>());
+    }
+    if (extracted_inputs.count("num_inference_steps")) {
+        LOG_DEBUG("  - steps: " << extracted_inputs.at("num_inference_steps").as<int>());
+    }
+    if (extracted_inputs.count("guidance_scale")) {
+        LOG_DEBUG("  - guidance: " << extracted_inputs.at("guidance_scale").as<float>());
+    }
+    if (extracted_inputs.count("tile_size")) {
+        LOG_DEBUG("  - tile_size: " << extracted_inputs.at("tile_size").as<int>());
     }
 }
 
@@ -478,79 +410,100 @@ void save_and_print_yaml_debug(const std::string& yaml_content, const std::strin
     }
 
     // Print YAML content for debugging
-    if (g_log_level >= LogLevel::DEBUG) {
-        std::cout << "\n[DEBUG] ====== YAML Pipeline Config ======\n" << yaml_content
-                  << "\n[DEBUG] ==================================\n" << std::endl;
-    }
+    LOG_DEBUG("====== YAML Pipeline Config ======\n" << yaml_content << "\n======================================");
 }
 
 // ============================================================================
-// Handle pipeline output - get and save/verify image
+// Handle pipeline output - get and save/verify image or video
 // ============================================================================
 
 bool handle_pipeline_output(ov::genai::module::ModulePipeline& pipeline,
                             const std::string& output_file) {
     LOG_INFO("Getting output...");
 
-    // Try to get the saved image path from the pipeline output
-    auto saved_image_output = pipeline.get_output("saved_image");
+    // Priority: saved_video > saved_image > image tensor
 
-    if (saved_image_output.is<std::string>()) {
-        std::string saved_image_path = saved_image_output.as<std::string>();
-
-        if (saved_image_path.empty()) {
-            LOG_ERROR("saved_image output is empty");
-            return false;
-        }
-
-        LOG_INFO("Saved image path: " << saved_image_path);
-
-        // Verify the file exists
-        if (fs::exists(saved_image_path)) {
-            auto file_size = fs::file_size(saved_image_path);
-            LOG_SUCCESS("Image saved successfully: " << saved_image_path
-                      << " (" << file_size << " bytes)");
-            return true;
-        } else {
-            LOG_ERROR("Saved image file does not exist: " << saved_image_path);
-            return false;
-        }
-    }
-
-    // Fallback: try to get raw image tensor (for backward compatibility)
-    auto output = pipeline.get_output("image");
-
-    if (output.is<ov::Tensor>()) {
-        auto tensor = output.as<ov::Tensor>();
-        auto shape = tensor.get_shape();
-
-        if (g_log_level >= LogLevel::INFO) {
-            std::cout << "[INFO] Output tensor shape: [";
-            for (size_t i = 0; i < shape.size(); ++i) {
-                std::cout << shape[i];
-                if (i < shape.size() - 1) std::cout << ", ";
+    // 1. Try to get saved_video path (from SaveVideoModule)
+    try {
+        auto saved_video_output = pipeline.get_output("saved_video");
+        if (saved_video_output.is<std::string>()) {
+            std::string saved_video_path = saved_video_output.as<std::string>();
+            if (!saved_video_path.empty()) {
+                LOG_INFO("Video saved by pipeline to: " << saved_video_path);
+                if (fs::exists(saved_video_path)) {
+                    auto file_size = fs::file_size(saved_video_path);
+                    LOG_SUCCESS("Video saved successfully: " << saved_video_path
+                              << " (" << file_size << " bytes)");
+                    return true;
+                } else {
+                    LOG_WARNING("Saved video file does not exist: " << saved_video_path);
+                }
             }
-            std::cout << "]" << std::endl;
-            std::cout << "[INFO] Output tensor element type: " << tensor.get_element_type() << std::endl;
         }
-
-        // Generate output filename if not specified
-        std::string output_filename = output_file;
-        if (output_filename.empty()) {
-            output_filename = image_utils::generate_output_filename("output", ".bmp");
-        }
-
-        LOG_INFO("Saving output image to: " << output_filename);
-
-        if (image_utils::save_image_bmp(output_filename, tensor)) {
-            LOG_SUCCESS("Image saved successfully: " << output_filename);
-            return true;
-        } else {
-            LOG_ERROR("Failed to save image");
-            return false;
-        }
+    } catch (const std::exception& e) {
+        LOG_DEBUG("saved_video output not available: " << e.what());
     }
 
-    LOG_ERROR("Output is neither a saved image path nor a tensor");
+    // 2. Try to get saved_image path (from SaveImageModule)
+    try {
+        auto saved_image_output = pipeline.get_output("saved_image");
+        if (saved_image_output.is<std::string>()) {
+            std::string saved_image_path = saved_image_output.as<std::string>();
+            if (!saved_image_path.empty()) {
+                LOG_INFO("Image saved by pipeline to: " << saved_image_path);
+                if (fs::exists(saved_image_path)) {
+                    auto file_size = fs::file_size(saved_image_path);
+                    LOG_SUCCESS("Image saved successfully: " << saved_image_path
+                              << " (" << file_size << " bytes)");
+                    return true;
+                } else {
+                    LOG_WARNING("Saved image file does not exist: " << saved_image_path);
+                }
+            }
+        }
+    } catch (const std::exception& e) {
+        LOG_DEBUG("saved_image output not available: " << e.what());
+    }
+
+    // 3. Fallback: try to get raw image tensor
+    try {
+        auto output = pipeline.get_output("image");
+        if (output.is<ov::Tensor>()) {
+            auto tensor = output.as<ov::Tensor>();
+            auto shape = tensor.get_shape();
+
+            if (log_utils::get_log_level() >= log_utils::LogLevel::INFO) {
+                std::ostringstream shape_ss;
+                shape_ss << "[";
+                for (size_t i = 0; i < shape.size(); ++i) {
+                    shape_ss << shape[i];
+                    if (i < shape.size() - 1) shape_ss << ", ";
+                }
+                shape_ss << "]";
+                LOG_INFO("Output tensor shape: " << shape_ss.str());
+                LOG_INFO("Output tensor element type: " << tensor.get_element_type());
+            }
+
+            // Generate output filename if not specified
+            std::string output_filename = output_file;
+            if (output_filename.empty()) {
+                output_filename = image_utils::generate_output_filename("output", ".bmp");
+            }
+
+            LOG_INFO("Saving output image to: " << output_filename);
+
+            if (image_utils::save_image_bmp(output_filename, tensor)) {
+                LOG_SUCCESS("Image saved successfully: " << output_filename);
+                return true;
+            } else {
+                LOG_ERROR("Failed to save image");
+                return false;
+            }
+        }
+    } catch (const std::exception& e) {
+        LOG_DEBUG("image output not available: " << e.what());
+    }
+
+    LOG_ERROR("No valid output found (tried: saved_video, saved_image, image)");
     return false;
 }

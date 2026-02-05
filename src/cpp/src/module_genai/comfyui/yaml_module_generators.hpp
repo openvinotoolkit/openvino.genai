@@ -43,14 +43,16 @@ struct YamlGeneratorContext {
     const ComfyUIToGenAIConverter::PipelineParams& params;  // Pipeline parameters containing all stored nodes
     const ConversionOptions& options;   // Conversion options (device, model path, etc.)
     const ComfyUIToGenAIConverter::NodeInfo& current_node;  // Current node being processed
+    std::string model_type;             // Model type detected during generation (e.g., "wan2.1", "zimage")
 
     YamlGeneratorContext(
         YAML::Node& pm,
         YAML::Node& r,
         const ComfyUIToGenAIConverter::PipelineParams& p,
         const ConversionOptions& o,
-        const ComfyUIToGenAIConverter::NodeInfo& n)
-        : pipeline_modules(pm), root(r), params(p), options(o), current_node(n) {}
+        const ComfyUIToGenAIConverter::NodeInfo& n,
+        const std::string& mt = "unknown")
+        : pipeline_modules(pm), root(r), params(p), options(o), current_node(n), model_type(mt) {}
 };
 
 /**
@@ -78,6 +80,15 @@ public:
  * @brief Generator for EmptySD3LatentImage -> RandomLatentImageModule
  */
 class RandomLatentImageModuleGenerator : public YamlModuleGeneratorBase {
+public:
+    void generate(YamlGeneratorContext& ctx) override;
+};
+
+/**
+ * @brief Generator for EmptyHunyuanLatentVideo -> RandomLatentImageModule
+ * Maps: width->width, height->height, length->num_frames, batch_size->batch_size
+ */
+class HunyuanLatentVideoModuleGenerator : public YamlModuleGeneratorBase {
 public:
     void generate(YamlGeneratorContext& ctx) override;
 };
@@ -118,6 +129,15 @@ public:
  * @brief Generator for SaveImage -> SaveImageModule
  */
 class SaveImageModuleGenerator : public YamlModuleGeneratorBase {
+public:
+    void generate(YamlGeneratorContext& ctx) override;
+};
+
+/**
+ * @brief Generator for SaveAnimatedWEBP -> SaveVideoModule
+ * Maps: filename_prefix->filename_prefix, fps->fps, quality->quality
+ */
+class SaveVideoModuleGenerator : public YamlModuleGeneratorBase {
 public:
     void generate(YamlGeneratorContext& ctx) override;
 };

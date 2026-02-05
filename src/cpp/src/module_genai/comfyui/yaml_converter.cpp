@@ -315,10 +315,18 @@ std::string ComfyUIToGenAIConverter::convert_to_yaml(
     pipeline_inputs["num_inference_steps"] = params.get_value<int>("KSampler", "steps", 4);
     pipeline_inputs["seed"] = params.get_value<int64_t>("KSampler", "seed", 0);
 
-    // EmptySD3LatentImage -> width, height
-    pipeline_inputs["width"] = params.get_value<int>("EmptySD3LatentImage", "width", 1024);
-    pipeline_inputs["height"] = params.get_value<int>("EmptySD3LatentImage", "height", 1024);
-    pipeline_inputs["batch_size"] = params.get_value<int>("EmptySD3LatentImage", "batch_size", 1);
+    // Latent image/video nodes -> width, height, batch_size, num_frames
+    // Note: Only one latent node type should be present per workflow
+    if (params.get_node("EmptySD3LatentImage")) {
+        pipeline_inputs["width"] = params.get_value<int>("EmptySD3LatentImage", "width", 1024);
+        pipeline_inputs["height"] = params.get_value<int>("EmptySD3LatentImage", "height", 1024);
+        pipeline_inputs["batch_size"] = params.get_value<int>("EmptySD3LatentImage", "batch_size", 1);
+    } else if (params.get_node("EmptyHunyuanLatentVideo")) {
+        pipeline_inputs["width"] = params.get_value<int>("EmptyHunyuanLatentVideo", "width", 1024);
+        pipeline_inputs["height"] = params.get_value<int>("EmptyHunyuanLatentVideo", "height", 1024);
+        pipeline_inputs["batch_size"] = params.get_value<int>("EmptyHunyuanLatentVideo", "batch_size", 1);
+        pipeline_inputs["num_frames"] = params.get_value<int>("EmptyHunyuanLatentVideo", "length", 16);
+    }
 
     // FluxGuidance -> max_sequence_length
     pipeline_inputs["max_sequence_length"] = params.get_value<int>("FluxGuidance", "max_sequence_length", 512);
@@ -369,6 +377,9 @@ std::string ComfyUIToGenAIConverter::generate_yaml(
     if (unet_name.find("z_image_turbo") != std::string::npos) {
         model_type = "zimage";
     }
+    if (unet_name.find("wan2.1") != std::string::npos) {
+        model_type = "wan2.1";
+    }
     root["global_context"]["model_type"] = model_type;
 
     // Pipeline modules
@@ -386,6 +397,9 @@ std::string ComfyUIToGenAIConverter::generate_yaml(
         outputs.push_back(create_output_node("num_inference_steps", "Int"));
         outputs.push_back(create_output_node("width", "Int"));
         outputs.push_back(create_output_node("height", "Int"));
+        if (model_type == "wan2.1") {
+            outputs.push_back(create_output_node("num_frames", "Int"));
+        }
         outputs.push_back(create_output_node("batch_size", "Int"));
         outputs.push_back(create_output_node("seed", "Int"));
         module["outputs"] = outputs;
@@ -422,7 +436,7 @@ std::string ComfyUIToGenAIConverter::generate_yaml(
         for (const auto& node_info : *nodes) {
             if (node_info.node_id_str == expected_node_id_str) {
                 // Create context and call generator
-                YamlGeneratorContext ctx(pipeline_modules, root, params, options, node_info);
+                YamlGeneratorContext ctx(pipeline_modules, root, params, options, node_info, model_type);
                 generator->generate(ctx);
                 GENAI_DEBUG("[YAML] Generated module for %s (%s)", node_id.c_str(), class_type.c_str());
                 break;

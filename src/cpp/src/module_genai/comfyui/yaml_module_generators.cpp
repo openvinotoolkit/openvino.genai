@@ -61,11 +61,13 @@ void YamlModuleGeneratorRegistry::initialize_defaults() {
     // Format: { "class_type", generator_instance }
     static const std::vector<std::pair<std::string, std::shared_ptr<YamlModuleGeneratorBase>>> default_generators = {
         {"EmptySD3LatentImage",  std::make_shared<RandomLatentImageModuleGenerator>()},
+        {"EmptyHunyuanLatentVideo", std::make_shared<HunyuanLatentVideoModuleGenerator>()},
         {"CLIPTextEncode",       std::make_shared<ClipTextEncoderModuleGenerator>()},
         {"KSampler",             std::make_shared<DenoiserLoopModuleGenerator>()},
         {"VAEDecode",            std::make_shared<VAEDecoderModuleGenerator>()},
         {"VAEDecodeSwitcher",    std::make_shared<VAEDecoderTilingModuleGenerator>()},
         {"SaveImage",            std::make_shared<SaveImageModuleGenerator>()},
+        {"SaveAnimatedWEBP",     std::make_shared<SaveVideoModuleGenerator>()},
     };
 
     for (const auto& [class_type, generator] : default_generators) {
@@ -127,6 +129,38 @@ void RandomLatentImageModuleGenerator::generate(YamlGeneratorContext& ctx) {
 }
 
 // ============================================================================
+// HunyuanLatentVideoModule Generator (EmptyHunyuanLatentVideo)
+// ============================================================================
+
+void HunyuanLatentVideoModuleGenerator::generate(YamlGeneratorContext& ctx) {
+    const auto& node = ctx.current_node;
+    GENAI_DEBUG("[EmptyHunyuanLatentVideo] Processing node: node_id_str=%s, title=%s",
+                node.node_id_str.c_str(), node.title.c_str());
+
+    std::string module_name = node.node_id_str;
+    GENAI_DEBUG("[YAML] Adding RandomLatentImageModule (%s) for HunyuanLatentVideo", module_name.c_str());
+
+    YAML::Node module = ctx.pipeline_modules[module_name];
+    module["device"] = ctx.options.device;
+
+    // Map: width->width, height->height, length->num_frames, batch_size->batch_size
+    YAML::Node inputs;
+    inputs.push_back(create_input_node("width", "pipeline_params.width", "Int"));
+    inputs.push_back(create_input_node("height", "pipeline_params.height", "Int"));
+    inputs.push_back(create_input_node("num_frames", "pipeline_params.num_frames", "Int"));
+    inputs.push_back(create_input_node("batch_size", "pipeline_params.batch_size", "Int"));
+    inputs.push_back(create_input_node("seed", "pipeline_params.seed", "Int"));
+    module["inputs"] = inputs;
+
+    YAML::Node outputs;
+    outputs.push_back(create_output_node("latents", "OVTensor"));
+    module["outputs"] = outputs;
+
+    module["params"]["model_path"] = ctx.options.model_path;
+    module["type"] = "RandomLatentImageModule";
+}
+
+// ============================================================================
 // ClipTextEncoderModule Generator (CLIPTextEncode)
 // ============================================================================
 
@@ -143,11 +177,20 @@ void ClipTextEncoderModuleGenerator::generate(YamlGeneratorContext& ctx) {
                 module_name.c_str(), is_negative ? "negative" : "positive");
 
     YAML::Node module = ctx.pipeline_modules[module_name];
-    module["device"] = ctx.options.device;
+    // Force CPU for T5/UMT5 text encoders in Wan 2.1 models to avoid NaN issues on GPU
+    // GPU inference of T5 models may produce NaN outputs on some hardware
+    if (ctx.model_type == "wan2.1") {
+        std::cout << "[WARNING] [ClipTextEncoderModule] Forcing CPU device for Wan 2.1 T5 text encoder to avoid NaN issues on GPU" << std::endl;
+        module["device"] = "CPU";
+    } else {
+        module["device"] = ctx.options.device;
+    }
 
     YAML::Node inputs;
     if (is_negative) {
-        inputs.push_back(create_input_node("negative_prompt", "pipeline_params.negative_prompt", "String"));
+        // For negative prompt encoder, use "prompt" input name but source from negative_prompt
+        // This is because ClipTextEncoderModule treats "prompt" input as the main input
+        inputs.push_back(create_input_node("prompt", "pipeline_params.negative_prompt", "String"));
     } else {
         inputs.push_back(create_input_node("prompt", "pipeline_params.prompt", "String"));
     }
@@ -156,11 +199,8 @@ void ClipTextEncoderModuleGenerator::generate(YamlGeneratorContext& ctx) {
     module["inputs"] = inputs;
 
     YAML::Node outputs;
-    if (is_negative) {
-        outputs.push_back(create_output_node("negative_prompt_embeds", "VecOVTensor"));
-    } else {
-        outputs.push_back(create_output_node("prompt_embeds", "VecOVTensor"));
-    }
+    // ClipTextEncoderModule always outputs to "prompt_embeds" when only prompt input is provided
+    outputs.push_back(create_output_node("prompt_embeds", "VecOVTensor"));
     module["outputs"] = outputs;
 
     module["params"]["model_path"] = ctx.options.model_path;
@@ -191,8 +231,12 @@ void DenoiserLoopModuleGenerator::generate(YamlGeneratorContext& ctx) {
     }
 
     std::string latent_module_name;
+    bool is_video_latent = false;
     if (auto* latent_node = ctx.params.get_node("EmptySD3LatentImage")) {
         latent_module_name = latent_node->node_id_str;
+    } else if (auto* latent_node = ctx.params.get_node("EmptyHunyuanLatentVideo")) {
+        latent_module_name = latent_node->node_id_str;
+        is_video_latent = true;
     }
 
     std::string module_name = node.node_id_str;
@@ -206,14 +250,20 @@ void DenoiserLoopModuleGenerator::generate(YamlGeneratorContext& ctx) {
         inputs.push_back(create_input_node("prompt_embeds", clip_positive_module_name + ".prompt_embeds", "VecOVTensor"));
     }
     if (!clip_negative_module_name.empty()) {
-        inputs.push_back(create_input_node("prompt_embeds_negative", clip_negative_module_name + ".negative_prompt_embeds", "VecOVTensor"));
+        // Negative encoder also outputs to "prompt_embeds" (not "negative_prompt_embeds")
+        inputs.push_back(create_input_node("prompt_embeds_negative", clip_negative_module_name + ".prompt_embeds", "VecOVTensor"));
     }
     if (!latent_module_name.empty()) {
         inputs.push_back(create_input_node("latents", latent_module_name + ".latents", "OVTensor"));
     }
+    // Add guidance_scale input for CFG
+    inputs.push_back(create_input_node("guidance_scale", "pipeline_params.guidance_scale", "Float"));
     inputs.push_back(create_input_node("num_inference_steps", "pipeline_params.num_inference_steps", "Int"));
     inputs.push_back(create_input_node("width", "pipeline_params.width", "Int"));
     inputs.push_back(create_input_node("height", "pipeline_params.height", "Int"));
+    if (is_video_latent) {
+        inputs.push_back(create_input_node("num_frames", "pipeline_params.num_frames", "Int"));
+    }
     module["inputs"] = inputs;
 
     YAML::Node outputs;
@@ -248,7 +298,7 @@ void VAEDecoderModuleGenerator::generate(YamlGeneratorContext& ctx) {
 
     YAML::Node inputs;
     if (!ksampler_module_name.empty()) {
-        inputs.push_back(create_input_node("latent", ksampler_module_name + ".latents", "OVTensor"));
+        inputs.push_back(create_input_node("latents", ksampler_module_name + ".latents", "OVTensor"));
     }
     module["inputs"] = inputs;
 
@@ -288,7 +338,7 @@ void VAEDecoderTilingModuleGenerator::generate(YamlGeneratorContext& ctx) {
 
     YAML::Node inputs;
     if (!ksampler_module_name.empty()) {
-        inputs.push_back(create_input_node("latent", ksampler_module_name + ".latents", "OVTensor"));
+        inputs.push_back(create_input_node("latents", ksampler_module_name + ".latents", "OVTensor"));
     }
     module["inputs"] = inputs;
 
@@ -389,6 +439,62 @@ void SaveImageModuleGenerator::generate(YamlGeneratorContext& ctx) {
 }
 
 // ============================================================================
+// SaveVideoModule Generator (SaveAnimatedWEBP -> SaveVideoModule)
+// ============================================================================
+
+void SaveVideoModuleGenerator::generate(YamlGeneratorContext& ctx) {
+    const auto& node = ctx.current_node;
+    GENAI_DEBUG("[SaveAnimatedWEBP] Processing node: node_id_str=%s, title=%s",
+                node.node_id_str.c_str(), node.title.c_str());
+
+    // Get referenced module name from VAE
+    std::string vae_module_name;
+    if (auto* vae_node = ctx.params.get_node("VAEDecodeSwitcher")) {
+        vae_module_name = vae_node->node_id_str;
+    } else if (auto* vae_node = ctx.params.get_node("VAEDecode")) {
+        vae_module_name = vae_node->node_id_str;
+    }
+
+    std::string module_name = node.node_id_str;
+    GENAI_DEBUG("[YAML] Adding SaveVideoModule (%s)", module_name.c_str());
+
+    // Extract parameters from node inputs
+    std::string filename_prefix = "ComfyUI";
+    if (node.inputs.contains("filename_prefix")) {
+        filename_prefix = node.inputs["filename_prefix"].get<std::string>();
+    }
+
+    int fps = 6;
+    if (node.inputs.contains("fps")) {
+        fps = static_cast<int>(node.inputs["fps"].get<double>());
+    }
+
+    int quality = 80;
+    if (node.inputs.contains("quality")) {
+        quality = node.inputs["quality"].get<int>();
+    }
+
+    YAML::Node module = ctx.pipeline_modules[module_name];
+    module["device"] = "CPU";
+
+    YAML::Node inputs;
+    if (!vae_module_name.empty()) {
+        inputs.push_back(create_input_node("raw_data", vae_module_name + ".image", "OVTensor"));
+    }
+    module["inputs"] = inputs;
+
+    YAML::Node outputs;
+    outputs.push_back(create_output_node("saved_video", "String"));
+    outputs.push_back(create_output_node("saved_videos", "VecString"));
+    module["outputs"] = outputs;
+
+    module["params"]["filename_prefix"] = filename_prefix;
+    module["params"]["fps"] = std::to_string(fps);
+    module["params"]["quality"] = std::to_string(quality);
+    module["type"] = "SaveVideoModule";
+}
+
+// ============================================================================
 // Result Module Generator (always called last)
 // ============================================================================
 
@@ -414,9 +520,16 @@ void YamlModuleGeneratorRegistry::generate_result_module(
         save_image_module_name = save_node->node_id_str;
     }
 
+    std::string save_video_module_name;
+    if (auto* save_node = params.get_node("SaveAnimatedWEBP")) {
+        save_video_module_name = save_node->node_id_str;
+    }
+
     YAML::Node inputs;
-    // Priority: SaveImage > VAE (only one input, fallback logic)
-    if (!save_image_module_name.empty()) {
+    // Priority: SaveAnimatedWEBP > SaveImage > VAE (only one input, fallback logic)
+    if (!save_video_module_name.empty()) {
+        inputs.push_back(create_input_node("saved_video", save_video_module_name + ".saved_video", "String"));
+    } else if (!save_image_module_name.empty()) {
         inputs.push_back(create_input_node("saved_image", save_image_module_name + ".saved_image", "String"));
     } else if (!vae_module_name.empty()) {
         inputs.push_back(create_input_node("image", vae_module_name + ".image", "OVTensor"));
@@ -424,7 +537,11 @@ void YamlModuleGeneratorRegistry::generate_result_module(
     module["inputs"] = inputs;
 
     YAML::Node outputs;
-    outputs.push_back(create_output_node("saved_image", "String"));
+    if (!save_video_module_name.empty()) {
+        outputs.push_back(create_output_node("saved_video", "String"));
+    } else {
+        outputs.push_back(create_output_node("saved_image", "String"));
+    }
     module["outputs"] = outputs;
 
     module["type"] = "ResultModule";

@@ -11,14 +11,18 @@ namespace module {
 /**
  * @brief SaveVideoModule - Saves video tensor to AVI file using MJPEG codec.
  *
- * This module accepts a 5D video tensor in [B, F, H, W, C] format:
- *   - B: Batch size (number of videos)
- *   - F: Frames (number of frames per video)
- *   - H: Height
- *   - W: Width
- *   - C: Channels (1=grayscale, 3=RGB, 4=RGBA)
+ * This module accepts video tensors in two formats:
+ *   1. [B, F, H, W, C] format (channels-last, e.g., from VideoProcessor)
+ *   2. [B, C, F, H, W] format (channels-first, e.g., from VAE decoder)
  *
- * Supported DataTypes: uint8
+ * Format detection:
+ *   - If shape[1] <= 4 and shape[4] > 4: channels-first [B, C, F, H, W]
+ *   - Otherwise: channels-last [B, F, H, W, C]
+ *
+ * For channels-first format with float data (typical VAE output), the module
+ * automatically converts from [-1, 1] or [0, 1] range to uint8 [0, 255].
+ *
+ * Supported DataTypes: uint8, float32, float16
  * Output format: AVI with MJPEG compression
  */
 class SaveVideoModule : public IBaseModule {
