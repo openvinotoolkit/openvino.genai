@@ -15,25 +15,7 @@
 #include "types_c.h"
 
 static ov_element_type_e cpp_element_type_to_c(const ov::element::Type& t) {
-    if (t == ov::element::f32)
-        return static_cast<ov_element_type_e>(ov::element::Type_t::f32);
-    if (t == ov::element::f16)
-        return static_cast<ov_element_type_e>(ov::element::Type_t::f16);
-    if (t == ov::element::f64)
-        return static_cast<ov_element_type_e>(ov::element::Type_t::f64);
-    if (t == ov::element::i32)
-        return static_cast<ov_element_type_e>(ov::element::Type_t::i32);
-    if (t == ov::element::i64)
-        return static_cast<ov_element_type_e>(ov::element::Type_t::i64);
-    if (t == ov::element::u8)
-        return static_cast<ov_element_type_e>(ov::element::Type_t::u8);
-    if (t == ov::element::u16)
-        return static_cast<ov_element_type_e>(ov::element::Type_t::u16);
-    if (t == ov::element::u32)
-        return static_cast<ov_element_type_e>(ov::element::Type_t::u32);
-    if (t == ov::element::u64)
-        return static_cast<ov_element_type_e>(ov::element::Type_t::u64);
-    return static_cast<ov_element_type_e>(ov::element::Type_t::undefined);
+    return static_cast<ov_element_type_e>(static_cast<ov::element::Type_t>(t));
 }
 
 ov_status_e ov_genai_text2speech_decoded_results_create(ov_genai_text2speech_decoded_results** results) {

@@ -163,7 +163,6 @@ jobs:
       - name: CMake Build
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          pip install numpy
           cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
                 -DENABLE_PYTHON=ON \
                 -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
@@ -348,7 +347,6 @@ jobs:
       - name: Build Samples (Release)
         if: ${{ 'Release' == matrix.build-type }}
         run: |
-          pip install numpy
           chmod +x ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.sh
           ${{ env.OV_INSTALL_DIR }}/samples/cpp/build_samples.sh -i ${{ env.INSTALL_DIR }}
           chmod +x ${{ env.OV_INSTALL_DIR }}/samples/c/build_samples.sh
@@ -409,7 +407,6 @@ jobs:
       - name: Build GenAI Node.js bindings
         run: |
           source ${{ env.OV_INSTALL_DIR }}/setupvars.sh
-          pip install numpy
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} \
             -DENABLE_JS=ON -DCPACK_GENERATOR=NPM \
             -DENABLE_PYTHON=OFF -DENABLE_WHEEL=OFF \
