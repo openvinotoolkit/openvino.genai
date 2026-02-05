@@ -8,11 +8,15 @@ numpy>=1.23.5
 tqdm>=4.66.1
 diffusers
 datasets>=3.6.0
-auto-gptq; sys_platform == "linux"
-autoawq<0.2.8; sys_platform == "linux"
 sentencepiece
 jinja2>=3.1.0
 scipy
 opencv-python
 imageio[pyav]
 imageio-ffmpeg
+torchaudio
+torchvision
+soundfile
+librosa
+vocos
+vector_quantize_pytorch

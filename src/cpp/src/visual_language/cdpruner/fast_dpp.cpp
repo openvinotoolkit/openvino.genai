@@ -364,6 +364,7 @@ std::vector<std::vector<size_t>> FastGreedyDPP::select_parallel_opencl(const ov:
         size_t batch_offset = batch_idx * batch_matrix_size;
         std::memcpy(single_batch_data, merged_data + batch_offset, batch_matrix_size * sizeof(float));
 
+        OPENVINO_ASSERT(m_opencl_dpp, "OpenCL DPP must be initialized");
         auto selected_tokens = m_opencl_dpp->select(single_batch_kernel, num_tokens_to_keep);
 
         std::vector<size_t> merged_selection;
@@ -515,6 +516,7 @@ std::vector<size_t> FastGreedyDPP::select_single_batch_opencl(const ov::Tensor& 
     std::memcpy(single_batch_data, kernel_data + batch_offset, batch_matrix_size * sizeof(float));
 
     // Call OpenCL DPP with single batch
+    OPENVINO_ASSERT(m_opencl_dpp, "OpenCL DPP must be initialized");
     return m_opencl_dpp->select(single_batch_kernel, num_tokens);
 }
 #endif

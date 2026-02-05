@@ -16,8 +16,9 @@ export const SpeechRecognition = () => (
     <UseCaseCard.Features>
       <li>Translate foreign language speech directly to English text</li>
       <li>Transcribe audio in multiple languages with automatic language detection</li>
-      <li>Generate precise timestamps for synchronized subtitles and captions</li>
       <li>Process long-form audio content (&gt;30 seconds) efficiently</li>
+      <li>Generate precise timestamps for synchronized subtitles and captions</li>
+      <li>Generate word-level timestamps for detailed transcription</li>
     </UseCaseCard.Features>
     <UseCaseCard.Code>
       <LanguageTabs>

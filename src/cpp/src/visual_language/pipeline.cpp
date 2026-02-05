@@ -32,7 +32,6 @@ void update_npu_properties(const std::filesystem::path& models_dir, ov::AnyMap& 
     switch (vlm_config.model_type) {
         case VLMModelType::GEMMA3:
             properties.insert({"NPUW_LLM_PREFILL_HINT", "STATIC"});
-            properties.insert({"NPUW_F16IC", "NO"});
             break;
         default:
             break;
@@ -515,7 +514,6 @@ private:
         const std::vector<ov::Tensor>& videos,
         const GenerationConfig& generation_config
     ) {
-        OPENVINO_ASSERT(images.size() <= 1u && videos.size() <= 1u, "Currently only batch size equal to 1 is supported for NPU device!");
         OPENVINO_ASSERT(generation_config.is_greedy_decoding() || generation_config.is_multinomial(),
             "Currently only greedy and multinomial decoding are supported for NPU device!");
         OPENVINO_ASSERT(generation_config.num_return_sequences == 1u,

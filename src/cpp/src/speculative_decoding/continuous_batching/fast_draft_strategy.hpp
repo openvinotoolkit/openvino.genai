@@ -5,9 +5,9 @@
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
-#include "speculative_decoding/continuous_batching_for_speculative_decoding_impl.hpp"
-#include "speculative_decoding/speculative_decoding_metrics.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
+#include "speculative_decoding/continuous_batching/pipeline_impl.hpp"
+#include "speculative_decoding/speculative_decoding_metrics.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
@@ -66,7 +66,7 @@ std::vector<EncodedGenerationResult> generate_common(
                                     main_cfg, draft_cfg,
                                     main_in, draft_in);
             main_generations.push_back(self->main_pipeline()->add_request(rid, main_in, main_cfg));
-            self->draft_generations().insert({rid,
+            self->m_draft_generations.insert({rid,
                 self->draft_pipeline()->add_request(rid, draft_in, draft_cfg)});
         }
     }
@@ -150,7 +150,6 @@ protected:
     bool is_requests_empty();
     std::vector<SequenceGroup::Ptr> get_awaiting_requests();
     std::pair<ov::genai::SchedulerConfig, ov::genai::SchedulerConfig> init_speculative_models(const ov::genai::ModelDesc& main_model_desc, const ov::genai::ModelDesc& draft_model_desc);
-    std::map<uint64_t, GenerationHandle>& draft_generations() { return m_draft_generations; }
 public:
     template<class Impl>
     friend std::vector<EncodedGenerationResult> generate_common(
