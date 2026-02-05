@@ -232,8 +232,8 @@ class TestText2VideoPipelineAdvanced:
         result = pipe.generate("test prompt", num_inference_steps=2)
         assert result.video is not None
 
-    def test_generate_guidance_scale_one_after_reshape(self, video_generation_model):
-        """Test: reshape with CFG (guidance_scale>1) then generate with guidance_scale=1 should raise error."""
+    def test_generate_without_cfg_after_reshape_with_cfg(self, video_generation_model):
+        """Test: reshape with CFG then generate without CFG should raise error."""
         pipe = ov_genai.Text2VideoPipeline(video_generation_model)
         pipe.reshape(1, 9, 32, 32, 3.0)
         pipe.compile("CPU")
@@ -248,8 +248,8 @@ class TestText2VideoPipelineAdvanced:
                 num_inference_steps=2,
             )
 
-    def test_generate_guidance_scale_high_after_reshape_low(self, video_generation_model):
-        """Regression test: reshape without CFG (guidance_scale=1) then generate with CFG (guidance_scale>1)."""
+    def test_generate_with_cfg_after_reshape_without_cfg(self, video_generation_model):
+        """Regression test: reshape without CFG then generate with CFG triggers rebuild."""
         pipe = ov_genai.Text2VideoPipeline(video_generation_model)
         pipe.reshape(1, 9, 32, 32, 1.0)
         pipe.compile("CPU")
