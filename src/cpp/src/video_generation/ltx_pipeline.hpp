@@ -477,10 +477,12 @@ public:
                             requested_batch_size_multiplier, "). "
                             "Either set guidance_scale > 1, or reshape/compile the model with guidance_scale <= 1.");
         }
+        // Use maximum of all multipliers to ensure model can handle requested batch size
         size_t batch_size_multiplier = std::max({requested_batch_size_multiplier,
                                                   m_reshape_batch_size_multiplier,
                                                   m_compiled_batch_size_multiplier});
 
+        // Before compilation: track and upgrade reshape multiplier if CFG is needed
         if (!m_is_compiled) {
             if (m_reshape_batch_size_multiplier == 0) {
                 m_reshape_batch_size_multiplier = batch_size_multiplier;
@@ -578,6 +580,8 @@ public:
                 // just assign to save memory copy
                 latent_cfg = latent;
             }
+            // Match compiled model's expected batch size by repeating latent if needed
+            // (e.g., when model was compiled with CFG but current config doesn't require it)
             const size_t request_input_batch = m_transformer->get_request_input_batch();
             if (request_input_batch > latent_cfg.get_shape()[0]) {
                 OPENVINO_ASSERT(request_input_batch % latent_cfg.get_shape()[0] == 0,
