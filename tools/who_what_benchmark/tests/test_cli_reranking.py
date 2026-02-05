@@ -33,39 +33,43 @@ def test_reranking_optimum(model_id, threshold, tmp_path):
     MODEL_PATH = convert_model(model_id)
 
     # Collect reference with HF model
-    run_wwb([
-        "--base-model",
-        model_id,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        "text-reranking",
-        "--hf",
-    ])
+    run_wwb(
+        [
+            "--base-model",
+            model_id,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            "text-reranking",
+            "--hf",
+        ]
+    )
 
     assert GT_FILE.exists()
     assert Path(tmp_dir, "reference").exists()
 
     outputs_path = tmp_path / "optimum"
     # test Optimum
-    outputs_optimum = run_wwb([
-        "--target-model",
-        MODEL_PATH,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        "text-reranking",
-        "--output",
-        outputs_path,
-    ])
+    outputs_optimum = run_wwb(
+        [
+            "--target-model",
+            MODEL_PATH,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            "text-reranking",
+            "--output",
+            outputs_path,
+        ]
+    )
 
     assert (outputs_path / "target").exists()
     assert (outputs_path / "target.csv").exists()
@@ -80,21 +84,23 @@ def test_reranking_optimum(model_id, threshold, tmp_path):
 
     outputs_path = tmp_path / "genai"
     # test GenAI
-    outputs_genai = run_wwb([
-        "--target-model",
-        MODEL_PATH,
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        "text-reranking",
-        "--genai",
-        "--output",
-        outputs_path,
-    ])
+    outputs_genai = run_wwb(
+        [
+            "--target-model",
+            MODEL_PATH,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            "text-reranking",
+            "--genai",
+            "--output",
+            outputs_path,
+        ]
+    )
     assert (outputs_path / "target").exists()
     assert (outputs_path / "target.csv").exists()
     assert (outputs_path / "metrics_per_question.csv").exists()
@@ -105,18 +111,20 @@ def test_reranking_optimum(model_id, threshold, tmp_path):
     assert similarity >= threshold
 
     # test w/o models
-    run_wwb([
-        "--target-data",
-        outputs_path / "target.csv",
-        "--num-samples",
-        "1",
-        "--gt-data",
-        GT_FILE,
-        "--device",
-        "CPU",
-        "--model-type",
-        "text-reranking",
-        "--genai"
-    ])
+    run_wwb(
+        [
+            "--target-data",
+            outputs_path / "target.csv",
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            "text-reranking",
+            "--genai",
+        ]
+    )
 
     remove_artifacts(outputs_path)

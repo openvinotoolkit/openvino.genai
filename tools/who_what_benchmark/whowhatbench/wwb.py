@@ -829,7 +829,7 @@ def print_rag_results(evaluator):
         logger.info("## Query:\n%s\n", e["query"])
         logger.info("## Passages num:\n%s\n", len(e["passages"]))
         logger.info(f"## Similarity:\n{e['similarity']:.5}\n")
-        logger.info("## Difference in scores pre texts:\n%s\n", e['per_text_scores_diff'])
+        logger.info("## Difference in scores pre texts:\n%s\n", e["per_text_scores_diff"])
 
 
 def main():
