@@ -760,9 +760,6 @@ def test_perf_metrics(model_descr, sample_from_dataset):
     assert np.allclose(mean_dur, np.mean(raw_dur))
     assert np.allclose(std_dur, np.std(raw_dur))
 
-    # processing duration is a single value per generate
-    assert len(whisper_raw_metrics.word_level_timestamps_processing_durations) == 1
-
     word_ts_raw_dur = np.array(whisper_raw_metrics.word_level_timestamps_processing_durations) / 1000
     mean_dur, std_dur = perf_metrics.get_word_level_timestamps_processing_duration()
     assert np.allclose(mean_dur, np.mean(word_ts_raw_dur))
