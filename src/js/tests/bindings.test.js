@@ -29,7 +29,7 @@ describe("bindings", () => {
 
     pipeline.generate(
       "Continue: 1 2 3",
-      { temperature: "0", max_new_tokens: "4" },
+      { temperature: 0, max_new_tokens: 4 },
       (chunk) => {
         output += chunk;
       },

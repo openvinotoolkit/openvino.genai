@@ -45,7 +45,7 @@ describe("LLMPipeline methods", async () => {
   await it("should generate non empty result", async () => {
     const result = await pipeline.generate(
       "Type something in English",
-      { temperature: "0", max_new_tokens: "4" },
+      { temperature: 0, max_new_tokens: 4 },
       () => {},
     );
 
@@ -59,7 +59,7 @@ describe("LLMPipeline methods", async () => {
   });
 
   it("throw error if generate called during another generation", async () => {
-    const promise = pipeline.generate("prompt1");
+    const promise = pipeline.generate("prompt1", { max_new_tokens: 500 });
     await assert.rejects(pipeline.generate("prompt2"), /Another generation is already in progress/);
     await promise;
   });
@@ -122,7 +122,7 @@ describe("generation parameters validation", () => {
     it("should throw an error if generationCallback is not a function", async () => {
       await assert.rejects(async () => await pipeline.generate("prompt", {}, false), {
         name: "Error",
-        message: "Callback must be a function",
+        message: "Streamer must be a function",
       });
     });
 
@@ -269,6 +269,21 @@ describe("LLMPipeline with chat history", () => {
     assert.ok(chunks.length > 0);
     // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
     chatHistory.push({ role: "assistant", content: chunks.join("") });
+  });
+
+  it("startChat() and finishChat() complete without error", async () => {
+    await pipeline.startChat();
+    await pipeline.finishChat();
+  });
+
+  it("startChat(systemMessage) then generate() then finishChat()", async () => {
+    await pipeline.startChat("You are a helpful assistant.");
+    const config = { max_new_tokens: 10 };
+    const result = await pipeline.generate("Reply with one word: hello", config);
+    const result2 = await pipeline.generate("Reply with one word: bye", config);
+    await pipeline.finishChat();
+    assert.ok(result.texts[0].length > 0);
+    assert.ok(result2.texts[0].length > 0);
   });
 });
 
