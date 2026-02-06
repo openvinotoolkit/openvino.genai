@@ -4,4 +4,4 @@ librosa==0.11.0  # For Whisper
 pillow==12.1.0  # Image processing for VLMs
 json5==0.13.0  # For ReAct
 pydantic==2.12.5  # For Structured output json schema
-opencv-python==4.13.0.90 # For video-to-text VLM sample
+opencv-python==4.13.0.92 # For video-to-text VLM sample
