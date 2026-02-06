@@ -4,6 +4,7 @@ import sys
 
 from conftest import convert_model, run_wwb
 from test_cli_image import get_similarity
+from profile_utils import _log, _stage
 
 
 logging.basicConfig(level=logging.INFO)
@@ -16,11 +17,15 @@ def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
     if sys.platform == "win32":
         pytest.xfail("Ticket 178790")
 
+    _log(f"run_test: model_id={model_id} model_type={model_type} optimum_threshold={optimum_threshold} genai_threshold={genai_threshold}")
     GT_FILE = tmp_path / "gt.csv"
-    MODEL_PATH = convert_model(model_id)
+    with _stage("convert_model"):
+        MODEL_PATH = convert_model(model_id)
+    _log(f"Model converted to: {MODEL_PATH}")
 
     # Collect reference with HF model
-    run_wwb([
+    with _stage("run_wwb_hf_reference"):
+        run_wwb([
         "--base-model",
         model_id,
         "--num-samples",
@@ -35,7 +40,8 @@ def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
     ])
 
     # test Optimum
-    output = run_wwb([
+    with _stage("run_wwb_optimum"):
+        output = run_wwb([
         "--target-model",
         MODEL_PATH,
         "--num-samples",
@@ -52,7 +58,8 @@ def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
         assert similarity >= optimum_threshold
 
     # test GenAI
-    output = run_wwb([
+    with _stage("run_wwb_genai"):
+        output = run_wwb([
         "--target-model",
         MODEL_PATH,
         "--num-samples",
@@ -72,7 +79,8 @@ def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
         assert similarity >= genai_threshold
 
     # test w/o models
-    run_wwb([
+    with _stage("run_wwb_metrics_without_models"):
+        run_wwb([
         "--target-data",
         tmp_path / "target.csv",
         "--num-samples",
@@ -94,6 +102,7 @@ def run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
     ],
 )
 def test_vlm_basic(model_id, model_type, tmp_path):
+    _log(f"test_vlm_basic: model_id={model_id} model_type={model_type}")
     run_test(model_id, model_type, None, None, tmp_path)
 
 
@@ -105,6 +114,7 @@ def test_vlm_basic(model_id, model_type, tmp_path):
     ],
 )
 def test_vlm_nanollava(model_id, model_type, optimum_threshold, genai_threshold, tmp_path):
+    _log(f"test_vlm_nanollava: model_id={model_id} model_type={model_type}")
     run_test(model_id, model_type, optimum_threshold, genai_threshold, tmp_path)
 
 
@@ -116,4 +126,5 @@ def test_vlm_nanollava(model_id, model_type, optimum_threshold, genai_threshold,
     ],
 )
 def test_vlm_video(model_id, model_type, tmp_path):
+    _log(f"test_vlm_video: model_id={model_id} model_type={model_type}")
     run_test(model_id, model_type, 0.8, 0.8, tmp_path)
