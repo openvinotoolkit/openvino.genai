@@ -57,6 +57,11 @@ video_generation_json = [
         "frame_rate": 25,
     }
 ]
+llm_chat_json = [
+    {
+        "prompt": ["Tell me the plot of Mulan. ", "Who is the main character ?"],
+    }
+]
 
 
 class TestBenchmarkLLM:
@@ -491,3 +496,33 @@ class TestBenchmarkLLM:
             generate_llm_bench_input_generation_jsonl,
         ] + sample_args
         run_sample(benchmark_py_command)
+
+
+    @pytest.mark.samples
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            ["-d", "cpu", "-n", "1", "-ic", "10", "--task", "text", "--optimum", "-p", "Why the Sun is yellow ?", "chat_iter", "3"],
+            ["-d", "cpu", "-n", "1", "-ic", "10", "--task", "text", "--genai", "-p", "Why the Sun is yellow ?", "chat_iter", "3"],
+            ["-d", "cpu", "-n", "1", "-ic", "10", "--task", "text", "--genai"],
+        ],
+    )
+    @pytest.mark.parametrize("convert_model", ["tiny-random-ltx-video"], indirect=True)
+    @pytest.mark.parametrize(
+        "generate_llm_bench_input_generation_jsonl", [("llm_chat_json.jsonl", llm_chat_json)], indirect=True
+    )
+    def test_python_tool_llm_benchmark_llm_chat(
+        self, convert_model, generate_llm_bench_input_generation_jsonl, sample_args
+    ):
+        prompt_args = [] if "-p" in sample_args else ["-pf", generate_llm_bench_input_generation_jsonl]
+        # Run Python benchmark
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [
+            sys.executable,
+            benchmark_script,
+            "-m",
+            convert_model,
+            *prompt_args
+        ] + sample_args
+        run_sample(benchmark_py_command)
+
