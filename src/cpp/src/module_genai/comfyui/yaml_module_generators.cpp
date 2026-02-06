@@ -284,6 +284,104 @@ void VAEDecoderModuleGenerator::generate(YamlGeneratorContext& ctx) {
     }
 
     std::string module_name = node.node_id_str;
+
+    // Determine whether to enable tiling:
+    // - use_tiling = 1: enable (only for Wan 2.1)
+    // - use_tiling = 0: disable
+    // - use_tiling = -1 (auto): enable for wan2.1 models only
+    // Note: ZImage uses VAEDecodeSwitcher node for tiling, not this parameter
+    bool enable_tiling = false;
+    if (ctx.model_type == "wan2.1") {
+        if (ctx.options.use_tiling == 1) {
+            enable_tiling = true;
+            GENAI_DEBUG("[YAML] VAE tiling enabled by user flag for Wan 2.1");
+        } else if (ctx.options.use_tiling == 0) {
+            enable_tiling = false;
+            GENAI_DEBUG("[YAML] VAE tiling disabled by user flag for Wan 2.1");
+        } else {
+            // Auto mode: enable for Wan 2.1 by default
+            enable_tiling = true;
+            GENAI_DEBUG("[YAML] VAE tiling auto-enabled for Wan 2.1");
+        }
+    } else {
+        // Non-Wan 2.1 models (e.g., ZImage): --use_tiling is ignored
+        // ZImage uses VAEDecodeSwitcher node for tiling control
+        if (ctx.options.use_tiling == 1) {
+            GENAI_WARN("[YAML] --use_tiling is only supported for Wan 2.1 models. "
+                       "For ZImage, use VAEDecodeSwitcher node with select_decoder='tiled'.");
+        }
+        enable_tiling = false;
+    }
+
+    // For Wan 2.1 with tiling, use VAEDecoderTilingModule
+    if (enable_tiling && ctx.model_type == "wan2.1") {
+        GENAI_DEBUG("[YAML] Adding VAEDecoderTilingModule (%s) for Wan 2.1", module_name.c_str());
+
+        YAML::Node module = ctx.pipeline_modules[module_name];
+        module["type"] = "VAEDecoderTilingModule";
+        module["model_type"] = "wan2.1";
+        module["device"] = "CPU";  // Tiling module runs on CPU
+
+        YAML::Node inputs;
+        if (!ksampler_module_name.empty()) {
+            inputs.push_back(create_input_node("latent", ksampler_module_name + ".latents", "OVTensor"));
+        }
+        module["inputs"] = inputs;
+
+        YAML::Node outputs;
+        outputs.push_back(create_output_node("video", "OVTensor"));
+        module["outputs"] = outputs;
+
+        // Tiling parameters
+        if (ctx.options.tile_size > 0) {
+            module["params"]["tile_sample_min_height"] = std::to_string(ctx.options.tile_size);
+            module["params"]["tile_sample_min_width"] = std::to_string(ctx.options.tile_size);
+            // Stride = tile_size * 0.75 (25% overlap)
+            int stride = static_cast<int>(ctx.options.tile_size * 0.75);
+            module["params"]["tile_sample_stride_height"] = std::to_string(stride);
+            module["params"]["tile_sample_stride_width"] = std::to_string(stride);
+        } else {
+            // Default tiling parameters: 256x256 tiles with 64 pixel overlap (stride=192)
+            module["params"]["tile_sample_min_height"] = "256";
+            module["params"]["tile_sample_min_width"] = "256";
+            module["params"]["tile_sample_stride_height"] = "192";
+            module["params"]["tile_sample_stride_width"] = "192";
+        }
+        module["params"]["spatial_compression_ratio"] = "8";
+        module["params"]["sub_module_name"] = "vae_decoder";
+
+        // Add sub_module for VAE decoder
+        YAML::Node sub_module;
+        sub_module["name"] = "vae_decoder";
+
+        YAML::Node vae_decoder;
+        vae_decoder["device"] = ctx.options.device;
+        vae_decoder["model_type"] = "wan2.1";
+
+        // Note: VAEDecoderTilingModule passes "latent" for VIDEO mode,
+        // but VAEDecoderModule expects "latents". We need to update
+        // either the module or the YAML to match.
+        // For now, use "latent" as input since VAEDecoderTilingModule passes that.
+        YAML::Node sub_inputs;
+        YAML::Node input_node;
+        input_node["name"] = "latent";
+        input_node["type"] = "OVTensor";
+        sub_inputs.push_back(input_node);
+        vae_decoder["inputs"] = sub_inputs;
+
+        YAML::Node sub_outputs;
+        sub_outputs.push_back(create_output_node("image", "OVTensor"));
+        vae_decoder["outputs"] = sub_outputs;
+
+        vae_decoder["params"]["model_path"] = ctx.options.model_path;
+        vae_decoder["type"] = "VAEDecoderModule";
+
+        sub_module["vae_decoder"] = vae_decoder;
+        ctx.root["sub_modules"].push_back(sub_module);
+        return;
+    }
+
+    // Standard VAEDecoderModule for non-tiling or non-Wan 2.1 cases
     GENAI_DEBUG("[YAML] Adding VAEDecoderModule (%s)", module_name.c_str());
 
     YAML::Node module = ctx.pipeline_modules[module_name];
@@ -300,6 +398,7 @@ void VAEDecoderModuleGenerator::generate(YamlGeneratorContext& ctx) {
     module["outputs"] = outputs;
 
     module["params"]["model_path"] = ctx.options.model_path;
+
     module["type"] = "VAEDecoderModule";
 }
 
@@ -442,10 +541,15 @@ void SaveVideoModuleGenerator::generate(YamlGeneratorContext& ctx) {
 
     // Get referenced module name from VAE
     std::string vae_module_name;
+    bool is_wan21_tiling = false;
     if (auto* vae_node = ctx.params.get_node("VAEDecodeSwitcher")) {
         vae_module_name = vae_node->node_id_str;
     } else if (auto* vae_node = ctx.params.get_node("VAEDecode")) {
         vae_module_name = vae_node->node_id_str;
+        // Check if this is Wan 2.1 with tiling (output is "video" not "image")
+        if (ctx.model_type == "wan2.1" && ctx.options.use_tiling != 0) {
+            is_wan21_tiling = true;
+        }
     }
 
     std::string module_name = node.node_id_str;
@@ -472,7 +576,9 @@ void SaveVideoModuleGenerator::generate(YamlGeneratorContext& ctx) {
 
     YAML::Node inputs;
     if (!vae_module_name.empty()) {
-        inputs.push_back(create_input_node("raw_data", vae_module_name + ".image", "OVTensor"));
+        // Wan 2.1 tiling outputs "video", others output "image"
+        std::string output_name = is_wan21_tiling ? "video" : "image";
+        inputs.push_back(create_input_node("raw_data", vae_module_name + "." + output_name, "OVTensor"));
     }
     module["inputs"] = inputs;
 
@@ -495,17 +601,23 @@ void YamlModuleGeneratorRegistry::generate_result_module(
     YAML::Node& pipeline_modules,
     YAML::Node& root,
     const ComfyUIToGenAIConverter::PipelineParams& params,
-    const ConversionOptions& options) {
+    const ConversionOptions& options,
+    const std::string& model_type) {
 
     GENAI_DEBUG("[YAML] Adding ResultModule (pipeline_result)");
     YAML::Node module = pipeline_modules["pipeline_result"];
 
     // Get referenced module names
     std::string vae_module_name;
+    bool is_wan21_tiling = false;
     if (auto* vae_node = params.get_node("VAEDecodeSwitcher")) {
         vae_module_name = vae_node->node_id_str;
     } else if (auto* vae_node = params.get_node("VAEDecode")) {
         vae_module_name = vae_node->node_id_str;
+        // Check if this is Wan 2.1 with tiling (output is "video" not "image")
+        if (model_type == "wan2.1" && options.use_tiling != 0) {
+            is_wan21_tiling = true;
+        }
     }
 
     std::string save_image_module_name;
@@ -525,7 +637,9 @@ void YamlModuleGeneratorRegistry::generate_result_module(
     } else if (!save_image_module_name.empty()) {
         inputs.push_back(create_input_node("saved_image", save_image_module_name + ".saved_image", "String"));
     } else if (!vae_module_name.empty()) {
-        inputs.push_back(create_input_node("image", vae_module_name + ".image", "OVTensor"));
+        // Wan 2.1 tiling outputs "video", others output "image"
+        std::string output_name = is_wan21_tiling ? "video" : "image";
+        inputs.push_back(create_input_node(output_name, vae_module_name + "." + output_name, "OVTensor"));
     }
     module["inputs"] = inputs;
 

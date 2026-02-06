@@ -46,6 +46,7 @@ struct ProgramOptions {
     float guidance = 0.0f;
     int max_seq_len = 0;
     int tile_size = 0;
+    int use_tiling = -1;  // -1=auto (default for wan2.1), 0=disable, 1=enable
     int verbose = 2;  // 0=quiet, 1=error, 2=info (default), 3=debug
     bool show_help = false;
 };
@@ -53,25 +54,33 @@ struct ProgramOptions {
 void print_help(const char* program_name) {
     std::cout << "Usage: " << program_name << " [options]\n\n"
               << "OpenVINO GenAI ModulePipeline for ComfyUI\n"
-              << "Runs image generation pipeline from ComfyUI both workflow  and API JSON config.\n\n"
+              << "Runs image/video generation pipeline from ComfyUI workflow or API JSON config.\n\n"
               << "Options:\n"
               << "  --json <file>           ComfyUI JSON file (required, API or workflow format)\n"
               << "  --model_path <path>     Model path base (required)\n"
               << "  --device <device>       Device to run on (default: CPU)\n"
               << "  --prompt <text>         Text prompt for generation\n"
-              << "  --output <file>         Output image filename (auto-generated if not specified)\n"
-              << "  --width <int>           Image width (default: 1024)\n"
-              << "  --height <int>          Image height (default: 1024)\n"
+              << "  --output <file>         Output image/video filename (auto-generated if not specified)\n"
+              << "  --width <int>           Image/video width (default: from JSON)\n"
+              << "  --height <int>          Image/video height (default: from JSON)\n"
               << "  --num_frames <int>      Number of video frames (for video generation)\n"
-              << "  --steps <int>           Number of inference steps (default: 4)\n"
-              << "  --guidance <float>      Guidance scale (default: 0.0)\n"
+              << "  --steps <int>           Number of inference steps (default: from JSON)\n"
+              << "  --guidance <float>      Guidance scale (default: from JSON)\n"
               << "  --max_seq_len <int>     Max sequence length (default: 512)\n"
-              << "  --tile_size <int>       VAE decoder tile size (sample_size)\n"
+              << "  --tile_size <int>       VAE decoder tile size in pixels (default: 256)\n"
+              << "  --use_tiling <0|1>      VAE tiling mode:\n"
+              << "                            -1 = auto (default, enabled for Wan 2.1)\n"
+              << "                             0 = disable tiling\n"
+              << "                             1 = enable tiling\n"
               << "  --verbose <level>       Verbosity: 0=quiet, 1=error, 2=info (default), 3=debug\n"
               << "  --help                  Show this help message\n\n"
               << "Examples:\n"
-              << "  " << program_name << " --json workflow.json --model_path ./models/Z-Image-Turbo-fp16-ov\n"
-              << "  " << program_name << " --json workflow.json --model_path ./models/Wan2.1-T2V --device GPU\n"
+              << "  # Image generation with Z-Image-Turbo\n"
+              << "  " << program_name << " --json workflow.json --model_path ./models/Z-Image-Turbo\n\n"
+              << "  # Video generation with Wan 2.1 on GPU (tiling auto-enabled)\n"
+              << "  " << program_name << " --json wan2.1_t2v.json --model_path ./models/Wan2.1-T2V --device GPU\n\n"
+              << "  # Video generation with tiling disabled\n"
+              << "  " << program_name << " --json wan2.1_t2v.json --model_path ./models/Wan2.1-T2V --use_tiling 0\n"
               << std::endl;
 }
 
@@ -134,6 +143,9 @@ int main(int argc, char* argv[]) {
         extracted_inputs["device"] = opts.device;
         if (opts.tile_size != 0) {
             extracted_inputs["tile_size"] = opts.tile_size;
+        }
+        if (opts.use_tiling != -1) {
+            extracted_inputs["use_tiling"] = (opts.use_tiling == 1);
         }
 
         // Use the new ModulePipeline API for conversion and input extraction
@@ -227,6 +239,8 @@ bool parse_arguments(int argc, char* argv[], ProgramOptions& opts) {
             opts.max_seq_len = std::stoi(argv[++i]);
         } else if (arg == "--tile_size" && i + 1 < argc) {
             opts.tile_size = std::stoi(argv[++i]);
+        } else if (arg == "--use_tiling" && i + 1 < argc) {
+            opts.use_tiling = std::stoi(argv[++i]);
         } else if (arg == "--verbose" && i + 1 < argc) {
             opts.verbose = std::stoi(argv[++i]);
         } else {

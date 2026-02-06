@@ -193,7 +193,8 @@ public:
         YAML::Node& pipeline_modules,
         YAML::Node& root,
         const ComfyUIToGenAIConverter::PipelineParams& params,
-        const ConversionOptions& options);
+        const ConversionOptions& options,
+        const std::string& model_type = "unknown");
 
 private:
     YamlModuleGeneratorRegistry() = default;

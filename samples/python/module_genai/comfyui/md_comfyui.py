@@ -10,15 +10,15 @@ Supports both workflow and API JSON formats.
 
 Usage:
     python ./samples/python/module_genai/comfyui/md_comfyui.py \
-        --json <comfyui.json> [options]
+        --json <comfyui.json> --model_path <model_path> [options]
 
 Examples:
     python ./samples/python/module_genai/comfyui/md_comfyui.py \
         --json ./samples/cpp/module_genai/comfyui/wan2.1_t2v.json \
-        --device GPU
+        --model_path ./models/Wan2.1-T2V --device GPU
     python ./samples/python/module_genai/comfyui/md_comfyui.py \
         --json ./samples/cpp/module_genai/comfyui/z_image_turbo_2k_tiled.json \
-        --device GPU
+        --model_path ./models/Z-Image-Turbo --device GPU
 """
 
 # Fix Python path priority: ensure pip-installed packages take precedence over
@@ -51,15 +51,15 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s --json ./samples/cpp/module_genai/comfyui/wan2.1_t2v.json --device GPU
-  %(prog)s --json ./samples/cpp/module_genai/comfyui/z_image_turbo_2k_tiled.json --device GPU
-  %(prog)s --json ./samples/cpp/module_genai/comfyui/z_image_turbo_2k_non_tiled_api.json --width 1024 --height 1024
+  %(prog)s --json wan2.1_t2v.json --model_path ./models/Wan2.1-T2V --device GPU
+  %(prog)s --json z_image_turbo_2k_tiled.json --model_path ./models/Z-Image-Turbo --device GPU
+  %(prog)s --json z_image_turbo_2k_non_tiled_api.json --model_path ./models/Z-Image-Turbo --width 1024 --height 1024
         """
     )
     parser.add_argument('--json', required=True,
                         help="ComfyUI JSON file (API or workflow format)")
-    parser.add_argument('--model_path', default=None,
-                        help="Model path base (auto-detected from JSON filename if not specified)")
+    parser.add_argument('--model_path', required=True,
+                        help="Model path base (required)")
     parser.add_argument('--device', default="GPU",
                         help="Device to run on (default: GPU)")
     parser.add_argument('--prompt', default=None,
@@ -79,7 +79,9 @@ Examples:
     parser.add_argument('--max-seq-len', dest='max_seq_len', type=int, default=None,
                         help="Max sequence length (overrides JSON value)")
     parser.add_argument('--tile_size', type=int, default=None,
-                        help="VAE decoder tile size")
+                        help="VAE decoder tile size in pixels (default: 256)")
+    parser.add_argument('--use_tiling', type=int, default=None, choices=[-1, 0, 1],
+                        help="VAE tiling mode: -1=auto (default, enabled for Wan 2.1), 0=disable, 1=enable")
     parser.add_argument('--seed', type=int, default=None,
                         help="Random seed (overrides JSON value)")
     parser.add_argument('--verbose', type=int, default=2,
@@ -341,10 +343,6 @@ def main():
             log.error(f"JSON file not found: {args.json}")
             return 1
 
-        if not args.model_path:
-            log.error("--model_path is required. Please specify the path to the model directory.")
-            return 1
-
         log.info(f"Loading ComfyUI JSON from: {args.json}")
 
         model_path = args.model_path
@@ -356,6 +354,12 @@ def main():
         }
         if args.tile_size is not None:
             conversion_kwargs["tile_size"] = args.tile_size
+        if args.use_tiling is not None:
+            # -1=auto (default), 0=disable, 1=enable
+            if args.use_tiling == -1:
+                pass  # auto mode, don't set use_tiling
+            else:
+                conversion_kwargs["use_tiling"] = (args.use_tiling == 1)
 
         # Convert JSON to YAML
         yaml_content, params = load_from_comfyui_json(args.json, **conversion_kwargs)

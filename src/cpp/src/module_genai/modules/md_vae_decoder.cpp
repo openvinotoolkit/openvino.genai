@@ -27,6 +27,11 @@ void VAEDecoderModule::print_static_config() {
     params:
       model_path: "model"
       enable_postprocess: "bool value"    # [Optional], default true.
+      enable_tiling: "bool value"         # [Optional], default false. Enable spatial tiling for Wan 2.1 VAE.
+      tile_sample_min_height: "256"       # [Optional], default 256. Minimum tile height in sample space.
+      tile_sample_min_width: "256"        # [Optional], default 256. Minimum tile width in sample space.
+      tile_sample_stride_height: "192"    # [Optional], default 192. Tile stride height (overlap = min - stride).
+      tile_sample_stride_width: "192"     # [Optional], default 192. Tile stride width.
     )" << std::endl;
 }
 
@@ -83,7 +88,48 @@ void VAEDecoderModule::create_vae_decoder(const std::filesystem::path &model_pat
                             const std::string &device,
                             const ov::AnyMap &properties) {
     if (m_model_type == DiffusionModelType::WAN_2_1) {
-        m_vae = std::make_shared<AutoencoderKLWan>(model_path, device, properties);
+        auto vae = std::make_shared<AutoencoderKLWan>(model_path, device, properties);
+
+        // Check for tiling configuration
+        const auto& params = module_desc->params;
+        bool enable_tiling = false;
+        if (params.find("enable_tiling") != params.end()) {
+            std::string val = params.at("enable_tiling");
+            enable_tiling = (val == "true" || val == "True" || val == "TRUE" || val == "1");
+        }
+
+        if (enable_tiling) {
+            int tile_min_h = 256, tile_min_w = 256;
+            int tile_stride_h = 192, tile_stride_w = 192;
+
+            if (params.find("tile_sample_min_height") != params.end()) {
+                tile_min_h = std::stoi(params.at("tile_sample_min_height"));
+            }
+            if (params.find("tile_sample_min_width") != params.end()) {
+                tile_min_w = std::stoi(params.at("tile_sample_min_width"));
+            }
+            if (params.find("tile_sample_stride_height") != params.end()) {
+                tile_stride_h = std::stoi(params.at("tile_sample_stride_height"));
+            }
+            if (params.find("tile_sample_stride_width") != params.end()) {
+                tile_stride_w = std::stoi(params.at("tile_sample_stride_width"));
+            }
+
+            vae->enable_tiling(tile_min_h, tile_min_w, tile_stride_h, tile_stride_w);
+
+            // Calculate overlap for logging
+            int overlap_h = tile_min_h - tile_stride_h;
+            int overlap_w = tile_min_w - tile_stride_w;
+            GENAI_INFO("VAEDecoderModule[" + module_desc->name + "]: Tiling enabled for Wan 2.1 VAE");
+            GENAI_INFO("  - Tile size: " + std::to_string(tile_min_h) + "x" + std::to_string(tile_min_w) + " pixels");
+            GENAI_INFO("  - Tile stride: " + std::to_string(tile_stride_h) + "x" + std::to_string(tile_stride_w) + " pixels");
+            GENAI_INFO("  - Tile overlap: " + std::to_string(overlap_h) + "x" + std::to_string(overlap_w) + " pixels");
+            GENAI_INFO("  - Latent tile size: " + std::to_string(tile_min_h / 8) + "x" + std::to_string(tile_min_w / 8) + " (8x spatial compression)");
+        } else {
+            GENAI_INFO("VAEDecoderModule[" + module_desc->name + "]: Tiling disabled, using full resolution decode");
+        }
+
+        m_vae = vae;
     } else if (m_model_type == DiffusionModelType::ZIMAGE) {
         m_vae = std::make_shared<AutoencoderKL>(model_path, device, properties);
     } else {
@@ -99,14 +145,20 @@ void VAEDecoderModule::run() {
         "VAEDecoderModule[VAE_decoder]: VAE model not initialized");
 
     prepare_inputs();
-    
-    if (this->inputs.find("latents") == this->inputs.end()) {
-        GENAI_ERR("VAEDecoderModule[" + module_desc->name + "]: 'latents' input not found");
+
+    // Support both "latent" (video) and "latents" (image) input names
+    std::string input_name;
+    if (this->inputs.find("latent") != this->inputs.end()) {
+        input_name = "latent";
+    } else if (this->inputs.find("latents") != this->inputs.end()) {
+        input_name = "latents";
+    } else {
+        GENAI_ERR("VAEDecoderModule[" + module_desc->name + "]: 'latent' or 'latents' input not found");
         return;
     }
 
     ov::Tensor image;
-    auto& latent_data = this->inputs["latents"].data.as<ov::Tensor>();
+    auto& latent_data = this->inputs[input_name].data.as<ov::Tensor>();
     if (m_model_type == DiffusionModelType::ZIMAGE) {
         if (latent_data.get_shape().size() == 3u) {
             PROFILE(pm, "vae infer");
@@ -121,7 +173,7 @@ void VAEDecoderModule::run() {
         image = std::get<std::shared_ptr<AutoencoderKLWan>>(m_vae)->decode(latent_data);
     } else {
         OPENVINO_THROW("VAEDecoderModule[" + module_desc->name + "]: Unsupported model type for VAE decoder");
-    }    
+    }
 
     this->outputs["image"].data = image;
 }

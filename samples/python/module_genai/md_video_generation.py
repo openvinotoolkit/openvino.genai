@@ -2,6 +2,35 @@ from pathlib import Path
 
 import argparse
 
+"""
+Wan 2.1 Video Generation Pipeline Sample
+
+This sample demonstrates how to use the OpenVINO GenAI ModulePipeline
+for Wan 2.1 text-to-video generation with optional VAE tiling.
+
+Usage Examples:
+    # Basic usage with default settings (tiling enabled, 256x256 tiles)
+    python md_video_generation.py --model_path ./models/Wan2.1-T2V-1.3B
+
+    # Run on GPU with custom resolution
+    python md_video_generation.py --model_path ./models/Wan2.1-T2V-1.3B --device GPU --width 832 --height 480
+
+    # Disable tiling (for smaller resolutions or comparison)
+    python md_video_generation.py --model_path ./models/Wan2.1-T2V-1.3B --use_tiling 0
+
+    # Custom tile size (512x512 tiles with 384 stride, 25% overlap)
+    python md_video_generation.py --model_path ./models/Wan2.1-T2V-1.3B --tile_size 512
+
+    # Full customization
+    python md_video_generation.py \\
+        --model_path ./models/Wan2.1-T2V-1.3B \\
+        --device GPU \\
+        --prompt "A cat walking on the beach at sunset" \\
+        --width 832 --height 480 \\
+        --num_frames 33 --steps 30 \\
+        --use_tiling 1 --tile_size 256
+"""
+
 # Parse arguments early to fail fast on invalid arguments
 def parse_args():
     parser = argparse.ArgumentParser(description="Wan 2.1 Pipeline Sample")
@@ -18,6 +47,10 @@ def parse_args():
     parser.add_argument('--guidance_scale', type=float, default=None, help="Guidance scale")
     parser.add_argument('--num_frames', type=int, default=None, help="Number of frames")
     parser.add_argument('--fps', type=int, default=None, help="Frames per second")
+    parser.add_argument('--use_tiling', type=int, default=1, choices=[0, 1],
+                        help="VAE tiling mode: 0=disable, 1=enable (default)")
+    parser.add_argument('--tile_size', type=int, default=256,
+                        help="VAE decoder tile size in pixels (default: 256)")
     parser.add_argument('--debug', action='store_true', help="Enable debug output")
     return parser.parse_args()
 
@@ -32,11 +65,16 @@ import yaml
 
 core = ov.Core()
 class OVWanPipeline:
-    def __init__(self, model_dir, device_map="CPU", fps: int = 10):
+    def __init__(self, model_dir, device_map="CPU", fps: int = 10, use_tiling: bool = True, tile_size: int = 256):
         model_dir = Path(model_dir)
         if isinstance(device_map, str):
             device_map = {"transformer": device_map, "text_encoder": device_map, "vae": device_map}
         self.fps = fps
+        self.use_tiling = use_tiling
+        self.tile_size = tile_size
+
+        # Calculate stride (75% of tile_size, 25% overlap)
+        tile_stride = int(tile_size * 0.75)
         cfg_data = {
             'global_context': {
                 'model_type': 'wan2.1'
@@ -238,7 +276,12 @@ class OVWanPipeline:
                     ],
                     'params': {
                         'model_path': str(model_dir),
-                        'enable_postprocess': True
+                        'enable_postprocess': 'true',
+                        'enable_tiling': 'true' if self.use_tiling else 'false',
+                        'tile_sample_min_height': str(self.tile_size),
+                        'tile_sample_min_width': str(self.tile_size),
+                        'tile_sample_stride_height': str(tile_stride),
+                        'tile_sample_stride_width': str(tile_stride),
                     }
                 },
                 'video_saver': {
@@ -362,8 +405,10 @@ num_inference_steps = args.steps if args.steps is not None else DEFAULT_NUM_INFE
 guidance_scale = args.guidance_scale if args.guidance_scale is not None else DEFAULT_GUIDANCE_SCALE
 num_frames = args.num_frames if args.num_frames is not None else DEFAULT_NUM_FRAMES
 fps = args.fps if args.fps is not None else DEFAULT_FPS
+use_tiling = args.use_tiling == 1
+tile_size = args.tile_size
 
-ov_pipe = OVWanPipeline(args.model_path, device_map=device_map, fps=fps)
+ov_pipe = OVWanPipeline(args.model_path, device_map=device_map, fps=fps, use_tiling=use_tiling, tile_size=tile_size)
 
 output = ov_pipe(
     prompt=prompt,

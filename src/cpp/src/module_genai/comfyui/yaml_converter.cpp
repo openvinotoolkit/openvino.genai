@@ -81,6 +81,7 @@ ConversionOptions create_conversion_options(const ov::AnyMap& pipeline_inputs) {
     std::string model_path = "./models/";
     std::string device = "CPU";
     int tile_size = 0;
+    int use_tiling = -1;  // -1 = auto
 
     auto it_model_path = pipeline_inputs.find("model_path");
     if (it_model_path != pipeline_inputs.end()) {
@@ -109,10 +110,24 @@ ConversionOptions create_conversion_options(const ov::AnyMap& pipeline_inputs) {
         }
     }
 
+    auto it_use_tiling = pipeline_inputs.find("use_tiling");
+    if (it_use_tiling != pipeline_inputs.end()) {
+        try {
+            use_tiling = it_use_tiling->second.as<bool>() ? 1 : 0;
+        } catch (const ov::Exception&) {
+            try {
+                use_tiling = it_use_tiling->second.as<int>();
+            } catch (const ov::Exception&) {
+                GENAI_WARN("use_tiling has invalid type, using auto");
+            }
+        }
+    }
+
     ConversionOptions options;
     options.model_path = model_path;
     options.device = device;
     options.tile_size = tile_size;
+    options.use_tiling = use_tiling;
     return options;
 }
 
@@ -445,7 +460,7 @@ std::string ComfyUIToGenAIConverter::generate_yaml(
     }
 
     // ResultModule (always generated last)
-    YamlModuleGeneratorRegistry::generate_result_module(pipeline_modules, root, params, options);
+    YamlModuleGeneratorRegistry::generate_result_module(pipeline_modules, root, params, options, model_type);
 
     GENAI_INFO("[YAML] YAML generation complete.");
 

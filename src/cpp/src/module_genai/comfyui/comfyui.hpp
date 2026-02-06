@@ -321,6 +321,7 @@ struct ConversionOptions {
     std::string device = "CPU"; // default device
     std::string model_type = "unknown";  // Model type (e.g., "wan2.1", "zimage")
     int tile_size = 0;  // VAE decoder tile size (sample_size), 0 means use value from JSON
+    int use_tiling = -1;  // -1=auto (default for model type), 0=disable, 1=enable
     // Note: use_tiled_vae is now auto-detected from VAEDecodeSwitcher's select_decoder input
 };
 
