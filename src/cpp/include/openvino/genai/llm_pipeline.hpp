@@ -20,6 +20,53 @@
 namespace ov {
 namespace genai {
 
+/**
+ * @brief Mode for saving OpenVINO models generated from GGUF files.
+ * 
+ * Controls the quantization strategy when processing GGUF models.
+ * - ORIGINAL: Preserve original GGUF quantization (Q4_K/Q6_K with small group sizes)
+ *             Output: <gguf_dir>/ov_model_original/openvino_model.xml
+ * - OPTIMIZED: Use device-optimized quantization (e.g., Q4_0_128/Q8_0_C for GPU)
+ *              Output: <gguf_dir>/ov_model_optimized/openvino_model.xml
+ * 
+ * Note: This controls processing strategy. Use enable_save_ov_model to control file saving.
+ * Future extensions can add more modes like COMPRESSED, PERFORMANCE, etc.
+ */
+enum class OVModelQuantizeMode {
+    ORIGINAL,    // Save model preserving original GGUF quantization
+    OPTIMIZED    // Save model with optimized quantization for target device
+};
+
+/** @cond INTERNAL */
+inline std::ostream& operator<<(std::ostream& os, const OVModelQuantizeMode& mode) {
+    switch (mode) {
+    case OVModelQuantizeMode::ORIGINAL:
+        return os << "ORIGINAL";
+    case OVModelQuantizeMode::OPTIMIZED:
+        return os << "OPTIMIZED";
+    default:
+        OPENVINO_THROW("Unsupported OVModelQuantizeMode");
+    }
+}
+
+inline std::istream& operator>>(std::istream& is, OVModelQuantizeMode& mode) {
+    std::string str;
+    is >> str;
+    // Convert to uppercase for case-insensitive comparison
+    std::transform(str.begin(), str.end(), str.begin(),
+                   [](unsigned char c) { return std::toupper(c); });
+    
+    if (str == "ORIGINAL") {
+        mode = OVModelQuantizeMode::ORIGINAL;
+    } else if (str == "OPTIMIZED") {
+        mode = OVModelQuantizeMode::OPTIMIZED;
+    } else {
+        OPENVINO_THROW("Unsupported OVModelQuantizeMode: ", str);
+    }
+    return is;
+}
+/** @endcond */
+
 // Return flag corresponds whether generation should be stopped. It could be:
 // ov::genai::StreamingStatus flag, RUNNING means continue generation, STOP means stop generation, CANCEL means stop generation and remove last prompt and answer from history
 using StreamerVariant = std::variant<std::function<StreamingStatus(std::string)>, std::shared_ptr<StreamerBase>, std::monostate>;
@@ -391,11 +438,20 @@ static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_confi
 static constexpr ov::Property<bool> prompt_lookup{"prompt_lookup"};
 
 /**
-* @brief enable enable_save_ov_model property serves to serialize ov model (xml/bin) generated from gguf model on disk for re-use.
-* Set `true` to activate this mode.
+* @brief enable_save_ov_model property serves to enable saving OV model (xml/bin) generated from GGUF model.
+* @deprecated Use save_ov_model_config instead for more control over save modes.
+* Set `true` to save model with original GGUF quantization (equivalent to OVModelQuantizeMode::ORIGINAL).
 * And create LLMPipeline instance with this config.
 */
 static constexpr ov::Property<bool> enable_save_ov_model{"enable_save_ov_model"};
+
+/**
+* @brief save_ov_model_config property serves to configure saving OV model (xml/bin) generated from GGUF model.
+* Set to ORIGINAL to save with GGUF quantization, or OPTIMIZED to save with device-optimized quantization.
+* This property takes priority over enable_save_ov_model if both are set.
+* And create LLMPipeline instance with this config.
+*/
+static constexpr ov::Property<OVModelQuantizeMode> save_ov_model_config{"save_ov_model_config"};
 
 
 }  // namespace genai
