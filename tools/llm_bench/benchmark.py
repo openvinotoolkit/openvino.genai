@@ -8,7 +8,6 @@ import logging as log
 from openvino import get_version
 import torch
 import traceback
-from llm_bench_utils.memory_monitor import MemMonitorWrapper, MemoryDataSummarizer
 import llm_bench_utils.output_csv
 import llm_bench_utils.output_json
 import task.visual_language_generation as bench_vlm
@@ -21,6 +20,7 @@ import task.text_embeddings as bench_text_embed
 import task.text_to_speech_generation as bench_text_to_speech
 import task.text_reranker as bench_text_rerank
 from llm_bench_utils.model_utils import analyze_args, get_ir_conversion_frontend, get_model_precision
+from llm_bench_utils.memory_monitor import MemoryDataSummarizer
 
 DEFAULT_TORCH_THREAD_NUMS = 16
 
@@ -488,13 +488,7 @@ def main():
     log.info(out_str)
     memory_data_collector = None
     if args.memory_consumption:
-        memory_monitor = MemMonitorWrapper()
-        if args.memory_consumption_delay:
-            memory_monitor.interval = args.memory_consumption_delay
-        memory_monitor.create_monitors()
-        if args.memory_consumption_dir:
-            memory_monitor.set_dir(args.memory_consumption_dir)
-        memory_data_collector = MemoryDataSummarizer(memory_monitor)
+        memory_data_collector = MemoryDataSummarizer(args)
     try:
         if model_args['use_case'].task in ['text_gen', 'code_gen']:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case'].task](
@@ -543,7 +537,7 @@ def main():
         exit(1)
     finally:
         if memory_data_collector:
-            memory_data_collector.memory_monitor.stop()
+            memory_data_collector.stop()
 
 
 if __name__ == '__main__':
