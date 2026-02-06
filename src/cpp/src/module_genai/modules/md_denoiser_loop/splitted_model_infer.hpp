@@ -57,5 +57,7 @@ public:
     void infer(const ov::AnyMap& inputs);
 
     ov::Tensor get_output_tensor(const size_t& index = 0);
+
+    void set_output_tensor(size_t idx, const ov::Tensor& tensor);
 };
 }  // namespace ov::genai::module

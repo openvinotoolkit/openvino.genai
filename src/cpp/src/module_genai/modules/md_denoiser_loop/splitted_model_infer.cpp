@@ -151,4 +151,12 @@ ov::Tensor CSplittedModelInfer::get_output_tensor(const size_t& index) {
     return m_postprocess_infer_request.get_output_tensor(index);
 #endif
 }
+
+void CSplittedModelInfer::set_output_tensor(size_t idx, const ov::Tensor& tensor) {
+#if USE_FULL_MODEL
+    m_full_infer_request.set_output_tensor(idx, tensor);
+#else
+    m_postprocess_infer_request.set_output_tensor(idx, tensor);
+#endif
+}
 }  // namespace ov::genai::module

@@ -364,8 +364,8 @@ ov::Tensor DenoiserLoopModule::run(
             ov::AnyMap splitted_model_inputs = {{"hidden_states", latents},
                                                 {"timestep", timestep},
                                                 {"encoder_hidden_states", prompt_tensor}};
+            m_splitted_model_infer->set_output_tensor(0, noise_pred);
             m_splitted_model_infer->infer(splitted_model_inputs);
-            noise_pred = m_splitted_model_infer->get_output_tensor();
         } else {
             m_request.set_tensor("hidden_states", latents);
             m_request.set_tensor("timestep", timestep);
@@ -380,8 +380,8 @@ ov::Tensor DenoiserLoopModule::run(
                 ov::AnyMap splitted_model_inputs = {{"hidden_states", latents},
                                                     {"timestep", timestep},
                                                     {"encoder_hidden_states", negative_prompt_tensor.value()}};
+                m_splitted_model_infer->set_output_tensor(0, noise_uncond);
                 m_splitted_model_infer->infer(splitted_model_inputs);
-                noise_uncond = m_splitted_model_infer->get_output_tensor();
             }
             else {
                 m_request.set_tensor("hidden_states", latents);
