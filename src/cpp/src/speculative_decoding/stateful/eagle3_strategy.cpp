@@ -195,13 +195,8 @@ std::vector<int64_t> Eagle3InferWrapperBase::sample_tokens(const ov::Tensor& log
     auto sequence_group = get_sequence_group();
     OPENVINO_ASSERT(sequence_group, "SequenceGroup not initialized");
 
-    OPENVINO_ASSERT(get_running_sequence_count() == 1,
-                    "Eagle3 currently only supports single sequence, got ",
-                    get_running_sequence_count(),
-                    " sequences");
-
     auto current_seq = get_current_sequence();
-    OPENVINO_ASSERT(current_seq, "No running sequence at index 0");
+    OPENVINO_ASSERT(current_seq, "No sequence at index 0");
 
     const size_t prev_generated_len = current_seq->get_generated_len();
     const size_t logits_seq_len = shape[1];
@@ -312,9 +307,9 @@ void Eagle3TargetWrapper::initialize_sequence(const ov::Tensor& input_ids, const
     TokenIds prompt_ids(ids_data, ids_data + seq_len);
     m_sequence_group = std::make_shared<SequenceGroup>(0, prompt_ids, config, 0);
 
-    OPENVINO_ASSERT(get_running_sequence_count() == 1,
+    OPENVINO_ASSERT(m_sequence_group->num_total_seqs() == 1,
                     "Expected single sequence after initialization, got ",
-                    get_running_sequence_count());
+                    m_sequence_group->num_total_seqs());
 }
 
 InferenceOutput Eagle3TargetWrapper::infer(const ov::Tensor& input_ids,
@@ -378,9 +373,9 @@ void Eagle3DraftWrapper::initialize_sequence(const ov::Tensor& input_ids, const 
     TokenIds draft_prompt_ids(ids_data + 1, ids_data + total_len);
     m_sequence_group = std::make_shared<SequenceGroup>(1, draft_prompt_ids, config, 0);
 
-    OPENVINO_ASSERT(get_running_sequence_count() == 1,
+    OPENVINO_ASSERT(m_sequence_group->num_total_seqs() == 1,
                     "Expected single sequence after initialization, got ",
-                    get_running_sequence_count());
+                    m_sequence_group->num_total_seqs());
 }
 
 InferenceOutput Eagle3DraftWrapper::infer(const ov::Tensor& input_ids,
@@ -642,8 +637,8 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     int64_t eos_token_id) {
     SpeculativeResult result;
 
-    OPENVINO_ASSERT(m_target->get_running_sequence_count() == 1 && m_draft->get_running_sequence_count() == 1,
-                    "Eagle3 speculative iteration requires single sequence per model");
+    OPENVINO_ASSERT(m_target->get_sequence_group() && m_draft->get_sequence_group(),
+                    "Eagle3 speculative iteration requires initialized sequence groups");
 
     auto target_hidden_states = m_target->get_current_sequence()->get_hidden_state();
     OPENVINO_ASSERT(target_hidden_states && target_hidden_states.get_size() > 0,
