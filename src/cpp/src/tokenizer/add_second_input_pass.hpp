@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include "openvino/pass/manager.hpp"
 #include <nlohmann/json.hpp>
 #include "openvino/core/model.hpp"

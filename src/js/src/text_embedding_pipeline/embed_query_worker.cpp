@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include "include/helper.hpp"
 #include "include/text_embedding_pipeline/embed_query_worker.hpp"
 

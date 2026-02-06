@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 const eslint = require("@eslint/js");
 const prettierConfig = require("eslint-plugin-prettier/recommended");
 const globals = require("globals");
