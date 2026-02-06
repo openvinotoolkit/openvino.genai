@@ -665,8 +665,20 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     // Append first token to target model (draft model already has it from sampler)
     m_target->append_tokens({first_draft_token});
 
+    // Check if first draft token is EOS - if so, no need to generate more draft tokens
+    bool draft_eos_reached = (first_draft_token == eos_token_id);
+
+    // IMPORTANT: If draft generated EOS, sampler will mark the sequence as FINISHED.
+    // However, we need to keep the draft sequence in RUNNING state because:
+    // 1. Target model may reject this EOS during validation
+    // 2. Next iteration needs draft sequence to be accessible via get_running_sequences()
+    // Only target model's EOS decision should truly end the generation.
+    if (draft_eos_reached) {
+        m_draft->get_current_sequence()->set_status(SequenceStatus::RUNNING);
+    }
+
     // Step 2: Generate additional draft tokens using internal hidden states
-    for (size_t i = 1; i < m_draft_iterations; ++i) {
+    for (size_t i = 1; i < m_draft_iterations && !draft_eos_reached; ++i) {
         InferContext more_ctx;
         more_ctx.input_token_count = 1;
         more_ctx.use_target_hidden = false;
@@ -680,16 +692,24 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
         // During validation, target model will retrieve tokens from its own sequence
         // so we need to speculatively add draft predictions here
         m_target->append_tokens({draft_token});
+
+        if (draft_token == eos_token_id) {
+            draft_eos_reached = true;
+            // Keep draft sequence in RUNNING state (same reason as above)
+            m_draft->get_current_sequence()->set_status(SequenceStatus::RUNNING);
+        }
     }
 
     // Step 3: Validate draft tokens with target model
 
-    const size_t validation_window_size = m_draft_iterations + 1;
+    // Validation window is based on actual draft tokens generated (may be less than m_draft_iterations if EOS hit)
+    const size_t actual_draft_tokens = draft_candidates.size();
+    const size_t validation_window_size = actual_draft_tokens + 1;
 
     InferContext val_ctx;
     val_ctx.input_token_count = validation_window_size;
     val_ctx.sample_count = validation_window_size;
-    val_ctx.num_tokens_to_validate = m_draft_iterations;
+    val_ctx.num_tokens_to_validate = actual_draft_tokens;
     auto val_result = m_target->forward(val_ctx);
 
     // Sampler validates draft tokens and returns accepted + new sampled token
@@ -698,7 +718,7 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     // Result: [accepted_draft_tokens..., new_sampled_token]
     const size_t accepted_count = validated_tokens.size() - 1;
     const int64_t target_predicted_token = validated_tokens.back();
-    const size_t tokens_to_remove = m_draft_iterations - accepted_count;
+    const size_t tokens_to_remove = actual_draft_tokens - accepted_count;
     const size_t total_accepted_tokens = validated_tokens.size();
 
     // Step 4: Synchronize sequences and KV cache
