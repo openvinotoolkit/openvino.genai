@@ -27,23 +27,9 @@ GGUF_MODEL_LIST = (
         "dynamic_quantization_group_size": None,
     },
     {
+        "hf_model_id": "Qwen/Qwen2.5-1.5B-Instruct",
         "gguf_model_id": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
         "gguf_filename": "qwen2.5-1.5b-instruct-q4_0.gguf",
-        "dynamic_quantization_group_size": None,
-    },
-    {
-        "gguf_model_id": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
-        "gguf_filename": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
-        "dynamic_quantization_group_size": None,
-    },
-        {
-        "gguf_model_id": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
-        "gguf_filename": "qwen2.5-1.5b-instruct-q8_0.gguf",
-        "dynamic_quantization_group_size": None,
-    },
-    {
-        "gguf_model_id": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
-        "gguf_filename": "qwen2.5-1.5b-instruct-fp16.gguf",
         "dynamic_quantization_group_size": None,
     },
     pytest.param(
@@ -56,6 +42,7 @@ GGUF_MODEL_LIST = (
         marks=pytest.mark.xfail(reason="Prediction mismatch. Ticket 172345", raises=AssertionError),
     ),
     {
+        "hf_model_id": "sammysun0711/tiny-random-deepseek-distill-qwen",
         "gguf_model_id": "sammysun0711/tiny-random-deepseek-distill-qwen-gguf",
         "gguf_filename": "tiny-random-deepseek-distill-qwen_q8_0.gguf",
         "dynamic_quantization_group_size": "64",

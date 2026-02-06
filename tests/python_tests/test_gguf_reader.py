@@ -18,6 +18,8 @@ from utils.hugging_face import (
     download_gguf_model, 
     load_hf_model_from_gguf, 
     load_hf_tokenizer_from_gguf,
+    download_and_convert_model,
+    OVConvertedModelSchema,
 )
 from utils.ov_genai_pipelines import (
     create_ov_pipeline, 
@@ -35,6 +37,7 @@ class ModelInfo:
     dynamic_quantization_group_size: str | None
     opt_model: Any | None
     hf_tokenizer: Any | None
+    hf_model_id: str | None = None
 
 
 @pytest.fixture(scope="module")
@@ -42,6 +45,9 @@ def model_gguf(request: pytest.FixtureRequest) -> ModelInfo:
     meta_info = request.param
     gguf_model_id = meta_info["gguf_model_id"]
     gguf_filename = meta_info["gguf_filename"]
+    hf_model_id = meta_info.get("hf_model_id", None)
+    print(f"\n[FIXTURE DEBUG] gguf_model_id = {repr(gguf_model_id)}")
+    print(f"[FIXTURE DEBUG] hf_model_id = {repr(hf_model_id)}")
     opt_model = load_hf_model_from_gguf(gguf_model_id, gguf_filename)
     hf_tokenizer = load_hf_tokenizer_from_gguf(gguf_model_id, gguf_filename)
     gguf_full_path = download_gguf_model(gguf_model_id, gguf_filename)
@@ -52,6 +58,7 @@ def model_gguf(request: pytest.FixtureRequest) -> ModelInfo:
         dynamic_quantization_group_size=meta_info["dynamic_quantization_group_size"],
         opt_model=opt_model,
         hf_tokenizer=hf_tokenizer,
+        hf_model_id=hf_model_id,
     )
 
 
@@ -140,6 +147,7 @@ def test_full_gguf_pipeline(
     opt_model = model_gguf.opt_model
     hf_tokenizer = model_gguf.hf_tokenizer
     dynamic_quantization_group_size = model_gguf.dynamic_quantization_group_size
+    hf_model_id = model_gguf.hf_model_id
 
     if gguf_model_id == "sammysun0711/tiny-random-deepseek-distill-qwen-gguf" and "<|endoftext|>" in prompt:
         pytest.skip(reason="Prompts to test special tokens for this model fail on HF side")
@@ -171,7 +179,31 @@ def test_full_gguf_pipeline(
 
     ov_pipe_gguf = create_ov_pipeline(gguf_full_path, pipeline_type=pipeline_type, enable_save_ov_model=enable_save_ov_model, dynamic_quantization_group_size=dynamic_quantization_group_size)
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
-    
+
+    # If hf_model_id is available, download HF PyTorch model and convert to OV for comparison
+    res_string_ov_converted = None
+    if hf_model_id:
+        try:
+            # Use project standard method to download and convert HF model to OpenVINO
+            print(f"[INFO] hf_model_id = {repr(hf_model_id)}")
+            print(f"[INFO] Converting HF model {hf_model_id} to OpenVINO format...")
+            converted_model: OVConvertedModelSchema = download_and_convert_model(
+                hf_model_id
+            )
+            print(f"[INFO] Converted model path: {converted_model.models_path}")
+
+            # Load the converted model using OpenVINO GenAI pipeline
+            ov_pipe_converted = create_ov_pipeline(
+                converted_model.models_path, pipeline_type=pipeline_type
+            )
+            res_string_ov_converted = ov_pipe_converted.generate(
+                prompt, generation_config=ov_generation_config
+            )
+            del ov_pipe_converted
+            gc.collect()
+        except Exception as e:
+            print(f"[WARNING] Failed to convert and load HF model {hf_model_id}: {e}")
+
     print(f"\n{'='*60}")
     print(f"[DEBUG] Model: {gguf_model_id}")
     print(f"[DEBUG] Prompt: {repr(prompt)}")
@@ -180,10 +212,15 @@ def test_full_gguf_pipeline(
     ov_tokenized = ov_pipe_gguf.get_tokenizer().encode(prompt)
     print(f"[DEBUG] OV input_ids: {ov_tokenized.input_ids.data.tolist()}")
     print(f"[DEBUG] HF output: {repr(res_string_input_1)}")
-    print(f"[DEBUG] OV output: {repr(res_string_input_2)}")
-    print(f"[DEBUG] Match: {res_string_input_1 == res_string_input_2}")
+    print(f"[DEBUG] OV GGUF-converted output: {repr(res_string_input_2)}")
+    if res_string_ov_converted:
+        print(f"[DEBUG] OV HF-converted output: {repr(res_string_ov_converted)}")
+        print(
+            f"[DEBUG] HF == OV HF-converted: {res_string_input_1 == res_string_ov_converted}"
+        )
+    print(f"[DEBUG] HF == OV GGUF: {res_string_input_1 == res_string_input_2}")
     print(f"{'='*60}\n")
-    
+
     # Check that eos_token, bos_token string representations are loaded correctly from gguf file
     assert ov_pipe_gguf.get_tokenizer().get_eos_token() == hf_tokenizer.decode([ov_pipe_gguf.get_tokenizer().get_eos_token_id()])
     assert ov_pipe_gguf.get_tokenizer().get_bos_token() == hf_tokenizer.decode([ov_pipe_gguf.get_tokenizer().get_bos_token_id()])
