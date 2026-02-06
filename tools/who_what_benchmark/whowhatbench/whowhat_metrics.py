@@ -266,8 +266,8 @@ class VideoSimilarity:
             if not ret:
                 break
             # if total_frames is less than required num_frames, duplicate some of them
-            for j in range(np.count_nonzero(frame_idxs == i)):
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            for _ in range(np.count_nonzero(frame_idxs == i)):
                 frames.append(frame)
 
         cap.release()
