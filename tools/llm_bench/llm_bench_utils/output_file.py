@@ -59,11 +59,12 @@ def save_video_file(
     out.release()
 
 
-def construct_file_name(batch_size, model_name, model_precision, prompt_idx, iteration, batchsize_idx, proc_id, suffix):
+def construct_file_name(batch_size, model_name, model_precision, prompt_idx, iteration, batchsize_idx, proc_id, suffix, is_chat=False):
     file_save_name = model_name
     if model_precision:
         file_save_name += "_" + model_precision
-    file_save_name += "_p" + str(prompt_idx)
+    file_save_name += "_c" if is_chat else "_p"
+    file_save_name += str(prompt_idx)
     if batch_size > 1 and batchsize_idx is not None:
         file_save_name += "_bs" + str(batchsize_idx)
     if iteration:
@@ -100,7 +101,7 @@ def output_image_input_text(input_text, args, prompt_idx, batchsize_idx, proc_id
     save_text_to_file(input_text, text_file_name, args)
 
 
-def output_gen_text(generated_text, args, model_precision, prompt_idx, iteration, batchsize_idx, proc_id):
+def output_gen_text(generated_text, args, model_precision, prompt_idx, iteration, batchsize_idx, proc_id, is_chat=False):
     text_file_name = construct_file_name(
         args["batch_size"],
         args["model_name"],
@@ -110,6 +111,7 @@ def output_gen_text(generated_text, args, model_precision, prompt_idx, iteration
         batchsize_idx,
         proc_id=proc_id,
         suffix="_output.txt",
+        is_chat=is_chat
     )
     save_text_to_file(generated_text, text_file_name, args)
 
