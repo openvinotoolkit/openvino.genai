@@ -42,12 +42,16 @@ class VisualTextEvaluator(TextEvaluator):
         gen_answer_fn=None,
         generation_config=None,
         seqs_per_request=None,
+        pruning_ratio=None,
+        relevance_weight=None,
         task_type: Literal['visual-text', 'visual-video-text'] = "visual-text",
         frames_num: int | None = None,
     ) -> None:
         self.processor = processor
         self.is_image_input = (task_type == "visual-text")
         self.frames_num = frames_num or DEF_VIDEO_FRAMES_AMOUNT
+        self.pruning_ratio = pruning_ratio
+        self.relevance_weight = relevance_weight
         super().__init__(
             base_model=base_model,
             tokenizer=tokenizer,
@@ -110,7 +114,16 @@ class VisualTextEvaluator(TextEvaluator):
 
     def _generate_data(self, model, gen_answer_fn=None, generation_config=None):
         def default_gen_answer(
-            model, prompt, image, video, processor, tokenizer, max_new_tokens, crop_question
+            model,
+            prompt,
+            image,
+            video,
+            processor,
+            tokenizer,
+            max_new_tokens,
+            crop_question,
+            pruning_ratio,
+            relevance_weight,
         ):
 
             from optimum.intel.openvino.modeling_visual_language import \
@@ -173,6 +186,8 @@ class VisualTextEvaluator(TextEvaluator):
                     self.tokenizer,
                     self.max_new_tokens,
                     self._crop_question,
+                    self.pruning_ratio,
+                    self.relevance_weight,
                 )
             )
 

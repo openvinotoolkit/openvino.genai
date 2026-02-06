@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <openvino/openvino.hpp>
@@ -26,10 +26,6 @@ bool GenerationHandleImpl::is_stopped() {
 
 bool GenerationHandleImpl::is_cancelled() {
     return get_status() == GenerationStatus::CANCEL;
-}
-
-void GenerationHandleImpl::drop() {
-    m_generation_stream->stop();
 }
 
 void GenerationHandleImpl::stop() {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (C) 2023-2025 Intel Corporation
+# Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 from argparse import ArgumentParser
@@ -153,12 +153,16 @@ class MileBenchDataset:
             context += choice_str
 
         img_num = len(ann["task_instance"]["images_path"])
-        qwen2_vl_image_placeholder = "<|vision_start|><|image_pad|><|vision_end|>"
+
+        def idx_to_ov_image_placeholder(idx: int) -> str:
+            return f"<ov_genai_image_{idx}>"
+
         for i in range(img_num):
             rmv_txt = "{image#%d}" % (i + 1)
             rmv_tbl = "{table#%d}" % (i + 1)
-            context = context.replace(rmv_txt, qwen2_vl_image_placeholder)
-            context = context.replace(rmv_tbl, qwen2_vl_image_placeholder)
+            image_placeholder = idx_to_ov_image_placeholder(i)
+            context = context.replace(rmv_txt, image_placeholder)
+            context = context.replace(rmv_tbl, image_placeholder)
 
         task_instruction_id = ann["task_instruction_id"]
         context_str = task_instructions[task_instruction_id] + "\n" + context

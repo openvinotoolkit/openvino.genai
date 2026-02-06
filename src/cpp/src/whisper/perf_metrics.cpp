@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/whisper_pipeline.hpp"
@@ -13,12 +13,21 @@ MeanStdPair WhisperPerfMetrics::get_features_extraction_duration() {
     return features_extraction_duration;
 }
 
+MeanStdPair WhisperPerfMetrics::get_word_level_timestamps_processing_duration() {
+    evaluate_statistics();
+    return word_level_timestamps_processing_duration;
+}
+
 void WhisperPerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
     if (m_evaluated) {
         return;
     }
 
     features_extraction_duration = ov::genai::calc_mean_and_std(whisper_raw_metrics.features_extraction_durations);
+
+    word_level_timestamps_processing_duration =
+        ov::genai::calc_mean_and_std(whisper_raw_metrics.word_level_timestamps_processing_durations);
+
     PerfMetrics::evaluate_statistics(start_time);
 };
 
@@ -35,6 +44,14 @@ WhisperPerfMetrics WhisperPerfMetrics::operator+(const WhisperPerfMetrics& right
     result_features_extraction_durations.insert(result_features_extraction_durations.end(),
                                                 right_features_extraction_durations.begin(),
                                                 right_features_extraction_durations.end());
+
+    auto& result_word_level_timestamps_processing_durations =
+        result.whisper_raw_metrics.word_level_timestamps_processing_durations;
+    auto& right_word_level_timestamps_processing_durations =
+        right.whisper_raw_metrics.word_level_timestamps_processing_durations;
+    result_word_level_timestamps_processing_durations.insert(result_word_level_timestamps_processing_durations.end(),
+                                                             right_word_level_timestamps_processing_durations.begin(),
+                                                             right_word_level_timestamps_processing_durations.end());
     return result;
 }
 
