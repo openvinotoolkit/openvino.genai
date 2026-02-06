@@ -623,6 +623,8 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  *
  * @param structured_output_config if set, the output will be a string constrained by the specified json_schema, regex, or EBNF grammar.
  * 
+ * @param parsers list of Parser objects to parse the generated text.
+ * 
  * @param apply_chat_template whether or not to apply chat_template for non-chat scenarios
  */
 class OPENVINO_GENAI_EXPORTS GenerationConfig {
