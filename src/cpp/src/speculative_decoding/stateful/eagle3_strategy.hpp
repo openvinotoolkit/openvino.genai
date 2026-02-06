@@ -86,26 +86,12 @@ public:
         return m_sequence_group;
     }
 
-    void set_sequence_group(SequenceGroup::Ptr sequence_group) {
-        m_sequence_group = sequence_group;
-        if (m_sequence_group) {
-            OPENVINO_ASSERT(get_running_sequence_count() == 1,
-                            "Eagle3 only supports single sequence, got ",
-                            get_running_sequence_count());
-        }
-    }
-
-    /// @brief Returns number of running sequences in the group
-    size_t get_running_sequence_count() const {
-        return m_sequence_group ? m_sequence_group->get_running_sequences().size() : 0;
-    }
-
     /// @brief Returns sequence at given index with bounds checking
     /// @param index Sequence index (0 for top-1)
     /// @return Sequence pointer or nullptr if index out of bounds
     Sequence::Ptr get_sequence(size_t index) const {
         if (m_sequence_group) {
-            auto sequences = m_sequence_group->get_running_sequences();
+            const auto& sequences = m_sequence_group->get_sequences();
             if (index < sequences.size()) {
                 return sequences[index];
             }
