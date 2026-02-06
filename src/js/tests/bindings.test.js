@@ -29,17 +29,16 @@ describe("bindings", () => {
 
     pipeline.generate(
       "Continue: 1 2 3",
-      (isDone, chunk) => {
-        if (!isDone) {
-          output += chunk;
-
-          return;
-        }
-
+      { temperature: "0", max_new_tokens: "4" },
+      (chunk) => {
+        output += chunk;
+      },
+      (error, result) => {
+        assert.strictEqual(error, null);
         assert.ok(output.length > 0);
+        assert.strictEqual(output, result.texts[0]);
         done();
       },
-      { temperature: 0, max_new_tokens: 4 },
     );
   });
 });

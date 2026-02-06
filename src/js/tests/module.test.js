@@ -1,4 +1,5 @@
 import { ChatHistory, LLMPipeline, StructuredOutputConfig } from "../dist/index.js";
+import { LLMPipeline as LLM } from "../dist/pipelines/llmPipeline.js";
 
 import assert from "node:assert/strict";
 import { describe, it, before } from "node:test";
@@ -34,7 +35,54 @@ describe("LLMPipeline construction", () => {
   });
 });
 
-describe("General LLM tests", () => {
+describe("LLMPipeline methods", async () => {
+  let pipeline = null;
+
+  await before(async () => {
+    pipeline = await LLMPipeline(LLM_PATH, "CPU");
+  });
+
+  await it("should generate non empty result", async () => {
+    const result = await pipeline.generate(
+      "Type something in English",
+      { temperature: "0", max_new_tokens: "4" },
+      () => {},
+    );
+
+    assert.ok(result.texts.length > 0);
+    assert.strictEqual(typeof result.texts[0], "string");
+  });
+
+  it("should include tokenizer", async () => {
+    const tokenizer = pipeline.getTokenizer();
+    assert.strictEqual(typeof tokenizer, "object");
+  });
+
+  it("throw error if generate called during another generation", async () => {
+    const promise = pipeline.generate("prompt1");
+    await assert.rejects(pipeline.generate("prompt2"), /Another generation is already in progress/);
+    await promise;
+  });
+});
+
+describe("corner cases", async () => {
+  it("should throw an error if pipeline is already initialized", async () => {
+    const pipeline = await LLMPipeline(LLM_PATH, "CPU");
+
+    await assert.rejects(async () => await pipeline.init(), {
+      name: "Error",
+      message: "LLMPipeline is already initialized",
+    });
+  });
+
+  it("should throw an error if pipeline is not initialized", async () => {
+    const pipeline = new LLM(LLM_PATH, "CPU");
+
+    assert.rejects(pipeline.generate("prompt"), /LLMPipeline is not initialized/);
+  });
+});
+
+describe("generation parameters validation", () => {
   let pipeline = null;
 
   before(async () => {

@@ -176,7 +176,6 @@ TEST_IMAGE_URLS = {
 
 NPU_UNSUPPORTED_MODELS = {
     "optimum-intel-internal-testing/tiny-random-internvl2",
-    "optimum-intel-internal-testing/tiny-random-gemma3",
 }
 
 DEFAULT_NPUW_PROPERTIES = {
@@ -1176,6 +1175,26 @@ def test_vlm_npu_no_image(ov_npu_pipe_model: VlmModelInfo):
     ov_pipe.generate(
         PROMPTS[0], generation_config=generation_config
     )
+
+
+@pytest.mark.skipif(
+    sys.platform == "darwin" or platform.machine() in ["aarch64", "arm64", "ARM64"],
+    reason="NPU plugin is available only on Linux and Windows x86_64",
+)
+def test_vlm_npu_auto_config(cat_tensor):
+    models_path = _get_ov_model(NPU_SUPPORTED_MODELS[0])
+    properties = {
+        "DEVICE_PROPERTIES": {
+            "NPU": {"NPUW_DEVICES": "CPU", "NPUW_ONLINE_PIPELINE": "NONE", "MAX_PROMPT_LEN": 2048},
+            "AUTO": {openvino.properties.device.priorities: "CPU,GPU"},
+        }
+    }
+
+    ov_pipe = VLMPipeline(models_path, "NPU", config=properties)
+
+    generation_config = _setup_generation_config(ov_pipe)
+
+    ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
 
 
 @parametrize_one_model_npu
