@@ -796,18 +796,20 @@ def print_image_results(evaluator):
     pd.set_option('display.max_colwidth', None)
     worst_examples = evaluator.worst_examples(
         top_k=5, metric=metric_of_interest)
+    logger.info("TOP WORST RESULTS")
     for i, e in enumerate(worst_examples):
         logger.info(
             "======================================================================================================="
         )
         logger.info(f"Top-{i+1} example:")
-        logger.info(e)
+        logger.info(f"\n{e}")
 
 
 def print_embeds_results(evaluator):
     metric_of_interest = "similarity"
     worst_examples = evaluator.worst_examples(
         top_k=5, metric=metric_of_interest)
+    logger.info("TOP WORST RESULTS")
     for i, e in enumerate(worst_examples):
         logger.info(
             "======================================================================================================="
@@ -821,6 +823,7 @@ def print_rag_results(evaluator):
     metric_of_interest = "similarity"
     worst_examples = evaluator.worst_examples(
         top_k=5, metric=metric_of_interest)
+    logger.info("TOP WORST RESULTS")
     for i, e in enumerate(worst_examples):
         logger.info(
             "======================================================================================================="
