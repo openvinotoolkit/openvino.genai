@@ -109,9 +109,6 @@ class MemoryMonitor:
         self._memory_values_queue = None
         self._stop_logging_atexit_fn = None
 
-    def set_timestamp(self):
-        self.timestamp = int(time.time())
-        
     def start(self, at_exit_fn: Optional[Callable] = None) -> "MemoryMonitor":
         """
         Start memory monitoring.
@@ -249,7 +246,6 @@ class MemoryMonitor:
 
     @staticmethod
     def get_system_memory():
-        print("!!!!")
         return psutil.virtual_memory().total - psutil.virtual_memory().available
 
     @staticmethod
@@ -261,6 +257,7 @@ class MemoryMonitor:
         return bytes_used
 
     def _monitor_memory(self):
+        self.timestamp = int(time.time())
         while not self._monitoring_thread_should_stop:
             _last_measurement_time = time.perf_counter()
             if self.memory_type == MemoryType.RSS:
@@ -281,6 +278,7 @@ class MemMonitorWrapper():
 
         self.interval = 0.01
         self.memory_unit = MemoryUnit.MiB
+        self.proc_id = os.getpid()
 
         self.memory_types = [MemoryType.RSS, MemoryType.SYSTEM]
 
@@ -311,8 +309,7 @@ class MemMonitorWrapper():
             time.sleep(self.interval * 3)
 
     def stop_and_collect_data(self, dir_name='mem_monitor_log'):
-        proc_id = os.getpid()
-        dir_name = f"{dir_name}_{proc_id}"
+        dir_name = f"{dir_name}_{self.proc_id}"
         self.stop()
 
         for mt, mm in self.memory_monitors.items():
@@ -344,13 +341,15 @@ class MemMonitorWrapper():
     def get_data(self, dict_format=False):
         if dict_format:
             bytes_total = cast_bytes_to(psutil.virtual_memory().total, memory_unit=self.memory_unit)
+            max_sys_mem_full = float(self.memory_data["full_mem"].get(MemoryType.SYSTEM, -1))
+            max_rss_mem_full = float(self.memory_data["full_mem"].get(MemoryType.RSS, -1))
             return {
-                "max_rss_mem": self.memory_data["full_mem"].get(MemoryType.RSS, -1),
-                "max_rss_mem_increase": self.memory_data["from_zero"].get(MemoryType.RSS, -1),
-                "max_rss_mem_share": 100.0 * float(self.memory_data["full_mem"].get(MemoryType.RSS, -1)) / bytes_total,                
-                "max_sys_mem": self.memory_data["full_mem"].get(MemoryType.SYSTEM, -1),
+                "max_sys_mem": max_sys_mem_full,
+                "max_sys_mem_share": 100.0 * max_sys_mem_full / bytes_total,
                 "max_sys_mem_increase": self.memory_data["from_zero"].get(MemoryType.SYSTEM, -1),
-                "max_sys_mem_share": 100.0 * float(self.memory_data["full_mem"].get(MemoryType.SYSTEM, -1)) / bytes_total,
+                "max_rss_mem": max_rss_mem_full,
+                "max_rss_mem_share": 100.0 * max_rss_mem_full / bytes_total,
+                "max_rss_mem_increase": self.memory_data["from_zero"].get(MemoryType.RSS, -1),
             }
         return (
             self.memory_data["full_mem"].get(MemoryType.RSS, -1),
@@ -358,6 +357,7 @@ class MemMonitorWrapper():
             self.memory_data["full_mem"].get(MemoryType.SYSTEM, -1),
             self.memory_data["from_zero"].get(MemoryType.SYSTEM, -1),
         )
+
 
 class MemStatus():
     def __init__(self, rss=None, sys=None):
@@ -419,7 +419,7 @@ class MemoryDataSummarizer():
         return mem_status
 
     def get_initial_mem_data(self, print_unit: MemoryUnit | None = None):
-        suffix = f'({print_unit})' if print_unit else ''
+        suffix = f"({print_unit})" if print_unit else ""
         sys = self.initial_mem_status.sys
         rss = self.initial_mem_status.rss
         if print_unit and print_unit != self.memory_monitor.memory_unit:
@@ -433,29 +433,27 @@ class MemoryDataSummarizer():
     def get_compilation_mem_data(self, print_unit: MemoryUnit | None = None):
         bytes_total = cast_bytes_to(psutil.virtual_memory().total, memory_unit=self.memory_monitor.memory_unit)
 
-        suffix = f'({print_unit.value})' if print_unit else ''
-        sys_max = self.compilation_mem_info['max_mem'].sys
-        rss_max = self.compilation_mem_info['max_mem'].rss
-        sys_increase = self.compilation_mem_info['increase_mem'].sys
-        rss_increase = self.compilation_mem_info['increase_mem'].rss
-        sys_share = 100.0 * float(self.compilation_mem_info['max_mem'].sys) / bytes_total
-        rss_share = 100.0 * float(self.compilation_mem_info['max_mem'].rss) / bytes_total
- 
+        suffix = f"({print_unit.value})" if print_unit else ""
+        sys_max = self.compilation_mem_info["max_mem"].sys
+        rss_max = self.compilation_mem_info["max_mem"].rss
+        sys_increase = self.compilation_mem_info["increase_mem"].sys
+        rss_increase = self.compilation_mem_info["increase_mem"].rss
+        sys_share = 100.0 * float(self.compilation_mem_info["max_mem"].sys) / bytes_total
+        rss_share = 100.0 * float(self.compilation_mem_info["max_mem"].rss) / bytes_total
+
         if print_unit and print_unit != self.memory_monitor.memory_unit:
             sys_max = convert_mem_unit(sys_max, self.memory_monitor.memory_unit, print_unit)
             rss_max = convert_mem_unit(rss_max, self.memory_monitor.memory_unit, print_unit)
             sys_increase = convert_mem_unit(sys_increase, self.memory_monitor.memory_unit, print_unit)
             rss_increase = convert_mem_unit(rss_increase, self.memory_monitor.memory_unit, print_unit)
-            sys_share = convert_mem_unit(sys_share, self.memory_monitor.memory_unit, print_unit)
-            rss_share = convert_mem_unit(rss_share, self.memory_monitor.memory_unit, print_unit)
 
         return {
             f"compile_max_rss_mem{suffix}": round(rss_max, 5),
             f"compile_max_sys_mem{suffix}": round(sys_max, 5),
             f"compile_max_increase_rss_mem{suffix}": round(rss_increase, 5),
             f"compile_max_increase_sys_mem{suffix}": round(sys_increase, 5),
-            f"compile_max_share_rss_mem{suffix}": round(rss_share, 3),
-            f"compile_max_share_sys_mem{suffix}": round(sys_share, 3),
+            "compile_max_share_rss_mem": round(rss_share, 3),
+            "compile_max_share_sys_mem": round(sys_share, 3),
         }
 
 

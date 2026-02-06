@@ -198,7 +198,10 @@ def run_visual_language_generation_genai(
     gen_config.num_beams = args["num_beams"]
     gen_config.do_sample = False
     gen_config.ignore_eos = True
-
+    if args["pruning_ratio"] is not None:
+        gen_config.pruning_ratio = args["pruning_ratio"]
+    if args["relevance_weight"] is not None:
+        gen_config.relevance_weight = args["relevance_weight"]
     kwargs = {}
     prefix = '[warm-up]' if num == 0 else '[{}]'.format(num)
     log.info(f'{prefix}[P{prompt_index}] Input image nums: {len(images)}')

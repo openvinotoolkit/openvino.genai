@@ -35,7 +35,6 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         sys_mem_increase = iter_data.get("max_sys_mem_increase")
         rss_mem_share = iter_data.get("max_rss_mem_share")
         sys_mem_share = iter_data.get("max_sys_mem_share")
-        available_mem = iter_data.get("available_mem")
 
         result_md5 = []
         for idx_md5 in range(len(iter_data['result_md5'])):
@@ -43,31 +42,35 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
 
         timestamp_start, timestamp_end = get_timestamp(iter_data['iteration'], iter_data['prompt_idx'], iter_timestamp)
 
+        if first_token_infer_latency:
+            first_token_infer_latency = round(first_token_infer_latency, 5)
+        if other_token_infer_latency:
+            other_token_infer_latency = round(other_token_infer_latency, 5)
+        if tokenization_time:
+            tokenization_time = round(tokenization_time, 5)
+        if detokenization_time:
+            detokenization_time = round(detokenization_time, 5)
+        if generation_time:
+            generation_time = round(generation_time, 5)
+
         res_data = {
             "iteration": iter_data["iteration"],
             "input_size": iter_data["input_size"],
             "infer_count": iter_data["infer_count"],
             "output_size": iter_data["output_size"],
-            "generation_time": round(generation_time, 5) if generation_time != "" else generation_time,
+            "generation_time": generation_time,
             "latency": round(latency, 5) if latency != "" else latency,
             "first_latency": round(first_latency, 5) if first_latency != "" else first_latency,
             "second_avg_latency": round(other_latency, 5) if other_latency != "" else other_latency,
-            "first_infer_latency": round(first_token_infer_latency, 5)
-            if first_token_infer_latency != ""
-            else first_token_infer_latency,
-            "second_infer_avg_latency": round(other_token_infer_latency, 5)
-            if other_token_infer_latency != ""
-            else other_token_infer_latency,
+            "first_infer_latency": first_token_infer_latency,
+            "second_infer_avg_latency": other_token_infer_latency,
+            "tokenization_time": tokenization_time,
+            "detokenization_time": detokenization_time,
             "prompt_idx": iter_data["prompt_idx"],
             "result_md5": result_md5,
             "start": timestamp_start,
             "end": timestamp_end,
         }
-
-        if tokenization_time:
-            res_data["tokenization_time"] = round(tokenization_time, 5)
-        if detokenization_time:
-            res_data["detokenization_time"] = round(detokenization_time, 5)
 
         if max_rss_mem:
             res_data["max_rss_mem"] = round(max_rss_mem, 5)
