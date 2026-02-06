@@ -43,4 +43,18 @@ setup(
     install_requires=required,
     entry_points={"console_scripts": ["wwb=whowhatbench.wwb:main"]},
     package_data={"whowhatbench": ["prompts/*.yaml", "prompts/*.json"]},
+    extras_require={
+        "minicpmo": [
+            "torch==2.8",
+            "torchvision==0.23",
+            "torchaudio==2.8.0",
+            "soundfile==0.13.1",
+            "librosa==0.11.0",
+            "torchcodec==0.7.0",
+            "vocos==0.1.0",
+            "vector_quantize_pytorch==1.23.2",
+            "transformers>=4.50,<=4.51.3",
+            "optimum-intel==1.27.0",
+        ],
+    },
 )
