@@ -26,6 +26,7 @@ def output_comments(result, use_case, writer):
         comment_list.append('2nd_infer_avg_latency: Text/Code generation models: Other inferences (exclude first inference) latency')
         comment_list.append('result_md5: MD5 of generated text')
         comment_list.append('prompt_idx: Index of prompts')
+        comment_list.append('chat_idx: Index of chats')
     elif use_case == 'image_gen':
         comment_list.append("infer_count: Tex2Image models' Inference(or Sampling) step size")
         comment_list.append('1st_latency: First step latency of unet')
@@ -140,6 +141,7 @@ def gen_data_to_csv(result: dict, iter_data: dict, pretrain_time: int, iter_time
     result[f'max_increase_rss_mem({mem_unit.value})'] = round(rss_mem_increase, 5) if rss_mem_increase != '' else rss_mem_increase
     result[f'max_increase_sys_mem({mem_unit.value})'] = round(sys_mem_increase, 5) if sys_mem_increase != '' else sys_mem_increase
     result['prompt_idx'] = iter_data['prompt_idx']
+    result['chat_idx'] = iter_data['chat_idx']
     result['tokenization_time'] = round(token_time, 5) if token_time != '' else token_time
     result['detokenization_time'] = round(detoken_time, 5) if detoken_time != '' else detoken_time
     result['start'], result['end'] = output_json.get_timestamp(iter_data['iteration'], iter_data['prompt_idx'], iter_timestamp)
@@ -173,6 +175,7 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         f'max_increase_rss_mem({mem_unit.value})',
         f'max_increase_sys_mem({mem_unit.value})',
         'prompt_idx',
+        'chat_idx',
         '1st_infer_latency(ms)',
         '2nd_infer_avg_latency(ms)',
         'num_beams',
