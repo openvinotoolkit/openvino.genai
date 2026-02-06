@@ -140,10 +140,10 @@ public:
         generate_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - decode_start_time));
 
-        result.perf_metrics.raw_metrics.tokenization_durations.emplace_back(tokenization_duration_microseconds);
         result.words = generate_result.words;
 
         result.perf_metrics = generate_result.perf_metrics;
+        result.perf_metrics.raw_metrics.tokenization_durations.emplace_back(tokenization_duration_microseconds);
         auto& segments = generate_result.segments;
 
         if (segments.has_value()) {
