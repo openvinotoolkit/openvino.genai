@@ -6,6 +6,8 @@
 #include <fstream>
 #include <numeric>
 
+#include "openvino/core/preprocess/pre_post_process.hpp"
+
 #include "json_utils.hpp"
 #include "utils.hpp"
 #include "lora/helper.hpp"
@@ -71,6 +73,12 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
     std::optional<AdapterConfig> adapters;
     auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
     OPENVINO_ASSERT(!adapters, "Adapters are not currently supported for Video Generation Pipeline.");
+
+    // Ensure output is f32 - downstream CFG code uses data<float>()
+    ov::preprocess::PrePostProcessor ppp(m_model);
+    ppp.output().postprocess().convert_element_type(ov::element::f32);
+    ppp.build();
+
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, *filtered_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LTX Video Transformer 3D model");
     m_request = compiled_model.create_infer_request();
