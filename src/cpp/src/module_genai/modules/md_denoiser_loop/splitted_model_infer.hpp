@@ -22,11 +22,11 @@ private:
                         const ov::AnyMap& properties = {});
 
     bool m_dynamic_load_model_weights;
-    std::string m_device;
+    bool m_is_gpu = false;
     ov::AnyMap m_properties;
 
-    void get_splitted_model_paths(const std::string& model_path);
-    void load_model(const std::string& model_path, const ov::AnyMap& properties);
+    void get_splitted_model_paths(const std::string& model_path, const std::string& device);
+    void load_model(const std::string& model_path, const ov::AnyMap& properties, const std::string& device);
 
     std::vector<std::string> m_splitted_model_paths;
     std::string m_preprocess_model_path;
@@ -42,8 +42,10 @@ private:
     ov::InferRequest m_preprocess_infer_request;
     ov::CompiledModel m_postprocess_compiled_model;
     ov::InferRequest m_postprocess_infer_request;
+    ov::RemoteContext m_context;
 #endif
 
+    ov::Tensor convert_to_remote_tensor(const ov::Tensor& tensor);
 public:
     ~CSplittedModelInfer();
     using PTR = std::shared_ptr<CSplittedModelInfer>;

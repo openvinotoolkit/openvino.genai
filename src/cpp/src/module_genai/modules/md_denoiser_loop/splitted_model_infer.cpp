@@ -1,6 +1,7 @@
 #include "splitted_model_infer.hpp"
 
 #include <regex>
+#include "logger.hpp"
 
 namespace ov::genai::module {
 
@@ -9,15 +10,14 @@ CSplittedModelInfer::CSplittedModelInfer(const std::string& model_path,
                                          const bool& dynamic_load_model_weights,
                                          const ov::AnyMap& properties)
     : m_dynamic_load_model_weights(dynamic_load_model_weights),
-      m_device(device),
+      m_is_gpu(device.find("GPU") != std::string::npos || device.find("gpu") != std::string::npos),
       m_properties(properties) {
     // parse all splitted model paths, model_path is the directory that contains all splitted models
-    get_splitted_model_paths(model_path);
-
-    load_model(model_path, properties);
+    get_splitted_model_paths(model_path, device);
+    load_model(model_path, properties, device);
 }
 
-void CSplittedModelInfer::get_splitted_model_paths(const std::string& model_path) {
+void CSplittedModelInfer::get_splitted_model_paths(const std::string& model_path, const std::string& device) {
     // each splitted model should be named as **_l{index}_*.xml. For example: model_l0_.xml, model_l1_.xml
     m_splitted_model_paths.clear();
 
@@ -49,7 +49,7 @@ void CSplittedModelInfer::get_splitted_model_paths(const std::string& model_path
 #if USE_FULL_MODEL
             if (filename.size() > 9 && filename.substr(filename.size() - 9) == "_full.xml") {
                 m_full_compiled_model =
-                    utils::singleton_core().compile_model(entry.path().string(), m_device, m_properties);
+                    utils::singleton_core().compile_model(entry.path().string(), device, m_properties);
                 m_full_infer_request = m_full_compiled_model.create_infer_request();
             }
 #endif
@@ -73,29 +73,52 @@ void CSplittedModelInfer::get_splitted_model_paths(const std::string& model_path
                     "Both preprocessing (_preprocess.xml) and postprocessing (_postprocess.xml) models are required.");
 }
 
-void CSplittedModelInfer::load_model(const std::string& model_path, const ov::AnyMap& properties) {
+void CSplittedModelInfer::load_model(const std::string& model_path, const ov::AnyMap& properties, const std::string& device) {
 #if USE_FULL_MODEL
 #else
-    for (const auto& path : m_splitted_model_paths) {
-        auto model = utils::singleton_core().read_model(path);
-        m_compiled_models.push_back(utils::singleton_core().compile_model(model, m_device, properties));
-        m_infer_requests.push_back(m_compiled_models.back().create_infer_request());
-    }
-
     {
         auto model = utils::singleton_core().read_model(m_preprocess_model_path);
-        m_preprocess_compiled_model = utils::singleton_core().compile_model(model, m_device, properties);
+        m_preprocess_compiled_model = utils::singleton_core().compile_model(model, device, properties);
+        if (m_is_gpu) {
+            // For GPU, all infer requests must share the same context to share weights.
+            m_context = m_preprocess_compiled_model.get_context();
+        }
         m_preprocess_infer_request = m_preprocess_compiled_model.create_infer_request();
     }
     {
         auto model = utils::singleton_core().read_model(m_postprocess_model_path);
-        m_postprocess_compiled_model = utils::singleton_core().compile_model(model, m_device, properties);
+        if (m_is_gpu) {
+            // For GPU, all infer requests must share the same context to share weights.
+            m_postprocess_compiled_model = utils::singleton_core().compile_model(model, m_context, properties);
+        } else {
+            m_postprocess_compiled_model = utils::singleton_core().compile_model(model, device, properties);
+        }
         m_postprocess_infer_request = m_postprocess_compiled_model.create_infer_request();
+    }
+
+    for (const auto& path : m_splitted_model_paths) {
+        auto model = utils::singleton_core().read_model(path);
+        if (m_is_gpu) {
+            m_compiled_models.push_back(utils::singleton_core().compile_model(model, m_context, properties));
+        } else {
+            m_compiled_models.push_back(utils::singleton_core().compile_model(model, device, properties));
+        }
+        m_infer_requests.push_back(m_compiled_models.back().create_infer_request());
     }
 #endif
 }
 
 CSplittedModelInfer::~CSplittedModelInfer() {}
+
+ov::Tensor CSplittedModelInfer::convert_to_remote_tensor(const ov::Tensor& tensor) {
+    if (tensor.is<ov::RemoteTensor>()) {
+        return tensor;
+    } else {
+        ov::Tensor remote_tensor = m_context.create_tensor(tensor.get_element_type(), tensor.get_shape());
+        tensor.copy_to(remote_tensor);
+        return remote_tensor;
+    }
+}
 
 void CSplittedModelInfer::infer(const ov::AnyMap& inputs) {
 #if USE_FULL_MODEL
@@ -118,6 +141,14 @@ void CSplittedModelInfer::infer(const ov::AnyMap& inputs) {
     ov::Tensor rotary_cos_tensor = m_preprocess_infer_request.get_tensor("rotary_cos");        // [-1,-1,64]
     ov::Tensor rotary_sin_tensor = m_preprocess_infer_request.get_tensor("rotary_sin");        // [-1,-1,64]
 
+    if (m_is_gpu && !hidden_states_tensor.is<ov::RemoteTensor>()) {
+        hidden_states_tensor = convert_to_remote_tensor(hidden_states_tensor);
+        text_embeds_tensor = convert_to_remote_tensor(text_embeds_tensor);
+        timestep_proj_tensor = convert_to_remote_tensor(timestep_proj_tensor);
+        rotary_cos_tensor = convert_to_remote_tensor(rotary_cos_tensor);
+        rotary_sin_tensor = convert_to_remote_tensor(rotary_sin_tensor);
+    }
+
     ov::Tensor temb_tensor = m_preprocess_infer_request.get_tensor("temb");
     ov::Tensor ppf_tensor = m_preprocess_infer_request.get_tensor("ppf");
     ov::Tensor pph_tensor = m_preprocess_infer_request.get_tensor("pph");
@@ -125,14 +156,16 @@ void CSplittedModelInfer::infer(const ov::AnyMap& inputs) {
 
     // Splitted models
     for (size_t i = 0; i < m_infer_requests.size(); ++i) {
+        m_infer_requests[i].set_output_tensor(0, hidden_states_tensor);
         m_infer_requests[i].set_tensor("hidden_states", hidden_states_tensor);
         m_infer_requests[i].set_tensor("text_embeds", text_embeds_tensor);
         m_infer_requests[i].set_tensor("timestep_proj", timestep_proj_tensor);
         m_infer_requests[i].set_tensor("rotary_cos", rotary_cos_tensor);
         m_infer_requests[i].set_tensor("rotary_sin", rotary_sin_tensor);
         m_infer_requests[i].infer();
-        hidden_states_tensor = m_infer_requests[i].get_output_tensor();
     }
+
+    GENAI_DEBUG("hidden_states_tensor is remote tensor: " + std::to_string(hidden_states_tensor.is<ov::RemoteTensor>()));
 
     // Postprocess
     m_postprocess_infer_request.set_tensor("hidden_states", hidden_states_tensor);
