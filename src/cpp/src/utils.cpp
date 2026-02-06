@@ -528,7 +528,7 @@ bool env_setup_for_print_debug_info() {
     return (env_var_value != nullptr && atoi(env_var_value) > static_cast<int>(ov::log::Level::WARNING));
 }
 
-static std::string _print_compiled_model_properties(ov::CompiledModel& compiled_model, const char* model_title) {
+static std::string compiled_model_properties_to_string(ov::CompiledModel& compiled_model, const char* model_title) {
     // output of the actual settings that the device selected
     std::stringstream ss;
     auto supported_properties = compiled_model.get_property(ov::supported_properties);
@@ -570,19 +570,19 @@ static std::string _print_compiled_model_properties(ov::CompiledModel& compiled_
 }
 
 void print_compiled_model_properties(ov::CompiledModel& compiled_model, const char* model_title) {
-    GENAI_CHECK_LOG_LEVEL(ov::log::Level::DEBUG, _print_compiled_model_properties(compiled_model, model_title));
+    GENAI_DEBUG(compiled_model_properties_to_string(compiled_model, model_title));
 }
 
 void print_gguf_debug_info(const std::string &debug_info) {
-    GENAI_CHECK_LOG_LEVEL(ov::log::Level::DEBUG, debug_info);
+    GENAI_DEBUG(debug_info);
 }
 
 void print_scheduler_config_info(const SchedulerConfig &scheduler_config) {
-    GENAI_CHECK_LOG_LEVEL(ov::log::Level::DEBUG, scheduler_config.to_string());
+    GENAI_DEBUG(scheduler_config.to_string());
 }
 
 void print_generation_config_info(const GenerationConfig &generation_config) {
-    GENAI_CHECK_LOG_LEVEL(ov::log::Level::DEBUG, generation_config.to_string());
+    GENAI_DEBUG(generation_config.to_string());
 }
 
 void import_npu_model(ov::CompiledModel& compiled,

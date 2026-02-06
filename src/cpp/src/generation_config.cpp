@@ -364,16 +364,22 @@ void GenerationConfig::validate() const {
     }
 }
 
-std::string GenerationConfig::to_string() const {
-    auto stop_criteria_to_string = [](StopCriteria criteria) -> std::string {
-        switch (criteria) {
-            case StopCriteria::EARLY: return "EARLY";
-            case StopCriteria::HEURISTIC: return "HEURISTIC";
-            case StopCriteria::NEVER: return "NEVER";
-            default: return "UNKNOWN";
-        }
-    };
+namespace {
+// TODO: Drop in favor of std::views::join_with() when C++23 is available.
+template <typename Range, typename Formatter>
+std::string join(const Range& range, const std::string& separator, Formatter formatter) {
+    std::ostringstream oss;
+    bool first = true;
+    for (const auto& item : range) {
+        if (!first) oss << separator;
+        formatter(oss, item);
+        first = false;
+    }
+    return oss.str();
+}
+}  // namespace
 
+std::string GenerationConfig::to_string() const {
     std::ostringstream oss;
     oss << "GenerationConfig { \n";
 
@@ -387,23 +393,9 @@ std::string GenerationConfig::to_string() const {
 
     // EOS and stop conditions
     oss << "  eos_token_id: " << eos_token_id << "\n";
-    oss << "  stop_strings: [";
-    bool first = true;
-    for (const auto& s : stop_strings) {
-        if (!first) oss << ", ";
-        oss << "\"" << s << "\"";
-        first = false;
-    }
-    oss << "]\n";
+    oss << "  stop_strings: [" << join(stop_strings, ", ", [](std::ostringstream& os, const std::string& s) { os << "\"" << s << "\""; }) << "]\n";
     oss << "  include_stop_str_in_output: " << std::boolalpha << include_stop_str_in_output << "\n";
-    oss << "  stop_token_ids: [";
-    first = true;
-    for (const auto& id : stop_token_ids) {
-        if (!first) oss << ", ";
-        oss << id;
-        first = false;
-    }
-    oss << "]\n";
+    oss << "  stop_token_ids: [" << join(stop_token_ids, ", ", [](std::ostringstream& os, int64_t id) { os << id; }) << "]\n";
 
     // Penalties
     oss << "  repetition_penalty: " << repetition_penalty << "\n";
@@ -417,7 +409,14 @@ std::string GenerationConfig::to_string() const {
     oss << "  length_penalty: " << length_penalty << "\n";
     oss << "  num_return_sequences: " << num_return_sequences << "\n";
     oss << "  no_repeat_ngram_size: " << no_repeat_ngram_size << "\n";
-    oss << "  stop_criteria: " << stop_criteria_to_string(stop_criteria) << "\n";
+    oss << "  stop_criteria: ";
+    switch (stop_criteria) {
+        case StopCriteria::EARLY: oss << "EARLY"; break;
+        case StopCriteria::HEURISTIC: oss << "HEURISTIC"; break;
+        case StopCriteria::NEVER: oss << "NEVER"; break;
+        default: oss << "UNKNOWN"; break;
+    }
+    oss << "\n";
 
     // Multinomial sampling parameters
     oss << "  temperature: " << temperature << "\n";
