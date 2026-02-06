@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 from test_cli_image import get_similarity
 from conftest import convert_model, run_wwb
+from profile_utils import _log, _stage
 
 
 logging.basicConfig(level=logging.INFO)
@@ -29,11 +30,15 @@ def remove_artifacts(artifacts_path: Path):
 @pytest.mark.xfail(sys.platform == "darwin", reason="Hangs. Ticket 175534", run=False)
 @pytest.mark.xfail(sys.platform == "win32", reason="Ticket 178790", run=False)
 def test_reranking_optimum(model_id, threshold, tmp_path):
+    _log(f"test_reranking_optimum: model_id={model_id} threshold={threshold}")
     GT_FILE = Path(tmp_dir) / "gt.csv"
-    MODEL_PATH = convert_model(model_id)
+    with _stage("convert_model"):
+        MODEL_PATH = convert_model(model_id)
+    _log(f"Model converted to: {MODEL_PATH}")
 
     # Collect reference with HF model
-    run_wwb(
+    with _stage("run_wwb_hf_reference"):
+        run_wwb(
         [
             "--base-model",
             model_id,
@@ -54,7 +59,8 @@ def test_reranking_optimum(model_id, threshold, tmp_path):
 
     outputs_path = tmp_path / "optimum"
     # test Optimum
-    outputs_optimum = run_wwb(
+    with _stage("run_wwb_optimum"):
+        outputs_optimum = run_wwb(
         [
             "--target-model",
             MODEL_PATH,
@@ -84,7 +90,8 @@ def test_reranking_optimum(model_id, threshold, tmp_path):
 
     outputs_path = tmp_path / "genai"
     # test GenAI
-    outputs_genai = run_wwb(
+    with _stage("run_wwb_genai"):
+        outputs_genai = run_wwb(
         [
             "--target-model",
             MODEL_PATH,
@@ -111,7 +118,8 @@ def test_reranking_optimum(model_id, threshold, tmp_path):
     assert similarity >= threshold
 
     # test w/o models
-    run_wwb(
+    with _stage("run_wwb_metrics_without_models"):
+        run_wwb(
         [
             "--target-data",
             outputs_path / "target.csv",
