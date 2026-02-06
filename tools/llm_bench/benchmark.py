@@ -414,6 +414,12 @@ def get_argparser():
         default=None,
         help="controller of video frames to process (required frame number if positive or decimation factor if negative)",
     )
+    parser.add_argument(
+        "--chat_mode",
+        type=int,
+        default=None,
+        help="",
+    )
     return parser.parse_args()
 
 
