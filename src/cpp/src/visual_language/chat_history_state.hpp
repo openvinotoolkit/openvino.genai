@@ -38,7 +38,12 @@ struct MessageMetadata {
     // Contains vision placeholders after prompt normalization.
     // Empty for system/assistant messages.
     std::string normalized_content;
-    
+
+    // Contains content after vision token pruning (if applicable).
+    // If pruning occurred, this differs from normalized_content.
+    // Empty if no pruning was applied.
+    std::string pruned_content;
+
     // Global indices provided with corresponding message (input order)
     std::vector<size_t> provided_image_indices;
     std::vector<size_t> provided_video_indices;

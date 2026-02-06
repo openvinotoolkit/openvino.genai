@@ -193,4 +193,27 @@ std::string VLMChatContext::multipart_message_to_string(
     return result;
 }
 
+/**
+ * @brief Applies vision token pruning to the last user message if applicable.
+ * Updates the MessageMetadata with pruned content.
+ */
+void VLMChatContext::apply_pruning_to_last_message() {
+    const size_t last_user_idx = m_history_state->get_last_user_message_index();
+    auto& messages_metadata = m_history_state->get_messages_metadata();
+
+    if (last_user_idx >= messages_metadata.size()) {
+        return;
+    }
+
+    auto& last_metadata = messages_metadata[last_user_idx];
+
+    // Get the pruned prompt from inputs embedder if pruning is active
+    std::optional<std::string> pruned_prompt =
+        m_inputs_embedder.get_last_updated_prompt(last_metadata.normalized_content);
+
+    if (pruned_prompt.has_value() && !pruned_prompt->empty()) {
+        last_metadata.pruned_content = pruned_prompt.value();
+    }
+}
+
 } // namespace ov::genai
