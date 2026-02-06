@@ -26,7 +26,7 @@ librosa==0.11.0
 soundfile==0.13.1
 datasets==4.1.1; sys_platform == "linux"
 datasets==3.6.0; sys_platform != "linux"
-torchcodec==0.7.0; sys_platform == "linux"
+torchcodec==0.10.0; sys_platform == "linux"
 rouge==1.0.1
 # - microsoft/Phi-4-multimodal-instruct
 peft==0.18.1
