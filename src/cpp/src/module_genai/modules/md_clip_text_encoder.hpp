@@ -105,6 +105,8 @@ private:
         const std::vector<std::string>& negative_prompts,
         const ImageGenerationConfig &generation_config);
     ov::Tensor encode_prompt(const std::vector<std::string>& prompts, const ImageGenerationConfig &generation_config);
+
+    ov::AnyMap m_compile_properties;
 };
 
 REGISTER_MODULE_CONFIG(ClipTextEncoderModule);

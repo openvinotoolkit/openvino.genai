@@ -1,0 +1,140 @@
+global_context:
+  model_type: wan2.1
+pipeline_modules:
+  pipeline_params:
+    outputs:
+      - name: prompt
+        type: String
+      - name: negative_prompt
+        type: String
+      - name: width
+        type: Int
+      - name: height
+        type: Int
+      - name: batch_size
+        type: Int
+      - name: num_images_per_prompt
+        type: Int
+      - name: seed
+        type: Int
+      - name: num_frames
+        type: Int
+      - name: guidance_scale
+        type: Float
+      - name: num_inference_steps
+        type: Int
+      - name: max_sequence_length
+        type: Int
+    type: ParameterModule
+  clip_text_encoder:
+    device: CPU
+    inputs:
+      - name: prompt
+        source: pipeline_params.prompt
+        type: String
+      - name: negative_prompt
+        source: pipeline_params.negative_prompt
+        type: String
+      - name: num_images_per_prompt
+        source: pipeline_params.num_images_per_prompt
+        type: Int
+      - name: max_sequence_length
+        source: pipeline_params.max_sequence_length
+        type: Int
+      - name: guidance_scale
+        source: pipeline_params.guidance_scale
+        type: Float
+    outputs:
+      - name: prompt_embeds
+        type: VecOVTensor
+      - name: negative_prompt_embeds
+        type: VecOVTensor
+    params:
+      cache_dir: ./cache_dir_text_encoder/
+      model_path: tests/module_genai/cpp/test_models/Wan2.1-T2V-1.3B-Diffusers
+    type: ClipTextEncoderModule
+  denoiser_loop:
+    device: GPU
+    inputs:
+      - name: latents
+        source: latent_image.latents
+        type: OVTensor
+      - name: prompt_embeds
+        source: clip_text_encoder.prompt_embeds
+        type: VecOVTensor
+      - name: prompt_embeds_negative
+        source: clip_text_encoder.negative_prompt_embeds
+        type: VecOVTensor
+      - name: guidance_scale
+        source: pipeline_params.guidance_scale
+        type: Float
+      - name: num_inference_steps
+        source: pipeline_params.num_inference_steps
+        type: Int
+    outputs:
+      - name: latents
+        type: OVTensor
+    params:
+      cache_dir: ./cache_dir_denoiser_loop/
+      model_path: tests/module_genai/cpp/test_models/Wan2.1-T2V-1.3B-Diffusers
+      splitted_model: false
+    type: DenoiserLoopModule
+  latent_image:
+    device: CPU
+    inputs:
+      - name: batch_size
+        source: pipeline_params.batch_size
+        type: Int
+      - name: num_images_per_prompt
+        source: pipeline_params.num_images_per_prompt
+        type: Int
+      - name: height
+        source: pipeline_params.height
+        type: Int
+      - name: width
+        source: pipeline_params.width
+        type: Int
+      - name: num_frames
+        source: pipeline_params.num_frames
+        type: Int
+      - name: seed
+        source: pipeline_params.seed
+        type: Int
+    outputs:
+      - name: latents
+        type: OVTensor
+    params:
+      model_path: tests/module_genai/cpp/test_models/Wan2.1-T2V-1.3B-Diffusers
+    type: RandomLatentImageModule
+  vae_decoder:
+    device: GPU
+    inputs:
+      - name: latents
+        source: denoiser_loop.latents
+        type: OVTensor
+    outputs:
+      - name: image
+        type: OVTensor
+    params:
+      enable_postprocess: true
+      model_path: tests/module_genai/cpp/test_models/Wan2.1-T2V-1.3B-Diffusers
+    type: VAEDecoderModule
+  video_saver:
+    inputs:
+      - name: raw_data
+        source: vae_decoder.image
+        type: OVTensor
+    outputs:
+      - name: saved_video
+        type: String
+      - name: saved_videos
+        type: VecString
+    params:
+      fps: 10
+    type: SaveVideoModule
+  pipeline_result:
+    inputs:
+      - name: saved_video
+        source: video_saver.saved_video
+        type: String
+    type: ResultModule

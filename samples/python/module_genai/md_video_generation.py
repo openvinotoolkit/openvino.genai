@@ -52,6 +52,7 @@ def parse_args():
     parser.add_argument('--tile_size', type=int, default=256,
                         help="VAE decoder tile size in pixels (default: 256)")
     parser.add_argument('--debug', action='store_true', help="Enable debug output")
+    parser.add_argument('--splitted_model', action='store_true', help="Enable splitted model inference")
     return parser.parse_args()
 
 # Parse args early - will exit on error before heavy imports
@@ -65,7 +66,7 @@ import yaml
 
 core = ov.Core()
 class OVWanPipeline:
-    def __init__(self, model_dir, device_map="CPU", fps: int = 10, use_tiling: bool = True, tile_size: int = 256):
+    def __init__(self, model_dir, device_map="CPU", fps: int = 10, splitted_model: bool = False,use_tiling: bool = True, tile_size: int = 256):
         model_dir = Path(model_dir)
         if isinstance(device_map, str):
             device_map = {"transformer": device_map, "text_encoder": device_map, "vae": device_map}
@@ -171,6 +172,7 @@ class OVWanPipeline:
                     ],
                     'params': {
                         'model_path': str(model_dir),
+                        'cache_dir': "./cache_dir_text_encoder/"  # [Optional], default is empty string.
                     }
                 },
                 'latent_image': {
@@ -256,6 +258,8 @@ class OVWanPipeline:
                     ],
                     'params': {
                         'model_path': str(model_dir),
+                        'cache_dir': "./cache_dir_denoiser_loop/",  # [Optional], default is empty string.
+                        'splitted_model': 'true' if splitted_model else 'false'
                     }
                 },
                 'vae_decoder': {
@@ -405,10 +409,12 @@ num_inference_steps = args.steps if args.steps is not None else DEFAULT_NUM_INFE
 guidance_scale = args.guidance_scale if args.guidance_scale is not None else DEFAULT_GUIDANCE_SCALE
 num_frames = args.num_frames if args.num_frames is not None else DEFAULT_NUM_FRAMES
 fps = args.fps if args.fps is not None else DEFAULT_FPS
+splitted_model = args.splitted_model if args.splitted_model is not None else False
+
 use_tiling = args.use_tiling == 1
 tile_size = args.tile_size
 
-ov_pipe = OVWanPipeline(args.model_path, device_map=device_map, fps=fps, use_tiling=use_tiling, tile_size=tile_size)
+ov_pipe = OVWanPipeline(args.model_path, device_map=device_map, fps=fps, splitted_model=splitted_model, use_tiling=use_tiling, tile_size=tile_size)
 
 output = ov_pipe(
     prompt=prompt,

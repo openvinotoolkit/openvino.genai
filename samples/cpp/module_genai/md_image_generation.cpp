@@ -26,7 +26,7 @@ inline ov::AnyMap parse_inputs_from_yaml_cfg_for_image_generation(const std::fil
         const std::string param_name = entry["name"].as<std::string>();
         const std::string param_type = entry["type"].as<std::string>();
 
-        if (param_type == "String" && utils::contain_key(param_name, {"prompt"})) {
+        if (param_type == "String" && utils::contains_key(param_name, {"prompt"})) {
             if (prompt.empty()) {
                 throw std::runtime_error("Prompt string is empty.");
             }
@@ -34,7 +34,7 @@ inline ov::AnyMap parse_inputs_from_yaml_cfg_for_image_generation(const std::fil
             continue;
         }
 
-        if (param_type == "Int" && utils::contain_key(param_name, {"width", "w"})) {
+        if (param_type == "Int" && utils::contains_key(param_name, {"width", "w"})) {
             if (width.empty()) {
                 throw std::runtime_error("Width is empty.");
             }
@@ -42,7 +42,7 @@ inline ov::AnyMap parse_inputs_from_yaml_cfg_for_image_generation(const std::fil
             continue;
         }
 
-        if (param_type == "Int" && utils::contain_key(param_name, {"height", "h"})) {
+        if (param_type == "Int" && utils::contains_key(param_name, {"height", "h"})) {
             if (height.empty()) {
                 throw std::runtime_error("Height is empty.");
             }
@@ -50,7 +50,7 @@ inline ov::AnyMap parse_inputs_from_yaml_cfg_for_image_generation(const std::fil
             continue;
         }
 
-        if (param_type == "Int" && utils::contain_key(param_name, {"num_inference_steps", "steps"})) {
+        if (param_type == "Int" && utils::contains_key(param_name, {"num_inference_steps", "steps"})) {
             if (num_inference_steps.empty()) {
                 throw std::runtime_error("Number of inference steps is empty.");
             }
@@ -58,7 +58,7 @@ inline ov::AnyMap parse_inputs_from_yaml_cfg_for_image_generation(const std::fil
             continue;
         }
 
-        if (param_type == "Float" && utils::contain_key(param_name, {"guidance_scale", "guidance"})) {
+        if (param_type == "Float" && utils::contains_key(param_name, {"guidance_scale", "guidance"})) {
             if (guidance_scale.empty()) {
                 throw std::runtime_error("Guidance scale is empty.");
             }
@@ -66,7 +66,7 @@ inline ov::AnyMap parse_inputs_from_yaml_cfg_for_image_generation(const std::fil
             continue;
         }
 
-        if (param_type == "Int" && utils::contain_key(param_name, {"max_sequence_length", "max_seq_len"})) {
+        if (param_type == "Int" && utils::contains_key(param_name, {"max_sequence_length", "max_seq_len"})) {
             if (max_sequence_length.empty()) {
                 throw std::runtime_error("Max sequence length is empty.");
             }

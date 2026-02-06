@@ -1,7 +1,7 @@
 // Copyright (C) 2023-2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "md_denoiser_loop.hpp"
+#include "class.hpp"
 
 #include "module_genai/module_factory.hpp"
 #include "module_genai/transformer_config.hpp"
@@ -12,6 +12,7 @@
 #include "image_generation/numpy_utils.hpp"
 #include <fstream>
 #include "module_genai/utils/profiler.hpp"
+#include "module_genai/utils/thread_helper.hpp"
 
 namespace ov {
 namespace genai {
@@ -51,6 +52,8 @@ void DenoiserLoopModule::print_static_config() {
         type: "OVTensor"                                   # Support DataType: [OVTensor]
     params:
       model_path: "model"
+      splitted_model: "bool value"    # [Optional], default false.
+      cache_dir: "./cache_dir_transformer/"  # [Optional], default is empty string.
     )" << std::endl;
 }
 
@@ -77,6 +80,8 @@ bool DenoiserLoopModule::initialize() {
         return false;
     }
 
+    check_splitted_model();
+
     std::filesystem::path model_path = module_desc->get_full_path(it_path->second);
     auto transformer_model_path = model_path / "transformer/openvino_model.xml";
     if (m_model_type == DiffusionModelType::ZIMAGE) {
@@ -86,6 +91,10 @@ bool DenoiserLoopModule::initialize() {
         // Force to use CPU for scheduler, since the Inverse(opset14) is not supported on GPU
         m_scheduler = std::make_shared<UniPCMultistepScheduler>(model_path / "scheduler/scheduler_config.json", "CPU");
         transformer_model_path = model_path / "transformer/transformer.xml";
+        if (m_splitted_model) {
+            transformer_model_path = model_path / "transformer_splitted/";
+        }
+        GENAI_INFO("Module[" + module_desc->name + "]: transformer_model_path: " + transformer_model_path.string());
     } else {
         OPENVINO_THROW("Unsupported '", module_desc->model_type, "' Transformer model type");
     }
@@ -93,19 +102,31 @@ bool DenoiserLoopModule::initialize() {
         GENAI_ERR("TransformerModule[" + module_desc->name + "]: model file not found at " + transformer_model_path.string());
         return false;
     }
-    auto model = utils::singleton_core().read_model(
-        transformer_model_path);
-    auto compiled_model = utils::singleton_core().compile_model(
-        model,
-        module_desc->device.empty() ? "CPU" : module_desc->device,
-        ov::AnyMap{});
-    m_request = compiled_model.create_infer_request();
+
+    auto properties = ov::AnyMap{};
+    check_cache_dir();
+    if (!m_cache_dir.empty()) {
+        properties["CACHE_DIR"] = m_cache_dir;
+    }
+
+    if (m_splitted_model) {
+        m_splitted_model_infer = CSplittedModelInfer::create(transformer_model_path,
+                                                             module_desc->device,
+                                                             m_dynamic_load_weights,
+                                                             properties);
+    } else {
+        auto model = utils::singleton_core().read_model(transformer_model_path);
+        m_compiled_model = utils::singleton_core().compile_model(model, module_desc->device, properties);
+        m_request = m_compiled_model.create_infer_request();
+    }
+
     return true;
 }
 
 void DenoiserLoopModule::run() {
     GENAI_INFO("Running module: " + module_desc->name);
     prepare_inputs();
+
     std::vector<ov::Tensor> prompt_embeds;
     std::vector<ov::Tensor> negative_prompt_embeds;
     ov::Tensor latents;
@@ -174,6 +195,7 @@ void DenoiserLoopModule::run() {
         }
         this->outputs["latents"].data = run(latents, prompt_embeds, negative_prompt_embeds, num_inference_steps, guidance_scale);
     }
+
 }
 
 // Image generation
@@ -235,6 +257,11 @@ ov::Tensor DenoiserLoopModule::run(
                 current_guidance_scale = 0.0f;
             }
         }
+
+        ov::Tensor input_hidden_states;
+        ov::Tensor input_timestep;
+        ov::Tensor input_encoder_hidden_states;
+
         bool apply_cfg = generation_config.guidance_scale > 1.0f && current_guidance_scale > 0.0f;
         if (apply_cfg) {
             ov::Tensor tmp_latents = numpy_utils::repeat(latents, 2);
@@ -242,22 +269,30 @@ ov::Tensor DenoiserLoopModule::run(
             ov::Tensor timestep(ov::element::f32, {1}, &timesteps[inference_step]);
             timestep = numpy_utils::repeat(timestep, 2);
             tmp_latents = tensor_utils::unsqueeze(tmp_latents, 2);
-            m_request.set_tensor("hidden_states", tmp_latents);
-            m_request.set_tensor("timestep", timestep);
-            m_request.set_tensor("encoder_hidden_states", all_prompt_tensor);
+
+            input_hidden_states = tmp_latents;
+            input_timestep = timestep;
+            input_encoder_hidden_states = all_prompt_tensor;
         } else {
-            ov::Tensor unsqueezed_latents = tensor_utils::unsqueeze(latents, 2);
-            ov::Tensor timestep(ov::element::f32, {1}, &timesteps[inference_step]);
-            m_request.set_tensor("hidden_states", unsqueezed_latents);
-            m_request.set_tensor("timestep", timestep);
-            m_request.set_tensor("encoder_hidden_states", prompt_tensor);
+            input_hidden_states = tensor_utils::unsqueeze(latents, 2);
+            input_timestep = ov::Tensor(ov::element::f32, {1}, &timesteps[inference_step]);
+            input_encoder_hidden_states = prompt_tensor;
         }
 
-        {
+        if (m_splitted_model) {
+            PROFILE(pm, "splitted_model_infer");
+            ov::AnyMap splitted_model_inputs = {{"hidden_states", input_hidden_states},
+                                                {"timestep", input_timestep},
+                                                {"encoder_hidden_states", input_encoder_hidden_states}};
+            m_splitted_model_infer->infer(splitted_model_inputs);
+        } else {
+            m_request.set_tensor("hidden_states", input_hidden_states);
+            m_request.set_tensor("timestep", input_timestep);
+            m_request.set_tensor("encoder_hidden_states", input_encoder_hidden_states);
             PROFILE(pm, "infer");
             m_request.infer();
         }
-        
+
         ov::Tensor model_output = m_request.get_output_tensor();
         ov::Tensor noise_pred;
         if (apply_cfg) {
@@ -323,26 +358,47 @@ ov::Tensor DenoiserLoopModule::run(
         for (size_t j = 0; j < timestep.get_size(); j++) {
             timestep_data[j] = static_cast<float>(t);
         }
-        m_request.set_tensor("hidden_states", latents);
-        m_request.set_tensor("timestep", timestep);
-        m_request.set_tensor("encoder_hidden_states", prompt_tensor);
-        m_request.set_output_tensor(0, noise_pred);
-        m_request.infer();
 
-        if (guidance_scale > 1.0f && negative_prompt_tensor.has_value()) {
+        if (m_splitted_model) {
+            PROFILE(pm, "splitted_model_infer");
+            ov::AnyMap splitted_model_inputs = {{"hidden_states", latents},
+                                                {"timestep", timestep},
+                                                {"encoder_hidden_states", prompt_tensor}};
+            m_splitted_model_infer->infer(splitted_model_inputs);
+            noise_pred = m_splitted_model_infer->get_output_tensor();
+        } else {
             m_request.set_tensor("hidden_states", latents);
             m_request.set_tensor("timestep", timestep);
-            m_request.set_tensor("encoder_hidden_states", negative_prompt_tensor.value());
-            m_request.set_output_tensor(0, noise_uncond);
+            m_request.set_tensor("encoder_hidden_states", prompt_tensor);
+            m_request.set_output_tensor(0, noise_pred);
             m_request.infer();
+        }
+
+        if (guidance_scale > 1.0f && negative_prompt_tensor.has_value()) {
+            if (m_splitted_model) {
+                PROFILE(pm, "splitted_model_infer_uncond");
+                ov::AnyMap splitted_model_inputs = {{"hidden_states", latents},
+                                                    {"timestep", timestep},
+                                                    {"encoder_hidden_states", negative_prompt_tensor.value()}};
+                m_splitted_model_infer->infer(splitted_model_inputs);
+                noise_uncond = m_splitted_model_infer->get_output_tensor();
+            }
+            else {
+                m_request.set_tensor("hidden_states", latents);
+                m_request.set_tensor("timestep", timestep);
+                m_request.set_tensor("encoder_hidden_states", negative_prompt_tensor.value());
+                m_request.set_output_tensor(0, noise_uncond);
+                m_request.infer();
+            }
 
             for (size_t j = 0; j < noise_pred.get_size(); j++) {
-                noise_pred_data[j] = noise_uncond_data[j] + guidance_scale * (noise_pred_data[j] - noise_uncond_data[j]);
+                noise_pred_data[j] =
+                    noise_uncond_data[j] + guidance_scale * (noise_pred_data[j] - noise_uncond_data[j]);
             }
         }
 
-        latents = std::get<std::shared_ptr<UniPCMultistepScheduler>>(m_scheduler)->step(
-            noise_pred, t, latents)["prev_sample"];
+        latents = std::get<std::shared_ptr<UniPCMultistepScheduler>>(m_scheduler)
+                      ->step(noise_pred, t, latents)["prev_sample"];
     }
     return latents;
 }

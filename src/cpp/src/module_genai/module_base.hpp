@@ -68,6 +68,14 @@ protected:
     bool is_input_module = false;
     bool is_output_module = false;
 
+    bool m_dynamic_load_weights = false;  // After inference with larger models, the weights need to be released to free
+                                          // up space for inference with other models.
+    void check_dynamic_load_weights();    // "dynamic_load_weights" depends on params: "cache_dir"
+    std::string m_cache_dir = std::string();
+    void check_cache_dir();
+    bool m_splitted_model = false;
+    void check_splitted_model();
+
     // Initialize ov::Model from config models_map with param_name: "ov_model"
     void init_ov_model();
 };

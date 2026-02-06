@@ -26,7 +26,7 @@ inline ov::AnyMap parse_inputs_from_yaml_cfg_for_vlm(const std::filesystem::path
         const std::string param_name = entry["name"].as<std::string>();
         const std::string param_type = entry["type"].as<std::string>();
 
-        if (param_type == "String" && utils::contain_key(param_name, {"prompt"})) {
+        if (param_type == "String" && utils::contains_key(param_name, {"prompt"})) {
             if (prompt.empty()) {
                 throw std::runtime_error("Prompt string is empty.");
             }
@@ -34,7 +34,7 @@ inline ov::AnyMap parse_inputs_from_yaml_cfg_for_vlm(const std::filesystem::path
             continue;
         }
 
-        if (param_type == "OVTensor" && utils::contain_key(param_name, {"img", "image"})) {
+        if (param_type == "OVTensor" && utils::contains_key(param_name, {"img", "image"})) {
             if (image_path.empty()) {
                 throw std::runtime_error("Image path is empty.");
             }
@@ -42,7 +42,7 @@ inline ov::AnyMap parse_inputs_from_yaml_cfg_for_vlm(const std::filesystem::path
             continue;
         }
 
-        if (param_type == "OVTensor" && utils::contain_key(param_name, {"video"})) {
+        if (param_type == "OVTensor" && utils::contains_key(param_name, {"video"})) {
             if (video_path.empty()) {
                 throw std::runtime_error("Video path is empty.");
             }

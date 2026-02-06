@@ -104,6 +104,48 @@ std::string IBaseModuleDesc::get_full_path(const std::string& fn) {
     OPENVINO_ASSERT(false, "File path is invalid: " + fn);
 }
 
+void IBaseModule::check_dynamic_load_weights() {
+    const auto& params = module_desc->params;
+    auto it_path = params.find("dynamic_load_weights");
+    if (it_path != params.end()) {
+        std::string val = module_desc->params["dynamic_load_weights"];
+        if (val == "true" || val == "True" || val == "TRUE" || val == "1") {
+            m_dynamic_load_weights = true;
+            GENAI_INFO("Module[" + module_desc->name + "]: m_dynamic_load_weights = true");
+            check_cache_dir();
+            if (m_cache_dir.empty()) {
+                OPENVINO_THROW("Module[" + module_desc->name +
+                               "]: 'cache_dir' must be set when 'dynamic_load_weights' is true");
+            }
+        }
+    }
+}
+
+void IBaseModule::check_cache_dir() {
+    if (m_cache_dir.empty()) {
+        const auto& params = module_desc->params;
+        auto it_path = params.find("cache_dir");
+        if (it_path != params.end()) {
+            m_cache_dir = module_desc->params["cache_dir"];
+            GENAI_INFO("Module[" + module_desc->name + "]: m_cache_dir = " + m_cache_dir);
+        }
+    } else {
+        GENAI_INFO("Module[" + module_desc->name + "]: m_cache_dir = " + m_cache_dir);
+    }
+}
+
+void IBaseModule::check_splitted_model() {
+    auto splitted_model = get_optional_param("splitted_model");
+    if (splitted_model.empty()) {
+        return;
+    }
+
+    if (splitted_model == "true" || splitted_model == "True" || splitted_model == "TRUE" || splitted_model == "1") {
+        m_splitted_model = true;
+        GENAI_INFO("Module[" + module_desc->name + "]: m_splitted_model = true");
+    }
+}
+
 }  // namespace module
 }  // namespace genai
 }  // namespace ov

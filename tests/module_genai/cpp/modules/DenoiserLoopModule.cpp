@@ -12,6 +12,8 @@ using namespace ov::genai::module;
 
 struct DenoiserLoopTestData {
     ov::genai::DiffusionModelType model_type;
+    std::string model_path;
+    bool splitted_model = false;
     ov::Tensor latents;
     ov::Tensor prompt_embed;
     ov::Tensor negative_prompt_embed;
@@ -27,6 +29,7 @@ std::vector<DenoiserLoopTestData> denoiser_loop_test_data() {
     std::vector<DenoiserLoopTestData> datas;
     DenoiserLoopTestData z_image_data;
     z_image_data.model_type = ov::genai::DiffusionModelType::ZIMAGE;
+    z_image_data.model_path = TEST_MODEL::ZImage_Turbo_fp16_ov();
     z_image_data.latents = ModuleTestBase::ut_randn_tensor(ov::Shape{1, 16, 16, 16}, 42);
     z_image_data.prompt_embed = ModuleTestBase::ut_randn_tensor(ov::Shape{101, 2560}, 42);
     z_image_data.num_inference_steps = 2;
@@ -37,6 +40,7 @@ std::vector<DenoiserLoopTestData> denoiser_loop_test_data() {
     datas.push_back(z_image_data);
     DenoiserLoopTestData wan_data;
     wan_data.model_type = ov::genai::DiffusionModelType::WAN_2_1;
+    wan_data.model_path = TEST_MODEL::Wan_2_1();
     wan_data.latents = ModuleTestBase::ut_randn_tensor(ov::Shape{1, 16, 2, 16, 16}, 42);
     wan_data.prompt_embed = ModuleTestBase::ut_randn_tensor(ov::Shape{16, 4096}, 42);
     wan_data.negative_prompt_embed = ModuleTestBase::ut_randn_tensor(ov::Shape{16, 4096}, 42);
@@ -47,6 +51,10 @@ std::vector<DenoiserLoopTestData> denoiser_loop_test_data() {
         0.0369669, 0.292062, -0.0306935, 0.553844, 0.545802, 0.459735, 0.822431, 0.74533, 0.913414, 1.11607
     };
     datas.push_back(wan_data);
+
+    DenoiserLoopTestData wan_data_splitted_model = wan_data;
+    wan_data_splitted_model.splitted_model = true;
+    datas.push_back(wan_data_splitted_model);
     return datas;
 }
 
@@ -62,8 +70,14 @@ private:
 
 public:
     static std::string get_test_case_name(const testing::TestParamInfo<test_params>& obj) {
-        const auto& device = std::get<1>(obj.param);
-        return std::regex_replace(diffusion_model_type_to_string(std::get<0>(obj.param).model_type), std::regex("\\."), "_") + "_" + device;
+        std::string result;
+        auto test_data = std::get<0>(obj.param);
+        auto device = std::get<1>(obj.param);
+
+        result = std::regex_replace(diffusion_model_type_to_string(test_data.model_type), std::regex("\\."), "_");
+        result = result + "_" + device;
+        result = result + "_SplittedModel_" + (test_data.splitted_model ? "true" : "false");
+        return result;
     }
 
     void SetUp() override {
@@ -106,11 +120,8 @@ protected:
         outputs.push_back(latents);
         denoiser_loop["outputs"] = outputs;
         YAML::Node params;
-        if (m_test_data.model_type == ov::genai::DiffusionModelType::ZIMAGE) {
-            params["model_path"] = TEST_MODEL::ZImage_Turbo_fp16_ov();
-        } else if (m_test_data.model_type == ov::genai::DiffusionModelType::WAN_2_1) {
-            params["model_path"] = TEST_MODEL::Wan_2_1();
-        }
+        params["model_path"] = m_test_data.model_path;
+        params["splitted_model"] = m_test_data.splitted_model ? "true" : "false";
         denoiser_loop["params"] = params;
         pipeline_modules["denoiser_loop"] = denoiser_loop;
         return YAML::Dump(config);
