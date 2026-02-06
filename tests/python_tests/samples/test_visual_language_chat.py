@@ -6,8 +6,8 @@ import pytest
 import subprocess # nosec B404
 import sys
 
-from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR
-from test_utils import run_sample
+from conftest import SAMPLES_PY_DIR, SAMPLES_CPP_DIR, SAMPLES_C_DIR, SAMPLES_JS_DIR
+from test_utils import run_sample, run_js_chat
 
 class TestVisualLanguageChat:
     @pytest.mark.vlm
@@ -39,9 +39,15 @@ class TestVisualLanguageChat:
         py_command = [sys.executable, py_script, convert_model, download_test_content]
         py_result = run_sample(py_command, questions)
 
+        # Test JavaScript sample
+        js_script = SAMPLES_JS_DIR / "visual_language_chat/visual_language_chat.js"
+        js_command = ["node", js_script, convert_model, download_test_content]
+        js_stdout = run_js_chat(js_command, questions)
+
         # Compare results
         assert py_result.stdout == cpp_result.stdout, f"Results should match"
         assert cpp_result.stdout == c_result.stdout, f"Results should match"
+        assert py_result.stdout == js_stdout, f"JS results should match"
 
     @pytest.mark.vlm
     @pytest.mark.samples
@@ -65,5 +71,11 @@ class TestVisualLanguageChat:
         cpp_command =[cpp_sample, convert_model, os.path.dirname(generate_test_content)]
         cpp_result = run_sample(cpp_command, questions)
 
+        # Test JavaScript sample
+        js_script = SAMPLES_JS_DIR / "visual_language_chat/visual_language_chat.js"
+        js_command = ["node", js_script, convert_model, os.path.dirname(generate_test_content)]
+        js_stdout = run_js_chat(js_command, questions)
+
         # Compare results
         assert py_result.stdout == cpp_result.stdout, f"Results should match"
+        assert py_result.stdout == js_stdout, f"JS results should match"
