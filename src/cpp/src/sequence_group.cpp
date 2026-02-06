@@ -3,6 +3,7 @@
 
 #include <string_view>
 #include "sequence_group.hpp"
+#include "utils.hpp"
 
 namespace ov {
 namespace genai {
@@ -97,6 +98,15 @@ size_t Sequence::get_hash(size_t content_length) {
     }
     
     return _make_hash(content_len);
+}
+
+SequenceGroup::SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
+    : m_request_id(request_id),
+      m_sampling_params(sampling_params),
+      m_block_size(block_size),
+      m_sequence_group_type(SequenceGroupType::TOKENS),
+      m_generation_stream(GenerationStream::create()) {
+    ov::genai::utils::print_generation_config_info(m_sampling_params);  // the latest possible place to print generation config info in case it is modified at some point
 }
 }  // namespace genai
 }  // namespace ov
