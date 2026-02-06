@@ -587,13 +587,15 @@ private:
         std::optional<int64_t> rope_delta;
         std::tie(position_ids, rope_delta) = m_inputs_embedder->get_position_ids(inputs_embeds_size, history_size);
 
+        const auto& lm_extra_inputs = m_inputs_embedder->get_lm_extra_inputs();
+
         if (m_sampler.get_seed() != generation_config.rng_seed) {
             m_sampler.set_seed(generation_config.rng_seed);
         }
 
         return ov::genai::get_lm_encoded_results(
             m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, std::move(requests),
-            position_ids, token_type_ids, kv_cache_state, m_embedding, rope_delta, m_max_kv_cache_size
+            position_ids, token_type_ids, kv_cache_state, m_embedding, rope_delta, m_max_kv_cache_size, lm_extra_inputs
         );
     }
 };
@@ -603,6 +605,7 @@ bool requires_sdpa(const std::filesystem::path& models_dir) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
     return vlm_config.model_type == VLMModelType::QWEN2_VL ||
            vlm_config.model_type == VLMModelType::QWEN2_5_VL ||
+           vlm_config.model_type == VLMModelType::QWEN3_VL ||
            vlm_config.model_type == VLMModelType::GEMMA3;
 }
 

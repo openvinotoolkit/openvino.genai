@@ -1334,7 +1334,7 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedderQwen2VL::run_video_image_embeddi
     return {res_video, res_image};
 }
 
-ov::Tensor InputsEmbedderQwen2VL::get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw) {
+ov::Tensor InputsEmbedderQwen2VL::get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw) const {
     const size_t spatial_merge_size = m_vision_encoder->get_processor_config().merge_size;
 
     std::vector<std::vector<size_t>> all_pos_ids;
