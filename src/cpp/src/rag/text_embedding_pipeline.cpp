@@ -95,7 +95,6 @@ public:
         ov::Core core = utils::singleton_core();
 
         auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);
-
         auto filtered_properties = extract_adapters_from_properties(properties, &m_adapters);
         if (m_adapters.has_value()) {
             setup_lora(model, device);

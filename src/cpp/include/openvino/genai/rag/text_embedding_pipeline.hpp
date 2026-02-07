@@ -96,7 +96,6 @@ public:
         std::optional<std::string> embed_instruction;
 
         /**
-
          * @brief Constructs text embedding pipeline configuration
          */
         Config() = default;
