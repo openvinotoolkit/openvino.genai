@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -65,13 +65,18 @@ protected:
     class ContinuousBatchingImpl;
 
     class ContinuousBatchingForSpeculativeDecodingImpl;
+    class ContinuousBatchingForEagle3DecodingImpl;
     class ContinuousBatchingForPromptLookupImpl;
     class SpeculativeDecodingImpl;
+    class Eagle3DecodingImpl;
     class PromptLookupImpl;
 
     friend class ContinuousBatchingForSpeculativeDecodingImpl;
+    
     friend class ContinuousBatchingForPromptLookupImpl;
+    friend class ContinuousBatchingForEagle3DecodingImpl;
     friend class SpeculativeDecodingImpl;
+    friend class Eagle3DecodingImpl;
     friend class PromptLookupImpl;
 
     std::shared_ptr<IContinuousBatchingPipeline> m_impl;
@@ -189,6 +194,19 @@ public:
 
     std::vector<VLMDecodedResults> generate(
         const std::vector<std::string>& prompts,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<std::vector<ov::Tensor>>& videos,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer=std::monostate{});
+    
+    std::vector<VLMDecodedResults> generate(
+        const std::vector<ChatHistory>& histories,
+        const std::vector<std::vector<ov::Tensor>>& images,
+        const std::vector<GenerationConfig>& sampling_params,
+        const StreamerVariant& streamer=std::monostate{});
+
+    std::vector<VLMDecodedResults> generate(
+        const std::vector<ChatHistory>& histories,
         const std::vector<std::vector<ov::Tensor>>& images,
         const std::vector<std::vector<ov::Tensor>>& videos,
         const std::vector<GenerationConfig>& sampling_params,

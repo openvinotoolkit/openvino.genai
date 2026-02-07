@@ -79,6 +79,7 @@ def main():
                 "question:\n")
         except EOFError:
             break
+        # New images and videos can be passed at each turn
         pipe.generate(prompt, generation_config=config, streamer=streamer)
     pipe.finish_chat()
 

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -44,6 +44,7 @@ class Sequence {
     LogProbs m_generated_log_probs;
     uint64_t m_grouped_id;
     uint64_t m_id = _get_next_global_sequence_id();
+    ov::Tensor m_hidden_state = ov::Tensor();
     SequenceStatus m_status = SequenceStatus::RUNNING;
     GenerationFinishReason m_finish_reason = GenerationFinishReason::NONE;
     float m_cumulative_log_prob = 0.0f;
@@ -70,6 +71,7 @@ class Sequence {
         m_generated_ids(seq.m_generated_ids),
         m_generated_log_probs(seq.m_generated_log_probs),
         m_grouped_id(id),
+        m_hidden_state(seq.m_hidden_state),
         m_status(seq.m_status),
         m_cumulative_log_prob(seq.m_cumulative_log_prob),
         m_sequence_group(seq.m_sequence_group),
@@ -140,6 +142,14 @@ public:
         m_cumulative_log_prob += log_prob;
         m_generated_log_probs.push_back(log_prob);
         m_generated_ids.push_back(token_id);
+    }
+
+    void update_hidden_state(const ov::Tensor& tensor) {
+        m_hidden_state = tensor;
+    }
+
+    ov::Tensor get_hidden_state() const {
+        return m_hidden_state;
     }
 
     // removes n last tokens and updates cumulative log prob
@@ -377,25 +387,19 @@ public:
 
         if (input_ids.get_element_type() == ov::element::i64) {
             m_prompt_ids.resize(prompt_len);
-            OPENVINO_SUPPRESS_DEPRECATED_START
-            std::copy_n(input_ids.data<int64_t>(), prompt_len, m_prompt_ids.begin());
-            OPENVINO_SUPPRESS_DEPRECATED_END
+            std::copy_n(input_ids.data<const int64_t>(), prompt_len, m_prompt_ids.begin());
             m_sequence_group_type = SequenceGroupType::TOKENS;
         } else if (input_ids.get_element_type() == ov::element::f32) {
             hidden_size = input_ids.get_shape()[2];
             m_input_embeds.resize(prompt_len);
             for (size_t i = 0; i < prompt_len; i++) {
                 m_input_embeds[i].resize(hidden_size);
-                OPENVINO_SUPPRESS_DEPRECATED_START
-                std::copy_n(input_ids.data<float>() + i * hidden_size, hidden_size, m_input_embeds[i].begin());
-                OPENVINO_SUPPRESS_DEPRECATED_END
+                std::copy_n(input_ids.data<const float>() + i * hidden_size, hidden_size, m_input_embeds[i].begin());
             }
             if (token_type_ids.has_value()) {
                 const ov::Tensor& tokens = token_type_ids.value();
                 m_token_type_ids = std::vector<int64_t>(tokens.get_size());
-                OPENVINO_SUPPRESS_DEPRECATED_START
-                std::copy_n(tokens.data<int64_t>(), tokens.get_size(), m_token_type_ids->begin());
-                OPENVINO_SUPPRESS_DEPRECATED_END
+                std::copy_n(tokens.data<const int64_t>(), tokens.get_size(), m_token_type_ids->begin());
             }
             m_sequence_group_type = SequenceGroupType::EMBEDDINGS;
         }
@@ -644,7 +648,7 @@ public:
         m_num_validation_tokens = k;
     }
 
-    size_t get_num_tokens_to_validate() {
+    size_t get_num_tokens_to_validate() const {
         return m_num_validation_tokens;
     }
 

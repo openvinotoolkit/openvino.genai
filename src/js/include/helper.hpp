@@ -1,9 +1,14 @@
+// Copyright (C) 2023-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #pragma once
 #include <napi.h>
 
+#include "openvino/core/type/element_type.hpp"
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/rag/text_embedding_pipeline.hpp"
-#include "openvino/core/type/element_type.hpp"
+#include "openvino/genai/rag/text_rerank_pipeline.hpp"
+#include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/openvino.hpp"
 
 template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
@@ -64,6 +69,15 @@ template <>
 ov::genai::StructuredOutputConfig::StructuralTag js_to_cpp<ov::genai::StructuredOutputConfig::StructuralTag>(const Napi::Env& env, const Napi::Value& value);
 template <>
 ov::Tensor js_to_cpp<ov::Tensor>(const Napi::Env& env, const Napi::Value& value);
+template <>
+std::shared_ptr<ov::genai::Parser> js_to_cpp<std::shared_ptr<ov::genai::Parser>>(const Napi::Env& env,
+                                                                                 const Napi::Value& value);
+template <>
+std::vector<std::shared_ptr<ov::genai::Parser>> js_to_cpp<std::vector<std::shared_ptr<ov::genai::Parser>>>(
+    const Napi::Env& env,
+    const Napi::Value& value);
+template <>
+std::vector<ov::Tensor> js_to_cpp<std::vector<ov::Tensor>>(const Napi::Env& env, const Napi::Value& value);
 /**
  * @brief  Unwraps a C++ object from a JavaScript wrapper.
  * @tparam TargetType The C++ class type to extract.
@@ -74,6 +88,9 @@ TargetType& unwrap(const Napi::Env& env, const Napi::Value& value);
 
 template <>
 ov::genai::PerfMetrics& unwrap<ov::genai::PerfMetrics>(const Napi::Env& env, const Napi::Value& value);
+
+template <>
+ov::genai::VLMPerfMetrics& unwrap<ov::genai::VLMPerfMetrics>(const Napi::Env& env, const Napi::Value& value);
 
 /**
  * @brief  Template function to convert C++ data types into Javascript data types
@@ -115,7 +132,18 @@ template <>
 Napi::Value cpp_to_js<std::vector<size_t>, Napi::Value>(const Napi::Env& env, const std::vector<size_t>& value);
 
 template <>
-Napi::Value cpp_to_js<ov::genai::JsonContainer, Napi::Value>(const Napi::Env& env, const ov::genai::JsonContainer& json_container);
+Napi::Value cpp_to_js<ov::genai::JsonContainer, Napi::Value>(const Napi::Env& env,
+                                                             const ov::genai::JsonContainer& json_container);
+
+template <>
+Napi::Value cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(
+    const Napi::Env& env,
+    const std::vector<ov::genai::JsonContainer>& value);
+
+template <>
+Napi::Value cpp_to_js<std::vector<std::pair<size_t, float>>, Napi::Value>(
+    const Napi::Env& env,
+    const std::vector<std::pair<size_t, float>>& rerank_results);
 
 template <>
 Napi::Value cpp_to_js<ov::Tensor, Napi::Value>(const Napi::Env& env, const ov::Tensor& tensor);
@@ -139,8 +167,14 @@ bool is_napi_value_int(const Napi::Env& env, const Napi::Value& num);
 
 bool is_chat_history(const Napi::Env& env, const Napi::Value& value);
 
+std::shared_ptr<ov::genai::Parser> get_native_parser(const Napi::Env& env, const Napi::Object& object);
+
 std::string json_stringify(const Napi::Env& env, const Napi::Value& value);
 
 Napi::Value json_parse(const Napi::Env& env, const std::string& value);
 
 Napi::Function get_prototype_from_ov_addon(const Napi::Env& env, const std::string& ctor_name);
+
+Napi::Object to_decoded_result(const Napi::Env& env, const ov::genai::DecodedResults& results);
+
+Napi::Object to_vlm_decoded_result(const Napi::Env& env, const ov::genai::VLMDecodedResults& results);

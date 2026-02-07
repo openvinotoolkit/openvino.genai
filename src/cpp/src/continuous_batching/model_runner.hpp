@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -15,6 +15,7 @@
 #include "continuous_batching/timer.hpp"
 
 #include "continuous_batching/attention_output.hpp"
+#include "continuous_batching/cache_eviction.hpp"
 
 namespace ov::genai {
 
@@ -24,6 +25,76 @@ inline std::string get_paged_attention_score_output_for_decoder_layer(size_t dec
     return ss.str();
 }
 
+inline std::string get_adaptive_rkv_diversity_score_output_for_decoder_layer(size_t decoder_layer_id) {
+    std::stringstream ss;
+    ss << "adaptive_rkv_diversity." << decoder_layer_id;
+    return ss.str();
+}
+
+/**
+ * @brief Bitwise flags for hidden state handling in ModelRunner, used in certain speculative decoding, e.g eagle series.
+ *
+ * The HiddenStateFlags enumeration defines bitwise flags used to control the behavior of hidden state handling in the model runner.
+ * Each flag represents a specific mode or capability related to hidden state export, import, or internal processing.
+ *
+ * Usage:
+ *   - Flags can be combined using bitwise OR to enable multiple behaviors simultaneously.
+ *   - Helper methods (e.g., enable_hidden_state_export) set or clear these flags.
+ *   - Use bitwise AND to check if a flag is enabled.
+ *
+ * Enum values:
+ *   - HS_NONE:    No hidden state operations are enabled (default).
+ *   - HS_EXPORT:  Enables exporting hidden states from the model for draft model useage.
+ *   - HS_IMPORT:  Enables importing hidden states into the model for a valid draft model forward.
+ *   - HS_INTERNAL: Enables internal handling of hidden states for draft model forward.
+ */
+
+enum HiddenStateFlags : uint8_t {
+    HS_NONE      = 0,
+    HS_EXPORT    = 1 << 0,
+    HS_IMPORT    = 1 << 1,
+    HS_INTERNAL  = 1 << 2
+};
+
+/**
+ * @brief Uniquely identifies a sequence within a group for hidden state mapping.
+ *
+ * The SequenceKey struct is used as a composite key for mapping hidden state ranges.
+ * It combines a request ID and a grouped sequence ID to uniquely identify a sequence within a batch or group.
+ *
+ * Members:
+ *   - request_id: The unique identifier for the request.
+ *   - grouped_sequence_id: The identifier for the sequence within its group.
+ *
+ * Comparison:
+ *   - operator< is defined to allow use as a key in std::map or std::set.
+ */
+
+struct SequenceKey {
+    size_t request_id{};
+    size_t grouped_sequence_id{};
+    bool operator<(const SequenceKey& other) const {
+        return std::tie(request_id, grouped_sequence_id) <
+            std::tie(other.request_id, other.grouped_sequence_id);
+    }
+};
+
+/**
+ * @brief Represents the range of tokens for which hidden states are stored or processed.
+ *
+ * The HiddenStateRange struct defines a contiguous range of tokens in a sequence,
+ * used to indicate which part of the sequence's hidden states are relevant in a batch processing context.
+ *
+ * Members:
+ *   - start_token_idx: The starting index of the token range.
+ *   - length: The number of tokens in the range.
+ */
+
+struct HiddenStateRange {
+    size_t start_token_idx{};
+    size_t length{};
+};
+
 /**
  * @brief Runs the LLM infer request, parsing the continuous batching scheduler output into proper inputs in terms of OV API (e.g. token input IDs,
  * KV cache block indices etc.) and returning the logit scores for the next token to be generated for each of the currently scheduled sequences.
@@ -31,6 +102,7 @@ inline std::string get_paged_attention_score_output_for_decoder_layer(size_t dec
 class ModelRunner {
     ov::InferRequest m_request;
     AttentionScoresForEachSubsequence m_last_attention_scores;
+    BlockDiversityForEachSubsequence m_last_block_diversities;
     size_t m_block_size;
     size_t m_num_decoder_layers;
     bool m_collect_attention_scores;
@@ -44,10 +116,16 @@ class ModelRunner {
     bool m_is_aggregate_attention_scores;
 
     bool m_is_use_xattention_inputs;
+
+    bool m_is_use_adaptive_rkv;
     // A model to compute token embeddings.
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
     EmbeddingsModel::Ptr m_embedding;
+    uint8_t m_hidden_state_flags = HS_NONE;
+    // a container which uses sequence group id and request id as key to store hidden states
+    std::map<SequenceKey, HiddenStateRange> m_sequence_hidden_state_mapping;
+    std::unordered_map<size_t, ov::Tensor> m_initial_hidden_states; // shape: [N, seq_len, hidden_size]
 
     std::shared_ptr<InputsEmbedder> m_inputs_embedder;
 
@@ -86,7 +164,8 @@ public:
                 bool is_use_per_layer_cache_control = false,
                 bool is_use_rotation_inputs = false,
                 bool is_aggregate_attention_scores = false,
-                bool is_use_xattention_inputs = false)
+                bool is_use_xattention_inputs = false,
+                bool m_is_use_adaptive_rkv_inputs = false)
         : m_request(std::move(request)),
           m_block_size(block_size),
           m_num_decoder_layers(num_decoder_layers),
@@ -95,7 +174,8 @@ public:
           m_is_use_rotation_inputs(is_use_rotation_inputs),
           m_rotated_block_logical_indices_per_sequence_for_each_layer(num_decoder_layers),
           m_is_aggregate_attention_scores(is_aggregate_attention_scores),
-          m_is_use_xattention_inputs(is_use_xattention_inputs) {
+          m_is_use_xattention_inputs(is_use_xattention_inputs),
+          m_is_use_adaptive_rkv(m_is_use_adaptive_rkv_inputs) {
         OPENVINO_ASSERT(m_num_decoder_layers != 0, "num_decoder_layers must be non-zero");
         _reset_cache_rotation_coefficients();
     }
@@ -106,6 +186,10 @@ public:
     ov::InferRequest get_infer_request() {
         return m_request;
     }
+
+    void enable_hidden_state_export(bool on)   { on ? m_hidden_state_flags |= HS_EXPORT   : m_hidden_state_flags &= ~HS_EXPORT; }
+    void enable_hidden_state_import(bool on)   { on ? m_hidden_state_flags |= HS_IMPORT   : m_hidden_state_flags &= ~HS_IMPORT; }
+    void enable_hidden_state_internal(bool on) { on ? m_hidden_state_flags |= HS_INTERNAL : m_hidden_state_flags &= ~HS_INTERNAL; }
 
     void set_inputs_embedder(const std::shared_ptr<InputsEmbedder>& inputs_embedder) {
         m_inputs_embedder = inputs_embedder;
@@ -121,6 +205,9 @@ public:
         return m_last_attention_scores;
     }
 
+    const BlockDiversityForEachSubsequence& get_last_block_diversities() const {
+        return m_last_block_diversities;
+    }
 
     void set_cache_rotation_trig_lut(ov::Tensor&& rotation_trig_lut) {
         m_cache_rotation_trig_lut = std::move(rotation_trig_lut);
@@ -134,6 +221,10 @@ public:
         m_cache_rotation_deltas_for_each_layer = std::move(rotation_deltas_for_each_layer);
     }
 
+    void set_initial_hidden_state(uint64_t request_id, const ov::Tensor& hidden_state) {
+        m_initial_hidden_states[request_id] = hidden_state;
+    }
+
     /**
      * Runs the forward inference call on the underlying LLM's ov::InferRequest, scheduling for inferencing tokens for given sequences
      * taking into account the supplied scheduler output struct.
@@ -142,6 +233,7 @@ public:
      * @return An ov::Tensor with next-token logit scores for each sequence processed during this `forward` call.
      */
     ov::Tensor forward(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
+        m_sequence_hidden_state_mapping.clear();
         size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
 
         size_t batch_size_in_sequences = 0;
@@ -184,6 +276,12 @@ public:
             {1, total_num_tokens}, ov::element::i64);
         ov::Tensor score_aggregation_window = _get_or_resize_tensor(m_cached_score_aggregation_window, "score_aggregation_window",
             {batch_size_in_sequences}, ov::element::i32);
+
+        ov::Tensor hidden_state_input = _prepare_hidden_state_input(total_num_tokens, hidden_size);
+        float* hidden_state_data = nullptr;
+        if (hidden_state_input) {
+            hidden_state_data = hidden_state_input.data<float>();
+        }
 
         ov::Tensor generated_ids_embeds;
         float *generated_ids_embeds_data = nullptr;
@@ -234,6 +332,7 @@ public:
             matmul_gathering_is_available = true;
         } catch (const ov::Exception&) {}
 
+        size_t current_token_idx = 0;
         std::map<size_t, std::set<size_t>> seq_id_to_skipped_blocks_map;
         size_t position_ids_idx = 0;
         for (size_t i = 0; i < num_sequence_groups; ++i) {
@@ -265,6 +364,50 @@ public:
 
                 output_seq_len = 0;
                 Sequence::CPtr sequence = running_sequences[seq_idx];
+                if (_is_hs_export()) {
+                    size_t start_token_idx = current_token_idx;
+                    size_t sequence_length = num_scheduled_tokens;
+
+                    SequenceKey key{sequence_group->get_request_id(), sequence->get_grouped_id()};
+                    m_sequence_hidden_state_mapping[key] = HiddenStateRange{start_token_idx, sequence_length};
+                }
+                if (_is_hs_import()) {
+                    auto it = m_initial_hidden_states.find(sequence_group->get_request_id());
+                    OPENVINO_ASSERT(it != m_initial_hidden_states.end() && it->second.get_size() > 0,
+                                    "Missing initial hidden state for Eagle3 draft model inference.");
+                    const auto& stored_hidden_state = it->second;
+                    auto stored_shape = stored_hidden_state.get_shape();
+                    OPENVINO_ASSERT(stored_shape.size() > 0, "Unexpected hidden state shape for Eagle3 draft model inference.");
+                    size_t stored_seq_len = stored_shape[0];
+                    size_t stored_hidden_size = stored_shape[stored_shape.size() - 1];
+
+                    OPENVINO_ASSERT(stored_hidden_size == hidden_size, "Target state hidden size does not match the expected size for Eagle3 draft model inference.");
+                    OPENVINO_ASSERT(stored_seq_len == total_num_tokens, "Target state sequence length does not match the expected length for Eagle3 draft model inference.");
+
+                    // fill the draft model hidden state input with the target hidden state
+                    hidden_state_input = stored_hidden_state;
+                } else if (_is_hs_internal()) {
+                    // fill hidden_state_data with m_hidden_states
+                    if (hidden_state_data) {
+                        OPENVINO_ASSERT(num_scheduled_tokens == 1, "unexpected num_scheduled_tokens in speculative drafting stage in eagle3 mode");
+                        std::memset(hidden_state_data + current_token_idx * hidden_size,
+                                    0,
+                                    num_scheduled_tokens * hidden_size * sizeof(float));
+                        auto hidden_state = running_sequences[seq_idx]->get_hidden_state();
+                        if (hidden_state.get_size() > 0) {
+                            auto shape = hidden_state.get_shape();
+                            if (shape.size() >= 2 && shape[shape.size() - 1] == hidden_size) {
+                                size_t seq_len = shape[0];
+                                size_t copy_length = std::min(seq_len, num_scheduled_tokens);
+
+                                size_t src_start_idx = seq_len >= copy_length ? seq_len - copy_length : 0;
+                                auto target_shape = ov::Shape{num_scheduled_tokens, 1, hidden_size};
+                                ov::Tensor target_base(ov::element::f32, target_shape, hidden_state_data + current_token_idx * hidden_size);
+                                _copy_roi_between_tensors(hidden_state, src_start_idx, copy_length, target_base, 0);
+                            }
+                        }
+                    }
+                }
                 for (size_t token_id = 0, position_id = group_position_id; token_id < num_scheduled_tokens; ++token_id, ++position_id, ++gathering_current_index) {
                     // compute token for current sequence
                     if (sequence_group_type == SequenceGroupType::TOKENS) {
@@ -343,6 +486,7 @@ public:
                         *score_aggregation_window_data = 1;
                     }
                 }
+                current_token_idx += num_scheduled_tokens;
                 past_lens_data += 1;
                 subsequence_begins_data += 1;
                 block_indices_begins_data += 1;
@@ -366,6 +510,9 @@ public:
             if (have_token_type_ids && !m_cached_token_type_ids) {
                 m_request.set_tensor("token_type_ids", token_type_ids);
             }
+        }
+        if (hidden_state_input && hidden_state_input.get_size() > 0) {
+            m_request.set_tensor("hidden_states", hidden_state_input);
         }
         if (position_ids.get_shape().size() == 3) {
             // flatten positions ids for 3D position ids case
@@ -400,6 +547,10 @@ public:
             _set_xattention_tensors(sequence_groups, scheduler_output, batch_size_in_sequences);
         }
 
+        if (m_is_use_adaptive_rkv) {
+            _set_adaptive_rkv_tensors(sequence_groups, scheduler_output, batch_size_in_sequences);
+        }
+
         if (matmul_gathering_is_available) {
             // use pre-allocated tensor for gather_indices as well
             ov::Tensor gather_indices = m_request.get_tensor("sampled_tokens_indices");
@@ -422,8 +573,25 @@ public:
             _collect_attention_scores(sequence_groups, scheduler_output);
         }
 
+        if (m_is_use_adaptive_rkv) {
+            _collect_adaptive_rkv_block_diversities(sequence_groups, scheduler_output);
+        }
+
         _reset_cache_rotation_coefficients();
 
+        if (_is_hs_export()) {
+            m_hidden_states = m_request.get_tensor("last_hidden_state");
+            for (size_t i = 0; i < num_sequence_groups; ++i) {
+                size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+                SequenceGroup::Ptr sequence_group = sequence_groups[seq_group_id];
+                std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
+                for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
+                    Sequence::Ptr sequence = running_sequences[seq_idx];
+                    sequence->update_hidden_state(
+                        _get_hidden_state(sequence_group->get_request_id(), sequence->get_grouped_id()));
+                }
+            }
+        }
         // return logits
         return m_request.get_tensor("logits");
     }
@@ -490,6 +658,114 @@ public:
     }
 
 private:
+    ov::Tensor m_hidden_states;
+
+    // Hidden state flags and helpers
+    bool _is_hs_export()   const { return m_hidden_state_flags & HS_EXPORT; }
+    bool _is_hs_import()   const { return m_hidden_state_flags & HS_IMPORT; }
+    bool _is_hs_internal() const { return m_hidden_state_flags & HS_INTERNAL; }
+
+    /**
+     * @brief Retrieves a slice of the hidden state tensor corresponding to a specific request and sequence group.
+     *
+     * This method looks up the hidden state mapping for the given request and sequence group IDs.
+     * If the mapping exists and the hidden states tensor is available, it returns a sub-tensor (region of interest)
+     * representing the hidden state for the specified sequence. If the mapping does not exist or the hidden states
+     * tensor is empty, an empty tensor is returned.
+     *
+     * @param request_id        The unique identifier for the request.
+     * @param seq_grouped_id    The identifier for the sequence group within the request.
+     * @return ov::Tensor       The tensor slice representing the hidden state for the specified sequence,
+     *                          or an empty tensor if not found.
+     */
+    ov::Tensor _get_hidden_state(uint64_t request_id, uint64_t seq_grouped_id) const {
+        if (m_hidden_states.get_size() == 0) {
+            return ov::Tensor();
+        }
+
+        SequenceKey key{request_id, seq_grouped_id};
+        const auto it = m_sequence_hidden_state_mapping.find(key);
+        if (it == m_sequence_hidden_state_mapping.end()) {
+            return ov::Tensor();
+        }
+
+        size_t start_idx = it->second.start_token_idx;
+        size_t length = it->second.length;
+
+        auto shape = m_hidden_states.get_shape();
+        OPENVINO_ASSERT(shape.size() >= 2,
+                        "Hidden states tensor rank is less than 2.");
+
+        auto [start_coord, end_coord] = ov::genai::utils::make_roi(shape, 0, start_idx, start_idx + length);
+        return ov::Tensor(m_hidden_states, start_coord, end_coord);
+    }
+
+    /**
+     * @brief Prepares and returns a hidden state input tensor for the model.
+     *
+     * This function checks if hidden state input is required based on the internal flags.
+     * If required, it determines the hidden size from the initial hidden states if not already provided.
+     * It then creates and returns a tensor of shape [total_num_tokens, 1, hidden_size] initialized to zeros.
+     *
+     * @param total_num_tokens The total number of tokens for which the hidden state tensor is to be created.
+     * @param hidden_size [in/out] The size of the hidden state. If set to 0, it will be inferred from the initial hidden states.
+     * @return ov::Tensor The prepared hidden state tensor, or an empty tensor if not applicable.
+     */
+    ov::Tensor _prepare_hidden_state_input(size_t total_num_tokens,
+                                           size_t& hidden_size /*in/out*/) {
+        if (!(m_hidden_state_flags & (HS_IMPORT | HS_INTERNAL))) {
+            return {};
+        }
+
+        if (hidden_size == 0) {
+            for (const auto& kv : m_initial_hidden_states) {
+                const auto& initial_hidden_states = kv.second;
+                auto hidden_states_shape = initial_hidden_states.get_shape();
+                OPENVINO_ASSERT(initial_hidden_states && hidden_states_shape.size() >= 2,
+                                "Initial hidden states tensor rank is less than 2.");
+                hidden_size = hidden_states_shape.back();
+                break;
+            }
+        }
+        if (hidden_size == 0) {
+            return {};
+        }
+
+        ov::Tensor hs(ov::element::f32, {total_num_tokens, 1, hidden_size});
+        std::memset(hs.data<float>(), 0, hs.get_byte_size());
+        return hs;
+    }
+
+    // Common helper to copy a contiguous slice (first-dim range) from src to dst using ROI tensors.
+    // src_start_idx: start index along src first dimension
+    // copy_length: number of elements along first dim to copy
+    // dst_base: destination base tensor (may be full buffer or a wrapper around a raw pointer)
+    // dst_first_dim_start: start index in first dimension of dst_base where copy should be placed
+    static void _copy_roi_between_tensors(const ov::Tensor& src,
+                                         size_t src_start_idx,
+                                         size_t copy_length,
+                                         const ov::Tensor& dst_base,
+                                         size_t dst_first_dim_start) {
+        if (copy_length == 0) {
+            return;
+        }
+
+        // prepare source ROI coords
+        const auto src_shape = src.get_shape();
+        OPENVINO_ASSERT(!src_shape.empty(), "source tensor rank is zero");
+        auto [src_start, src_end] = ov::genai::utils::make_roi(src_shape, 0, src_start_idx, src_start_idx + copy_length);
+        ov::Tensor src_roi(src, src_start, src_end);
+
+        // prepare destination ROI coords
+        const auto dst_shape = dst_base.get_shape();
+        OPENVINO_ASSERT(!dst_shape.empty(), "destination tensor rank is zero");
+        auto [tgt_start, tgt_end] = ov::genai::utils::make_roi(dst_shape, 0, dst_first_dim_start, dst_first_dim_start + copy_length);
+        ov::Tensor tgt_roi(dst_base, tgt_start, tgt_end);
+
+        // bulk copy
+        src_roi.copy_to(tgt_roi);
+    }
+
     ov::Tensor _get_or_resize_tensor(ov::Tensor& cached_tensor, 
                                    const std::string& tensor_name,
                                    const ov::Shape& required_shape,
@@ -771,6 +1047,59 @@ private:
         }
     }
 
+    void _collect_adaptive_rkv_block_diversities(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
+        m_last_block_diversities.clear();
+        size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
+        using IndexSpan = std::pair<size_t, size_t>;
+        std::list<std::pair<size_t, IndexSpan>> running_seq_ids_and_kvcache_spans;
+        size_t offset = 0;
+        for (size_t i = 0; i < num_sequence_groups; ++i) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+
+            if (!sequence_group->can_generate_tokens()) {
+                // As we only evict during generation phase, so will the similarity calculation will only be
+                // scheduled after prefill is finished
+                continue;
+            }
+            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+
+            for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
+                Sequence::CPtr sequence = running_sequences[seq_idx];
+                size_t global_sequence_id = sequence->get_id();
+                auto it = scheduler_output.m_adaptive_rkv_evictable_sizes.find(global_sequence_id);
+                if (it == scheduler_output.m_adaptive_rkv_evictable_sizes.end()) {
+                    // Adaptive R-KV diversity calculation was not scheduled for this sequence
+                    continue;
+                }
+
+                // [eviction_size_in_tokens / block_size, eviction_size_in_tokens]
+                size_t num_diversity_values_calculated = it->second * it->second / m_block_size;
+                IndexSpan span = {offset, offset + num_diversity_values_calculated};
+                offset += num_diversity_values_calculated;
+                running_seq_ids_and_kvcache_spans.emplace_back(global_sequence_id, span);
+            }
+        }
+
+        for (const auto& seq_id_and_score_span : running_seq_ids_and_kvcache_spans) {
+            auto block_diversities_across_decoder_layers_for_current_sequence = BlockDiversityForEachDecoderLayer(m_num_decoder_layers);
+            size_t global_sequence_id = seq_id_and_score_span.first;
+            IndexSpan span = seq_id_and_score_span.second;
+            for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; decoder_layer_id++) {
+                auto output_tensor_name = get_adaptive_rkv_diversity_score_output_for_decoder_layer(decoder_layer_id);
+                auto diversities_in_this_layer = m_request.get_tensor(output_tensor_name);
+                OPENVINO_ASSERT(diversities_in_this_layer.get_size() != 0, "Size of the output ", output_tensor_name, " may not be zero");
+                OPENVINO_ASSERT(diversities_in_this_layer.get_size() >= span.second, "Size of the output ", output_tensor_name, " must be at least ", span.second);
+
+                auto diversities_of_current_sequence_group = ov::Tensor(diversities_in_this_layer, ov::Coordinate{span.first}, ov::Coordinate{span.second});
+                auto copied_tensor = ov::Tensor(diversities_of_current_sequence_group.get_element_type(), ov::Shape{span.second - span.first});
+                diversities_of_current_sequence_group.copy_to(copied_tensor);
+                block_diversities_across_decoder_layers_for_current_sequence[decoder_layer_id] = diversities_of_current_sequence_group;
+            }
+            m_last_block_diversities[global_sequence_id] = block_diversities_across_decoder_layers_for_current_sequence;
+        }
+    }
+
     void _set_xattention_tensors(const std::vector<SequenceGroup::Ptr>& sequence_groups,
                                  const Scheduler::Output& scheduler_output,
                                  size_t batch_size_in_sequences) {
@@ -801,12 +1130,94 @@ private:
             }
         }
 
-        std::vector<std::string> xattention_tensor_names(m_num_decoder_layers);
         for (size_t i = 0; i < m_num_decoder_layers; i++) {
             auto tensor_name = std::string("xattention_threshold.") + std::to_string(i);
             m_request.set_tensor(tensor_name, xattention_thresholds);
         }
 
+    }
+
+    void _set_adaptive_rkv_tensors(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                                   const Scheduler::Output& scheduler_output,
+                                   size_t batch_size_in_sequences) {
+        ov::Tensor adaptive_rkv_start_size(ov::element::i32, {});
+        adaptive_rkv_start_size.data<int32_t>()[0] = scheduler_output.m_adaptive_rkv_start_size;
+        m_request.set_tensor("adaptive_rkv_start_size", adaptive_rkv_start_size);
+
+        ov::Tensor adaptive_rkv_evictable_sizes(ov::element::i32, {batch_size_in_sequences});
+        int32_t* adaptive_rkv_evictable_sizes_data = adaptive_rkv_evictable_sizes.data<int32_t>();
+        std::vector<size_t> running_seq_ids;
+        for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); i++) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+            size_t num_running_sequences = running_sequences.size();
+            for (size_t k = 0; k < num_running_sequences; ++k) {
+                Sequence::CPtr sequence = running_sequences[k];
+                size_t seq_id = sequence->get_id();
+                running_seq_ids.push_back(seq_id);
+            }
+        }
+
+        for (size_t seq_id : running_seq_ids) {
+            size_t evictable_size = 0;
+
+            if (scheduler_output.m_adaptive_rkv_evictable_sizes.find(seq_id) != scheduler_output.m_adaptive_rkv_evictable_sizes.end()) {
+                evictable_size = scheduler_output.m_adaptive_rkv_evictable_sizes.at(seq_id);
+            }
+            *adaptive_rkv_evictable_sizes_data = evictable_size;
+            adaptive_rkv_evictable_sizes_data += 1;
+        }
+
+        m_request.set_tensor("adaptive_rkv_evictable_sizes", adaptive_rkv_evictable_sizes);
+
+        std::vector<size_t> num_diversity_set_blocks_per_layer(m_num_decoder_layers, 0);
+        if (scheduler_output.m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence.empty()) {
+            // Set the auxiliary tensors to zero-shape if the scheduler did not provide information on which blocks of the
+            // evictable area belong to the diversity subset
+            for (size_t i = 0; i < m_num_decoder_layers; i++) {
+                auto begins_name = std::string("adaptive_rkv_diversity_block_set_indices_begins.") + std::to_string(i);
+                auto indices_name = std::string("adaptive_rkv_diversity_block_set_indices.") + std::to_string(i);
+                ov::Tensor adaptive_rkv_diversity_block_set_begins(ov::element::i32, {0});
+                ov::Tensor adaptive_rkv_diversity_block_set_indices(ov::element::i32, {0});
+                m_request.set_tensor(begins_name, adaptive_rkv_diversity_block_set_begins);
+                m_request.set_tensor(indices_name, adaptive_rkv_diversity_block_set_indices);
+            }
+        }
+        else {
+            // This will provide opportunity for optimization of the in-kernel diversity calculation by only computing the
+            // diversity scores between the actual blocks of the "diversity" set and not among all of the evictable blocks,
+            // which also include the blocks that will be necessarily kept as part of attention mass preservation.
+            for (size_t i = 0; i < m_num_decoder_layers; i++) {
+                ov::Tensor adaptive_rkv_diversity_block_set_begins(ov::element::i32, {batch_size_in_sequences + 1});
+                OPENVINO_ASSERT(batch_size_in_sequences == running_seq_ids.size());
+                auto begins_data = adaptive_rkv_diversity_block_set_begins.data<int32_t>();
+                begins_data[0] = 0;
+                begins_data += 1;
+
+                auto begins_name = std::string("adaptive_rkv_diversity_block_set_indices_begins.") + std::to_string(i);
+                const auto& adaptive_rkv_diversity_block_map = scheduler_output.m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence[i];
+                for (size_t seq_id : running_seq_ids) {
+                    OPENVINO_ASSERT(adaptive_rkv_diversity_block_map.find(seq_id) != adaptive_rkv_diversity_block_map.end());
+                    size_t num_blocks = adaptive_rkv_diversity_block_map.at(seq_id).size();
+                    num_diversity_set_blocks_per_layer[i] += num_blocks;
+                    *begins_data  = num_diversity_set_blocks_per_layer[i];
+                    begins_data += 1;
+                }
+                m_request.set_tensor(begins_name, adaptive_rkv_diversity_block_set_begins);
+            }
+
+            std::vector<std::string> indices_tensor_names(m_num_decoder_layers);
+            for (size_t i = 0; i < m_num_decoder_layers; i++) {
+                auto indices_name = std::string("adaptive_rkv_diversity_block_set_indices.") + std::to_string(i);
+                indices_tensor_names[i] = indices_name;
+                auto indices_tensor = m_request.get_tensor(indices_name);
+                indices_tensor.set_shape({num_diversity_set_blocks_per_layer[i]});
+            }
+            _fill_select_indices_from_block_tables(indices_tensor_names,
+                                                   scheduler_output,
+                                                   scheduler_output.m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence);
+        }
     }
 };
 }

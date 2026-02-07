@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2025 Intel Corporation
+# Copyright (C) 2018-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import sys
@@ -21,8 +21,8 @@ def model_facebook_opt_125m() -> OVConvertedModelSchema:
 
 
 @pytest.fixture(scope="module")
-def model_katuni4ka_tiny_random_phi3() -> OVConvertedModelSchema:
-    model_id : str = "katuni4ka/tiny-random-phi3"
+def model_tiny_random_phi3() -> OVConvertedModelSchema:
+    model_id: str = "optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM"
     return download_and_convert_model(model_id)
 
 
@@ -35,11 +35,11 @@ def model_tinyllama_1_1b_chat() -> OVConvertedModelSchema:
 @pytest.mark.parametrize(
     "generation_config,prompt",
     [
-        ({"max_new_tokens": 30}, 'table is made of'),
-        ({"max_new_tokens": 30, "min_new_tokens": 30}, '你好！ 你好嗎？'),
-        ({"max_new_tokens": 30, "ignore_eos": True}, 'Alan Turing was a'),
-        ({"max_length": 30, "ignore_eos": True}, 'table is made of'),
-        ({"stop_token_ids": {28998}, "apply_chat_template": False}, 'The Sun is yellow because'),
+        ({"max_new_tokens": 30}, "table is made of"),
+        ({"max_new_tokens": 30, "min_new_tokens": 30}, "你好！ 你好嗎？"),
+        ({"max_new_tokens": 30, "ignore_eos": True}, "Alan Turing was a"),
+        ({"max_length": 30, "ignore_eos": True}, "table is made of"),
+        ({"stop_token_ids": {18392}, "apply_chat_template": False}, "The Sun is yellow because"),
     ],
     ids=[
         "max_new_tokens",
@@ -50,11 +50,9 @@ def model_tinyllama_1_1b_chat() -> OVConvertedModelSchema:
     ]
 )
 def test_basic_stop_criteria(
-    model_katuni4ka_tiny_random_phi3: OVConvertedModelSchema,
-    generation_config: GenerationConfig,
-    prompt
+    model_tiny_random_phi3: OVConvertedModelSchema, generation_config: GenerationConfig, prompt
 ):
-    generate_and_compare(model_katuni4ka_tiny_random_phi3, [prompt], generation_config)
+    generate_and_compare(model_tiny_random_phi3, [prompt], generation_config)
 
 
 @pytest.mark.parametrize(
@@ -151,25 +149,20 @@ def test_stop_strings_tinyllama(
     ],
     ids=["basic", "repetition_penalty", "long_max_new_tokens"]
 )
-@pytest.mark.parametrize("prompt", [
-    'What is OpenVINO?',
-    'table is made of', 
-    'The Sun is yellow because', 
-    '你好！ 你好嗎？'.encode('unicode_escape'),  # to escape Win limitation on Unicode tmp path
-    'I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature'
-])
-def test_greedy(
-    model_katuni4ka_tiny_random_phi3: OVConvertedModelSchema,
-    generation_config,
-    prompt
-):
-    prompt = prompt.decode('unicode_escape') if isinstance(prompt, bytes) else prompt
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "What is OpenVINO?",
+        "table is made of",
+        "The Sun is yellow because",
+        "你好！ 你好嗎？".encode("unicode_escape"),  # to escape Win limitation on Unicode tmp path
+        "I have an interview about product speccing with the company Weekend Health. Give me an example of a question they might ask with regards about a new feature",
+    ],
+)
+def test_greedy(model_tiny_random_phi3: OVConvertedModelSchema, generation_config, prompt):
+    prompt = prompt.decode("unicode_escape") if isinstance(prompt, bytes) else prompt
 
-    generate_and_compare(
-        model_katuni4ka_tiny_random_phi3, 
-        prompt, 
-        generation_config
-    )
+    generate_and_compare(model_tiny_random_phi3, prompt, generation_config)
 
 
 @pytest.mark.parametrize(

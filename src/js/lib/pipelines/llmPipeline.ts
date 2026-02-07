@@ -1,189 +1,84 @@
 import util from "node:util";
-import { ChatHistory, LLMPipeline as LLMPipelineWrap } from "../addon.js";
+import { ChatHistory, LLMPipeline as LLMPipelineWrapper } from "../addon.js";
 import { GenerationConfig, StreamingStatus, LLMPipelineProperties } from "../utils.js";
+import { DecodedResults } from "../decodedResults.js";
 import { Tokenizer } from "../tokenizer.js";
 
-export type ResolveFunction = (arg: { value: string; done: boolean }) => void;
-export type Options = {
-  disableStreamer?: boolean;
-  max_new_tokens?: number;
-};
-
-/** Structure with raw performance metrics for each generation before any statistics are calculated. */
-export type RawMetrics = {
-  /** Durations for each generate call in milliseconds. */
-  generateDurations: number[];
-  /** Durations for the tokenization process in milliseconds. */
-  tokenizationDurations: number[];
-  /** Durations for the detokenization process in milliseconds. */
-  detokenizationDurations: number[];
-  /** Times to the first token for each call in milliseconds. */
-  timesToFirstToken: number[];
-  /** Timestamps of generation every token or batch of tokens in milliseconds. */
-  newTokenTimes: number[];
-  /** Inference time for each token in milliseconds. */
-  tokenInferDurations: number[];
-  /** Batch sizes for each generate call. */
-  batchSizes: number[];
-  /** Total durations for each generate call in milliseconds. */
-  durations: number[];
-  /** Total inference duration for each generate call in microseconds. */
-  inferenceDurations: number[];
-  /** Time to compile the grammar in milliseconds. */
-  grammarCompileTimes: number[];
-};
-
-/** Structure holding mean and standard deviation values. */
-export type MeanStdPair = {
-  mean: number;
-  std: number;
-};
-
-/** Structure holding summary of statistical values */
-export type SummaryStats = {
-  mean: number;
-  std: number;
-  min: number;
-  max: number;
-};
-
 /**
- * Holds performance metrics for each generate call.
- *
- * PerfMetrics holds the following metrics with mean and standard deviations:
-    - Time To the First Token (TTFT), ms
-    - Time per Output Token (TPOT), ms/token
-    - Inference time per Output Token (IPOT), ms/token
-    - Generate total duration, ms
-    - Inference duration, ms
-    - Tokenization duration, ms
-    - Detokenization duration, ms
-    - Throughput, tokens/s
-    - Load time, ms
-    - Number of generated tokens
-    - Number of tokens in the input prompt
-    - Time to initialize grammar compiler for each backend, ms
-    - Time to compile grammar, ms
- * Preferable way to access metrics is via getter methods. Getter methods calculate mean and std values from rawMetrics and return pairs.
- * If mean and std were already calculated, getter methods return cached values.
+ * This class is used for generation with Large Language Models (LLMs)
  */
-export interface PerfMetrics {
-  /** Returns the load time in milliseconds. */
-  getLoadTime(): number;
-  /** Returns the number of generated tokens. */
-  getNumGeneratedTokens(): number;
-  /** Returns the number of tokens in the input prompt. */
-  getNumInputTokens(): number;
-  /** Returns the mean and standard deviation of Time To the First Token (TTFT) in milliseconds. */
-  getTTFT(): MeanStdPair;
-  /** Returns the mean and standard deviation of Time Per Output Token (TPOT) in milliseconds. */
-  getTPOT(): MeanStdPair;
-  /** Returns the mean and standard deviation of Inference time Per Output Token in milliseconds. */
-  getIPOT(): MeanStdPair;
-  /** Returns the mean and standard deviation of throughput in tokens per second. */
-  getThroughput(): MeanStdPair;
-  /** Returns the mean and standard deviation of the time spent on model inference during generate call in milliseconds. */
-  getInferenceDuration(): MeanStdPair;
-  /** Returns the mean and standard deviation of generate durations in milliseconds. */
-  getGenerateDuration(): MeanStdPair;
-  /** Returns the mean and standard deviation of tokenization durations in milliseconds. */
-  getTokenizationDuration(): MeanStdPair;
-  /** Returns the mean and standard deviation of detokenization durations in milliseconds. */
-  getDetokenizationDuration(): MeanStdPair;
-  /** Returns a map with the time to initialize the grammar compiler for each backend in milliseconds. */
-  getGrammarCompilerInitTimes(): { [key: string]: number };
-  /** Returns the mean, standard deviation, min, and max of grammar compile times in milliseconds. */
-  getGrammarCompileTime(): SummaryStats;
-  /** A structure of RawPerfMetrics type that holds raw metrics. */
-  rawMetrics: RawMetrics;
-
-  /** Adds the metrics from another PerfMetrics object to this one.
-   * @returns The current PerfMetrics instance.
-   */
-  add(other: PerfMetrics): this;
-}
-
-export class DecodedResults {
-  constructor(texts: string[], scores: number[], perfMetrics: PerfMetrics) {
-    this.texts = texts;
-    this.scores = scores;
-    this.perfMetrics = perfMetrics;
-  }
-  toString() {
-    if (this.scores.length !== this.texts.length) {
-      throw new Error("The number of scores and texts doesn't match in DecodedResults.");
-    }
-    if (this.texts.length === 0) {
-      return "";
-    }
-    if (this.texts.length === 1) {
-      return this.texts[0];
-    }
-    let result = "";
-    for (let i = 0; i < this.texts.length - 1; ++i) {
-      result += `${this.scores[i].toFixed(6)}: ${this.texts[i]}\n`;
-    }
-    result += `${this.scores[this.scores.length - 1].toFixed(
-      6,
-    )}: ${this.texts[this.texts.length - 1]}`;
-
-    return result;
-  }
-  texts: string[];
-  scores: number[];
-  perfMetrics: PerfMetrics;
-}
-
 export class LLMPipeline {
   modelPath: string;
   device: string;
-  pipeline: any | null = null;
+  pipeline: LLMPipelineWrapper | null = null;
   properties: LLMPipelineProperties;
-  isInitialized = false;
-  isChatStarted = false;
 
+  /**
+   * Construct an LLM pipeline from a folder containing tokenizer and model IRs.
+   * @param modelPath - A folder to read tokenizer and model IRs.
+   * @param device - Inference device. A tokenizer is always compiled for CPU.
+   * @param properties - Device and pipeline properties.
+   */
   constructor(modelPath: string, device: string, properties: LLMPipelineProperties) {
     this.modelPath = modelPath;
     this.device = device;
     this.properties = properties;
   }
 
+  /**
+   * Initialize the underlying native pipeline.
+   * @returns Resolves when initialization is complete.
+   */
   async init() {
-    if (this.isInitialized) throw new Error("LLMPipeline is already initialized");
+    if (this.pipeline) throw new Error("LLMPipeline is already initialized");
 
-    this.pipeline = new LLMPipelineWrap();
+    const pipeline = new LLMPipelineWrapper();
 
-    const initPromise = util.promisify(this.pipeline.init.bind(this.pipeline));
+    const initPromise = util.promisify(pipeline.init.bind(pipeline));
     const result = await initPromise(this.modelPath, this.device, this.properties);
-
-    this.isInitialized = true;
+    this.pipeline = pipeline;
 
     return result;
   }
 
+  /**
+   * Start a chat session with an optional system message.
+   * @param systemMessage - Optional system message to initialize chat context.
+   * @returns Resolves when chat session is started.
+   * @deprecated startChat is deprecated and will be removed in future releases. Please, use generate() with ChatHistory argument.
+   */
   async startChat(systemMessage: string = "") {
-    if (this.isChatStarted) throw new Error("Chat is already started");
+    if (!this.pipeline) throw new Error("LLMPipeline is not initialized");
 
     const startChatPromise = util.promisify(this.pipeline.startChat.bind(this.pipeline));
     const result = await startChatPromise(systemMessage);
 
-    this.isChatStarted = true;
-
     return result;
   }
+
+  /**
+   * Finish the current chat session and clear chat-related state.
+   * @returns Resolves when chat session is finished.
+   * @deprecated finishChat is deprecated and will be removed in future releases. Please, use generate() with ChatHistory argument.
+   */
   async finishChat() {
-    if (!this.isChatStarted) throw new Error("Chat is not started");
+    if (!this.pipeline) throw new Error("LLMPipeline is not initialized");
 
     const finishChatPromise = util.promisify(this.pipeline.finishChat.bind(this.pipeline));
     const result = await finishChatPromise();
 
-    this.isChatStarted = false;
-
     return result;
   }
 
+  /**
+   * Stream generation results as an async iterator of strings.
+   * The iterator yields subword chunks.
+   * @param inputs - Input prompt string or chat history.
+   * @param generationConfig - Generation configuration parameters.
+   * @returns Async iterator producing subword chunks.
+   */
   stream(inputs: string | ChatHistory, generationConfig: GenerationConfig = {}) {
-    if (!this.isInitialized) throw new Error("Pipeline is not initialized");
+    if (!this.pipeline) throw new Error("LLMPipeline is not initialized");
 
     if (Array.isArray(inputs))
       throw new Error(
@@ -192,24 +87,66 @@ export class LLMPipeline {
     if (typeof generationConfig !== "object") throw new Error("Options must be an object");
 
     let streamingStatus: StreamingStatus = StreamingStatus.RUNNING;
-    const queue: { isDone: boolean; subword: string }[] = [];
+    const queue: { done: boolean; subword: string }[] = [];
+    type ResolveFunction = (arg: { value: string; done: boolean }) => void;
+    type RejectFunction = (reason?: unknown) => void;
     let resolvePromise: ResolveFunction | null;
+    let rejectPromise: RejectFunction | null;
 
-    // Callback function that C++ will call when a chunk is ready
-    function chunkOutput(isDone: boolean, subword: string) {
+    const callback = (
+      error: Error | null,
+      result: {
+        texts: string[];
+        scores: number[];
+        perfMetrics: any;
+        parsed: Record<string, unknown>[];
+      },
+    ) => {
+      if (error) {
+        if (rejectPromise) {
+          rejectPromise(error);
+          // Reset promises
+          resolvePromise = null;
+          rejectPromise = null;
+        } else {
+          throw error;
+        }
+      } else {
+        const decodedResult = new DecodedResults(
+          result.texts,
+          result.scores,
+          result.perfMetrics,
+          result.parsed,
+        );
+        const fullText = decodedResult.toString();
+        if (resolvePromise) {
+          // Fulfill pending request
+          resolvePromise({ done: true, value: fullText });
+          // Reset promises
+          resolvePromise = null;
+          rejectPromise = null;
+        } else {
+          // Add data to queue if no pending promise
+          queue.push({ done: true, subword: fullText });
+        }
+      }
+    };
+
+    const streamer = (chunk: string): StreamingStatus => {
       if (resolvePromise) {
         // Fulfill pending request
-        resolvePromise({ value: subword, done: isDone });
-        resolvePromise = null; // Reset promise resolver
+        resolvePromise({ done: false, value: chunk });
+        // Reset promises
+        resolvePromise = null;
+        rejectPromise = null;
       } else {
         // Add data to queue if no pending promise
-        queue.push({ isDone, subword });
+        queue.push({ done: false, subword: chunk });
       }
-
       return streamingStatus;
-    }
+    };
 
-    this.pipeline.generate(inputs, chunkOutput, generationConfig);
+    this.pipeline.generate(inputs, generationConfig, streamer, callback);
 
     return {
       async next() {
@@ -218,17 +155,18 @@ export class LLMPipeline {
         const data = queue.shift();
 
         if (data !== undefined) {
-          const { isDone, subword } = data;
-
-          return { value: subword, done: isDone };
+          return { value: data.subword, done: data.done };
         }
 
-        return new Promise((resolve: ResolveFunction) => (resolvePromise = resolve));
+        return new Promise((resolve: ResolveFunction, reject: RejectFunction) => {
+          resolvePromise = resolve;
+          rejectPromise = reject;
+        });
       },
       async return() {
         streamingStatus = StreamingStatus.CANCEL;
 
-        return { done: true };
+        return { done: true, value: "" };
       },
       [Symbol.asyncIterator]() {
         return this;
@@ -236,40 +174,35 @@ export class LLMPipeline {
     };
   }
 
+  /**
+   * Generate sequences for LLMs.
+   * @param inputs - Input prompt string, array of prompts, or chat history.
+   * @param generationConfig - Generation configuration parameters.
+   * @param streamer - Optional streamer callback called for each chunk.
+   * @returns Resolves with decoded results once generation finishes.
+   */
   async generate(
     inputs: string | string[] | ChatHistory,
     generationConfig: GenerationConfig = {},
-    callback: (chunk: string) => void | undefined,
-  ) {
+    streamer?: (chunk: string) => StreamingStatus,
+  ): Promise<DecodedResults> {
+    if (!this.pipeline) throw new Error("LLMPipeline is not initialized");
     if (typeof generationConfig !== "object") throw new Error("Options must be an object");
-    if (callback !== undefined && typeof callback !== "function")
-      throw new Error("Callback must be a function");
+    if (streamer !== undefined && typeof streamer !== "function")
+      throw new Error("Streamer must be a function");
 
-    const options: { disableStreamer?: boolean } = {};
-    if (!callback) {
-      options["disableStreamer"] = true;
-    }
+    const innerGenerate = util.promisify(this.pipeline.generate.bind(this.pipeline));
+    const result = await innerGenerate(inputs, generationConfig, streamer);
 
-    return new Promise((resolve: (value: DecodedResults) => void) => {
-      const chunkOutput = (isDone: boolean, result: string | any) => {
-        if (isDone) {
-          const decodedResults = new DecodedResults(
-            result.texts,
-            result.scores,
-            result.perfMetrics,
-          );
-          resolve(decodedResults);
-        } else if (callback && typeof result === "string") {
-          return callback(result);
-        }
-
-        return StreamingStatus.RUNNING;
-      };
-      this.pipeline.generate(inputs, chunkOutput, generationConfig, options);
-    });
+    return new DecodedResults(result.texts, result.scores, result.perfMetrics, result.parsed);
   }
 
+  /**
+   * Get the pipeline tokenizer instance.
+   * @returns Tokenizer used by the pipeline.
+   */
   getTokenizer(): Tokenizer {
+    if (!this.pipeline) throw new Error("LLMPipeline is not initialized");
     return this.pipeline.getTokenizer();
   }
 }
