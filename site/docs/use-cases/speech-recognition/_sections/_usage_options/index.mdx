@@ -204,6 +204,50 @@ Whisper can predict timestamps for each segment of speech, which is useful for s
     </TabItemCpp>
 </LanguageTabs>
 
+### Word-level Timestamps Prediction
+
+Whisper can predict timestamps for each word of speech, which provides more granular timing information compared to segment-level timestamps.
+
+<LanguageTabs>
+    <TabItemPython>
+        ```python
+        # Word timestamps require decomposition of cross-attention decoder SDPA layers,
+        # so word_timestamps must be passed to the pipeline constructor (not just in generation config)
+        pipe = openvino_genai.WhisperPipeline(model_path, "CPU", word_timestamps=True)
+
+        # Enable word-level timestamp prediction
+        result = pipe.generate(raw_speech, word_timestamps=True)
+
+        # Print word-level timestamps
+        for word in result.words:
+            print(f"[{word.start_ts:.2f}, {word.end_ts:.2f}]: {word.word}")
+        ```
+    </TabItemPython>
+    <TabItemCpp>
+        ```cpp
+        int main() {
+            // Word timestamps require decomposition of cross-attention decoder SDPA layers,
+            // so word_timestamps must be passed to the pipeline constructor (not just in generation config)
+            ov::genai::WhisperPipeline pipeline(model_path, "CPU", ov::genai::word_timestamps(true));
+
+            // Enable word-level timestamp prediction
+            auto result = pipeline.generate(raw_speech, ov::genai::word_timestamps(true));
+
+            // Print word-level timestamps
+            std::cout << std::fixed << std::setprecision(2);
+            for (auto& word : *result.words) {
+                std::cout << "[" << word.start_ts << ", " << word.end_ts << "]: " << word.word << "\n";
+            }
+        }
+        ```
+    </TabItemCpp>
+</LanguageTabs>
+
+:::info
+NPU device requires `STATIC_PIPELINE=True` property passed to `WhisperPipeline` constructor:
+`openvino_genai.WhisperPipeline(model_path, "NPU", word_timestamps=True, STATIC_PIPELINE=True)`
+:::
+
 ### Long-Form Audio Processing
 
 Whisper models are designed for audio segments up to 30 seconds in length.

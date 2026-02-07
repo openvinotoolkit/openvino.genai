@@ -97,7 +97,7 @@ def callback(step, num_steps, latent):
 video = pipe.generate(
    prompt,
    callback=callback
-)
+).video
 ```
 
 ## Troubleshooting

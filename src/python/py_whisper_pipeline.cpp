@@ -15,7 +15,6 @@
 #include "tokenizer/tokenizers_path.hpp"
 
 namespace py = pybind11;
-using ov::genai::ChunkStreamerBase;
 using ov::genai::DecodedResults;
 using ov::genai::GenerationConfig;
 using ov::genai::OptionalWhisperGenerationConfig;
@@ -207,6 +206,9 @@ auto raw_perf_metrics_docstring = R"(
 
     :param features_extraction_durations: Duration for each features extraction call.
     :type features_extraction_durations: list[MicroSeconds]
+
+    :param word_level_timestamps_processing_durations: Duration for each word-level timestamps processing call.
+    :type word_level_timestamps_processing_durations: list[MicroSeconds]
 )";
 
 auto perf_metrics_docstring = R"(
@@ -214,6 +216,9 @@ auto perf_metrics_docstring = R"(
 
     :param get_features_extraction_duration: Returns mean and standard deviation of features extraction duration in milliseconds
     :type get_features_extraction_duration: MeanStdPair
+
+    :param get_word_level_timestamps_processing_duration: Returns mean and standard deviation of word-level timestamps processing duration in milliseconds
+    :type get_word_level_timestamps_processing_duration: MeanStdPair
 
     :param whisper_raw_metrics: Whisper specific raw metrics
     :type WhisperRawPerfMetrics:
@@ -233,44 +238,6 @@ OptionalWhisperGenerationConfig update_whisper_config_from_kwargs(const Optional
 
     return res_config;
 }
-
-OPENVINO_SUPPRESS_DEPRECATED_START
-
-class ConstructableChunkStreamer : public ChunkStreamerBase {
-    bool put(int64_t token) override {
-        PYBIND11_OVERRIDE(bool,               // Return type
-                          ChunkStreamerBase,  // Parent class
-                          put,                // Name of function in C++ (must match Python name)
-                          token               // Argument(s)
-        );
-    }
-    bool put_chunk(std::vector<int64_t> tokens) override {
-        PYBIND11_OVERRIDE(bool,               // Return type
-                          ChunkStreamerBase,  // Parent class
-                          put_chunk,          // Name of function in C++ (must match Python name)
-                          tokens              // Argument(s)
-        );
-    }
-    StreamingStatus write(const std::vector<int64_t>& token) override {
-        PYBIND11_OVERRIDE(StreamingStatus,    // Return type
-                          ChunkStreamerBase,  // Parent class
-                          write,              // Name of function in C++ (must match Python name)
-                          token               // Argument(s)
-        );
-    }
-    StreamingStatus write(int64_t token) override {
-        PYBIND11_OVERRIDE(StreamingStatus,    // Return type
-                          ChunkStreamerBase,  // Parent class
-                          write,              // Name of function in C++ (must match Python name)
-                          token               // Argument(s)
-        );
-    }
-    void end() override {
-        PYBIND11_OVERRIDE_PURE(void, ChunkStreamerBase, end);
-    }
-};
-
-OPENVINO_SUPPRESS_DEPRECATED_END
 
 py::object call_whisper_common_generate(WhisperPipeline& pipe,
                                         const RawSpeechInput& raw_speech_input,
@@ -296,27 +263,6 @@ py::object call_whisper_common_generate(WhisperPipeline& pipe,
 }  // namespace
 
 void init_whisper_pipeline(py::module_& m) {
-    OPENVINO_SUPPRESS_DEPRECATED_START
-    py::class_<ChunkStreamerBase, ConstructableChunkStreamer, std::shared_ptr<ChunkStreamerBase>, StreamerBase>(
-        m,
-        "ChunkStreamerBase",
-        streamer_base_docstring)  // Change the holder form unique_ptr to shared_ptr
-        .def(py::init<>())
-        .def("put",
-             &ChunkStreamerBase::put,
-             "Put is called every time new token is generated. Returns a bool flag to indicate whether generation "
-             "should be stopped, if return true generation stops",
-             py::arg("token"))
-        .def("put_chunk",
-             &ChunkStreamerBase::put_chunk,
-             "put_chunk is called every time new token chunk is generated. Returns a bool flag to indicate whether "
-             "generation should be stopped, if return true generation stops",
-             py::arg("tokens"))
-        .def("end",
-             &ChunkStreamerBase::end,
-             "End is called at the end of generation. It can be used to flush cache if your own streamer has one");
-    OPENVINO_SUPPRESS_DEPRECATED_END
-
     // Binding for WhisperGenerationConfig
     py::class_<WhisperGenerationConfig, GenerationConfig>(m,
                                                           "WhisperGenerationConfig",
@@ -351,11 +297,15 @@ void init_whisper_pipeline(py::module_& m) {
         .def(py::init<>())
         .def_property_readonly("features_extraction_durations", [](const WhisperRawPerfMetrics& rw) {
             return common_utils::get_ms(rw, &WhisperRawPerfMetrics::features_extraction_durations);
+        })
+        .def_property_readonly("word_level_timestamps_processing_durations", [](const WhisperRawPerfMetrics& rw) {
+            return common_utils::get_ms(rw, &WhisperRawPerfMetrics::word_level_timestamps_processing_durations);
         });
 
     py::class_<WhisperPerfMetrics, PerfMetrics>(m, "WhisperPerfMetrics", perf_metrics_docstring)
         .def(py::init<>())
         .def("get_features_extraction_duration", &WhisperPerfMetrics::get_features_extraction_duration)
+        .def("get_word_level_timestamps_processing_duration", &WhisperPerfMetrics::get_word_level_timestamps_processing_duration)
         .def_readonly("whisper_raw_metrics", &WhisperPerfMetrics::whisper_raw_metrics);
 
     py::class_<WhisperDecodedResultChunk>(m, "WhisperDecodedResultChunk", whisper_decoded_result_chunk)

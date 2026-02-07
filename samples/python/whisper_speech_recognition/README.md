@@ -38,7 +38,7 @@ export_tokenizer(tokenizer, output_dir)
 
 Download example audio file: https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
 
-Or you can use the [`recorder.py`](recorder.py) script. The script records 5 seconds of audio from the microphone. 
+Or you can use the [`recorder.py`](recorder.py) script. The script records 5 seconds of audio from the microphone.
 
 To install `PyAudio` dependency follow the [installation instructions](https://pypi.org/project/PyAudio/).
 
@@ -157,4 +157,4 @@ Example output:
 ----------------
 ```
 
-To resolve this ensure that audio data has a 16k Hz sampling rate. You can use the recorder.py provided to record or use FFmpeg to convert the audio to the required format. 
+To resolve this ensure that audio data has a 16k Hz sampling rate. You can use the recorder.py provided to record or use FFmpeg to convert the audio to the required format.

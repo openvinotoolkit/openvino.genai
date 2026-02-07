@@ -182,8 +182,12 @@ std::string VLMChatContext::multipart_message_to_string(
             } else if (type == "image") {
                 result += "<ov_genai_image_" + std::to_string(image_index) + ">";
                 image_index++;
-            }
-            // TODO Add video content support
+            } else if (type == "video") {
+                result += "<ov_genai_video_" + std::to_string(video_index) + ">";
+                video_index++;
+            } else {
+                OPENVINO_THROW("Unsupported content type in multipart message: ", type);
+            }            
         }
     }
     return result;

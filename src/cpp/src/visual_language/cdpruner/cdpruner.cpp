@@ -335,8 +335,10 @@ PruningStatistics CDPruner::get_last_pruning_statistics() const {
 }
 
 void CDPruner::validate_config(const Config& config) {
-    if (config.pruning_ratio == 0)
+    if (config.pruning_ratio == 0) {
+        GENAI_INFO("pruning_ratio is 0, pruning disabled!");
         return;  // Pruning disabled, no validation needed
+    }
 
     OPENVINO_ASSERT(config.pruning_ratio >= 1 && config.pruning_ratio <= 100,
                     "pruning ratio must be between 0 and 100");

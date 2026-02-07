@@ -1,0 +1,72 @@
+[
+    {
+        "prompt": "A woman with light skin, wearing a blue jacket and a black hat with a veil, looks down and to her right, then back up as she speaks; she has brown hair styled in an updo, light brown eyebrows, and is wearing a white collared shirt under her jacket; the camera remains stationary on her face as she speaks; the background is out of focus, but shows trees and people in period clothing; the scene is captured in real-life footage.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 256,
+        "height": 128,
+        "guidance_scale": 3
+    },
+    {
+        "prompt": "A woman with blonde hair styled up, wearing a black dress with sequins and pearl earrings, looks down with a sad expression on her face. The camera remains stationary, focused on the woman's face. The lighting is dim, casting soft shadows on her face. The scene appears to be from a movie or TV show.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 256,
+        "height": 256,
+        "guidance_scale": 3
+    },
+    {
+        "prompt": "A man with graying hair, a beard, and a gray shirt looks down and to his right, then turns his head to the left. The camera angle is a close-up, focused on the man's face. The lighting is dim, with a greenish tint. The scene appears to be real-life footage.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 704,
+        "height": 480,
+        "guidance_scale": 3
+    },
+    {
+        "prompt": "The camera pans across a cityscape of tall buildings with a circular building in the center. The camera moves from left to right, showing the tops of the buildings and the circular building in the center. The buildings are various shades of gray and white, and the circular building has a green roof. The camera angle is high, looking down at the city. The lighting is bright, with the sun shining from the upper left, casting shadows from the buildings. The scene is computer-generated imagery.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 1216,
+        "height": 704,
+        "guidance_scale": 3
+    },
+    {
+        "prompt": "A man in a dimly lit room talks on a vintage telephone, hangs up, and looks down with a sad expression. He holds the black rotary phone to his right ear with his right hand, his left hand holding a rocks glass with amber liquid. He wears a brown suit jacket over a white shirt, and a gold ring on his left ring finger. His short hair is neatly combed, and he has light skin with visible wrinkles around his eyes. The camera remains stationary, focused on his face and upper body. The room is dark, lit only by a warm light source off-screen to the left, casting shadows on the wall behind him. The scene appears to be from a movie.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 704,
+        "height": 480,
+        "guidance_scale": 3
+    },
+    {
+        "prompt": "A woman with short brown hair, wearing a maroon sleeveless top and a silver necklace, walks through a room while talking, then a woman with pink hair and a white shirt appears in the doorway and yells. The first woman walks from left to right, her expression serious; she has light skin and her eyebrows are slightly furrowed. The second woman stands in the doorway, her mouth open in a yell; she has light skin and her eyes are wide. The room is dimly lit, with a bookshelf visible in the background. The camera follows the first woman as she walks, then cuts to a close-up of the second woman's face. The scene is captured in real-life footage.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 704,
+        "height": 480,
+        "guidance_scale": 5
+    },
+    {
+        "prompt": "The waves crash against the jagged rocks of the shoreline, sending spray high into the air.The rocks are a dark gray color, with sharp edges and deep crevices. The water is a clear blue-green, with white foam where the waves break against the rocks. The sky is a light gray, with a few white clouds dotting the horizon.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 704,
+        "height": 480,
+        "guidance_scale": 5
+    },
+    {
+        "prompt": "A man walks towards a window, looks out, and then turns around. He has short, dark hair, dark skin, and is wearing a brown coat over a red and gray scarf. He walks from left to right towards a window, his gaze fixed on something outside. The camera follows him from behind at a medium distance. The room is brightly lit, with white walls and a large window covered by a white curtain. As he approaches the window, he turns his head slightly to the left, then back to the right. He then turns his entire body to the right, facing the window. The camera remains stationary as he stands in front of the window. The scene is captured in real-life footage.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 256,
+        "height": 128,
+        "guidance_scale": 3
+    },
+    {
+        "prompt": "The camera pans over a snow-covered mountain range, revealing a vast expanse of snow-capped peaks and valleys.The mountains are covered in a thick layer of snow, with some areas appearing almost white while others have a slightly darker, almost grayish hue. The peaks are jagged and irregular, with some rising sharply into the sky while others are more rounded. The valleys are deep and narrow, with steep slopes that are also covered in snow. The trees in the foreground are mostly bare, with only a few leaves remaining on their branches. The sky is overcast, with thick clouds obscuring the sun. The overall impression is one of peace and tranquility, with the snow-covered mountains standing as a testament to the power and beauty of nature.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 704,
+        "height": 480,
+        "guidance_scale": 3
+    },
+    {
+        "prompt": "A man in a suit enters a room and speaks to two women sitting on a couch. The man, wearing a dark suit with a gold tie, enters the room from the left and walks towards the center of the frame. He has short gray hair, light skin, and a serious expression. He places his right hand on the back of a chair as he approaches the couch. Two women are seated on a light-colored couch in the background. The woman on the left wears a light blue sweater and has short blonde hair. The woman on the right wears a white sweater and has short blonde hair. The camera remains stationary, focusing on the man as he enters the room. The room is brightly lit, with warm tones reflecting off the walls and furniture. The scene appears to be from a film or television show.",
+        "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted",
+        "width": 256,
+        "height": 128,
+        "guidance_scale": 3
+    }
+]

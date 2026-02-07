@@ -177,12 +177,6 @@ private:
     Sampler m_sampler;
 };
 
-OPENVINO_SUPPRESS_DEPRECATED_START
-std::pair<std::string, Any> streamer(std::shared_ptr<ChunkStreamerBase> func) {
-    return {utils::STREAMER_ARG_NAME, Any::make<std::shared_ptr<ChunkStreamerBase>>(func)};
-}
-OPENVINO_SUPPRESS_DEPRECATED_END
-
 std::pair<std::string, Any> generation_config(const WhisperGenerationConfig& config) {
     return {utils::CONFIG_ARG_NAME, Any::make<WhisperGenerationConfig>(config)};
 }
@@ -252,5 +246,3 @@ void ov::genai::WhisperPipeline::set_generation_config(const WhisperGenerationCo
 }
 
 ov::genai::WhisperPipeline::~WhisperPipeline() = default;
-
-ov::genai::ChunkStreamerBase::~ChunkStreamerBase() = default;

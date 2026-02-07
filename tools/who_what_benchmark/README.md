@@ -37,7 +37,7 @@ pip install .
 ## Usage
 ### Compare Text-generation Models (LLMs)
 ```sh
-# Collect ground truth from the baseline Hugging Face Transformer model 
+# Collect ground truth from the baseline Hugging Face Transformer model
 wwb --base-model microsoft/Phi-3-mini-4k-instruct --gt-data gt.csv --model-type text --hf
 
 # Convert model to Optimum-Intel (quantized to 8-bit by default)
@@ -56,7 +56,7 @@ wwb --target-model phi-3-openvino --gt-data gt.csv --model-type text --genai
 ```sh
 # Export FP16 model to OpenVINO
 optimum-cli export openvino -m llava-hf/llava-v1.6-mistral-7b-hf  --weight-format int8 llava-int8
-# Collect the references and save the mapping in the .csv file. 
+# Collect the references and save the mapping in the .csv file.
 # Reference images will be stored in the "reference" subfolder under the same path with .csv.
 wwb --base-model llava-hf/llava-v1.6-mistral-7b-hf --gt-data llava_test/gt.csv --model-type visual-text --hf
 # Compute the metric
@@ -68,7 +68,7 @@ wwb --target-model llava-int8 --gt-data llava_test/gt.csv --model-type visual-te
 ```sh
 # Export FP16 model to OpenVINO
 optimum-cli export openvino -m Qwen/Qwen2-VL-7B-Instruct  --weight-format int8 qwen2-vl-7b-Instruct
-# Collect the references and save the mapping in the .csv file. 
+# Collect the references and save the mapping in the .csv file.
 # Reference images will be stored in the "reference" subfolder under the same path with .csv.
 wwb --base-model Qwen/Qwen2-VL-7B-Instruct --gt-data qwen_video_test/gt.csv --model-type visual-video-text --hf
 # Compute the metric
@@ -80,7 +80,7 @@ wwb --target-model qwen2-vl-7b-Instruct --gt-data qwen_video_test/gt.csv --model
 ```sh
 # Export model with 8-bit quantized weights to OpenVINO
 optimum-cli export openvino -m SimianLuo/LCM_Dreamshaper_v7 --weight-format int8 sd-lcm-int8
-# Collect the references and save the mapping in the .csv file. 
+# Collect the references and save the mapping in the .csv file.
 # Reference images will be stored in the "reference" subfolder under the same path with .csv.
 wwb --base-model SimianLuo/LCM_Dreamshaper_v7--gt-data lcm_test/gt.csv --model-type text-to-image --hf
 # Compute the metric
@@ -197,7 +197,7 @@ wwb --target-model /home/user/models/Llama_2_7b_chat_hf_int8 --gt-data llama_2_7
 wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv --hf
 
 # Use --language parameter to control the language of prompts
-# Autodetection works for basic Chinese models 
+# Autodetection works for basic Chinese models
 wwb --base-model meta-llama/Llama-2-7b-chat-hf --gt-data llama_2_7b_wwb_gt.csv --hf
 ```
 

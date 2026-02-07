@@ -72,7 +72,6 @@ from .py_openvino_genai import TokenizedInputs, Tokenizer
 from .py_openvino_genai import (
     WhisperGenerationConfig,
     WhisperPipeline,
-    ChunkStreamerBase,
     WhisperRawPerfMetrics,
     WhisperPerfMetrics,
     WhisperWordTiming,

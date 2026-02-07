@@ -1,14 +1,26 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import sys
+
+# win32 fails on ffmpeg DLLs load
+# import transformers.pipeline imports VideoClassificationPipeline which requires PyAV (ffmpeg bindings)
+# wa is to create mock 'av' module to prevent DLLs loading errors
+# ticket: 179943
+if sys.platform == "win32":
+    from types import ModuleType
+
+    sys.modules["av"] = ModuleType("av")
+    sys.modules["av"].__version__ = "0.0.0"
+
 import openvino_genai as ov_genai
 import functools
 import pytest
-import sys
 import openvino_tokenizers
 import openvino
 import datasets
-from transformers import WhisperProcessor, pipeline, AutoTokenizer
+from transformers import WhisperProcessor, AutoTokenizer
+from transformers.pipelines.automatic_speech_recognition import AutomaticSpeechRecognitionPipeline
 from optimum.intel.openvino import OVModelForSpeechSeq2Seq
 import gc
 import json
@@ -80,8 +92,7 @@ def read_whisper_model(params, word_timestamps=False):
         local_files_only=True,
     ))
 
-    hf_pipe = pipeline(
-        "automatic-speech-recognition",
+    hf_pipe = AutomaticSpeechRecognitionPipeline(
         model=opt_model,
         tokenizer=processor.tokenizer,
         feature_extractor=processor.feature_extractor,
@@ -714,9 +725,13 @@ def test_random_sampling(model_descr, sample_from_dataset):
 @pytest.mark.parametrize("sample_from_dataset", [{"language" : "en", "sample_id": 0}], indirect=True)
 @pytest.mark.xfail(condition=(sys.platform == "darwin"), reason="Ticket - 173169")
 def test_perf_metrics(model_descr, sample_from_dataset):
-    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
+    model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr, word_timestamps=True)
 
-    result = genai_pipe.generate(sample_from_dataset)
+    result = genai_pipe.generate(
+        sample_from_dataset,
+        return_timestamps=True,
+        word_timestamps=True,
+    )
 
     perf_metrics = result.perf_metrics
 
@@ -735,6 +750,7 @@ def test_perf_metrics(model_descr, sample_from_dataset):
     assert perf_metrics.get_detokenization_duration().mean > 0
     assert perf_metrics.get_detokenization_duration().mean > 0
     assert perf_metrics.get_features_extraction_duration().mean > 0
+    assert perf_metrics.get_word_level_timestamps_processing_duration().mean > 0
 
     # assert that calculating statistics manually from the raw counters we get the same results as from PerfMetrics
     whisper_raw_metrics = perf_metrics.whisper_raw_metrics
@@ -744,11 +760,13 @@ def test_perf_metrics(model_descr, sample_from_dataset):
     assert np.allclose(mean_dur, np.mean(raw_dur))
     assert np.allclose(std_dur, np.std(raw_dur))
 
+    word_ts_raw_dur = np.array(whisper_raw_metrics.word_level_timestamps_processing_durations) / 1000
+    mean_dur, std_dur = perf_metrics.get_word_level_timestamps_processing_duration()
+    assert np.allclose(mean_dur, np.mean(word_ts_raw_dur))
+    assert np.allclose(std_dur, np.std(word_ts_raw_dur))
+
 
 @pytest.fixture(params=[
-    "DeprecatedBaseStreamer",
-    "DeprecatedChunkStreamer",
-    "DeprecatedChunkWriteStreamer",
     "Streamer",
     "streamer_callback",
     "streamer_bool_callback"
@@ -766,60 +784,6 @@ def streamer_for_test(request):
         def reset(self) -> None:
             self.container.clear()
 
-    class DeprecatedBaseStreamer(ov_genai.StreamerBase):
-        def __init__(self) -> None:
-            super().__init__()
-            self.tokens = []
-
-        def put(self, token: int) -> bool:
-            self.tokens.append(token)
-            return False
-
-        def end(self) -> None:
-            pass
-
-    if request.param == 'DeprecatedBaseStreamer':
-        streamer = DeprecatedBaseStreamer()
-        return streamer, ResultHandler(streamer.tokens)
-
-    class DeprecatedChunkStreamer(ov_genai.ChunkStreamerBase):
-        def __init__(self) -> None:
-            super().__init__()
-            self.tokens = []
-
-        def put(self, token: int) -> bool:
-            self.tokens.append(token)
-            return False
-
-        def put_chunk(self, tokens: list[int]) -> bool:
-            self.tokens += tokens
-            return False
-
-        def end(self) -> None:
-            pass
-
-    if request.param == 'DeprecatedChunkStreamer':
-        streamer = DeprecatedChunkStreamer()
-        return streamer, ResultHandler(streamer.tokens)
-
-    class DeprecatedChunkWriteStreamer(ov_genai.ChunkStreamerBase):
-        def __init__(self) -> None:
-            super().__init__()
-            self.tokens = []
-
-        def write(self, token: int | list[int]) -> ov_genai.StreamingStatus:
-            if type(token) == list:
-                self.tokens += token
-            else:
-                self.tokens.append(token)
-            return ov_genai.StreamingStatus.RUNNING
-
-        def end(self) -> None:
-            pass
-
-    if request.param == 'DeprecatedChunkWriteStreamer':
-        streamer = DeprecatedChunkWriteStreamer()
-        return streamer, ResultHandler(streamer.tokens)
 
     class Streamer(ov_genai.StreamerBase):
         def __init__(self) -> None:

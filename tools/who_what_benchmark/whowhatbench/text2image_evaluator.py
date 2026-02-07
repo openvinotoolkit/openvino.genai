@@ -29,6 +29,8 @@ default_data = {
 
 @register_evaluator("text-to-image")
 class Text2ImageEvaluator(BaseEvaluator):
+    DEF_NUM_INFERENCE_STEP = 4
+
     def __init__(
         self,
         base_model: Any = None,
@@ -37,7 +39,7 @@ class Text2ImageEvaluator(BaseEvaluator):
         metrics="similarity",
         similarity_model_id: str = "openai/clip-vit-large-patch14",
         resolution=(512, 512),
-        num_inference_steps=4,
+        num_inference_steps=None,
         crop_prompts=True,
         num_samples=None,
         gen_image_fn=None,
@@ -54,7 +56,7 @@ class Text2ImageEvaluator(BaseEvaluator):
         self.resolution = resolution
         self.crop_prompt = crop_prompts
         self.num_samples = num_samples
-        self.num_inference_steps = num_inference_steps
+        self.num_inference_steps = num_inference_steps or self.DEF_NUM_INFERENCE_STEP
         self.seed = seed
         self.similarity = None
         self.similarity = ImageSimilarity(similarity_model_id)

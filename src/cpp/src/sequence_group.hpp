@@ -387,25 +387,19 @@ public:
 
         if (input_ids.get_element_type() == ov::element::i64) {
             m_prompt_ids.resize(prompt_len);
-            OPENVINO_SUPPRESS_DEPRECATED_START
-            std::copy_n(input_ids.data<int64_t>(), prompt_len, m_prompt_ids.begin());
-            OPENVINO_SUPPRESS_DEPRECATED_END
+            std::copy_n(input_ids.data<const int64_t>(), prompt_len, m_prompt_ids.begin());
             m_sequence_group_type = SequenceGroupType::TOKENS;
         } else if (input_ids.get_element_type() == ov::element::f32) {
             hidden_size = input_ids.get_shape()[2];
             m_input_embeds.resize(prompt_len);
             for (size_t i = 0; i < prompt_len; i++) {
                 m_input_embeds[i].resize(hidden_size);
-                OPENVINO_SUPPRESS_DEPRECATED_START
-                std::copy_n(input_ids.data<float>() + i * hidden_size, hidden_size, m_input_embeds[i].begin());
-                OPENVINO_SUPPRESS_DEPRECATED_END
+                std::copy_n(input_ids.data<const float>() + i * hidden_size, hidden_size, m_input_embeds[i].begin());
             }
             if (token_type_ids.has_value()) {
                 const ov::Tensor& tokens = token_type_ids.value();
                 m_token_type_ids = std::vector<int64_t>(tokens.get_size());
-                OPENVINO_SUPPRESS_DEPRECATED_START
-                std::copy_n(tokens.data<int64_t>(), tokens.get_size(), m_token_type_ids->begin());
-                OPENVINO_SUPPRESS_DEPRECATED_END
+                std::copy_n(tokens.data<const int64_t>(), tokens.get_size(), m_token_type_ids->begin());
             }
             m_sequence_group_type = SequenceGroupType::EMBEDDINGS;
         }

@@ -74,3 +74,17 @@ Supported parameters that can be set are:
 Prompt file example：
 {"prompt": "what is openvino?"}
 {"prompt": "A chat between a curious user and an artificial intelligence assistant."}
+
+## 9.Video generation
+Supported parameters that can be set are:
+* `num_steps` - inference steps (default 25)
+* `num_frames` - generated frames number (default 25)
+* `frame_rate` - frame rate for video generation and saving (default 25)
+* `width` - resolution width (default 512)
+* `height` - resolution height (default 512)
+* `guidance_scale` - guidance scale
+* `guidance_rescale` - guidance rescale (**Note:** Currently not supported by LTX Pipeline with OpenVINO GenAI)
+* `prompt` - input prompt text for the video generation
+* `negative_prompt` - input negative_prompt text for the video generation
+Prompt file example：
+{"num_steps":"25", "width":"480", "height":"736", "guidance_scale":"3", "prompt": "A cat plays with ball on the christmas tree.", "negative_prompt": "worst quality, inconsistent motion, blurry, jittery, distorted", "num_frames": 5, "frame_rate": 25}
