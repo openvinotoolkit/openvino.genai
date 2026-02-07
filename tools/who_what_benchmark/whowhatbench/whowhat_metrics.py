@@ -190,9 +190,10 @@ class EmbedsSimilarity:
             with open(prediction, 'rb') as f:
                 prediction_data = np.load(f)
 
-            cos_sim = F.cosine_similarity(torch.from_numpy(gold_data), torch.from_numpy(prediction_data))
-            metric_per_passages.append(cos_sim.detach().numpy())
-            metric_per_gen.append(torch.mean(cos_sim).item())
+            cos_sim_all = cosine_similarity(gold_data, prediction_data)
+            cos_sim = np.diag(cos_sim_all)
+            metric_per_passages.append(cos_sim)
+            metric_per_gen.append(np.mean(cos_sim))
 
         metric_dict = {"similarity": np.mean(metric_per_gen)}
         return metric_dict, {"similarity": metric_per_gen, "similarity_per_passages": metric_per_passages}
@@ -223,14 +224,14 @@ class RerankingSimilarity:
                 scores_diff = self.MISSING_DOCUMENT_PENALTY
                 if document_idx in prediction_scores:
                     scores_diff = abs(gold_score - prediction_scores[document_idx])
-                per_query_text.append(scores_diff)
+                per_query_text.append(scores_diff.item())
 
             metric_per_query.append(per_query_text)
             dist = np.linalg.norm(per_query_text)
             similarity_per_query.append(1 / (1 + dist))
 
         metric_dict = {"similarity": np.mean(similarity_per_query)}
-        return metric_dict, {"similarity": similarity_per_query, "per_text_score_list": metric_per_query}
+        return metric_dict, {"similarity": similarity_per_query, "per_text_scores_diff": metric_per_query}
 
 
 class VideoSimilarity:

@@ -22,8 +22,10 @@ tmp_dir = tempfile.mkdtemp()
 base_model_path = os.path.join(tmp_dir, "opt125m")
 target_model_path = os.path.join(tmp_dir, "opt125m_int8")
 
-gptq_model_id = "ybelkada/opt-125m-gptq-4bit"
+# awq/gptq models are skipped for now: 180586
 awq_model_id = "TitanML/tiny-mixtral-AWQ-4bit"
+# model load failed - ticket: 178940, 180586
+gptq_model_id = "ybelkada/opt-125m-gptq-4bit"
 
 
 def setup_module():
@@ -159,20 +161,9 @@ def test_text_language(tmp_path):
     assert "马克" in data["prompts"].values[0]
 
 
-hf_model_scope = [
-    (model_id),
-]
-if sys.platform != 'darwin' and sys.platform != 'win32':
-    hf_model_scope += [
-        # model load failed in optimum, ticket: 178940
-        # (gptq_model_id),
-        (awq_model_id),
-    ]
-
-
 @pytest.mark.parametrize(
     ("model_id"),
-    hf_model_scope,
+    [(model_id)],
 )
 def test_text_hf_model(model_id, tmp_path):
     temp_file_name = tmp_path / "gt.csv"
