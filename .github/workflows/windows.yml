@@ -212,6 +212,7 @@ jobs:
             Remove-Item -Path "${{ env.BUILD_DIR }}/CMakeCache.txt" -Force -ErrorAction SilentlyContinue
             $pythonCommand = "py -$pyVersion -c `"import sys; print(f'{sys.executable}')`""
             $pythonExecutablePath = & cmd /c $pythonCommand
+            & $pythonExecutablePath -m pip install numpy
 
             cmake -DPython3_EXECUTABLE="$pythonExecutablePath" -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake -DCMAKE_BUILD_TYPE=${{ matrix.build-type }} -S ${{ env.SRC_DIR }} -B ${{ env.BUILD_DIR }} &&
             cmake --build ${{ env.BUILD_DIR }} --parallel $ENV:NUMBER_OF_PROCESSORS --config ${{ matrix.build-type }} --verbose &&
@@ -530,7 +531,7 @@ jobs:
           path: ${{ github.workspace }}
           merge-multiple: true
 
-      - name: Store ${{ matrix.build_type }} artifacts to a shared drive
+      - name: Store ${{ matrix.build-type }} artifacts to a shared drive
         id: store_artifacts
         if: ${{ always() }}
         uses: openvinotoolkit/openvino/.github/actions/store_artifacts@master
@@ -1011,9 +1012,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check status of all jobs
-        if: >-
-          ${{
-            contains(needs.*.result, 'failure') ||
-            contains(needs.*.result, 'cancelled')
-          }}
-        run: exit 1
+        if: always()
+        run: |
+          echo "All dependent job results:"
+          echo '${{ toJSON(needs) }}' | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+
+          # List failed / cancelled jobs
+          failed_jobs=$(echo '${{ toJSON(needs) }}' | jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | .key' || true)
+
+          if [ -n "$failed_jobs" ]; then
+            echo "Failed or cancelled jobs:"
+            echo "$failed_jobs"
+            # Optionally show more info for each failed job
+            echo '${{ toJSON(needs) }}' | jq -r --argjson _ "$(echo '{}' )" \
+              'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | "\(.key): \(.value | tojson)"'
+            exit 1
+          fi

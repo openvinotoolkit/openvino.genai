@@ -178,6 +178,7 @@ jobs:
             rm -rf ${{ env.BUILD_DIR }}/CMakeCache.txt
 
             python_exec_path=$(python$py_version -c "import sys; print(sys.executable)")
+            $python_exec_path -m pip install numpy
 
             echo "Configuring cmake for python$py_version"
             /usr/bin/cmake -DOpenVINODeveloperPackage_DIR=${{ env.OV_INSTALL_DIR }}/developer_package/cmake \
@@ -471,7 +472,7 @@ jobs:
         run: tar -czvf ${{ env.NODEJS_PACKAGE }} *
         working-directory: ${{ env.NODEJS_PATH }}
 
-      - name: Store ${{ matrix.build_type }} artifacts to a shared drive
+      - name: Store ${{ matrix.build-type }} artifacts to a shared drive
         id: store_artifacts
         if: ${{ always() }}
         uses: openvinotoolkit/openvino/.github/actions/store_artifacts@master
@@ -670,9 +671,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check status of all jobs
-        if: >-
-          ${{
-            contains(needs.*.result, 'failure') ||
-            contains(needs.*.result, 'cancelled')
-          }}
-        run: exit 1
+        if: always()
+        run: |
+          echo "All dependent job results:"
+          echo '${{ toJSON(needs) }}' | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+
+          # List failed / cancelled jobs
+          failed_jobs=$(echo '${{ toJSON(needs) }}' | jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | .key' || true)
+
+          if [ -n "$failed_jobs" ]; then
+            echo "Failed or cancelled jobs:"
+            echo "$failed_jobs"
+            # Optionally show more info for each failed job
+            echo '${{ toJSON(needs) }}' | jq -r --argjson _ "$(echo '{}' )" \
+              'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | "\(.key): \(.value | tojson)"'
+            exit 1
+          fi

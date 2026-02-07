@@ -3,10 +3,15 @@
 
 #include "openvino/genai/c/whisper_generation_config.h"
 
+#include <cstring>
 #include <filesystem>
+#include <memory>
+#include <string>
+#include <vector>
 
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "types_c.h"
+
 
 ov_status_e ov_genai_whisper_generation_config_create(ov_genai_whisper_generation_config** config) {
     if (!config) {

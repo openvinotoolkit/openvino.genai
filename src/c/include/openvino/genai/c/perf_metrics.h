@@ -146,3 +146,12 @@ ov_genai_perf_metrics_get_detokenization_duration(const ov_genai_perf_metrics* m
  */
 OPENVINO_GENAI_C_EXPORTS ov_status_e ov_genai_perf_metrics_add_in_place(ov_genai_perf_metrics* left,
                                                                         const ov_genai_perf_metrics* right);
+
+/**
+ * @brief Get the number of generated samples from ov_genai_perf_metrics.
+ * @param metrics A pointer to the ov_genai_perf_metrics instance.
+ * @param num_generated_samples The number of generated samples.
+ * @return ov_status_e A status code, return OK(0) if successful.
+ */
+OPENVINO_GENAI_C_EXPORTS ov_status_e
+ov_genai_perf_metrics_get_num_generated_samples(const ov_genai_perf_metrics* metrics, size_t* num_generated_samples);
