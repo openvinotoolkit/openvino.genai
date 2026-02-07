@@ -120,7 +120,6 @@ public:
             m_tokenization_params.insert({padding_side.name(), *m_config.padding_side});
         }
 
-
         if (device == "NPU") {
             m_request = create_text_embedding_npu_request(model,
                                                           m_config,

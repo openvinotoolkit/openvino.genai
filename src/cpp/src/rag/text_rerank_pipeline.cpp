@@ -35,6 +35,7 @@ struct ModelMetadata {
     std::optional<std::string> model_type;
     bool is_qwen3 = false;
 };
+
 ModelMetadata read_model_type(const std::filesystem::path& models_path) {
     ModelMetadata info;
     const std::filesystem::path& json_path = models_path / "config.json";
@@ -57,10 +58,12 @@ ModelMetadata read_model_type(const std::filesystem::path& models_path) {
 }
 
 bool has_input(const std::shared_ptr<Model>& model, const std::string& name) {
-    const auto& inputs = model->inputs();
-    return std::any_of(inputs.begin(), inputs.end(), [&](const auto& input) {
-        return input.get_any_name() == name;
-    });
+    for (const auto& input : model->inputs()) {
+        if (input.get_any_name() == name) {
+            return true;
+        }
+    }
+    return false;
 }
 
 std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model) {
@@ -101,6 +104,7 @@ std::shared_ptr<Model> apply_qwen3_postprocessing(std::shared_ptr<Model> model,
 
     processor.output().postprocess().custom([&output_shape,
                                              &params](const ov::Output<ov::Node>& node) -> std::shared_ptr<ov::Node> {
+        // to support models with embedded postprocessing like tomaarsen/Qwen3-Reranker-0.6B-seq-cls
         if (output_shape[1] == 1) {
             return std::make_shared<op::v0::Sigmoid>(node);
         }
@@ -161,8 +165,8 @@ public:
                            const std::string& device,
                            const Config& config,
                            const ov::AnyMap& properties = {})
-        : m_config{config},
-          m_models_path{models_path} {
+        : m_config{config}{
+
         m_config.validate();
         const auto model_info = read_model_type(models_path);
         const bool is_qwen3 = model_info.is_qwen3;
@@ -187,7 +191,7 @@ public:
 
         auto filtered_properties = extract_adapters_from_properties(properties, &m_adapters);
         if (m_adapters.has_value()) {
-            setup_lora(model, device);
+            m_adapter_controller = setup_lora(model, *m_adapters, device);
         }
 
         m_has_position_ids = has_input(model, "position_ids");
@@ -299,32 +303,11 @@ private:
     InferRequest m_request;
     Config m_config;
     AnyMap m_tokenization_params;
-    std::filesystem::path m_models_path;
     bool m_has_position_ids = false;
     bool m_has_beam_idx = false;
     std::optional<AdapterConfig> m_adapters;
     std::optional<AdapterController> m_adapter_controller;
-
-    /**
-     * @brief Setup LoRA adapters for the model
-     * 
-     * Uses the tensor name prefix from AdapterConfig if set by user,
-     * otherwise uses empty string (no prefix stripping).
-     * 
-     * If your LoRA adapter was trained with PEFT and has "base_model.model" prefix,
-     * set it explicitly: adapter_config.set_tensor_name_prefix("base_model.model")
-     */
-    void setup_lora(std::shared_ptr<Model>& model, const std::string& device) {
-        OPENVINO_ASSERT(m_adapters.has_value(), "setup_lora called without adapters");
-
-        // Use user-specified prefix, or empty string if not set
-        if (!m_adapters->get_tensor_name_prefix().has_value()) {
-            m_adapters->set_tensor_name_prefix("");
-        }
-
-        m_adapter_controller = AdapterController(model, *m_adapters, device);
-    }
-
+	
     TokenizedInputs tokenize(const std::string& query, const std::vector<std::string>& texts) {
         if (m_tokenizer.supports_paired_input()) {
             return m_tokenizer.encode({query}, texts, m_tokenization_params);
