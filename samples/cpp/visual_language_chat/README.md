@@ -3,9 +3,10 @@
 This example showcases inference of Visual language models (VLMs). The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `ov::genai::VLMPipeline` and runs the simplest deterministic greedy sampling algorithm. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/minicpm-v-multimodal-chatbot) which provides an example of Visual-language assistant.
 
 
-There are three sample files:
+There are four sample files:
  - [`visual_language_chat.cpp`](./visual_language_chat.cpp) demonstrates basic usage of the VLM pipeline.
  - [`video_to_text_chat.cpp`](./video_to_text_chat.cpp) demonstrates video to text usage of the VLM pipeline.
+ - [`live_vlm_chat.cpp`](./live_vlm_chat.cpp) demonstrates real-time VLM chat using a webcam feed (requires OpenCV).
  - [`benchmark_vlm.cpp`](./benchmark_vlm.cpp) shows how to benchmark a VLM in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text and calculating various performance metrics.
 
 
@@ -42,6 +43,23 @@ A model that supports video input is required to run this sample, for example `l
 `video_to_text_chat ./LLaVA-NeXT-Video-7B-hf/ sample_demo_1.mp4`
 
 Supported models with video input are listed in [this section](https://openvinotoolkit.github.io/openvino.genai/docs/use-cases/image-processing/#use-image-or-video-tags-in-prompt).
+
+
+## Run live webcam chat sample:
+
+This sample enables real-time interaction with VLMs using a webcam. It features a multi-threaded architecture to decouple video capture from inference, ensuring a responsive UI.
+
+**Note:** This sample requires OpenCV to be found during the build.
+
+`live_vlm_chat <model_dir> [device]`
+
+**Controls:**
+- **SPACE** or **ENTER**: Snap the current video frame and input a prompt.
+- **ESC**: Exit the application.
+
+**Example:**
+`live_vlm_chat miniCPM-V-2_6 CPU`
+
 
 ## Run benchmark:
 
