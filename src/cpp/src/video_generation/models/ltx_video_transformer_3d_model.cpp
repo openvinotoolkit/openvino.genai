@@ -70,7 +70,10 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
     OPENVINO_ASSERT(m_model, "Model has been already compiled. Cannot re-compile already compiled model");
     std::optional<AdapterConfig> adapters;
     auto filtered_properties = extract_adapters_from_properties(properties, &adapters);
-    OPENVINO_ASSERT(!adapters, "Adapters are not currently supported for Video Generation Pipeline.");
+    if (adapters) {
+        adapters->set_tensor_name_prefix(adapters->get_tensor_name_prefix().value_or("transformer"));
+        m_adapter_controller = AdapterController(m_model, *adapters, device);
+    }
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, *filtered_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LTX Video Transformer 3D model");
     m_request = compiled_model.create_infer_request();
@@ -85,6 +88,13 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
 void LTXVideoTransformer3DModel::set_hidden_states(const std::string& tensor_name, const ov::Tensor& encoder_hidden_states) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
     m_request.set_tensor(tensor_name, encoder_hidden_states);
+}
+
+void LTXVideoTransformer3DModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
+    OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
+    if (adapters) {
+        m_adapter_controller.apply(m_request, *adapters);
+    }
 }
 
 ov::Tensor LTXVideoTransformer3DModel::infer(const ov::Tensor& latent_model_input, const ov::Tensor& timestep) {
