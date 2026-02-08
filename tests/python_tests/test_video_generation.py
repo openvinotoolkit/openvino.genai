@@ -231,3 +231,46 @@ class TestText2VideoPipelineAdvanced:
 
         result = pipe.generate("test prompt", num_inference_steps=2)
         assert result.video is not None
+
+
+class TestLoRAVideoGeneration:
+    def test_lora_adapters_constructor(self, video_generation_model):
+        """Test that LoRA adapters can be passed to the constructor without error"""
+        # Create an empty adapter config (no actual LoRA files, just testing the API)
+        adapter_config = ov_genai.AdapterConfig()
+
+        # This should not raise an error (previously would assert "Adapters are not currently supported")
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU", adapters=adapter_config)
+        assert pipe is not None
+
+    def test_lora_adapters_generate(self, video_generation_model):
+        """Test that LoRA adapters can be passed to generate() without error"""
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+
+        # Create an empty adapter config
+        adapter_config = ov_genai.AdapterConfig()
+
+        # This should not raise an error
+        result = pipe.generate(
+            "test prompt",
+            height=32,
+            width=32,
+            num_frames=9,
+            num_inference_steps=2,
+            adapters=adapter_config
+        )
+        assert result is not None
+        assert result.video is not None
+
+    def test_transformer_has_set_adapters_method(self, video_generation_model):
+        """Test that the LTXVideoTransformer3DModel has the set_adapters method"""
+        model_path = Path(video_generation_model) / "transformer"
+        if model_path.exists():
+            model = ov_genai.LTXVideoTransformer3DModel(str(model_path))
+            model.compile("CPU")
+
+            # Check that set_adapters method exists and can be called
+            assert hasattr(model, "set_adapters")
+
+            # Call with None (empty adapters) should not raise an error
+            model.set_adapters(None)
