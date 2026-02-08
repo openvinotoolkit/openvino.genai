@@ -44,3 +44,30 @@ install(DIRECTORY
         c/whisper_speech_recognition
         c/visual_language_chat
         DESTINATION samples/c COMPONENT cpp_samples_genai)
+
+
+
+
+#------------------------------------------------------------------
+# LIVE VLM CHAT SAMPLE
+
+# Try to find OpenCV (Standard Method)
+find_package(OpenCV COMPONENTS core highgui videoio imgproc QUIET)
+
+if(OpenCV_FOUND)
+    # Define the executable
+    add_executable(live_vlm_chat cpp/visual_language_chat/live_vlm_chat.cpp)
+
+    # Link libraries (No hardcoded paths!)
+    target_link_libraries(live_vlm_chat PRIVATE openvino::genai ${OpenCV_LIBS})
+
+    # Installation rules (Standard)
+    install(TARGETS live_vlm_chat
+            RUNTIME DESTINATION samples_bin/
+            COMPONENT samples_bin
+            EXCLUDE_FROM_ALL)
+            
+    message(STATUS "Enabled sample: live_vlm_chat")
+else()
+    message(STATUS "OpenCV not found. Skipping live_vlm_chat sample.")
+endif()
