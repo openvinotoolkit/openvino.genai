@@ -6,7 +6,7 @@ main();
 async function main() {
     const modelPath = process.argv[2];
     const prompt = process.argv[3];
-    
+
     if (process.argv.length > 4) {
         console.error(`Run command must be: 'node ${basename(process.argv[1])} *path_to_model_dir* *prompt*'`);
         process.exit(1);

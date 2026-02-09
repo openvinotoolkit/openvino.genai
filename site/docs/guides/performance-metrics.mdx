@@ -64,9 +64,9 @@ However, since mean and standard deviation values are usually sufficient, we wil
         import { LLMPipeline } from "openvino-genai-node";
 
         const pipe = await LLMPipeline(models_path, "CPU");
-        const result = await pipe.generate("The Sun is yellow because", { 
+        const result = await pipe.generate("The Sun is yellow because", {
             max_new_tokens: 20,
-            return_decoded_results: true 
+            return_decoded_results: true
         });
         const perf_metrics = result.perfMetrics;
 
@@ -141,13 +141,13 @@ This accumulates statistics from several `generate()` calls.
         import { LLMPipeline } from "openvino-genai-node";
 
         const pipe = await LLMPipeline(models_path, "CPU");
-        const res_1 = await pipe.generate("The Sun is yellow because", { 
+        const res_1 = await pipe.generate("The Sun is yellow because", {
             max_new_tokens: 20,
-            return_decoded_results: true 
+            return_decoded_results: true
         });
-        const res_2 = await pipe.generate("Why Sky is blue because", { 
+        const res_2 = await pipe.generate("Why Sky is blue because", {
             max_new_tokens: 20,
-            return_decoded_results: true 
+            return_decoded_results: true
         });
         const perf_metrics = res_1.perfMetrics.add(res_2.perfMetrics);
 
