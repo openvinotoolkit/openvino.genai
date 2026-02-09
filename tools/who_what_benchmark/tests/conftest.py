@@ -26,6 +26,10 @@ MODELS: Dict[str, Dict[str, Any]] = {
         "name": "cross-encoder/ms-marco-TinyBERT-L2-v2",
         "convert_args": ["--trust-remote-code", "--task", "text-classification"],
     },
+    "Qwen3-Reranker-0.6B-seq-cls": {
+        "name": "tomaarsen/Qwen3-Reranker-0.6B-seq-cls",
+        "convert_args": ["--trust-remote-code", "--task", "text-classification"],
+    },
     "Qwen3-Reranker-0.6B": {
         "name": "Qwen/Qwen3-Reranker-0.6B",
         "convert_args": ["--trust-remote-code", "--task", "text-generation"],
