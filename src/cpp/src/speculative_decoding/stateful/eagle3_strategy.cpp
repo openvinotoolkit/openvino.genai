@@ -772,7 +772,7 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     auto next_hidden = ov::Tensor(current_hidden, start_coord, end_coord);
     m_target->get_current_sequence()->update_hidden_state(next_hidden);
 
-    result.accepted_tokens_count = accepted_count;
+    result.accepted_tokens_count = total_accepted_tokens - 1;
     result.next_window_size = total_accepted_tokens;
     result.validated_tokens = std::move(validated_tokens);
     result.eos_reached = (target_predicted_token == eos_token_id);
