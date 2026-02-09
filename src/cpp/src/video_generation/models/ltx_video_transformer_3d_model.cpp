@@ -96,9 +96,13 @@ ov::Tensor LTXVideoTransformer3DModel::infer(const ov::Tensor& latent_model_inpu
     m_request.infer();
 
     ov::Tensor output = m_request.get_output_tensor();
+#ifdef _WIN32
     ov::Tensor result(output.get_element_type(), output.get_shape());
     std::memcpy(result.data(), output.data(), output.get_byte_size());
     return result;
+#else
+    return output;
+#endif
 }
 
 size_t LTXVideoTransformer3DModel::get_expected_batch_size() const {
