@@ -31,15 +31,13 @@
     "lint": "eslint .",
     "postinstall": "node ./scripts/download-runtime.cjs --ignore-if-exists",
     "prepare": "npm run build",
-    "test": "python ./tests/setup.py --to-env-file test.env && node --env-file=test.env --test ./tests/*.test.js",
-    "test_setup": "node ./tests/setup.js"
+    "test": "python ./tests/setup.py --to-env-file test.env && node --env-file=test.env --test ./tests/*.test.js"
   },
   "dependencies": {
     "openvino-node": "2026.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
-    "@huggingface/hub": "^0.21.0",
     "@types/node": "^24.10.1",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",

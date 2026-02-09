@@ -148,8 +148,19 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
     assert.ok(tokenizer instanceof Tokenizer, "Should return tokenizer");
   });
 
-  it("should start and finish chat", async () => {
+  it("should work with start and finish chat", async () => {
     await pipeline.startChat("You are an assistant named Tom.");
+    const result = await pipeline.generate("What is on the image?", {
+      generationConfig: {
+        max_new_tokens: 20,
+      },
+      images: [testImage1],
+    });
     await pipeline.finishChat();
+    assert.ok(
+      result instanceof VLMDecodedResults,
+      "Result should be instance of VLMDecodedResults",
+    );
+    assert.ok(result.texts.length > 0, "Should generate some output");
   });
 });

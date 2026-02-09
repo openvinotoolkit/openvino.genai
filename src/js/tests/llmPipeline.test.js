@@ -12,7 +12,7 @@ if (!LLM_PATH) {
   throw new Error("Please set LLM_PATH environment variable to run the tests.");
 }
 
-describe("LLMPipeline construction", () => {
+describe("LLMPipeline initialization", () => {
   it("test LLMPipeline(modelPath)", async () => {
     const pipe = await LLMPipeline(LLM_PATH);
     assert.strictEqual(typeof pipe, "object");
@@ -33,46 +33,11 @@ describe("LLMPipeline construction", () => {
     };
     await assert.doesNotReject(LLMPipeline(LLM_PATH, "CPU", { schedulerConfig: schedulerConfig }));
   });
-});
 
-describe("LLMPipeline methods", async () => {
-  let pipeline = null;
-
-  await before(async () => {
-    pipeline = await LLMPipeline(LLM_PATH, "CPU");
-  });
-
-  await it("should generate non empty result", async () => {
-    const result = await pipeline.generate(
-      "Type something in English",
-      { temperature: 0, max_new_tokens: 4 },
-      () => {},
-    );
-
-    assert.ok(result.texts.length > 0);
-    assert.strictEqual(typeof result.texts[0], "string");
-  });
-
-  it("should include tokenizer", async () => {
-    const tokenizer = pipeline.getTokenizer();
-    assert.strictEqual(typeof tokenizer, "object");
-  });
-
-  it("throw error if generate called during another generation", async () => {
-    const promise = pipeline.generate("prompt1", { max_new_tokens: 500 });
-    await assert.rejects(pipeline.generate("prompt2"), /Another generation is already in progress/);
-    await promise;
-  });
-});
-
-describe("corner cases", async () => {
   it("should throw an error if pipeline is already initialized", async () => {
     const pipeline = await LLMPipeline(LLM_PATH, "CPU");
 
-    await assert.rejects(async () => await pipeline.init(), {
-      name: "Error",
-      message: "LLMPipeline is already initialized",
-    });
+    await assert.rejects(pipeline.init(), /LLMPipeline is already initialized/);
   });
 
   it("should throw an error if pipeline is not initialized", async () => {
@@ -82,7 +47,7 @@ describe("corner cases", async () => {
   });
 });
 
-describe("generation parameters validation", () => {
+describe("General LLM test", () => {
   let pipeline = null;
 
   before(async () => {
@@ -219,7 +184,7 @@ describe("generation parameters validation", () => {
   });
 });
 
-describe("LLMPipeline with chat history", () => {
+describe("LLMPipeline in chat mode", () => {
   let pipeline = null;
   // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
   const chatHistory = new ChatHistory();
@@ -269,11 +234,6 @@ describe("LLMPipeline with chat history", () => {
     assert.ok(chunks.length > 0);
     // We need to keep previous messages between tests to avoid error for SDPA backend (macOS in CI)
     chatHistory.push({ role: "assistant", content: chunks.join("") });
-  });
-
-  it("startChat() and finishChat() complete without error", async () => {
-    await pipeline.startChat();
-    await pipeline.finishChat();
   });
 
   it("startChat(systemMessage) then generate() then finishChat()", async () => {

@@ -9,7 +9,7 @@ if (!LLM_PATH) {
   throw new Error("Please set LLM_PATH environment variable to run the tests.");
 }
 
-describe("bindings", () => {
+describe("LLMPipeline", () => {
   let pipeline = null;
 
   before((_, done) => {
