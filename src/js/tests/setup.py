@@ -4,7 +4,6 @@
 
 """
 Setup script to download and convert models for JS tests.
-This is a Python equivalent of setup.js
 """
 
 import argparse
