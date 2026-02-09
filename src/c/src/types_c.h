@@ -3,6 +3,9 @@
 
 #pragma once
 
+#include <stdarg.h>
+
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -17,6 +20,7 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
+
 
 #define GET_PROPERTY_FROM_ARGS_LIST                                                                            \
     std::string property_key = va_arg(args_ptr, char*);                                                        \

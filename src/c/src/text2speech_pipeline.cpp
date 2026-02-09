@@ -4,6 +4,8 @@
 
 #include "openvino/genai/c/text2speech_pipeline.h"
 
+#include <cstdarg>
+#include <cstring>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -76,16 +78,21 @@ ov_status_e ov_genai_text2speech_decoded_results_get_speech_at(const ov_genai_te
         ov_element_type_e et = (ov_element_type_e)cpp_tensor.get_element_type();
 
         ov::Shape cpp_shape = cpp_tensor.get_shape();
-        std::vector<int64_t> dims(cpp_shape.begin(), cpp_shape.end());
+        std::vector<size_t> dims(cpp_shape.begin(), cpp_shape.end());
         ov_shape_t shape;
-        shape.rank = dims.size();
-        shape.dims = dims.data();
+        ov_shape_create(dims.size(), reinterpret_cast<const int64_t*>(dims.data()), &shape);
 
-        // Wrap the data in an ov_tensor_t. The user will be responsible for freeing it,
-        // but the data itself is owned by 'results'.
-        return ov_tensor_create_from_host_ptr(et, shape, cpp_tensor.data(), speech);
-    } catch (const std::exception& e) {
-        return ov_status_e::GENERAL_ERROR;
+        // Explicitly create a new tensor and copy data to resolve life time issues
+        ov_status_e status = ov_tensor_create(et, shape, speech);
+        if (status == ov_status_e::OK) {
+            void* data_ptr = nullptr;
+            ov_tensor_data(*speech, &data_ptr);
+            std::memcpy(data_ptr, cpp_tensor.data(), cpp_tensor.get_byte_size());
+        }
+        ov_shape_free(&shape);
+        return status;
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
     }
 }
 
