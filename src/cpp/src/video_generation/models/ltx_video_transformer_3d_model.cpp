@@ -3,6 +3,7 @@
 
 #include "openvino/genai/video_generation/ltx_video_transformer_3d_model.hpp"
 
+#include <cstring>
 #include <fstream>
 #include <numeric>
 
@@ -94,7 +95,10 @@ ov::Tensor LTXVideoTransformer3DModel::infer(const ov::Tensor& latent_model_inpu
     m_request.set_tensor("timestep", timestep);
     m_request.infer();
 
-    return m_request.get_output_tensor();
+    ov::Tensor output = m_request.get_output_tensor();
+    ov::Tensor result(output.get_element_type(), output.get_shape());
+    std::memcpy(result.data(), output.data(), output.get_byte_size());
+    return result;
 }
 
 size_t LTXVideoTransformer3DModel::get_expected_batch_size() const {
