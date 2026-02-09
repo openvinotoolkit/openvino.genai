@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "lora/helper.hpp"
 #include "lm_encoding.hpp"
