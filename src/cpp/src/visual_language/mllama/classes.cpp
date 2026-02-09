@@ -497,7 +497,7 @@ static inline ov::Tensor convert_sparse_cross_attention_mask_to_dense(
 
 } // namespace
 
-EncodedImage VisionEncoderMLlamma::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
+EncodedImage VisionEncoderMLlama::encode(const ov::Tensor& image, const ov::AnyMap& config_map) {
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     ov::Tensor pixel_values, aspect_ratio_ids, aspect_ratio_mask;
@@ -530,7 +530,7 @@ EncodedImage VisionEncoderMLlamma::encode(const ov::Tensor& image, const ov::Any
     return encoded_image;
 }
 
-std::vector<std::pair<std::string, ov::Tensor>> InputsEmbedderMLlamma::get_language_model_inputs(
+std::vector<std::pair<std::string, ov::Tensor>> InputsEmbedderMLlama::get_language_model_inputs(
     const std::string& unified_prompt,
     const std::vector<ov::genai::EncodedImage>& images,
     const std::vector<ov::genai::EncodedVideo>& videos,
@@ -604,18 +604,18 @@ std::vector<std::pair<std::string, ov::Tensor>> InputsEmbedderMLlamma::get_langu
     return inputs;
 }
 
-ov::Tensor InputsEmbedderMLlamma::get_inputs_embeds(const std::string& unified_prompt,
+ov::Tensor InputsEmbedderMLlama::get_inputs_embeds(const std::string& unified_prompt,
                                                     const std::vector<ov::genai::EncodedImage>& images,
                                                     ov::genai::VLMPerfMetrics& metrics,
                                                     bool recalculate_merged_embeddings,
                                                     const std::vector<size_t>& images_sequence){
-    OPENVINO_THROW("[InputsEmbedderMLlamma] The method get_inputs_embeds is not supported for MLlama models because "
+    OPENVINO_THROW("[InputsEmbedderMLlama] The method get_inputs_embeds is not supported for MLlama models because "
                    "cross-kv states are required to also be returned, and set on the language model. "
                    "Please use get_language_model_inputs instead, which returns both the input embeddings "
                    "and the necessary cross-kv state tensors. ");
 }
 
-NormalizedPrompt InputsEmbedderMLlamma::normalize_prompt(const std::string& prompt,
+NormalizedPrompt InputsEmbedderMLlama::normalize_prompt(const std::string& prompt,
                                                        size_t base_id,
                                                        const std::vector<EncodedImage>& images) const {
     std::string image_token = "<|image|>";
@@ -625,13 +625,13 @@ NormalizedPrompt InputsEmbedderMLlamma::normalize_prompt(const std::string& prom
     return {std::move(unified_prompt), std::move(images_sequence), {}};
 }
 
-InputsEmbedderMLlamma::InputsEmbedderMLlamma(const VLMConfig& vlm_config,
+InputsEmbedderMLlama::InputsEmbedderMLlama(const VLMConfig& vlm_config,
                                              const std::filesystem::path& model_dir,
                                              const std::string& device,
                                              const ov::AnyMap device_config)
     : IInputsEmbedder(vlm_config, model_dir, device, device_config) {}
 
-InputsEmbedderMLlamma::InputsEmbedderMLlamma(const VLMConfig& vlm_config,
+InputsEmbedderMLlama::InputsEmbedderMLlama(const VLMConfig& vlm_config,
                                              const ModelsMap& models_map,
                                              const Tokenizer& tokenizer,
                                              const std::filesystem::path& config_dir_path,

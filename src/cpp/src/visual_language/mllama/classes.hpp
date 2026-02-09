@@ -6,21 +6,21 @@
 
 namespace ov::genai {
 
-class VisionEncoderMLlamma : public VisionEncoder {
+class VisionEncoderMLlama : public VisionEncoder {
 public:
     using VisionEncoder::VisionEncoder;
 
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
 };
 
-class InputsEmbedderMLlamma : public InputsEmbedder::IInputsEmbedder {
+class InputsEmbedderMLlama : public InputsEmbedder::IInputsEmbedder {
 public:
-    InputsEmbedderMLlamma(const VLMConfig& vlm_config,
+    InputsEmbedderMLlama(const VLMConfig& vlm_config,
                         const std::filesystem::path& model_dir,
                         const std::string& device,
                         const ov::AnyMap device_config);
 
-    InputsEmbedderMLlamma(const VLMConfig& vlm_config,
+    InputsEmbedderMLlama(const VLMConfig& vlm_config,
                         const ModelsMap& models_map,
                         const Tokenizer& tokenizer,
                         const std::filesystem::path& config_dir_path,

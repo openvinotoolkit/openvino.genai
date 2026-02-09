@@ -76,7 +76,7 @@ VisionEncoder::Ptr VisionEncoder::create(const std::filesystem::path& model_dir,
     } else if (model_type == VLMModelType::GEMMA3) {
         return std::make_shared<VisionEncoderGemma3>(model_dir, device, properties);
     } else if (model_type == VLMModelType::MLLAMA) {
-        return std::make_shared<VisionEncoderMLlamma>(model_dir, device, properties);
+        return std::make_shared<VisionEncoderMLlama>(model_dir, device, properties);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }
@@ -111,7 +111,7 @@ VisionEncoder::Ptr VisionEncoder::create(
     } else if (model_type == VLMModelType::GEMMA3) {
         return std::make_shared<VisionEncoderGemma3>(models_map, config_dir_path, device, device_config);
     } else if (model_type == VLMModelType::MLLAMA) {
-        return std::make_shared<VisionEncoderMLlamma>(models_map, config_dir_path, device, device_config);
+        return std::make_shared<VisionEncoderMLlama>(models_map, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM VisionEncoder class. Please, create feature request on new model support");
     }
