@@ -707,6 +707,7 @@ void add_cross_attention_qk_scaled_scores_outputs_for_whisper(std::shared_ptr<ov
     size_t idx = 0;
     for (auto& op : model->get_ordered_ops()) {
         const auto op_type = op->get_type_info().name;
+        // SDPA decompose transformation can create different op types depending on the optimum-intel implementation
         if (op_type != std::string("Add") && op_type != std::string("MatMul")) {
             continue;
         }
