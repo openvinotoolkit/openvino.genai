@@ -98,6 +98,7 @@ VIDEO_MODEL_IDS = [
     "optimum-intel-internal-testing/tiny-random-llava-next-video",
     "optimum-intel-internal-testing/tiny-random-qwen2vl",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
+    "optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B"
 ]
 
 
@@ -126,6 +127,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next": lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
+    "optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
@@ -139,6 +141,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<video>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
+    "optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
 }
 
 
@@ -900,6 +903,10 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
             ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "SDPA"),
             id="qwen2.5-vl/SDPA",
         ),
+        pytest.param(
+            ("optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B", "SDPA"),
+            id="VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B/SDPA",
+        ),
     ],
     indirect=["ov_pipe_model"],
 )
@@ -1463,6 +1470,7 @@ TAG_INSERTED_BY_TEMPLATE = [
     ("optimum-intel-internal-testing/tiny-random-llava-next", "PA"),
     ("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"),
     ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B", "PA"),
     ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
     ("qnguyen3/nanoLLaVA", "PA"),
     ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
@@ -2091,6 +2099,7 @@ def test_vlm_pipeline_match_optimum_with_resolutions(
 CDPRUNER_SUPPORTED_MODELS = [
     "optimum-intel-internal-testing/tiny-random-qwen2vl",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
+    "optimum-intel-internal-testing/tiny-random-VideoChat-Flash-Qwen2_5-7B_InternVideo2-1B",
 ]
 
 parametrize_cdpruner_models = pytest.mark.parametrize(
