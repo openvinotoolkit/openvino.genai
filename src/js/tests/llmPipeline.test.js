@@ -43,7 +43,7 @@ describe("LLMPipeline initialization", () => {
   it("should throw an error if pipeline is not initialized", async () => {
     const pipeline = new LLM(LLM_PATH, "CPU");
 
-    assert.rejects(pipeline.generate("prompt"), /LLMPipeline is not initialized/);
+    await assert.rejects(pipeline.generate("prompt"), /LLMPipeline is not initialized/);
   });
 });
 

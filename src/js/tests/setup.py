@@ -21,7 +21,7 @@ from optimum.intel import (
 tests_utils_path = Path(__file__).parent.parent.parent.parent / "tests" / "python_tests"
 sys.path.insert(0, str(tests_utils_path))
 
-from utils import hugging_face, constants
+from utils import hugging_face
 
 TEST_MODELS = {
     "LLM": {
