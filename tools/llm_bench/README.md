@@ -7,7 +7,7 @@ This tool is designed for performance estimation, not accuracy validation. For a
 For Text Generation Pipeline prompt modifications are turned on by default from iteration to iteration. It's enabled to avoid prefix caching. If you need to have equal results on each iteration, please, run tool with --disable_prompt_permutation.
 
 ### 1. Prepare Python Virtual Environment for LLM Benchmarking
-   
+
 ``` bash
 python3 -m venv ov-llm-bench-env
 source ov-llm-bench-env/bin/activate
@@ -15,11 +15,11 @@ pip install --upgrade pip
 
 git clone  https://github.com/openvinotoolkit/openvino.genai.git
 cd openvino.genai/tools/llm_bench
-pip install -r requirements.txt  
+pip install -r requirements.txt
 ```
 
 > Note:
-> For existing Python environments, run the following command to ensure that all dependencies are installed with the latest versions:  
+> For existing Python environments, run the following command to ensure that all dependencies are installed with the latest versions:
 > `pip install -U --upgrade-strategy eager -r requirements.txt`
 
 #### (Optional) Hugging Face Login :
@@ -31,9 +31,9 @@ huggingface-cli login
 ```
 
 ### 2. Convert Model to OpenVINO IR Format
-   
-The `optimum-cli` tool simplifies converting Hugging Face models to OpenVINO IR format. 
-- Detailed documentation can be found in the [Optimum-Intel documentation](https://huggingface.co/docs/optimum/main/en/intel/openvino/export). 
+
+The `optimum-cli` tool simplifies converting Hugging Face models to OpenVINO IR format.
+- Detailed documentation can be found in the [Optimum-Intel documentation](https://huggingface.co/docs/optimum/main/en/intel/openvino/export).
 - To learn more about weight compression, see the [NNCF Weight Compression Guide](https://docs.openvino.ai/2025/openvino-workflow/model-optimization-guide/weight-compression.html).
 - For additional guidance on running inference with OpenVINO for LLMs, see the [OpenVINO Generative AI workflow](https://docs.openvino.ai/2025/openvino-workflow-generative.html).
 
@@ -45,11 +45,11 @@ optimum-cli export openvino --model <MODEL_ID> --weight-format <PRECISION> <OUTP
 optimum-cli export openvino -h # For detailed information
 ```
 
-* `--model <MODEL_ID>` : model_id for downloading from [huggingface_hub](https://huggingface.co/models) or path with directory where pytorch model located. 
+* `--model <MODEL_ID>` : model_id for downloading from [huggingface_hub](https://huggingface.co/models) or path with directory where pytorch model located.
 * `--weight-format <PRECISION>` : precision for model conversion. Available options: `fp32, fp16, int8, int4, mxfp4`
 * `<OUTPUT_DIR>`: output directory for saving generated OpenVINO model.
 
-**NOTE:** 
+**NOTE:**
 - Models larger than 1 billion parameters are exported to the OpenVINO format with 8-bit weights by default. You can disable it with `--weight-format fp32`.
 
 **Example:**
@@ -100,6 +100,8 @@ python benchmark.py -m models/llama-2-7b-chat/ -pf prompts/llama-2-7b-chat_l.jso
 - `-lc`: Path to JSON file to load customized configurations.
 - `--optimum`: Use Optimum Intel pipelines for benchmarking.
 - `--from_onnx`: Allow initialize Optimum OpenVINO model using ONNX.
+- `--pruning_ratio`: Percentage of visual tokens to prune (valid range: 0-100). If this option is not provided, pruning is disabled.
+- `--relevance_weight`: Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, making pruning more conservative on borderline tokens.
 
 **Additional options:**
 ``` bash
@@ -118,10 +120,10 @@ python benchmark.py -m models/llama-2-7b-chat/pytorch -n 2 -f pt --task text_gen
 
 > **Note:** If needed, You can install a specific OpenVINO version using pip:
 > ``` bash
-> # e.g. 
+> # e.g.
 > pip install openvino==2024.4.0
 > # Optional, install the openvino nightly package if needed.
-> # OpenVINO nightly is pre-release software and has not undergone full release validation or qualification. 
+> # OpenVINO nightly is pre-release software and has not undergone full release validation or qualification.
 > pip uninstall openvino
 > pip install --upgrade --pre openvino openvino-tokenizers --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 > ```
@@ -155,8 +157,8 @@ For example, `--load_config config.json` as following will result in streams.num
 ```json
 {
   "INFERENCE_NUM_THREADS": <NUMBER>
-} 
-``` 
+}
+```
 `<NUMBER>` is the number of total physical cores in 2 sockets.
 
 ## 6. Execution on CPU device
@@ -203,7 +205,7 @@ optimum-cli export openvino --model openbmb/MiniCPM-V-2_6 --trust-remote-code mo
 python benchmark.py -m models/MiniCPM-V-2_6/ -p "What is openvino?" -n 2 --task visual_text_gen -i ./image.png
 ```
 
-> **Supported VLM model types:** llava, llava-next, qwen2-vl, llava-qwen2, internvl-chat, minicpmv, phi3-v, minicpm-v, minicpmo, maira2, qwen2-5-vl 
+> **Supported VLM model types:** llava, llava-next, qwen2-vl, llava-qwen2, internvl-chat, minicpmv, phi3-v, minicpm-v, minicpmo, maira2, qwen2-5-vl
 
 ### Image Generation Models
 ```sh
@@ -264,7 +266,7 @@ optimum-cli export openvino --model openai/whisper-base models/whisper-base
 # load audio
 wget https://storage.openvinotoolkit.org/models_contrib/speech/2021.2/librispeech_s5/how_are_you_doing_today.wav
 # run benchmark.py
-python benchmark.py -m models/whisper-base/ --media ./how_are_you_doing_today.wav -n 2 --task speech_to_text 
+python benchmark.py -m models/whisper-base/ --media ./how_are_you_doing_today.wav -n 2 --task speech_to_text
 ```
 
 > **Supported Text to Speech model types:** whisper
@@ -291,7 +293,7 @@ python benchmark.py -m models/ms-marco-MiniLM-L2-v2/ -n 2 --task text_rerank
 # convert model to OpenVINO IR format
 optimum-cli export openvino --model BAAI/bge-small-en-v1.5 --task feature-extraction models/bge-small-en-v1.5
 # run benchmark.py
-python benchmark.py -m models/bge-small-en-v1.5/ -n 2 --task text_embed 
+python benchmark.py -m models/bge-small-en-v1.5/ -n 2 --task text_embed
 ```
 
 **Some additional parameters:**
@@ -308,10 +310,27 @@ python benchmark.py -m models/bge-small-en-v1.5/ -n 2 --task text_embed
 # convert model to OpenVINO IR format
 optimum-cli export openvino --model Salesforce/codegen-350M-multi models/codegen-350M-multi
 # run benchmark.py
-python benchmark.py -m models/codegen-350M-multi -p "def hello_world():" -n 2 --task code_gen 
+python benchmark.py -m models/codegen-350M-multi -p "def hello_world():" -n 2 --task code_gen
 ```
 
 > **Supported Code Generation model types:**: codegen, codegen2, stable-code, replit, codet5
+
+### Video Generation Models
+```sh
+python benchmark.py -m models/LTX-Video/FP16 -p "A cat plays with ball on the christmas tree." --negative_prompt "worst quality, inconsistent motion, blurry, jittery, distorted" --num_frames 5 -n 2 --num_steps 25 --task text-to-video
+```
+
+**Some additional parameters:**
+- `--height`: Generated video height.
+- `--width`: Generated video width.
+- `--num_steps`: Number of inference steps for video generation.
+- `--num_frames`: Number of frames in generated video.
+- `--frame_rate`: Frame rate for video generation and saving.
+- `--static_reshape`: Reshape video generation pipeline to specific width & height at pipeline creation time.
+- `--guidance_scale`: guidance scale parameter for pipeline, supported via json JSON input only.
+- `--guidance_rescale`: guidance rescale parameter for pipeline, supported via json JSON input only. **Note:** Currently not supported by LTX Pipeline with OpenVINO GenAI.
+
+> **Supported Video Generation model types:** Lightricks/LTX-Video
 
 ## 8. Memory consumption mode
 Enables memory usage information collection mode. This mode affects execution time, so it is not recommended to run memory consumption and performance benchmarking at the same time. Effect on performance can be reduced by specifying a longer --memory_consumption_delay, but the impact is still expected.

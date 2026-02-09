@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2025 Intel Corporation
+# Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import os
 import time
@@ -13,7 +13,8 @@ import llm_bench_utils
 import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print
 import llm_bench_utils.gen_output_data as gen_output_data
-import llm_bench_utils.parse_json_data as parse_json_data
+from llm_bench_utils.prompt_utils import get_image_prompt
+from .pipeline_utils import collect_prompts_step
 from transformers.image_utils import load_image
 import openvino as ov
 import numpy as np
@@ -217,19 +218,7 @@ def run_image_generation_genai(image_param, num, image_id, pipe, args, iter_data
 
 
 def run_image_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
-    input_image_list = get_image_prompt(args)
-    if args['prompt_index'] is None:
-        prompt_idx_list = [image_id for image_id, input_text in enumerate(input_image_list)]
-        image_list = input_image_list
-    else:
-        prompt_idx_list = []
-        image_list = []
-        for i in args['prompt_index']:
-            if 0 <= i < len(input_image_list):
-                image_list.append(input_image_list[i])
-                prompt_idx_list.append(i)
-    if len(image_list) == 0:
-        raise RuntimeError('==Failure prompts is empty ==')
+    image_list, prompt_idx_list = collect_prompts_step(args, get_image_prompt)
 
     # If --static_reshape is specified, we need to get width, height, and guidance scale to drop into args
     # as genai's create_image_gen_model implementation will need those to reshape the pipeline before compile().
@@ -246,7 +235,7 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
 
     if framework == "ov" and not use_genai:
         stable_diffusion_hook.new_text_encoder(pipe)
-        stable_diffusion_hook.new_unet(pipe)
+        stable_diffusion_hook.new_main_model(pipe)
         stable_diffusion_hook.new_vae_decoder(pipe)
 
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, prompt nums: {len(image_list)}, prompt idx: {prompt_idx_list}')
@@ -280,26 +269,3 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
 
     metrics_print.print_average(iter_data_list, prompt_idx_list, args['batch_size'], False)
     return iter_data_list, pretrain_time, iter_timestamp
-
-
-def get_image_prompt(args):
-    input_image_list = []
-
-    input_key = ['prompt']
-    if args.get("task") == args["use_case"].TASK["inpainting"]["name"] or ((args.get("media") or args.get("images")) and args.get("mask_image")):
-        input_key = ['media', "mask_image", "prompt"]
-    elif args.get("task") == args["use_case"].TASK["img2img"]["name"] or args.get("media") or args.get("images"):
-        input_key = ['media', "prompt"]
-
-    output_data_list, is_json_data = model_utils.get_param_from_file(args, input_key)
-    if is_json_data is True:
-        image_param_list = parse_json_data.parse_image_json_data(output_data_list)
-        if len(image_param_list) > 0:
-            for image_data in image_param_list:
-                if args['prompt_file'] is not None and len(args['prompt_file']) > 0:
-                    image_data['media'] = model_utils.resolve_media_file_path(image_data.get("media"), args['prompt_file'][0])
-                    image_data['mask_image'] = model_utils.resolve_media_file_path(image_data.get("mask_image"), args['prompt_file'][0])
-                input_image_list.append(image_data)
-    else:
-        input_image_list.append(output_data_list[0])
-    return input_image_list

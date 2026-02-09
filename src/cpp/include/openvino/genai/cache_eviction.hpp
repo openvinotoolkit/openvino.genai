@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <unordered_map>
 #include <sstream>
+#include <set>
 
 #include "openvino/core/except.hpp"
 
@@ -17,8 +18,11 @@ namespace ov::genai {
 */
 enum class AggregationMode {
     SUM,     /**< In this mode the importance scores of each token will be summed after each step of generation */
-    NORM_SUM /**< Same as SUM, but the importance scores are additionally divided by the lifetime (in tokens generated)
+    NORM_SUM, /**< Same as SUM, but the importance scores are additionally divided by the lifetime (in tokens generated)
                 * of a given token in cache */
+    ADAPTIVE_RKV /** Switches the cache eviction algorithm to use Adaptive R-KV algorithm. The scores are aggregated within
+                   a configurable window size of the latest generated tokens. May not be used together with the KVCrush
+                   algorithm. */
 };
 
 /**
@@ -94,9 +98,15 @@ public:
     }
 };
 
-/**
-* @brief Configuration struct for the cache eviction algorithm.
-*/
+struct AdaptiveRKVConfig {
+    AdaptiveRKVConfig() = default;
+    AdaptiveRKVConfig(double attention_mass_, size_t window_size_) : attention_mass(attention_mass_), window_size(window_size_) {};
+
+    double attention_mass = 0.9;
+    size_t window_size = 8;
+};
+
+
 class CacheEvictionConfig {
 public:
     CacheEvictionConfig() = default;
@@ -107,11 +117,13 @@ public:
                         AggregationMode aggregation_mode_,
                         bool apply_rotation_ = false,
                         size_t snapkv_window_size_ = 8,
-                        const KVCrushConfig& kvcrush_config_ = KVCrushConfig(0, KVCrushAnchorPointMode::RANDOM))
+                        const KVCrushConfig& kvcrush_config_ = KVCrushConfig(0, KVCrushAnchorPointMode::RANDOM),
+                        const AdaptiveRKVConfig& adaptive_rkv_config_ = AdaptiveRKVConfig())
         : aggregation_mode(aggregation_mode_),
           apply_rotation(apply_rotation_),
           snapkv_window_size(snapkv_window_size_),
           kvcrush_config(kvcrush_config_),
+          adaptive_rkv_config(adaptive_rkv_config_),
           m_start_size(start_size),
           m_recent_size(recent_size),
           m_max_cache_size(max_cache_size) {
@@ -190,6 +202,8 @@ public:
      * even if they are not among the most important ones.*/
     KVCrushConfig kvcrush_config;
 
+    AdaptiveRKVConfig adaptive_rkv_config;
+
 private:
     /** Number of tokens in the *beginning* of KV cache that should be retained
      * in the KV cache for this sequence during generation. Must be non-zero and a multiple of the KV cache block size for
@@ -212,4 +226,3 @@ private:
 };
 
 } // namespace ov::genai
-

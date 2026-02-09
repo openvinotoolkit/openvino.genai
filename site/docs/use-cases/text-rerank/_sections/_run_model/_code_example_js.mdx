@@ -1,0 +1,15 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="javascript" showLineNumbers>
+{`import { TextRerankPipeline } from 'openvino-genai-node';
+
+const pipeline = await TextRerankPipeline(modelPath, { device: "${props.device || 'CPU'}", config: { top_n: 3 }, });
+
+const rerankResult = await pipeline.rerank(query, documents);
+
+console.log("Reranked documents:");
+for (const [index, score] of rerankResult) {
+    console.log(\`Document \${index} (score: \${score.toFixed(4)}): \${documents[index]}\`);
+}
+`}
+</CodeBlock>

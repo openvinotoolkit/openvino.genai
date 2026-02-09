@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2025 Intel Corporation
+# Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 # flake8: noqa
 import time
@@ -12,7 +12,11 @@ tm_list = []
 tm_infer_list = []
 tm_mm_embeddings = []
 
-if version.parse(transformers.__version__) >= version.parse("4.55.0"):
+if version.parse(transformers.__version__) >= version.parse("4.57.0"):
+    import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v57 as hook_beam_search_v57
+
+    new_beam_search = hook_beam_search_v57.new_beam_search_v57
+elif version.parse(transformers.__version__) >= version.parse("4.55.0"):
     import llm_bench_utils.llm_hook_beam_search.hook_beam_search_v55 as hook_beam_search_v55
     new_beam_search = hook_beam_search_v55.new_beam_search_v55
 elif version.parse(transformers.__version__) >= version.parse("4.52.0"):
@@ -73,7 +77,10 @@ class BeamSearchHook:
 
     def new_forward(self, model):
         """Define a new beam search function."""
-        model._beam_search = new_beam_search.__get__(model, model.__class__)
+        if version.parse(transformers.__version__) >= version.parse("4.57.0"):
+            type(model)._beam_search = new_beam_search
+        else:
+            model._beam_search = new_beam_search.__get__(model, model.__class__)
 
     def new_get_multimodal_embeddings(self, model):
         model._orig_get_multimodal_embeddings = model.get_multimodal_embeddings
