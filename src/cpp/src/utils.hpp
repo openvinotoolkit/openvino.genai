@@ -9,6 +9,7 @@
 
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
+#include "openvino/genai/rag/text_embedding_pipeline.hpp"
 #include "openvino/runtime/core.hpp"
 
 #include "openvino/genai/generation_handle.hpp"
@@ -162,9 +163,7 @@ public:
     }
 
     void add_inputs(const ov::Tensor& inputs_ids) {
-        OPENVINO_SUPPRESS_DEPRECATED_START
-        std::copy_n(inputs_ids.data<int64_t>(), inputs_ids.get_size(), std::back_inserter(state));
-        OPENVINO_SUPPRESS_DEPRECATED_END
+        std::copy_n(inputs_ids.data<const int64_t>(), inputs_ids.get_size(), std::back_inserter(state));
     }
 
     void reset_state() {
@@ -195,6 +194,11 @@ std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu(const std::shared_p
                                                              const ov::AnyMap& config,
                                                              const KVAxesPosition& kv_pos,
                                                              const bool is_whisper = false);
+
+std::pair<ov::CompiledModel, KVDesc> compile_decoder_for_npu_text_embedding(const std::shared_ptr<ov::Model>& model,
+                                                                            const ov::AnyMap& config,
+                                                                            const KVAxesPosition& kv_pos,
+                                                                            const ov::genai::TextEmbeddingPipeline::Config& text_embed_config);
 
 /// @brief SharedOptional is a wrapper around a reference to an existing object and an optional shared alternative value.
 /// The difference from std::optional is that the default state is not empty and contains a reference to an existing object outside the class.

@@ -21,7 +21,8 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     EmbeddingsModel::Ptr m_embedding,
     std::optional<int64_t> rope_delta = std::nullopt,
     const size_t max_kv_cache_size = std::numeric_limits<size_t>::max(),
-    const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs = {});
+    const std::unordered_map<std::string, ov::Tensor>& lm_extra_inputs = {},
+    const bool use_intermediate_remote_tensor = true);
 
 
 void align_kv_cache_and_history(const ov::Tensor& new_chat_tokens, utils::KVCacheState& kv_cache_state);
