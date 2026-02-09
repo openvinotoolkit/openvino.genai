@@ -63,7 +63,9 @@ public:
     virtual std::vector<float> get_next_token_log_probs(
         const std::string& prompt,
         const std::vector<int64_t>& token_ids
-    ) = 0;
+    ) {
+        OPENVINO_THROW("get_next_token_log_probs is not implemented for this pipeline type");
+    }
 
     virtual ~LLMPipelineImplBase() = default;
 
