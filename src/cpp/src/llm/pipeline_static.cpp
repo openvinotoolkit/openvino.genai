@@ -382,6 +382,13 @@ void StatefulLLMPipeline::finish_chat() {
     m_history.clear();
 };
 
+std::vector<float> StatefulLLMPipeline::get_next_token_log_probs(
+    const std::string& prompt,
+    const std::vector<int64_t>& token_ids
+) {
+    OPENVINO_THROW("get_next_token_log_probs is not yet implemented for static pipeline");
+}
+
 StatefulLLMPipeline::~StatefulLLMPipeline() {
     m_request.get_compiled_model().release_memory();
 }

@@ -318,6 +318,26 @@ public:
     }
     EncodedResults generate(const EncodedInputs& inputs, const ov::AnyMap& config_map);
 
+    /**
+    * @brief Get log probabilities for specific tokens after processing the prompt.
+    * This method processes the input prompt and returns log probabilities for the specified token IDs
+    * that would follow the prompt. Useful for multiple-choice tasks where you need to compare
+    * probabilities of different continuations.
+    *
+    * @param prompt The input text prompt
+    * @param token_ids Vector of token IDs to get log probabilities for
+    * @return Vector of log probabilities corresponding to each token ID
+    * 
+    * Example usage for MMLU-style multiple choice:
+    *   prompt = "What is 2+2?\nA. 3\nB. 4\nC. 5\nD. 6\nAnswer:"
+    *   token_ids = [tokenizer.encode(" A")[0], tokenizer.encode(" B")[0], ...]
+    *   log_probs = pipeline.get_next_token_log_probs(prompt, token_ids)
+    */
+    std::vector<float> get_next_token_log_probs(
+        const std::string& prompt,
+        const std::vector<int64_t>& token_ids
+    );
+
     ov::genai::Tokenizer get_tokenizer();
     GenerationConfig get_generation_config() const;
     void set_generation_config(const GenerationConfig& config);

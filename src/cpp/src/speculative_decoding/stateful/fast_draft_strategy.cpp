@@ -701,6 +701,13 @@ void StatefulSpeculativeLLMPipeline::finish_chat() {
     m_main_request->reset_state();
 };
 
+std::vector<float> StatefulSpeculativeLLMPipeline::get_next_token_log_probs(
+    const std::string& prompt,
+    const std::vector<int64_t>& token_ids
+) {
+    OPENVINO_THROW("get_next_token_log_probs is not yet implemented for speculative decoding pipeline");
+}
+
 StatefulSpeculativeLLMPipeline::~StatefulSpeculativeLLMPipeline() {
     m_main_request->release_memory();
     m_draft_request->release_memory();

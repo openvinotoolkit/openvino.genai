@@ -88,6 +88,11 @@ public:
 
     ov::genai::SpeculativeDecodingMetrics get_speculative_decoding_metrics() const;
 
+    std::vector<float> get_next_token_log_probs(
+        const std::string& prompt,
+        const std::vector<int64_t>& token_ids
+    );
+
     // Override to reset model states
     void finish_chat() override;
 

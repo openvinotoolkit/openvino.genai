@@ -747,4 +747,11 @@ SpeculativeDecodingMetrics StatefulEagle3LLMPipeline::get_speculative_decoding_m
     return m_sd_metrics;
 }
 
+std::vector<float> StatefulEagle3LLMPipeline::get_next_token_log_probs(
+    const std::string& prompt,
+    const std::vector<int64_t>& token_ids
+) {
+    OPENVINO_THROW("get_next_token_log_probs is not yet implemented for Eagle3 speculative decoding pipeline");
+}
+
 }  // namespace ov::genai

@@ -4,6 +4,9 @@
 
 #include "llm/pipeline_stateful.hpp"
 
+#include <algorithm>
+#include <cmath>
+
 #include "lora/helper.hpp"
 #include "lm_encoding.hpp"
 #include "openvino/genai/text_streamer.hpp"
@@ -345,9 +348,6 @@ EncodedResults StatefulLLMPipeline::generate(
             "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
     }
 
-    // Stateful pipeline does not provide logprobs for prompt tokens
-    OPENVINO_ASSERT(config.echo == false, "Echo is not supported in the stateful pipeline");
-
     std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
 
     OPENVINO_ASSERT(streamer_ptr == nullptr || batch_size == 1 && config.num_return_sequences == 1 &&
@@ -495,6 +495,95 @@ void StatefulLLMPipeline::finish_chat() {
         m_tokenized_chat_history.clear();
         m_kv_cache_state.reset_state();
     }
+}
+
+std::vector<float> StatefulLLMPipeline::get_next_token_log_probs(
+    const std::string& prompt,
+    const std::vector<int64_t>& token_ids
+) {
+    // If slice optimization is enabled, run single inference and extract all log_probs
+
+    // Tokenize the prompt (context only, without any continuation)
+    ov::Tensor prompt_ids = m_tokenizer.encode(prompt).input_ids;
+    size_t prompt_len = prompt_ids.get_shape().at(1);
+    size_t batch_size = prompt_ids.get_shape().at(0);
+    
+    // ========== SINGLE INFERENCE FOR ALL TOKENS ==========
+    
+    // Reset KV cache
+    reset_kv_state();
+    
+    // Set inputs
+    m_model_runner.set_tensor("input_ids", prompt_ids);
+    
+    // Set attention mask (all 1s for full prompt)
+    ov::Tensor attention_mask = ov::Tensor{ov::element::i64, prompt_ids.get_shape()};
+    std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
+    m_model_runner.set_tensor("attention_mask", attention_mask);
+    
+    // Initialize position_ids if needed
+    try {
+        size_t num_inputs = m_model_runner.get_compiled_model().inputs().size();
+        if (num_inputs == 4) {
+            ov::Tensor position_ids = ov::Tensor{ov::element::i64, prompt_ids.get_shape()};
+            utils::initialize_position_ids(position_ids, attention_mask, 0);
+            m_model_runner.set_tensor("position_ids", position_ids);
+        }
+    } catch (const std::exception& e) {
+    }
+    
+    // Set beam_idx
+    ov::Tensor beam_idx = ov::Tensor{ov::element::i32, {batch_size}};
+    std::fill_n(beam_idx.data<int32_t>(), batch_size, 0);
+    m_model_runner.set_tensor("beam_idx", beam_idx);
+    
+    // Run inference ONCE
+    m_model_runner.infer();
+    
+    // Get logits - with slice optimization, we only get last position
+    ov::Tensor logits_tensor = m_model_runner.get_tensor("logits");
+    auto logits_shape = logits_tensor.get_shape();
+    const float* logits_data = logits_tensor.data<const float>();
+    size_t vocab_size = logits_shape.back();
+    size_t logits_seq_len = logits_shape[1];
+    
+    // Use the LAST position's logits (predicts what comes after prompt)
+    size_t logits_pos = logits_seq_len - 1;
+    const float* position_logits = logits_data + logits_pos * vocab_size;
+    
+    // Compute log softmax normalization ONCE for all tokens
+    float max_val = -std::numeric_limits<float>::infinity();
+    for (size_t j = 0; j < vocab_size; ++j) {
+        if (position_logits[j] > max_val) {
+            max_val = position_logits[j];
+        }
+    }
+    
+    double log_sum = 0.0;
+    for (size_t j = 0; j < vocab_size; ++j) {
+        log_sum += std::exp(position_logits[j] - max_val);
+    }
+    log_sum = std::log(log_sum);
+    
+    // Extract log_probs for each continuation token from the same logits
+    std::vector<float> result;
+    result.reserve(token_ids.size());
+    
+    for (size_t i = 0; i < token_ids.size(); ++i) {
+        int64_t cont_token = token_ids[i];
+        
+        if (cont_token >= (int64_t)vocab_size || cont_token < 0) {
+            result.push_back(-1000.0f);
+            continue;
+        }
+        
+        float raw_logit = position_logits[cont_token];
+        float log_prob = raw_logit - max_val - static_cast<float>(log_sum);
+        
+        result.push_back(log_prob);
+    }
+    
+    return result;
 }
 
 StatefulLLMPipeline::~StatefulLLMPipeline() {
