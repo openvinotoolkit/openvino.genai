@@ -77,7 +77,7 @@ LTXVideoTransformer3DModel& LTXVideoTransformer3DModel::compile(const std::strin
     // Ensure output is f32 - downstream CFG code uses data<float>()
     ov::preprocess::PrePostProcessor ppp(m_model);
     ppp.output().postprocess().convert_element_type(ov::element::f32);
-    ppp.build();
+    m_model = ppp.build();
 
     ov::CompiledModel compiled_model = utils::singleton_core().compile_model(m_model, device, *filtered_properties);
     ov::genai::utils::print_compiled_model_properties(compiled_model, "LTX Video Transformer 3D model");
