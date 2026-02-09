@@ -222,7 +222,10 @@ private:
         std::vector<int64_t> validated_tokens;
     };
 
-    SpeculativeResult run_speculative_iteration(size_t token_count, int64_t eos_token_id);
+    SpeculativeResult run_speculative_iteration(size_t token_count,
+                                                int64_t eos_token_id,
+                                                size_t current_generated_tokens,
+                                                size_t max_new_tokens);
 
     std::unique_ptr<Eagle3DraftWrapper> m_draft;
     std::unique_ptr<Eagle3TargetWrapper> m_target;

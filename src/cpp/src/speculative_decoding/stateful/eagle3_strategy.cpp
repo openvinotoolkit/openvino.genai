@@ -573,15 +573,18 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
     while (!eos_reached && generated_tokens < config.max_new_tokens &&
            m_target->get_sequence_length() < m_prompt_length + config.max_new_tokens &&
            streaming_status == ov::genai::StreamingStatus::RUNNING) {
-        auto result = run_speculative_iteration(input_token_count, static_cast<int64_t>(config.eos_token_id));
+        auto result = run_speculative_iteration(input_token_count,
+                                                static_cast<int64_t>(config.eos_token_id),
+                                                generated_tokens,
+                                                config.max_new_tokens);
 
         streaming_status = stream_generated_tokens(streamer_ptr, result.validated_tokens);
 
         // Update statistics
         total_draft_generated += m_draft_iterations;
         total_draft_accepted += result.accepted_tokens_count;
+        generated_tokens += result.validated_tokens.size();
         eos_reached = result.eos_reached;
-        generated_tokens++;
 
         // Prepare for next iteration (hidden states are stored in sequence)
         input_token_count = result.next_window_size;
@@ -634,7 +637,9 @@ EncodedResults StatefulEagle3LLMPipeline::generate_tokens(const EncodedInputs& i
 
 StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_speculative_iteration(
     size_t input_token_count,
-    int64_t eos_token_id) {
+    int64_t eos_token_id,
+    size_t current_generated_tokens,
+    size_t max_new_tokens) {
     SpeculativeResult result;
 
     OPENVINO_ASSERT(m_target->get_sequence_group() && m_draft->get_sequence_group(),
@@ -718,8 +723,23 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     // Result: [accepted_draft_tokens..., new_sampled_token]
     const size_t accepted_count = validated_tokens.size() - 1;
     const int64_t target_predicted_token = validated_tokens.back();
-    const size_t tokens_to_remove = actual_draft_tokens - accepted_count;
-    const size_t total_accepted_tokens = validated_tokens.size();
+    size_t tokens_to_remove = actual_draft_tokens - accepted_count;
+    size_t total_accepted_tokens = validated_tokens.size();
+
+    // Check if accepting all validated tokens would exceed max_new_tokens
+    size_t tokens_after_accept = current_generated_tokens + validated_tokens.size();
+    if (tokens_after_accept > max_new_tokens) {
+        // Truncate to exactly max_new_tokens
+        size_t excess_tokens = tokens_after_accept - max_new_tokens;
+        size_t tokens_to_keep = validated_tokens.size() - excess_tokens;
+
+        validated_tokens.resize(tokens_to_keep);
+        total_accepted_tokens = tokens_to_keep;
+
+        m_target->truncate_sequence(m_prompt_length + max_new_tokens);
+
+        tokens_to_remove = actual_draft_tokens - (tokens_to_keep - 1);  // -1 for the new target token
+    }
 
     // Step 4: Synchronize sequences and KV cache
     // Target model's sequence is already updated by Sampler
@@ -748,7 +768,7 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     m_target->get_current_sequence()->update_hidden_state(next_hidden);
 
     result.accepted_tokens_count = accepted_count;
-    result.next_window_size = accepted_count + 1;
+    result.next_window_size = total_accepted_tokens;
     result.validated_tokens = std::move(validated_tokens);
     result.eos_reached = (target_predicted_token == eos_token_id);
 
