@@ -33,6 +33,16 @@ public:
                                  bool recalculate_merged_embeddings = true,
                                  const std::vector<size_t>& image_sequence = {}) override;
 
+    std::vector<std::pair<std::string, ov::Tensor>> get_language_model_inputs(
+        const std::string& prompt,
+        const std::vector<ov::genai::EncodedImage>& images,
+        const std::vector<ov::genai::EncodedVideo>& videos,
+        ov::genai::VLMPerfMetrics& metrics,
+        bool recalculate_merged_embeddings = true,
+        const std::vector<size_t>& image_sequence = {},
+        const std::vector<size_t>& videos_sequence = {},
+        const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {}) override;
+
     NormalizedPrompt normalize_prompt(const std::string& prompt,
                                       size_t base_id,
                                       const std::vector<EncodedImage>& images) const override;

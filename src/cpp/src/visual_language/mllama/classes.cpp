@@ -293,8 +293,8 @@ static inline ov::Tensor build_aspect_ratio_mask(const ImageSize& aspect_ratio, 
     return aspect_ratio_mask;
 }
 
-// returns <pixel_values, aspect_ratio_ids, aspect_ratio_mask> ov::Tensors
-std::tuple<ov::Tensor, ov::Tensor, ov::Tensor> get_pixel_values_mllama(const ov::Tensor& image,
+// returns <pixel_values, aspect_ratio_ids, aspect_ratio_mask, num_tiles>
+std::tuple<ov::Tensor, ov::Tensor, ov::Tensor, size_t> get_pixel_values_mllama(const ov::Tensor& image,
                                                                        const ProcessorConfig& config) {
     // Resize
     ImageSize aspect_ratio;
@@ -319,13 +319,180 @@ std::tuple<ov::Tensor, ov::Tensor, ov::Tensor> get_pixel_values_mllama(const ov:
 
     // Tile the image & produce pixel_values tensor
     auto tiled_image = split_to_tiles(normalized_image, aspect_ratio.height, aspect_ratio.width);
+    size_t num_tiles = tiled_image.get_shape()[0];
     auto pixel_values = pack_images(tiled_image, config.max_image_tiles);
 
     // Build aspect ratio ids & mask tensors
     auto aspect_ratio_ids = convert_aspect_ratio_to_ids(aspect_ratio, config.max_image_tiles);
     auto aspect_ratio_mask = build_aspect_ratio_mask(aspect_ratio, config.max_image_tiles);
 
-    return {pixel_values, aspect_ratio_ids, aspect_ratio_mask};
+    return {pixel_values, aspect_ratio_ids, aspect_ratio_mask, num_tiles};
+}
+
+// ref:
+// https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/models/mllama/processing_mllama.py#L42
+using MaskPair = std::array<int64_t, 2>;
+static inline std::vector<MaskPair> get_cross_attention_token_mask(const ov::Tensor& input_ids,
+                                                                   int64_t image_token_id) {
+    // Validate dtype
+    if (input_ids.get_element_type() != ov::element::i64) {
+        throw std::invalid_argument("input_ids must be an ov::Tensor of type i64 (int64_t).");
+    }
+
+    // Validate shape [1, L]
+    const ov::Shape shape = input_ids.get_shape();
+    if (shape.size() != 2 || shape[0] != 1) {
+        throw std::invalid_argument("input_ids must have shape [1, L].");
+    }
+
+    const int64_t L = static_cast<int64_t>(shape[1]);
+    const auto* ids = input_ids.data<const int64_t>();
+    if (!ids) {
+        throw std::runtime_error("input_ids.data<const int64_t>() returned null.");
+    }
+
+    // Collect image token locations
+    std::vector<int64_t> image_token_locations;
+    image_token_locations.reserve(4);
+
+    for (int64_t i = 0; i < L; ++i) {
+        if (ids[i] == image_token_id) {
+            image_token_locations.push_back(i);
+        }
+    }
+
+    if (image_token_locations.empty()) {
+        return {};
+    }
+
+    // Only one image present: unmask until end of sequence (Python uses -1 here)
+    if (image_token_locations.size() == 1) {
+        return {MaskPair{image_token_locations[0], -1}};
+    }
+
+    // Build initial masks: [[loc0, loc1], [loc1, loc2], ...] and last attends to end
+    std::vector<MaskPair> vision_masks;
+    vision_masks.reserve(image_token_locations.size());
+
+    for (size_t k = 0; k + 1 < image_token_locations.size(); ++k) {
+        vision_masks.push_back(MaskPair{image_token_locations[k], image_token_locations[k + 1]});
+    }
+    vision_masks.push_back(MaskPair{image_token_locations.back(), L});
+
+    // If there are two or more consecutive vision tokens, they all attend to all subsequent tokens.
+    int64_t last_mask_end = vision_masks.back()[1];
+    for (size_t idx = vision_masks.size(); idx-- > 0;) {
+        auto& m = vision_masks[idx];
+        if (m[0] == (m[1] - 1)) {  // consecutive image tokens: start == end-1
+            m[1] = last_mask_end;
+        }
+        last_mask_end = m[1];
+    }
+
+    return vision_masks;
+}
+
+// ref:
+// https://github.com/huggingface/transformers/blob/v4.57.6/src/transformers/models/mllama/processing_mllama.py#L90
+// Produces: ov::Tensor i64 of shape [B, length, max_num_images, max_num_tiles]
+static inline ov::Tensor convert_sparse_cross_attention_mask_to_dense(
+    const std::vector<std::vector<MaskPair>>& cross_attention_token_mask,  // [B][num_images] -> {start,end}
+    const std::vector<std::vector<size_t>>& num_tiles,                     // [B][num_images] -> tile_count
+    size_t max_num_tiles,
+    size_t length) {
+    const size_t batch_size = cross_attention_token_mask.size();
+
+    if (num_tiles.size() != batch_size) {
+        throw std::invalid_argument("num_tiles must have the same batch size as cross_attention_token_mask.");
+    }
+
+    // max_num_images = max(len(masks) for masks in cross_attention_token_mask)
+    size_t max_num_images = 0;
+    for (const auto& sample_masks : cross_attention_token_mask) {
+        max_num_images = std::max(max_num_images, sample_masks.size());
+    }
+
+    // Allocate dense mask, initialized to zeros (ov::Tensor default-inits but doesn't guarantee zero,
+    // so we explicitly fill).
+    ov::Tensor cross_attention_mask(ov::element::i64, ov::Shape{batch_size, length, max_num_images, max_num_tiles});
+
+    auto* out = cross_attention_mask.data<int64_t>();
+    if (!out) {
+        throw std::runtime_error("Failed to get writable tensor data for cross_attention_mask.");
+    }
+    std::fill(out, out + cross_attention_mask.get_size(), int64_t{0});
+
+    // Helper for flattening indices [B, L, I, T] in row-major order
+    const size_t B = batch_size;
+    const size_t L = length;
+    const size_t I = max_num_images;
+    const size_t T = max_num_tiles;
+
+    auto idx = [L, I, T](size_t b, size_t t, size_t i, size_t tile) -> size_t {
+        return (((b * L + t) * I + i) * T + tile);
+    };
+
+    for (size_t sample_idx = 0; sample_idx < batch_size; ++sample_idx) {
+        const auto& sample_masks = cross_attention_token_mask[sample_idx];
+        const auto& sample_num_tiles = num_tiles[sample_idx];
+
+        const size_t num_images_in_sample = std::min(sample_masks.size(), sample_num_tiles.size());
+
+        for (size_t mask_idx = 0; mask_idx < num_images_in_sample; ++mask_idx) {
+            const auto& loc = sample_masks[mask_idx];
+            size_t mask_num_tiles = sample_num_tiles[mask_idx];
+
+            // Equivalent of:
+            // start, end = locations
+            int64_t start64 = loc[0];
+            int64_t end64 = loc[1];
+
+            // Clamp tiles
+            if (mask_num_tiles > max_num_tiles) {
+                mask_num_tiles = max_num_tiles;
+            }
+
+            // Python:
+            // end = min(end, length)
+            // if end == -1: end = length
+            // (note: min(-1, length) stays -1, so -1 survives into the check)
+            end64 = std::min<int64_t>(end64, static_cast<int64_t>(length));
+            if (end64 == -1) {
+                end64 = static_cast<int64_t>(length);
+            }
+
+            // Basic sanity / bounds. (In the typical use-case start/end are non-negative.)
+            if (start64 < 0) {
+                // If you prefer strict matching of Python negative slicing semantics, you can
+                // implement that here; most models never produce negative starts.
+                start64 = 0;
+            }
+            if (end64 < 0) {
+                // end < 0 (but not -1) => empty range
+                continue;
+            }
+
+            const size_t start = static_cast<size_t>(start64);
+            const size_t end = static_cast<size_t>(end64);
+
+            if (start >= length) {
+                continue;  // empty
+            }
+            const size_t end_clamped = std::min(end, length);
+            if (end_clamped <= start) {
+                continue;  // empty
+            }
+
+            // cross_attention_mask[sample_idx, start:end, mask_idx, :mask_num_tiles] = 1
+            for (size_t t = start; t < end_clamped; ++t) {
+                for (size_t tile = 0; tile < mask_num_tiles; ++tile) {
+                    out[idx(sample_idx, t, mask_idx, tile)] = 1;
+                }
+            }
+        }
+    }
+
+    return cross_attention_mask;
 }
 
 } // namespace
@@ -334,7 +501,8 @@ EncodedImage VisionEncoderMLlamma::encode(const ov::Tensor& image, const ov::Any
     ProcessorConfig config = utils::from_any_map(config_map, m_processor_config);
 
     ov::Tensor pixel_values, aspect_ratio_ids, aspect_ratio_mask;
-    std::tie(pixel_values, aspect_ratio_ids, aspect_ratio_mask) = get_pixel_values_mllama(image, config);
+    size_t num_tiles;
+    std::tie(pixel_values, aspect_ratio_ids, aspect_ratio_mask, num_tiles) = get_pixel_values_mllama(image, config);
 
     CircularBufferQueueElementGuard<ov::InferRequest> infer_request_guard(this->m_ireq_queue_vision_encoder.get());
     ov::InferRequest& encoder = infer_request_guard.get();
@@ -345,29 +513,116 @@ EncodedImage VisionEncoderMLlamma::encode(const ov::Tensor& image, const ov::Any
 
     encoder.infer();
 
-    // mllama encoder produces cross-kv states that need to be set as input tensors to the language model.
-    // TODO: Figure out best way to make that connection.
-    // Note: Another option is to have encoder return hidden states, and set those (similar to whisper encoder + decoder pipeline).
-    //       In that case, language model will need to produce initial cross-kv during pre-fill. Need to experiment..
-    // We also need to consider that for multi-turn conversations, we need to merge new cross-kv states with old.
-    // Also, for text-only cases, we need to produce 'dummy' cross-kv.. and that can't happen here as this function won't
-    // be called unless an image is used.
+    EncodedImage encoded_image{};
+    encoded_image.num_tiles = num_tiles;
 
-    return {};
+    const auto &outputs = encoder.get_compiled_model().outputs();
+    for (const auto& output : outputs) {
+        const auto& name = output.get_any_name();
+        auto tensor = encoder.get_tensor(name);
+        // copy_to here so that next encoder infer won't overwrite the data we are storing in encoded_image.
+        // For example, when multiple images are used, encode is called separately for each.
+        ov::Tensor tensor_copy(tensor.get_element_type(), tensor.get_shape());
+        tensor.copy_to(tensor_copy);
+        encoded_image.cross_kv_states.push_back({name, tensor_copy});
+    }
+
+    return encoded_image;
+}
+
+std::vector<std::pair<std::string, ov::Tensor>> InputsEmbedderMLlamma::get_language_model_inputs(
+    const std::string& unified_prompt,
+    const std::vector<ov::genai::EncodedImage>& images,
+    const std::vector<ov::genai::EncodedVideo>& videos,
+    ov::genai::VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& image_sequence,
+    const std::vector<size_t>& videos_sequence,
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
+    if (videos.size()) {
+        OPENVINO_THROW(
+            "Current model doesn't support video preprocess currently. Input images are processed as separate images.");
+    }
+
+    // mllama always adds special tokens in pytorch
+    set_add_special_tokens(true);
+    ov::Tensor input_ids = get_encoded_input_ids(unified_prompt, metrics);
+    ov::Tensor encoded_image_token = m_tokenizer.encode("<|image|>", ov::genai::add_special_tokens(false)).input_ids;
+    int64_t image_token_id = encoded_image_token.data<int64_t>()[encoded_image_token.get_size() - 1];
+
+    // TODO: I believe get_language_model_inputs is called for a given batch, although some of the following
+    // helpers (get_cross_attention_token_mask, convert_sparse_cross_attention_mask_to_dense, etc.) are written
+    // to handle batch size > 1. Not necessarily an issue, but it's confusing and could be simplified.
+    std::vector<std::vector<MaskPair>> cross_attention_token_mask;
+    size_t num_tokens = input_ids.get_shape()[1];
+    for (size_t b = 0; b < input_ids.get_shape()[0]; b++) {
+        ov::Coordinate in_coord_begin{b, 0};
+        ov::Coordinate in_coord_end{b + 1, num_tokens};
+        ov::Tensor input_ids_slice(input_ids, in_coord_begin, in_coord_end);
+        cross_attention_token_mask.emplace_back(get_cross_attention_token_mask(input_ids, image_token_id));
+    }
+
+    //[B][image_images]
+    std::vector<std::vector<size_t>> num_tiles;
+    std::vector<std::pair<std::string, ov::Tensor>> cross_kv_inputs;
+    if (!images.empty()) {
+        std::vector<size_t> batch_tile_sizes;
+        for (size_t imagei = 0; imagei < images.size(); imagei++) {
+            if (imagei == 0) {
+                cross_kv_inputs = images[imagei].cross_kv_states;
+            } else {
+                // TODO: This requires us to merge multiple cross_kv_states. Handle this later.
+                OPENVINO_THROW("This model doesn't yet have support for multiple images.");
+            }
+
+            batch_tile_sizes.push_back(images[imagei].num_tiles);
+        }
+        num_tiles.push_back(batch_tile_sizes);
+    }
+    else
+    {
+        // TODO: If it's the first prompt in a chat session, we need to create dummy kv states.
+        // Otherwise, re-use previous KV Cache states (they should already be set).
+        OPENVINO_THROW("This model doesn't yet have support for text-only input");
+    }
+
+    //TODO: replace '4' here with max_tiles from vision preprocessor config.
+    auto cross_attention_mask =
+        convert_sparse_cross_attention_mask_to_dense(cross_attention_token_mask, num_tiles, 4, num_tokens);
+
+    CircularBufferQueueElementGuard<EmbeddingsRequest> embeddings_request_guard(m_embedding->get_request_queue().get());
+    EmbeddingsRequest& req = embeddings_request_guard.get();
+    ov::Tensor inputs_embeds = m_embedding->infer(req, input_ids);
+
+    std::vector<std::pair<std::string, ov::Tensor>> inputs = {{"inputs_embeds", inputs_embeds}};
+    inputs.push_back({"cross_attention_mask", cross_attention_mask});
+
+    for (auto& cross_kv_input : cross_kv_inputs) {
+        inputs.push_back(cross_kv_input);
+    }
+
+    return inputs;
 }
 
 ov::Tensor InputsEmbedderMLlamma::get_inputs_embeds(const std::string& unified_prompt,
-                                                  const std::vector<ov::genai::EncodedImage>& images,
-                                                  ov::genai::VLMPerfMetrics& metrics,
-                                                  bool recalculate_merged_embeddings,
-                                                  const std::vector<size_t>& images_sequence) {
-    return {};
+                                                    const std::vector<ov::genai::EncodedImage>& images,
+                                                    ov::genai::VLMPerfMetrics& metrics,
+                                                    bool recalculate_merged_embeddings,
+                                                    const std::vector<size_t>& images_sequence){
+    OPENVINO_THROW("[InputsEmbedderMLlamma] The method get_inputs_embeds is not supported for MLlama models because "
+                   "cross-kv states are required to also be returned, and set on the language model. "
+                   "Please use get_language_model_inputs instead, which returns both the input embeddings "
+                   "and the necessary cross-kv state tensors. ");
 }
 
 NormalizedPrompt InputsEmbedderMLlamma::normalize_prompt(const std::string& prompt,
                                                        size_t base_id,
                                                        const std::vector<EncodedImage>& images) const {
-    return {};
+    std::string image_token = "<|image|>";
+    auto [unified_prompt, images_sequence] =
+        normalize(prompt, image_token, image_token, base_id, images.size(), VisionType::IMAGE);
+
+    return {std::move(unified_prompt), std::move(images_sequence), {}};
 }
 
 InputsEmbedderMLlamma::InputsEmbedderMLlamma(const VLMConfig& vlm_config,

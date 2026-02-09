@@ -81,6 +81,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     std::vector<SequenceGroup::Ptr> sequence_groups,
     std::optional<ov::Tensor> position_ids,
     std::optional<ov::Tensor> token_type_ids,
+    std::optional<ov::Tensor> cross_attention_mask,
     utils::KVCacheState& kv_cache_state,
     EmbeddingsModel::Ptr m_embedding,
     std::optional<int64_t> rope_delta,
@@ -145,6 +146,10 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     m_llm.set_tensor("attention_mask", attention_mask);
     if (position_ids.has_value())
         m_llm.set_tensor("position_ids", *position_ids);
+
+    if (cross_attention_mask.has_value()) {
+        m_llm.set_tensor("cross_attention_mask", *cross_attention_mask);
+    }
 
     ov::Tensor beam_idx = ov::Tensor(ov::element::i32, {batch_size});
     std::fill_n(beam_idx.data<int32_t>(), batch_size, 0);
@@ -250,6 +255,42 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
             kv_cache_state.add_inputs(new_input_ids);
 
         update_attention_mask_with_beams(m_llm.get_tensor("attention_mask"), next_beams);
+
+        if (cross_attention_mask) {
+            //TODO: We can probably just adapt update_attention_mask_with_beams to support both
+            // attention_mask & cross_attention_mask, as I think it also needs to be a function of next_beams (?)
+            ov::Shape original_shape = cross_attention_mask->get_shape();
+            ov::Shape new_shape = original_shape;
+            new_shape[1] += 1;
+
+            ov::Tensor new_attention_mask = ov::Tensor(cross_attention_mask->get_element_type(), new_shape);
+
+            // copy original context to new mask
+            {
+                ov::Coordinate begin(original_shape.size(), 0);
+                ov::Coordinate end(original_shape);
+                ov::Tensor new_attention_mask_view(new_attention_mask, begin, end);
+                cross_attention_mask->copy_to(new_attention_mask_view);
+            }
+
+            // torch.cat( [cross_attention_mask_prev, cross_attention_mask_prev[:, -1:, ...]], dim=1)
+            {
+                ov::Coordinate begin_original(original_shape.size(), 0);
+                begin_original[1] = original_shape[1] - 1;
+                ov::Coordinate end_original(original_shape);
+                ov::Tensor orig_slice(*cross_attention_mask, begin_original, end_original);
+
+                ov::Coordinate begin_new(original_shape.size(), 0);
+                begin_new[1] = original_shape[1];
+                ov::Coordinate end_new(new_shape);
+                ov::Tensor new_slice(new_attention_mask, begin_new, end_new);
+                orig_slice.copy_to(new_slice);
+            }
+
+            cross_attention_mask = new_attention_mask;
+            m_llm.set_tensor("cross_attention_mask", *cross_attention_mask);
+
+        }
 
         if (position_ids.has_value()) {
             if (position_ids->get_shape().size() == 3 && rope_delta.has_value()) {
