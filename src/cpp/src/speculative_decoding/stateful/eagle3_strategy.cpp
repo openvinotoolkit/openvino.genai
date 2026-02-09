@@ -738,6 +738,11 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
 
         m_target->truncate_sequence(m_prompt_length + max_new_tokens);
 
+        // Adjust metrics to reflect actual tokens kept after truncation
+        auto& target_batch_sizes = m_target->get_raw_perf_metrics().m_batch_sizes;
+        OPENVINO_ASSERT(!target_batch_sizes.empty(), "batch_sizes should have been recorded by sampler");
+        target_batch_sizes.back() = tokens_to_keep;
+
         tokens_to_remove = actual_draft_tokens - (tokens_to_keep - 1);  // -1 for the new target token
     }
 
