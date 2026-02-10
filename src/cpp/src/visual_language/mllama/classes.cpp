@@ -125,13 +125,13 @@ void pad(const clip_image_u8& image, const ProcessorConfig& config, const ImageS
 
     OPENVINO_ASSERT(padded_width >= image.nx);
     OPENVINO_ASSERT(padded_height >= image.ny);
-    padded_image.nx = padded_width;
-    padded_image.ny = padded_height;
+    padded_image.nx = static_cast<int>(padded_width);
+    padded_image.ny = static_cast<int>(padded_height);
     padded_image.buf.resize(3 * padded_width * padded_height);
 
     size_t npadx = padded_width - image.nx;
 
-    for (int y = 0; y < padded_height; y++) {
+    for (size_t y = 0; y < padded_height; ++y) {
         uint8_t* ppadded = &padded_image.buf[y * padded_width * 3];
         if (y < image.ny) {
             const uint8_t* pimage = &image.buf[y * image.nx * 3];
@@ -153,11 +153,14 @@ void pad(const clip_image_u8& image, const ProcessorConfig& config, const ImageS
 void resize(const ov::Tensor& image, const ProcessorConfig& config, clip_image_u8 &resized_image, ImageSize &aspect_ratio) {
     clip_image_u8 input_image = tensor_to_clip_image_u8(image);
 
-    ImageSize image_size{input_image.ny, input_image.nx};
-    auto image_height = input_image.ny;
-    auto image_width = input_image.nx;
+    OPENVINO_ASSERT(input_image.ny > 0);
+    OPENVINO_ASSERT(input_image.nx > 0);
+    auto image_height = static_cast<size_t>(input_image.ny);
+    auto image_width = static_cast<size_t>(input_image.nx);
     auto tile_size = config.size_height;
     OPENVINO_ASSERT(tile_size > 0);
+
+    ImageSize image_size{image_height, image_width};
 
     auto canvas_size = get_optimal_tiled_canvas(image_height, image_width, config.max_image_tiles, tile_size);
 
@@ -187,8 +190,8 @@ static inline ov::Tensor split_to_tiles(const clip_image_f32& image,
     const size_t W = static_cast<size_t>(image.nx);
     const size_t H = static_cast<size_t>(image.ny);
 
-    OPENVINO_ASSERT(W % num_tiles_height == 0);
-    OPENVINO_ASSERT(H % num_tiles_width == 0);
+    OPENVINO_ASSERT(W % num_tiles_width == 0);
+    OPENVINO_ASSERT(H % num_tiles_height == 0);
 
     const size_t tile_h = H / num_tiles_height;
     const size_t tile_w = W / num_tiles_width;
@@ -335,21 +338,16 @@ using MaskPair = std::array<int64_t, 2>;
 static inline std::vector<MaskPair> get_cross_attention_token_mask(const ov::Tensor& input_ids,
                                                                    int64_t image_token_id) {
     // Validate dtype
-    if (input_ids.get_element_type() != ov::element::i64) {
-        throw std::invalid_argument("input_ids must be an ov::Tensor of type i64 (int64_t).");
-    }
+    OPENVINO_ASSERT(input_ids.get_element_type() == ov::element::i64,
+                    "input_ids must be an ov::Tensor of type i64 (int64_t).");
 
     // Validate shape [1, L]
     const ov::Shape shape = input_ids.get_shape();
-    if (shape.size() != 2 || shape[0] != 1) {
-        throw std::invalid_argument("input_ids must have shape [1, L].");
-    }
+    OPENVINO_ASSERT(shape.size() == 2 && shape[0] == 1, "input_ids must have shape [1, L].");
 
     const int64_t L = static_cast<int64_t>(shape[1]);
     const auto* ids = input_ids.data<const int64_t>();
-    if (!ids) {
-        throw std::runtime_error("input_ids.data<const int64_t>() returned null.");
-    }
+    OPENVINO_ASSERT(ids, "input_ids.data<const int64_t>() returned null.");
 
     // Collect image token locations
     std::vector<int64_t> image_token_locations;
