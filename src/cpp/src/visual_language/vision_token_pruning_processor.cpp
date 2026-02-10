@@ -90,7 +90,6 @@ std::string VisionTokenPruningProcessor::get_last_updated_prompt(const std::stri
         return original_prompt;
     }
 
-    const auto& keep_flags = m_last_keep_flags;
     std::string result;
     result.reserve(original_prompt.size());
 
@@ -98,7 +97,7 @@ std::string VisionTokenPruningProcessor::get_last_updated_prompt(const std::stri
     bool inside_vision_region = false;
     size_t region_idx = 0;
     size_t pad_idx = 0;
-    const size_t region_count = keep_flags.size();
+    const size_t region_count = m_last_keep_flags.size();
     size_t total_pads_processed = 0;
     size_t total_pads_kept = 0;
 
@@ -138,9 +137,9 @@ std::string VisionTokenPruningProcessor::get_last_updated_prompt(const std::stri
         } else if (next_token_pos == next_image_pad || next_token_pos == next_video_pad) {
             const std::string& pad_token = (next_token_pos == next_image_pad) ? image_pad_token : video_pad_token;
 
-            if (region_idx < region_count && pad_idx < keep_flags[region_idx].size()) {
+            if (region_idx < region_count && pad_idx < m_last_keep_flags[region_idx].size()) {
                 total_pads_processed++;
-                if (keep_flags[region_idx][pad_idx]) {
+                if (m_last_keep_flags[region_idx][pad_idx]) {
                     result.append(pad_token);
                     total_pads_kept++;
                 }
@@ -425,7 +424,7 @@ ov::Tensor VisionTokenPruningProcessor::generate_pruned_text_embeds(
     return pruned_text_embeds;
 }
 
-void VisionTokenPruningProcessor::adjust_position_ids(ov::Tensor& position_ids_inout,
+void VisionTokenPruningProcessor::adjust_position_ids(ov::Tensor& position_ids,
                                                       const ov::Tensor& input_ids,
                                                       const std::vector<std::array<size_t, 3>>& images_grid_thw,
                                                       const std::vector<size_t>& images_sequence,
@@ -446,28 +445,28 @@ void VisionTokenPruningProcessor::adjust_position_ids(ov::Tensor& position_ids_i
     }
 
     // Detect position encoding type from shape
-    const ov::Shape& pos_shape = position_ids_inout.get_shape();
+    const ov::Shape& pos_shape = position_ids.get_shape();
     bool is_3d_encoding = (pos_shape.size() == 3 && pos_shape[0] == 3);
 
     if (is_3d_encoding) {
         // 3D RoPE position encoding (Qwen2VL style)
-        position_ids_inout = update_position_ids_3d(position_ids_inout,
-                                                    input_ids,
-                                                    vision_start_token_id,
-                                                    image_pad_token_id,
-                                                    reordered_images_grid_thw,
-                                                    kept_indices_per_image,
-                                                    spatial_merge_size,
-                                                    keep_flags_per_region_out);
+        position_ids = update_position_ids_3d(position_ids,
+                                              input_ids,
+                                              vision_start_token_id,
+                                              image_pad_token_id,
+                                              reordered_images_grid_thw,
+                                              kept_indices_per_image,
+                                              spatial_merge_size,
+                                              keep_flags_per_region_out);
     } else {
         // 1D position encoding (LLaVA, MiniCPM, etc.)
-        position_ids_inout = update_position_ids_1d(position_ids_inout,
-                                                    input_ids,
-                                                    vision_start_token_id,
-                                                    image_pad_token_id,
-                                                    reordered_images_grid_thw,
-                                                    kept_indices_per_image,
-                                                    keep_flags_per_region_out);
+        position_ids = update_position_ids_1d(position_ids,
+                                              input_ids,
+                                              vision_start_token_id,
+                                              image_pad_token_id,
+                                              reordered_images_grid_thw,
+                                              kept_indices_per_image,
+                                              keep_flags_per_region_out);
     }
 }
 
@@ -773,7 +772,7 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     ov::Tensor& position_ids,
     utils::KVCacheState& kv_cache_state,
     bool is_chat_conversation,
-    size_t& prev_hist_length_inout) {
+    size_t& prev_hist_length) {
     auto pruning_start = std::chrono::high_resolution_clock::now();
 
     PruningResult result;
@@ -877,22 +876,15 @@ std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProc
     auto& kv_history = kv_cache_state.get_state();
     OPENVINO_ASSERT(kv_history.size() >= context.input_ids.get_size(),
                     "KV cache history does not contain expected original prompt length");
-    if (is_chat_conversation) {
-        size_t retained_history_size = kv_history.size() - context.input_ids.get_size();
-        // Chat mode: preserve complete history (input + generated tokens)
-        kv_history.resize(retained_history_size);
-    } else {
-        kv_history.resize(prev_hist_length_inout);
-    }
 
+    // Resize KV cache to preserve history and remove unpruned current turn
+    // For chat mode: prev_hist_length = kv_history.size() - context.input_ids.size()
+    // For non-chat mode: prev_hist_length already contains correct history size
+    kv_history.resize(prev_hist_length);
     kv_cache_state.add_inputs(result.pruned_input_ids);
 
     // Step 11: Update prev_hist_length for next iteration
-    prev_hist_length_inout = kv_cache_state.get_state().size();
-
-    GENAI_DEBUG("[CDPruner] KV cache after update: size=%zu, prev_hist_length=%zu",
-                kv_cache_state.get_state().size(),
-                prev_hist_length_inout);
+    prev_hist_length = kv_cache_state.get_state().size();
     auto pruning_end = std::chrono::high_resolution_clock::now();
     auto pruning_duration = std::chrono::duration_cast<std::chrono::milliseconds>(pruning_end - pruning_start).count();
 

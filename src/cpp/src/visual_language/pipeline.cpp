@@ -276,15 +276,13 @@ public:
                 std::string original_prompt = last_user_message["content"].get_string();
 
                 // Get the pruned prompt after CDPruner
-                std::optional<std::string> pruned_prompt = m_inputs_embedder->get_last_updated_prompt(original_prompt);
+                std::string pruned_prompt = m_inputs_embedder->get_last_updated_prompt(original_prompt);
 
-                if (pruned_prompt.has_value()) {
-                    // Replace the user message with pruned version
-                    OPENVINO_ASSERT(last_user_idx < m_history.size(), "Invalid last_user_idx");
-                    auto user_message = m_history[last_user_idx];
-                    user_message["content"] = pruned_prompt.value();
-                    m_history[last_user_idx] = user_message;
-                }
+                // Replace the user message with pruned version
+                OPENVINO_ASSERT(last_user_idx < m_history.size(), "Invalid last_user_idx");
+                auto user_message = m_history[last_user_idx];
+                user_message["content"] = pruned_prompt;
+                m_history[last_user_idx] = user_message;
             }
 
             m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status);

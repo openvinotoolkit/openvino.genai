@@ -208,12 +208,7 @@ void VLMChatContext::apply_pruning_to_last_message() {
     auto& last_metadata = messages_metadata[last_user_idx];
 
     // Get the pruned prompt from inputs embedder if pruning is active
-    std::optional<std::string> pruned_prompt =
-        m_inputs_embedder.get_last_updated_prompt(last_metadata.normalized_content);
-
-    if (pruned_prompt.has_value() && !pruned_prompt->empty()) {
-        last_metadata.pruned_content = pruned_prompt.value();
-    }
+    last_metadata.pruned_content = m_inputs_embedder.get_last_updated_prompt(last_metadata.normalized_content);
 }
 
 } // namespace ov::genai
