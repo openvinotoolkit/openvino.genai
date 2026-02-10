@@ -240,8 +240,10 @@ class VideoSimilarity:
     def __init__(self) -> None:
         from transformers import VivitImageProcessor, VivitModel
 
-        self.processor = VivitImageProcessor.from_pretrained("google/vivit-b-16x2")
-        self.model = VivitModel.from_pretrained("google/vivit-b-16x2").eval()
+        self.embeds_model = "google/vivit-b-16x2"
+        self.embeds_model_frame_num = 32
+        self.processor = VivitImageProcessor.from_pretrained(self.embeds_model)
+        self.model = VivitModel.from_pretrained(self.embeds_model).eval()
 
         import lpips
 
@@ -265,9 +267,13 @@ class VideoSimilarity:
             ret, frame = cap.read()
             if not ret:
                 break
+
+            frame_count = np.count_nonzero(frame_idxs == i)
+            if frame_count == 0:
+                continue
             # if total_frames is less than required num_frames, duplicate some of them
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            for _ in range(np.count_nonzero(frame_idxs == i)):
+            for _ in range(frame_count):
                 frames.append(frame)
 
         cap.release()
@@ -275,7 +281,8 @@ class VideoSimilarity:
 
     def get_embedding(self, gold_video: np.ndarray, predicted_video: np.ndarray):
         gold_inputs = self.processor(list(gold_video), return_tensors="pt")
-        gold_emb = self.model(**gold_inputs).last_hidden_state[:, 0, :]
+        with torch.no_grad():
+            gold_emb = self.model(**gold_inputs).last_hidden_state[:, 0, :]
 
         predicted_inputs = self.processor(list(predicted_video), return_tensors="pt")
         predicted_emb = self.model(**predicted_inputs).last_hidden_state[:, 0, :]
@@ -303,41 +310,32 @@ class VideoSimilarity:
 
         return np.mean(lpips_scores)
 
-    def normalize_frame_diff_for_lpips(self, diff: np.ndarray):
-        # Shift and scale to [0, 255]
-        diff_min = diff.min()
-        diff_max = diff.max()
-
-        if diff_max - diff_min < 1e-6:
-            # No motion, return zeros
-            return np.zeros_like(diff, dtype=np.uint8)
-
-        diff_norm = (diff - diff_min) / (diff_max - diff_min) * 255
-        return diff_norm.astype(np.uint8)
-
-    def get_frame_differences(self, video: np.ndarray) -> np.ndarray:
+    def get_frame_differences_for_tlpips(self, video: np.ndarray) -> np.ndarray:
         differences = []
         for i in range(len(video) - 1):
             diff = video[i + 1].astype(np.float32) - video[i].astype(np.float32)
             differences.append(diff)
 
-        return np.array(differences)
+        # Convert to tensor [-1, 1] range as LPIPS expects
+        differences = torch.Tensor(np.array(differences))
+        max_diff = differences.abs().max()
+        # if no changes occurred, max_diff will be 0; no normalization is required
+        if max_diff.item() != 0.0:
+            differences = differences / max_diff
+        return differences.permute(0, 3, 1, 2)
 
     def get_temporal_lpips(self, gold_video: np.ndarray, pred_video: np.ndarray):
         """
         Temporal LPIPS: compares MOTION (frame differences) between videos
         """
 
-        gold_video_diff = self.get_frame_differences(gold_video)
-        pred_video_diff = self.get_frame_differences(pred_video)
+        gold_video_diff = self.get_frame_differences_for_tlpips(gold_video)
+        pred_video_diff = self.get_frame_differences_for_tlpips(pred_video)
 
         temporal_lpips_scores = []
         for i in range(len(gold_video_diff)):
-            gold_diff_norm = self.normalize_frame_diff_for_lpips(gold_video_diff[i])
-            pred_diff_norm = self.normalize_frame_diff_for_lpips(pred_video_diff[i])
-            # Convert to tensor [-1, 1] range as LPIPS expects
-            gold_tensor = self.convert_frame_to_lpips_tensor(gold_diff_norm)
-            pred_tensor = self.convert_frame_to_lpips_tensor(pred_diff_norm)
+            gold_tensor = gold_video_diff[i].unsqueeze(0)
+            pred_tensor = pred_video_diff[i].unsqueeze(0)
 
             with torch.no_grad():
                 score = self.lpips_model(gold_tensor, pred_tensor)
@@ -357,9 +355,9 @@ class VideoSimilarity:
 
         return ssim_vals
 
-    def evaluate(self, gt, prediction):
-        videos_gold = gt["videos"].values
-        videos_prediction = prediction["videos"].values
+    def evaluate(self, data_gold, data_prediction):
+        videos_gold = data_gold["videos"].values
+        videos_prediction = data_prediction["videos"].values
 
         metric_per_video = []
         ssim_per_video = []
@@ -367,8 +365,8 @@ class VideoSimilarity:
         tlpips_per_video = []
         for gold, prediction in tqdm(zip(videos_gold, videos_prediction), desc="Video Similarity evaluation"):
             # vivit requires 32 frames
-            gold_video = self.load_video_frames(str(gold), num_frames=32)
-            predicted_video = self.load_video_frames(str(prediction), num_frames=32)
+            gold_video = self.load_video_frames(str(gold), num_frames=self.embeds_model_frame_num)
+            predicted_video = self.load_video_frames(str(prediction), num_frames=self.embeds_model_frame_num)
 
             cos_sim_mean = self.get_embedding(gold_video, predicted_video)
 
