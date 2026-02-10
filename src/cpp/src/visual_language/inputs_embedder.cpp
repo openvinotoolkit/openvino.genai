@@ -421,8 +421,8 @@ void InputsEmbedder::set_vision_token_pruning_config(size_t pruning_ratio, float
     return m_impl->set_vision_token_pruning_config(pruning_ratio, relevance_weight);
 }
 
-std::string InputsEmbedder::get_last_updated_prompt(const std::string& original_prompt) const {
-    return m_impl->get_last_updated_prompt(original_prompt);
+std::string InputsEmbedder::get_last_pruned_prompt(const std::string& original_prompt) const {
+    return m_impl->get_last_pruned_prompt(original_prompt);
 }
 
 NormalizedPrompt InputsEmbedder::normalize_prompt(

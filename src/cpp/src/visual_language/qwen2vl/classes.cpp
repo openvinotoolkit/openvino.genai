@@ -1265,16 +1265,16 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderQwen2VL::get_generat
     return {position_ids, rope_delta};
 }
 
-std::string InputsEmbedderQwen2VL::get_last_updated_prompt(const std::string& original_prompt) const {
+std::string InputsEmbedderQwen2VL::get_last_pruned_prompt(const std::string& original_prompt) const {
     std::string updated_prompt = original_prompt;
 
     // Remove pruned vision pad tokens from the last prompt if CDPruner is active
     if (is_cdpruner_active()) {
-        updated_prompt = m_pruning_processor->get_last_updated_prompt(updated_prompt,
-                                                                      m_vlm_config.vision_start_token,
-                                                                      m_vlm_config.vision_end_token,
-                                                                      m_vlm_config.image_pad_token,
-                                                                      m_vlm_config.video_pad_token);
+        updated_prompt = m_pruning_processor->get_last_pruned_prompt(updated_prompt,
+                                                                     m_vlm_config.vision_start_token,
+                                                                     m_vlm_config.vision_end_token,
+                                                                     m_vlm_config.image_pad_token,
+                                                                     m_vlm_config.video_pad_token);
     }
 
     return updated_prompt;

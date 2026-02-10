@@ -81,11 +81,11 @@ std::vector<std::vector<size_t>> VisionTokenPruningProcessor::get_last_selected_
     }
 }
 
-std::string VisionTokenPruningProcessor::get_last_updated_prompt(const std::string& original_prompt,
-                                                                 const std::string& vision_start_token,
-                                                                 const std::string& vision_end_token,
-                                                                 const std::string& image_pad_token,
-                                                                 const std::string& video_pad_token) const {
+std::string VisionTokenPruningProcessor::get_last_pruned_prompt(const std::string& original_prompt,
+                                                                const std::string& vision_start_token,
+                                                                const std::string& vision_end_token,
+                                                                const std::string& image_pad_token,
+                                                                const std::string& video_pad_token) const {
     if (m_last_keep_flags.empty()) {
         return original_prompt;
     }

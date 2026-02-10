@@ -101,19 +101,19 @@ public:
     std::vector<std::vector<size_t>> get_last_selected_tokens() const;
 
     /**
-     * @brief Get updated prompt with modified vision tokens based on keep_flags
+     * @brief Get pruned prompt with modified vision tokens based on keep_flags
      * @param original_prompt The original prompt string
      * @param vision_start_token Vision start token string
      * @param vision_end_token Vision end token string
      * @param image_pad_token Image pad token string
      * @param video_pad_token Video pad token string
-     * @return Updated prompt if modifications were made, otherwise returns original_prompt unchanged
+     * @return Pruned prompt if modifications were made, otherwise returns original_prompt unchanged
      */
-    std::string get_last_updated_prompt(const std::string& original_prompt,
-                                        const std::string& vision_start_token,
-                                        const std::string& vision_end_token,
-                                        const std::string& image_pad_token,
-                                        const std::string& video_pad_token) const;
+    std::string get_last_pruned_prompt(const std::string& original_prompt,
+                                       const std::string& vision_start_token,
+                                       const std::string& vision_end_token,
+                                       const std::string& image_pad_token,
+                                       const std::string& video_pad_token) const;
 
     /**
      * @brief Result structure for CDPruner visual token pruning pipeline.

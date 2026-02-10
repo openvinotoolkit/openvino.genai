@@ -276,7 +276,7 @@ public:
                 std::string original_prompt = last_user_message["content"].get_string();
 
                 // Get the pruned prompt after CDPruner
-                std::string pruned_prompt = m_inputs_embedder->get_last_updated_prompt(original_prompt);
+                std::string pruned_prompt = m_inputs_embedder->get_last_pruned_prompt(original_prompt);
 
                 // Replace the user message with pruned version
                 OPENVINO_ASSERT(last_user_idx < m_history.size(), "Invalid last_user_idx");

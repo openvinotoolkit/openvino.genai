@@ -98,8 +98,8 @@ public:
     // adds currently generated text to chat history
     void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
 
-    // gets last updated prompt after vision token pruning
-    std::string get_last_updated_prompt(const std::string& original_prompt) const;
+    // gets last pruned prompt after vision token pruning
+    std::string get_last_pruned_prompt(const std::string& original_prompt) const;
 
     // set the apply_chat_template flag, which determines whether chat template should be applied for non-chat scenarios
     void set_apply_chat_template_status(bool apply_chat_template);
@@ -233,9 +233,9 @@ private:
 
         virtual void update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status);
 
-        // Get last updated prompt after vision token pruning.
-        virtual std::string get_last_updated_prompt(const std::string& original_prompt) const {
-            OPENVINO_THROW_NOT_IMPLEMENTED("Base class get_last_updated_prompt() isn't implemented");
+        // Get last pruned prompt after vision token pruning.
+        virtual std::string get_last_pruned_prompt(const std::string& original_prompt) const {
+            OPENVINO_THROW_NOT_IMPLEMENTED("Base class get_last_pruned_prompt() isn't implemented");
         }
 
         virtual void finish_chat();
