@@ -3,11 +3,9 @@
 This example showcases inference of Visual language models (VLMs). The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `ov::genai::VLMPipeline` and runs the simplest deterministic greedy sampling algorithm. There is also a Jupyter [notebook](https://github.com/openvinotoolkit/openvino_notebooks/tree/latest/notebooks/minicpm-v-multimodal-chatbot) which provides an example of Visual-language assistant.
 
 
-The following sample files:
- - [`visual_language_chat.cpp`](./visual_language_chat.cpp) demonstrates basic usage of the VLM pipeline.
+The following are sample files:
+ - [`visual_language_chat.cpp`](./visual_language_chat.cpp) demonstrates basic usage of the VLM pipeline which support accelerated inference using prompt lookup decoding.
  - [`video_to_text_chat.cpp`](./video_to_text_chat.cpp) demonstrates video to text usage of the VLM pipeline.
- - [`prompt_lookup_decoding_vlm.cpp`](./prompt_lookup_decoding_vlm.cpp) demonstrates accelerated inference using prompt lookup decoding in the VLM pipeline.
- - [`prompt_lookup_decoding_vlm_chat.cpp`](./prompt_lookup_decoding_vlm_chat.cpp) demonstrates accelerated inference using prompt lookup decoding in the VLM pipeline with chat mode.
  - [`benchmark_vlm.cpp`](./benchmark_vlm.cpp) shows how to benchmark a VLM in OpenVINO GenAI. The script includes functionality for warm-up iterations, generating text and calculating various performance metrics.
 
 
