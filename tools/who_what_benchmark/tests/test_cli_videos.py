@@ -28,7 +28,11 @@ def teardown_module():
 
 
 @pytest.mark.xfail(sys.platform == "darwin", reason="Not enough memory on macOS CI runners. Ticket CVS-179749")
-@pytest.mark.xfail(sys.platform == "win32", reason="Access violation in OVLTXPipeline on Windows. Ticket CVS-179750")
+@pytest.mark.xfail(
+    sys.platform == "win32",
+    reason="LTX GenAI pipeline still crashes on Windows. Ticket CVS-179750",
+    run=False,
+)
 @pytest.mark.parametrize(
     ("model_id", "model_type"),
     [("optimum-intel-internal-testing/tiny-random-ltx-video", "text-to-video")],
@@ -37,24 +41,26 @@ def test_video_model_genai(model_id, model_type, tmp_path):
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = os.path.join(MODEL_CACHE, model_id.replace("/", "_"))
 
-    run_wwb(
-        [
-            "--base-model",
-            model_id,
-            "--num-samples",
-            "1",
-            "--gt-data",
-            GT_FILE,
-            "--device",
-            "CPU",
-            "--model-type",
-            model_type,
-            "--num-inference-steps",
-            "2",
-            "--video-frames-num",
-            "9",
-        ]
-    )
+    base_model = MODEL_PATH if sys.platform == "win32" else model_id
+    base_args = [
+        "--base-model",
+        base_model,
+        "--num-samples",
+        "1",
+        "--gt-data",
+        GT_FILE,
+        "--device",
+        "CPU",
+        "--model-type",
+        model_type,
+        "--num-inference-steps",
+        "2",
+        "--video-frames-num",
+        "9",
+    ]
+    if sys.platform == "win32":
+        base_args.append("--genai")
+    run_wwb(base_args)
     assert GT_FILE.exists()
     assert (tmp_path / "reference").exists()
 

@@ -3,6 +3,7 @@
 
 #include "openvino/genai/video_generation/autoencoder_kl_ltx_video.hpp"
 
+#include <cstring>
 #include <fstream>
 #include <memory>
 #include <numeric>
@@ -171,7 +172,14 @@ ov::Tensor AutoencoderKLLTXVideo::decode(const ov::Tensor& latent) {
 
     m_decoder_request.set_input_tensor(latent);
     m_decoder_request.infer();
-    return m_decoder_request.get_output_tensor();
+    ov::Tensor output = m_decoder_request.get_output_tensor();
+#ifdef _WIN32
+    ov::Tensor result(output.get_element_type(), output.get_shape());
+    std::memcpy(result.data(), output.data(), output.get_byte_size());
+    return result;
+#else
+    return output;
+#endif
 }
 
 const AutoencoderKLLTXVideo::Config& AutoencoderKLLTXVideo::get_config() const {

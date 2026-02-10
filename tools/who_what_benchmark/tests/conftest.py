@@ -124,9 +124,20 @@ def run_wwb(args: list[str], env=None):
     if env:
         base_env.update(env)
 
-    return subprocess.check_output(
+    result = subprocess.run(
         command,
+        stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         encoding="utf-8",
         env=base_env,
     )
+    if result.returncode != 0:
+        logger.error("WWB failed: %s", " ".join(command))
+        if result.stdout:
+            logger.error("WWB output:\n%s", result.stdout)
+        raise subprocess.CalledProcessError(
+            result.returncode,
+            command,
+            output=result.stdout,
+        )
+    return result.stdout
