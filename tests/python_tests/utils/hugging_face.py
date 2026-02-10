@@ -199,8 +199,6 @@ def get_huggingface_models(
             "ov_config": get_default_llm_properties(),
             "local_files_only": local_files_only,
         }
-        if is_eagle_model:
-            params["eagle3"] = True
         return model_class.from_pretrained(model_id, **params)
 
     opt_model = retry_request(auto_model_from_pretrained)
