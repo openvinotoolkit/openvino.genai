@@ -19,6 +19,7 @@ int main(int argc, char* argv[]) {
     const char* prompt = argv[2];
     const char* speaker_embedding_path = (argc == 4) ? argv[3] : NULL;
     const char* device = "CPU";
+    int exit_status = EXIT_SUCCESS;
 
     ov_genai_text2speech_pipeline* pipeline = NULL;
     ov_genai_text2speech_decoded_results* results = NULL;
@@ -28,8 +29,10 @@ int main(int argc, char* argv[]) {
 
     if (speaker_embedding_path) {
         speaker_embedding = read_speaker_embedding(speaker_embedding_path);
-        if (!speaker_embedding)
+        if (!speaker_embedding) {
+            exit_status = EXIT_FAILURE;
             goto err;
+        }
     }
 
     const char* texts[] = {prompt};
@@ -39,6 +42,7 @@ int main(int argc, char* argv[]) {
     CHECK_STATUS(ov_genai_text2speech_decoded_results_get_speeches_count(results, &count));
     if (count != 1) {
         fprintf(stderr, "Expected exactly one decoded waveform\n");
+        exit_status = EXIT_FAILURE;
         goto err;
     }
 
@@ -69,5 +73,5 @@ err:
     if (speaker_embedding)
         ov_tensor_free(speaker_embedding);
 
-    return EXIT_SUCCESS;
+    return exit_status;
 }

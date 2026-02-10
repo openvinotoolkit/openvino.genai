@@ -12,8 +12,10 @@
 #include <vector>
 
 #include "openvino/c/ov_tensor.h"
+#include "openvino/genai/c/perf_metrics.h"
 #include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
 #include "types_c.h"
+
 
 ov_status_e ov_genai_text2speech_decoded_results_create(ov_genai_text2speech_decoded_results** results) {
     if (!results) {
@@ -74,13 +76,14 @@ ov_status_e ov_genai_text2speech_decoded_results_get_speech_at(const ov_genai_te
         if (index >= results->object->speeches.size()) {
             return ov_status_e::OUT_OF_BOUNDS;
         }
-        ov::Tensor cpp_tensor = results->object->speeches.at(index);
+        const ov::Tensor& cpp_tensor = results->object->speeches.at(index);
         ov_element_type_e et = (ov_element_type_e)cpp_tensor.get_element_type();
 
         ov::Shape cpp_shape = cpp_tensor.get_shape();
         std::vector<size_t> dims(cpp_shape.begin(), cpp_shape.end());
+        std::vector<int64_t> dims_i64(dims.begin(), dims.end());
         ov_shape_t shape;
-        ov_shape_create(dims.size(), reinterpret_cast<const int64_t*>(dims.data()), &shape);
+        ov_shape_create(dims_i64.size(), dims_i64.data(), &shape);
 
         // Explicitly create a new tensor and copy data to resolve life time issues
         ov_status_e status = ov_tensor_create(et, shape, speech);
@@ -145,8 +148,10 @@ ov_status_e ov_genai_text2speech_pipeline_generate(ov_genai_text2speech_pipeline
         std::vector<std::string> texts_cpp;
         texts_cpp.reserve(texts_size);
         for (size_t i = 0; i < texts_size; ++i) {
-            if (texts[i])
-                texts_cpp.emplace_back(texts[i]);
+            if (!texts[i]) {
+                return ov_status_e::INVALID_C_PARAM;
+            }
+            texts_cpp.emplace_back(texts[i]);
         }
 
         ov::Tensor speaker_embedding_cpp;

@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -21,9 +21,9 @@
 #include "openvino/genai/whisper_generation_config.hpp"
 #include "openvino/genai/whisper_pipeline.hpp"
 
-
 #define GET_PROPERTY_FROM_ARGS_LIST                                                                            \
-    std::string property_key = va_arg(args_ptr, char*);                                                        \
+    const char* _property_key_ptr = va_arg(args_ptr, const char*);                                             \
+    std::string property_key = _property_key_ptr ? _property_key_ptr : "";                                     \
     if (property_key == ov::cache_encryption_callbacks.name()) {                                               \
         ov_encryption_callbacks* _value = va_arg(args_ptr, ov_encryption_callbacks*);                          \
         auto encrypt_func = _value->encrypt_func;                                                              \

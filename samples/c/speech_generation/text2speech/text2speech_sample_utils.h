@@ -12,6 +12,7 @@
 #define CHECK_STATUS(return_status)                                                           \
     if (return_status != 0) {                                                                 \
         fprintf(stderr, "[ERROR] return status %d, line %d\n", (int)return_status, __LINE__); \
+        exit_status = EXIT_FAILURE;                                                           \
         goto err;                                                                             \
     }
 
