@@ -632,7 +632,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    runs-on: aks-linux-8-cores-64gb
+    runs-on: aks-linux-8-cores-32gb
     container:
       image: openvinogithubactions.azurecr.io/ov_test/ubuntu_22_04_x64:${{ needs.openvino_download.outputs.docker_tag }}
       volumes:
@@ -706,7 +706,7 @@ jobs:
             marker: 'vlm'
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).VLM_samples.test }}
-            runner: 'aks-linux-8-cores-64gb'
+            runner: 'aks-linux-8-cores-32gb'
           - name: 'Rag'
             marker: 'rag'
             cmd: 'tests/python_tests/samples'

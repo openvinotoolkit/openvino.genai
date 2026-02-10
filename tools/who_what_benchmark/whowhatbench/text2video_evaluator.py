@@ -21,7 +21,7 @@ class Text2VideoEvaluator(BaseEvaluator):
     DEF_FRAME_RATE = 25
     DEF_WIDTH = 704
     DEF_HEIGHT = 480
-    DEF_GUIDANCE_SCALE = 3  # CVS-179754: guidance_scale == 1 triggers GenAI runtime error
+    DEF_GUIDANCE_SCALE = 3
     DEF_GUIDANCE_RESCALE = 0
 
     def __init__(
