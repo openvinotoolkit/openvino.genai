@@ -51,8 +51,6 @@ def prepare_default_data(num_samples=None):
 
 @register_evaluator("image-inpainting")
 class InpaintingEvaluator(Text2ImageEvaluator):
-    DEF_NUM_INFERENCE_STEPS = 4
-
     def __init__(
         self,
         base_model: Any = None,
@@ -74,7 +72,7 @@ class InpaintingEvaluator(Text2ImageEvaluator):
         self.metrics = metrics
         self.crop_prompt = crop_prompts
         self.num_samples = num_samples
-        self.num_inference_steps = num_inference_steps or self.DEF_NUM_INFERENCE_STEPS
+        self.num_inference_steps = num_inference_steps or self.DEFAULT_NUM_INFERENCE_STEPS
         self.seed = seed
         self.similarity = None
         self.similarity = ImageSimilarity(similarity_model_id)
