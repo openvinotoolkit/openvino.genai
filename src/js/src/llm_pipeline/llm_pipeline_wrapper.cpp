@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include "include/llm_pipeline/llm_pipeline_wrapper.hpp"
 
 #include <future>

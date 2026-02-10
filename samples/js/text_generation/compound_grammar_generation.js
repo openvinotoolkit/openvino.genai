@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 import { z } from 'zod';
 import { ChatHistory, LLMPipeline, StructuredOutputConfig as SOC, StreamingStatus } from 'openvino-genai-node';
 import { serialize_json, toJSONSchema } from './helper.js';

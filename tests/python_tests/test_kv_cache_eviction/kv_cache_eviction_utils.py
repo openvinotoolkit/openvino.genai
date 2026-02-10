@@ -1,3 +1,6 @@
+# Copyright (C) 2025-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 from openvino_genai import SchedulerConfig
 
 def get_scheduler_config(num_kv_blocks: int) -> SchedulerConfig:

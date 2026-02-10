@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 import { bootstrap } from "global-agent";
 import { promises as fs } from "node:fs";
 import { listFiles, downloadFile } from "@huggingface/hub";

@@ -1,3 +1,6 @@
+# Copyright (C) 2023-2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 import json
 from llm_bench_utils.memory_monitor import MemoryUnit, MemoryDataSummarizer
 

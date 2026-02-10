@@ -1,3 +1,6 @@
+// Copyright (C) 2025-2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
 #include "add_second_input_pass.hpp"
 #include <openvino/pass/manager.hpp>
 #include <openvino/opsets/opset15.hpp>
