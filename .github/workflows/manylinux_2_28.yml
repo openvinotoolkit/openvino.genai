@@ -567,6 +567,7 @@ jobs:
       INSTALL_DIR: ${{ github.workspace }}/install
       SRC_DIR: ${{ github.workspace }}/src
       BUILD_DIR: ${{ github.workspace }}/build
+      HF_HUB_OFFLINE: 1
 
     steps:
       - name: Clone openvino.genai
@@ -617,6 +618,7 @@ jobs:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/src
       NODE_VERSION: 22
+      HF_HUB_OFFLINE: 1
 
     steps:
       - name: Clone openvino.genai
