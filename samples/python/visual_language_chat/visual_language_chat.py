@@ -59,7 +59,7 @@ def main():
     # GPU and NPU can be used as well.
     # Note: If NPU is selected, only the language model will be run on the NPU.
     properties = dict()
-    properties["prompt_lookup"] = args.enable_lookup
+    properties["prompt_lookup"] = True
     if args.device == "GPU":
         # Cache compiled models on disk for GPU to save time on the next run.
         # It's not beneficial for CPU.
