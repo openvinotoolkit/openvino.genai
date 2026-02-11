@@ -1,0 +1,16 @@
+import CodeBlock from '@theme/CodeBlock';
+
+<CodeBlock language="cpp" showLineNumbers>
+{`#include "openvino/genai/video_generation/text2video_pipeline.hpp"
+#include "imwrite_video.hpp"
+
+int main(int argc, char* argv[]) {
+    const std::string models_path = argv[1], prompt = argv[2];
+
+    ov::genai::Text2VideoPipeline pipe(models_path, "${props.device || 'CPU'}");
+    ov::Tensor video = pipe.generate(prompt).video;
+
+    imwrite_video("genai_video.avi", video);
+}
+`}
+</CodeBlock>

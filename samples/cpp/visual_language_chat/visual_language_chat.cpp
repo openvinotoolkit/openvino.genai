@@ -37,25 +37,32 @@ int main(int argc, char* argv[]) try {
     // Define max_ngram_size
     generation_config.max_ngram_size = 3;
 
-    ov::genai::ChatHistory history;
     std::string prompt;
 
+    ov::genai::ChatHistory history;
+    
     std::cout << "question:\n";
     std::getline(std::cin, prompt);
-    history.push_back({{"role", "user"}, {"content", prompt}});
-    ov::genai::DecodedResults decoded_results = pipe.generate(history,
-                                                              ov::genai::images(rgbs),
-                                                              ov::genai::generation_config(generation_config),
-                                                              ov::genai::streamer(print_subword));
-    history.push_back({{"role", "assistant"}, {"content", decoded_results.texts[0]}});
+
+    history.push_back({{"role", "user"}, {"content", std::move(prompt)}});
+    ov::genai::VLMDecodedResults decoded_results = pipe.generate(
+        history,
+        ov::genai::images(rgbs),
+        ov::genai::generation_config(generation_config),
+        ov::genai::streamer(print_subword)
+    );
+    history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
     std::cout << "\n----------\n"
                  "question:\n";
     while (std::getline(std::cin, prompt)) {
-        history.push_back({{"role", "user"}, {"content", prompt}});
+        history.push_back({{"role", "user"}, {"content", std::move(prompt)}});
         // New images and videos can be passed at each turn
-        ov::genai::DecodedResults decoded_results =
-            pipe.generate(history, ov::genai::generation_config(generation_config), ov::genai::streamer(print_subword));
-        history.push_back({{"role", "assistant"}, {"content", decoded_results.texts[0]}});
+        ov::genai::VLMDecodedResults decoded_results = pipe.generate(
+            history,
+            ov::genai::generation_config(generation_config),
+            ov::genai::streamer(print_subword)
+        );
+        history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
         std::cout << "\n----------\n"
                      "question:\n";
     }

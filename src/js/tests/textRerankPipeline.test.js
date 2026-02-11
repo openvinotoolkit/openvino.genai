@@ -4,10 +4,12 @@
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import { TextRerankPipeline } from "../dist/index.js";
-import { models } from "./models.js";
 
-const RERANK_MODEL_PATH =
-  process.env.RERANK_MODEL_PATH || `./tests/models/${models.TestReranking.split("/")[1]}`;
+const { RERANK_MODEL_PATH } = process.env;
+
+if (!RERANK_MODEL_PATH) {
+  throw new Error("Please set RERANK_MODEL_PATH environment variable to run the tests.");
+}
 
 const docs = [
   "The temperature in London today is 15 degrees Celsius.",

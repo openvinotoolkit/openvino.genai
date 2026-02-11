@@ -796,31 +796,34 @@ def print_image_results(evaluator):
     pd.set_option('display.max_colwidth', None)
     worst_examples = evaluator.worst_examples(
         top_k=5, metric=metric_of_interest)
+    logger.info("TOP WORST RESULTS")
     for i, e in enumerate(worst_examples):
         logger.info(
             "======================================================================================================="
         )
         logger.info(f"Top-{i+1} example:")
-        logger.info(e)
+        logger.info(f"\n{e}")
 
 
 def print_embeds_results(evaluator):
     metric_of_interest = "similarity"
     worst_examples = evaluator.worst_examples(
         top_k=5, metric=metric_of_interest)
+    logger.info("TOP WORST RESULTS")
     for i, e in enumerate(worst_examples):
         logger.info(
             "======================================================================================================="
         )
         logger.info(f"Top-{i+1} example:")
         logger.info("## Passages num:\n%s\n", len(e["passages"]))
-        logger.info("## Similarity:\n%s\n", e["similarity"])
+        logger.info(f"## Similarity:\n{e['similarity']:.5}\n")
 
 
 def print_rag_results(evaluator):
     metric_of_interest = "similarity"
     worst_examples = evaluator.worst_examples(
         top_k=5, metric=metric_of_interest)
+    logger.info("TOP WORST RESULTS")
     for i, e in enumerate(worst_examples):
         logger.info(
             "======================================================================================================="
@@ -828,8 +831,8 @@ def print_rag_results(evaluator):
         logger.info(f"Top-{i+1} example:")
         logger.info("## Query:\n%s\n", e["query"])
         logger.info("## Passages num:\n%s\n", len(e["passages"]))
-        logger.info("## Similarity:\n%s\n", e["similarity"])
-        logger.info("## Top_n scores:\n%s\n", e["per_text_score_list"])
+        logger.info(f"## Similarity:\n{e['similarity']:.5}\n")
+        logger.info("## Difference in scores pre texts:\n%s\n", e["per_text_scores_diff"])
 
 
 def main():

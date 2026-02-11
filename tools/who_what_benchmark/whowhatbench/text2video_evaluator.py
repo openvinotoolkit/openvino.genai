@@ -16,12 +16,12 @@ from .whowhat_metrics import VideoSimilarity
 
 @register_evaluator("text-to-video")
 class Text2VideoEvaluator(BaseEvaluator):
-    DEF_NUM_FRAMES = 25
+    DEF_NUM_FRAMES = 33
     DEF_NUM_INF_STEPS = 25
     DEF_FRAME_RATE = 25
     DEF_WIDTH = 704
     DEF_HEIGHT = 480
-    DEF_GUIDANCE_SCALE = 3  # CVS-179754: guidance_scale == 1 triggers GenAI runtime error
+    DEF_GUIDANCE_SCALE = 3
     DEF_GUIDANCE_RESCALE = 0
 
     def __init__(
@@ -31,7 +31,7 @@ class Text2VideoEvaluator(BaseEvaluator):
         test_data: Union[str, list] = None,
         metrics="similarity",
         num_inference_steps=25,
-        num_frames=25,
+        num_frames=33,
         crop_prompts=True,
         num_samples=None,
         gen_video_fn=None,
@@ -96,9 +96,11 @@ class Text2VideoEvaluator(BaseEvaluator):
         assert self.last_cmp is not None
 
         res = self.last_cmp.nsmallest(top_k, metric)
-        res = list(row for idx, row in res.iterrows())
+        formatted_res = []
+        for _, row in res.iterrows():
+            formatted_res.append("\n".join(f"{col:<40} {val}" for col, val in row.items()))
 
-        return res
+        return formatted_res
 
     def collect_default_data(self):
         from importlib.resources import files

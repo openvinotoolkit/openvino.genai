@@ -78,7 +78,7 @@ def main():
         config.max_ngram_size = 3
 
     history = openvino_genai.ChatHistory()
-    prompt = input("question:\n")
+    prompt = input('question:\n')
     history.append({"role": "user", "content": prompt})
     decoded_results = pipe.generate(history, images=rgbs, generation_config=config, streamer=streamer)
     history.append({"role": "assistant", "content": decoded_results.texts[0]})
