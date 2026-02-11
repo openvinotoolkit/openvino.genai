@@ -388,8 +388,7 @@ public:
                         hidden_state_input = stored_hidden_state;
                     } else {
                         size_t copy_length = std::min(stored_seq_len, num_scheduled_tokens);
-                        size_t source_start_idx =
-                            stored_seq_len >= copy_length ? stored_seq_len - copy_length : 0;
+                        size_t source_start_idx = stored_seq_len - copy_length;
                         _copy_roi_between_tensors(stored_hidden_state, source_start_idx, copy_length, hidden_state_input, current_token_idx);
                     }
                 } else if (_is_hs_internal()) {

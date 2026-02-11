@@ -246,7 +246,6 @@ ContinuousBatchingPipeline::ContinuousBatchingForSpeculativeDecodingImpl::update
     UpdateRequestResult result{0, 0};
     // Check if all requests have completed pre-filling
     bool pause_gen_status = false;
-    bool all_request_prefill_finished = false;
     std::vector<uint64_t> generated_requests;
     for (auto& request : m_requests) {
         if (request->has_finished_prefill()) {

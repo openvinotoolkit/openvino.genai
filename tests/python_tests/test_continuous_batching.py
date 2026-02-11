@@ -719,7 +719,7 @@ def compare_results_for_dynamic_split_fuse_config(main_model_id, draft_model_id,
     result_gen = ov_pipe_target.generate(prompts, generation_config)
 
     result_len_ref = len(result_ref.texts)
-    result_len_gen= len(result_gen.texts)
+    result_len_gen = len(result_gen.texts)
 
     assert result_len_ref == result_len_gen
     for i in range(0, result_len_ref):

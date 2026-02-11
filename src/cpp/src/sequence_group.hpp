@@ -456,8 +456,8 @@ public:
     }
 
     bool has_finished_prefill() const {
-        for (auto& sequnece : get_running_sequences()) {
-            if (sequnece->get_generated_len() > 0) {
+        for (auto& sequence : get_running_sequences()) {
+            if (sequence->get_generated_len() > 0) {
                 return true;
             }
         }
