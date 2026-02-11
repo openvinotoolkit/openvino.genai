@@ -716,7 +716,7 @@ jobs:
             timeout: 90
           - name: 'EAGLE3 speculative decoding tests'
             cmd: |
-              python -m pip install git+https://github.com/huggingface/optimum-intel.git@${{ env.EAGLE3_OPTIMUM_COMMIT }}
+              python -m pip install git+https://github.com/huggingface/optimum-intel.git@${{ env.EAGLE3_OPT_INTEL_REF }}
               python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "eagle3"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speculative_decoding.test }}
             timeout: 90
