@@ -5,8 +5,9 @@
 #include <openvino/genai/visual_language/pipeline.hpp>
 #include <filesystem>
 
-bool print_subword(std::string&& subword) {
-    return !(std::cout << subword << std::flush);
+ov::genai::StreamingStatus print_subword(std::string&& subword) {
+    std::cout << subword << std::flush;
+    return ov::genai::StreamingStatus::RUNNING;
 }
 
 int main(int argc, char* argv[]) try {
@@ -32,25 +33,33 @@ int main(int argc, char* argv[]) try {
 
     std::string prompt;
 
-    pipe.start_chat();
+    ov::genai::ChatHistory history;
+    
     std::cout << "question:\n";
-
     std::getline(std::cin, prompt);
-    pipe.generate(prompt,
-                  ov::genai::images(rgbs),
-                  ov::genai::generation_config(generation_config),
-                  ov::genai::streamer(print_subword));
+
+    history.push_back({{"role", "user"}, {"content", std::move(prompt)}});
+    ov::genai::VLMDecodedResults decoded_results = pipe.generate(
+        history,
+        ov::genai::images(rgbs),
+        ov::genai::generation_config(generation_config),
+        ov::genai::streamer(print_subword)
+    );
+    history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
     std::cout << "\n----------\n"
         "question:\n";
     while (std::getline(std::cin, prompt)) {
+        history.push_back({{"role", "user"}, {"content", std::move(prompt)}});
         // New images and videos can be passed at each turn
-        pipe.generate(prompt,
-                      ov::genai::generation_config(generation_config),
-                      ov::genai::streamer(print_subword));
+        ov::genai::VLMDecodedResults decoded_results = pipe.generate(
+            history,
+            ov::genai::generation_config(generation_config),
+            ov::genai::streamer(print_subword)
+        );
+        history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
         std::cout << "\n----------\n"
             "question:\n";
     }
-    pipe.finish_chat();
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';

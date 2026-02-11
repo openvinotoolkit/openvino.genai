@@ -24,6 +24,7 @@ from .py_openvino_genai import (
 
 from .py_openvino_genai import (
     Parser,
+    VLLMParserWrapper,
     ReasoningParser,
     DeepSeekR1ReasoningParser,
     Phi4ReasoningParser,
@@ -71,7 +72,6 @@ from .py_openvino_genai import TokenizedInputs, Tokenizer
 from .py_openvino_genai import (
     WhisperGenerationConfig,
     WhisperPipeline,
-    ChunkStreamerBase,
     WhisperRawPerfMetrics,
     WhisperPerfMetrics,
     WhisperWordTiming,

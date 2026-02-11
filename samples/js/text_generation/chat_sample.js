@@ -1,5 +1,5 @@
 import readline from 'readline';
-import { LLMPipeline } from 'openvino-genai-node';
+import { LLMPipeline, ChatHistory } from 'openvino-genai-node';
 import { basename } from 'node:path';
 
 main();
@@ -32,7 +32,7 @@ async function main() {
   const pipe = await LLMPipeline(MODEL_PATH, device);
   const config = { 'max_new_tokens': 100 };
 
-  await pipe.startChat();
+  const chatHistory = new ChatHistory();
   promptUser();
 
   // Function to prompt the user for input
@@ -46,12 +46,13 @@ async function main() {
 
     // Check for exit command
     if (!input) {
-      await pipe.finishChat();
       rl.close();
       process.exit(0);
     }
 
-    await pipe.generate(input, config, streamer);
+    chatHistory.push({ role: "user", content: input });
+    const decodedResults = await pipe.generate(chatHistory, config, streamer);
+    chatHistory.push({ role: "assistant", content: decodedResults.toString() });
     console.log('\n----------');
 
     if (!rl.closed) promptUser();

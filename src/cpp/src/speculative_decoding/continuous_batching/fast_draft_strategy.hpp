@@ -5,9 +5,9 @@
 
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 #include "continuous_batching/pipeline_impl.hpp"
-#include "speculative_decoding/continuous_batching_for_speculative_decoding_impl.hpp"
-#include "speculative_decoding/speculative_decoding_metrics.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
+#include "speculative_decoding/continuous_batching/pipeline_impl.hpp"
+#include "speculative_decoding/speculative_decoding_metrics.hpp"
 #include "utils.hpp"
 
 namespace ov::genai {
@@ -66,7 +66,7 @@ std::vector<EncodedGenerationResult> generate_common(
                                     main_cfg, draft_cfg,
                                     main_in, draft_in);
             main_generations.push_back(self->main_pipeline()->add_request(rid, main_in, main_cfg));
-            self->draft_generations().insert({rid,
+            self->m_draft_generations.insert({rid,
                 self->draft_pipeline()->add_request(rid, draft_in, draft_cfg)});
         }
     }
@@ -192,7 +192,6 @@ public:
     const Tokenizer& tokenizer() const { return m_tokenizer; }
 
     std::mutex& draft_generations_mutex() { return m_draft_generations_mutex; }
-    std::map<uint64_t, GenerationHandle>& draft_generations() { return m_draft_generations; }
 };
 
 }  // namespace ov::genai

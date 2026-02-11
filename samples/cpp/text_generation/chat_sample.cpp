@@ -27,10 +27,9 @@ int main(int argc, char* argv[]) try {
 
     std::cout << "question:\n";
     while (std::getline(std::cin, prompt)) {
-        chat_history.push_back({{"role", "user"}, {"content", prompt}});
+        chat_history.push_back({{"role", "user"}, {"content", std::move(prompt)}});
         ov::genai::DecodedResults decoded_results = pipe.generate(chat_history, config, streamer);
-        std::string output = decoded_results.texts[0];
-        chat_history.push_back({{"role", "assistant"}, {"content", output}});
+        chat_history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
         std::cout << "\n----------\n"
             "question:\n";
     }

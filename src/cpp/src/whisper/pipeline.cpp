@@ -140,10 +140,10 @@ public:
         generate_result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - decode_start_time));
 
-        result.perf_metrics.raw_metrics.tokenization_durations.emplace_back(tokenization_duration_microseconds);
         result.words = generate_result.words;
 
         result.perf_metrics = generate_result.perf_metrics;
+        result.perf_metrics.raw_metrics.tokenization_durations.emplace_back(tokenization_duration_microseconds);
         auto& segments = generate_result.segments;
 
         if (segments.has_value()) {
@@ -165,7 +165,6 @@ public:
         metrics.load_time = this->m_load_time_ms;
         auto stop_time = std::chrono::steady_clock::now();
         metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
-        result.perf_metrics.raw_metrics.tokenization_durations.emplace_back(MicroSeconds(0.0f));
         metrics.evaluate_statistics(start_time);
 
         return result;
@@ -176,12 +175,6 @@ private:
     std::shared_ptr<ov::genai::WhisperDecoder> m_decoder;
     Sampler m_sampler;
 };
-
-OPENVINO_SUPPRESS_DEPRECATED_START
-std::pair<std::string, Any> streamer(std::shared_ptr<ChunkStreamerBase> func) {
-    return {utils::STREAMER_ARG_NAME, Any::make<std::shared_ptr<ChunkStreamerBase>>(func)};
-}
-OPENVINO_SUPPRESS_DEPRECATED_END
 
 std::pair<std::string, Any> generation_config(const WhisperGenerationConfig& config) {
     return {utils::CONFIG_ARG_NAME, Any::make<WhisperGenerationConfig>(config)};
@@ -252,5 +245,3 @@ void ov::genai::WhisperPipeline::set_generation_config(const WhisperGenerationCo
 }
 
 ov::genai::WhisperPipeline::~WhisperPipeline() = default;
-
-ov::genai::ChunkStreamerBase::~ChunkStreamerBase() = default;

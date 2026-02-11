@@ -13,7 +13,7 @@ import llm_bench_utils.model_utils as model_utils
 import llm_bench_utils.metrics_print as metrics_print
 from llm_bench_utils.prompt_utils import get_text_prompt
 import llm_bench_utils.gen_output_data as gen_output_data
-from task.pipeline_utils import CommonPipeline, execution_time_in_sec
+from task.pipeline_utils import CommonPipeline, execution_time_in_sec, collect_prompts_step
 from llm_bench_utils.memory_monitor import MemMonitorWrapper
 from pathlib import Path
 from typing import Any
@@ -193,7 +193,7 @@ class TextRerankerOptimum(CommonPipeline):
             self.mem_consumption_meter.start()
         generation_result, generation_time = self.generate(tokenized_input)
         if (self.mem_consumption_level == 1 and iter_num == 0) or self.mem_consumption_level == 2:
-            self.mem_consumption_meter.stop_and_collect_data(f"{'P' + str(iter_num) if iter_num > 0 else 'warm-up'}_{proc_id}")
+            self.mem_consumption_meter.stop_and_collect_data(f"{'P' + str(iter_num) if iter_num > 0 else 'warm-up'}")
             max_rss_mem_consumption, rss_mem_increase, max_sys_mem_consumption, sys_mem_increase = self.mem_consumption_meter.get_data()
 
         iter_data, _ = self.postprocess_output_info(
@@ -343,7 +343,7 @@ class TextRerankerGenAI(CommonPipeline):
             self.mem_consumption_meter.start()
         generation_result, generation_time = self.generate(input_text)
         if (self.mem_consumption_level == 1 and iter_num == 0) or self.mem_consumption_level == 2:
-            self.mem_consumption_meter.stop_and_collect_data(f"{'P' + str(iter_num) if iter_num > 0 else 'warm-up'}_{proc_id}")
+            self.mem_consumption_meter.stop_and_collect_data(f"{'P' + str(iter_num) if iter_num > 0 else 'warm-up'}")
             max_rss_mem_consumption, rss_mem_increase, max_sys_mem_consumption, sys_mem_increase = self.mem_consumption_meter.get_data()
 
         iter_data, _ = self.postprocess_output_info(
@@ -370,19 +370,7 @@ def run_text_reranker_benchmark(
 ) -> tuple[list, float, dict]:
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_reranker_model(model_path, device, mem_consumption, **args)
     iter_data_list = []
-    input_text_list = get_text_prompt(args)
-    if args["prompt_index"] is None:
-        prompt_idx_list = [prompt_idx for prompt_idx, _ in enumerate(input_text_list)]
-        text_list = input_text_list
-    else:
-        prompt_idx_list = []
-        text_list = []
-        for i in args["prompt_index"]:
-            if 0 <= i < len(input_text_list):
-                text_list.append(input_text_list[i])
-                prompt_idx_list.append(i)
-    if len(input_text_list) == 0:
-        raise RuntimeError("==Failure prompts is empty ==")
+    text_list, prompt_idx_list = collect_prompts_step(args, get_text_prompt)
 
     if not use_genai:
         text_reranker_pipeline = TextRerankerOptimum(model, tokenizer, args, model_path, mem_consumption)
