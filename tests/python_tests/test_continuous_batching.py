@@ -734,22 +734,23 @@ def compare_results_for_dynamic_split_fuse_config(main_model_id, draft_model_id,
 
 
 batch_prompts = [
-    [
-        "Do you know why the Sun appears yellow to us on Earth, even though it actually emits white light?"
-    ],
+    ["Do you know why the Sun appears yellow to us on Earth, even though it actually emits white light?"],
     [
         "Do you know why the Sun appears yellow to us on Earth, even though it actually emits white light?",
-        "Please tell me something about Canada based on your knowledge, such as its geography, culture, history, or unique national characteristics."
+        "Please tell me something about Canada based on your knowledge, such as its geography, culture, history, or unique national characteristics.",
     ],
     [
         "Do you know why the Sun appears yellow to us on Earth, even though it actually emits white light?",
         "Please tell me something about Canada based on your knowledge, such as its geography, culture, history, or unique national characteristics.",
-        "Please tell me something about OpenVINO based on your knowledge, including its purpose, core features, typical use cases."
+        "Please tell me something about OpenVINO based on your knowledge, including its purpose, core features, typical use cases.",
     ],
 ]
+
+
 @pytest.mark.parametrize("prompts", batch_prompts)
 def test_dynamic_split_fuse_for_speculative_decoding(prompts):
     compare_results_for_dynamic_split_fuse_config("HuggingFaceTB/SmolLM2-360M", "HuggingFaceTB/SmolLM2-135M", prompts)
+
 
 @pytest.mark.parametrize("prompts", batch_prompts)
 def test_dynamic_split_fuse_for_eagle3(prompts):
