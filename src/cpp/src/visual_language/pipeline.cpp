@@ -271,17 +271,12 @@ public:
                 auto history_state = ChatHistoryInternalState::get_or_create(m_history, m_vision_registry);
                 size_t last_user_idx = history_state->get_last_user_message_index();
 
-                // Get original prompt content from the last user message
-                const auto& last_user_message = m_history[last_user_idx];
-                std::string original_prompt = last_user_message["content"].get_string();
-
-                // Get the pruned prompt after CDPruner
-                std::string pruned_prompt = m_inputs_embedder->get_last_pruned_prompt(original_prompt);
-
-                // Replace the user message with pruned version
                 OPENVINO_ASSERT(last_user_idx < m_history.size(), "Invalid last_user_idx");
+
+                // Replace the original prompt with the pruned prompt after CDPruner
                 auto user_message = m_history[last_user_idx];
-                user_message["content"] = pruned_prompt;
+                std::string original_prompt = user_message["content"].get_string();
+                user_message["content"] = m_inputs_embedder->get_last_pruned_prompt(original_prompt);
                 m_history[last_user_idx] = user_message;
             }
 

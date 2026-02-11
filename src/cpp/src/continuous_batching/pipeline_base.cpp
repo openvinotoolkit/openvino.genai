@@ -441,15 +441,15 @@ ContinuousBatchingPipeline::IContinuousBatchingPipeline::generate(
     std::vector<VLMChatContext> chat_contexts;
     chat_contexts.reserve(histories.size());
 
-    const auto& generation_config = sampling_params[0];
-    // Set visual token pruning configuration
-    m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
-                                                       generation_config.relevance_weight);
-
     for (size_t i = 0; i < histories.size(); i++) {
         OPENVINO_ASSERT(sampling_params[i].apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
         OPENVINO_ASSERT(!histories[i].empty(), "Chat history must not be empty when using ChatHistory in generate method.");
-    
+
+        const auto& generation_config = sampling_params[i];
+        // Set visual token pruning configuration
+        m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
+                                                           generation_config.relevance_weight);
+
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
         
         VLMChatContext chat_context(histories[i], m_vision_registry, *m_inputs_embedder);
