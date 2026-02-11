@@ -247,17 +247,11 @@ void init_llm_pipeline(py::module_& m) {
         .def("get_generation_config", &LLMPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &LLMPipeline::set_generation_config, py::arg("config"))
         .def("get_next_token_log_probs", &LLMPipeline::get_next_token_log_probs,
-            py::arg("prompt"), "Input prompt string",
-            py::arg("token_ids"), "List of token IDs to get log probabilities for",
+            py::arg("prompt"),
+            py::arg("token_ids"),
             R"(
                 Get log probabilities for specific tokens after processing a prompt.
                 This is optimized for multiple-choice evaluation tasks like MMLU.
-                
-                Example for MMLU:
-                    prompt = "Question: What is 2+2? A) 3 B) 4 C) 5 D) 6"
-                    token_ids = [tokenizer.encode("A"), tokenizer.encode("B"), 
-                                 tokenizer.encode("C"), tokenizer.encode("D")]
-                    log_probs = pipeline.get_next_token_log_probs(prompt, token_ids)
                 
                 Args:
                     prompt (str): The input prompt to process
@@ -265,6 +259,12 @@ void init_llm_pipeline(py::module_& m) {
                 
                 Returns:
                     List[float]: Log probabilities for each requested token
+                
+                Example for MMLU:
+                    prompt = "Question: What is 2+2? A) 3 B) 4 C) 5 D) 6"
+                    token_ids = [tokenizer.encode("A"), tokenizer.encode("B"), 
+                                 tokenizer.encode("C"), tokenizer.encode("D")]
+                    log_probs = pipeline.get_next_token_log_probs(prompt, token_ids)
             )");
 
     m.def("draft_model", [](

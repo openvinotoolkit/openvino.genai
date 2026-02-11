@@ -348,6 +348,9 @@ EncodedResults StatefulLLMPipeline::generate(
         OPENVINO_ASSERT(config.num_return_sequences == 1u,
             "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
     }
+    
+    // Stateful pipeline does not provide logprobs for prompt tokens
+    OPENVINO_ASSERT(config.echo == false, "Echo is not supported in the stateful pipeline");
 
     std::shared_ptr<StreamerBase> streamer_ptr = ov::genai::utils::create_streamer(streamer, m_tokenizer);
 
@@ -508,6 +511,9 @@ std::vector<float> StatefulLLMPipeline::get_next_token_log_probs(
     ov::Tensor prompt_ids = m_tokenizer.encode(prompt).input_ids;
     size_t prompt_len = prompt_ids.get_shape().at(1);
     size_t batch_size = prompt_ids.get_shape().at(0);
+    OPENVINO_ASSERT(batch_size == 1,
+                    "StatefulLLMPipeline::get_next_token_log_probs currently supports batch_size == 1, got batch_size = ",
+                    batch_size);
     
     // ========== SINGLE INFERENCE FOR ALL TOKENS ==========
     
