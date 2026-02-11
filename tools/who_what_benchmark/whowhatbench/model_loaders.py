@@ -11,8 +11,16 @@ from transformers import (
 )
 
 from .embeddings_evaluator import DEFAULT_MAX_LENGTH as EMBED_DEFAULT_MAX_LENGTH
-from .reranking_evaluator import DEFAULT_MAX_LENGTH as RERANK_DEFAULT_MAX_LENGTH, DEFAULT_TOP_K as RERANK_DEFAULT_TOP_K, is_qwen3_causallm
-from .utils import mock_torch_cuda_is_available, mock_AwqQuantizer_validate_environment
+from .reranking_evaluator import (
+    DEFAULT_MAX_LENGTH as RERANK_DEFAULT_MAX_LENGTH,
+    DEFAULT_TOP_K as RERANK_DEFAULT_TOP_K,
+    is_qwen3_causallm,
+)
+from .utils import (
+    mock_torch_cuda_is_available,
+    mock_AwqQuantizer_validate_environment,
+    disable_diffusers_model_progress_bar,
+)
 import os
 
 from whowhatbench.utils import get_json_config
@@ -310,6 +318,7 @@ def load_text2image_model(
                 **model_kwargs
             )
 
+    disable_diffusers_model_progress_bar(model)
     return model
 
 
@@ -454,6 +463,7 @@ def load_imagetext2image_model(
 ):
     if use_hf:
         from diffusers import AutoPipelineForImage2Image
+
         logger.info("Using HF Transformers API")
         model = AutoPipelineForImage2Image.from_pretrained(
             model_id, trust_remote_code=True
@@ -464,6 +474,7 @@ def load_imagetext2image_model(
     else:
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVPipelineForImage2Image
+
         model_kwargs = {"ov_config": ov_config, "safety_checker": None}
         if kwargs.get('from_onnx'):
             model_kwargs['from_onnx'] = kwargs['from_onnx']
@@ -477,6 +488,8 @@ def load_imagetext2image_model(
                 device=device,
                 **model_kwargs
             )
+
+    disable_diffusers_model_progress_bar(model)
     return model
 
 
@@ -499,6 +512,7 @@ def load_inpainting_model(
 ):
     if use_hf:
         from diffusers import AutoPipelineForInpainting
+
         logger.info("Using HF Transformers API")
         model = AutoPipelineForInpainting.from_pretrained(
             model_id, trust_remote_code=True
@@ -509,6 +523,7 @@ def load_inpainting_model(
     else:
         logger.info("Using Optimum API")
         from optimum.intel.openvino import OVPipelineForInpainting
+
         model_kwargs = {"ov_config": ov_config, "safety_checker": None}
         if kwargs.get('from_onnx'):
             model_kwargs['from_onnx'] = kwargs['from_onnx']
@@ -523,6 +538,8 @@ def load_inpainting_model(
                 device=device,
                 **model_kwargs
             )
+
+    disable_diffusers_model_progress_bar(model)
     return model
 
 
@@ -683,6 +700,7 @@ def load_text2video_model(model_id, device="CPU", ov_config=None, use_hf=False, 
                 model_id, trust_remote_code=True, use_cache=True, device=device, **model_kwargs
             )
 
+    disable_diffusers_model_progress_bar(model)
     return model
 
 

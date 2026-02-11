@@ -158,7 +158,7 @@ class Text2ImageEvaluator(BaseEvaluator):
         if not os.path.exists(image_dir):
             os.makedirs(image_dir)
 
-        for i, prompt in tqdm(enumerate(prompts), desc="Evaluate pipeline"):
+        for i, prompt in tqdm(enumerate(prompts), total=len(prompts), desc="Evaluate pipeline"):
             set_seed(self.seed)
             rng = rng.manual_seed(self.seed)
             image = generation_fn(
