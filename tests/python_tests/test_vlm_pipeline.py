@@ -335,7 +335,7 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
         VIDEO_TAG_GENERATOR_BY_MODEL.get(ov_model, lambda idx: ""),
         RESOLUTION_BY_MODEL.get(ov_model, DEFAULT_RESOLUTION),
         pipeline,
-        ov_prompt_lookup
+        ov_prompt_lookup,
     )
 
 
@@ -410,7 +410,7 @@ def ov_npu_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
         VIDEO_TAG_GENERATOR_BY_MODEL.get(ov_model, lambda idx: ""),
         RESOLUTION_BY_MODEL.get(ov_model, DEFAULT_RESOLUTION),
         pipeline,
-        False
+        False,
     )
 
 
@@ -571,9 +571,7 @@ def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Te
         result_from_streamer.append(word)
         return False
 
-    generation_config = _setup_generation_config(
-        ov_pipe, prompt_lookup=ov_pipe_model.prompt_lookup
-    )
+    generation_config = _setup_generation_config(ov_pipe, prompt_lookup=ov_pipe_model.prompt_lookup)
 
     res = ov_pipe.generate(
         PROMPTS[0],
@@ -834,9 +832,7 @@ def test_vlm_pipeline_chat(
         result_from_streamer.append(word)
         return False
 
-    generation_config = _setup_generation_config(
-        ov_pipe, prompt_lookup=ov_pipe_model.prompt_lookup
-    )
+    generation_config = _setup_generation_config(ov_pipe, prompt_lookup=ov_pipe_model.prompt_lookup)
 
     ov_pipe.start_chat(system_message)
 
@@ -871,9 +867,7 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
 ):
     ov_pipe = ov_pipe_model.pipeline
 
-    generation_config = _setup_generation_config(
-        ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup
-    )
+    generation_config = _setup_generation_config(ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup)
 
     prompts_with_images = [
         (PROMPTS[0], iteration_images[0]),

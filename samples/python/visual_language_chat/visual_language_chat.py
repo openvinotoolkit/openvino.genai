@@ -49,10 +49,10 @@ def read_images(path: str) -> list[Tensor]:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('model_dir', help="Path to the model directory")
-    parser.add_argument('image_dir', help="Image file or dir with images")
-    parser.add_argument("enable_lookup", nargs='?', default=False, help="True or False")
-    parser.add_argument('device', nargs='?', default='CPU', help="Device to run the model on (default: CPU)")
+    parser.add_argument("model_dir", help="Path to the model directory")
+    parser.add_argument("image_dir", help="Image file or dir with images")
+    parser.add_argument("enable_lookup", nargs="?", default=False, help="True or False")
+    parser.add_argument("device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
     args = parser.parse_args()
 
     rgbs = read_images(args.image_dir)
@@ -60,12 +60,12 @@ def main():
     # GPU and NPU can be used as well.
     # Note: If NPU is selected, only the language model will be run on the NPU.
     properties = dict()
+    if args.enable_lookup:
+        properties["prompt_lookup"] = args.enable_lookup
     if args.device == "GPU":
         # Cache compiled models on disk for GPU to save time on the next run.
         # It's not beneficial for CPU.
         properties["CACHE_DIR"] = "vlm_cache"
-    if args.enable_lookup:
-        properties["prompt_lookup"] = args.enable_lookup
 
     pipe = openvino_genai.VLMPipeline(args.model_dir, args.device, **properties)
 

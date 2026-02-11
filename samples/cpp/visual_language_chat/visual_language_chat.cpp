@@ -20,13 +20,13 @@ int main(int argc, char* argv[]) try {
     // GPU and NPU can be used as well.
     // Note: If NPU is selected, only language model will be run on NPU
     std::string device = (argc == 4) ? argv[3] : "CPU";
+    properties.insert({ov::genai::prompt_lookup(true)});
     ov::AnyMap properties;
     if (device == "GPU") {
         // Cache compiled models on disk for GPU to save time on the
         // next run. It's not beneficial for CPU.
         properties.insert({ov::cache_dir("vlm_cache")});
     }
-    properties.insert({ov::genai::prompt_lookup(true)});
 
     ov::genai::VLMPipeline pipe(argv[1], device, properties);
 

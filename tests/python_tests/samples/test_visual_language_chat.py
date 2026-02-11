@@ -94,6 +94,6 @@ class TestVisualLanguageChat:
         py_result_ref = run_sample(py_command_ref, questions, env=env)
 
         # Compare results
-        assert (
-            py_result.stdout == py_result_ref.stdout
-        ), f"Results should be identical when running without lookup and lookup speculative decoding enabled."
+        assert py_result.stdout == py_result_ref.stdout, (
+            f"Results should be identical when running without lookup and lookup speculative decoding enabled."
+        )
