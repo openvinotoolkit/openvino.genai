@@ -348,7 +348,7 @@ EncodedResults StatefulLLMPipeline::generate(
         OPENVINO_ASSERT(config.num_return_sequences == 1u,
             "Currently only \"num_return_sequences\" equal to 1 is supported for NPU device!");
     }
-    
+
     // Stateful pipeline does not provide logprobs for prompt tokens
     OPENVINO_ASSERT(config.echo == false, "Echo is not supported in the stateful pipeline");
 
@@ -509,7 +509,6 @@ std::vector<float> StatefulLLMPipeline::get_next_token_log_probs(
 
     // Tokenize the prompt (context only, without any continuation)
     ov::Tensor prompt_ids = m_tokenizer.encode(prompt).input_ids;
-    size_t prompt_len = prompt_ids.get_shape().at(1);
     size_t batch_size = prompt_ids.get_shape().at(0);
     OPENVINO_ASSERT(batch_size == 1,
                     "StatefulLLMPipeline::get_next_token_log_probs currently supports batch_size == 1, got batch_size = ",
@@ -528,15 +527,17 @@ std::vector<float> StatefulLLMPipeline::get_next_token_log_probs(
     std::fill_n(attention_mask.data<int64_t>(), attention_mask.get_size(), 1);
     m_model_runner.set_tensor("attention_mask", attention_mask);
     
-    // Initialize position_ids if needed
-    try {
-        size_t num_inputs = m_model_runner.get_compiled_model().inputs().size();
-        if (num_inputs == 4) {
-            ov::Tensor position_ids = ov::Tensor{ov::element::i64, prompt_ids.get_shape()};
-            utils::initialize_position_ids(position_ids, attention_mask, 0);
-            m_model_runner.set_tensor("position_ids", position_ids);
-        }
-    } catch (const std::exception& e) {
+    // Initialize position_ids if the model requires it (check by name, not input count)
+    auto inputs = m_model_runner.get_compiled_model().inputs();
+    auto position_ids_input = std::find_if(inputs.begin(), inputs.end(),
+        [](const ov::Output<const ov::Node>& input) {
+            return input.get_any_name() == "position_ids";
+        });
+    
+    if (position_ids_input != inputs.end()) {
+        ov::Tensor position_ids = ov::Tensor{ov::element::i64, prompt_ids.get_shape()};
+        utils::initialize_position_ids(position_ids, attention_mask, 0);
+        m_model_runner.set_tensor("position_ids", position_ids);
     }
     
     // Set beam_idx
@@ -578,12 +579,8 @@ std::vector<float> StatefulLLMPipeline::get_next_token_log_probs(
     
     for (size_t i = 0; i < token_ids.size(); ++i) {
         int64_t cont_token = token_ids[i];
-        
-        if (cont_token >= (int64_t)vocab_size || cont_token < 0) {
-            result.push_back(-1000.0f);
-            continue;
-        }
-        
+        OPENVINO_ASSERT(cont_token >= 0 && cont_token < (int64_t)vocab_size,
+                        "Token ID ", cont_token, " is out of vocabulary range [0, ", vocab_size, ")"); 
         float raw_logit = position_logits[cont_token];
         float log_prob = raw_logit - max_val - static_cast<float>(log_sum);
         
