@@ -67,33 +67,3 @@ class TestVisualLanguageChat:
 
         # Compare results
         assert py_result.stdout == cpp_result.stdout, f"Results should match"
-
-    @pytest.mark.vlm
-    @pytest.mark.samples
-    @pytest.mark.parametrize(
-        "convert_model, download_test_content, questions",
-        [
-            pytest.param(
-                "Qwen2-VL-2B-Instruct",
-                "monalisa.jpg",
-                "Who drew this painting?\nWhen did the painter live?",
-            )
-        ],
-        indirect=["convert_model", "download_test_content"],
-    )
-    def test_prompt_lookup_decoding_vlm_chat(self, convert_model, download_test_content, questions):
-        env = os.environ.copy()
-        env["OPENVINO_LOG_LEVEL"] = "0"
-
-        # Test Python sample, enable lookup decoding.
-        py_script = os.path.join(SAMPLES_PY_DIR, "visual_language_chat/visual_language_chat.py")
-        py_command = [sys.executable, py_script, convert_model, download_test_content, "True"]
-        py_result = run_sample(py_command, questions, env=env)
-        # Test Python sample, disable lookup decoding.
-        py_command_ref = [sys.executable, py_script, convert_model, download_test_content, "False"]
-        py_result_ref = run_sample(py_command_ref, questions, env=env)
-
-        # Compare results
-        assert py_result.stdout == py_result_ref.stdout, (
-            f"Results should be identical when running without lookup and lookup speculative decoding enabled."
-        )

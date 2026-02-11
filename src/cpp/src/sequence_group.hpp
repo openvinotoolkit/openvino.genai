@@ -410,9 +410,7 @@ public:
                 const ov::Tensor& tokens = prompt_ids.value();
                 OPENVINO_ASSERT(tokens.get_element_type() == ov::element::i64);
                 m_prompt_ids.resize(tokens.get_size());
-                OPENVINO_SUPPRESS_DEPRECATED_START
-                std::copy_n(tokens.data<int64_t>(), tokens.get_size(), m_prompt_ids.begin());
-                OPENVINO_SUPPRESS_DEPRECATED_END
+                std::copy_n(tokens.data<const int64_t>(), tokens.get_size(), m_prompt_ids.begin());
             }
             m_sequence_group_type = SequenceGroupType::EMBEDDINGS;
         }
