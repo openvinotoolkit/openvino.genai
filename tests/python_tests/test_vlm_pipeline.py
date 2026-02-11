@@ -81,6 +81,7 @@ class VlmModelInfo:
     video_tag: Callable[[int], str]
     resolution: int
     pipeline: VLMPipeline
+    prompt_lookup: bool
 
     def get_vision_tag(self, vision_type: VisionType) -> Callable[[int], str]:
         return self.image_tag if vision_type == VisionType.IMAGE else self.video_tag
@@ -159,6 +160,8 @@ DEFAULT_RESOLUTION = 336
 
 ATTENTION_BACKEND: list[str] = ["PA", "SDPA"]
 
+PROMPT_LOOKUP: list[bool] = [True, False]
+
 
 DEFAULT_MAX_NEW_TOKENS = 30
 DEFAULT_SCORE_EPSILON = 0.001
@@ -191,10 +194,16 @@ def _setup_generation_config(
     ignore_eos: bool = False,
     set_eos_token: bool = True,
     do_sample: bool = True,
+    prompt_lookup: bool = False,
 ) -> GenerationConfig:
     generation_config = pipeline.get_generation_config()
     generation_config.max_new_tokens = max_new_tokens
     generation_config.do_sample = do_sample
+    if prompt_lookup:
+        # add parameter to enable prompt lookup decoding to generate `num_assistant_tokens` candidates per iteration
+        generation_config.num_assistant_tokens = 5
+        # Define max_ngram_size
+        generation_config.max_ngram_size = 3
 
     if set_eos_token:
         generation_config.set_eos_token_id(pipeline.get_tokenizer().get_eos_token_id())
@@ -288,36 +297,41 @@ GEMMA3_MACOS_XFAIL_REASON = "gemma3 not supported on macOS with older transforme
 
 @pytest.fixture(scope="module")
 def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
-    ov_model, ov_backend = request.param
-
+    if isinstance(request.param, tuple) and len(request.param) == 3:
+        ov_model, ov_backend, ov_prompt_lookup = request.param
+    else:
+        ov_model, ov_backend = request.param
+        ov_prompt_lookup = False
+    print(f"Setting up model {ov_model} with backend {ov_backend} and prompt_lookup={ov_prompt_lookup}")
     if sys.platform == "darwin" and "gemma3" in ov_model:
         pytest.xfail(GEMMA3_MACOS_XFAIL_REASON)
 
     models_path = _get_ov_model(ov_model)
 
-    pipeline = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=ov_backend)
+    pipeline = VLMPipeline(models_path, "CPU", ATTENTION_BACKEND=ov_backend, prompt_lookup=ov_prompt_lookup)
     return VlmModelInfo(
         ov_model,
         ov_backend,
         IMAGE_TAG_GENERATOR_BY_MODEL.get(ov_model, lambda idx: ""),
         VIDEO_TAG_GENERATOR_BY_MODEL.get(ov_model, lambda idx: ""),
         RESOLUTION_BY_MODEL.get(ov_model, DEFAULT_RESOLUTION),
-        pipeline
+        pipeline,
+        ov_prompt_lookup
     )
 
 
 parametrize_all_models = pytest.mark.parametrize(
     "ov_pipe_model",
-    [(m, b) for m in MODEL_IDS for b in ATTENTION_BACKEND],
-    ids=lambda p: f"{p[0]}/{p[1]}",
+    [(m, b, pl) for m in MODEL_IDS for b in ATTENTION_BACKEND for pl in PROMPT_LOOKUP],
+    ids=lambda p: f"{p[0]}/{p[1]}/{p[2]}",
     indirect=["ov_pipe_model"],
 )
 
 
 parametrize_all_models_with_video = pytest.mark.parametrize(
     "ov_pipe_model",
-    [(m, b) for m in VIDEO_MODEL_IDS for b in ATTENTION_BACKEND],
-    ids=lambda p: f"{p[0]}/{p[1]}",
+    [(m, b, pl) for m in VIDEO_MODEL_IDS for b in ATTENTION_BACKEND for pl in PROMPT_LOOKUP],
+    ids=lambda p: f"{p[0]}/{p[1]}/{p[2]}",
     indirect=["ov_pipe_model"],
 )
 
@@ -377,6 +391,7 @@ def ov_npu_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
         VIDEO_TAG_GENERATOR_BY_MODEL.get(ov_model, lambda idx: ""),
         RESOLUTION_BY_MODEL.get(ov_model, DEFAULT_RESOLUTION),
         pipeline,
+        False
     )
 
 
@@ -537,7 +552,9 @@ def test_vlm_pipeline(ov_pipe_model: VlmModelInfo, test_images: list[openvino.Te
         result_from_streamer.append(word)
         return False
 
-    generation_config = _setup_generation_config(ov_pipe)
+    generation_config = _setup_generation_config(
+        ov_pipe, prompt_lookup=ov_pipe_model.prompt_lookup
+    )
 
     res = ov_pipe.generate(
         PROMPTS[0],
@@ -798,7 +815,9 @@ def test_vlm_pipeline_chat(
         result_from_streamer.append(word)
         return False
 
-    generation_config = _setup_generation_config(ov_pipe)
+    generation_config = _setup_generation_config(
+        ov_pipe, prompt_lookup=ov_pipe_model.prompt_lookup
+    )
 
     ov_pipe.start_chat(system_message)
 
@@ -833,7 +852,9 @@ def test_vlm_pipeline_start_chat_vs_chat_history(
 ):
     ov_pipe = ov_pipe_model.pipeline
 
-    generation_config = _setup_generation_config(ov_pipe, do_sample=False)
+    generation_config = _setup_generation_config(
+        ov_pipe, do_sample=False, prompt_lookup=ov_pipe_model.prompt_lookup
+    )
 
     prompts_with_images = [
         (PROMPTS[0], iteration_images[0]),
@@ -1015,6 +1036,9 @@ def test_vlm_pipeline_chat_with_video(
     generation_config = ov_pipe.get_generation_config()
     generation_config.max_new_tokens = 30
     generation_config.set_eos_token_id(ov_pipe.get_tokenizer().get_eos_token_id())
+    if ov_pipe_model.prompt_lookup:
+        generation_config.num_assistant_tokens = 5
+        generation_config.max_ngram_size = 3
 
     ov_pipe.start_chat(system_message)
     iteration_images = iteration_images_and_videos[0]
@@ -1216,7 +1240,12 @@ def test_vlm_pipeline_chat_streamer_cancel_second_generate(
             else StreamingStatus.RUNNING
         )
 
-    generation_config = _setup_generation_config(ov_pipe, ignore_eos=True, do_sample=False)
+    generation_config = _setup_generation_config(
+        ov_pipe,
+        ignore_eos=True,
+        do_sample=False,
+        prompt_lookup=ov_pipe_model.prompt_lookup,
+    )
 
     images_and_videos = {"images": image_sequence}
     if ov_pipe_model.model_id in VIDEO_MODEL_IDS:
@@ -1347,7 +1376,10 @@ def test_vlm_pipeline_chat_streamer_cancel_first_generate(
         )
 
     generation_config = _setup_generation_config(
-        ov_pipe, ignore_eos=True, do_sample=False
+        ov_pipe,
+        ignore_eos=True,
+        do_sample=False,
+        prompt_lookup=ov_pipe_model.prompt_lookup,
     )
 
     images_and_videos = {"images": image_sequence}
