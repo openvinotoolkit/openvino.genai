@@ -8,10 +8,12 @@ from PIL import Image
 import torch
 import torch.nn.functional as F
 
+import cv2
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
 from transformers import CLIPImageProcessor, CLIPModel
 from tqdm import tqdm
+from skimage.metrics import structural_similarity
 from sklearn.metrics.pairwise import cosine_similarity
 
 
@@ -21,7 +23,9 @@ def evaluate_similarity(model, data_gold, data_prediction):
 
     metric_per_question = []
     for gold, prediction in tqdm(
-        zip(answers_gold, answers_prediction), desc="Similarity evaluation"
+        zip(answers_gold, answers_prediction),
+        total=min(len(answers_gold), len(answers_prediction)),
+        desc="Similarity evaluation",
     ):
         embeddings = model.encode([gold, prediction])
         cos_sim = util.cos_sim(embeddings, embeddings)
@@ -143,7 +147,9 @@ def evaluate_image_similarity(processor, model, data_gold, data_prediction):
 
     metric_per_image = []
     for gold, prediction in tqdm(
-        zip(images_gold, images_prediction), desc="Image Similarity evaluation"
+        zip(images_gold, images_prediction),
+        total=min(len(images_gold), len(images_prediction)),
+        desc="Image Similarity evaluation",
     ):
         gold_image = Image.open(gold)
         prediction_image = Image.open(prediction)
@@ -182,17 +188,20 @@ class EmbedsSimilarity:
         metric_per_gen = []
         metric_per_passages = []
         for gold, prediction in tqdm(
-            zip(embeds_gold, embeds_prediction), desc="Embeds Similarity evaluation"
+            zip(embeds_gold, embeds_prediction),
+            total=min(len(embeds_gold), len(embeds_prediction)),
+            desc="Embeds Similarity evaluation",
         ):
-            with open(gold, 'rb') as f:
+            with open(gold, "rb") as f:
                 gold_data = np.load(f)
 
-            with open(prediction, 'rb') as f:
+            with open(prediction, "rb") as f:
                 prediction_data = np.load(f)
 
-            cos_sim = F.cosine_similarity(torch.from_numpy(gold_data), torch.from_numpy(prediction_data))
-            metric_per_passages.append(cos_sim.detach().numpy())
-            metric_per_gen.append(torch.mean(cos_sim).item())
+            cos_sim_all = cosine_similarity(gold_data, prediction_data)
+            cos_sim = np.diag(cos_sim_all)
+            metric_per_passages.append(cos_sim)
+            metric_per_gen.append(np.mean(cos_sim))
 
         metric_dict = {"similarity": np.mean(metric_per_gen)}
         return metric_dict, {"similarity": metric_per_gen, "similarity_per_passages": metric_per_passages}
@@ -208,12 +217,14 @@ class RerankingSimilarity:
         metric_per_query = []
         similarity_per_query = []
         for gold, prediction in tqdm(
-            zip(gold_results, prediction_results), desc="Reranking Similarity evaluation"
+            zip(gold_results, prediction_results),
+            total=min(len(gold_results), len(prediction_results)),
+            desc="Reranking Similarity evaluation",
         ):
-            with open(gold, 'rb') as f:
+            with open(gold, "rb") as f:
                 gold_data = np.load(f)
 
-            with open(prediction, 'rb') as f:
+            with open(prediction, "rb") as f:
                 prediction_data = np.load(f)
 
             prediction_scores = {int(pred_info[0]): pred_info[1] for pred_info in prediction_data}
@@ -223,67 +234,165 @@ class RerankingSimilarity:
                 scores_diff = self.MISSING_DOCUMENT_PENALTY
                 if document_idx in prediction_scores:
                     scores_diff = abs(gold_score - prediction_scores[document_idx])
-                per_query_text.append(scores_diff)
+                per_query_text.append(scores_diff.item())
 
             metric_per_query.append(per_query_text)
             dist = np.linalg.norm(per_query_text)
             similarity_per_query.append(1 / (1 + dist))
 
         metric_dict = {"similarity": np.mean(similarity_per_query)}
-        return metric_dict, {"similarity": similarity_per_query, "per_text_score_list": metric_per_query}
+        return metric_dict, {"similarity": similarity_per_query, "per_text_scores_diff": metric_per_query}
 
 
 class VideoSimilarity:
     def __init__(self) -> None:
-        from transformers import LlavaNextVideoProcessor, LlavaNextVideoModel
+        from transformers import VivitImageProcessor, VivitModel
 
-        self.processor = LlavaNextVideoProcessor.from_pretrained("llava-hf/LLaVA-NeXT-Video-7B-hf")
-        self.model = LlavaNextVideoModel.from_pretrained("llava-hf/LLaVA-NeXT-Video-7B-hf").eval()
+        self.embeds_model = "google/vivit-b-16x2"
+        self.embeds_model_frame_num = 32
+        self.processor = VivitImageProcessor.from_pretrained(self.embeds_model)
+        self.model = VivitModel.from_pretrained(self.embeds_model).eval()
 
-    def get_pixel_values_videos(self, video):
-        # according to pre processing of inputs in get_video_features of LlavaNextVideoModel
-        # https://github.com/huggingface/transformers/blob/v4.53.2/src/transformers/models/llava_next_video/modular_llava_next_video.py#L381
-        inputs = self.processor.video_processor(videos=video, return_tensors="pt")["pixel_values_videos"]
-        batch_size, frames, channels, height, width = inputs.shape
-        pixel_values_videos = inputs.reshape(batch_size * frames, channels, height, width)
-        return pixel_values_videos
+        import lpips
 
-    def get_video_features(self, pixel_values_videos):
-        layer_idx = self.model.config.vision_feature_layer
+        # alex - faster; vgg - more rigorous assessments; to check when collecting statistics
+        self.lpips_model = lpips.LPIPS(net="alex").to("cpu")
+
+    def load_video_frames(self, video_path: str, num_frames: int | None = None):
+        cap = cv2.VideoCapture(video_path)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        # Adjust frame count to match required num_frames:
+        # interpolate if video has less frames, truncate if it has more
+        frame_idxs = np.arange(total_frames)
+        if num_frames and num_frames > total_frames:
+            frame_idxs = np.linspace(0, total_frames - 1, num_frames).astype(int)
+        elif num_frames and num_frames < total_frames:
+            frame_idxs = np.arange(num_frames)
+
+        frames = []
+        for i in range(total_frames):
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            frame_count = np.count_nonzero(frame_idxs == i)
+            if frame_count == 0:
+                continue
+            # if total_frames is less than required num_frames, duplicate some of them
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            for _ in range(frame_count):
+                frames.append(frame)
+
+        cap.release()
+        return np.stack(frames)
+
+    def get_embedding(self, gold_video: np.ndarray, predicted_video: np.ndarray):
+        gold_inputs = self.processor(list(gold_video), return_tensors="pt")
         with torch.no_grad():
-            # output shape (batch, patches, hidden_dim)
-            outputs = self.model.vision_tower(pixel_values_videos, output_hidden_states=True)
-        # according to post processing of outputs in get_video_features of LlavaNextVideoModel
-        # https://github.com/huggingface/transformers/blob/v4.53.2/src/transformers/models/llava_next_video/modular_llava_next_video.py#L387
-        outputs = outputs.hidden_states[layer_idx][:, 1:]
-        return outputs.mean(dim=2)
+            gold_emb = self.model(**gold_inputs).last_hidden_state[:, 0, :]
 
-    def load_video_frames(self, video_path):
-        import imageio.v3 as iio
+        predicted_inputs = self.processor(list(predicted_video), return_tensors="pt")
+        predicted_emb = self.model(**predicted_inputs).last_hidden_state[:, 0, :]
 
-        frames = iio.imread(video_path, plugin="pyav")
-        return [Image.fromarray(frame).convert("RGB") for frame in frames]
+        cos_sim_all = cosine_similarity(gold_emb.detach().numpy(), predicted_emb.detach().numpy())
+        return np.mean(np.diag(cos_sim_all))
 
-    def evaluate(self, gt, prediction):
-        videos_gold = gt["videos"].values
-        videos_prediction = prediction["videos"].values
+    def convert_frame_to_lpips_tensor(self, frame: np.ndarray) -> torch.Tensor:
+        tensor = torch.from_numpy(frame).float().permute(2, 0, 1) / 255.0
+        # [0, 1] -> [-1, 1]
+        tensor = tensor * 2 - 1
+        return tensor.unsqueeze(0)
+
+    def get_lpips(self, gold_video: np.ndarray, pred_video: np.ndarray):
+        lpips_scores = []
+        for i, gold_frame in enumerate(gold_video):
+            pred_frame = pred_video[i]
+            pred_lpips_frame = self.convert_frame_to_lpips_tensor(pred_frame)
+            gold_lpips_frame = self.convert_frame_to_lpips_tensor(gold_frame)
+
+            with torch.no_grad():
+                score = self.lpips_model(gold_lpips_frame, pred_lpips_frame)
+
+            lpips_scores.append(score.item())
+
+        return np.mean(lpips_scores)
+
+    def get_frame_differences_for_tlpips(self, video: np.ndarray) -> np.ndarray:
+        differences = []
+        for i in range(len(video) - 1):
+            diff = video[i + 1].astype(np.float32) - video[i].astype(np.float32)
+            differences.append(diff)
+
+        # Convert to tensor [-1, 1] range as LPIPS expects
+        differences = torch.Tensor(np.array(differences))
+        max_diff = differences.abs().max()
+        # if no changes occurred, max_diff will be 0; no normalization is required
+        if max_diff.item() != 0.0:
+            differences = differences / max_diff
+        return differences.permute(0, 3, 1, 2)
+
+    def get_temporal_lpips(self, gold_video: np.ndarray, pred_video: np.ndarray):
+        """
+        Temporal LPIPS: compares MOTION (frame differences) between videos
+        """
+
+        gold_video_diff = self.get_frame_differences_for_tlpips(gold_video)
+        pred_video_diff = self.get_frame_differences_for_tlpips(pred_video)
+
+        temporal_lpips_scores = []
+        for i in range(len(gold_video_diff)):
+            gold_tensor = gold_video_diff[i].unsqueeze(0)
+            pred_tensor = pred_video_diff[i].unsqueeze(0)
+
+            with torch.no_grad():
+                score = self.lpips_model(gold_tensor, pred_tensor)
+
+            temporal_lpips_scores.append(score.item())
+
+        return np.mean(temporal_lpips_scores)
+
+    def get_ssim(self, gold_video: np.ndarray, pred_video: np.ndarray):
+        ssim_vals = []
+        for i, gold_frame in enumerate(gold_video):
+            gf_gray = cv2.cvtColor(gold_frame, cv2.COLOR_RGB2GRAY)
+            pred_frame = pred_video[i]
+            pf_gray = cv2.cvtColor(pred_frame, cv2.COLOR_RGB2GRAY)
+
+            ssim_vals.append(structural_similarity(gf_gray, pf_gray))
+
+        return ssim_vals
+
+    def evaluate(self, data_gold, data_prediction):
+        videos_gold = data_gold["videos"].values
+        videos_prediction = data_prediction["videos"].values
 
         metric_per_video = []
-        metric_per_frames_per_video = []
-        for gold, pred in tqdm(zip(videos_gold, videos_prediction), desc="Video Similarity evaluation"):
-            gold_video = self.load_video_frames(gold)
-            prediction_video = self.load_video_frames(pred)
+        ssim_per_video = []
+        lpips_per_video = []
+        tlpips_per_video = []
+        for gold, prediction in tqdm(zip(videos_gold, videos_prediction), desc="Video Similarity evaluation"):
+            # vivit requires 32 frames
+            gold_video = self.load_video_frames(str(gold), num_frames=self.embeds_model_frame_num)
+            predicted_video = self.load_video_frames(str(prediction), num_frames=self.embeds_model_frame_num)
 
-            gold_inputs_pixel_values = self.get_pixel_values_videos(gold_video)
-            prediction_inputs_pixel_values = self.get_pixel_values_videos(prediction_video)
+            cos_sim_mean = self.get_embedding(gold_video, predicted_video)
 
-            gold_outputs = self.get_video_features(gold_inputs_pixel_values)
-            prediction_outputs = self.get_video_features(prediction_inputs_pixel_values)
+            ssim_vals = self.get_ssim(gold_video, predicted_video)
+            ssim_avg = sum(ssim_vals) / len(ssim_vals)
 
-            cos_sim_all = cosine_similarity(prediction_outputs, gold_outputs)
-            cos_sim_frames = np.array([cos_sim_all[i, i] for i in range(len(gold_video))])
-            metric_per_video.append(np.mean(cos_sim_frames))
-            metric_per_frames_per_video.append(cos_sim_frames)
+            lpips = self.get_lpips(gold_video, predicted_video)
+            tlpips = self.get_temporal_lpips(gold_video, predicted_video)
+
+            metric_per_video.append(cos_sim_mean)
+            ssim_per_video.append(ssim_avg)
+            lpips_per_video.append(lpips)
+            tlpips_per_video.append(tlpips)
 
         metric_dict = {"similarity": np.mean(metric_per_video)}
-        return metric_dict, {"similarity": metric_per_video, "per_frame": metric_per_frames_per_video}
+        return metric_dict, {
+            "similarity": metric_per_video,
+            "SSIM (higher is better, 1.0 best)": ssim_per_video,
+            "LPIPS (lower is better, 0 best)": lpips_per_video,
+            "tLPIPS (lower is better, 0 best)": tlpips_per_video,
+        }

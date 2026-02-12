@@ -6,7 +6,7 @@ import argparse
 import json
 from typing import Literal
 
-from openvino_genai import GenerationConfig, LLMPipeline, StructuredOutputConfig
+from openvino_genai import GenerationConfig, LLMPipeline, StructuredOutputConfig, ChatHistory
 from pydantic import BaseModel, Field
 
 
@@ -73,20 +73,26 @@ def main():
             prompt = input("> ")
         except EOFError:
             break
-        pipe.start_chat(sys_message)
+
+        history = ChatHistory()
+        history.append({"role": "system", "content": sys_message})
         config.structured_output_config = StructuredOutputConfig(
             json_schema=json.dumps(ItemQuantities.model_json_schema())
         )
         config.do_sample = False
-        json_response = pipe.generate(prompt, config)
+        history.append({"role": "user", "content": prompt})
+        decoded_results = pipe.generate(history, config)
+        json_response = decoded_results.texts[0]
         res = json.loads(json_response)
-        pipe.finish_chat()
         print(f"Generated JSON with item quantities: {json_response}")
 
         config.do_sample = True
         config.temperature = 0.8
 
-        pipe.start_chat(sys_message_for_items)
+        history.clear()
+        history.append({"role": "system", "content": sys_message_for_items})
+        history.append({"role": "user", "content": prompt})
+
         generate_has_run = False
         for item, quantity in res.items():
             config.structured_output_config = StructuredOutputConfig(
@@ -94,10 +100,12 @@ def main():
             )
             for _ in range(quantity):
                 generate_has_run = True
-                json_strs = pipe.generate(prompt, config)
+                decoded_results = pipe.generate(history, config)
+                json_strs = decoded_results.texts[0]
+                # Validate generated JSON
                 json.loads(json_strs)
                 print(json_strs)
-        pipe.finish_chat()
+
         if not generate_has_run:
             print("No items generated. Please try again with a different request.")
 
