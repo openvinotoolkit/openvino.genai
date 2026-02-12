@@ -625,7 +625,7 @@ jobs:
             timeout: 90
           - name: 'EAGLE3 speculative decoding tests'
             cmd: |
-              python -m pip install git+https://github.com/xufang-lisa/optimum-intel.git@ea9607daf32919024cdd4390deec9693a7b64d23
+              python -m pip install git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76
               python -m pytest -v ./tests/python_tests/test_continuous_batching.py -k "eagle3"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).speculative_decoding.test }}
             timeout: 90
@@ -805,7 +805,7 @@ jobs:
       - name : Install specific optimum-intel for eagle3 samples
         if: ${{ matrix.test.marker == 'eagle3_decoding' && matrix.test.run_condition }}
         run: |
-          python -m pip install git+https://github.com/xufang-lisa/optimum-intel.git@ea9607daf32919024cdd4390deec9693a7b64d23
+          python -m pip install git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76
 
       - name: Test Samples (Python and C++)
         if: ${{ matrix.test.run_condition }}
