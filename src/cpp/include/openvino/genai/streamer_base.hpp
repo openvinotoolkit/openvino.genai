@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -20,21 +20,9 @@ enum class StreamingStatus {
  */
 class OPENVINO_GENAI_EXPORTS StreamerBase {
 public:
-    /// @brief put is called every time new token is decoded. Deprecated. Please, use write instead.
-    /// @return bool flag to indicate whether generation should be stopped, if return true generation stops
-    OPENVINO_DEPRECATED("Please, use `write()` instead of `put()`. Support will be removed in 2026.0.0 release.")
-    virtual bool put(int64_t token) {
-        OPENVINO_THROW("This method is deprecated and will be removed in 2026.0.0 release. Please, override write() instead.");
-        return true;
-    };
-
     /// @brief write is called every time new token is decoded
     /// @return StreamingStatus flag to indicate whether generation should continue to run, be stopped, or be cancelled
-    virtual StreamingStatus write(int64_t token) {
-        OPENVINO_SUPPRESS_DEPRECATED_START
-        return put(token) ? StreamingStatus::STOP : StreamingStatus::RUNNING;
-        OPENVINO_SUPPRESS_DEPRECATED_END
-    };
+    virtual StreamingStatus write(int64_t token) = 0;
 
     /// @brief write is called every time new vector of tokens is decoded, in case of assisting or prompt lookup decoding
     /// @return StreamingStatus flag to indicate whether generation should continue to run, be stopped, or be cancelled

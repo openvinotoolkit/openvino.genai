@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2025 Intel Corporation
+# Copyright (C) 2018-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -8,6 +8,67 @@ list(APPEND SOURCE_FILES "${CMAKE_CURRENT_BINARY_DIR}/version.cpp")
 # Dependencies
 
 include(FetchContent)
+
+# OpenCL support for CDPruner DPP acceleration - reuse OpenVINO's ENABLE_SYSTEM_OPENCL
+if(ENABLE_SYSTEM_OPENCL)
+    # Try to find OpenCL since ENABLE_SYSTEM_OPENCL is ON
+    find_package(OpenCL QUIET)
+    if(TARGET OpenCL::OpenCL)
+        message(STATUS "OpenCL found via OpenVINO configuration - enabling CDPruner DPP acceleration")
+
+        set(opencl_header_search_params
+            HINTS
+                ${opencl_root_hints}
+            PATHS
+                ENV "PROGRAMFILES(X86)"
+                ENV AMDAPPSDKROOT
+                ENV INTELOCLSDKROOT
+                ENV NVSDKCOMPUTE_ROOT
+                ENV CUDA_PATH
+                ENV ATISTREAMSDKROOT
+                ENV OCL_ROOT
+            PATH_SUFFIXES
+                "include"
+                "OpenCL/common/inc"
+                "AMD APP/include")
+
+        find_path(OpenCL_HPP_INCLUDE_DIR
+            NAMES
+                CL/opencl.hpp OpenCL/opencl.hpp
+            ${opencl_header_search_params})
+
+        find_path(CL2_HPP_INCLUDE_DIR
+            NAMES
+                CL/cl2.hpp OpenCL/cl2.hpp
+            ${opencl_header_search_params})
+
+        set(OpenCL_DEFINITIONS)
+        if(OpenCL_HPP_INCLUDE_DIR OR CL2_HPP_INCLUDE_DIR)
+            get_target_property(opencl_target OpenCL::OpenCL ALIASED_TARGET)
+            if(NOT TARGET ${opencl_target})
+                set(opencl_target OpenCL::OpenCL)
+            endif()
+            set(OpenCL_HEADERS)
+            if(OpenCL_HPP_INCLUDE_DIR)
+                message(STATUS "OpenCL C++ headers found: ${OpenCL_HPP_INCLUDE_DIR}")
+                list(APPEND OpenCL_HEADERS ${OpenCL_HPP_INCLUDE_DIR})
+                list(APPEND OpenCL_DEFINITIONS OV_GPU_USE_OPENCL_HPP)
+            endif()
+            if(CL2_HPP_INCLUDE_DIR)
+                message(STATUS "OpenCL C++ headers found: ${CL2_HPP_INCLUDE_DIR}")
+                list(APPEND OpenCL_HEADERS ${CL2_HPP_INCLUDE_DIR})
+            endif()
+            set_property(TARGET ${opencl_target} APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${OpenCL_HEADERS})
+            set_property(TARGET ${opencl_target} APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS ${OpenCL_DEFINITIONS})
+        else()
+            message(WARNING "OpenCL C++ headers not found, some features may be disabled. Please install opencl-headers.")
+        endif()
+    else()
+        message(STATUS "ENABLE_SYSTEM_OPENCL is ON but OpenCL::OpenCL target not found - CDPruner will use CPU-only DPP")
+    endif()
+else()
+    message(STATUS "ENABLE_SYSTEM_OPENCL is OFF - CDPruner will use CPU-only DPP implementation")
+endif()
 
 if(NOT TARGET nlohmann_json)
     FetchContent_Declare(nlohmann_json
@@ -59,7 +120,7 @@ if(ANDROID)
 endif()
 
 if(ENABLE_XGRAMMAR)
-    set(XGRAMMAR_VERSION v0.1.25)
+    set(XGRAMMAR_VERSION v0.1.31)
     set(XGRAMMAR_DIR ${CMAKE_BINARY_DIR}/xgrammar)
 
     FetchContent_Declare(
@@ -143,6 +204,14 @@ target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SO
 
 target_link_libraries(${TARGET_NAME_OBJ} PRIVATE openvino::runtime openvino::threading nlohmann_json::nlohmann_json minja)
 
+# Add OpenCL support if enabled via OpenVINO configuration
+if(ENABLE_SYSTEM_OPENCL AND TARGET OpenCL::OpenCL AND (DEFINED OpenCL_HPP_INCLUDE_DIR OR DEFINED CL2_HPP_INCLUDE_DIR))
+    target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_OPENCL_DPP)
+    target_link_libraries(${TARGET_NAME_OBJ} PRIVATE OpenCL::OpenCL)
+else()
+    message(STATUS "OpenCL library or headers not found, ENABLE_OPENCL_DPP will not be defined.")
+endif()
+
 target_compile_features(${TARGET_NAME_OBJ} PRIVATE cxx_std_17)
 
 target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE openvino_genai_EXPORTS)
@@ -150,6 +219,20 @@ target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE openvino_genai_EXPORTS)
 # Add /bigobj flag for MSVC to handle large object files
 if(MSVC)
     target_compile_options(${TARGET_NAME_OBJ} PRIVATE "/bigobj")
+endif()
+
+# Add native CPU optimization for SIMD instructions
+if (ARCH_DIR STREQUAL "intel64")
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        # Force AVX2 only (disable AVX512)
+        target_compile_options(${TARGET_NAME_OBJ} PRIVATE "-mavx2" "-mno-avx512f")
+        message(STATUS "Enable SIMD compilation for ${TARGET_NAME_OBJ}")
+    elseif(MSVC)
+        target_compile_options(${TARGET_NAME_OBJ} PRIVATE "/arch:AVX2")
+        message(STATUS "Enable SIMD compilation for ${TARGET_NAME_OBJ}")
+    else()
+        message(STATUS "Disable SIMD compilation for ${TARGET_NAME_OBJ}")
+    endif()
 endif()
 
 set_target_properties(${TARGET_NAME_OBJ} PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -169,6 +252,11 @@ target_include_directories(${TARGET_NAME} INTERFACE "$<INSTALL_INTERFACE:runtime
 
 target_link_libraries(${TARGET_NAME} PUBLIC openvino::runtime PRIVATE openvino::threading nlohmann_json::nlohmann_json minja ${CMAKE_DL_LIBS})
 
+# Add OpenCL support if enabled via OpenVINO configuration
+if(ENABLE_SYSTEM_OPENCL AND TARGET OpenCL::OpenCL)
+    target_link_libraries(${TARGET_NAME} PRIVATE OpenCL::OpenCL)
+endif()
+
 if(ENABLE_XGRAMMAR)
     target_link_libraries(${TARGET_NAME} PRIVATE xgrammar)
 endif()
@@ -179,7 +267,7 @@ endif()
 
 target_compile_features(${TARGET_NAME} INTERFACE cxx_std_17)
 
-# Add /bigobj flag for MSVC to handle large object files  
+# Add /bigobj flag for MSVC to handle large object files
 if(MSVC)
     target_compile_options(${TARGET_NAME} PRIVATE "/bigobj")
 endif()

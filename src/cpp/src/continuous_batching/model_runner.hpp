@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -15,12 +15,19 @@
 #include "continuous_batching/timer.hpp"
 
 #include "continuous_batching/attention_output.hpp"
+#include "continuous_batching/cache_eviction.hpp"
 
 namespace ov::genai {
 
 inline std::string get_paged_attention_score_output_for_decoder_layer(size_t decoder_layer_id) {
     std::stringstream ss;
     ss << "scores." << decoder_layer_id;
+    return ss.str();
+}
+
+inline std::string get_adaptive_rkv_diversity_score_output_for_decoder_layer(size_t decoder_layer_id) {
+    std::stringstream ss;
+    ss << "adaptive_rkv_diversity." << decoder_layer_id;
     return ss.str();
 }
 
@@ -95,6 +102,7 @@ struct HiddenStateRange {
 class ModelRunner {
     ov::InferRequest m_request;
     AttentionScoresForEachSubsequence m_last_attention_scores;
+    BlockDiversityForEachSubsequence m_last_block_diversities;
     size_t m_block_size;
     size_t m_num_decoder_layers;
     bool m_collect_attention_scores;
@@ -108,6 +116,8 @@ class ModelRunner {
     bool m_is_aggregate_attention_scores;
 
     bool m_is_use_xattention_inputs;
+
+    bool m_is_use_adaptive_rkv;
     // A model to compute token embeddings.
     // Input shape: [N, conversation length].
     // Output shape: [1, conversation length, hidden_size].
@@ -154,7 +164,8 @@ public:
                 bool is_use_per_layer_cache_control = false,
                 bool is_use_rotation_inputs = false,
                 bool is_aggregate_attention_scores = false,
-                bool is_use_xattention_inputs = false)
+                bool is_use_xattention_inputs = false,
+                bool m_is_use_adaptive_rkv_inputs = false)
         : m_request(std::move(request)),
           m_block_size(block_size),
           m_num_decoder_layers(num_decoder_layers),
@@ -163,7 +174,8 @@ public:
           m_is_use_rotation_inputs(is_use_rotation_inputs),
           m_rotated_block_logical_indices_per_sequence_for_each_layer(num_decoder_layers),
           m_is_aggregate_attention_scores(is_aggregate_attention_scores),
-          m_is_use_xattention_inputs(is_use_xattention_inputs) {
+          m_is_use_xattention_inputs(is_use_xattention_inputs),
+          m_is_use_adaptive_rkv(m_is_use_adaptive_rkv_inputs) {
         OPENVINO_ASSERT(m_num_decoder_layers != 0, "num_decoder_layers must be non-zero");
         _reset_cache_rotation_coefficients();
     }
@@ -193,6 +205,9 @@ public:
         return m_last_attention_scores;
     }
 
+    const BlockDiversityForEachSubsequence& get_last_block_diversities() const {
+        return m_last_block_diversities;
+    }
 
     void set_cache_rotation_trig_lut(ov::Tensor&& rotation_trig_lut) {
         m_cache_rotation_trig_lut = std::move(rotation_trig_lut);
@@ -532,6 +547,10 @@ public:
             _set_xattention_tensors(sequence_groups, scheduler_output, batch_size_in_sequences);
         }
 
+        if (m_is_use_adaptive_rkv) {
+            _set_adaptive_rkv_tensors(sequence_groups, scheduler_output, batch_size_in_sequences);
+        }
+
         if (matmul_gathering_is_available) {
             // use pre-allocated tensor for gather_indices as well
             ov::Tensor gather_indices = m_request.get_tensor("sampled_tokens_indices");
@@ -552,6 +571,10 @@ public:
 
         if (m_collect_attention_scores) {
             _collect_attention_scores(sequence_groups, scheduler_output);
+        }
+
+        if (m_is_use_adaptive_rkv) {
+            _collect_adaptive_rkv_block_diversities(sequence_groups, scheduler_output);
         }
 
         _reset_cache_rotation_coefficients();
@@ -1024,6 +1047,59 @@ private:
         }
     }
 
+    void _collect_adaptive_rkv_block_diversities(const std::vector<SequenceGroup::Ptr> & sequence_groups, const Scheduler::Output& scheduler_output) {
+        m_last_block_diversities.clear();
+        size_t num_sequence_groups = scheduler_output.m_scheduled_sequence_groups_ids.size();
+        using IndexSpan = std::pair<size_t, size_t>;
+        std::list<std::pair<size_t, IndexSpan>> running_seq_ids_and_kvcache_spans;
+        size_t offset = 0;
+        for (size_t i = 0; i < num_sequence_groups; ++i) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+
+            if (!sequence_group->can_generate_tokens()) {
+                // As we only evict during generation phase, so will the similarity calculation will only be
+                // scheduled after prefill is finished
+                continue;
+            }
+            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+
+            for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
+                Sequence::CPtr sequence = running_sequences[seq_idx];
+                size_t global_sequence_id = sequence->get_id();
+                auto it = scheduler_output.m_adaptive_rkv_evictable_sizes.find(global_sequence_id);
+                if (it == scheduler_output.m_adaptive_rkv_evictable_sizes.end()) {
+                    // Adaptive R-KV diversity calculation was not scheduled for this sequence
+                    continue;
+                }
+
+                // [eviction_size_in_tokens / block_size, eviction_size_in_tokens]
+                size_t num_diversity_values_calculated = it->second * it->second / m_block_size;
+                IndexSpan span = {offset, offset + num_diversity_values_calculated};
+                offset += num_diversity_values_calculated;
+                running_seq_ids_and_kvcache_spans.emplace_back(global_sequence_id, span);
+            }
+        }
+
+        for (const auto& seq_id_and_score_span : running_seq_ids_and_kvcache_spans) {
+            auto block_diversities_across_decoder_layers_for_current_sequence = BlockDiversityForEachDecoderLayer(m_num_decoder_layers);
+            size_t global_sequence_id = seq_id_and_score_span.first;
+            IndexSpan span = seq_id_and_score_span.second;
+            for (size_t decoder_layer_id = 0; decoder_layer_id < m_num_decoder_layers; decoder_layer_id++) {
+                auto output_tensor_name = get_adaptive_rkv_diversity_score_output_for_decoder_layer(decoder_layer_id);
+                auto diversities_in_this_layer = m_request.get_tensor(output_tensor_name);
+                OPENVINO_ASSERT(diversities_in_this_layer.get_size() != 0, "Size of the output ", output_tensor_name, " may not be zero");
+                OPENVINO_ASSERT(diversities_in_this_layer.get_size() >= span.second, "Size of the output ", output_tensor_name, " must be at least ", span.second);
+
+                auto diversities_of_current_sequence_group = ov::Tensor(diversities_in_this_layer, ov::Coordinate{span.first}, ov::Coordinate{span.second});
+                auto copied_tensor = ov::Tensor(diversities_of_current_sequence_group.get_element_type(), ov::Shape{span.second - span.first});
+                diversities_of_current_sequence_group.copy_to(copied_tensor);
+                block_diversities_across_decoder_layers_for_current_sequence[decoder_layer_id] = diversities_of_current_sequence_group;
+            }
+            m_last_block_diversities[global_sequence_id] = block_diversities_across_decoder_layers_for_current_sequence;
+        }
+    }
+
     void _set_xattention_tensors(const std::vector<SequenceGroup::Ptr>& sequence_groups,
                                  const Scheduler::Output& scheduler_output,
                                  size_t batch_size_in_sequences) {
@@ -1054,12 +1130,94 @@ private:
             }
         }
 
-        std::vector<std::string> xattention_tensor_names(m_num_decoder_layers);
         for (size_t i = 0; i < m_num_decoder_layers; i++) {
             auto tensor_name = std::string("xattention_threshold.") + std::to_string(i);
             m_request.set_tensor(tensor_name, xattention_thresholds);
         }
 
+    }
+
+    void _set_adaptive_rkv_tensors(const std::vector<SequenceGroup::Ptr>& sequence_groups,
+                                   const Scheduler::Output& scheduler_output,
+                                   size_t batch_size_in_sequences) {
+        ov::Tensor adaptive_rkv_start_size(ov::element::i32, {});
+        adaptive_rkv_start_size.data<int32_t>()[0] = scheduler_output.m_adaptive_rkv_start_size;
+        m_request.set_tensor("adaptive_rkv_start_size", adaptive_rkv_start_size);
+
+        ov::Tensor adaptive_rkv_evictable_sizes(ov::element::i32, {batch_size_in_sequences});
+        int32_t* adaptive_rkv_evictable_sizes_data = adaptive_rkv_evictable_sizes.data<int32_t>();
+        std::vector<size_t> running_seq_ids;
+        for (size_t i = 0; i < scheduler_output.m_scheduled_sequence_groups_ids.size(); i++) {
+            size_t seq_group_id = scheduler_output.m_scheduled_sequence_groups_ids[i];
+            SequenceGroup::CPtr sequence_group = sequence_groups[seq_group_id];
+            std::vector<Sequence::CPtr> running_sequences = sequence_group->get_running_sequences();
+            size_t num_running_sequences = running_sequences.size();
+            for (size_t k = 0; k < num_running_sequences; ++k) {
+                Sequence::CPtr sequence = running_sequences[k];
+                size_t seq_id = sequence->get_id();
+                running_seq_ids.push_back(seq_id);
+            }
+        }
+
+        for (size_t seq_id : running_seq_ids) {
+            size_t evictable_size = 0;
+
+            if (scheduler_output.m_adaptive_rkv_evictable_sizes.find(seq_id) != scheduler_output.m_adaptive_rkv_evictable_sizes.end()) {
+                evictable_size = scheduler_output.m_adaptive_rkv_evictable_sizes.at(seq_id);
+            }
+            *adaptive_rkv_evictable_sizes_data = evictable_size;
+            adaptive_rkv_evictable_sizes_data += 1;
+        }
+
+        m_request.set_tensor("adaptive_rkv_evictable_sizes", adaptive_rkv_evictable_sizes);
+
+        std::vector<size_t> num_diversity_set_blocks_per_layer(m_num_decoder_layers, 0);
+        if (scheduler_output.m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence.empty()) {
+            // Set the auxiliary tensors to zero-shape if the scheduler did not provide information on which blocks of the
+            // evictable area belong to the diversity subset
+            for (size_t i = 0; i < m_num_decoder_layers; i++) {
+                auto begins_name = std::string("adaptive_rkv_diversity_block_set_indices_begins.") + std::to_string(i);
+                auto indices_name = std::string("adaptive_rkv_diversity_block_set_indices.") + std::to_string(i);
+                ov::Tensor adaptive_rkv_diversity_block_set_begins(ov::element::i32, {0});
+                ov::Tensor adaptive_rkv_diversity_block_set_indices(ov::element::i32, {0});
+                m_request.set_tensor(begins_name, adaptive_rkv_diversity_block_set_begins);
+                m_request.set_tensor(indices_name, adaptive_rkv_diversity_block_set_indices);
+            }
+        }
+        else {
+            // This will provide opportunity for optimization of the in-kernel diversity calculation by only computing the
+            // diversity scores between the actual blocks of the "diversity" set and not among all of the evictable blocks,
+            // which also include the blocks that will be necessarily kept as part of attention mass preservation.
+            for (size_t i = 0; i < m_num_decoder_layers; i++) {
+                ov::Tensor adaptive_rkv_diversity_block_set_begins(ov::element::i32, {batch_size_in_sequences + 1});
+                OPENVINO_ASSERT(batch_size_in_sequences == running_seq_ids.size());
+                auto begins_data = adaptive_rkv_diversity_block_set_begins.data<int32_t>();
+                begins_data[0] = 0;
+                begins_data += 1;
+
+                auto begins_name = std::string("adaptive_rkv_diversity_block_set_indices_begins.") + std::to_string(i);
+                const auto& adaptive_rkv_diversity_block_map = scheduler_output.m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence[i];
+                for (size_t seq_id : running_seq_ids) {
+                    OPENVINO_ASSERT(adaptive_rkv_diversity_block_map.find(seq_id) != adaptive_rkv_diversity_block_map.end());
+                    size_t num_blocks = adaptive_rkv_diversity_block_map.at(seq_id).size();
+                    num_diversity_set_blocks_per_layer[i] += num_blocks;
+                    *begins_data  = num_diversity_set_blocks_per_layer[i];
+                    begins_data += 1;
+                }
+                m_request.set_tensor(begins_name, adaptive_rkv_diversity_block_set_begins);
+            }
+
+            std::vector<std::string> indices_tensor_names(m_num_decoder_layers);
+            for (size_t i = 0; i < m_num_decoder_layers; i++) {
+                auto indices_name = std::string("adaptive_rkv_diversity_block_set_indices.") + std::to_string(i);
+                indices_tensor_names[i] = indices_name;
+                auto indices_tensor = m_request.get_tensor(indices_name);
+                indices_tensor.set_shape({num_diversity_set_blocks_per_layer[i]});
+            }
+            _fill_select_indices_from_block_tables(indices_tensor_names,
+                                                   scheduler_output,
+                                                   scheduler_output.m_adaptive_rkv_diversity_block_sets_for_each_layer_per_sequence);
+        }
     }
 };
 }

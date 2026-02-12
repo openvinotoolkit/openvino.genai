@@ -1,4 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
+# Copyright (C) 2025-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 
@@ -198,3 +198,108 @@ def test_extended_perf_metrics():
         assert (mean_gen_duration, std_gen_duration) == (model_metrics.get_generate_duration().mean, model_metrics.get_generate_duration().std)
         assert mean_gen_duration > 0 and mean_gen_duration < total_time
         assert std_gen_duration == 0
+
+
+# Eagle3 specific tests
+eagle3_models_and_input = [
+    (
+        "Qwen/Qwen3-1.7B",
+        "AngelSlim/Qwen3-1.7B_eagle3",
+        """Code:
+def add(a, b):
+    return a + b
+
+Question: Can you please add 2 and 3
+A:""",
+    )
+]
+
+eagle3_devices = [("NPU", "NPU")]
+
+
+@pytest.mark.parametrize("target_model,draft_model,prompt", eagle3_models_and_input)
+@pytest.mark.parametrize("target_device,draft_device", eagle3_devices)
+def test_eagle3_string_inputs(target_model, target_device, draft_model, draft_device, prompt):
+    """Test Eagle3 pipeline with string inputs on different device combinations"""
+    # Download and convert models:
+    target_model_schema = download_and_convert_model(target_model)
+    target_opt_model = target_model_schema.opt_model
+    target_hf_tokenizer = target_model_schema.hf_tokenizer
+    target_model_path = target_model_schema.models_path
+    draft_model_path = download_and_convert_model(draft_model).models_path
+
+    # Create OpenVINO GenAI Eagle3 pipeline:
+    draft_config = get_npu_llm_properties_for_test() if (draft_device == "NPU") else get_default_llm_properties()
+    ov_draft_model = ov_genai.draft_model(draft_model_path, draft_device, **draft_config)
+
+    target_config = get_npu_llm_properties_for_test() if (target_device == "NPU") else get_default_llm_properties()
+    ov_pipe = ov_genai.LLMPipeline(target_model_path, target_device, target_config, draft_model=ov_draft_model)
+
+    # Run reference HF model:
+    ov_generation_config = ov_genai.GenerationConfig(max_new_tokens=30, do_sample=False)
+    target_hf_tokenizer.add_special_tokens({"pad_token": "[PAD]"})
+    ref_gen_results = run_hugging_face(target_opt_model, target_hf_tokenizer, [prompt], ov_generation_config)
+
+    # Run OpenVINO GenAI Eagle3 pipeline:
+    ov_decoded_results = ov_pipe.generate([prompt], ov_generation_config)
+    ov_gen_results = convert_decoded_results_to_generation_result(ov_decoded_results, 1, 1, False)
+
+    # Run OpenVINO GenAI pipeline with ChatHistory:
+    chat_history = ov_genai.ChatHistory([{"role": "user", "content": prompt}])
+    ov_chat_history_decoded_results = ov_pipe.generate(chat_history, ov_generation_config)
+    ov_chat_history_gen_results = convert_decoded_results_to_generation_result(
+        ov_chat_history_decoded_results, 1, 1, False
+    )
+
+    # Compare results:
+    compare_generation_results([prompt], ref_gen_results, ov_gen_results, ov_generation_config)
+    compare_generation_results([prompt], ref_gen_results, ov_chat_history_gen_results, ov_generation_config)
+
+
+@pytest.mark.parametrize("target_model,draft_model,prompt", eagle3_models_and_input)
+@pytest.mark.parametrize("target_device,draft_device", eagle3_devices)
+def test_eagle3_perf_metrics(target_model, target_device, draft_model, draft_device, prompt):
+    """Test Eagle3 pipeline performance metrics to verify speculative decoding is actually working"""
+    # Download and convert models:
+    target_model_path = download_and_convert_model(target_model).models_path
+    draft_model_path = download_and_convert_model(draft_model).models_path
+
+    # Create OpenVINO GenAI Eagle3 pipeline:
+    draft_config = get_npu_llm_properties_for_test() if (draft_device == "NPU") else get_default_llm_properties()
+    ov_draft_model = ov_genai.draft_model(draft_model_path, draft_device, **draft_config)
+
+    target_config = get_npu_llm_properties_for_test() if (target_device == "NPU") else get_default_llm_properties()
+    ov_pipe = ov_genai.LLMPipeline(target_model_path, target_device, target_config, draft_model=ov_draft_model)
+    generation_config = ov_genai.GenerationConfig(
+        do_sample=False, max_new_tokens=30, ignore_eos=True, num_assistant_tokens=5
+    )
+
+    # Generate and collect both basic and extended performance metrics
+    results = ov_pipe.generate([prompt], generation_config)
+    perf_metrics = results.perf_metrics
+    extended_perf_metrics = results.extended_perf_metrics
+
+    # Verify extended metrics exist (proves Eagle3 speculative decoding is enabled)
+    assert extended_perf_metrics is not None
+    assert extended_perf_metrics.main_model_metrics is not None
+    assert extended_perf_metrics.draft_model_metrics is not None
+
+    # Check that draft model actually generated tokens (proves it executed)
+    num_draft_generated = extended_perf_metrics.draft_model_metrics.get_num_generated_tokens()
+    assert num_draft_generated > 0, "Draft model did not generate any tokens"
+
+    # Check that tokens were accepted (proves speculative decoding worked)
+    num_accepted = extended_perf_metrics.get_num_accepted_tokens()
+    assert num_accepted > 0, "No tokens were accepted from draft model"
+    assert num_accepted <= num_draft_generated
+
+    # Calculate and verify acceptance rate is reasonable for Eagle3
+    acceptance_rate = num_accepted / num_draft_generated if num_draft_generated > 0 else 0
+    assert 0 <= acceptance_rate <= 1
+    assert acceptance_rate > 0.1, f"Acceptance rate too low ({acceptance_rate:.2%}), Eagle3 may not be working properly"
+
+    # Verify both models had reasonable iteration counts
+    target_iterations = len(extended_perf_metrics.main_model_metrics.raw_metrics.m_durations)
+    draft_iterations = len(extended_perf_metrics.draft_model_metrics.raw_metrics.m_durations)
+    assert target_iterations > 0 and target_iterations <= generation_config.max_new_tokens
+    assert draft_iterations > 0, "Draft model had no iterations"

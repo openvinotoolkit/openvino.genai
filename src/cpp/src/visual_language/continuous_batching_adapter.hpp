@@ -1,9 +1,10 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 
 #include "visual_language/pipeline_base.hpp"
+#include "visual_language/chat_history_state.hpp"
 #include "openvino/genai/continuous_batching_pipeline.hpp"
 
 using namespace ov::genai;
@@ -59,6 +60,44 @@ public:
     ) override {
         auto start_time = std::chrono::steady_clock::now();
         auto result = m_impl.generate({prompt}, {images}, {videos}, {std::move(generation_config)}, streamer)[0];
+        auto stop_time = std::chrono::steady_clock::now();
+
+        VLMDecodedResults decoded;
+        decoded.perf_metrics = result.perf_metrics;
+        decoded.perf_metrics.load_time = get_load_time();
+
+        decoded.perf_metrics.raw_metrics.generate_durations.clear();
+        decoded.perf_metrics.raw_metrics.generate_durations.emplace_back(PerfMetrics::get_microsec(stop_time - start_time));
+        decoded.perf_metrics.m_evaluated = false;
+        decoded.perf_metrics.evaluate_statistics(start_time);
+        
+        for (size_t idx = 0; idx < result.texts.size(); ++idx) {
+            decoded.texts.push_back(result.texts.at(idx));
+            decoded.scores.push_back(result.scores.at(idx));
+        }
+        return decoded;
+    }
+
+    VLMDecodedResults generate(
+        const ChatHistory& history,
+        const std::vector<ov::Tensor>& images,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) override {
+        return generate(history, images, {}, std::move(generation_config), streamer);
+    }
+
+    VLMDecodedResults generate(
+        const ChatHistory& history,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer
+    ) override {
+        auto start_time = std::chrono::steady_clock::now();
+        // Ensure chat history internal state is initialized for original history
+        ChatHistoryInternalState::get_or_create(history);
+        auto result = m_impl.generate({history}, {images}, {videos}, {std::move(generation_config)}, streamer)[0];
         auto stop_time = std::chrono::steady_clock::now();
 
         VLMDecodedResults decoded;

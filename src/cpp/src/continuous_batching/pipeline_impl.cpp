@@ -1,9 +1,10 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <atomic>
 #include <thread>
 #include <optional>
+#include "openvino/genai/cache_eviction.hpp"
 
 #ifdef __APPLE__
 #include <sys/types.h>
@@ -78,7 +79,8 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     bool allow_cache_rotation = scheduler_config.cache_eviction_config.apply_rotation;
     bool allow_xattention = scheduler_config.use_sparse_attention && scheduler_config.sparse_attention_config.mode == SparseAttentionMode::XATTENTION;
     bool allow_score_aggregation = true;
-    ov::pass::SDPAToPagedAttention(is_need_per_layer_cache_control, is_need_per_layer_cache_control, allow_score_aggregation, allow_cache_rotation, allow_xattention).run_on_model(model);
+    bool allow_adaptive_rkv = scheduler_config.use_cache_eviction && scheduler_config.cache_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV;
+    ov::pass::SDPAToPagedAttention(is_need_per_layer_cache_control, is_need_per_layer_cache_control, allow_score_aggregation, allow_cache_rotation, allow_xattention, allow_adaptive_rkv).run_on_model(model);
     utils::apply_gather_before_matmul_transformation(model);
 
     initialize_pipeline(model, scheduler_config, device, properties);
@@ -97,6 +99,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::ContinuousBatchingImpl(
     // Note: set_inputs_embedder also sets the embedding model internally.
     m_model_runner->set_inputs_embedder(inputs_embedder);
     m_model_input_type = ModelInputType::EMBEDDINGS;
+    m_vision_registry = std::make_shared<VisionRegistry>();
 }
 
 ContinuousBatchingPipeline::ContinuousBatchingImpl::~ContinuousBatchingImpl() {
@@ -189,6 +192,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
         m_scheduler = std::make_shared<Scheduler>(m_block_size, cache_manager, normalized_config, m_num_decoder_layers, can_use_partial_preemption, eviction_config.snapkv_window_size);
 
         bool is_apply_rotation = eviction_config.apply_rotation;
+        bool is_use_adaptive_rkv = (eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV);
         m_model_runner = std::make_shared<ModelRunner>(infer_request,
                                                        m_block_size,
                                                        m_num_decoder_layers,
@@ -196,7 +200,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
                                                        /* is_use_per_layer_cache_control = */ true,
                                                        /* is_use_rotation_inputs = */ is_apply_rotation,
                                                        /* is_aggregate_attention_scores = */ true,
-                                                       is_use_xattention);
+                                                       is_use_xattention,
+                                                       is_use_adaptive_rkv);
         if (eviction_config.apply_rotation) {
             _prepare_rotation_data_storage(normalized_config, cache_manager->get_v_head_size(0));
         }
@@ -208,7 +213,8 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::initialize_pipeline(
                                                        /* is_use_per_layer_cache_control = */ false,
                                                        /* is_use_rotation_inputs = */ false,
                                                        /* is_aggregate_attention_scores = */ false,
-                                                       is_use_xattention);
+                                                       is_use_xattention,
+                                                       /* is_use_adaptive_rkv = */ false);
     }
 
     m_sampler = std::make_shared<Sampler>(m_tokenizer, sampler_num_threads);
@@ -348,10 +354,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         m_pipeline_metrics.avg_cache_usage = _get_current_running_average_cache_usage();
 
         const auto& sched_config = m_scheduler->get_config();
-        if (sched_config.use_cache_eviction && sched_config.cache_eviction_config.apply_rotation) {
-            _compute_cache_rotation_data(m_requests, scheduler_output);
-            m_model_runner->set_cache_rotation_data(std::move(m_current_step_rotated_block_indices_per_sequence),
-                                                    std::move(m_current_step_rotation_deltas));
+        if (sched_config.use_cache_eviction) {
+           if (sched_config.cache_eviction_config.apply_rotation) {
+                _compute_cache_rotation_data(m_requests, scheduler_output);
+                m_model_runner->set_cache_rotation_data(std::move(m_current_step_rotated_block_indices_per_sequence),
+                                                        std::move(m_current_step_rotation_deltas));
+           }
         }
 
     }
@@ -729,7 +737,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_compute_cache_rotation
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_blocks(const SchedulerConfig& sched_config, const Scheduler::Output& scheduler_output) {
     std::unordered_map<SequenceGroup::Ptr, size_t> seq_group_to_num_blocks_evicted_map;
-    auto sequence_attention_scores = m_model_runner->get_last_attention_scores();
+    const auto& sequence_attention_scores = m_model_runner->get_last_attention_scores();
 
     OPENVINO_ASSERT(!sequence_attention_scores.empty());
     size_t num_decoder_layers = sequence_attention_scores.begin()->second.size();
@@ -768,6 +776,14 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
              continue;
          }
 
+        if (sched_config.cache_eviction_config.aggregation_mode == AggregationMode::ADAPTIVE_RKV) {
+            const auto& block_diversities = m_model_runner->get_last_block_diversities();
+            auto it = block_diversities.find(seq_id);
+            if (it != block_diversities.end()) {
+                cache_eviction_algo.register_block_diversity(it->second);
+            }
+        }
+
         m_previous_num_blocks_before_eviction_per_sequence[seq_id] = seq_group_ptr->get_num_logical_blocks();
 
         auto logical_blocks_to_evict = cache_eviction_algo.evict_logical_blocks();
@@ -792,6 +808,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_maybe_evict_cache_bloc
         seq_group_ptr->register_token_eviction(num_blocks_evicted * m_block_size);
     }
 }
+
+void ContinuousBatchingPipeline::ContinuousBatchingImpl::_set_adaptive_rkv_diversity_blocks(const SchedulerConfig& sched_config, const Scheduler::Output& scheduler_output) {
+    // TODO(vshampor): implement
+}
+
+
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::_fill_prompt_log_probs(std::vector<SequenceGroup::Ptr>& sequence_groups, ov::Tensor& logits) {
     const float * logits_data = logits.data<float>();

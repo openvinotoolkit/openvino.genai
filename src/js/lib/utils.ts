@@ -1,6 +1,8 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+import type { Parser } from "./parsers.js";
+
 export enum StreamingStatus {
   RUNNING,
   STOP,
@@ -306,15 +308,17 @@ export type StructuredOutputGenerationConfig = {
   structured_output_config?: StructuredOutputConfig;
 };
 
-/** Structure to keep generation config parameters. For a selected method of decoding, only parameters from that group
- * and generic parameters are used. For example, if do_sample is set to true, then only generic parameters and random sampling parameters will
- * be used while greedy and beam search parameters will not affect decoding at all.
- */
+export type ParserGenerationConfig = {
+  /** Array of parsers to process complete text content at the end of generation */
+  parsers?: Parser[];
+};
+
 export type GenerationConfig = GenericGenerationConfig &
   BeamSearchGenerationConfig &
   RandomSamplingsGenerationConfig &
   AssistingGenerationConfig &
-  StructuredOutputGenerationConfig;
+  StructuredOutputGenerationConfig &
+  ParserGenerationConfig;
 
 export type SchedulerConfig = {
   /** a maximum number of tokens to batch
@@ -343,7 +347,7 @@ export type SchedulerConfig = {
 
 export type LLMPipelineProperties = {
   schedulerConfig?: SchedulerConfig;
-};
+} & Record<string, unknown>;
 
 export type VLMPipelineProperties = {
   schedulerConfig?: SchedulerConfig;

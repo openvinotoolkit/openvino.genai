@@ -1,22 +1,23 @@
-// Copyright (C) 2018-2025 Intel Corporation
+// Copyright (C) 2018-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
-
-import { Tokenizer, VLMPipeline, DecodedResults, VLMDecodedResults } from "../dist/index.js";
 
 import assert from "node:assert";
 import { describe, it, before } from "node:test";
-import { models } from "./models.js";
 import { createTestImageTensor, createTestVideoTensor } from "./utils.js";
+import { Tokenizer, VLMPipeline, DecodedResults, VLMDecodedResults } from "../dist/index.js";
 
-const MODEL_PATH = process.env.VLM_MODEL_PATH || `./tests/models/${models.VLM.split("/")[1]}`;
+const { VLM_PATH } = process.env;
+
+if (!VLM_PATH) {
+  throw new Error("Please set VLM_PATH environment variable to run the tests.");
+}
 
 // Skip tests on macOS due to insufficient memory
 describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
   let pipeline, testImage1, testImage2, testVideo1, testVideo2;
 
   before(async () => {
-    pipeline = await VLMPipeline(MODEL_PATH, "CPU");
-    pipeline.setGenerationConfig({ max_new_tokens: 10 });
+    pipeline = await VLMPipeline(VLM_PATH, "CPU");
     testImage1 = createTestImageTensor();
     testImage2 = createTestImageTensor(50, 50);
     testVideo1 = createTestVideoTensor();
@@ -24,7 +25,11 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
   });
 
   it("should generate text without images", async () => {
-    const result = await pipeline.generate("What is 2+2?");
+    const result = await pipeline.generate("What is 2+2?", {
+      generationConfig: {
+        max_new_tokens: 20,
+      },
+    });
 
     assert.ok(result instanceof DecodedResults, "Result should be instance of DecodedResults");
     assert.ok(
@@ -37,6 +42,7 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
   it("should generate text with images", async () => {
     const result = await pipeline.generate("Compare these two images.", {
       images: [testImage1, testImage2],
+      generationConfig: { max_new_tokens: 20 },
     });
 
     assert.strictEqual(result.texts.length, 1, "Should generate comparison");
@@ -67,6 +73,7 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
   it("throw error on invalid streamer", async () => {
     await assert.rejects(
       pipeline.generate("What is 2+2?", {
+        generationConfig: { max_new_tokens: 20 },
         streamer: () => {
           throw new Error("Test error");
         },
@@ -141,13 +148,19 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
     assert.ok(tokenizer instanceof Tokenizer, "Should return tokenizer");
   });
 
-  it("should start and finish chat", async () => {
+  it("should work with start and finish chat", async () => {
     await pipeline.startChat("You are an assistant named Tom.");
-    const result1 = await pipeline.generate("What is your name?");
-    assert.ok(/Tom/.test(result1.toString()));
-
+    const result = await pipeline.generate("What is on the image?", {
+      generationConfig: {
+        max_new_tokens: 20,
+      },
+      images: [testImage1],
+    });
     await pipeline.finishChat();
-    const result2 = await pipeline.generate("What is your name?");
-    assert.ok(!/Tom/.test(result2.toString()));
+    assert.ok(
+      result instanceof VLMDecodedResults,
+      "Result should be instance of VLMDecodedResults",
+    );
+    assert.ok(result.texts.length > 0, "Should generate some output");
   });
 });

@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -609,6 +609,10 @@ operator|(const StructuredOutputConfig::StructuralTag& lhs,
  * @param top_k the number of highest probability vocabulary tokens to keep for top-k-filtering.
  * @param rng_seed initializes random generator.
  *
+ * CDPruner configuration:
+ * @param pruning_ratio the percentage of visual tokens to prune [0-100). Set to 0 to disable pruning.
+ * @param relevance_weight the weight of relevance for visual tokens.
+ *
  * Assisting generation parameters:
  * @param assistant_confidence_threshold the lower token probability of candidate to be validated by main model in case of dynamic strategy candidates number update.
           NOTE: `assistant_confidence_threshold` is supported only by ContinuousBatching backend for Speculative Decode.
@@ -662,6 +666,10 @@ public:
     bool do_sample = false;
     size_t rng_seed = 0;
 
+    // CDPruner config
+    size_t pruning_ratio = 0;  // 0 means disabled, and values from 1 to 100 represent the percentage to prune.
+    float relevance_weight = 0.5f;
+
     // Assisting generation parameters
     float assistant_confidence_threshold = 0.f;
     size_t num_assistant_tokens = 0;
@@ -690,9 +698,6 @@ public:
     bool is_structured_output_generation() const;
 
     std::vector<std::shared_ptr<Parser>> parsers;
-
-    OPENVINO_DEPRECATED("Please, use `is_assisting_generation()` instead of `is_speculative_decoding()`. This method will be removed in 2026.0.0 release")
-    bool is_speculative_decoding() const;
 
     void update_generation_config(const ov::AnyMap& properties);
 
@@ -735,6 +740,10 @@ static constexpr ov::Property<float> repetition_penalty{"repetition_penalty"};
 static constexpr ov::Property<int64_t> eos_token_id{"eos_token_id"};
 static constexpr ov::Property<float> presence_penalty{"presence_penalty"};
 static constexpr ov::Property<float> frequency_penalty{"frequency_penalty"};
+
+static constexpr ov::Property<size_t> pruning_ratio{"pruning_ratio"};
+static constexpr ov::Property<float> relevance_weight{"relevance_weight"};
+
 extern OPENVINO_GENAI_EXPORTS ov::Property<size_t> rng_seed;
 
 static constexpr ov::Property<float> assistant_confidence_threshold{"assistant_confidence_threshold"};
@@ -748,15 +757,6 @@ static constexpr ov::Property<std::string> grammar{"grammar"};
 static constexpr ov::Property<std::string> backend{"backend"};
 
 static constexpr ov::Property<bool> apply_chat_template{"apply_chat_template"};
-
-// Predefined Configs
-
-OPENVINO_DEPRECATED("Please, use individual parameters instead of predefined configs. This method will be removed in 2026.0.0 release")
-OPENVINO_GENAI_EXPORTS GenerationConfig beam_search();
-OPENVINO_DEPRECATED("Please, use individual parameters instead of predefined configs. This method will be removed in 2026.0.0 release")
-OPENVINO_GENAI_EXPORTS GenerationConfig greedy();
-OPENVINO_DEPRECATED("Please, use individual parameters instead of predefined configs. This method will be removed in 2026.0.0 release")
-OPENVINO_GENAI_EXPORTS GenerationConfig multinomial();
 
 }  // namespace genai
 }  // namespace ov

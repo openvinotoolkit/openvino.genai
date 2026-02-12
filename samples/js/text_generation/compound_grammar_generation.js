@@ -55,28 +55,32 @@ function toolsToArraySchema(...tools) {
     });
 }
 
-/** parser to extract tool calls from the model output. */
-function parse(answer) {
-    answer.parsed = [];
-    for (const content of answer.texts) {
+class CustomToolCallParser {
+    parse(msg) {
+        if (!msg.content) {
+            msg.content = "";
+        }
+        const content = msg.content;
+
         const startTag = "functools";
         const startIndex = content.indexOf(startTag);
-        if (startIndex === -1) return;
+        if (startIndex === -1) {
+            return;
+        }
 
+        const jsonPart = content.slice(startIndex + startTag.length);
         try {
-            const jsonPart = content.slice(startIndex + startTag.length);
             const toolCalls = JSON.parse(jsonPart);
-            answer.parsed.push(toolCalls);
+            msg.tool_calls = toolCalls;
+            return;
         } catch {
-            answer.parsed.push([]);
+            return;
         }
     }
-
-    return;
 }
 
 function printToolCall(answer) {
-    for (const toolCall of answer.parsed[0]) {
+    for (const toolCall of answer.parsed[0].tool_calls) {
         const args = Object.keys(toolCall["arguments"])
             .map((key) => `${key}="${toolCall["arguments"][key]}"`);
         console.log(`${toolCall["name"]}(${args.join(", ")})`);
@@ -121,14 +125,13 @@ async function main() {
     const userText1 = "Do dolphins have fingers?";
     console.log("User: ", userText1);
     chatHistory.push({ role: "user", content: userText1 });
-    const modelInput = tokenizer.applyChatTemplate(chatHistory, true);
 
     // the example grammar works the same as SOC.Regex("yes|no")
     // but the Union grammar is more flexible and can be extended with more options
     const yesOrNo = SOC.Union(SOC.Regex("yes"), SOC.Regex("no"));
     generationConfig.structured_output_config = new SOC({ structural_tags_config: yesOrNo });
     process.stdout.write("Assistant: ");
-    const answer1 = await pipe.generate(modelInput, generationConfig, streamer);
+    const answer1 = await pipe.generate(chatHistory, generationConfig, streamer);
     chatHistory.push({ role: "assistant", content: answer1.texts[0] });
     console.log();
 
@@ -137,7 +140,6 @@ async function main() {
         + "then book hotel from 2025-12-04 to 2025-12-10 in Paris";
     console.log("User: ", userText2);
     chatHistory.push({ role: "user", content: userText2 });
-    const modelInput2 = tokenizer.applyChatTemplate(chatHistory, true);
 
     const startToolCallTag = SOC.ConstString("functools");
     const toolsJson = SOC.JSONSchema(
@@ -146,10 +148,10 @@ async function main() {
     const toolCall = SOC.Concat(startToolCallTag, toolsJson);
 
     generationConfig.structured_output_config.structural_tags_config = toolCall;
+    generationConfig.parsers = [new CustomToolCallParser()];
 
     process.stdout.write("Assistant: ");
-    const answer2 = await pipe.generate(modelInput2, generationConfig);
-    parse(answer2);
+    const answer2 = await pipe.generate(chatHistory, generationConfig);
     console.log("\n\nThe following tool calls were generated:")
     printToolCall(answer2)
     console.log();

@@ -50,6 +50,8 @@ def read_video(path: str, num_frames: int = 8) -> Tensor:
         if idx in indices:
             frames.append(np.array(frame))
         idx += 1
+
+    cap.release()
     assert idx == total_num_frames, "Frame count mismatch: expected {}, got {}".format(total_num_frames, idx)
 
     return Tensor(frames)
@@ -84,17 +86,22 @@ def main():
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
 
-    pipe.start_chat()
+    history = openvino_genai.ChatHistory()
     prompt = input("question:\n")
-    pipe.generate(prompt, videos=videos, generation_config=config, streamer=streamer)
+    history.append({"role": "user", "content": prompt})
+    decoded_results = pipe.generate(history, videos=videos, generation_config=config, streamer=streamer)
+    history.append({"role": "assistant", "content": decoded_results.texts[0]})
 
     while True:
         try:
             prompt = input("\n----------\nquestion:\n")
         except EOFError:
             break
-        pipe.generate(prompt, generation_config=config, streamer=streamer)
-    pipe.finish_chat()
+
+        history.append({"role": "user", "content": prompt})
+        # New images and videos can be passed at each turn
+        decoded_results = pipe.generate(history, generation_config=config, streamer=streamer)
+        history.append({"role": "assistant", "content": decoded_results.texts[0]})
 
 
 if __name__ == "__main__":

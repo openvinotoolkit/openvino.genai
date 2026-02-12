@@ -1,4 +1,4 @@
-# Copyright (C) 2018-2025 Intel Corporation
+# Copyright (C) 2018-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 from dataclasses import dataclass
@@ -182,11 +182,13 @@ def get_huggingface_models(
     model_id: str | Path,
     model_class: Type[OVModel],
     local_files_only=False,
+    trust_remote_code=False,
 ) -> tuple[OptimizedModel, AutoTokenizer]:
     def auto_tokenizer_from_pretrained() -> AutoTokenizer:
         return AutoTokenizer.from_pretrained(
             model_id, 
             local_files_only=local_files_only,
+            trust_remote_code=trust_remote_code,
         )
 
     is_eagle_model = "eagle3" in str(model_id).lower()
@@ -198,6 +200,7 @@ def get_huggingface_models(
             "load_in_8bit": False,
             "ov_config": get_default_llm_properties(),
             "local_files_only": local_files_only,
+            "trust_remote_code": trust_remote_code,
         }
         if is_eagle_model:
             params["eagle3"] = True
@@ -253,7 +256,8 @@ def sanitize_model_id(model_id: str) -> str:
 
 def download_and_convert_model_class(
     model_id: str, 
-    model_class: Type[OVModel], 
+    model_class: Type[OVModel],
+    trust_remote_code=False,
     **tokenizer_kwargs,
 ) -> OVConvertedModelSchema:
     dir_name = sanitize_model_id(model_id)
@@ -265,9 +269,13 @@ def download_and_convert_model_class(
     manager = AtomicDownloadManager(models_path)
 
     if manager.is_complete() or (models_path / OV_MODEL_FILENAME).exists():
-        opt_model, hf_tokenizer = get_huggingface_models(models_path, model_class, local_files_only=True)
+        opt_model, hf_tokenizer = get_huggingface_models(
+            models_path, model_class, local_files_only=True, trust_remote_code=trust_remote_code
+        )
     else:
-        opt_model, hf_tokenizer = get_huggingface_models(model_id, model_class, local_files_only=False)
+        opt_model, hf_tokenizer = get_huggingface_models(
+            model_id, model_class, local_files_only=False, trust_remote_code=trust_remote_code
+        )
         if "padding_side" in tokenizer_kwargs:
             hf_tokenizer.padding_side = tokenizer_kwargs.pop("padding_side")
 

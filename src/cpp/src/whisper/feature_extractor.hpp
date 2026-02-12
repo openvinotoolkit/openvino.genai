@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -13,7 +13,12 @@ namespace genai {
 
 struct WhisperFeatures {
     size_t feature_size;
+
+    // total frames extracted from the audio including padding
     size_t n_frames;
+
+    // active frames corresponding to the original audio length
+    size_t n_active_frames;
 
     // flattened 2d array with shape [feature_size, n_frames]
     std::vector<float> data;

@@ -1,7 +1,6 @@
 # Copyright (C) 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import pytest
 import sys
 
@@ -24,14 +23,17 @@ class TestTextEmbeddingPipeline:
         py_command = [sys.executable, py_script, convert_model, "Document 1", "Document 2"]
         py_result = run_sample(py_command)
 
-        # Run JS sample
-        js_sample = SAMPLES_JS_DIR / "rag/text_embeddings.js"
-        js_command = ["node", js_sample, convert_model, "Document 1", "Document 2"]
-        js_result = run_sample(js_command)
-
         # Compare results
         assert py_result.stdout == cpp_result.stdout, "Python and C++ results should match"
-        assert py_result.stdout == js_result.stdout, "Python and JS results should match"
+
+        # Run JS sample
+        # nodejs tests fails on mac with: "mutex lock failed: Invalid argument"
+        # ticket: 179949
+        if sys.platform != "darwin":
+            js_sample = SAMPLES_JS_DIR / "rag/text_embeddings.js"
+            js_command = ["node", js_sample, convert_model, "Document 1", "Document 2"]
+            js_result = run_sample(js_command)
+            assert py_result.stdout == js_result.stdout, "Python and JS results should match"
 
 
 class TestTextRerankPipeline:
@@ -58,3 +60,19 @@ range of computing tasks."
 
         # Compare results
         assert py_result.stdout == cpp_result.stdout, "Python and C++ results should match"
+
+        # Run JS sample
+        # nodejs tests fails on mac with: "mutex lock failed: Invalid argument"
+        # ticket: 179949
+        if sys.platform != "darwin":
+            js_sample = SAMPLES_JS_DIR / "rag/text_rerank.js"
+            js_command = [
+                "node",
+                js_sample,
+                convert_model,
+                "What are the main features of Intel Core Ultra processors?",
+                document_1,
+                document_2,
+            ]
+            js_result = run_sample(js_command)
+            assert py_result.stdout == js_result.stdout, "Python and JS results should match"

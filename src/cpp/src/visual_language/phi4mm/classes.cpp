@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "visual_language/phi4mm/classes.hpp"
@@ -206,7 +206,7 @@ std::unique_ptr<ov::genai::CircularBufferQueue<ov::InferRequest>> create_image_p
     ResultVector results{t165, t164, t163, t162, t161};
     SinkVector sinks{};
     ParameterVector parameters{t0, t1, t2, t3, t4};
-    auto model = make_shared<Model>(results, sinks, parameters);
+    auto model = make_shared<Model>(std::move(results), std::move(sinks), std::move(parameters));
     using namespace ov::genai;
     CompiledModel compiled = utils::singleton_core().compile_model(model, device);
     return make_unique<CircularBufferQueue<InferRequest>>(
@@ -494,10 +494,10 @@ std::unique_ptr<ov::genai::CircularBufferQueue<ov::InferRequest>> create_separat
     auto t132 = make_shared<Result>(t131);                      // f32[1,?,?] -> f32[1,?,?]
     t132->output(0).get_tensor().set_names({"img_features_with_separators"});
 
-    ResultVector results{t132};
+    ResultVector results{std::move(t132)};
     SinkVector sinks{};
-    ParameterVector parameters{t0, t1, t2, t3, t4, t5};
-    auto model = make_shared<Model>(results, sinks, parameters);
+    ParameterVector parameters{std::move(t0), std::move(t1), std::move(t2), std::move(t3), std::move(t4), std::move(t5)};
+    auto model = make_shared<Model>(std::move(results), std::move(sinks), std::move(parameters));
     using namespace ov::genai;
     CompiledModel compiled = utils::singleton_core().compile_model(model, device);
     return make_unique<CircularBufferQueue<InferRequest>>(

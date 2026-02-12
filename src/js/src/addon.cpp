@@ -9,6 +9,7 @@
 #include "include/perf_metrics.hpp"
 #include "include/text2video_pipeline/text2video_pipeline_wrapper.hpp"
 #include "include/text_embedding_pipeline/pipeline_wrapper.hpp"
+#include "include/text_rerank_pipeline/pipeline_wrapper.hpp"
 #include "include/tokenizer.hpp"
 #include "include/vlm_pipeline/perf_metrics.hpp"
 #include "include/vlm_pipeline/vlm_pipeline_wrapper.hpp"
@@ -53,6 +54,11 @@ Napi::Object init_module(Napi::Env env, Napi::Object exports) {
     init_class(env, exports, "LLMPipeline", &LLMPipelineWrapper::get_class, addon_data->core);
     init_class(env, exports, "VLMPipeline", &VLMPipelineWrapper::get_class, addon_data->vlm_pipeline);
     init_class(env, exports, "TextEmbeddingPipeline", &TextEmbeddingPipelineWrapper::get_class, addon_data->core);
+    init_class(env,
+               exports,
+               "TextRerankPipeline",
+               &TextRerankPipelineWrapper::get_class,
+               addon_data->text_rerank_pipeline);
     init_class(env, exports, "Tokenizer", &TokenizerWrapper::get_class, addon_data->tokenizer);
     init_class(env, exports, "PerfMetrics", &PerfMetricsWrapper::get_class, addon_data->perf_metrics);
     init_class(env, exports, "VLMPerfMetrics", &VLMPerfMetricsWrapper::get_class, addon_data->vlm_perf_metrics);

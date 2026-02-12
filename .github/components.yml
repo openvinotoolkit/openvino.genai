@@ -16,12 +16,14 @@ tests_dependencies:
     - text_streamer
     - RAG
     - WWB
+    - video_generation
 
 samples_dependencies:
   revalidate:
     - LLM_samples
     - Whisper_samples
     - Image_generation_samples
+    - Video_generation_samples
     - VLM_samples
     - RAG_samples
     - Speech_generation_samples
@@ -89,6 +91,12 @@ image_generation:
     - llm_bench
     - WWB
 
+video_generation:
+  revalidate:
+    - Video_generation_samples
+    - llm_bench
+    - WWB
+
 RAG:
   revalidate:
     - RAG_samples
@@ -139,6 +147,9 @@ RAG_samples:
   revalidate: []
 
 Speech_generation_samples:
+  revalidate: []
+
+Video_generation_samples:
   revalidate: []
 
 GGUF:

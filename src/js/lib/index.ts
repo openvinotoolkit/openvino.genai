@@ -68,3 +68,4 @@ export * from "./utils.js";
 export * from "./addon.js";
 export type { TokenizedInputs, EncodeOptions, DecodeOptions } from "./tokenizer.js";
 export type { ChatMessage, ExtraContext, ToolDefinition } from "./chatHistory.js";
+export type { Parser, ReasoningParserOptions } from "./parsers.js";

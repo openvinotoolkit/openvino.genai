@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -9,6 +9,8 @@
 
 #include "visual_language/vision_encoder.hpp"
 #include "visual_language/inputs_embedder.hpp"
+#include "circular_buffer_queue.hpp"
+#include "visual_language/cdpruner/cdpruner.hpp"
 
 namespace ov::genai {
 

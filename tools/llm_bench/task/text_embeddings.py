@@ -18,9 +18,15 @@ FW_UTILS = {'pt': llm_bench_utils.pt_utils, 'ov': llm_bench_utils.ov_utils}
 def run_text_embeddings_optimum(input_text, num, model, tokenizer, args, iter_data_list, prompt_index, bench_hook, proc_id, mem_consumption):
     input_text_list = [input_text] * args['batch_size']
     tokenizer_kwargs = {'padding': True, 'truncation': True, 'padding_side': args.get('emb_padding_side', 'right')}
+
+    pad_to_max_length = args.get("emb_pad_to_max_length")
+    if pad_to_max_length is True:
+        tokenizer_kwargs.update({"padding": "max_length"})
+
     max_lenght = args.get('emb_max_length')
     if max_lenght is not None:
-        tokenizer_kwargs.update({'padding': 'max_length', 'max_length': max_lenght})
+        tokenizer_kwargs.update({"max_length": max_lenght})
+
     tok_encode_start = time.perf_counter()
     input_data = tokenizer(input_text_list, return_tensors='pt', **tokenizer_kwargs)
     tok_encode_end = time.perf_counter()
@@ -45,7 +51,7 @@ def run_text_embeddings_optimum(input_text, num, model, tokenizer, args, iter_da
     model(**input_data)
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
+        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
         max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
 
     embed_time = end - start
@@ -92,10 +98,16 @@ def run_text_embeddings_optimum(input_text, num, model, tokenizer, args, iter_da
 
 def run_text_embeddings_genai(input_text, num, model, tokenizer, args, iter_data_list, prompt_index, bench_hook, proc_id, mem_consumption):
     input_text_list = [input_text] * args['batch_size']
-    tokenizer_kwargs = {}
+
+    tokenizer_kwargs = {"padding": True, "truncation": True}
+    pad_to_max_length = args.get("emb_pad_to_max_length")
+    if pad_to_max_length is True:
+        tokenizer_kwargs.update({"padding": "max_length"})
+
     max_lenght = args.get('emb_max_length')
     if max_lenght is not None:
-        tokenizer_kwargs = {'padding': 'max_length', 'max_length': max_lenght}
+        tokenizer_kwargs.update({"max_length": max_lenght})
+
     tok_encode_start = time.perf_counter()
     input_data = tokenizer(input_text_list, return_tensors='pt', **tokenizer_kwargs)
     tok_encode_end = time.perf_counter()
@@ -120,7 +132,7 @@ def run_text_embeddings_genai(input_text, num, model, tokenizer, args, iter_data
     model.embed_documents(input_text_list)
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
+        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
         max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
     tm_list = []
     tm_infer_list = []

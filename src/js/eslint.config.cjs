@@ -58,6 +58,8 @@ module.exports = defineConfig([
             "padding_side",
             "add_second_input",
             "number_of_inputs",
+            "reasoning_content",
+            "top_n",
           ],
         },
       ],
