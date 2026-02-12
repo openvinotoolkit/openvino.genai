@@ -49,6 +49,7 @@ def weight_0_1(value):
 def main():
     parser = argparse.ArgumentParser(description="Help command")
     parser.add_argument("-m", "--model", type=str, help="Path to model and tokenizers base directory")
+    parser.add_argument("-dm", "--draft_model", type=str, help="Path to draft model and tokenizers base directory")
     parser.add_argument("-p", "--prompt", type=str, default=None, help="Prompt")
     parser.add_argument("-pf", "--prompt_file", type=str, help="Read prompt from file")
     parser.add_argument("-i", "--image", type=str, default="image.jpg", help="Image")
@@ -87,6 +88,7 @@ def main():
     # Perf metrics is stored in VLMDecodedResults.
     # In order to get VLMDecodedResults instead of a string input should be a list.
     models_path = args.model
+    draft_model_path = args.draft_model
     images = read_images(args.image)
     device = args.device
     num_warmup = args.num_warmup
@@ -106,7 +108,15 @@ def main():
         scheduler_config = ov_genai.SchedulerConfig()
         scheduler_config.enable_prefix_caching = False
         scheduler_config.max_num_batched_tokens = sys.maxsize
-        pipe = ov_genai.VLMPipeline(models_path, device, scheduler_config=scheduler_config)
+
+        print("draft_model_path=", draft_model_path)
+        print("device=", device)
+        if draft_model_path:
+            draft_model = ov_genai.draft_model(draft_model_path, device)
+            pipe = ov_genai.VLMPipeline(models_path, device, scheduler_config=scheduler_config, draft_model=draft_model)
+        else:
+            pipe = ov_genai.VLMPipeline(models_path, device, scheduler_config=scheduler_config)
+
 
     input_data = pipe.get_tokenizer().encode(prompt)
     prompt_token_size = input_data.input_ids.get_shape()[1]
@@ -116,9 +126,11 @@ def main():
         pipe.generate(prompt, images=images, generation_config=config)
 
     res = pipe.generate(prompt, images=images, generation_config=config)
+    print(res.texts)
     perf_metrics = res.perf_metrics
     for _ in range(num_iter - 1):
         res = pipe.generate(prompt, images=images, generation_config=config)
+        print(res.texts)
         perf_metrics += res.perf_metrics
 
     print(f"Output token size: {res.perf_metrics.get_num_generated_tokens()}")
