@@ -1942,21 +1942,21 @@ class LLMPipeline:
         ...
     def get_next_token_log_probs(self, prompt: str, token_ids: collections.abc.Sequence[typing.SupportsInt]) -> list[float]:
         """
-        Get log probabilities for specific tokens after processing a prompt.
-        This is optimized for multiple-choice evaluation tasks like MMLU.
-        
-        Args:
-            prompt (str): The input prompt to process
-            token_ids (List[int]): Token IDs to get log probabilities for
-        
-        Returns:
-            List[float]: Log probabilities for each requested token
-        
-        Example for MMLU:
-            prompt = "Question: What is 2+2? A) 3 B) 4 C) 5 D) 6"
-            token_ids = [tokenizer.encode("A"), tokenizer.encode("B"), 
-                         tokenizer.encode("C"), tokenizer.encode("D")]
-            log_probs = pipeline.get_next_token_log_probs(prompt, token_ids)
+                        Get log probabilities for specific tokens after processing a prompt.
+                        This is optimized for multiple-choice evaluation tasks like MMLU.
+                        
+                        Args:
+                            prompt (str): The input prompt to process
+                            token_ids (List[int]): Token IDs to get log probabilities for
+                        
+                        Returns:
+                            List[float]: Log probabilities for each requested token
+                        
+                        Example for MMLU:
+                            prompt = "Question: What is 2+2? A) 3 B) 4 C) 5 D) 6"
+                            token_ids = [tokenizer.encode("A"), tokenizer.encode("B"), 
+                                         tokenizer.encode("C"), tokenizer.encode("D")]
+                            log_probs = pipeline.get_next_token_log_probs(prompt, token_ids)
         """
     def get_tokenizer(self) -> Tokenizer:
         ...
