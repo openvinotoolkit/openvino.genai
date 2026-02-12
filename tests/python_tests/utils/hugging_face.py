@@ -202,7 +202,7 @@ def get_huggingface_models(
             "local_files_only": local_files_only,
             "trust_remote_code": trust_remote_code,
         }
-         if is_eagle_model:
+        if is_eagle_model:
             params["trust_remote_code"] = True
         return model_class.from_pretrained(model_id, **params)
 
