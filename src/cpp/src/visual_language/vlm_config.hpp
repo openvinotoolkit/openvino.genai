@@ -21,6 +21,7 @@ enum class VLMModelType {
     QWEN2_VL,
     QWEN2_5_VL,
     GEMMA3,
+    MLLAMA
 };
 
 /// @brief A Configuration class passed to VLMPipeline and used to

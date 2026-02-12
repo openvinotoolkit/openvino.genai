@@ -535,21 +535,34 @@ private:
     ) {
         ov::Tensor inputs_embeds;
         std::optional<ov::Tensor> token_type_ids;
+        std::optional<ov::Tensor> cross_attention_mask;
         bool recalculate_merged_embeddings = encoded_images.size() > 0 || encoded_videos.size() > 0;
 
         auto start_get_inputs_embeds = std::chrono::steady_clock::now();
-        if (m_inputs_embedder->has_token_type_ids()) {
-            std::tie(inputs_embeds, token_type_ids) =
-                m_inputs_embedder->get_inputs_embeds_with_token_type_ids(unified_prompt,
-                                                                         encoded_images,
-                                                                         encoded_videos,
-                                                                         perf_metrics,
-                                                                         recalculate_merged_embeddings,
-                                                                         image_sequence,
-                                                                         video_sequence);
-        } else {
-            inputs_embeds = m_inputs_embedder->get_inputs_embeds(unified_prompt, encoded_images, encoded_videos, perf_metrics, recalculate_merged_embeddings, image_sequence, video_sequence);
+        auto inputs = m_inputs_embedder->get_language_model_inputs(unified_prompt,
+                                                                   encoded_images,
+                                                                   encoded_videos,
+                                                                   perf_metrics,
+                                                                   recalculate_merged_embeddings,
+                                                                   image_sequence,
+                                                                   video_sequence);
+        for (auto& input : inputs) {
+            auto& name = input.first;
+            auto& tensor = input.second;
+            if (name == "inputs_embeds") {
+                inputs_embeds = tensor;
+            } else if (name == "token_type_ids") {
+                token_type_ids = tensor;
+            } else if (name == "cross_attention_mask") {
+                cross_attention_mask = tensor;
+            } else {
+                // any extra inputs returned are assumed to not need any special handling during decode loop,
+                // so they are directly set to the language model here.
+                m_language.set_tensor(name, tensor);
+            }
         }
+        OPENVINO_ASSERT(inputs_embeds, "get_language_model_inputs didn't return inputs_embeds");
+
         auto end_get_inputs_embeds = std::chrono::steady_clock::now();
         perf_metrics.vlm_raw_metrics.prepare_embeddings_durations.emplace_back(PerfMetrics::get_microsec(end_get_inputs_embeds - start_get_inputs_embeds));
 
@@ -611,7 +624,7 @@ private:
 
         return ov::genai::get_lm_encoded_results(
             m_language, inputs_embeds, new_atten_mask, streamer_ptr, m_sampler, std::move(requests),
-            position_ids, token_type_ids, kv_cache_state, m_embedding, rope_delta, m_max_kv_cache_size,
+            position_ids, token_type_ids, cross_attention_mask, kv_cache_state, m_embedding, rope_delta, m_max_kv_cache_size,
             use_intermediate_remote_tensor
         );
     }
@@ -622,7 +635,8 @@ bool requires_sdpa(const std::filesystem::path& models_dir) {
     auto vlm_config = utils::from_config_json_if_exists<VLMConfig>(models_dir, "config.json");
     return vlm_config.model_type == VLMModelType::QWEN2_VL ||
            vlm_config.model_type == VLMModelType::QWEN2_5_VL ||
-           vlm_config.model_type == VLMModelType::GEMMA3;
+           vlm_config.model_type == VLMModelType::GEMMA3 ||
+           vlm_config.model_type == VLMModelType::MLLAMA;
 }
 
 VLMPipeline::VLMPipeline(
