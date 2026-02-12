@@ -14,6 +14,7 @@ struct AddonData {
     Napi::FunctionReference perf_metrics;
     Napi::FunctionReference vlm_perf_metrics;
     Napi::FunctionReference chat_history;
+    Napi::FunctionReference text2video_pipeline;
     Napi::ObjectReference openvino_addon;
 };
 

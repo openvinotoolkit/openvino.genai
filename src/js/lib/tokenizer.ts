@@ -2,7 +2,7 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Tensor } from "openvino-node";
+import type { Tensor } from "./addon.js";
 import type { ChatHistory } from "./chatHistory.js";
 
 /**

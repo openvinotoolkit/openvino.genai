@@ -35,7 +35,7 @@
     "test_setup": "node ./tests/setup.js"
   },
   "dependencies": {
-    "openvino-node": "2026.0.0"
+    "openvino-node": "2025.4.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
