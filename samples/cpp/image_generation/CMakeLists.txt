@@ -136,6 +136,22 @@ install(TARGETS stable_diffusion_export_import
         COMPONENT samples_bin
         EXCLUDE_FROM_ALL)
 
+# create encrypted_stable_diffusion sample executable
+
+add_executable(encrypted_stable_diffusion encrypted_stable_diffusion.cpp load_image.cpp imwrite.cpp)
+
+target_include_directories(encrypted_stable_diffusion PRIVATE ${CMAKE_BINARY_DIR} "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(encrypted_stable_diffusion PRIVATE openvino::genai indicators::indicators)
+
+set_target_properties(encrypted_stable_diffusion PROPERTIES
+    # Ensure out of box LC_RPATH on macOS with SIP
+    INSTALL_RPATH_USE_LINK_PATH ON)
+
+install(TARGETS encrypted_stable_diffusion
+        RUNTIME DESTINATION samples_bin/
+        COMPONENT samples_bin
+        EXCLUDE_FROM_ALL)
+
 # create inpainting executable
 
 add_executable(inpainting inpainting.cpp load_image.cpp imwrite.cpp)
