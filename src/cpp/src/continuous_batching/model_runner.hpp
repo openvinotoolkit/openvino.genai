@@ -382,10 +382,15 @@ public:
                     size_t stored_hidden_size = stored_shape[stored_shape.size() - 1];
 
                     OPENVINO_ASSERT(stored_hidden_size == hidden_size, "Target state hidden size does not match the expected size for Eagle3 draft model inference.");
-                    OPENVINO_ASSERT(stored_seq_len == total_num_tokens, "Target state sequence length does not match the expected length for Eagle3 draft model inference.");
 
                     // fill the draft model hidden state input with the target hidden state
-                    hidden_state_input = stored_hidden_state;
+                    if (stored_seq_len == total_num_tokens) {
+                        hidden_state_input = stored_hidden_state;
+                    } else {
+                        size_t copy_length = std::min(stored_seq_len, num_scheduled_tokens);
+                        size_t source_start_idx = stored_seq_len - copy_length;
+                        _copy_roi_between_tensors(stored_hidden_state, source_start_idx, copy_length, hidden_state_input, current_token_idx);
+                    }
                 } else if (_is_hs_internal()) {
                     // fill hidden_state_data with m_hidden_states
                     if (hidden_state_data) {

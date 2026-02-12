@@ -455,6 +455,15 @@ public:
         return m_max_content_len + m_num_validation_tokens >= get_prompt_len() && !m_is_gen_paused;
     }
 
+    bool has_finished_prefill() const {
+        for (auto& sequence : get_running_sequences()) {
+            if (sequence->get_generated_len() > 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
     Sequence::Ptr operator[] (size_t index) {
         OPENVINO_ASSERT(m_sequences.size() > index);
         return m_sequences[index];
