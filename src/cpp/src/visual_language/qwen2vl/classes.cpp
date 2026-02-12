@@ -1265,6 +1265,21 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedderQwen2VL::get_generat
     return {position_ids, rope_delta};
 }
 
+std::string InputsEmbedderQwen2VL::get_last_pruned_prompt(const std::string& original_prompt) const {
+    std::string pruned_prompt = original_prompt;
+
+    // Remove pruned vision pad tokens from the last prompt if CDPruner is active
+    if (is_cdpruner_active()) {
+        pruned_prompt = m_pruning_processor->get_last_pruned_prompt(pruned_prompt,
+                                                                    m_vlm_config.vision_start_token,
+                                                                    m_vlm_config.vision_end_token,
+                                                                    m_vlm_config.image_pad_token,
+                                                                    m_vlm_config.video_pad_token);
+    }
+
+    return pruned_prompt;
+}
+
 void InputsEmbedderQwen2VL::start_chat(const std::string& system_message) {
     IInputsEmbedder::start_chat(system_message);
     m_position_ids = ov::Tensor();
