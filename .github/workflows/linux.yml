@@ -33,7 +33,6 @@ env:
   BASE_PRODUCT_TYPE: public_linux_ubuntu_22_04_x86_64
   GENAI_WHEELS_ARTIFACT_NAME: 'genai_wheels'
   GENAI_ARCHIVE_ARTIFACT_BASE_NAME: 'genai_archive'
-  EAGLE3_OPT_INTEL_REF: '2c48d6430c265ac259c1b264f3e2c4025cdd7b76'
 
 jobs:
   smart_ci:
