@@ -177,7 +177,7 @@ class EmbeddingsEvaluator(BaseEvaluator):
         if not os.path.exists(result_dir):
             os.makedirs(result_dir)
 
-        for i, data in tqdm(enumerate(inputs), desc="Evaluate pipeline"):
+        for i, data in tqdm(enumerate(inputs), total=len(inputs), desc="Evaluate pipeline"):
             kwargs = {'padding_side': self.padding_side,
                       'pooling_type': self.pooling_type,
                       'normalize': self.normalize}
