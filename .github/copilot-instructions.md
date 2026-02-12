@@ -33,11 +33,12 @@ When analyzing a Pull Request, follow this protocol:
 12. Make sure the function names are descriptive.
 13. Check for variables with different names but similar meaning or aliasing.
 14. Avoid duplicate code. Ensure that common functionality is extracted into reusable functions or utilities.
-15. Avoid pronouns in comments and names to make the statements concise.
-16. Unused functions and constructors aren't allowed except for in `debug_utils.hpp`.
-17. `debug_utils.hpp` must never be included.
-18. Assumptions on user behalf aren't allowed. For example, the implementation shouldn't adjust config values silently or with a warning; it should throw an exception instead.
-19. Samples:
+15. Initialize containers with values instead of constructing an empty container and immediately inserting values.
+16. Avoid pronouns in comments and names to make the statements concise.
+17. Unused functions and constructors aren't allowed except for in `debug_utils.hpp`.
+18. `debug_utils.hpp` must never be included.
+19. Assumptions on user behalf aren't allowed. For example, the implementation shouldn't adjust config values silently or with a warning; it should throw an exception instead.
+20. Samples:
     * Avoid adding new samples unless there is a strong, clearly justified reason.
     * Keep command‑line arguments in samples minimal.
     * Ensure new samples have corresponding tests.
