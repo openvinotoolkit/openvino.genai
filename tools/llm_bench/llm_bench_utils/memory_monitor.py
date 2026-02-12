@@ -192,7 +192,14 @@ class MemoryMonitor:
 
         filename_label = f"{self.memory_type.value}_memory_usage{filename_suffix}"
         # Save measurements to text file
-        log_filepath = save_dir / f"{filename_label}.txt"
+        counter = 0
+        while True:
+            log_filepath = save_dir / f"{filename_label}_{counter}.txt"
+            if os.path.exists(log_filepath):
+                counter += 1
+            else:
+                break
+
         with open(log_filepath, "w") as log_file:
             if len(time_values) == 0:
                 log_file.write("No measurements recorded.\nPlease make sure logging duration or interval were enough.")

@@ -16,15 +16,48 @@ import math
 import cv2
 
 
+class PromptHandler:
+    index_counter = 0
+    def __init__(self, text=None):
+        self._index = self.index_counter
+        self.index_counter += 1
+        self._text = text
+
+    @property
+    def index(self):
+        # read-only index
+        return self._index
+
+    @property
+    def text(self):
+        # read-only text
+        return self._text
+
+    def __repr__(self):
+        output = ""
+        if self._text is not None:
+            output += str(len(self._text))
+        return output
+
+    def __len__(self):
+        length = 0
+        if self._text is not None:
+            length += len(self._text)
+        return length
+
 def get_text_prompt(args):
+    # prompts = []
     text_list = []
     output_data_list, is_json_data = get_param_from_file(args, 'prompt')
     if is_json_data is True:
         text_param_list = parse_text_json_data(output_data_list)
         if len(text_param_list) > 0:
             for text in text_param_list:
+                # prompt = PromptHandler(text)
                 text_list.append(text)
     else:
+        #prompt = PromptHandler(output_data_list[0])
+        #text_list.append(prompt)
         text_list.append(output_data_list[0])
     return text_list
 
