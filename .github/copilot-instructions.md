@@ -33,7 +33,7 @@ When analyzing a Pull Request, follow this protocol:
 12. Make sure the function names are descriptive.
 13. Check for variables with different names but similar meaning or aliasing.
 14. Avoid duplicate code. Ensure that common functionality is extracted into reusable functions or utilities.
-15. Initialize containers with values instead of constructing an empty container and immediately inserting values.
+15. When initial container values are known upfront, prefer initializer-list / brace-initialization over constructing an empty container and immediately inserting values.
 16. Avoid pronouns in comments and names to make the statements concise.
 17. Unused functions and constructors aren't allowed except for in `debug_utils.hpp`.
 18. `debug_utils.hpp` must never be included.
