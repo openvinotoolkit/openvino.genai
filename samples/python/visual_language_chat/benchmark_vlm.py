@@ -111,9 +111,11 @@ def main():
 
         print("draft_model_path=", draft_model_path)
         print("device=", device)
-        draft_model = ov_genai.draft_model(str(draft_model_path), device)
-        #pipe = ov_genai.VLMPipeline(models_path, device, scheduler_config=scheduler_config)
-        pipe = ov_genai.VLMPipeline(models_path, device, scheduler_config=scheduler_config, draft_model=draft_model)
+        if draft_model_path:
+            draft_model = ov_genai.draft_model(draft_model_path, device)
+            pipe = ov_genai.VLMPipeline(models_path, device, scheduler_config=scheduler_config, draft_model=draft_model)
+        else:
+            pipe = ov_genai.VLMPipeline(models_path, device, scheduler_config=scheduler_config)
 
 
     input_data = pipe.get_tokenizer().encode(prompt)
