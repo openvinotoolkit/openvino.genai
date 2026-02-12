@@ -209,7 +209,16 @@ public:
         m_clip_text_encoder->compile(text_encode_device, *updated_properties);
         m_clip_text_encoder_with_projection->compile(text_encode_device, *updated_properties);
         m_unet->compile(denoise_device, *updated_properties);
+
+        // Workaround for EISW-176450: SDXL VAE may produce all-zero outputs on NPU due to
+        // precision issues in internal MVN normalization. Increase precision for
+        // internal_MvnNormalize via NPU_COMPILATION_MODE_PARAMS; scope is SDXL VAE on NPU only.
+        if (vae_device.find("NPU") != std::string::npos) {
+            updated_properties.fork()["NPU_COMPILATION_MODE_PARAMS"] =
+                "compute-layers-with-higher-precision=internal_MvnNormalize";
+        }
         m_vae->compile(vae_device, *updated_properties);
+        updated_properties.fork().erase("NPU_COMPILATION_MODE_PARAMS");
     }
 
     std::shared_ptr<DiffusionPipeline> clone() override {
