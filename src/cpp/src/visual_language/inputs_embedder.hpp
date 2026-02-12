@@ -70,6 +70,8 @@ public:
 
     bool has_token_type_ids() const;
 
+    const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
+
     std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
     std::vector<ov::genai::EncodedVideo> encode_videos(const std::vector<ov::Tensor>& videos);
@@ -179,6 +181,8 @@ private:
             const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count = {});
 
         virtual bool has_token_type_ids() const;
+
+        virtual const std::unordered_map<std::string, ov::Tensor>& get_lm_extra_inputs() const;
 
         virtual std::vector<ov::genai::EncodedImage> encode_images(const std::vector<ov::Tensor>& images);
 
@@ -329,6 +333,7 @@ private:
     friend class InputsEmbedderPhi4MM;
     friend class InputsEmbedderQwen2VL;
     friend class InputsEmbedderQwen2_5_VL;
+    friend class InputsEmbedderQwen3VL;
     friend class InputsEmbedderGemma3;
 };
 
