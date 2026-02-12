@@ -9,19 +9,9 @@ int main(int argc, char* argv[]) try {
 
     std::string models_path = argv[1];
     std::string prompt = argv[2];
-    std::string device = "GPU";  // CPU can be used as well
-    ov::AnyMap pipe_config = {};
-    
-    // Enable save_ov_model for GGUF files to save optimized model variant
-    if (models_path.size() >= 5 && models_path.substr(models_path.size() - 5) == ".gguf") {
-        // Simplified API - direct string assignment (recommended)
-        pipe_config["save_ov_model_config"] = "OPTIMIZED";  // or "ORIGINAL" 
-        pipe_config["enable_save_ov_model"] = true;
-    }
-    
-    std::cout << "[INFO] Creating LLMPipeline with device: " << device << std::endl;
-    ov::genai::LLMPipeline pipe(models_path, device, pipe_config);
-    std::cout << "[INFO] LLMPipeline created successfully" << std::endl;
+    std::string device = "CPU";  // GPU can be used as well
+
+    ov::genai::LLMPipeline pipe(models_path, device);
     ov::genai::GenerationConfig config;
     config.max_new_tokens = 100;
     std::string result = pipe.generate(prompt, config);
