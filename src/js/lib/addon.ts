@@ -4,7 +4,6 @@
 import { createRequire } from "module";
 import { platform } from "node:os";
 import { join, dirname, resolve } from "node:path";
-import { Tensor } from "openvino-node";
 import type { ChatHistory as IChatHistory } from "./chatHistory.js";
 import type { Tokenizer as ITokenizer } from "./tokenizer.js";
 import { addon as ovAddon } from "openvino-node";
@@ -22,6 +21,8 @@ import {
   LLMPipelineProperties,
 } from "./utils.js";
 import { VLMPerfMetrics, PerfMetrics } from "./perfMetrics.js";
+
+export type Tensor = (typeof ovAddon)["Tensor"];
 
 export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
 export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
@@ -169,11 +170,27 @@ export interface VLMPipeline {
   setGenerationConfig(config: GenerationConfig): void;
 }
 
+export interface Text2VideoPipeline {
+  new (): Text2VideoPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    properties: object,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    prompt: string,
+    callback: (err: Error | null, result: Tensor) => void,
+    config: object,
+  ): void;
+}
+
 interface OpenVINOGenAIAddon {
   TextRerankPipeline: TextRerankPipeline;
   TextEmbeddingPipeline: TextEmbeddingPipelineWrapper;
   LLMPipeline: LLMPipeline;
   VLMPipeline: VLMPipeline;
+  Text2VideoPipeline: Text2VideoPipeline;
   ChatHistory: IChatHistory;
   Tokenizer: ITokenizer;
   ReasoningParser: IReasoningParser;
@@ -202,19 +219,7 @@ function getGenAIAddon(): OpenVINOGenAIAddon {
 const addon = getGenAIAddon();
 addon.setOpenvinoAddon(ovAddon);
 
-export const {
-  TextEmbeddingPipeline,
-  TextRerankPipeline,
-  LLMPipeline,
-  VLMPipeline,
-  ChatHistory,
-  Tokenizer,
-  ReasoningParser,
-  DeepSeekR1ReasoningParser,
-  Phi4ReasoningParser,
-  Llama3PythonicToolParser,
-  Llama3JsonToolParser,
-} = addon;
+export const { TextEmbeddingPipeline, LLMPipeline, VLMPipeline, Text2VideoPipeline, ChatHistory, Tokenizer } = addon;
 export type ChatHistory = IChatHistory;
 export type Tokenizer = ITokenizer;
 export type ReasoningParser = IReasoningParser;

@@ -6,7 +6,7 @@ import { VLMPipeline as VLMPipelineWrapper } from "../addon.js";
 import { GenerationConfig, VLMPipelineProperties, StreamingStatus } from "../utils.js";
 import { VLMDecodedResults } from "../decodedResults.js";
 import { Tokenizer } from "../tokenizer.js";
-import type { Tensor } from "openvino-node";
+import type { Tensor } from "../addon.js";
 import { VLMPerfMetrics } from "../perfMetrics.js";
 
 /**

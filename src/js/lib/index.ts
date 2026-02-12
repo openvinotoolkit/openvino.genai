@@ -4,10 +4,7 @@
 import { LLMPipeline as LLM } from "./pipelines/llmPipeline.js";
 import { VLMPipeline as VLM } from "./pipelines/vlmPipeline.js";
 import { TextEmbeddingPipeline as Embedding } from "./pipelines/textEmbeddingPipeline.js";
-import {
-  TextRerankPipeline as TextRerank,
-  TextRerankPipelineOptions,
-} from "./pipelines/textRerankPipeline.js";
+import { Text2VideoPipeline as Text2Video } from "./pipelines/text2VideoPipeline.js";
 import { LLMPipelineProperties, VLMPipelineProperties } from "./utils.js";
 
 class PipelineFactory {
@@ -52,16 +49,19 @@ class PipelineFactory {
     return pipeline;
   }
 
-  static async TextRerankPipeline(modelPath: string, options: TextRerankPipelineOptions = {}) {
-    const pipeline = new TextRerank(modelPath, options);
+  static async Text2VideoPipeline(
+    modelPath: string,
+    device: string = "CPU",
+    config: Record<string, unknown> = {},
+  ) {
+    const pipeline = new Text2Video(modelPath, device, config);
     await pipeline.init();
 
     return pipeline;
   }
 }
 
-export const { LLMPipeline, VLMPipeline, TextEmbeddingPipeline, TextRerankPipeline } =
-  PipelineFactory;
+export const { LLMPipeline, VLMPipeline, TextEmbeddingPipeline, Text2VideoPipeline } = PipelineFactory;
 export { DecodedResults, VLMDecodedResults } from "./decodedResults.js";
 export { PerfMetrics, VLMPerfMetrics } from "./perfMetrics.js";
 export * from "./utils.js";
