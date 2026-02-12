@@ -204,6 +204,8 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
+    auto extensions = utils::extract_extensions(properties);
+    utils::add_extensions_to_core(extensions);
 
     if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(models_path, tokenizer, device, properties);
@@ -242,6 +244,8 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
+    auto extensions = utils::extract_extensions(properties);
+    utils::add_extensions_to_core(extensions);
 
     if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(models_path, device, properties);
@@ -283,6 +287,8 @@ ov::genai::LLMPipeline::LLMPipeline(
 
     bool is_npu_requested = ov::genai::utils::is_npu_requested(device, user_properties);
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties, is_npu_requested);
+    auto extensions = utils::extract_extensions(properties);
+    utils::add_extensions_to_core(extensions);
 
     if (is_npu_requested) {
         m_pimpl = StatefulPipeline::create(
