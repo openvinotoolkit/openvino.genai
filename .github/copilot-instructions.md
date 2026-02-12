@@ -37,7 +37,7 @@ When analyzing a Pull Request, follow this protocol:
 16. Avoid pronouns in comments and names to make the statements concise.
 17. Unused functions and constructors aren't allowed except for in `debug_utils.hpp`.
 18. `debug_utils.hpp` must never be included.
-19. Assumptions on user behalf aren't allowed. For example, the implementation shouldn't adjust config values silently or with a warning; it should throw an exception instead.
+19. Assumptions on the user's behalf aren't allowed. For example, the implementation shouldn't adjust config values silently or with a warning; it should throw an exception instead.
 20. Samples:
     * Avoid adding new samples unless there is a strong, clearly justified reason.
     * Keep command‑line arguments in samples minimal.
