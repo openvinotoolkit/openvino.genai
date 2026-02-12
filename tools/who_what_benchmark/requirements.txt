@@ -20,3 +20,5 @@ soundfile
 librosa
 vocos
 vector_quantize_pytorch
+lpips
+scikit-image
