@@ -15,6 +15,7 @@ WWB provides default datasets for the supported use cases. However, it is relati
     * Support of custom datasets of the user choice
 * Validation of text-to-image pipelines. Computes similarity score between generated images with Diffusers library, Optimum-Intel, and OpenVINO GenAI via `Text2ImageEvaluator` class.
 * Validation of Visual Language pipelines. Computes similarity score between generated images with Diffusers library, Optimum-Intel, and OpenVINO GenAI via `VisualTextEvaluator` class.
+* Text-to-video evaluator defaults `guidance_scale` to 1; set higher to enable CFG.
 
 ### Installation
 To install WWB and its dependencies, follow these steps:
