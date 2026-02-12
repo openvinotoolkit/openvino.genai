@@ -343,12 +343,7 @@ class SequenceGroup  : public std::enable_shared_from_this<SequenceGroup> {
 
     size_t m_num_streamed_tokens = 0, m_stream_window_size = 0;
 
-    SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
-        : m_request_id(request_id),
-          m_sampling_params(sampling_params),
-          m_block_size(block_size),
-          m_sequence_group_type(SequenceGroupType::TOKENS),
-          m_generation_stream(GenerationStream::create()) { }
+    SequenceGroup(uint64_t request_id, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size);
 
     bool out_of_memory() const {
         for (size_t seq_id = 0; seq_id < m_sequences.size(); ++seq_id) {
