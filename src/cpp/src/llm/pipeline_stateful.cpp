@@ -237,7 +237,6 @@ DecodedResults StatefulLLMPipeline::generate(
     StreamerVariant streamer
 ) {
     is_chat_conversation = true;
-    m_history = history;
     
     if (is_chat_conversation && m_chat_input_type == ov::genai::utils::GenerationChatInputsType::UNDEF)
         m_chat_input_type = ov::genai::utils::GenerationChatInputsType::CHAT_HISTORY;
@@ -253,6 +252,24 @@ DecodedResults StatefulLLMPipeline::generate(
     OPENVINO_ASSERT(config.apply_chat_template, "Chat template must be applied when using ChatHistory in generate method.");
     OPENVINO_ASSERT(!m_tokenizer.get_chat_template().empty(), "Chat template must not be empty when using ChatHistory in generate method.");
     OPENVINO_ASSERT(!history.empty(), "Chat history must not be empty when using ChatHistory in generate method.");
+
+    bool is_history_continuation = history.size() > m_history.size();
+    if (is_history_continuation) {
+        for (size_t i = 0; i < m_history.size(); ++i) {
+            if (history[i] != m_history[i]) {
+                is_history_continuation = false;
+                break;
+            }
+        }
+    }
+
+    if (!is_history_continuation) {
+        reset_kv_state();
+        m_model_runner.get_tensor("attention_mask").set_shape({1, 0});
+        m_kv_cache_state.reset_state();
+    }
+
+    m_history = history;
 
     constexpr bool add_generation_prompt = true;
     auto new_templated_chat_history = m_tokenizer.apply_chat_template(m_history, add_generation_prompt);

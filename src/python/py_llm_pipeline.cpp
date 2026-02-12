@@ -242,8 +242,20 @@ void init_llm_pipeline(py::module_& m) {
         )
 
         .def("get_tokenizer", &LLMPipeline::get_tokenizer)
-        .def("start_chat", &LLMPipeline::start_chat, py::arg("system_message") = "")
-        .def("finish_chat", &LLMPipeline::finish_chat)
+        .def("start_chat", [](LLMPipeline& pipe, const std::string& system_message) {
+            PyErr_WarnEx(PyExc_DeprecationWarning,
+                         "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+                         "Please use generate() with ChatHistory argument.",
+                         1);
+            pipe.start_chat(system_message);
+        }, py::arg("system_message") = "")
+        .def("finish_chat", [](LLMPipeline& pipe) {
+            PyErr_WarnEx(PyExc_DeprecationWarning,
+                         "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+                         "Please use generate() with ChatHistory argument.",
+                         1);
+            pipe.finish_chat();
+        })
         .def("get_generation_config", &LLMPipeline::get_generation_config, py::return_value_policy::copy)
         .def("set_generation_config", &LLMPipeline::set_generation_config, py::arg("config"))
         .def("get_next_token_log_probs", &LLMPipeline::get_next_token_log_probs,

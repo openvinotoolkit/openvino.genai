@@ -383,12 +383,18 @@ public:
     *
     * @param system_message optional system message.
     */
+    OPENVINO_DEPRECATED(
+        "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+        "Please, use generate() with ChatHistory argument.")
     void start_chat(const std::string& system_message = {});
 
     /**
     * @brief finish chat and clear kv cache.
     * Turns off keeping KV cache between generate calls.
     */
+    OPENVINO_DEPRECATED(
+        "start_chat() / finish_chat() API is deprecated and will be removed in the next major release. "
+        "Please, use generate() with ChatHistory argument.")
     void finish_chat();
 
 private:
