@@ -318,6 +318,59 @@ public:
     }
     EncodedResults generate(const EncodedInputs& inputs, const ov::AnyMap& config_map);
 
+    /**
+    * @brief Get log probabilities for specific tokens after processing the prompt.
+    *
+    * This method processes the input prompt and returns log probabilities for the specified token IDs
+    * that would follow the prompt at the next token position. It is useful for multiple-choice tasks
+    * where probabilities of different single-token continuations must be compared.
+    *
+    * Semantics:
+    *   - Returns one log probability per element of @p token_ids.
+    *   - Each log probability corresponds to the model's probability of that token being generated
+    *     as the next token after @p prompt.
+    *   - The method does not rely on or update any external generation state or chat history; each call
+    *     evaluates the model on @p prompt only.
+    *   - Batching is over @p token_ids; @p prompt is a single input sequence.
+    *   - For multi-token choices (for example, when tokenizer.encode(" A") yields several IDs),
+    *     the caller must decide how to handle them (for example, ensure choices are single-token,
+    *     or pre-compute/logically combine per-position probabilities).
+    *
+    * @param prompt The input text prompt.
+    * @param token_ids Vector of token IDs to get log probabilities for.
+    * @return Vector of log probabilities corresponding to each token ID.
+    *
+    * Example usage for an MMLU-style multiple choice task (C++-style pseudo-code):
+    *   ov::genai::Tokenizer tokenizer = pipeline.get_tokenizer();
+    *   std::string prompt =
+    *       "What is 2+2?\n"
+    *       "A. 3\n"
+    *       "B. 4\n"
+    *       "C. 5\n"
+    *       "D. 6\n"
+    *       "Answer:";
+    *
+    *   std::vector<int64_t> choice_token_ids;
+    *   {
+    *       std::vector<int64_t> a_ids = tokenizer.encode(" A");
+    *       std::vector<int64_t> b_ids = tokenizer.encode(" B");
+    *       // Ensure that each choice is represented by a single token ID.
+    *       // If not, the caller must define how to aggregate multi-token probabilities.
+    *       if (a_ids.size() == 1 && b_ids.size() == 1) {
+    *           choice_token_ids.push_back(a_ids[0]);
+    *           choice_token_ids.push_back(b_ids[0]);
+    *           // ... similarly for other choices
+    *       }
+    *   }
+    *
+    *   std::vector<float> log_probs =
+    *       pipeline.get_next_token_log_probs(prompt, choice_token_ids);
+    */
+    std::vector<float> get_next_token_log_probs(
+        const std::string& prompt,
+        const std::vector<int64_t>& token_ids
+    );
+
     ov::genai::Tokenizer get_tokenizer();
     GenerationConfig get_generation_config() const;
     void set_generation_config(const GenerationConfig& config);
