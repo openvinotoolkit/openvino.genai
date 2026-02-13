@@ -2266,11 +2266,8 @@ def test_vlm_prompt_lookup_functionality(cat_tensor):
     results = ov_pipe.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
 
     ov_pipe_pld = VLMPipeline(model_path, "CPU", prompt_lookup=True)
-    # add parameter to enable prompt lookup decoding to generate `num_assistant_tokens` candidates per iteration
-    generation_config.num_assistant_tokens = 5
-    # Define max_ngram_size
-    generation_config.max_ngram_size = 3
-    results_pld = ov_pipe_pld.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config)
+    generation_config_pld = _setup_generation_config(ov_pipe_pld, max_new_tokens=20, do_sample=False, prompt_lookup=True)
+    results_pld = ov_pipe_pld.generate(PROMPTS[0], images=[cat_tensor], generation_config=generation_config_pld)
 
     assert results.texts[0].strip() == results_pld.texts[0].strip(), (
         "Result should be the same when prompt_lookup is enabled and disabled."

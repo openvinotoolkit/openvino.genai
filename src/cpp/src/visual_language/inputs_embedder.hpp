@@ -80,10 +80,10 @@ public:
     /**
      * Encodes the original prompt text into token IDs for use as a lookup table in prompt lookup decoding.
      *
-     * @param org_prompt The original prompt text to be encoded.
+     * @param original_prompt The original prompt text to be encoded.
      * @return An ov::Tensor containing the encoded token IDs of the prompt.
      */
-    ov::Tensor encode_prompt(const std::string& org_prompt);
+    ov::Tensor encode_prompt(const std::string& original_prompt);
 
     void set_position_ids(const ov::Tensor& position_ids);
 
@@ -232,10 +232,10 @@ private:
         /**
          * Encodes the original prompt text into token IDs for use as a lookup table in prompt lookup decoding.
          *
-         * @param org_prompt The original prompt text to be encoded.
+         * @param original_prompt The original prompt text to be encoded.
          * @return An ov::Tensor containing the encoded token IDs of the prompt.
          */
-        ov::Tensor encode_prompt(const std::string& org_prompt);
+        ov::Tensor encode_prompt(const std::string& original_prompt);
 
         void set_add_special_tokens(bool value) {
             m_add_special_tokens = value;
