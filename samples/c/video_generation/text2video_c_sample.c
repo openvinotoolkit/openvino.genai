@@ -1,8 +1,9 @@
-// Copyright (C) 2026 Intel Corporation
+// Copyright (C) 202 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-#include "openvino/genai/c/text2video_pipeline.h"
 #include <stdio.h>
+
+#include "openvino/genai/c/text2video_pipeline.h"
 
 int main(int argc, char* argv[]) {
     if (argc < 3) {
