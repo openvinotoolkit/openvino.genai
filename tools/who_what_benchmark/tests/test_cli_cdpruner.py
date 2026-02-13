@@ -6,6 +6,7 @@ import pytest
 import logging
 import sys
 from test_cli_image import run_wwb
+from profile_utils import _log, _stage
 
 
 logging.basicConfig(level=logging.INFO)
@@ -18,28 +19,32 @@ def run_test(model_id, model_type, tmp_path, pruning_ratio, relevance_weight):
     if sys.platform == "win32":
         pytest.xfail("Ticket 178790")
 
+    _log(f"run_test: model_id={model_id} model_type={model_type} pruning_ratio={pruning_ratio} relevance_weight={relevance_weight}")
     GT_FILE = tmp_path / "gt.csv"
     MODEL_PATH = tmp_path / model_id.replace("/", "_")
 
-    result = subprocess.run(
-        [
-            "optimum-cli",
-            "export",
-            "openvino",
-            "-m",
-            model_id,
-            MODEL_PATH,
-            "--task",
-            "image-text-to-text",
-            "--trust-remote-code",
-        ],
-        capture_output=True,
-        text=True,
-    )
+    with _stage("convert_model"):
+        result = subprocess.run(
+            [
+                "optimum-cli",
+                "export",
+                "openvino",
+                "-m",
+                model_id,
+                MODEL_PATH,
+                "--task",
+                "image-text-to-text",
+                "--trust-remote-code",
+            ],
+            capture_output=True,
+            text=True,
+        )
     assert result.returncode == 0
+    _log(f"Model converted to: {MODEL_PATH}")
 
     # Collect reference with HF model
-    run_wwb(
+    with _stage("run_wwb_hf_reference"):
+        run_wwb(
         [
             "--base-model",
             model_id,
@@ -58,7 +63,8 @@ def run_test(model_id, model_type, tmp_path, pruning_ratio, relevance_weight):
     env = {}
     env["OPENVINO_LOG_LEVEL"] = "7"
     # test cdpruner
-    output = run_wwb(
+    with _stage("run_wwb_cdpruner"):
+        output = run_wwb(
         [
             "--target-model",
             MODEL_PATH,
@@ -101,4 +107,5 @@ def run_test(model_id, model_type, tmp_path, pruning_ratio, relevance_weight):
     ],
 )
 def test_pruner_basic(model_id, model_type, tmp_path, pruning_ratio, relevance_weight):
+    _log(f"test_pruner_basic: model_id={model_id} model_type={model_type} pruning_ratio={pruning_ratio} relevance_weight={relevance_weight}")
     run_test(model_id, model_type, tmp_path, pruning_ratio, relevance_weight)
