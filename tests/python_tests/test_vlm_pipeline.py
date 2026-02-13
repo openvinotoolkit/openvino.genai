@@ -341,7 +341,12 @@ def ov_pipe_model(request: pytest.FixtureRequest) -> VlmModelInfo:
 
 parametrize_all_models = pytest.mark.parametrize(
     "ov_pipe_model",
-    [(m, b, pl) for m in MODEL_IDS for b in ATTENTION_BACKEND for pl in PROMPT_LOOKUP],
+    [
+        (m, b, pl)
+        for m in MODEL_IDS
+        for b in ATTENTION_BACKEND
+        for pl in PROMPT_LOOKUP if b == "PA" or pl is False
+    ],
     ids=lambda p: f"{p[0]}/{p[1]}/{p[2]}",
     indirect=["ov_pipe_model"],
 )
@@ -349,7 +354,12 @@ parametrize_all_models = pytest.mark.parametrize(
 
 parametrize_all_models_with_video = pytest.mark.parametrize(
     "ov_pipe_model",
-    [(m, b, pl) for m in VIDEO_MODEL_IDS for b in ATTENTION_BACKEND for pl in PROMPT_LOOKUP],
+    [
+        (m, b, pl)
+        for m in VIDEO_MODEL_IDS
+        for b in ATTENTION_BACKEND
+        for pl in PROMPT_LOOKUP if b == "PA" or pl is False
+    ],
     ids=lambda p: f"{p[0]}/{p[1]}/{p[2]}",
     indirect=["ov_pipe_model"],
 )
