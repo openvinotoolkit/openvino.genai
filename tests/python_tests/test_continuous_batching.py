@@ -673,7 +673,7 @@ def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_dev
     main_hf_tokenizer = main_model_schema.hf_tokenizer
     main_model_path = main_model_schema.models_path
 
-    draft_model_path = download_and_convert_model(draft_model, , trust_remote_code=True).models_path
+    draft_model_path = download_and_convert_model(draft_model, trust_remote_code=True).models_path
 
     # Create OpenVINO GenAI pipeline:
 
