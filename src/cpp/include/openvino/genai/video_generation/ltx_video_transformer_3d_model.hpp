@@ -50,6 +50,9 @@ public:
 
     LTXVideoTransformer3DModel& reshape(int64_t batch_size, int64_t num_frames, int64_t height, int64_t width, int64_t tokenizer_model_max_length);
 
+    size_t get_expected_batch_size() const;
+    size_t get_request_input_batch();
+
 private:
     class Inference;
     std::shared_ptr<Inference> m_impl;
@@ -57,6 +60,7 @@ private:
     Config m_config;
     ov::InferRequest m_request;
     std::shared_ptr<ov::Model> m_model;
+    size_t m_expected_batch_size = 0;
     int64_t m_spatial_compression_ratio, m_temporal_compression_ratio; // calculated based on vae config, needed for reshape
 
     class InferenceDynamic;

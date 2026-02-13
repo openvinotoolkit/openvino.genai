@@ -1,3 +1,4 @@
+# Contributing
 1. See [pull_request_template.md](/.github/pull_request_template.md) for pull request (PR) requirements.
 2. See [BUILD.md](/src/docs/BUILD.md) for instructions on how to build `OpenVINO™ GenAI`.
 3. Code style is determined by the file the change is made in. If ambiguous, look into the neighboring files of the same type. In case of contradiction, pick any of the options but stay consistent in your choice.
