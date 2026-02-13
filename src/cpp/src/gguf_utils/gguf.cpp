@@ -7,11 +7,120 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <iomanip>
 #include <numeric>
 #include <optional>
 
+// Use gguflib's FP16 conversion functions
+extern "C" {
+    uint16_t to_half(float f);
+    float from_half(uint16_t h);
+}
+
 // https://github.com/antirez/gguf-tools/blob/af7d88d808a7608a33723fba067036202910acb3/gguflib.h#L102-L108
 constexpr int gguf_array_header_size = 12;
+
+// ====================================================================
+// Custom dequantization functions (ported from gguflib with Q4_K fix)
+// ====================================================================
+
+// [CVS-181137] Q4_K dequantization with bug fix for gguflib's gguf_q4_k_to_float().
+static void gguf_q4_k_to_f16(void* weights_data, void* dst, uint64_t count) {
+    const int BLOCK_SIZE = 256;
+    const int BYTES_PER_BLOCK = 2 + 2 + 12 + 128; // scales_d(fp16) + scales_m(fp16) + qs(12) + weights(128)
+    
+    uint8_t* src = static_cast<uint8_t*>(weights_data);
+    uint16_t* output = static_cast<uint16_t*>(dst);
+    
+    uint64_t num_blocks = count / BLOCK_SIZE;
+    
+    for (uint64_t block_idx = 0; block_idx < num_blocks; block_idx++) {
+        uint8_t* block = src + block_idx * BYTES_PER_BLOCK;
+        
+        // Read scales and mins meta-quantization factors
+        uint16_t scales_d_bits = *reinterpret_cast<uint16_t*>(block);
+        uint16_t scales_m_bits = *reinterpret_cast<uint16_t*>(block + 2);
+        float scales_d = from_half(scales_d_bits);
+        float scales_m = from_half(scales_m_bits);
+        
+        // Read quantized scales and mins (12 bytes = 96 bits for 8 pairs)
+        uint8_t* qs = block + 4;
+        
+        // Extract 8 scales and 8 mins (6-bit each, packed in 12 bytes)
+        // Reference: llama.cpp get_scale_min_k4()
+        float scales[8];
+        float mins[8];
+        
+        for (int j = 0; j < 8; j++) {
+            uint8_t d, m;
+            if (j < 4) {
+                d = qs[j] & 63;
+                m = qs[j + 4] & 63;
+            } else {
+                d = (qs[j + 4] & 0xF) | ((qs[j - 4] >> 6) << 4);
+                m = (qs[j + 4] >>  4) | ((qs[j - 0] >> 6) << 4);
+            }
+            scales[j] = scales_d * d;
+            mins[j] = scales_m * m;
+        }
+        
+        // Dequantize weights (128 bytes = 256 x 4-bit values)
+        // Layout: process 32 bytes at a time in pairs of scale/min
+        // First 32 weights from low 4-bits of bytes 0-31, then 32 weights from high 4-bits of bytes 0-31
+        uint8_t* weights = block + 16;
+        uint64_t weight_idx = 0;
+        
+        for (uint32_t b = 0; b < 8; b += 2) {
+            float scale1 = scales[b];
+            float min1 = mins[b];
+            float scale2 = scales[b+1];
+            float min2 = mins[b+1];
+            
+            uint32_t byte_offset = (b / 2) * 32;  // b=0→0, b=2→32, b=4→64, b=6→96
+            
+            // First set: low 4-bits of 32 bytes (32 weights)
+            for (uint32_t j = 0; j < 32; j++) {
+                uint8_t w = weights[byte_offset + j] & 0xf;
+                float weight = w * scale1 - min1;
+                output[block_idx * BLOCK_SIZE + weight_idx] = to_half(weight);
+                
+                weight_idx++;
+            }
+            
+            // Second set: high 4-bits of same 32 bytes (32 weights)
+            for (uint32_t j = 0; j < 32; j++) {
+                uint8_t w = weights[byte_offset + j] >> 4;
+                float weight = w * scale2 - min2;
+                output[block_idx * BLOCK_SIZE + weight_idx] = to_half(weight);
+                
+                weight_idx++;
+            }
+        }
+    }
+}
+
+// Custom tensor_to_f16 implementation (replaces gguf_tensor_to_f16 from gguflib for Q4_K only)
+static int16_t* tensor_to_f16_custom(gguf_tensor* tensor) {
+    if (tensor->type == GGUF_TYPE_Q4_K) {
+        // Use custom Q4_K dequantization with bug fix
+        uint64_t count = tensor->num_weights;
+        int16_t* output = static_cast<int16_t*>(malloc(count * sizeof(int16_t)));
+        
+        if (output == nullptr) {
+            return nullptr;
+        }
+        
+        gguf_q4_k_to_f16(tensor->weights_data, output, count);
+        return output;
+    } else {
+        // For all other types (including Q6_K), use gguflib
+        return gguf_tensor_to_f16(tensor);
+    }
+}
+
+// ====================================================================
+// End of custom dequantization functions
+// ====================================================================
 
 template <typename... Args>
 std::string format(std::string fmt, Args... args) {
@@ -91,13 +200,18 @@ ov::Tensor extract_tensor_data(gguf_tensor* tensor) {
         return weights;
     }
     // Otherwise, we convert to float16.
-    // TODO: Add other dequantization options.
-    int16_t* data = gguf_tensor_to_f16(tensor);
-    OPENVINO_ASSERT(data != nullptr, "[load_gguf] gguf_tensor_to_f16 failed");
+    // gguflib version (for reference):
+    // int16_t* data = gguf_tensor_to_f16(tensor);
+    // OPENVINO_ASSERT(data != nullptr, "[load_gguf] gguf_tensor_to_f16 failed");
+    
+    // Custom Q4_K dequantization with bug fix:
+    int16_t* data = tensor_to_f16_custom(tensor);
+    OPENVINO_ASSERT(data != nullptr, "[load_gguf] tensor_to_f16_custom failed");
 
     auto shape = get_shape(*tensor);
     const size_t new_size = tensor->num_weights * sizeof(int16_t);
-    ov::Tensor weights(ov::element::f16, shape);
+    // Use u16 to store FP16 bit representation (matches OpenVINO requirement)
+    ov::Tensor weights(ov::element::u16, shape);
     memcpy(weights.data(), data, new_size);
     free(data);
 
@@ -265,7 +379,8 @@ std::unordered_map<std::string, GGUFMetaData> load_metadata(gguf_ctx* ctx) {
 
 void load_arrays(gguf_ctx* ctx,
                  std::unordered_map<std::string, ov::Tensor>& array_map,
-                 std::unordered_map<std::string, gguf_tensor_type>& qtype_map) {
+                 std::unordered_map<std::string, gguf_tensor_type>& qtype_map,
+                 const ov::genai::OVModelQuantizeMode& quantize_mode) {
     gguf_tensor tensor;
 
     auto check_insert = [](const auto& inserted) {
@@ -275,9 +390,71 @@ void load_arrays(gguf_ctx* ctx,
                         "'. This can happen when loading quantized tensors.");
     };
 
+    bool is_gpu_optimized = (quantize_mode == ov::genai::OVModelQuantizeMode::GPU_OPTIMIZED);
+
     while (gguf_get_tensor(ctx, &tensor)) {
-        if (tensor.type == GGUF_TYPE_Q4_0 || tensor.type == GGUF_TYPE_Q4_1 || tensor.type == GGUF_TYPE_Q8_0 ||
-            tensor.type == GGUF_TYPE_Q4_K || tensor.type == GGUF_TYPE_Q6_K) {
+        // GPU_OPTIMIZED: dequantize Q4_0/Q4_K/Q6_K → FP16 → requantize to Q4_0_128/Q8_0_C
+        if ((tensor.type == GGUF_TYPE_Q4_0 || tensor.type == GGUF_TYPE_Q4_K || tensor.type == GGUF_TYPE_Q6_K) &&
+            is_gpu_optimized) {
+            std::string name(tensor.name, tensor.namelen);
+            ov::Tensor fp16_tensor = extract_tensor_data(&tensor);
+
+            constexpr std::string_view weight_suffix = ".weight";
+            const std::string name_prefix = name.substr(0, name.length() - weight_suffix.length());
+
+            {
+                // Mixed requant: token_embd/output.weight → Q8_0_C (channel-wise); others → Q4_0_128
+                bool is_token_embd = (name.find("token_embd.weight") != std::string::npos);
+                bool is_output = (name == "output.weight");
+
+                bool use_q8_0 = (is_token_embd || is_output);
+                int64_t block_size = use_q8_0 ? static_cast<int64_t>(fp16_tensor.get_shape()[1]) : 128;
+
+                // Convert FP16 → FP32
+                auto shape = fp16_tensor.get_shape();
+                int64_t n_elements = fp16_tensor.get_size();
+                std::vector<float> fp32_data(n_elements);
+                const uint16_t* fp16_ptr = fp16_tensor.data<uint16_t>();
+                for (int64_t i = 0; i < n_elements; i++) {
+                    fp32_data[i] = from_half(fp16_ptr[i]);
+                }
+
+                // Create output tensors
+                ov::Tensor weights_out, scales_out, biases_out;
+
+                if (use_q8_0) {
+                    // Q8_0_C: channel-wise scale (per output channel), symmetric quant (biases replicated for compat)
+                    size_t num_blocks_per_row = shape[1] / block_size;  // Should be 1 for channel-wise
+                    weights_out =
+                        ov::Tensor(ov::element::u32, ov::Shape{shape[0], shape[1] / 4});  // 4 u8 packed per u32
+                    scales_out = ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});
+                    biases_out =
+                        ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});  // Match scales shape
+
+                    quantize_q8_0(fp32_data.data(), weights_out, scales_out, biases_out, n_elements, block_size);
+                } else {
+                    // Q4_0_128 format
+                    size_t num_blocks_per_row = shape[1] / block_size;
+                    size_t packed_width = shape[1] / 8;  // 2 u4 per u8, then 4 u8 per u32 = 8 u4 per u32
+                    weights_out = ov::Tensor(ov::element::u32, ov::Shape{shape[0], packed_width});
+                    scales_out = ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});
+                    biases_out =
+                        ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});  // Match scales shape
+
+                    quantize_q4_0(fp32_data.data(), weights_out, scales_out, biases_out, n_elements, block_size);
+                }
+
+                // Store requantized tensors (same structure as gguf_load_quantized)
+                check_insert(array_map.emplace(name, std::move(weights_out)));
+                check_insert(array_map.emplace(name_prefix + ".scales", std::move(scales_out)));
+                check_insert(array_map.emplace(name_prefix + ".biases", std::move(biases_out)));
+                qtype_map.emplace(name_prefix + ".qtype", use_q8_0 ? GGUF_TYPE_Q8_0 : GGUF_TYPE_Q4_0);
+            }
+        }
+        // Other quantized types: keep quantized format (exclude Q4_K/Q6_K when gpu_optimized)
+        else if (tensor.type == GGUF_TYPE_Q4_0 || tensor.type == GGUF_TYPE_Q4_1 || tensor.type == GGUF_TYPE_Q8_0 ||
+                 (tensor.type == GGUF_TYPE_Q4_K && !is_gpu_optimized) ||
+                 (tensor.type == GGUF_TYPE_Q6_K && !is_gpu_optimized)) {
             gguf_load_quantized(array_map, qtype_map, tensor);
         } else {
             std::string name(tensor.name, tensor.namelen);
@@ -319,7 +496,7 @@ std::vector<std::string> get_all_files(std::string file, int total_num) {
     return files;
 }
 
-GGUFLoad get_gguf_data(const std::string& file) {
+GGUFLoad get_gguf_data(const std::string& file, const ov::genai::OVModelQuantizeMode& quantize_mode) {
     std::unordered_map<std::string, ov::Tensor> arrays;
     std::unordered_map<std::string, gguf_tensor_type> qtype;
 
@@ -336,7 +513,7 @@ GGUFLoad get_gguf_data(const std::string& file) {
 
     if (it == metadata.end())  // single GGUF file
     {
-        load_arrays(ctx.get(), arrays, qtype);
+        load_arrays(ctx.get(), arrays, qtype, quantize_mode);
         return {metadata, arrays, qtype};
     } else  // multi GGUF files
     {
@@ -351,9 +528,9 @@ GGUFLoad get_gguf_data(const std::string& file) {
 
             auto metadata_tmp = load_metadata(ctx_i.get());
 
-            load_arrays(ctx_i.get(), arrays, qtype);
+            load_arrays(ctx_i.get(), arrays, qtype, quantize_mode);
         }
-        load_arrays(ctx.get(), arrays, qtype);
+        load_arrays(ctx.get(), arrays, qtype, quantize_mode);
         return {metadata, arrays, qtype};
     }
 }
@@ -570,11 +747,14 @@ std::unordered_map<std::string, gguf_tensor_type> get_qtype_map(
 std::tuple<std::map<std::string, GGUFMetaData>,
            std::unordered_map<std::string, ov::Tensor>,
            std::unordered_map<std::string, gguf_tensor_type>>
-load_gguf(const std::string& file) {
-    auto [metadata, weights, qtype] = get_gguf_data(file);
+load_gguf(const std::string& file, const ov::genai::OVModelQuantizeMode& quantize_mode) {
+
+    auto [metadata, weights, qtype] = get_gguf_data(file, quantize_mode);
 
     auto config = config_from_meta(metadata);
+
     auto consts = consts_from_weights(config, weights);
+
     auto qtypes = get_qtype_map(config, qtype);
 
     return {config, consts, qtypes};

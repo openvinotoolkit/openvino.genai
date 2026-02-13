@@ -397,11 +397,62 @@ static constexpr ov::Property<SchedulerConfig> scheduler_config{"scheduler_confi
 static constexpr ov::Property<bool> prompt_lookup{"prompt_lookup"};
 
 /**
-* @brief enable enable_save_ov_model property serves to serialize ov model (xml/bin) generated from gguf model on disk for re-use.
-* Set `true` to activate this mode.
+ * @brief Requantization strategy.
+ * - ORIGINAL: Keep original GGUF quant (e.g., Q4_K/Q6_K)
+ *             Output: <gguf_dir>/ov_model_original/openvino_model.xml
+ * - GPU_OPTIMIZED: Requantize for better GPU perf (e.g., Q4_0_128/Q8_0_C)
+ *             Output: <gguf_dir>/ov_model_gpu_optimized/openvino_model.xml 
+ * 
+ * Recommend: Save optimized OV model to skip requant overhead (infer directly).
+ * Independent of enable_save_ov_model (requant works unsaved in encryption scenarios).
+ */
+enum class OVModelQuantizeMode {
+    ORIGINAL,
+    GPU_OPTIMIZED
+    // TODO: Add NPU_OPTIMIZED support
+};
+
+/** @cond INTERNAL */
+inline std::ostream& operator<<(std::ostream& os, const OVModelQuantizeMode& mode) {
+    switch (mode) {
+    case OVModelQuantizeMode::ORIGINAL:
+        return os << "ORIGINAL";
+    case OVModelQuantizeMode::GPU_OPTIMIZED:
+        return os << "GPU_OPTIMIZED";
+    default:
+        OPENVINO_THROW("Unsupported OVModelQuantizeMode");
+    }
+}
+
+inline std::istream& operator>>(std::istream& is, OVModelQuantizeMode& mode) {
+    std::string str;
+    is >> str;
+    // Convert to uppercase for case-insensitive comparison
+    std::transform(str.begin(), str.end(), str.begin(),
+                   [](unsigned char c) { return std::toupper(c); });
+    
+    if (str == "ORIGINAL") {
+        mode = OVModelQuantizeMode::ORIGINAL;
+    } else if (str == "GPU_OPTIMIZED") {
+        mode = OVModelQuantizeMode::GPU_OPTIMIZED;
+    } else {
+        OPENVINO_THROW("Unsupported OVModelQuantizeMode: ", str);
+    }
+    return is;
+}
+/** @endcond */
+
+/**
+* @brief enable_save_ov_model property serves to enable saving OV model (xml/bin) generated from GGUF model.
+* Set `true` to save model with original GGUF quantization (equivalent to OVModelQuantizeMode::ORIGINAL).
 * And create LLMPipeline instance with this config.
 */
 static constexpr ov::Property<bool> enable_save_ov_model{"enable_save_ov_model"};
+
+/**
+* @brief Selects requantization mode. See OVModelQuantizeMode for details.
+*/
+static constexpr ov::Property<OVModelQuantizeMode> save_ov_model_quantize_mode{"save_ov_model_quantize_mode"};
 
 
 }  // namespace genai

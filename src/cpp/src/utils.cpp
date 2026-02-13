@@ -372,17 +372,42 @@ bool is_gguf_model(const std::filesystem::path& file_path) {
 
 } // namespace
 
-std::pair<ov::AnyMap, bool> extract_gguf_properties(const ov::AnyMap& external_properties) {
-    bool enable_save_ov_model = false;
+std::tuple<ov::AnyMap, bool, ov::genai::OVModelQuantizeMode> extract_gguf_properties(const ov::AnyMap& external_properties) {
+    ov::genai::OVModelQuantizeMode save_ov_model_quantize_mode = ov::genai::OVModelQuantizeMode::ORIGINAL;
     ov::AnyMap properties = external_properties;
 
-    auto it = properties.find(ov::genai::enable_save_ov_model.name());
-    if (it != properties.end()) {
-        enable_save_ov_model = it->second.as<bool>();
-        properties.erase(it);
+    // Check explicit save control
+    std::optional<bool> explicit_save;
+    auto save_it = properties.find(ov::genai::enable_save_ov_model.name());
+    if (save_it != properties.end()) {
+        explicit_save = save_it->second.as<bool>();
+        properties.erase(save_it);
     }
 
-    return {properties, enable_save_ov_model};
+    // Check save_ov_model_quantize_mode - controls quantization strategy
+    // Supports both enum and string values: "ORIGINAL", "GPU_OPTIMIZED", or enum directly
+    bool config_mode_set = false;
+    auto config_it = properties.find(ov::genai::save_ov_model_quantize_mode.name());
+    if (config_it != properties.end()) {
+        if (config_it->second.is<ov::genai::OVModelQuantizeMode>()) {
+            save_ov_model_quantize_mode = config_it->second.as<ov::genai::OVModelQuantizeMode>();
+        } else if (config_it->second.is<std::string>()) {
+            std::string mode_str = config_it->second.as<std::string>();
+            std::stringstream ss(mode_str);
+            ss >> save_ov_model_quantize_mode;
+        } else {
+            OPENVINO_THROW("save_ov_model_quantize_mode must be either OVModelQuantizeMode enum or string (ORIGINAL/GPU_OPTIMIZED)");
+        }
+        properties.erase(config_it);
+        config_mode_set = true;
+    }
+
+    // Determine should_save_file:
+    //   explicit_save set → use it
+    //   not set → no save (false)
+    bool enable_save_ov_model = explicit_save.value_or(false);
+
+    return {properties, enable_save_ov_model, save_ov_model_quantize_mode};
 }
 
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16) {
@@ -396,15 +421,15 @@ void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::str
         ov::genai::utils::print_gguf_debug_info(ss.str());
     }
     catch (const ov::Exception& e) {
-        OPENVINO_THROW("Exception during model serialization ", e.what(), ", user can disable it by setting 'ov::genai::enable_save_ov_model' property to false");
+        OPENVINO_THROW("Exception during model serialization ", e.what(), ", user can disable it by setting 'ov::genai::enable_save_ov_model' to false");
     }
 }
 
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& properties) {
-    auto [filtered_properties, enable_save_ov_model] = extract_gguf_properties(properties);
+    auto [filtered_properties, enable_save_ov_model, save_ov_model_quantize_mode] = extract_gguf_properties(properties);
     if (is_gguf_model(model_dir)) {
 #ifdef ENABLE_GGUF
-        return create_from_gguf(model_dir.string(), enable_save_ov_model);
+        return create_from_gguf(model_dir.string(), enable_save_ov_model, save_ov_model_quantize_mode);
 #else
         OPENVINO_ASSERT("GGUF support is switched off. Please, recompile with 'cmake -DENABLE_GGUF=ON'");
 #endif
