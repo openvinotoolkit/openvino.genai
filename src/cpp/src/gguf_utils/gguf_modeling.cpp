@@ -139,31 +139,20 @@ std::shared_ptr<ov::Model> create_language_model(
 } // namespace
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
-                                            const ov::genai::OVModelQuantizeMode& quantize_mode,
-                                            bool should_save_file) {
+                                            const bool enable_save_ov_model,
+                                            const ov::genai::OVModelQuantizeMode& save_ov_model_quantize_mode) {
     auto start_time = std::chrono::high_resolution_clock::now();
     std::stringstream ss;
     ss << "Loading and unpacking model from: " << model_path;
     ov::genai::utils::print_gguf_debug_info(ss.str());
 
-    // Map OVModelQuantizeMode to load_gguf parameters:
-    // ORIGINAL: keep Q4_K/Q6_K as-is (dequantize=false)
-    // OPTIMIZED: dequantize Q4_K/Q6_K to FP16, then requantize to Q4_0_128/Q8_0_C
-    //
-    // Note: quantize_mode controls processing strategy (independent from should_save_file)
-    // should_save_file controls whether to save the model file
-    bool dequantize_to_fp16 = (quantize_mode == ov::genai::OVModelQuantizeMode::OPTIMIZED);
-    bool requantize = (quantize_mode == ov::genai::OVModelQuantizeMode::OPTIMIZED);
-
     ss.str("");
     ss << "[DEBUG] OVModelQuantizeMode: quantization_mode="
-       << (quantize_mode == ov::genai::OVModelQuantizeMode::ORIGINAL ? "ORIGINAL" : "OPTIMIZED")
-       << ", save_file=" << (should_save_file ? "YES" : "NO")
-       << ", dequantize_to_fp16=" << (dequantize_to_fp16 ? "true" : "false")
-       << ", requantize=" << (requantize ? "true" : "false");
+       << (save_ov_model_quantize_mode == ov::genai::OVModelQuantizeMode::ORIGINAL ? "ORIGINAL" : "GPU_OPTIMIZED")
+       << ", save_file=" << (enable_save_ov_model ? "YES" : "NO");
     ov::genai::utils::print_gguf_debug_info(ss.str());
 
-    auto [config, consts, qtypes] = load_gguf(model_path, dequantize_to_fp16, requantize);
+    auto [config, consts, qtypes] = load_gguf(model_path, save_ov_model_quantize_mode);
     auto load_finish_time = std::chrono::high_resolution_clock::now();
 
     ss.str("");
@@ -177,14 +166,11 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
     ov::genai::utils::print_gguf_debug_info(ss.str());
     if (!model_arch.compare("llama") || !model_arch.compare("qwen2") || !model_arch.compare("qwen3")) {
         model = create_language_model(config, consts, qtypes);
-        if (should_save_file){
+        if (enable_save_ov_model){
             std::filesystem::path gguf_model_path(model_path);
-            // Save to different folders based on quantization mode
-            // - ov_model_original: Original GGUF quantization (small group size, for accuracy alignment with llama.cpp)
-            // - ov_model_optimized: Optimized quantization (larger group size, for better GPU/NPU performance)
             std::filesystem::path save_dir = gguf_model_path.parent_path() /
-                (quantize_mode == ov::genai::OVModelQuantizeMode::OPTIMIZED 
-                    ? "ov_model_optimized" 
+                (save_ov_model_quantize_mode == ov::genai::OVModelQuantizeMode::GPU_OPTIMIZED 
+                    ? "ov_model_gpu_optimized" 
                     : "ov_model_original");
             std::filesystem::create_directories(save_dir);
             std::filesystem::path save_path = save_dir / "openvino_model.xml";

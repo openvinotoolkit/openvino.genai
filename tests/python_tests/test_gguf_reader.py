@@ -233,26 +233,26 @@ def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
 
 @pytest.mark.parametrize("model_gguf", [GGUF_MODEL_LIST[0]], indirect=True)
 @pytest.mark.parametrize(
-    "config_mode,save_file,expected_log",
+    "save_ov_model_quantize_mode,enable_save_ov_model,expected_log",
     [
         ("ORIGINAL", True, "quantization_mode=ORIGINAL, save_file=YES"),
         ("ORIGINAL", False, "quantization_mode=ORIGINAL, save_file=NO"),
-        ("ORIGINAL", None, "quantization_mode=ORIGINAL, save_file=YES"),
-        ("OPTIMIZED", True, "quantization_mode=OPTIMIZED, save_file=YES"),
-        ("OPTIMIZED", False, "quantization_mode=OPTIMIZED, save_file=NO"),
-        ("OPTIMIZED", None, "quantization_mode=OPTIMIZED, save_file=YES"),
+        ("ORIGINAL", None, "quantization_mode=ORIGINAL, save_file=NO"),
+        ("GPU_OPTIMIZED", True, "quantization_mode=GPU_OPTIMIZED, save_file=YES"),
+        ("GPU_OPTIMIZED", False, "quantization_mode=GPU_OPTIMIZED, save_file=NO"),
+        ("GPU_OPTIMIZED", None, "quantization_mode=GPU_OPTIMIZED, save_file=NO"),
         (None, True, "quantization_mode=ORIGINAL, save_file=YES"),
         (None, False, "quantization_mode=ORIGINAL, save_file=NO"),
         (None, None, "quantization_mode=ORIGINAL, save_file=NO"),
-        ("optimized", True, "quantization_mode=OPTIMIZED, save_file=YES"),
+        ("gpu_optimized", True, "quantization_mode=GPU_OPTIMIZED, save_file=YES"),
     ],
     ids=[
         "ORIGINAL_save",
         "ORIGINAL_no_save",
         "ORIGINAL_default_save",
-        "OPTIMIZED_save",
-        "OPTIMIZED_no_save",
-        "OPTIMIZED_default_save",
+        "GPU_OPTIMIZED_save",
+        "GPU_OPTIMIZED_no_save",
+        "GPU_OPTIMIZED_default_save",
         "default_ORIGINAL_save",
         "default_ORIGINAL_no_save",
         "all_defaults",
@@ -261,26 +261,24 @@ def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
 )
 def test_ov_model_quantize_mode_log_verification(
     model_gguf: ModelInfo, 
-    config_mode: str,
-    save_file: bool,
+    save_ov_model_quantize_mode: str,
+    enable_save_ov_model: bool,
     expected_log: str,
     capfd,
     monkeypatch
 ):
-    """Configuration Validation Test: Verifies config_mode × save_file matrix via log output
+    """Configuration Validation Test: Verifies save_ov_model_quantize_mode x enable_save_ov_model matrix via log output
     
     Objectives:
     1. Integration: String-based config (pipe_config dict, following OV PerformanceMode) → C++ extract_gguf_properties → correct processing
-    2. Independence: save_ov_model_config ⊥ enable_save_ov_model (decoupled control)
-       - "OPTIMIZED_no_save": OPTIMIZED processing WITHOUT file saving for model encryption
-    3. Default Behavior (critical findings from test):
-       - config_mode SET + save_file UNSET → save_file=YES (auto-save when mode specified)
-       - config_mode UNSET + save_file UNSET → save_file=NO (no save by default)
-    4. Case-insensitive: "OPTIMIZED"/"optimized" → same result
+    2. Independence: save_ov_model_quantize_mode ⊥ enable_save_ov_model (decoupled control)
+       - "GPU_OPTIMIZED_no_save": GPU_OPTIMIZED processing WITHOUT file saving for model encryption
+    3. Default: No auto-save. enable_save_ov_model must be explicitly True to save.
+    4. Case-insensitive: "GPU_OPTIMIZED"/"gpu_optimized" → same result
     
     Test Matrix (10 scenarios):
-    - config_mode ∈ {ORIGINAL, OPTIMIZED, None} × save_file ∈ {True, False, None}
-    - + 1 lowercase test ("optimized")
+    - save_ov_model_quantize_mode ∈ {ORIGINAL, GPU_OPTIMIZED, None} x enable_save_ov_model ∈ {True, False, None}
+    - + 1 lowercase test ("gpu_optimized")
     
     Tools: monkeypatch (OPENVINO_LOG_LEVEL=3) + capfd (capture logs)
     """
@@ -291,10 +289,10 @@ def test_ov_model_quantize_mode_log_verification(
     monkeypatch.setenv("OPENVINO_LOG_LEVEL", "3")
     
     pipe_config = {}
-    if config_mode is not None:
-        pipe_config["save_ov_model_config"] = config_mode
-    if save_file is not None:
-        pipe_config["enable_save_ov_model"] = save_file
+    if save_ov_model_quantize_mode is not None:
+        pipe_config["save_ov_model_quantize_mode"] = save_ov_model_quantize_mode
+    if enable_save_ov_model is not None:
+        pipe_config["enable_save_ov_model"] = enable_save_ov_model
     
     pipe = ov_genai.LLMPipeline(gguf_full_path, "CPU", pipe_config)
     del pipe
@@ -306,16 +304,16 @@ def test_ov_model_quantize_mode_log_verification(
     assert expected_log in output, \
         f"Expected log '{expected_log}' not found in output:\n{output}"
     
-    print(f"✓ Test passed: mode={config_mode}, save_file={save_file}")
+    print(f"✓ Test passed: mode={save_ov_model_quantize_mode}, enable_save_ov_model={enable_save_ov_model}")
 
 
 @pytest.mark.parametrize("model_gguf", [GGUF_MODEL_LIST[0]], indirect=True)
 def test_full_gguf_pipeline_quantize_mode(
     model_gguf: ModelInfo,
 ):
-    """E2E Inference Test: Validates OPTIMIZED maintains output consistency in short generation
+    """E2E Inference Test: Validates GPU_OPTIMIZED maintains output consistency in short generation
     
-    Verifies that OPTIMIZED mode (larger group-size requantization) produces identical outputs
+    Verifies that GPU_OPTIMIZED mode (larger group-size requantization) produces identical outputs
     as ORIGINAL in short-text scenario (30 tokens), proving requant functionality works correctly.
     Note: Single model test is sufficient to validate requant mechanism. Minor differences with
     other models/prompts or longer outputs are acceptable due to quantization precision trade-offs.
@@ -331,9 +329,9 @@ def test_full_gguf_pipeline_quantize_mode(
     ov_generation_config.apply_chat_template = False
     
     outputs = {}
-    for mode in ["ORIGINAL", "OPTIMIZED"]:
+    for mode in ["ORIGINAL", "GPU_OPTIMIZED"]:
         pipe_config = {
-            "save_ov_model_config": mode,
+            "save_ov_model_quantize_mode": mode,
             "enable_save_ov_model": False
         }
         
@@ -345,7 +343,7 @@ def test_full_gguf_pipeline_quantize_mode(
         
         print(f"✓ {mode}: output_length={len(output)}")
     
-    assert outputs["ORIGINAL"] == outputs["OPTIMIZED"], \
-        f"Outputs must be identical!\nORIGINAL: {outputs['ORIGINAL']}\nOPTIMIZED: {outputs['OPTIMIZED']}"
+    assert outputs["ORIGINAL"] == outputs["GPU_OPTIMIZED"], \
+        f"Outputs must be identical!\nORIGINAL: {outputs['ORIGINAL']}\nGPU_OPTIMIZED: {outputs['GPU_OPTIMIZED']}"
     
-    print(f"✓ Inference correctness validated: ORIGINAL == OPTIMIZED")
+    print(f"✓ Inference correctness validated: ORIGINAL == GPU_OPTIMIZED")
