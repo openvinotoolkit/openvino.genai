@@ -13,8 +13,10 @@ from transformers import (
 from .embeddings_evaluator import DEFAULT_MAX_LENGTH as EMBED_DEFAULT_MAX_LENGTH
 from .reranking_evaluator import (
     DEFAULT_MAX_LENGTH as RERANK_DEFAULT_MAX_LENGTH,
+    DEFAULT_MAX_LENGTH_QWEN as RERANK_DEFAULT_MAX_LENGTH_QWEN,
     DEFAULT_TOP_K as RERANK_DEFAULT_TOP_K,
     is_qwen3_causallm,
+    is_qwen3,
 )
 from .utils import (
     mock_torch_cuda_is_available,
@@ -600,7 +602,7 @@ def load_embedding_model(model_id, device="CPU", ov_config=None, use_hf=False, u
     return model
 
 
-def load_reranking_genai_pipeline(model_dir, device="CPU", ov_config=None):
+def load_reranking_genai_pipeline(model_dir, device="CPU", ov_config=None, is_qwen3_model=False):
     try:
         import openvino_genai
     except ImportError as e:
@@ -611,7 +613,7 @@ def load_reranking_genai_pipeline(model_dir, device="CPU", ov_config=None):
 
     config = openvino_genai.TextRerankPipeline.Config()
     config.top_n = RERANK_DEFAULT_TOP_K
-    config.max_length = RERANK_DEFAULT_MAX_LENGTH
+    config.max_length = RERANK_DEFAULT_MAX_LENGTH_QWEN if is_qwen3_model else RERANK_DEFAULT_MAX_LENGTH
 
     pipeline = openvino_genai.TextRerankPipeline(model_dir, device.upper(), config, **ov_config)
 
@@ -638,7 +640,8 @@ def load_reranking_model(model_id, device="CPU", ov_config=None, use_hf=False, u
             model = AutoModelForSequenceClassification.from_pretrained(model_id, trust_remote_code=True)
     elif use_genai:
         logger.info("Using OpenVINO GenAI API")
-        model = load_reranking_genai_pipeline(model_id, device, ov_config)
+        is_qwen3_model = is_qwen3(config)
+        model = load_reranking_genai_pipeline(model_id, device, ov_config, is_qwen3_model)
     else:
         logger.info("Using Optimum API")
         model_cls = None
