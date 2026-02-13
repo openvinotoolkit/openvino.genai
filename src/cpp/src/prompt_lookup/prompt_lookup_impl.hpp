@@ -31,10 +31,32 @@ public:
         m_pipeline = std::make_shared<ContinuousBatchingForPromptLookupImpl>(model, tokenizer, scheduler_config, device, properties, generation_config);
     };
 
+    PromptLookupImpl(const std::shared_ptr<ov::Model>& model,
+                     const std::shared_ptr<InputsEmbedder>& embedder,
+                     const Tokenizer& tokenizer,
+                     const SchedulerConfig& scheduler_config,
+                     const std::string& device,
+                     const ov::AnyMap& properties,
+                     const ov::genai::GenerationConfig& generation_config) {
+        m_tokenizer = tokenizer;
+        m_inputs_embedder = embedder;
+        m_model_input_type = ModelInputType::EMBEDDINGS;
+        m_vision_registry = std::make_shared<VisionRegistry>();
+        m_perf_metrics.raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
+        m_pipeline = std::make_shared<ContinuousBatchingForPromptLookupImpl>(model,
+                                                                             m_inputs_embedder,
+                                                                             m_tokenizer,
+                                                                             scheduler_config,
+                                                                             device,
+                                                                             properties,
+                                                                             generation_config);
+    };
+
     GenerationHandle add_request(uint64_t request_id,
                                  const ov::Tensor& input_ids,
                                  const ov::genai::GenerationConfig& sampling_params,
-                                 std::optional<ov::Tensor> token_type_ids = std::nullopt) override;
+                                 std::optional<ov::Tensor> token_type_ids = std::nullopt,
+                                 std::optional<ov::Tensor> prompt_ids = std::nullopt) override;
     GenerationHandle add_request(uint64_t request_id,
                                  const std::string& prompt,
                                  const ov::genai::GenerationConfig& sampling_params) override;
@@ -48,7 +70,8 @@ public:
              const std::vector<GenerationConfig>& sampling_params,
              const StreamerVariant& streamer,
              const std::optional<std::vector<ov::Tensor>>& token_type_ids = std::nullopt,
-             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt) override;
+             const std::optional<std::vector<std::pair<ov::Tensor, std::optional<int64_t>>>>& position_ids = std::nullopt,
+             const std::optional<std::vector<ov::Tensor>>& prompt_ids = std::nullopt) override;
 
     SpeculativeDecodingMetrics get_metrics();
 };

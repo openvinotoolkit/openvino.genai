@@ -20,16 +20,21 @@ int main(int argc, char* argv[]) try {
     // GPU and NPU can be used as well.
     // Note: If NPU is selected, only language model will be run on NPU
     std::string device = (argc == 4) ? argv[3] : "CPU";
-    ov::AnyMap enable_compile_cache;
+    ov::AnyMap properties = {ov::genai::prompt_lookup(true)};
     if (device == "GPU") {
         // Cache compiled models on disk for GPU to save time on the
         // next run. It's not beneficial for CPU.
-        enable_compile_cache.insert({ov::cache_dir("vlm_cache")});
+        properties.insert({ov::cache_dir("vlm_cache")});
     }
-    ov::genai::VLMPipeline pipe(argv[1], device, enable_compile_cache);
+
+    ov::genai::VLMPipeline pipe(argv[1], device, properties);
 
     ov::genai::GenerationConfig generation_config;
     generation_config.max_new_tokens = 100;
+    // Define candidates number for candidate generation
+    generation_config.num_assistant_tokens = 5;
+    // Define max_ngram_size
+    generation_config.max_ngram_size = 3;
 
     std::string prompt;
 
@@ -47,7 +52,7 @@ int main(int argc, char* argv[]) try {
     );
     history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
     std::cout << "\n----------\n"
-        "question:\n";
+                 "question:\n";
     while (std::getline(std::cin, prompt)) {
         history.push_back({{"role", "user"}, {"content", std::move(prompt)}});
         // New images and videos can be passed at each turn
@@ -58,7 +63,7 @@ int main(int argc, char* argv[]) try {
         );
         history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
         std::cout << "\n----------\n"
-            "question:\n";
+                     "question:\n";
     }
 } catch (const std::exception& error) {
     try {

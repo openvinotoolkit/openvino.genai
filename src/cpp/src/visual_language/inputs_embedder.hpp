@@ -77,6 +77,14 @@ public:
     // compute position ids for language model input
     std::pair<ov::Tensor, std::optional<int64_t>> get_position_ids(const size_t inputs_embeds_size, const size_t history_size);
 
+    /**
+     * Encodes the original prompt text into token IDs for use as a lookup table in prompt lookup decoding.
+     *
+     * @param original_prompt The original prompt text to be encoded.
+     * @return An ov::Tensor containing the encoded token IDs of the prompt.
+     */
+    ov::Tensor encode_prompt(const std::string& original_prompt);
+
     void set_position_ids(const ov::Tensor& position_ids);
 
     void set_rope_delta(int64_t rope_delta);
@@ -220,6 +228,14 @@ private:
         void set_apply_chat_template_status(bool apply_chat_template) {
             m_apply_chat_template = apply_chat_template;
         }
+
+        /**
+         * Encodes the original prompt text into token IDs for use as a lookup table in prompt lookup decoding.
+         *
+         * @param original_prompt The original prompt text to be encoded.
+         * @return An ov::Tensor containing the encoded token IDs of the prompt.
+         */
+        ov::Tensor encode_prompt(const std::string& original_prompt);
 
         void set_add_special_tokens(bool value) {
             m_add_special_tokens = value;

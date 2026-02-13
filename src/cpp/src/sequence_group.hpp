@@ -160,6 +160,10 @@ public:
             m_cumulative_log_prob -= m_generated_log_probs.back();
             m_generated_log_probs.pop_back();
             m_generated_ids.pop_back();
+            if (m_type == SequenceGroupType::EMBEDDINGS) {
+                m_generated_ids_embeds.pop_back();
+                m_position_ids_list.pop_back();
+            }
         }
     }
 
@@ -365,7 +369,7 @@ public:
 
     // const_cast is safe as ov::Tensor only views the data and doesn't modify it.
     SequenceGroup(uint64_t request_id, const TokenIds& input_ids, const ov::genai::GenerationConfig& sampling_params, std::size_t block_size)
-        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, const_cast<int64_t*>(input_ids.data())), sampling_params, block_size, std::nullopt) {
+        : SequenceGroup(request_id, ov::Tensor(ov::element::i64, ov::Shape{input_ids.size()}, const_cast<int64_t*>(input_ids.data())), sampling_params, block_size, std::nullopt, std::nullopt) {
     }
 
     SequenceGroup(uint64_t request_id,
@@ -374,7 +378,8 @@ public:
                   std::size_t block_size,
                   const std::optional<ov::Tensor>& token_type_ids = std::nullopt,
                   const std::optional<ov::Tensor>& position_ids = std::nullopt,
-                  const std::optional<int64_t>& rope_delta = std::nullopt)
+                  const std::optional<int64_t>& rope_delta = std::nullopt,
+                  const std::optional<ov::Tensor>& prompt_ids = std::nullopt)
         : SequenceGroup(request_id, sampling_params, block_size) {
         size_t prompt_len;
         size_t hidden_size = 0;
@@ -400,6 +405,12 @@ public:
                 const ov::Tensor& tokens = token_type_ids.value();
                 m_token_type_ids = std::vector<int64_t>(tokens.get_size());
                 std::copy_n(tokens.data<const int64_t>(), tokens.get_size(), m_token_type_ids->begin());
+            }
+            if (prompt_ids.has_value()) {
+                const ov::Tensor& tokens = prompt_ids.value();
+                OPENVINO_ASSERT(tokens.get_element_type() == ov::element::i64);
+                m_prompt_ids.resize(tokens.get_size());
+                std::copy_n(tokens.data<const int64_t>(), tokens.get_size(), m_prompt_ids.begin());
             }
             m_sequence_group_type = SequenceGroupType::EMBEDDINGS;
         }
