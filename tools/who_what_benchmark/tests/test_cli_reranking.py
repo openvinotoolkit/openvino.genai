@@ -21,9 +21,9 @@ def remove_artifacts(artifacts_path: Path):
 @pytest.mark.parametrize(
     ("model_id", "threshold"),
     [
-        ("cross-encoder/ms-marco-TinyBERT-L2-v2", 0.9),
-        ("Qwen/Qwen3-Reranker-0.6B", 0.9),
-        ("tomaarsen/Qwen3-Reranker-0.6B-seq-cls", 0.9),
+        ("cross-encoder/ms-marco-TinyBERT-L2-v2", 0.99),
+        ("Qwen/Qwen3-Reranker-0.6B", 0.99),
+        ("tomaarsen/Qwen3-Reranker-0.6B-seq-cls", 0.99),
     ],
 )
 @pytest.mark.xfail(sys.platform == "darwin", reason="Hangs. Ticket 175534", run=False)
