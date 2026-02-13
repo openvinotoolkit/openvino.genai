@@ -77,6 +77,8 @@ EncodedImage VisionEncoderLLaVANext::encode(const ov::Tensor& image, const ov::A
 
 namespace {
 
+// ref:
+// https://github.com/huggingface/transformers/blob/v4.57.3/src/transformers/models/llava_next/modeling_llava_next.py#L109
 ov::Tensor unpad_image(const ov::Tensor& tensor, const ImageSize& original_size) {
     size_t original_height = original_size.height;
     size_t original_width = original_size.width;
@@ -88,43 +90,37 @@ ov::Tensor unpad_image(const ov::Tensor& tensor, const ImageSize& original_size)
     float original_aspect_ratio = static_cast<float>(original_width) / original_height;
     float current_aspect_ratio = static_cast<float>(current_width) / current_height;
 
-    ov::Tensor unpadded_tensor;
-
+    ov::Shape unpadded_tensor_shape;
+    ov::Coordinate view_begin, view_end;
     if (original_aspect_ratio > current_aspect_ratio) {
         float scale_factor = static_cast<float>(current_width) / original_width;
         size_t new_height = static_cast<size_t>(original_height * scale_factor);
         size_t padding = (current_height - new_height) / 2;
-        size_t unpadded_height_dim = new_height + 1;
-        unpadded_height_dim = std::min(unpadded_height_dim, current_height);
-        unpadded_tensor = ov::Tensor(tensor.get_element_type(), {embed_dim, unpadded_height_dim, current_width});
 
-        for (size_t e = 0; e < embed_dim; ++e) {
-            for (int h = 0; h < unpadded_height_dim; ++h) {
-                std::copy(
-                    tensor.data<float>() + (e * current_height * current_width + (padding + h) * current_width),
-                    tensor.data<float>() + (e * current_height * current_width + (padding + h) * current_width + current_width),
-                    unpadded_tensor.data<float>() + (e * unpadded_height_dim * current_width + h * current_width)
-                );
-            }
-        }
+        OPENVINO_ASSERT(current_height > padding * 2,
+                        "current_height(" + std::to_string(current_height) + ") must be > padding(" +
+                            std::to_string(padding) + ") * 2");
+        size_t unpadded_height = current_height - padding * 2;
+        unpadded_tensor_shape = ov::Shape({embed_dim, unpadded_height, current_width});
+        view_begin = ov::Coordinate({0, padding, 0});
+        view_end = ov::Coordinate({embed_dim, current_height - padding, current_width});
     } else {
         float scale_factor = static_cast<float>(current_height) / original_height;
         size_t new_width = static_cast<size_t>(original_width * scale_factor);
         size_t padding = (current_width - new_width) / 2;
-        size_t unpadded_width_dim = new_width + 1;
-        unpadded_width_dim = std::min(unpadded_width_dim, current_width);
-        unpadded_tensor = ov::Tensor(tensor.get_element_type(), {embed_dim, current_height, unpadded_width_dim});
 
-        for (size_t e = 0; e < embed_dim; ++e) {
-            for (int h = 0; h < current_height; ++h) {
-                std::copy(
-                    tensor.data<float>() + (e * current_height * current_width + h * current_width + padding),
-                    tensor.data<float>() + (e * current_height * current_width + h * current_width + padding + unpadded_width_dim),
-                    unpadded_tensor.data<float>() + (e * current_height * unpadded_width_dim + h * unpadded_width_dim)
-                );
-            }
-        }
+        OPENVINO_ASSERT(current_width > padding * 2,
+                        "current_width(" + std::to_string(current_width) + ") must be > padding(" +
+                            std::to_string(padding) + ") * 2");
+        size_t unpadded_width = current_width - padding * 2;
+        unpadded_tensor_shape = ov::Shape({embed_dim, current_height, unpadded_width});
+        view_begin = ov::Coordinate({0, 0, padding});
+        view_end = ov::Coordinate({embed_dim, current_height, current_width - padding});
     }
+
+    auto unpadded_tensor_view = ov::Tensor(tensor, view_begin, view_end);
+    auto unpadded_tensor = ov::Tensor(tensor.get_element_type(), unpadded_tensor_shape);
+    unpadded_tensor_view.copy_to(unpadded_tensor);
 
     return unpadded_tensor;
 }
