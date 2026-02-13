@@ -587,7 +587,10 @@ def test_speculative_decoding_extended_perf_metrics(pipeline_type: PipelineType,
         model_path = download_and_convert_model(model_id).models_path
         draft_model_path = None
         if draft_model_id is not None:
-            draft_model_path = download_and_convert_model(draft_model_id).models_path
+            if "eagle3" in str(draft_model_id).lower():
+                draft_model_path = download_and_convert_model(draft_model_id, trust_remote_code=True).models_path
+            else:
+                draft_model_path = download_and_convert_model(draft_model_id).models_path
         ov_pipe = create_ov_pipeline(model_path, pipeline_type=pipeline_type, draft_model_path=draft_model_path)
         return ov_pipe.generate([prompt], generation_config).extended_perf_metrics
 
@@ -670,7 +673,7 @@ def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_dev
     main_hf_tokenizer = main_model_schema.hf_tokenizer
     main_model_path = main_model_schema.models_path
 
-    draft_model_path = download_and_convert_model(draft_model).models_path
+    draft_model_path = download_and_convert_model(draft_model, trust_remote_code=True).models_path
 
     # Create OpenVINO GenAI pipeline:
 
@@ -694,7 +697,10 @@ def test_eagle3_sd_string_inputs(main_model, main_device, draft_model, draft_dev
 
 def compare_results_for_dynamic_split_fuse_config(main_model_id, draft_model_id):
     main_model_path = download_and_convert_model(main_model_id).models_path
-    draft_model_path = download_and_convert_model(draft_model_id).models_path
+    if "eagle3" in str(draft_model_id).lower():
+        draft_model_path = download_and_convert_model(draft_model_id, trust_remote_code=True).models_path
+    else:
+        draft_model_path = download_and_convert_model(draft_model_id).models_path
 
     scheduler_config_ref = dict_to_scheduler_config(
         {"dynamic_split_fuse": False, "max_num_batched_tokens": sys.maxsize}

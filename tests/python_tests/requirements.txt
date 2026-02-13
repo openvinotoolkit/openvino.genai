@@ -1,6 +1,6 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
 diffusers==0.35.2
-optimum-intel==1.27.0
+git+https://github.com/huggingface/optimum-intel.git@2c48d6430c265ac259c1b264f3e2c4025cdd7b76
 numpy==1.26.4; platform_system == "Darwin" and platform_machine == "x86_64"
 safetensors==0.6.2; platform_system == "Darwin" and platform_machine == "x86_64"
 pytest==9.0.2

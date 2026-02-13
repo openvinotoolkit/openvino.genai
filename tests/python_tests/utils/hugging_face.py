@@ -203,7 +203,7 @@ def get_huggingface_models(
             "trust_remote_code": trust_remote_code,
         }
         if is_eagle_model:
-            params["eagle3"] = True
+            params["trust_remote_code"] = True
         return model_class.from_pretrained(model_id, **params)
 
     opt_model = retry_request(auto_model_from_pretrained)
