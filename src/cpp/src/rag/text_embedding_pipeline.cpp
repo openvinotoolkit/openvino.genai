@@ -6,10 +6,13 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 
+#include "debug_utils.hpp"
 #include "json_utils.hpp"
 #include "logger.hpp"
+#include "lora/helper.hpp"
 #include "npu/text_embedding_pipeline.hpp"
 #include "openvino/core/except.hpp"
+#include "openvino/genai/lora_adapter.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "text_embedding_utils.hpp"
 #include "utils.hpp"
@@ -34,7 +37,6 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
 }
 
 std::optional<size_t> read_max_position_embeddings(const std::filesystem::path& models_path) {
-    // config.json not found. Skip parameters initialization from file, use defaults.
     const std::filesystem::path& json_path = models_path / "config.json";
     if (!std::filesystem::exists(json_path)) {
         return std::nullopt;
@@ -67,7 +69,7 @@ TextEmbeddingPipeline::Config::Config(const ov::AnyMap& properties) {
     read_anymap_param(properties, ov::genai::embed_instruction.name(), embed_instruction);
     read_anymap_param(properties, ov::genai::query_instruction.name(), query_instruction);
     read_anymap_param(properties, ov::genai::padding_side.name(), padding_side);
-};
+}
 
 void TextEmbeddingPipeline::Config::validate() const {
     if (max_length.has_value()) {
@@ -93,8 +95,13 @@ public:
         ov::Core core = utils::singleton_core();
 
         auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);
+        auto filtered_properties = extract_adapters_from_properties(properties, &m_adapters);
+        if (m_adapters.has_value()) {
+            setup_lora(model, device);
+        }
 
         bool is_seq_len_fixed = true;
+
         if (m_config.max_length) {
             m_tokenization_params.insert({max_length.name(), *m_config.max_length});
         } else {
@@ -124,35 +131,41 @@ public:
                 utils::reshape_model(model, m_config, m_max_position_embeddings);
             }
             model = utils::apply_postprocessing(model, m_config);
-            auto compiled_model = core.compile_model(model, device, properties);
-            utils::print_compiled_model_properties(compiled_model, "text embedding model");
-            m_request = compiled_model.create_infer_request();
+            const ov::AnyMap& compile_props = *filtered_properties;
+            m_compiled_model = core.compile_model(model, device, compile_props);
+
+            utils::print_compiled_model_properties(m_compiled_model, "text embedding model");
+            m_request = m_compiled_model.create_infer_request();
+            
+            if (m_adapters.has_value() && m_adapter_controller.has_value()) {
+               m_adapter_controller->apply(m_request, *m_adapters);
+            }
         }
     };
 
     EmbeddingResults embed_documents(const std::vector<std::string>& texts) {
         start_embed_documents_async(texts);
         return wait_embed_documents();
-    };
+    }
 
     void start_embed_documents_async(const std::vector<std::string>& texts) {
         auto formatted_texts = format_texts(texts);
         start_embed_async(formatted_texts);
-    };
+    }
 
     EmbeddingResults wait_embed_documents() {
         return wait_embed();
-    };
+    }
 
     EmbeddingResult embed_query(const std::string& text) {
         start_embed_query_async(text);
         return wait_embed_query();
-    };
+    }
 
     void start_embed_query_async(const std::string& text) {
         std::vector<std::string> formatted_query{format_query(text)};
         start_embed_async(formatted_query);
-    };
+    }
 
     EmbeddingResult wait_embed_query() {
         const EmbeddingResults results = wait_embed();
@@ -164,16 +177,53 @@ public:
             return (*uint8s)[0];
         }
         OPENVINO_THROW("Embedding result type is not supported");
-    };
+    }
+
+    void set_adapters(const std::optional<AdapterConfig>& adapters) {
+        OPENVINO_ASSERT(m_adapter_controller.has_value(),
+                        "Cannot set adapters: pipeline was not constructed with LoRA support. "
+                        "Provide adapters in the constructor properties to enable LoRA.");
+        if (adapters.has_value()) {
+            m_adapter_controller->apply(m_request, *adapters);
+        } else {
+            m_adapter_controller->apply(m_request, std::nullopt);
+        }
+    }
+    bool has_adapters() const {
+        return m_adapters.has_value();
+    }
 
 private:
     Tokenizer m_tokenizer;
+    ov::CompiledModel m_compiled_model;
     InferRequest m_request;
     InferRequest m_post_request;
     Config m_config;
     AnyMap m_tokenization_params;
     std::optional<size_t> m_max_position_embeddings;
+    std::optional<AdapterConfig> m_adapters;
+    std::optional<AdapterController> m_adapter_controller;
     ov::Tensor m_attention_mask;
+  
+    /**
+     * @brief Setup LoRA adapters for the model
+     * 
+     * Uses the tensor name prefix from AdapterConfig if set by user,
+     * otherwise uses empty string (no prefix stripping).
+     * 
+     * If your LoRA adapter was trained with PEFT and has "base_model.model" prefix,
+     * set it explicitly: adapter_config.set_tensor_name_prefix("base_model.model")
+     */
+    void setup_lora(std::shared_ptr<Model>& model, const std::string& device) {
+        OPENVINO_ASSERT(m_adapters.has_value(), "setup_lora called without adapters");
+
+        // Use user-specified prefix, or empty string if not set
+        if (!m_adapters->get_tensor_name_prefix().has_value()) {
+            m_adapters->set_tensor_name_prefix("");
+        }
+
+        m_adapter_controller = AdapterController(model, *m_adapters, device);
+    }
 
     ov::Tensor post_model_infer(const ov::Tensor& input) {
         if (!m_post_request) {
@@ -216,8 +266,6 @@ private:
 
     void start_embed_async(std::vector<std::string>& texts) {
         if (m_config.batch_size.has_value()) {
-            // if batch_size is set, model shape is fixed
-            // provide user friendly error message if number of texts is not equal to batch_size
             OPENVINO_ASSERT(texts.size() == *m_config.batch_size,
                             "Number of texts passed to pipeline should be equal to batch_size(",
                             *m_config.batch_size,
@@ -330,6 +378,12 @@ EmbeddingResult TextEmbeddingPipeline::wait_embed_query() {
     return m_impl->wait_embed_query();
 }
 
+void TextEmbeddingPipeline::set_adapters(const std::optional<AdapterConfig>& adapters) {
+    m_impl->set_adapters(adapters);
+}
+bool TextEmbeddingPipeline::has_adapters() const {
+    return m_impl->has_adapters();
+}
 TextEmbeddingPipeline::~TextEmbeddingPipeline() = default;
 
 }  // namespace genai
