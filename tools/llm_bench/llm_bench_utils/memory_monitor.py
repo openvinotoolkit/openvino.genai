@@ -19,6 +19,7 @@ from functools import partial
 from pathlib import Path
 from typing import Callable, Optional
 
+import statistics
 import psutil
 import matplotlib
 import matplotlib.pyplot as plt
@@ -59,6 +60,7 @@ class MemoryMonitor:
         memory_type: Optional[MemoryType] = MemoryType.RSS,
         memory_unit: Optional[MemoryUnit] = MemoryUnit.MiB,
         include_child_processes: Optional[bool] = None,
+        median_filter_length = 0
     ):
         """
         Memory monitoring utility to measure python process memory footprint. After start() is called, it
@@ -108,6 +110,10 @@ class MemoryMonitor:
         self._memory_monitor_thread = None
         self._memory_values_queue = None
         self._stop_logging_atexit_fn = None
+        self.median_filter_length = int(median_filter_length)
+        self.median_buffer = None
+        if self.median_filter_length > 0:
+            self.median_buffer = []
 
     def start(self, at_exit_fn: Optional[Callable] = None) -> "MemoryMonitor":
         """
@@ -268,6 +274,14 @@ class MemoryMonitor:
                 raise Exception("Unknown memory type to log")
             if self._monitoring_thread_should_stop:
                 break
+            if self.median_buffer is not None:
+                self.median_buffer.append(bytes_used)
+                while len(self.median_buffer) > self.median_filter_length:
+                    self.median_buffer.pop(0)
+                if len(self.median_buffer) == self.median_filter_length:
+                    bytes_used = statistics.median(self.median_buffer)
+                else:
+                    continue
             self._memory_values_queue.put((time.perf_counter(), bytes_used))
             time.sleep(max(0.0, self.interval - (time.perf_counter() - _last_measurement_time)))
 
@@ -289,6 +303,7 @@ class MemMonitorWrapper():
         for memory_type in self.memory_types:
             self.memory_monitors[memory_type] = MemoryMonitor(
                 interval=self.interval, memory_type=memory_type, memory_unit=self.memory_unit
+                median_filter_length = self.median_filter_length
             )
 
     def set_dir(self, dir):
@@ -373,6 +388,7 @@ class MemoryDataSummarizer():
         memory_monitor = MemMonitorWrapper()
         if args.memory_consumption_delay:
             memory_monitor.interval = args.memory_consumption_delay
+        memory_monitor.median_filter_length = args.mc_median_filter_length
         memory_monitor.create_monitors()
         if args.memory_consumption_dir:
             memory_monitor.set_dir(args.memory_consumption_dir)
