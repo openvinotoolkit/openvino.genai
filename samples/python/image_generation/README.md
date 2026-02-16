@@ -5,6 +5,7 @@ Examples in this folder showcase inference of text to image models like Stable D
 There are several sample files:
  - [`text2image.py`](./text2image.py) demonstrates basic usage of the text to image pipeline
  - [`lora_text2image.py`](./lora_text2image.py) shows how to apply LoRA adapters to the pipeline
+ - [`taylorseer_text2image.py`](./taylorseer_text2image.py) demonstrates text to image generation with TaylorSeer caching optimization for improved performance. Only the Flux model is supported.
  - [`heterogeneous_stable_diffusion.py`](./heterogeneous_stable_diffusion.py) shows how to assemble a heterogeneous text2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
  - [`image2image.py`](./image2image.py) demonstrates basic usage of the image to image pipeline
  - [`inpainting.py`](./inpainting.py) demonstrates basic usage of the inpainting pipeline
@@ -121,6 +122,31 @@ Check the difference:
 With adapter | Without adapter
 :---:|:---:
 ![](./../../cpp/image_generation/lora.bmp) | ![](./../../cpp/image_generation/baseline.bmp)
+
+## Run text to image with TaylorSeer caching optimization
+
+The `taylorseer_text2image.py` sample demonstrates how to use TaylorSeer Lite caching to accelerate text to image generation. TaylorSeer is a caching optimization technique that uses Taylor series approximation to predict intermediate outputs during diffusion inference, reducing the number of computationally expensive transformer forward passes.
+
+Run the sample with custom parameters:
+
+```bash
+python taylorseer_text2image.py ./flux.1-dev/FP16 \
+    "a beautiful sunset over mountains" \
+    --steps 28 \
+    --cache-interval 3 \
+    --disable-before 4 \
+    --disable-after -2 \
+```
+
+The sample generates two images with and without TaylorSeer config applied using the same prompt:
+   - `taylorseer.bmp` with TaylorSeer config applied
+   - `taylorseer_baseline.bmp` without TaylorSeer config applied
+
+Check the difference:
+
+With TaylorSeer | Without TaylorSeer
+:---:|:---:
+![](./../../cpp/image_generation/taylorseer.bmp) | ![](./../../cpp/image_generation/taylorseer_baseline.bmp)
 
 ## Run text to image with multiple devices
 

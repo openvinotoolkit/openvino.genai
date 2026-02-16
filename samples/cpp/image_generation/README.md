@@ -6,6 +6,7 @@ There are several sample files:
  - [`text2image.cpp`](./text2image.cpp) demonstrates basic usage of the text to image pipeline
  - [`text2image_concurrency.cpp`](./text2image_concurrency.cpp) demonstrates concurrent usage of the text to image pipeline to create multiple images with different prompts
  - [`lora_text2image.cpp`](./lora_text2image.cpp) shows how to apply LoRA adapters to the pipeline
+ - [`taylorseer_text2image.cpp`](./taylorseer_text2image.cpp) demonstrates text to image generation with TaylorSeer caching optimization for improved performance. Only the Flux model is supported.
  - [`heterogeneous_stable_diffusion.cpp`](./heterogeneous_stable_diffusion.cpp) shows how to assemble a heterogeneous txt2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
  - [`image2image.cpp`](./image2image.cpp) demonstrates basic usage of the image to image pipeline
  - [`image2image_concurrency.cpp.cpp`](./image2image_concurrency.cpp) demonstrates concurrent usage of the image to image pipeline to create multiple images with different prompts
@@ -107,6 +108,31 @@ Check the difference:
 With adapter | Without adapter
 :---:|:---:
 ![](./lora.bmp) | ![](./baseline.bmp)
+
+## Run text to image with TaylorSeer caching optimization
+
+The `taylorseer_text2image` sample demonstrates how to use TaylorSeer Lite caching to accelerate text to image generation. TaylorSeer is a caching optimization technique that uses Taylor series approximation to predict intermediate outputs during diffusion inference, reducing the number of computationally expensive transformer forward passes.
+
+Run the sample with custom parameters:
+
+```bash
+./taylorseer_text2image ./flux.1-dev/FP16 \
+    "a beautiful sunset over mountains" \
+    --steps 28 \
+    --cache-interval 3 \
+    --disable-before 4 \
+    --disable-after -2 \
+```
+
+The sample generates two images with and without TaylorSeer config applied using the same prompt:
+   - `taylorseer.bmp` with TaylorSeer config applied
+   - `taylorseer_baseline.bmp` without TaylorSeer config applied
+
+Check the difference:
+
+With TaylorSeer | Without TaylorSeer
+:---:|:---:
+![](./taylorseer.bmp) | ![](./taylorseer_baseline.bmp)
 
 ## Run text to image with multiple devices
 
