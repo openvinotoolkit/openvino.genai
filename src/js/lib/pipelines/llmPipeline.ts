@@ -48,6 +48,10 @@ export class LLMPipeline {
    * @deprecated startChat is deprecated and will be removed in future releases. Please, use generate() with ChatHistory argument.
    */
   async startChat(systemMessage: string = "") {
+    console.warn(
+      "DEPRECATION WARNING: startChat() / finishChat() API is deprecated and will be removed in the next major release.",
+      "Please, use generate() with ChatHistory argument.",
+    );
     if (!this.pipeline) throw new Error("LLMPipeline is not initialized");
 
     const startChatPromise = util.promisify(this.pipeline.startChat.bind(this.pipeline));
@@ -62,6 +66,10 @@ export class LLMPipeline {
    * @deprecated finishChat is deprecated and will be removed in future releases. Please, use generate() with ChatHistory argument.
    */
   async finishChat() {
+    console.warn(
+      "DEPRECATION WARNING: startChat() / finishChat() API is deprecated and will be removed in the next major release.",
+      "Please, use generate() with ChatHistory argument.",
+    );
     if (!this.pipeline) throw new Error("LLMPipeline is not initialized");
 
     const finishChatPromise = util.promisify(this.pipeline.finishChat.bind(this.pipeline));

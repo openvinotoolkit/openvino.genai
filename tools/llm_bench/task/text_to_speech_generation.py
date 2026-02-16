@@ -56,7 +56,7 @@ def run_text_to_speech_generation_optimum(
 
     end = time.perf_counter()
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
+        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
         max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
 
     generation_time = end - start
@@ -131,11 +131,10 @@ def run_text_to_speech_generation_genai(
     end = time.perf_counter()
 
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
-        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}_{proc_id}")
+        mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
         max_rss_mem_consumption, max_rss_mem_increase, max_sys_mem_consumption, max_sys_mem_increase = mem_consumption.get_data()
 
     generation_time = end - start
-
     perf_metrics = generation_result.perf_metrics
     tokenization_time = [perf_metrics.get_tokenization_duration().mean]
 
