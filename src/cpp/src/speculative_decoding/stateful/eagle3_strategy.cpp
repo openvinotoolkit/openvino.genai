@@ -99,7 +99,7 @@ void Eagle3InferWrapperBase::trim_kv_cache(size_t tokens_to_remove) {
                     " tokens. Valid range: 0 < tokens_to_remove < current_len");
 
     if (m_device != "NPU") {
-        utils::KVCacheState state;
+        utils::CacheState state;  // TODO: support linear cache state when needed
         state.num_tokens_to_trim = tokens_to_remove;
         state.seq_length_axis = m_kv_axes_pos.seq_len;
         state.reset_mem_state = false;

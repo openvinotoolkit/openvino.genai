@@ -6,6 +6,7 @@
 #include <optional>
 #include <stdexcept>
 #include <utility>
+#include <unordered_set>
 
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
@@ -144,6 +145,14 @@ void release_core_plugin(const std::string& device);
 
 size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history);
 
+enum class CacheType {
+    KVCache = 0,  // FullAttention Key-Value cache use all previous states for generation
+    LinearCache = 1,  // LinearAttention/CausalConv cache, only the last state used for generation
+};
+
+
+std::unordered_set<CacheType> get_cache_types(std::shared_ptr<const ov::Model> model);
+
 struct KVAxesPosition {
     size_t batch;
     size_t seq_len;
@@ -151,8 +160,11 @@ struct KVAxesPosition {
 
 KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model);
 
-class KVCacheState {
+class CacheState {
     std::vector<int64_t> state;
+    std::unordered_set<CacheType> kinds{CacheType::KVCache};
+
+    bool has_kind(CacheType k) const { return kinds.find(k) != kinds.end(); }
 public:
     size_t num_tokens_to_trim = 0;
     size_t seq_length_axis = 2;
@@ -171,9 +183,15 @@ public:
         num_tokens_to_trim = 0;
         state.clear();
     }
+
+    bool has_linear() const { return has_kind(CacheType::LinearCache); }
+    bool has_kvcache() const { return has_kind(CacheType::KVCache); }
+    bool is_hybrid() const { return has_linear() && has_kvcache(); }
+    void add_kind(CacheType k) { kinds.insert(k); }
+
 };
 
-void trim_kv_cache(ov::InferRequest request, KVCacheState& kv_cache_state, std::optional<AdapterController> adapter_controller);
+void trim_kv_cache(ov::InferRequest request, CacheState& cache_state, std::optional<AdapterController> adapter_controller);
 
 ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front);
 

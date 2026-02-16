@@ -276,7 +276,7 @@ void LLMInferWrapper::trim_kv_cache(const size_t tokens_to_remove) {
     // For NPU "trim" is done by position ids on NPUW side.
     if (m_device != "NPU") {
         // Trim kv_cache values on tokens_to_remove
-        ov::genai::utils::KVCacheState to_trim_state;
+        ov::genai::utils::CacheState to_trim_state;
         to_trim_state.num_tokens_to_trim = tokens_to_remove;
         to_trim_state.seq_length_axis =  m_kv_pos.seq_len;
         to_trim_state.reset_mem_state = false;

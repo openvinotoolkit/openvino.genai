@@ -38,8 +38,8 @@ std::pair<ov::Tensor, std::optional<int64_t>> InputsEmbedder::IInputsEmbedder::g
 
 void InputsEmbedder::IInputsEmbedder::start_chat(const std::string& system_message) {
     m_is_chat_conversation = true;
-    if (!m_kv_cache_state.get_state().empty()) {
-        m_kv_cache_state.reset_state();
+    if (!m_cache_state.get_state().empty()) {
+        m_cache_state.reset_state();
     }
     if (system_message.empty()) {
         return;
@@ -47,20 +47,20 @@ void InputsEmbedder::IInputsEmbedder::start_chat(const std::string& system_messa
 }
 
 void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& decoded_results, const ov::genai::GenerationStatus generation_finish_status) {
-    m_kv_cache_state.num_tokens_to_trim = 0;
+    m_cache_state.num_tokens_to_trim = 0;
     if (generation_finish_status == ov::genai::GenerationStatus::CANCEL) {
         // If chat generation process was cancelled by user, let's rollback to previous state of kv cache
-        std::vector<int64_t>& state = m_kv_cache_state.get_state();
+        std::vector<int64_t>& state = m_cache_state.get_state();
 
-        m_kv_cache_state.num_tokens_to_trim = state.size() - m_prev_hist_length;
+        m_cache_state.num_tokens_to_trim = state.size() - m_prev_hist_length;
         state.resize(m_prev_hist_length);
-        m_kv_cache_state.reset_mem_state = state.empty();
+        m_cache_state.reset_mem_state = state.empty() || m_cache_state.has_linear();
     }
 }
 
 void InputsEmbedder::IInputsEmbedder::finish_chat() {
     m_is_chat_conversation = false;
-    m_kv_cache_state.reset_state();
+    m_cache_state.reset_state();
 }
 
 InputsEmbedder::IInputsEmbedder::IInputsEmbedder(
@@ -130,8 +130,8 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::apply_chat_template_tokenize(const s
 ov::Tensor InputsEmbedder::IInputsEmbedder::update_history(const ov::Tensor& new_chat_tokens) {
     ov::Tensor encoded_inputs;
     if (m_is_chat_conversation) {
-        ov::genai::align_kv_cache_and_history(new_chat_tokens, m_kv_cache_state);
-        encoded_inputs = get_chat_encoded_input(new_chat_tokens, m_kv_cache_state).input_ids;
+        ov::genai::align_kv_cache_and_history(new_chat_tokens, m_cache_state);
+        encoded_inputs = get_chat_encoded_input(new_chat_tokens, m_cache_state).input_ids;
     } else {
         encoded_inputs = new_chat_tokens;
     }
@@ -142,8 +142,8 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::update_history(const ov::Tensor& new
 ov::Tensor InputsEmbedder::IInputsEmbedder::get_encoded_input_ids(const std::string& prompt, ov::genai::VLMPerfMetrics& metrics) {
     const auto new_chat_tokens = apply_chat_template_tokenize(prompt, metrics);
     auto new_input_ids = update_history(new_chat_tokens);
-    m_prev_hist_length = m_kv_cache_state.get_state().size();
-    m_kv_cache_state.add_inputs(new_input_ids);
+    m_prev_hist_length = m_cache_state.get_state().size();
+    m_cache_state.add_inputs(new_input_ids);
 
     return new_input_ids;
 }
@@ -393,7 +393,7 @@ EmbeddingsModel::Ptr InputsEmbedder::get_embedding_model() const {
     return m_impl->get_embedding_model();
 }
 
-ov::genai::utils::KVCacheState& InputsEmbedder::get_kv_cache_state() {
+ov::genai::utils::CacheState& InputsEmbedder::get_kv_cache_state() {
     return  m_impl->get_kv_cache_state();
 }
 
