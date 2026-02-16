@@ -1,6 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import sys
 
 # win32 fails on ffmpeg DLLs load
@@ -44,10 +45,12 @@ def run_gc_after_test():
     Fixture to run garbage collection after each test class.
     This is a workaround to minimize memory consumption during tests and allow the use of less powerful CI runners.
     """
-    dataset_cache_dir = Path("/mount/caches/huggingface/lin/datasets")
-    print("Cache dir files:")
-    for file in dataset_cache_dir.glob("*"):
-        print(f"{file}")
+    dataset_cache_dir = os.environ.get("HF_DATASETS_CACHE")
+    print(f"Dataset cache dir path: {dataset_cache_dir}")
+
+    if dataset_cache_dir and Path(dataset_cache_dir).exists():
+        num_files = len(list(Path(dataset_cache_dir).glob("*.lock")))
+        print(f"Number of files in datasets cache dir before test class: {num_files}")
     yield
     gc.collect()
 
