@@ -73,8 +73,6 @@ public:
             // Compute at first_compute_offset, then every cache_interval steps
             return ((offset - first_compute_offset) % config.get_cache_interval()) == 0;
         }
-
-        // return (current_step - config.get_disable_cache_before_step()) % config.get_cache_interval() == 0;
     }
 
     /**
