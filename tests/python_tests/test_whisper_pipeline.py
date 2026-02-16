@@ -225,7 +225,6 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
             "distil-whisper/meanwhile",
             split="test",
             streaming=True,
-            trust_remote_code=True,
         )
     ds = typing.cast(datasets.IterableDataset, ds)
     ds = ds.cast_column("audio", datasets.Audio(sampling_rate=16000))
