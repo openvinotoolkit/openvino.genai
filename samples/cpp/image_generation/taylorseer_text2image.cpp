@@ -42,6 +42,7 @@ int32_t main(int32_t argc, char* argv[]) try {
             disable_after = std::stoi(argv[++i]);
         } else if (arg == "--steps" && i + 1 < argc) {
             num_inference_steps = std::stoul(argv[++i]);
+        }
     }
 
     // Initialize pipeline
