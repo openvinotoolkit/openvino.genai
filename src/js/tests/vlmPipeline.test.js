@@ -150,4 +150,23 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
     const result2 = await pipeline.generate("What is your name?");
     assert.ok(!/Tom/.test(result2.toString()));
   });
+
+  it("getGenerationConfig returns object with expected fields", async () => {
+    const config = pipeline.getGenerationConfig();
+    assert.strictEqual(typeof config, "object");
+    assert.strictEqual(typeof config.max_new_tokens, "number");
+    assert.strictEqual(typeof config.temperature, "number");
+    assert.strictEqual(typeof config.do_sample, "boolean");
+    const result = await pipeline.generate("Say OK");
+    assert.ok(result.texts[0].length <= config.max_new_tokens);
+  });
+
+  it("setGenerationConfig updates config, getGenerationConfig returns updated values", async () => {
+    pipeline.setGenerationConfig({ max_new_tokens: 42, temperature: 0.3 });
+    const config = pipeline.getGenerationConfig();
+    assert.strictEqual(config.max_new_tokens, 42);
+    assert.strictEqual(config.temperature, 0.3);
+    const result = await pipeline.generate("Say OK");
+    assert.ok(result.texts[0].length <= 42);
+  });
 });

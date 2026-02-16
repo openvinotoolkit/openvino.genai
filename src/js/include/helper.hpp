@@ -49,6 +49,9 @@ template <>
 std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& env, const Napi::Value& value);
 template <>
 std::vector<int64_t> js_to_cpp<std::vector<int64_t>>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType std::vector<float> (e.g. raw speech) */
+template <>
+std::vector<float> js_to_cpp<std::vector<float>>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType GenerateInputs */
 template <>
 GenerateInputs js_to_cpp<GenerateInputs>(const Napi::Env& env, const Napi::Value& value);
@@ -154,6 +157,12 @@ Napi::Value cpp_to_js<ov::genai::TokenizedInputs, Napi::Value>(const Napi::Env& 
  * @brief  Template function to convert C++ map into Javascript Object. Map key must be std::string.
  * @tparam MapElementType C++ data type of map elements.
  */
+
+/** @brief  A template specialization for TargetType Napi::Value and SourceType ov::genai::GenerationConfig */
+template <>
+Napi::Value cpp_to_js<ov::genai::GenerationConfig, Napi::Value>(const Napi::Env& env,
+                                                                const ov::genai::GenerationConfig& config);
+
 template <typename MapElementType>
 Napi::Object cpp_map_to_js_object(const Napi::Env& env, const std::map<std::string, MapElementType>& map) {
     Napi::Object obj = Napi::Object::New(env);

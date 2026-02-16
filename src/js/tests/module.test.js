@@ -64,6 +64,25 @@ describe("LLMPipeline methods", async () => {
     const tokenizer = pipeline.getTokenizer();
     assert.strictEqual(typeof tokenizer, "object");
   });
+
+  it("getGenerationConfig returns object with expected fields", async () => {
+    const config = pipeline.getGenerationConfig();
+    assert.strictEqual(typeof config, "object");
+    assert.strictEqual(typeof config.max_new_tokens, "number");
+    assert.strictEqual(typeof config.temperature, "number");
+    assert.strictEqual(typeof config.do_sample, "boolean");
+    const result = await pipeline.generate("Say OK");
+    assert.ok(result.texts[0].length <= config.max_new_tokens);
+  });
+
+  it("setGenerationConfig updates config, getGenerationConfig returns updated values", async () => {
+    pipeline.setGenerationConfig({ max_new_tokens: 42, temperature: 0.5 });
+    const config = pipeline.getGenerationConfig();
+    assert.strictEqual(config.max_new_tokens, 42);
+    assert.strictEqual(config.temperature, 0.5);
+    const result = await pipeline.generate("Say OK");
+    assert.ok(result.texts[0].length <= 42);
+  });
 });
 
 describe("corner cases", async () => {
@@ -80,6 +99,19 @@ describe("corner cases", async () => {
     const pipeline = new LLM(MODEL_PATH, "CPU");
 
     assert.rejects(pipeline.generate("prompt"), /LLMPipeline is not initialized/);
+  });
+
+  it("getGenerationConfig throws if pipeline not initialized", () => {
+    const uninitPipeline = new LLM(MODEL_PATH, "CPU");
+    assert.throws(() => uninitPipeline.getGenerationConfig(), /LLMPipeline is not initialized/);
+  });
+
+  it("setGenerationConfig throws if pipeline not initialized", () => {
+    const uninitPipeline = new LLM(MODEL_PATH, "CPU");
+    assert.throws(
+      () => uninitPipeline.setGenerationConfig({ max_new_tokens: 10 }),
+      /LLMPipeline is not initialized/,
+    );
   });
 });
 
