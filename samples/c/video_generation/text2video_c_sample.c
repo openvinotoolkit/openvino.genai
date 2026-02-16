@@ -1,4 +1,4 @@
-// Copyright (C) 202 Intel Corporation
+// Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include <stdio.h>

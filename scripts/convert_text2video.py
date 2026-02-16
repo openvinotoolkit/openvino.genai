@@ -1,3 +1,6 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
 import gc
 from pathlib import Path
 
@@ -12,7 +15,6 @@ def convert_text2video():
     output_dir.mkdir(exist_ok=True)
     model_id = "ali-vilab/text-to-video-ms-1.7b"
 
-    # 1. Text Encoder
     print("Converting Text Encoder...")
     text_encoder = CLIPTextModel.from_pretrained(
         model_id, subfolder="text_encoder", torch_dtype=torch.float16, variant="fp16"
@@ -25,7 +27,6 @@ def convert_text2video():
     del ov_text, text_encoder
     gc.collect()
 
-    # 2. U-Net
     print("Converting U-Net...")
     unet = UNet3DConditionModel.from_pretrained(
         model_id, subfolder="unet", torch_dtype=torch.float16, variant="fp16"
@@ -42,7 +43,6 @@ def convert_text2video():
     del ov_unet, unet, dummy_inputs
     gc.collect()
 
-    # 3. VAE & Configs
     print("Converting VAE...")
     vae = AutoencoderKL.from_pretrained(
         model_id, subfolder="vae", torch_dtype=torch.float16, variant="fp16"
@@ -55,7 +55,6 @@ def convert_text2video():
     del ov_vae, vae
     gc.collect()
 
-    # Save Scheduler and Tokenizer
     pipe = TextToVideoSDPipeline.from_pretrained(
         model_id, torch_dtype=torch.float16, variant="fp16"
     )

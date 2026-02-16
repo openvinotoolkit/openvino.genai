@@ -18,8 +18,9 @@ extern "C" {
 int ov_genai_text2video_pipeline_create(const char* model_path,
                                         const char* device,
                                         ov_genai_text2video_pipeline** pipeline) {
-    if (!pipeline || !model_path || !device)
+    if (!pipeline || !model_path || !device) {
         return 1;
+    }
 
     try {
         auto pipe_cpp = std::make_unique<ov::genai::Text2VideoPipeline>(model_path, device);
@@ -31,15 +32,17 @@ int ov_genai_text2video_pipeline_create(const char* model_path,
 }
 
 void ov_genai_text2video_pipeline_destroy(ov_genai_text2video_pipeline* pipeline) {
-    if (pipeline)
+    if (pipeline) {
         delete pipeline;
+    }
 }
 
 void ov_genai_text2video_pipeline_generate(ov_genai_text2video_pipeline* pipeline,
                                            const char* prompt,
                                            text2video_custom_tensor* output_tensor) {
-    if (!pipeline || !prompt || !output_tensor)
+    if (!pipeline || !prompt || !output_tensor) {
         return;
+    }
 
     try {
         auto result = pipeline->pipe->generate(prompt);

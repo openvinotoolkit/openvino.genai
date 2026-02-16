@@ -2,18 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
+
 #include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// FIX: Define the macro to be empty for static compilation
-#define OV_GENAI_C_API
+#ifndef OV_GENAI_C_API
+#    ifdef _WIN32
+#        define OV_GENAI_C_API __declspec(dllexport)
+#    else
+#        define OV_GENAI_C_API __attribute__((visibility("default")))
+#    endif
+#endif
 
 typedef struct {
-    void* data;   // Raw pixel data
-    size_t size;  // Total bytes
+    void* data;    // Raw pixel data
+    size_t size;   // Total bytes
     size_t height;
     size_t width;
 } text2video_custom_tensor;
