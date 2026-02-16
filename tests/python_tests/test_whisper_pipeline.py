@@ -1,9 +1,7 @@
 # Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-import os
 import sys
-import tempfile
 
 # win32 fails on ffmpeg DLLs load
 # import transformers.pipeline imports VideoClassificationPipeline which requires PyAV (ffmpeg bindings)
@@ -37,25 +35,6 @@ from utils.network import retry_request
 from utils.atomic_download import AtomicDownloadManager
 from typing import Any
 from difflib import SequenceMatcher
-from pathlib import Path
-
-
-@pytest.fixture(scope="session")
-def datasets_cache_dir():
-    """
-    Fixture to provide a temporary directory for datasets cache on local disk.
-    This avoids I/O errors with network-mounted filesystems.
-    """
-    with tempfile.TemporaryDirectory(prefix="hf_datasets_cache_") as tmpdir:
-        yield tmpdir
-
-
-def print_lock_files_count(cache_dir):
-    if cache_dir and Path(cache_dir).exists():
-        files = list(Path(cache_dir).glob("*.lock"))
-        print(f"Lock Files in datasets cache dir ({len(files)}):")
-        for f in files:
-            print(f"{f}")
 
 
 @pytest.fixture(scope="class", autouse=True)
@@ -221,14 +200,10 @@ def run_genai(
 MAX_DATASET_LENGTH = 30
 
 @functools.lru_cache(16)
-def get_whisper_dataset(language: str, long_form: bool, cache_dir: str | None = None) -> list:
-    print(f"Loading dataset for language: {language}, long_form: {long_form}")
+def get_whisper_dataset(language: str, long_form: bool) -> list:
     # TODO: temporary always use long_form for until "mozilla-foundation/common_voice_11_0" 
     # https://github.com/huggingface/datasets/issues/7647 dataset is fixed for streaming mode
     # if not long_form:
-    print(f"Cache_dir for datasets: {cache_dir}")
-    print_lock_files_count(cache_dir)
-
     if False:
         ds = datasets.load_dataset(
             "mozilla-foundation/common_voice_11_0",
@@ -236,31 +211,26 @@ def get_whisper_dataset(language: str, long_form: bool, cache_dir: str | None = 
             split="test",
             streaming=True,
             trust_remote_code=True,
-            cache_dir=cache_dir,
         )
     else:
         ds = datasets.load_dataset(
             "distil-whisper/meanwhile",
             split="test",
             streaming=True,
-            cache_dir=cache_dir,
         )
     ds = typing.cast(datasets.IterableDataset, ds)
     ds = ds.cast_column("audio", datasets.Audio(sampling_rate=16000))
     ds = ds.take(MAX_DATASET_LENGTH)
 
-    print("Dataset loaded, printing lock files count...")
-    print_lock_files_count(cache_dir)
-
     return [x["audio"]["array"] for x in ds]
 
 @pytest.fixture
-def sample_from_dataset(request, datasets_cache_dir):
+def sample_from_dataset(request):
     language = request.param.get("language", "en")
     long_form = request.param.get("long_form", False)
 
     sample_id = request.param.get("sample_id", 0)
-    samples = get_whisper_dataset(language, long_form, cache_dir=datasets_cache_dir)
+    samples = get_whisper_dataset(language, long_form)
     assert sample_id < MAX_DATASET_LENGTH
 
     return samples[sample_id]
@@ -402,9 +372,9 @@ def test_max_new_tokens(model_descr, sample_from_dataset):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("language", ["fr", "de"])
-def test_language_mode(model_descr, language, datasets_cache_dir):
+def test_language_mode(model_descr, language):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
-    sample = get_whisper_dataset(language, long_form=False, cache_dir=datasets_cache_dir)[0]
+    sample = get_whisper_dataset(language, long_form=False)[0]
 
     expected = hf_pipe(
         sample, max_new_tokens=30, generate_kwargs={"language": language}
