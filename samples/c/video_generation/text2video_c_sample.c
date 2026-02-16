@@ -10,7 +10,7 @@ int main(int argc, char* argv[]) {
         printf("Usage: %s <model_path> <device>\n", argv[0]);
         return 1;
     }
-
+    
     ov_genai_text2video_pipeline* pipe = NULL;
     int status = ov_genai_text2video_pipeline_create(argv[1], argv[2], &pipe);
 
