@@ -44,6 +44,10 @@ def run_gc_after_test():
     Fixture to run garbage collection after each test class.
     This is a workaround to minimize memory consumption during tests and allow the use of less powerful CI runners.
     """
+    dataset_cache_dir = Path("/mount/caches/huggingface/lin/datasets")
+    print("Cache dir files:")
+    for file in dataset_cache_dir.glob("*"):
+        print(f"{file}")
     yield
     gc.collect()
 
