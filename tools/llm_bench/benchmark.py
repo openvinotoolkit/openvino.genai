@@ -127,12 +127,19 @@ def get_argparser():
         ' but the impact is still expected. '
     )
     parser.add_argument(
-        "--memory_consumption_delay",
+        "--memory_consumption_cooldown",
         default=None,
+        type=int,
+        help="Sleep interval in seconds before start of execution of each prompt (cooldown).",
+    )
+    parser.add_argument(
+        "--memory_consumption_interval",
+        default=0.5,
         required=False,
         type=float,
-        help="delay for memory consumption check in seconds, smaller value will lead to more precised memory consumption, but may affects performance."
-        "It is not recommended to run memory consumption and performance benchmarking in the same time",
+        help="Interval sampling for memory consumption monitoring in seconds, smaller value will lead to more"
+        " precised memory consumption, but may affects performance. It is not recommended to run memory consumption"
+        " and performance benchmarking in the same time",
     )
     parser.add_argument(
         '-mc_dir',
