@@ -327,6 +327,25 @@ void init_image_generation_pipelines(py::module_& m) {
         py::arg("scheduler_config_path"),
         py::arg_v("scheduler_type", ov::genai::Scheduler::Type::AUTO, "Scheduler.Type.AUTO"));
 
+    py::class_<ov::genai::TaylorSeerCacheConfig, std::shared_ptr<ov::genai::TaylorSeerCacheConfig>>(
+        m, "TaylorSeerCacheConfig",
+        "Configuration for TaylorSeer cache mechanism in diffusion transformers.\n\n"
+        "See paper: https://arxiv.org/pdf/2503.06923\n\n"
+        "Parameters:\n"
+        "  cache_interval: Interval between full computation steps (default: 3)\n"
+        "  disable_cache_before_step: Step before which caching is disabled for warmup (default: 6)\n"
+        "  disable_cache_after_step: Step after which caching is disabled. If negative, "
+        "calculated as num_inference_steps + disable_cache_after_step (default: -2)")
+        .def(py::init<size_t, size_t, int>(),
+             py::arg("cache_interval") = 3,
+             py::arg("disable_cache_before_step") = 6,
+             py::arg("disable_cache_after_step") = -2)
+        .def("get_cache_interval", &ov::genai::TaylorSeerCacheConfig::get_cache_interval)
+        .def("get_disable_cache_before_step", &ov::genai::TaylorSeerCacheConfig::get_disable_cache_before_step)
+        .def("get_disable_cache_after_step", &ov::genai::TaylorSeerCacheConfig::get_disable_cache_after_step)
+        .def("to_string", &ov::genai::TaylorSeerCacheConfig::to_string)
+        .def("__repr__", &ov::genai::TaylorSeerCacheConfig::to_string);
+
     py::class_<ov::genai::ImageGenerationConfig>(m, "ImageGenerationConfig", "This class is used for storing generation config for image generation pipeline.")
         .def(py::init<>())
         .def_readwrite("prompt_2", &ov::genai::ImageGenerationConfig::prompt_2)
@@ -344,6 +363,7 @@ void init_image_generation_pipelines(py::module_& m) {
         .def_readwrite("adapters", &ov::genai::ImageGenerationConfig::adapters)
         .def_readwrite("strength", &ov::genai::ImageGenerationConfig::strength)
         .def_readwrite("max_sequence_length", &ov::genai::ImageGenerationConfig::max_sequence_length)
+        .def_readwrite("taylorseer_config", &ov::genai::ImageGenerationConfig::taylorseer_config)
         .def("validate", &ov::genai::ImageGenerationConfig::validate)
         .def("update_generation_config", [](
             ov::genai::ImageGenerationConfig& config,
