@@ -3,6 +3,7 @@
 
 import os
 import sys
+import tempfile
 
 # win32 fails on ffmpeg DLLs load
 # import transformers.pipeline imports VideoClassificationPipeline which requires PyAV (ffmpeg bindings)
@@ -39,18 +40,30 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 
+@pytest.fixture(scope="session")
+def datasets_cache_dir():
+    """
+    Fixture to provide a temporary directory for datasets cache on local disk.
+    This avoids I/O errors with network-mounted filesystems.
+    """
+    with tempfile.TemporaryDirectory(prefix="hf_datasets_cache_") as tmpdir:
+        yield tmpdir
+
+
+def print_lock_files_count(cache_dir):
+    if cache_dir and Path(cache_dir).exists():
+        files = list(Path(cache_dir).glob("*.lock"))
+        print(f"Lock Files in datasets cache dir ({len(files)}):")
+        for f in files:
+            print(f"{f}")
+
+
 @pytest.fixture(scope="class", autouse=True)
 def run_gc_after_test():
     """
     Fixture to run garbage collection after each test class.
     This is a workaround to minimize memory consumption during tests and allow the use of less powerful CI runners.
     """
-    dataset_cache_dir = os.environ.get("HF_DATASETS_CACHE")
-    print(f"Dataset cache dir path: {dataset_cache_dir}")
-
-    if dataset_cache_dir and Path(dataset_cache_dir).exists():
-        num_files = len(list(Path(dataset_cache_dir).glob("*.lock")))
-        print(f"Number of files in datasets cache dir before test class: {num_files}")
     yield
     gc.collect()
 
@@ -208,37 +221,46 @@ def run_genai(
 MAX_DATASET_LENGTH = 30
 
 @functools.lru_cache(16)
-def get_whisper_dataset(language: str, long_form: bool) -> list:
+def get_whisper_dataset(language: str, long_form: bool, cache_dir: str | None = None) -> list:
+    print(f"Loading dataset for language: {language}, long_form: {long_form}")
     # TODO: temporary always use long_form for until "mozilla-foundation/common_voice_11_0" 
     # https://github.com/huggingface/datasets/issues/7647 dataset is fixed for streaming mode
     # if not long_form:
-    if False:  
+    print(f"Cache_dir for datasets: {cache_dir}")
+    print_lock_files_count(cache_dir)
+
+    if False:
         ds = datasets.load_dataset(
             "mozilla-foundation/common_voice_11_0",
             language,
             split="test",
             streaming=True,
             trust_remote_code=True,
+            cache_dir=cache_dir,
         )
     else:
         ds = datasets.load_dataset(
             "distil-whisper/meanwhile",
             split="test",
             streaming=True,
+            cache_dir=cache_dir,
         )
     ds = typing.cast(datasets.IterableDataset, ds)
     ds = ds.cast_column("audio", datasets.Audio(sampling_rate=16000))
     ds = ds.take(MAX_DATASET_LENGTH)
 
+    print("Dataset loaded, printing lock files count...")
+    print_lock_files_count(cache_dir)
+
     return [x["audio"]["array"] for x in ds]
 
 @pytest.fixture
-def sample_from_dataset(request):
+def sample_from_dataset(request, datasets_cache_dir):
     language = request.param.get("language", "en")
     long_form = request.param.get("long_form", False)
 
     sample_id = request.param.get("sample_id", 0)
-    samples = get_whisper_dataset(language, long_form)
+    samples = get_whisper_dataset(language, long_form, cache_dir=datasets_cache_dir)
     assert sample_id < MAX_DATASET_LENGTH
 
     return samples[sample_id]
@@ -380,9 +402,9 @@ def test_max_new_tokens(model_descr, sample_from_dataset):
 
 @pytest.mark.parametrize("model_descr", get_whisper_models_list(tiny_only=True))
 @pytest.mark.parametrize("language", ["fr", "de"])
-def test_language_mode(model_descr, language):
+def test_language_mode(model_descr, language, datasets_cache_dir):
     model_id, path, hf_pipe, genai_pipe = read_whisper_model(model_descr)
-    sample = get_whisper_dataset(language, long_form=False)[0]
+    sample = get_whisper_dataset(language, long_form=False, cache_dir=datasets_cache_dir)[0]
 
     expected = hf_pipe(
         sample, max_new_tokens=30, generate_kwargs={"language": language}
