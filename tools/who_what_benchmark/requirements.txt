@@ -17,3 +17,11 @@ imageio[pyav]<=2.37.2
 imageio-ffmpeg<=0.6.0
 lpips==0.1.4
 scikit-image<=0.26.0
+# - openbmb/MiniCPM-o-2_6
+soundfile==0.13.1
+librosa==0.11.0
+torchcodec<=0.10.0; sys_platform == "linux"
+vocos==0.1.0
+vector_quantize_pytorch==1.23.2
+torchaudio>=2.1.0,<=2.10.0
+torchvision>=0.16,<=0.25.0

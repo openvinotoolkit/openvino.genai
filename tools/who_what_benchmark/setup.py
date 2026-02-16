@@ -44,10 +44,10 @@ setup(
     entry_points={"console_scripts": ["wwb=whowhatbench.wwb:main"]},
     package_data={"whowhatbench": ["prompts/*.yaml", "prompts/*.json"]},
     extras_require={
-        "minicpmo": [
-            "torch==2.8",
-            "torchvision==0.23",
-            "torchaudio==2.8.0",
+        "minicpm-o-2_6": [
+            "torch==2.10.0",
+            "torchvision==0.25.0",
+            "torchaudio==2.10.0",
             "soundfile==0.13.1",
             "librosa==0.11.0",
             "torchcodec==0.7.0",

@@ -6,7 +6,7 @@ openvino<=2026.1.0
 openvino-tokenizers<=2026.1.0
 openvino_genai<=2026.1.0
 # Image processing for VLMs
-pillow==12.1.0
+pillow==12.1.1
 torch>=2.1.0,<=2.10
 transformers[sentencepiece]>=4.40.0,<=4.57.0
 diffusers>=0.22.0,<=0.36.0
