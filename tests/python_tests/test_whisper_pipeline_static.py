@@ -45,15 +45,17 @@ def load_and_save_whisper_model(params, stateful=False, **tokenizer_kwargs):
 
             tokenizer.save_pretrained(temp_path)
 
-            opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
-                model_cached,
-                export=True,
-                trust_remote_code=True,
-                stateful=stateful,
-                compile=False,
-                device="CPU",
-                load_in_8bit=False,
-            ))
+            opt_model = retry_request(
+                lambda: OVModelForSpeechSeq2Seq.from_pretrained(
+                    model_cached,
+                    export=True,
+                    trust_remote_code=True,
+                    stateful=stateful,
+                    compile=False,
+                    device="CPU",
+                    load_in_8bit=False,
+                )
+            )
             opt_model.generation_config.save_pretrained(temp_path)
             opt_model.config.save_pretrained(temp_path)
             opt_model.save_pretrained(temp_path)

@@ -124,14 +124,16 @@ def save_model(model_id: str, tmp_path: pathlib.Path):
 
         tokenizer.save_pretrained(temp_path)
 
-        opt_model = retry_request(lambda: OVModelForSpeechSeq2Seq.from_pretrained(
-            model_cached,
-            export=True,
-            trust_remote_code=True,
-            compile=False,
-            device="CPU",
-            load_in_8bit=False,
-        ))
+        opt_model = retry_request(
+            lambda: OVModelForSpeechSeq2Seq.from_pretrained(
+                model_cached,
+                export=True,
+                trust_remote_code=True,
+                compile=False,
+                device="CPU",
+                load_in_8bit=False,
+            )
+        )
         opt_model.generation_config.save_pretrained(temp_path)
         opt_model.config.save_pretrained(temp_path)
         opt_model.save_pretrained(temp_path)

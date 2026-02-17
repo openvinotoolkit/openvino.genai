@@ -260,9 +260,7 @@ def _get_ov_model(model_id: str) -> str:
         # For tiny-random-internvl2 processor is actually tokenizer
         elif isinstance(processor, transformers.Qwen2TokenizerFast):
             tokenizer = processor
-            processor = transformers.AutoImageProcessor.from_pretrained(
-                model_cached, trust_remote_code=True
-            )
+            processor = transformers.AutoImageProcessor.from_pretrained(model_cached, trust_remote_code=True)
         else:
             tokenizer = processor.tokenizer
             if tokenizer.chat_template is None:
@@ -1796,9 +1794,8 @@ def run_compare_genai_optimum(ov_pipe_model: VlmModelInfo, image, video):
 
     def get_nanollava_processor():
         hf_model = transformers.AutoModelForCausalLM.from_pretrained(
-            model_cached,
-            device_map='auto',
-            trust_remote_code=True)
+            model_cached, device_map="auto", trust_remote_code=True
+        )
         return NanollavaProcessorWrapper(hf_model.process_images, hf_model.config, hf_model.dtype)
 
     ov_pipe = ov_pipe_model.pipeline
