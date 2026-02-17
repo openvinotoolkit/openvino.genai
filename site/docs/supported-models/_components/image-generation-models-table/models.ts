@@ -102,7 +102,7 @@ export const IMAGE_GENERATION_MODELS: ImageGenerationModelType[] = [
     textToImage: true,
     imageToImage: true,
     inpainting: true,
-    loraSupport: false,
+    loraSupport: true,
     links: [
       'https://huggingface.co/black-forest-labs/FLUX.1-schnell',
       'https://huggingface.co/shuttleai/shuttle-3-diffusion',
