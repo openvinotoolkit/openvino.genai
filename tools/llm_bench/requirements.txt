@@ -2,9 +2,9 @@
 numpy==1.26.4; platform_system == "Darwin" and platform_machine == "x86_64"
 numpy>=1.16.6,<=2.4.2; platform_system != "Darwin" or platform_machine != "x86_64"
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
-openvino<=2026.1.0
-openvino-tokenizers<=2026.1.0
-openvino_genai<=2026.1.0
+openvino
+openvino-tokenizers
+openvino_genai
 # Image processing for VLMs
 pillow==12.1.1
 torch>=2.1.0,<=2.10
@@ -34,11 +34,9 @@ einops==0.8.2
 # For microsoft/Phi-3.5-vision-instruct
 backoff==2.2.1
 # For openbmb/MiniCPM-o-2_6
-vector_quantize_pytorch==1.23.2
+vector-quantize-pytorch==1.27.20
 vocos==0.1.0
-torchaudio==2.8.0
+torchaudio>=2.1.0,<=2.10.0
 torchcodec==0.7.0; sys_platform == "linux"
-torchvision==0.17.2; platform_system == "Darwin" and platform_machine == "x86_64"
-torchvision==0.23.0; platform_system != "Darwin" or platform_machine != "x86_64"
+torchvision>=0.16,<=0.25.0
 soundfile==0.13.1
-librosa==0.11.0
