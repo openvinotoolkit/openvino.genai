@@ -11,16 +11,16 @@ from PIL import Image
 
 def main():
     parser = argparse.ArgumentParser(description="Text-to-image generation with TaylorSeer caching optimization")
-    parser.add_argument('model_dir', help='Path to the converted OpenVINO model directory')
-    parser.add_argument('prompt', help='Text prompt for image generation')
-    parser.add_argument('--steps', type=int, default=28, help='Number of inference steps')
+    parser.add_argument("model_dir", help="Path to the converted OpenVINO model directory")
+    parser.add_argument("prompt", help="Text prompt for image generation")
+    parser.add_argument("--steps", type=int, default=28, help="Number of inference steps")
 
-    ts_group = parser.add_argument_group('TaylorSeer Cache Configurations')
-    ts_group.add_argument('--cache-interval', type=int, default=3, help='Cache interval')
-    ts_group.add_argument('--disable-before', type=int, default=6,
-                        help='Disable caching before this step for warmup')
-    ts_group.add_argument('--disable-after', type=int, default=-2,
-                        help='Disable caching after this step from end, -1 means last step')
+    ts_group = parser.add_argument_group("TaylorSeer Cache Configurations")
+    ts_group.add_argument("--cache-interval", type=int, default=3, help="Cache interval")
+    ts_group.add_argument("--disable-before", type=int, default=6, help="Disable caching before this step for warmup")
+    ts_group.add_argument(
+        "--disable-after", type=int, default=-2, help="Disable caching after this step from end, -1 means last step"
+    )
     args = parser.parse_args()
 
     device = "CPU"  # GPU can be used as well
@@ -34,7 +34,7 @@ def main():
     taylorseer_config = openvino_genai.TaylorSeerCacheConfig(
         cache_interval=args.cache_interval,
         disable_cache_before_step=args.disable_before,
-        disable_cache_after_step=args.disable_after
+        disable_cache_after_step=args.disable_after,
     )
     generation_config = pipe.get_generation_config()
     generation_config.taylorseer_config = taylorseer_config
@@ -45,15 +45,14 @@ def main():
     print(f"  Disable before step: {args.disable_before}")
     print(f"  Disable after step: {args.disable_after}")
 
-
     print(f"Generating image with TaylorSeer caching...")
     generate_kwargs = {
-        'width': 512,
-        'height': 512,
-        'num_inference_steps': args.steps,
-        'rng_seed': 42,
-        'num_images_per_prompt': 1,
-        'callback': callback,
+        "width": 512,
+        "height": 512,
+        "num_inference_steps": args.steps,
+        "rng_seed": 42,
+        "num_images_per_prompt": 1,
+        "callback": callback,
     }
 
     start_time = time.time()
@@ -79,7 +78,7 @@ def main():
 
     print(f"Baseline generation completed in {baseline_time:.2f}s")
 
-    baseline_filename = image_filename.replace('.bmp', '_baseline.bmp')
+    baseline_filename = image_filename.replace(".bmp", "_baseline.bmp")
     baseline_image = Image.fromarray(baseline_tensor.data[0])
     baseline_image.save(baseline_filename)
     print(f"Baseline image saved to {baseline_filename}")
@@ -91,8 +90,8 @@ def main():
     print(f"  Baseline time: {baseline_time:.2f}s")
     print(f"  TaylorSeer time: {taylorseer_time:.2f}s")
     print(f"  Speedup: {speedup:.2f}x")
-    print(f"  Time saved: {time_saved:.2f}s ({(time_saved/baseline_time*100):.1f}%)")
+    print(f"  Time saved: {time_saved:.2f}s ({(time_saved / baseline_time * 100):.1f}%)")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
