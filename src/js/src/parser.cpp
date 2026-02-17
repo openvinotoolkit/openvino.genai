@@ -146,7 +146,8 @@ void DeepSeekR1ReasoningParserWrapper::set_parser(std::shared_ptr<ov::genai::Dee
     _parser = std::move(parser);
 }
 
-Napi::Object DeepSeekR1ReasoningParserWrapper::wrap(Napi::Env env, std::shared_ptr<ov::genai::DeepSeekR1ReasoningParser> parser) {
+Napi::Object DeepSeekR1ReasoningParserWrapper::wrap(Napi::Env env,
+                                                    std::shared_ptr<ov::genai::DeepSeekR1ReasoningParser> parser) {
     const auto& prototype = env.GetInstanceData<AddonData>()->deepseek_r1_reasoning_parser;
     OPENVINO_ASSERT(prototype, "Invalid pointer to DeepSeekR1ReasoningParser prototype.");
     Napi::Object obj = prototype.Value().As<Napi::Function>().New({});
@@ -218,7 +219,8 @@ void Llama3PythonicToolParserWrapper::set_parser(std::shared_ptr<ov::genai::Llam
     _parser = std::move(parser);
 }
 
-Napi::Object Llama3PythonicToolParserWrapper::wrap(Napi::Env env, std::shared_ptr<ov::genai::Llama3PythonicToolParser> parser) {
+Napi::Object Llama3PythonicToolParserWrapper::wrap(Napi::Env env,
+                                                   std::shared_ptr<ov::genai::Llama3PythonicToolParser> parser) {
     const auto& prototype = env.GetInstanceData<AddonData>()->llama3_pythonic_tool_parser;
     OPENVINO_ASSERT(prototype, "Invalid pointer to Llama3PythonicToolParser prototype.");
     Napi::Object obj = prototype.Value().As<Napi::Function>().New({});
