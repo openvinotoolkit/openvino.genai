@@ -48,7 +48,8 @@ def test_final_parser_llama_32_json():
     except ImportError:
         pytest.skip("No vLLM package in the environment")
 
-    parser = Llama3JsonToolParser(AutoTokenizer.from_pretrained(snapshot_download("gpt2")))  # required to avoid HF rate limits
+    model_cached = snapshot_download("gpt2")  # required to avoid HF rate limits
+    parser = Llama3JsonToolParser(AutoTokenizer.from_pretrained(model_cached))
     res_vllm = parser.extract_tool_calls(model_output, None).model_dump_json()
 
     wrapper = VLLMParserWrapper(parser)
@@ -64,7 +65,8 @@ def test_final_parser_deepseek():
     except ImportError:
         pytest.skip("No vLLM package in the environment")
 
-    parser = DeepSeekR1ReasoningParser(AutoTokenizer.from_pretrained(snapshot_download("deepseek-ai/DeepSeek-V3.1")))  # required to avoid HF rate limits
+    model_cached = snapshot_download("deepseek-ai/DeepSeek-V3.1")  # required to avoid HF rate limits
+    parser = DeepSeekR1ReasoningParser(AutoTokenizer.from_pretrained(model_cached))
     reasoning, content = parser.extract_reasoning(model_output, None)
     message_vllm = {
         "content": content,

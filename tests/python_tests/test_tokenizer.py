@@ -357,7 +357,8 @@ def test_special_tokens(prompt, ov_hf_tokenizers):
 
 
 def test_multiple_infer_request_state(tmp_path):
-    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(snapshot_download("llamafactory/tiny-random-Llama-3")))  # required to avoid HF rate limits
+    model_cached = snapshot_download("llamafactory/tiny-random-Llama-3")  # required to avoid HF rate limits
+    hf_tokenizer = retry_request(lambda: AutoTokenizer.from_pretrained(model_cached))
     ov_tokenizer = convert_tokenizer(hf_tokenizer)
     openvino.save_model(ov_tokenizer, tmp_path / "openvino_tokenizer.xml")
     del ov_tokenizer, hf_tokenizer
