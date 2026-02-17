@@ -184,10 +184,14 @@ class LongBenchTestData:
     avg_cache_usage_optimization_ratio: float
 
 
-@pytest.mark.parametrize("test_struct", [
-    LongBenchTestData("samsum", 4, 1.6, 2.5),
-    LongBenchTestData("trec", 3.2, 2.0, 3.3),
-], ids=["samsum", "trec"])
+@pytest.mark.parametrize(
+    "test_struct",
+    [
+        LongBenchTestData("samsum", 4, 1.6, 2.5),
+        LongBenchTestData("trec", 3.2, 2.0, 3.3),
+    ],
+    ids=["samsum", "trec"],
+)
 def test_optimized_generation_longbench(test_struct):
     seqs_per_request = 32
     device = "CPU"

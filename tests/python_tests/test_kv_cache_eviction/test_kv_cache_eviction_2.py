@@ -28,8 +28,8 @@ KVCRUSH_SNAPKV_BASELINE_CONFIG = CacheEvictionConfig(
 
 OPTIMAL_KVCRUSH_CONFIGS = {
     "samsum": (768, 8, KVCrushAnchorPointMode.ALTERNATING),
-    "trec": (960, 2, KVCrushAnchorPointMode.ALTERNATING), 
-    "qasper": (960, 2, KVCrushAnchorPointMode.ALTERNATING)
+    "trec": (960, 2, KVCrushAnchorPointMode.ALTERNATING),
+    "qasper": (960, 2, KVCrushAnchorPointMode.ALTERNATING),
 }
 
 
