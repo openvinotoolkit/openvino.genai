@@ -3,6 +3,8 @@
 
 #include "include/helper.hpp"
 
+#include <cmath>
+
 #include "include/addon.hpp"
 #include "include/chat_history.hpp"
 #include "include/parser.hpp"
@@ -15,6 +17,15 @@ constexpr const char* CPP_SCHEDULER_CONFIG_KEY = "scheduler_config";
 constexpr const char* POOLING_TYPE_KEY = "pooling_type";
 constexpr const char* STRUCTURED_OUTPUT_CONFIG_KEY = "structured_output_config";
 constexpr const char* PARSERS_KEY = "parsers";
+
+// Safe integer range for JS Number: -(2^53 - 1) .. (2^53 - 1).
+constexpr int64_t NAPI_NUMBER_MIN_INTEGER = -(1LL << 53) + 1;
+constexpr int64_t NAPI_NUMBER_MAX_INTEGER = (1LL << 53) - 1;
+
+/** True if the value is a JS Set. */
+bool is_js_set(const Napi::Value& value) {
+    return value.IsObject() && value.ToString().Utf8Value() == "[object Set]";
+}
 
 /** True if the value is a JS number with no fractional part, or a BigInt. */
 bool is_js_integer(const Napi::Env& env, const Napi::Number& value) {
@@ -79,30 +90,16 @@ ov::Any js_to_cpp<ov::Any>(const Napi::Env& env, const Napi::Value& value) {
         if (is_js_integer(env, num)) {
             return ov::Any(js_to_cpp<int64_t>(env, num));
         }
-        return ov::Any(js_to_cpp<float>(env, num));
+        return ov::Any(js_to_cpp<double>(env, num));
     } else if (value.IsBoolean()) {
         return ov::Any(value.ToBoolean().Value());
     } else if (value.IsArray()) {
         return js_array_to_any(env, value.As<Napi::Array>());
     } else if (value.IsObject()) {
-        std::string toStr = value.ToString().Utf8Value();
-        if (toStr == "[object Set]") {
+        if (is_js_set(value)) {
             try {
-                // try to cast to set of strings
-                auto object_value = value.As<Napi::Object>();
-                auto values = object_value.Get("values").As<Napi::Function>();
-                auto iterator = values.Call(object_value, {}).As<Napi::Object>();
-                auto next = iterator.Get("next").As<Napi::Function>();
-                auto size = object_value.Get("size").As<Napi::Number>().Int32Value();
-
-                std::set<std::string> set;
-                for (uint32_t i = 0; i < size; ++i) {
-                    auto item = next.Call(iterator, {}).As<Napi::Object>();
-                    set.insert(item.Get("value").As<Napi::String>().Utf8Value());
-                }
-
-                return ov::Any(set);
-            } catch (std::exception& e) {
+                return ov::Any(js_to_cpp<std::set<std::string>>(env, value));
+            } catch (const std::exception& e) {
                 std::cerr << "Cannot convert to set: " << e.what() << std::endl;
             }
         } else {
@@ -139,8 +136,10 @@ ov::AnyMap js_to_cpp<ov::AnyMap>(const Napi::Env& env, const Napi::Value& value)
             result_map[key_name] = js_to_cpp<ov::genai::StructuredOutputConfig>(env, value_by_key);
         } else if (key_name == PARSERS_KEY) {
             result_map[key_name] = js_to_cpp<std::vector<std::shared_ptr<ov::genai::Parser>>>(env, value_by_key);
+        } else if (key_name == "stop_strings") {
+            result_map[key_name] = js_to_cpp<std::set<std::string>>(env, value_by_key);
         } else if (key_name == "stop_token_ids") {
-            result_map[key_name] = js_to_cpp<std::vector<int64_t>>(env, value_by_key);
+            result_map[key_name] = js_to_cpp<std::set<int64_t>>(env, value_by_key);
         } else if (key_name == "stop_criteria") {
             std::string str = value_by_key.ToString().Utf8Value();
             ov::genai::StopCriteria criteria;
@@ -180,6 +179,12 @@ int64_t js_to_cpp<int64_t>(const Napi::Env& env, const Napi::Value& value) {
 }
 
 template <>
+double js_to_cpp<double>(const Napi::Env& env, const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsNumber(), "Passed argument must be of type Number.");
+    return value.As<Napi::Number>().DoubleValue();
+}
+
+template <>
 std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& env, const Napi::Value& value) {
     if (value.IsArray()) {
         auto array = value.As<Napi::Array>();
@@ -212,6 +217,54 @@ std::vector<int64_t> js_to_cpp<std::vector<int64_t>>(const Napi::Env& env, const
         vector.push_back(js_to_cpp<int64_t>(env, array[i]));
     }
     return vector;
+}
+
+/** Collects elements of a JS Set into a vector of Napi::Value. Value must be a JS Set. */
+std::vector<Napi::Value> js_set_to_values(const Napi::Env& env, const Napi::Value& value) {
+    const auto object_value = value.As<Napi::Object>();
+    const auto values_fn = object_value.Get("values").As<Napi::Function>();
+    const auto iterator = values_fn.Call(object_value, {}).As<Napi::Object>();
+    const auto next_fn = iterator.Get("next").As<Napi::Function>();
+    const auto size = object_value.Get("size").As<Napi::Number>().Int32Value();
+    std::vector<Napi::Value> result;
+    result.reserve(static_cast<size_t>(size));
+    for (int32_t i = 0; i < size; ++i) {
+        const auto item = next_fn.Call(iterator, {}).As<Napi::Object>();
+        result.push_back(item.Get("value"));
+    }
+    return result;
+}
+
+template <>
+std::set<std::string> js_to_cpp<std::set<std::string>>(const Napi::Env& env, const Napi::Value& value) {
+    if (value.IsArray()) {
+        const auto vec = js_to_cpp<std::vector<std::string>>(env, value);
+        return std::set<std::string>(vec.begin(), vec.end());
+    }
+    if (is_js_set(value)) {
+        std::set<std::string> result;
+        for (const auto& v : js_set_to_values(env, value)) {
+            result.insert(js_to_cpp<std::string>(env, v));
+        }
+        return result;
+    }
+    OPENVINO_THROW("Passed argument must be of type Array or Set.");
+}
+
+template <>
+std::set<int64_t> js_to_cpp<std::set<int64_t>>(const Napi::Env& env, const Napi::Value& value) {
+    if (value.IsArray()) {
+        const auto vec = js_to_cpp<std::vector<int64_t>>(env, value);
+        return std::set<int64_t>(vec.begin(), vec.end());
+    }
+    if (is_js_set(value)) {
+        std::set<int64_t> result;
+        for (const auto& v : js_set_to_values(env, value)) {
+            result.insert(js_to_cpp<int64_t>(env, v));
+        }
+        return result;
+    }
+    OPENVINO_THROW("Passed argument must be of type Array or Set.");
 }
 
 template <>
@@ -461,6 +514,17 @@ std::vector<std::shared_ptr<ov::genai::Parser>> js_to_cpp<std::vector<std::share
 }
 
 template <>
+ov::genai::GenerationConfig js_to_cpp<ov::genai::GenerationConfig>(const Napi::Env& env, const Napi::Value& value) {
+    ov::genai::GenerationConfig config;
+    if (value.IsUndefined() || value.IsNull()) {
+        return config;
+    }
+    ov::AnyMap config_map = js_to_cpp<ov::AnyMap>(env, value);
+    config.update_generation_config(config_map);
+    return config;
+}
+
+template <>
 std::vector<ov::Tensor> js_to_cpp<std::vector<ov::Tensor>>(const Napi::Env& env, const Napi::Value& value) {
     std::vector<ov::Tensor> tensors;
     if (value.IsUndefined() || value.IsNull()) {
@@ -574,6 +638,24 @@ Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(const Napi::Env&
 }
 
 template <>
+Napi::Value cpp_to_js<int64_t, Napi::Value>(const Napi::Env& env, const int64_t& value) {
+    if (value >= NAPI_NUMBER_MIN_INTEGER && value <= NAPI_NUMBER_MAX_INTEGER) {
+        return Napi::Number::New(env, value);
+    }
+    return Napi::BigInt::New(env, value);
+}
+
+template <>
+Napi::Value cpp_to_js<size_t, Napi::Value>(const Napi::Env& env, const size_t& value) {
+    return cpp_to_js<int64_t, Napi::Value>(env, static_cast<int64_t>(value));
+}
+
+template <>
+Napi::Value cpp_to_js<float, Napi::Value>(const Napi::Env& env, const float& value) {
+    return Napi::Number::New(env,  std::round(static_cast<double>(value) * 1e7) / 1e7);
+}
+
+template <>
 Napi::Value cpp_to_js<std::vector<std::string>, Napi::Value>(const Napi::Env& env,
                                                              const std::vector<std::string>& value) {
     auto js_array = Napi::Array::New(env, value.size());
@@ -581,6 +663,30 @@ Napi::Value cpp_to_js<std::vector<std::string>, Napi::Value>(const Napi::Env& en
         js_array[i] = Napi::String::New(env, value[i]);
     }
     return js_array;
+}
+
+template <>
+Napi::Value cpp_to_js<std::set<std::string>, Napi::Value>(const Napi::Env& env,
+                                                          const std::set<std::string>& value) {
+    auto set_ctor = env.Global().Get("Set").As<Napi::Function>();
+    auto js_set = set_ctor.New({});
+    auto add_fn = js_set.Get("add").As<Napi::Function>();
+    for (const auto& item : value) {
+        add_fn.Call(js_set, {Napi::String::New(env, item)});
+    }
+    return js_set;
+}
+
+template <>
+Napi::Value cpp_to_js<std::set<int64_t>, Napi::Value>(const Napi::Env& env,
+                                                      const std::set<int64_t>& value) {
+    auto set_ctor = env.Global().Get("Set").As<Napi::Function>();
+    auto js_set = set_ctor.New({});
+    auto add_fn = js_set.Get("add").As<Napi::Function>();
+    for (const auto& item : value) {
+        add_fn.Call(js_set, {cpp_to_js<int64_t, Napi::Value>(env, item)});
+    }
+    return js_set;
 }
 
 template <>
@@ -623,6 +729,20 @@ Napi::Value cpp_to_js<std::vector<std::pair<size_t, float>>, Napi::Value>(
         js_array[i] = tuple;
     }
     return js_array;
+}
+
+template <>
+Napi::Value cpp_to_js<ov::genai::StopCriteria, Napi::Value>(const Napi::Env& env,
+                                                           const ov::genai::StopCriteria& value) {
+    switch (value) {
+    case ov::genai::StopCriteria::EARLY:
+        return Napi::String::New(env, "EARLY");
+    case ov::genai::StopCriteria::HEURISTIC:
+        return Napi::String::New(env, "HEURISTIC");
+    case ov::genai::StopCriteria::NEVER:
+        return Napi::String::New(env, "NEVER");
+    }
+    OPENVINO_THROW("Unknown StopCriteria value");
 }
 
 template <>
@@ -673,70 +793,258 @@ Napi::Value cpp_to_js<ov::genai::TokenizedInputs, Napi::Value>(const Napi::Env& 
     return js_object;
 }
 
+template <>
+Napi::Value cpp_to_js<ov::genai::StructuredOutputConfig, Napi::Value>(const Napi::Env& env,
+                                                                       const ov::genai::StructuredOutputConfig& config) {
+    Napi::Object obj = Napi::Object::New(env);
+    if (config.json_schema.has_value()) {
+        obj.Set("json_schema", Napi::String::New(env, *config.json_schema));
+    }
+    if (config.regex.has_value()) {
+        obj.Set("regex", Napi::String::New(env, *config.regex));
+    }
+    if (config.grammar.has_value()) {
+        obj.Set("grammar", Napi::String::New(env, *config.grammar));
+    }
+    if (config.backend.has_value()) {
+        obj.Set("backend", Napi::String::New(env, *config.backend));
+    }
+    if (config.structural_tags_config.has_value()) {
+        std::visit(
+            [&env, &obj](const auto& v) {
+                using T = std::decay_t<decltype(v)>;
+                if constexpr (std::is_same_v<T, ov::genai::StructuredOutputConfig::StructuralTag>) {
+                    obj.Set("structural_tags_config",
+                            cpp_to_js<ov::genai::StructuredOutputConfig::StructuralTag, Napi::Value>(env, v));
+                } else {
+                    Napi::Error::New(env,
+                                    "structural_tags_config with structural_tags array is not supported in JavaScript API")
+                        .ThrowAsJavaScriptException();
+                }
+            },
+            *config.structural_tags_config);
+    }
+    if (config.compound_grammar.has_value()) {
+        Napi::Error::New(env, "compound_grammar is not supported in JavaScript API").ThrowAsJavaScriptException();
+    }
+    return obj;
+}
+
+template <>
+Napi::Value cpp_to_js<ov::genai::StructuredOutputConfig::Tag, Napi::Value>(const Napi::Env& env, const ov::genai::StructuredOutputConfig::Tag& tag) {
+    using SOC = ov::genai::StructuredOutputConfig;
+    Napi::Object obj = Napi::Object::New(env);
+    obj.Set("structuralTagType", Napi::String::New(env, "Tag"));
+    obj.Set("begin", Napi::String::New(env, tag.begin));
+    obj.Set("content", cpp_to_js<SOC::StructuralTag, Napi::Value>(env, tag.content));
+    obj.Set("end", Napi::String::New(env, tag.end));
+    return obj;
+}
+
+template <>
+Napi::Value cpp_to_js<ov::genai::StructuredOutputConfig::StructuralTag, Napi::Value>(
+    const Napi::Env& env,
+    const ov::genai::StructuredOutputConfig::StructuralTag& tag) {
+    using SOC = ov::genai::StructuredOutputConfig;
+    return std::visit(
+        overloaded{
+            [&env](const std::string& s) -> Napi::Value { return Napi::String::New(env, s); },
+            [&env](const SOC::Regex& g) -> Napi::Value {
+                Napi::Object obj = Napi::Object::New(env);
+                obj.Set("structuralTagType", Napi::String::New(env, "Regex"));
+                obj.Set("value", Napi::String::New(env, g.value));
+                return obj;
+            },
+            [&env](const SOC::JSONSchema& g) -> Napi::Value {
+                Napi::Object obj = Napi::Object::New(env);
+                obj.Set("structuralTagType", Napi::String::New(env, "JSONSchema"));
+                obj.Set("value", Napi::String::New(env, g.value));
+                return obj;
+            },
+            [&env](const SOC::EBNF& g) -> Napi::Value {
+                Napi::Object obj = Napi::Object::New(env);
+                obj.Set("structuralTagType", Napi::String::New(env, "EBNF"));
+                obj.Set("value", Napi::String::New(env, g.value));
+                return obj;
+            },
+            [&env](const SOC::ConstString& g) -> Napi::Value {
+                Napi::Object obj = Napi::Object::New(env);
+                obj.Set("structuralTagType", Napi::String::New(env, "ConstString"));
+                obj.Set("value", Napi::String::New(env, g.value));
+                return obj;
+            },
+            [&env](const SOC::AnyText&) -> Napi::Value {
+                Napi::Object obj = Napi::Object::New(env);
+                obj.Set("structuralTagType", Napi::String::New(env, "AnyText"));
+                return obj;
+            },
+            [&env](const SOC::QwenXMLParametersFormat& g) -> Napi::Value {
+                Napi::Object obj = Napi::Object::New(env);
+                obj.Set("structuralTagType", Napi::String::New(env, "QwenXMLParametersFormat"));
+                obj.Set("jsonSchema", Napi::String::New(env, g.json_schema));
+                return obj;
+            },
+            [&env](const std::shared_ptr<SOC::Concat>& g) -> Napi::Value {
+                Napi::Object obj = Napi::Object::New(env);
+                obj.Set("structuralTagType", Napi::String::New(env, "Concat"));
+                Napi::Array arr = Napi::Array::New(env, g->elements.size());
+                for (size_t i = 0; i < g->elements.size(); ++i) {
+                    arr[i] = cpp_to_js<SOC::StructuralTag, Napi::Value>(env, g->elements[i]);
+                }
+                obj.Set("elements", arr);
+                return obj;
+            },
+            [&env](const std::shared_ptr<SOC::Union>& g) -> Napi::Value {
+                Napi::Object obj = Napi::Object::New(env);
+                obj.Set("structuralTagType", Napi::String::New(env, "Union"));
+                Napi::Array arr = Napi::Array::New(env, g->elements.size());
+                for (size_t i = 0; i < g->elements.size(); ++i) {
+                    arr[i] = cpp_to_js<SOC::StructuralTag, Napi::Value>(env, g->elements[i]);
+                }
+                obj.Set("elements", arr);
+                return obj;
+            },
+            [&env](const std::shared_ptr<SOC::Tag>& g) -> Napi::Value { return cpp_to_js<SOC::Tag, Napi::Value>(env, *g); },
+            [&env](const std::shared_ptr<SOC::TriggeredTags>& g) -> Napi::Value {
+                Napi::Object obj = Napi::Object::New(env);
+                obj.Set("structuralTagType", Napi::String::New(env, "TriggeredTags"));
+                obj.Set("triggers", cpp_to_js<std::vector<std::string>, Napi::Value>(env, g->triggers));
+                Napi::Array tags_arr = Napi::Array::New(env, g->tags.size());
+                for (size_t i = 0; i < g->tags.size(); ++i) {
+                    tags_arr[i] = cpp_to_js<ov::genai::StructuredOutputConfig::Tag, Napi::Value>(env, g->tags[i]);
+                }
+                obj.Set("tags", tags_arr);
+                obj.Set("atLeastOne", Napi::Boolean::New(env, g->at_least_one));
+                obj.Set("stopAfterFirst", Napi::Boolean::New(env, g->stop_after_first));
+                return obj;
+            },
+            [&env](const std::shared_ptr<SOC::TagsWithSeparator>& g) -> Napi::Value {
+                Napi::Object obj = Napi::Object::New(env);
+                obj.Set("structuralTagType", Napi::String::New(env, "TagsWithSeparator"));
+                Napi::Array tags_arr = Napi::Array::New(env, g->tags.size());
+                for (size_t i = 0; i < g->tags.size(); ++i) {
+                    tags_arr[i] = cpp_to_js<ov::genai::StructuredOutputConfig::Tag, Napi::Value>(env, g->tags[i]);
+                }
+                obj.Set("tags", tags_arr);
+                obj.Set("separator", Napi::String::New(env, g->separator));
+                obj.Set("atLeastOne", Napi::Boolean::New(env, g->at_least_one));
+                obj.Set("stopAfterFirst", Napi::Boolean::New(env, g->stop_after_first));
+                return obj;
+            },
+            [&env](const auto&) -> Napi::Value {
+                OPENVINO_THROW("Unknown StructuralTag type");
+            }},
+        tag);
+}
+
+template <>
+Napi::Value cpp_to_js<std::vector<std::shared_ptr<ov::genai::Parser>>, Napi::Value>(
+    const Napi::Env& env,
+    const std::vector<std::shared_ptr<ov::genai::Parser>>& parsers) {
+    Napi::Array arr = Napi::Array::New(env, parsers.size());
+    for (size_t i = 0; i < parsers.size(); ++i) {
+        const auto& p = parsers[i];
+        if (!p) {
+            Napi::Error::New(env, "null parser in parsers array").ThrowAsJavaScriptException();
+            return env.Undefined();
+        }
+        auto* jsp = dynamic_cast<JSParser*>(p.get());
+        if (jsp) {
+            arr[i] = jsp->GetJSObject(env);
+            continue;
+        }
+        if (auto rp = std::dynamic_pointer_cast<ov::genai::ReasoningParser>(p)) {
+            arr[i] = ReasoningParserWrapper::wrap(env, rp);
+        } else if (auto dp = std::dynamic_pointer_cast<ov::genai::DeepSeekR1ReasoningParser>(p)) {
+            arr[i] = DeepSeekR1ReasoningParserWrapper::wrap(env, dp);
+        } else if (auto pp = std::dynamic_pointer_cast<ov::genai::Phi4ReasoningParser>(p)) {
+            arr[i] = Phi4ReasoningParserWrapper::wrap(env, pp);
+        } else if (auto lp = std::dynamic_pointer_cast<ov::genai::Llama3PythonicToolParser>(p)) {
+            arr[i] = Llama3PythonicToolParserWrapper::wrap(env, lp);
+        } else if (auto lj = std::dynamic_pointer_cast<ov::genai::Llama3JsonToolParser>(p)) {
+            arr[i] = Llama3JsonToolParserWrapper::wrap(env, lj);
+        } else {
+            Napi::Error::New(env, "unsupported parser type in parsers array").ThrowAsJavaScriptException();
+            return env.Undefined();
+        }
+    }
+    return arr;
+}
 
 template <>
 Napi::Value cpp_to_js<ov::genai::GenerationConfig, Napi::Value>(const Napi::Env& env,
                                                                 const ov::genai::GenerationConfig& config) {
     Napi::Object obj = Napi::Object::New(env);
-    obj.Set("max_new_tokens", Napi::Number::New(env, config.max_new_tokens));
-    obj.Set("max_length", Napi::Number::New(env, config.max_length));
+
+    // Generic
+    obj.Set("max_new_tokens", cpp_to_js<size_t, Napi::Value>(env, config.max_new_tokens));
+    obj.Set("max_length", cpp_to_js<size_t, Napi::Value>(env, config.max_length));
     obj.Set("ignore_eos", Napi::Boolean::New(env, config.ignore_eos));
-    obj.Set("min_new_tokens", Napi::Number::New(env, config.min_new_tokens));
+    obj.Set("min_new_tokens", cpp_to_js<size_t, Napi::Value>(env, config.min_new_tokens));
     obj.Set("echo", Napi::Boolean::New(env, config.echo));
-    obj.Set("logprobs", Napi::Number::New(env, config.logprobs));
-    obj.Set("eos_token_id", Napi::Number::New(env, config.eos_token_id));
-    obj.Set("include_stop_str_in_output", Napi::Boolean::New(env, config.include_stop_str_in_output));
-    obj.Set("repetition_penalty", Napi::Number::New(env, config.repetition_penalty));
-    obj.Set("presence_penalty", Napi::Number::New(env, config.presence_penalty));
-    obj.Set("frequency_penalty", Napi::Number::New(env, config.frequency_penalty));
-    obj.Set("num_beam_groups", Napi::Number::New(env, config.num_beam_groups));
-    obj.Set("num_beams", Napi::Number::New(env, config.num_beams));
-    obj.Set("diversity_penalty", Napi::Number::New(env, config.diversity_penalty));
-    obj.Set("length_penalty", Napi::Number::New(env, config.length_penalty));
-    obj.Set("num_return_sequences", Napi::Number::New(env, config.num_return_sequences));
-    obj.Set("no_repeat_ngram_size", Napi::Number::New(env, config.no_repeat_ngram_size));
-    obj.Set("temperature", Napi::Number::New(env, config.temperature));
-    obj.Set("top_p", Napi::Number::New(env, config.top_p));
-    obj.Set("top_k", Napi::Number::New(env, config.top_k));
-    obj.Set("do_sample", Napi::Boolean::New(env, config.do_sample));
-    obj.Set("rng_seed", Napi::Number::New(env, config.rng_seed));
-    obj.Set("pruning_ratio", Napi::Number::New(env, config.pruning_ratio));
-    obj.Set("relevance_weight", Napi::Number::New(env, config.relevance_weight));
-    obj.Set("assistant_confidence_threshold", Napi::Number::New(env, config.assistant_confidence_threshold));
-    obj.Set("num_assistant_tokens", Napi::Number::New(env, config.num_assistant_tokens));
-    obj.Set("max_ngram_size", Napi::Number::New(env, config.max_ngram_size));
-    obj.Set("apply_chat_template", Napi::Boolean::New(env, config.apply_chat_template));
+    obj.Set("logprobs", cpp_to_js<size_t, Napi::Value>(env, config.logprobs));
+
+    // EOS special token
+    obj.Set("eos_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.eos_token_id));
     if (!config.stop_strings.empty()) {
-        Napi::Array arr = Napi::Array::New(env, config.stop_strings.size());
-        uint32_t i = 0;
-        for (const auto& s : config.stop_strings) {
-            arr[i++] = Napi::String::New(env, s);
-        }
-        obj.Set("stop_strings", arr);
+        obj.Set("stop_strings", cpp_to_js<std::set<std::string>, Napi::Value>(env, config.stop_strings));
     } else {
         obj.Set("stop_strings", env.Undefined());
     }
+    obj.Set("include_stop_str_in_output", Napi::Boolean::New(env, config.include_stop_str_in_output));
     if (!config.stop_token_ids.empty()) {
-        Napi::Array arr = Napi::Array::New(env, config.stop_token_ids.size());
-        uint32_t i = 0;
-        for (const auto& id : config.stop_token_ids) {
-            arr[i++] = Napi::Number::New(env, id);
-        }
-        obj.Set("stop_token_ids", arr);
+        obj.Set("stop_token_ids", cpp_to_js<std::set<int64_t>, Napi::Value>(env, config.stop_token_ids));
     } else {
         obj.Set("stop_token_ids", env.Undefined());
     }
-    switch (config.stop_criteria) {
-    case ov::genai::StopCriteria::EARLY:
-        obj.Set("stop_criteria", Napi::String::New(env, "EARLY"));
-        break;
-    case ov::genai::StopCriteria::HEURISTIC:
-        obj.Set("stop_criteria", Napi::String::New(env, "HEURISTIC"));
-        break;
-    case ov::genai::StopCriteria::NEVER:
-        obj.Set("stop_criteria", Napi::String::New(env, "NEVER"));
-        break;
+
+    // penalties (not used in beam search)
+    obj.Set("repetition_penalty", cpp_to_js<float, Napi::Value>(env, config.repetition_penalty));
+    obj.Set("presence_penalty", cpp_to_js<float, Napi::Value>(env, config.presence_penalty));
+    obj.Set("frequency_penalty", cpp_to_js<float, Napi::Value>(env, config.frequency_penalty));
+
+    // Beam search specific
+    obj.Set("num_beam_groups", cpp_to_js<size_t, Napi::Value>(env, config.num_beam_groups));
+    obj.Set("num_beams", cpp_to_js<size_t, Napi::Value>(env, config.num_beams));
+    obj.Set("diversity_penalty", cpp_to_js<float, Napi::Value>(env, config.diversity_penalty));
+    obj.Set("length_penalty", cpp_to_js<float, Napi::Value>(env, config.length_penalty));
+    obj.Set("num_return_sequences", cpp_to_js<size_t, Napi::Value>(env, config.num_return_sequences));
+    obj.Set("no_repeat_ngram_size", cpp_to_js<size_t, Napi::Value>(env, config.no_repeat_ngram_size));
+    obj.Set("stop_criteria", cpp_to_js<ov::genai::StopCriteria, Napi::Value>(env, config.stop_criteria));
+
+    // Multinomial
+    obj.Set("temperature", cpp_to_js<float, Napi::Value>(env, config.temperature));
+    obj.Set("top_p", cpp_to_js<float, Napi::Value>(env, config.top_p));
+    obj.Set("top_k", cpp_to_js<size_t, Napi::Value>(env, config.top_k));
+    obj.Set("do_sample", Napi::Boolean::New(env, config.do_sample));
+    obj.Set("rng_seed", cpp_to_js<size_t, Napi::Value>(env, config.rng_seed));
+
+    // CDPruner config
+    obj.Set("pruning_ratio", cpp_to_js<size_t, Napi::Value>(env, config.pruning_ratio));
+    obj.Set("relevance_weight", cpp_to_js<float, Napi::Value>(env, config.relevance_weight));
+
+    // Assisting generation parameters
+    obj.Set("assistant_confidence_threshold", cpp_to_js<float, Napi::Value>(env, config.assistant_confidence_threshold));
+    obj.Set("num_assistant_tokens", cpp_to_js<size_t, Napi::Value>(env, config.num_assistant_tokens));
+    obj.Set("max_ngram_size", cpp_to_js<size_t, Napi::Value>(env, config.max_ngram_size));
+
+    // Structured output parameters
+    if (config.structured_output_config.has_value()) {
+        obj.Set("structured_output_config",
+                cpp_to_js<ov::genai::StructuredOutputConfig, Napi::Value>(env, *config.structured_output_config));
+    } else {
+        obj.Set("structured_output_config", env.Undefined());
     }
+    if (!config.parsers.empty()) {
+        obj.Set("parsers",
+                cpp_to_js<std::vector<std::shared_ptr<ov::genai::Parser>>, Napi::Value>(env, config.parsers));
+    } else {
+        obj.Set("parsers", env.Undefined());
+    }
+
+    // set to true if chat template should be applied for non-chat scenarios, set to false otherwise
+    obj.Set("apply_chat_template", Napi::Boolean::New(env, config.apply_chat_template));
+    
     return obj;
 }
 

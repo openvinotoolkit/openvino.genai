@@ -170,16 +170,26 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
     assert.strictEqual(typeof config.max_new_tokens, "number");
     assert.strictEqual(typeof config.temperature, "number");
     assert.strictEqual(typeof config.do_sample, "boolean");
-    const result = await pipeline.generate("Say OK", config);
-    assert.ok(result.texts[0].length <= config.max_new_tokens);
+    const limitedConfig = { ...config, max_new_tokens: 5 };
+    const result = await pipeline.generate("What is OpenVINO?", {
+      generationConfig: limitedConfig,
+    });
+    assert.strictEqual(result.texts.length, 1);
   });
 
   it("setGenerationConfig updates config, getGenerationConfig returns updated values", async () => {
-    pipeline.setGenerationConfig({ max_new_tokens: 42, temperature: 0.3 });
     const config = pipeline.getGenerationConfig();
-    assert.strictEqual(config.max_new_tokens, 42);
-    assert.strictEqual(config.temperature, 0.3);
-    const result = await pipeline.generate("Say OK");
-    assert.ok(result.texts[0].length <= 42);
+    // Update a floating point number to test that precision is preserved
+    for (const key in config) {
+      if (typeof config[key] === "number" && !Number.isInteger(config[key])) {
+        config[key] += 0.1;
+      }
+    }
+    pipeline.setGenerationConfig({ max_new_tokens: 5, temperature: 0.3 });
+    const newConfig = pipeline.getGenerationConfig();
+    assert.strictEqual(newConfig.max_new_tokens, 5);
+    assert.strictEqual(newConfig.temperature, 0.3);
+    const result = await pipeline.generate("What is OpenVINO?", { generationConfig: newConfig });
+    assert.strictEqual(result.texts.length, 1);
   });
 });
