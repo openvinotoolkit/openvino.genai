@@ -89,9 +89,11 @@ TEST(TestCacheManager, test_dynamic_cache_increase) {
     // check initial cache allocation
     block_manager.increase_kv_blocks_number(100);
     ASSERT_EQ(block_manager.get_total_number_of_kv_blocks(), 100);
+    ASSERT_EQ(block_manager.get_total_number_of_kv_blocks(), 100);
 
     cache_manager->allocate_cache_if_needed(block_manager.get_total_number_of_kv_blocks());
     ASSERT_EQ(get_total_allocated_bytes(cache_manager), 100 * block_size_in_bytes);
+    ASSERT_EQ(block_manager.get_kv_cache_size_in_bytes(), 153600);
 
 
     // check cache increase
@@ -100,9 +102,11 @@ TEST(TestCacheManager, test_dynamic_cache_increase) {
 
     cache_manager->allocate_cache_if_needed(block_manager.get_total_number_of_kv_blocks());
     ASSERT_EQ(get_total_allocated_bytes(cache_manager), 200 * block_size_in_bytes);
+    ASSERT_EQ(block_manager.get_kv_cache_size_in_bytes(), 307200);
 
 
     // check that cache does not increase if new blocks were not allocated
     cache_manager->allocate_cache_if_needed(block_manager.get_total_number_of_kv_blocks());
     ASSERT_EQ(get_total_allocated_bytes(cache_manager), 200 * block_size_in_bytes);
+    ASSERT_EQ(block_manager.get_kv_cache_size_in_bytes(), 307200);
 }

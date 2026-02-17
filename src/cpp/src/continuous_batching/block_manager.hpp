@@ -488,7 +488,7 @@ public:
         for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) sum += num_free_blocks(layer_idx);
         return static_cast<float>(m_num_layers * m_total_num_blocks - sum) / (m_num_layers * m_total_num_blocks) * 100;
     }
-
+    
     /**
      * @return The total number of KV blocks .
      */
@@ -768,6 +768,13 @@ public:
      */
     void increase_kv_blocks_number(size_t num_blocks) {
         m_allocator.increase_kv_blocks_number(num_blocks);
+    }
+
+    /**
+     * @return The total number of KV blocks size in bytes.
+     */
+    size_t get_kv_cache_size_in_bytes() const {
+        return m_num_layers * get_total_number_of_kv_blocks() * m_block_size * 4; // 4 bytes per token
     }
 
     /**
