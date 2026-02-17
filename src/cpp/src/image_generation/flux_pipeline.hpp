@@ -528,7 +528,7 @@ public:
                     taylorseer_state.update(inference_step, noise_pred_tensor);
                 }
             } else {
-                 noise_pred_tensor = m_transformer->infer(latents, timestep);
+                noise_pred_tensor = m_transformer->infer(latents, timestep);
             }
 
             auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);

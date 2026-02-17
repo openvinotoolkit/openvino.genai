@@ -4,6 +4,7 @@
 #pragma once
 
 #include <string>
+#include <sstream>
 
 namespace ov::genai {
 
@@ -51,7 +52,7 @@ public:
     }
 
 private:
-    std::size_t cache_interval = 0;
+    std::size_t cache_interval = 3;
     std::size_t disable_cache_before_step = 6;
     int disable_cache_after_step = -2;
 };
