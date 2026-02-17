@@ -20,7 +20,7 @@ At regular intervals (controlled by `cache_interval`), a full forward pass is ex
 TaylorSeer Lite is configured through `ov::genai::TaylorSeerCacheConfig` and exposed in `ov::genai::ImageGenerationConfig`.
 
 ### Parameters
-* **`cache_interval`** (`size_t`, defaults to `3`) - Compute interval between full forward passes. After a full computation, the cached output is reused for this many subsequent denoising steps before refreshing with a new full forward pass.
+* **`cache_interval`** (`size_t`, defaults to `3`) - Number of consecutive prediction steps between full forward passes. After a full computation, the cached output is reused for this many subsequent denoising steps before refreshing with a new full forward pass.
 
 * **`disable_cache_before_step`** (`size_t`, defaults to `6`) - Number of initial steps where caching is disabled. Full computation is performed for steps 0 through `disable_cache_before_step - 1` to establish stable derivatives before prediction begins. This warmup period improves prediction accuracy.
 

@@ -3252,9 +3252,9 @@ class T5EncoderModel:
 class TaylorSeerCacheConfig:
     """
     Configuration for TaylorSeer cache mechanism in diffusion transformers.
-
+    
     See paper: https://arxiv.org/pdf/2503.06923
-
+    
     Parameters:
       cache_interval: Interval between full computation steps (default: 3)
       disable_cache_before_step: Step before which caching is disabled for warmup (default: 6)
