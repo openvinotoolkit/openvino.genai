@@ -773,8 +773,8 @@ public:
     /**
      * @return The total number of KV blocks size in bytes.
      */
-    size_t get_kv_cache_size_in_bytes() const {
-        return m_num_layers * get_total_number_of_kv_blocks() * m_block_size * 4; // 4 bytes per token
+    size_t get_kv_cache_size() const {
+        return m_num_layers * get_total_number_of_kv_blocks() * m_block_size;
     }
 
     /**

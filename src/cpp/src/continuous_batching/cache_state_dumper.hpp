@@ -70,7 +70,7 @@ public:
             std::ofstream out_stream_cache_usage;
 
             out_stream_cache_usage.open(cache_usage_file_path, std::ios::app);
-            out_stream_cache_usage << dump_count << ' ' << block_mgr->get_used_percentage() << " of " << block_mgr->get_kv_cache_size_in_bytes() << std::endl;
+            out_stream_cache_usage << dump_count << ' ' << block_mgr->get_used_percentage() << " of " << block_mgr->get_kv_cache_size() << std::endl;
             out_stream_cache_usage.flush();
             dump_count++;
         }
