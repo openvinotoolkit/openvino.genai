@@ -488,7 +488,7 @@ public:
         for (size_t layer_idx = 0; layer_idx < m_num_layers; layer_idx++) sum += num_free_blocks(layer_idx);
         return static_cast<float>(m_num_layers * m_total_num_blocks - sum) / (m_num_layers * m_total_num_blocks) * 100;
     }
-    
+
     /**
      * @return The total number of KV blocks .
      */
