@@ -116,7 +116,7 @@ public:
         m_cache_manager->allocate_cache_if_needed(m_block_manager->get_total_number_of_kv_blocks());
         _clear_waiting_sequences(sequence_groups);
         scheduler_output.m_cache_usage = m_block_manager->get_used_percentage();
-        scheduler_output.m_cache_size_in_bytes = m_block_manager->get_kv_cache_size() * m_cache_manager->get_block_size_in_bytes();
+        scheduler_output.m_cache_size_in_bytes = m_block_manager->get_total_number_of_kv_blocks() * m_cache_manager->get_block_size_in_bytes();
 
         static ManualTimer copy_blocks_timer("copy block");
         copy_blocks_timer.start();
