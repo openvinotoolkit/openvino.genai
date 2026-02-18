@@ -116,15 +116,15 @@ def get_argparser():
         'Example for Pytorch: {\"PREC_BF16\":true}. Pytorch currently only supports bf16 settings.\n',
     )
     parser.add_argument(
-        '-mc',
-        '--memory_consumption',
+        "-mc",
+        "--memory_consumption",
         default=0,
         required=False,
         type=int,
-        help='Enables memory usage information collection mode. If the value is 1, output the maximum memory consumption in warm-up iterations.'
-        ' If the value is 2, output the maximum memory consumption in all iterations.\nIt is not recommended to run memory consumption and'
-        ' performance benchmarking at the same time. Effect on performance can be reduced by specifying a longer --memory_consumption_delay,'
-        ' but the impact is still expected. '
+        help="Enables memory usage monitoring mode. Use 1 to track maximum memory consumption during model compilation "
+        "and warm-up iteration, or 2 to track across all iterations. Warning: Concurrent memory consumption and "
+        "performance benchmarking is not recommended. Performance impact can be reduced by using longer "
+        "--memory_consumption_cooldown and --memory_consumption_interval values, though a degradation is unavoidable.",
     )
     parser.add_argument(
         "--memory_consumption_cooldown",
@@ -134,12 +134,11 @@ def get_argparser():
     )
     parser.add_argument(
         "--memory_consumption_interval",
-        default=0.5,
+        default=0.01,
         required=False,
         type=float,
-        help="Interval sampling for memory consumption monitoring in seconds, smaller value will lead to more"
-        " precised memory consumption, but may affects performance. It is not recommended to run memory consumption"
-        " and performance benchmarking in the same time",
+        help="Sampling interval (in s.) for monitoring memory consumption. Lower values increase measurement precision"
+        "but may degrade performance/latency. Avoid running memory consumption and performance benchmarks concurrently.",
     )
     parser.add_argument(
         '-mc_dir',
