@@ -128,5 +128,8 @@ public:
     float get_load_time() {
         return m_load_time_ms;
     }
+
+protected:
+    std::optional<AdapterController> m_adapter_controller;
 };
 }
