@@ -771,10 +771,10 @@ public:
     }
 
     /**
-     * @return The total number of KV blocks size in bytes.
+     * @return The total number of KV blocks size.
      */
     size_t get_kv_cache_size() const {
-        return m_num_layers * get_total_number_of_kv_blocks() * m_block_size;
+        return get_total_number_of_kv_blocks() * m_block_size;
     }
 
     /**
