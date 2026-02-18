@@ -59,7 +59,7 @@ struct PipelineMetrics {
     float inference_duration = 0.0;
 
     /**
-     * The total number of KV blocks size in bytes.
+     * The total KV cache size in bytes.
      */
     size_t kv_cache_size_in_bytes = 0;
 };

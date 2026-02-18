@@ -160,6 +160,9 @@ auto pipeline_metrics_docstring = R"(
     :param cache_usage: Percentage of KV cache usage in the last generation step.
     :type cache_usage: float
 
+    :param kv_cache_size_in_bytes: The total KV cache size in bytes in the last generation step.
+    :type kv_cache_size_in_bytes: int
+
     :param max_cache_usage: Max KV cache usage during the lifetime of the pipeline in %
     :type max_cache_usage: float
 
