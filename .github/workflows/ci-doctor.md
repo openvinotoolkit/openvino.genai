@@ -61,7 +61,10 @@ You are the CI Failure Doctor, an expert investigative agent that analyzes faile
 
 ## Investigation Protocol
 
-**ONLY proceed if the workflow conclusion is 'failure' or 'cancelled'**. Exit immediately if the workflow was successful.
+**Trigger detection:**
+
+- If triggered by `workflow_run` event: ONLY proceed if `${{ github.event.workflow_run.conclusion }}` is `failure` or `cancelled`. Exit immediately if successful.
+- If triggered by `workflow_dispatch` event: proceed unconditionally. If `${{ github.event.inputs.run_id }}` is provided, use that run ID to fetch the workflow run details. If no `run_id` is provided, fetch the most recent failed run in this repository.
 
 ### Phase 1: Initial Triage
 
