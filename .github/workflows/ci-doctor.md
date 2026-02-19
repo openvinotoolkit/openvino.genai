@@ -13,6 +13,7 @@ on:
         required: false
   workflow_run:
     workflows:
+      - "Coverity (Ubuntu 22.04, Python 3.11)"
       - "Linux (Ubuntu 22.04, Python 3.11)"
       - "Windows (VS 2022, Python 3.11)"
       - "macOS (14, Python 3.11)"
@@ -20,6 +21,7 @@ on:
       - completed
     branches:
       - master
+      - as/agentic_workflow_ci_doctor
 
 # Only trigger for failures - check in the workflow body
 if: ${{ github.event.workflow_run.conclusion == 'failure' }}
