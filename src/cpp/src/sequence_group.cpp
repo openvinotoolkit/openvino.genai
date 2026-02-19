@@ -106,7 +106,7 @@ SequenceGroup::SequenceGroup(uint64_t request_id, const ov::genai::GenerationCon
       m_block_size(block_size),
       m_sequence_group_type(SequenceGroupType::TOKENS),
       m_generation_stream(GenerationStream::create()) {
-    ov::genai::utils::print_generation_config_info(m_sampling_params);  // the latest possible place to print generation config info in case it is modified at some point
+    ov::genai::utils::print_generation_config_info(m_sampling_params);  // the last possible moment to print generation config before it is actually used
 }
 }  // namespace genai
 }  // namespace ov

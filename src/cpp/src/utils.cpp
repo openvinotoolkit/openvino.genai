@@ -528,7 +528,7 @@ bool env_setup_for_print_debug_info() {
     return (env_var_value != nullptr && atoi(env_var_value) > static_cast<int>(ov::log::Level::WARNING));
 }
 
-static std::string compiled_model_properties_to_string(ov::CompiledModel& compiled_model, const char* model_title) {
+static std::string compiled_model_properties_to_string(const ov::CompiledModel& compiled_model, const char* model_title) {
     // output of the actual settings that the device selected
     std::stringstream ss;
     auto supported_properties = compiled_model.get_property(ov::supported_properties);
@@ -569,12 +569,12 @@ static std::string compiled_model_properties_to_string(ov::CompiledModel& compil
     return ss.str();
 }
 
-void print_compiled_model_properties(ov::CompiledModel& compiled_model, const char* model_title) {
+void print_compiled_model_properties(const ov::CompiledModel& compiled_model, const char* model_title) {
     GENAI_DEBUG(compiled_model_properties_to_string(compiled_model, model_title));
 }
 
 void print_gguf_debug_info(const std::string &debug_info) {
-    GENAI_DEBUG(debug_info);
+    GENAI_DEBUG(std::string("[GGUF Reader]: ") + debug_info);
 }
 
 void print_scheduler_config_info(const SchedulerConfig &scheduler_config) {
