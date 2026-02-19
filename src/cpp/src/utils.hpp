@@ -6,7 +6,7 @@
 #include <optional>
 #include <stdexcept>
 #include <utility>
-#include <unordered_set>
+#include <cstdint>
 
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
@@ -145,13 +145,20 @@ void release_core_plugin(const std::string& device);
 
 size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history);
 
-enum class CacheType {
-    KVCache = 0,  // FullAttention Key-Value cache use all previous states for generation
-    LinearCache = 1,  // LinearAttention/CausalConv cache, only the last state used for generation
+struct CacheTypes {
+    CacheTypes() = default;
+    explicit CacheTypes(uint8_t m) : mask(m) {}
+    void add_kvcache() { mask |= (1u << 0); }
+    void add_linear() { mask |= (1u << 1); }
+    bool has_kvcache() const { return (mask & (1u << 0)) != 0; }
+    bool has_linear() const { return (mask & (1u << 1)) != 0; }
+    bool is_hybrid() const { return has_kvcache() && has_linear(); }
+    uint8_t value() const { return mask; }
+private:
+    uint8_t mask = 0;
 };
 
-
-std::unordered_set<CacheType> get_cache_types(std::shared_ptr<const ov::Model> model);
+CacheTypes get_cache_types(std::shared_ptr<const ov::Model> model);
 
 struct KVAxesPosition {
     size_t batch;
@@ -162,10 +169,19 @@ KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model);
 
 class CacheState {
     std::vector<int64_t> state;
-    std::unordered_set<CacheType> kinds{CacheType::KVCache};
-
-    bool has_kind(CacheType k) const { return kinds.find(k) != kinds.end(); }
+    CacheTypes cache_types;
 public:
+    // Default constructor
+    CacheState() = default;
+
+    // Construct from CacheTypes
+    explicit CacheState(CacheTypes cache_types) : cache_types(cache_types) {}
+
+    // Construct from model by detecting cache types inside the model
+    explicit CacheState(const std::shared_ptr<const ov::Model>& model) {
+        cache_types = get_cache_types(model);
+    }
+
     size_t num_tokens_to_trim = 0;
     size_t seq_length_axis = 2;
     bool reset_mem_state = false;
@@ -184,10 +200,9 @@ public:
         state.clear();
     }
 
-    bool has_linear() const { return has_kind(CacheType::LinearCache); }
-    bool has_kvcache() const { return has_kind(CacheType::KVCache); }
-    bool is_hybrid() const { return has_linear() && has_kvcache(); }
-    void add_kind(CacheType k) { kinds.insert(k); }
+    bool has_linear() const { return cache_types.has_linear(); }
+    bool has_kvcache() const { return cache_types.has_kvcache(); }
+    bool is_hybrid() const { return cache_types.is_hybrid(); }
 
 };
 

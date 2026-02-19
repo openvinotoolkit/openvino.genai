@@ -436,11 +436,11 @@ size_t get_first_history_difference(const ov::Tensor& encoded_history, const std
 }
 
 
-std::unordered_set<CacheType> get_cache_types(std::shared_ptr<const ov::Model> model) {
+CacheTypes get_cache_types(std::shared_ptr<const ov::Model> model) {
     // "ReadValue" node is cache representation in stateful model
     const std::string state_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
-        std::unordered_set<CacheType> cache_types;
-    
+    CacheTypes cache_types;
+
     for (const auto op : model->get_ops()) {
         // check input size, as in LoRA adapters case it could be 0
         if (op->get_type_name() != state_node_type_name || op->get_input_size() < 1) {
@@ -458,13 +458,15 @@ std::unordered_set<CacheType> get_cache_types(std::shared_ptr<const ov::Model> m
         }
 
         if (rank == 4 && dynamic_axis_count == 2) {
-            cache_types.insert(CacheType::KVCache);
+            cache_types.add_kvcache();
         } else if (rank == 3 && dynamic_axis_count == 1) {
-            cache_types.insert(CacheType::LinearCache);
+            cache_types.add_linear();
         } else {
             continue;
         }
     }
+
+    return cache_types;
 }
 
 
@@ -505,7 +507,11 @@ KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
 }
 
 void trim_kv_cache(ov::InferRequest request, CacheState& cache_state, std::optional<AdapterController> adapter_controller) {
-    if (cache_state.reset_mem_state) {
+    if (
+        cache_state.reset_mem_state
+        // linear cache stores only the last state, trimming is not possible, so we reset the whole cache in this case
+        || (cache_state.num_tokens_to_trim > 0 && cache_state.has_linear())
+    ) {
         if (adapter_controller) {
             for(auto& state: request.query_state()) {
                 if(!adapter_controller->has_state_name(state.get_name())) {

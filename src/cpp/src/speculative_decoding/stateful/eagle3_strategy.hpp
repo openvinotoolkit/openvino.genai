@@ -158,6 +158,7 @@ protected:
     SequenceGroup::Ptr m_sequence_group;
     Sampler m_sampler;
     ov::genai::RawPerfMetrics m_raw_perf_metrics;
+    ov::genai::utils::CacheTypes m_cache_types;
 };
 
 /**
