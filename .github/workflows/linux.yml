@@ -25,6 +25,8 @@ env:
   SCCACHE_CACHE_SIZE: 30G
   SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
   HF_HOME: /mount/caches/huggingface/lin
+  # mount directory leads to issue with load_dataset lock file. It's either cannot be released or there is a deadlock. Ticket: 181288
+  HF_DATASETS_CACHE: /tmp/.hf_cache/datasets/
   OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/
   OPENVINO_LOG_LEVEL: 4
   GENAI_ARCHIVE_NAME: genai.tar.gz
@@ -702,11 +704,12 @@ jobs:
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Image_generation_samples.test }}
             runner: 'aks-linux-4-cores-16gb'
-          - name: 'VLM'
-            marker: 'vlm'
-            cmd: 'tests/python_tests/samples'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).VLM_samples.test }}
-            runner: 'aks-linux-8-cores-32gb'
+          # Test hangs on Linux. Ticket: 181387
+          # - name: 'VLM'
+          #   marker: 'vlm'
+          #   cmd: 'tests/python_tests/samples'
+          #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).VLM_samples.test }}
+          #   runner: 'aks-linux-8-cores-32gb'
           - name: 'Rag'
             marker: 'rag'
             cmd: 'tests/python_tests/samples'
@@ -896,7 +899,7 @@ jobs:
 
   genai_nodejs_tests:
     name: Node.js bindings tests
-    needs: [ smart_ci, openvino_download, genai_build_nodejs ]
+    needs: [ smart_ci, openvino_download, genai_build_wheels, genai_build_genai_wheel, genai_build_nodejs ]
     if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
     timeout-minutes: 20
     defaults:
@@ -914,6 +917,7 @@ jobs:
       OV_INSTALL_DIR: ${{ github.workspace }}/ov
       SRC_DIR: ${{ github.workspace }}/openvino.genai
       INSTALL_DIR: ${{ github.workspace }}/openvino.genai/src/js/bin
+      PY_INSTALL_DIR: ${{ github.workspace }}/install
       NODE_VERSION: 21
 
     steps:
@@ -941,6 +945,20 @@ jobs:
         uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download Python wheels for JS tests
+        uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
+        with:
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*}"
+          path: ${{ env.PY_INSTALL_DIR }}
+          merge-multiple: true
+
+      - name: Install OpenVINO GenAI Python packages (from wheels)
+        uses: ./openvino.genai/.github/actions/install_wheel
+        with:
+          packages: "openvino;openvino_tokenizers[transformers];openvino_genai"
+          requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
+          local_wheel_dir: ${{ env.PY_INSTALL_DIR }}/wheels
 
       # JS pacakges uses the OpenVINO and OpenVINO GenAI libraries from the bin directory.
       # Here we emulate the installation of the openvino-node package from NPM. The latest

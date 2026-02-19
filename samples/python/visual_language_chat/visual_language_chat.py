@@ -69,9 +69,11 @@ def main():
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
 
-    pipe.start_chat()
+    history = openvino_genai.ChatHistory()
     prompt = input('question:\n')
-    pipe.generate(prompt, images=rgbs, generation_config=config, streamer=streamer)
+    history.append({"role": "user", "content": prompt})
+    decoded_results = pipe.generate(history, images=rgbs, generation_config=config, streamer=streamer)
+    history.append({"role": "assistant", "content": decoded_results.texts[0]})
 
     while True:
         try:
@@ -79,9 +81,11 @@ def main():
                 "question:\n")
         except EOFError:
             break
+
+        history.append({"role": "user", "content": prompt})
         # New images and videos can be passed at each turn
-        pipe.generate(prompt, generation_config=config, streamer=streamer)
-    pipe.finish_chat()
+        decoded_results = pipe.generate(history, generation_config=config, streamer=streamer)
+        history.append({"role": "assistant", "content": decoded_results.texts[0]})
 
 
 if '__main__' == __name__:
