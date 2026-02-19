@@ -25,7 +25,8 @@ on:
       - as/agentic_workflow_ci_doctor
 
 # Only trigger for failures - check in the workflow body
-if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+# Allow workflow_dispatch for manual testing
+if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'failure' }}
 
 permissions: read-all
 
