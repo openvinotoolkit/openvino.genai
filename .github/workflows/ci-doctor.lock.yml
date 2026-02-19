@@ -28,19 +28,25 @@
 #
 # Source: githubnext/agentics/workflows/ci-doctor.md@0aa94a6e40aeaf131118476bc6a07e55c4ceb147
 #
-# gh-aw-metadata: {"schema_version":"v1","frontmatter_hash":"41a6b7060ef94199a86ad2ed9a9c35d7bab5040181f70ccb847821c8bcc41057","compiler_version":"v0.46.5"}
+# gh-aw-metadata: {"schema_version":"v1","frontmatter_hash":"1ac9e2d440ed2ef134636f67ec838a176403881b8540cf425d0757ed0e541614","compiler_version":"v0.46.5"}
 
 name: "CI Failure Doctor"
 "on":
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Workflow run ID to investigate (for manual testing)
+        required: false
   workflow_run:
     # zizmor: ignore[dangerous-triggers] - workflow_run trigger is secured with role and fork validation
     branches:
-    - main
+    - master
     types:
     - completed
     workflows:
-    - Daily Perf Improver
-    - Daily Test Coverage Improver
+    - Linux (Ubuntu 22.04, Python 3.11)
+    - Windows (VS 2022, Python 3.11)
+    - macOS (14, Python 3.11)
 
 permissions: {}
 
