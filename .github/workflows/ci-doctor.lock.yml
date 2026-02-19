@@ -28,7 +28,7 @@
 #
 # Source: githubnext/agentics/workflows/ci-doctor.md@0aa94a6e40aeaf131118476bc6a07e55c4ceb147
 #
-# gh-aw-metadata: {"schema_version":"v1","frontmatter_hash":"5f0011567d63fcc64f4a4a14730065c181f005d8bf750be83d53e56590d3d9a8","compiler_version":"v0.46.5"}
+# gh-aw-metadata: {"schema_version":"v1","frontmatter_hash":"57f4ab35e84ea051b0eacce19ee6135b7cb3a6baaed57129f597b8e1b472c291","compiler_version":"v0.46.5"}
 
 name: "CI Failure Doctor"
 "on":
@@ -45,6 +45,7 @@ name: "CI Failure Doctor"
     types:
     - completed
     workflows:
+    - SDL tests
     - Coverity (Ubuntu 22.04, Python 3.11)
     - Linux (Ubuntu 22.04, Python 3.11)
     - Windows (VS 2022, Python 3.11)

@@ -13,6 +13,7 @@ on:
         required: false
   workflow_run:
     workflows:
+      - "SDL tests"
       - "Coverity (Ubuntu 22.04, Python 3.11)"
       - "Linux (Ubuntu 22.04, Python 3.11)"
       - "Windows (VS 2022, Python 3.11)"
