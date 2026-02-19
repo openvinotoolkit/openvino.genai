@@ -84,13 +84,15 @@ def main():
     print(f"Baseline image saved to {baseline_filename}")
 
     # Performance comparison
-    speedup = baseline_time / taylorseer_time
-    time_saved = baseline_time - taylorseer_time
+    speedup = baseline_time / taylorseer_time if taylorseer_time > 0 else 0.0
+    time_saved = baseline_time - taylorseer_time if baseline_time > 0 else 0.0
+    percentage = (baseline_time - taylorseer_time) / baseline_time * 100 if baseline_time > 0 else 0.0
+
     print(f"\nPerformance Comparison:")
     print(f"  Baseline time: {baseline_time:.2f}s")
     print(f"  TaylorSeer time: {taylorseer_time:.2f}s")
     print(f"  Speedup: {speedup:.2f}x")
-    print(f"  Time saved: {time_saved:.2f}s ({(time_saved / baseline_time * 100):.1f}%)")
+    print(f"  Time saved: {time_saved:.2f}s ({percentage:.1f}%)")
 
 
 if __name__ == "__main__":

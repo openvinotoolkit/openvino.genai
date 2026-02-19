@@ -15,9 +15,9 @@ protected:
                            size_t expected_interval,
                            size_t expected_before,
                            int expected_after) {
-        EXPECT_EQ(config.get_cache_interval(), expected_interval);
-        EXPECT_EQ(config.get_disable_cache_before_step(), expected_before);
-        EXPECT_EQ(config.get_disable_cache_after_step(), expected_after);
+        EXPECT_EQ(config.cache_interval, expected_interval);
+        EXPECT_EQ(config.disable_cache_before_step, expected_before);
+        EXPECT_EQ(config.disable_cache_after_step, expected_after);
     }
 };
 
@@ -25,6 +25,24 @@ TEST_F(TaylorSeerCacheConfigTest, DefaultConstructor) {
     TaylorSeerCacheConfig config;
     // Default constructor uses member initializers: cache_interval=3, disable_before=6, disable_after=-2
     AssertConfigEquals(config, 3, 6, -2);
+}
+
+TEST_F(TaylorSeerCacheConfigTest, InvalidCacheIntervalZero) {
+    EXPECT_THROW(
+        {
+            const TaylorSeerCacheConfig config(0, 0, -1);
+            (void)config;
+        },
+        ov::Exception);
+}
+
+TEST_F(TaylorSeerCacheConfigTest, InvalidCacheIntervalOne) {
+    EXPECT_THROW(
+        {
+            const TaylorSeerCacheConfig config(1, 0, -1);
+            (void)config;
+        },
+        ov::Exception);
 }
 
 struct FullConstructorParams {
@@ -181,7 +199,6 @@ TEST_P(TSShouldComputeTest, ComputeDecisions) {
     TaylorSeerCacheConfig config(params.cache_interval,
                                   params.disable_before,
                                   params.disable_after);
-
     bool result = state.should_compute(params.current_step, config, params.num_inference_steps);
     EXPECT_EQ(result, params.expected_result) << params.description;
 }
@@ -210,6 +227,82 @@ INSTANTIATE_TEST_SUITE_P(
         ShouldComputeParams{49, 3, 6, 48, 50, true, "Step 49 >= 48"}
     )
 );
+
+TEST_F(TaylorSeerStateTest, DisableCacheBeforeStepGreaterThanNumSteps) {
+    TaylorSeerState state;
+    TaylorSeerCacheConfig config(3, 100, -2);
+    EXPECT_THROW(state.should_compute(0, config, 50), ov::Exception);
+}
+
+TEST_F(TaylorSeerStateTest, ValidateSucceedsWhenDisableBeforeEqualsSteps) {
+    TaylorSeerState state;
+    TaylorSeerCacheConfig config(3, 50, -2);
+    EXPECT_NO_THROW(state.should_compute(0, config, 50));
+}
+
+TEST_F(TaylorSeerStateTest, ValidateThrowsWhenNegativeDisableAfterExceedsSteps) {
+    TaylorSeerState state;
+    TaylorSeerCacheConfig config(3, 6, -100);
+    EXPECT_THROW(state.should_compute(0, config, 50), ov::Exception);
+}
+
+TEST_F(TaylorSeerStateTest, ValidateEdgeCaseNegativeDisableAfterEqualsSteps) {
+    TaylorSeerState state;
+    // abs(disable_after) = 50 == num_inference_steps = 50 (should be valid)
+    TaylorSeerCacheConfig config(3, 6, -50);
+    EXPECT_NO_THROW(state.should_compute(0, config, 50));
+}
+
+TEST_F(TaylorSeerStateTest, ShouldComputeWhenDisableBeforeExceedsStepsButValidated) {
+    TaylorSeerState state;
+    TaylorSeerCacheConfig config(3, 50, -2);
+
+    // All steps should compute because they're all in "warm-up"
+    EXPECT_TRUE(state.should_compute(0, config, 50));
+    EXPECT_TRUE(state.should_compute(25, config, 50));
+    EXPECT_TRUE(state.should_compute(49, config, 50));
+}
+
+TEST_F(TaylorSeerStateTest, ShouldComputeWithZeroDisableBefore) {
+    TaylorSeerState state;
+    // No warm-up phase configured
+    TaylorSeerCacheConfig config(3, 0, -2);
+
+    EXPECT_FALSE(state.should_compute(0, config, 10));
+    EXPECT_FALSE(state.should_compute(1, config, 10));
+
+    EXPECT_TRUE(state.should_compute(2, config, 10));
+    EXPECT_FALSE(state.should_compute(3, config, 10));
+    EXPECT_FALSE(state.should_compute(4, config, 10));
+}
+
+TEST_F(TaylorSeerStateTest, ShouldComputeWithDisableAfterZero) {
+    TaylorSeerState state;
+    // Caching disabled after step 0
+    TaylorSeerCacheConfig config(3, 2, 0);
+
+    // Steps 0-1 in warm-up
+    EXPECT_TRUE(state.should_compute(0, config, 50));
+    EXPECT_TRUE(state.should_compute(1, config, 50));
+
+    // All subsequent steps >= 0 should compute (no caching)
+    EXPECT_TRUE(state.should_compute(2, config, 50));
+    EXPECT_TRUE(state.should_compute(10, config, 50));
+    EXPECT_TRUE(state.should_compute(49, config, 50));
+}
+
+TEST_F(TaylorSeerStateTest, ShouldComputeEdgeCaseDisableAfterEqualsDisableBefore) {
+    TaylorSeerState state;
+    TaylorSeerCacheConfig config(3, 10, 10);
+
+    // All steps before 10: warm-up
+    EXPECT_TRUE(state.should_compute(0, config, 50));
+    EXPECT_TRUE(state.should_compute(9, config, 50));
+
+    // At and after step 10: should compute (no caching window)
+    EXPECT_TRUE(state.should_compute(10, config, 50));
+    EXPECT_TRUE(state.should_compute(11, config, 50));
+}
 
 TEST_F(TaylorSeerStateTest, PredictWithTaylorSeries) {
     TaylorSeerState state;

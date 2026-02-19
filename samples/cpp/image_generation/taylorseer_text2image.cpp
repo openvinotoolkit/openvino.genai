@@ -107,13 +107,16 @@ int32_t main(int32_t argc, char* argv[]) try {
     std::cout << "Baseline image saved to taylorseer_baseline.bmp\n";
 
     // Performance comparison
-    double speedup = static_cast<double>(baseline_duration.count()) / taylorseer_duration.count();
-    double time_saved = (baseline_duration.count() - taylorseer_duration.count()) / 1000.0;
-    double percentage = (time_saved * 1000.0) / baseline_duration.count() * 100.0;
+    double baseline_ms = static_cast<double>(baseline_duration.count());
+    double taylorseer_ms = static_cast<double>(taylorseer_duration.count());
+
+    double speedup = taylorseer_ms > 0 ? baseline_ms / taylorseer_ms : 0.0;
+    double time_saved = baseline_ms > 0 ? (baseline_ms - taylorseer_ms) / 1000.0 : 0.0;
+    double percentage = baseline_ms > 0 ? (baseline_ms - taylorseer_ms) / baseline_ms * 100.0 : 0.0;
 
     std::cout << "\nPerformance Comparison:\n";
-    std::cout << "  Baseline time: " << baseline_duration.count() / 1000.0 << "s\n";
-    std::cout << "  TaylorSeer time: " << taylorseer_duration.count() / 1000.0 << "s\n";
+    std::cout << "  Baseline time: " << baseline_ms / 1000.0 << "s\n";
+    std::cout << "  TaylorSeer time: " << taylorseer_ms / 1000.0 << "s\n";
     std::cout << "  Speedup: " << speedup << "x\n";
     std::cout << "  Time saved: " << time_saved << "s (" << percentage << "%)\n";
 
