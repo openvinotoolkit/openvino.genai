@@ -34,6 +34,7 @@ einops==0.8.2
 # For microsoft/Phi-3.5-vision-instruct
 backoff==2.2.1
 # For openbmb/MiniCPM-o-2_6
+# Please, be advised that MiniCPM-o-2_6 requires transformers>=4.50,<=4.51.3
 vector-quantize-pytorch==1.27.20
 vocos==0.1.0
 torchaudio>=2.1.0,<=2.10.0

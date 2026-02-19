@@ -838,7 +838,6 @@ def print_rag_results(evaluator):
 def main():
     args = parse_args()
     check_args(args)
-    print("check ci")
 
     version_str = f'openvino runtime version: {ov.get_version()}'
     if args.genai:

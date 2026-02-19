@@ -34,6 +34,11 @@ PIP_PRE=1 \
 PIP_EXTRA_INDEX_URL=https://storage.openvinotoolkit.org/simple/wheels/nightly \
 pip install .
 ```
+Some models require specific module versions, WWB supports installing certain configurations. For more information, please refer to `extras_require` in setup.py.
+For example:
+```
+pip install .[minicpm-o-2_6]
+```
 
 ## Usage
 ### Compare Text-generation Models (LLMs)
