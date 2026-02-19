@@ -139,6 +139,8 @@ class ModelRunner {
     ov::Tensor m_cached_max_context_len;
     ov::Tensor m_cached_score_aggregation_window;
     ov::Tensor m_cached_token_type_ids;
+    ov::Tensor m_cached_deepstack_visual_embeds;
+    ov::Tensor m_cached_visual_pos_masks;
 public:
     /**
      * Constructs the ModelRunner.
@@ -241,6 +243,11 @@ public:
         size_t max_context_len_val = 0;
         size_t hidden_size = 0;
         bool have_token_type_ids = false;
+        
+        bool have_deepstack_visual_inputs = false;
+        size_t deepstack_layers_num = 0;
+        size_t total_deepstack_vision_tokens = 0;
+        
         OPENVINO_ASSERT(sequence_groups.size() > 0);
         auto sequence_group_type = sequence_groups[0]->get_sequence_group_type();
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
@@ -256,6 +263,24 @@ public:
             total_num_tokens += sequence_group->get_num_scheduled_tokens() * num_sequences;
             total_num_blocks += sequence_group->get_num_blocks() * num_sequences;
             max_context_len_val = std::max(max_context_len_val, sequence_group->get_context_len());
+
+            if (sequence_group->get_deepstack_visual_embeds() && sequence_group->get_visual_pos_masks()) {
+                have_deepstack_visual_inputs = true;
+            }
+
+            if (have_deepstack_visual_inputs) {
+                const bool is_prefill = sequence_group->get_num_processed_tokens() == 0;
+                const auto& deepstack_shape = sequence_group->get_deepstack_visual_embeds().get_shape();
+                const bool has_visual_tokens = deepstack_shape[1] > 1; // if no images/videos provided, deepstack_visual_embeds shape is [num_layers, 1, hidden_size]
+                if (is_prefill && has_visual_tokens) {
+                    total_deepstack_vision_tokens += deepstack_shape[1];
+                }
+                if (deepstack_layers_num == 0) {
+                    deepstack_layers_num = deepstack_shape[0];
+                } else {
+                    OPENVINO_ASSERT(deepstack_layers_num == deepstack_shape[0], "Inconsistent number of deepstack layers across sequence groups");
+                }
+            }
         }
 
         // Use cached pre-allocated tensors instead of creating new ones
@@ -274,6 +299,7 @@ public:
 
         ov::Tensor token_type_ids = _get_or_resize_tensor(m_cached_token_type_ids, "token_type_ids",
             {1, total_num_tokens}, ov::element::i64);
+        
         ov::Tensor score_aggregation_window = _get_or_resize_tensor(m_cached_score_aggregation_window, "score_aggregation_window",
             {batch_size_in_sequences}, ov::element::i32);
 
@@ -293,19 +319,34 @@ public:
         int64_t *input_ids_data = nullptr;
         int64_t *token_type_ids_data = nullptr;
 
+        ov::Tensor deepstack_visual_embeds;
+        ov::Tensor visual_pos_masks;
+        bool *visual_pos_masks_data = nullptr;
+
         ov::Tensor position_ids;
         if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
             inputs_embeds_data = inputs_embeds.data<float>();
             token_type_ids_data = token_type_ids.data<int64_t>();
+
             auto position_ids_elem = sequence_groups[0]->get_running_sequences()[0]->get_position_ids_list();
             ov::Shape position_ids_shape = position_ids_elem[0].get_shape();
             if (position_ids_shape.size() == 3) {
                 position_ids_shape[2] = total_num_tokens;
-            }
-            else {
+            } else {
                 position_ids_shape = {total_num_tokens};
             }
             position_ids = _get_or_resize_tensor(m_cached_position_ids, "position_ids", position_ids_shape, ov::element::i64);
+
+            if (have_deepstack_visual_inputs) {
+                deepstack_visual_embeds = _get_or_resize_tensor(m_cached_deepstack_visual_embeds, "deepstack_visual_embeds",
+                    {deepstack_layers_num, std::max(total_deepstack_vision_tokens, size_t(1)), hidden_size}, ov::element::f32);
+                
+                visual_pos_masks = _get_or_resize_tensor(m_cached_visual_pos_masks, "visual_pos_masks",
+                    {1, total_num_tokens}, ov::element::boolean);
+
+                visual_pos_masks_data = visual_pos_masks.data<bool>();
+                std::fill_n(visual_pos_masks_data, total_num_tokens, false);
+            }
         } else if (sequence_group_type == SequenceGroupType::TOKENS) {
             input_ids_data = input_ids.data<int64_t>();
             position_ids = _get_or_resize_tensor(m_cached_position_ids, "position_ids", {total_num_tokens}, ov::element::i64);
@@ -350,14 +391,44 @@ public:
             const bool sampling_is_required = sequence_group->requires_sampling();
             const size_t tokens_to_sample_per_sequence = 1 + sequence_group->get_num_tokens_to_validate();
 
+            if (sequence_group_type == SequenceGroupType::EMBEDDINGS && have_deepstack_visual_inputs) {
+                // Fill deepstack_visual_embeds
+                if (total_deepstack_vision_tokens == 0) {
+                    std::fill_n(deepstack_visual_embeds.data<float>(), deepstack_visual_embeds.get_size(), 0.0f);
+                } else {
+                    float* dst = deepstack_visual_embeds.data<float>();
+
+                    const auto& deepstack = sequence_group->get_deepstack_visual_embeds();
+                    const float* src = deepstack.data<const float>();
+                    const size_t vision_tokens = deepstack.get_shape()[1];
+                    const size_t tokens_offset = i * vision_tokens;
+                    // Concatenate deepstack_visual_embeds from different sequence groups along vision tokens
+                    for (size_t layer = 0; layer < deepstack_layers_num; ++layer) {
+                        std::memcpy(
+                            dst + layer * total_deepstack_vision_tokens * hidden_size + tokens_offset * hidden_size,
+                            src + layer * vision_tokens * hidden_size,
+                            vision_tokens * hidden_size * sizeof(float));
+                    }
+                }
+            }
+
             for (size_t seq_idx = 0; seq_idx < num_running_sequences; ++seq_idx) {
-                // compute token_type_ids for current sequence
                 if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
+                    // compute token_type_ids for current sequence
                     if (auto token_type_ids = sequence_group->get_token_type_ids()) {
                         have_token_type_ids = true;
                         OPENVINO_ASSERT(token_type_ids->size() >= prompt_len, "Token type IDs size is smaller than prompt_len");
-                        for (size_t i = 0; i < num_scheduled_tokens; ++i) {
-                            token_type_ids_data[i] = (i < prompt_len ? (*token_type_ids)[i] : 0);
+                        for (size_t j = 0; j < num_scheduled_tokens; ++j) {
+                            token_type_ids_data[j] = (j < prompt_len ? (*token_type_ids)[j] : 0);
+                        }
+                    }
+
+                    if (have_deepstack_visual_inputs) {
+                        // Fill visual_pos_masks_data
+                        const auto& mask = sequence_group->get_visual_pos_masks();
+                        for (size_t j = 0; j < num_scheduled_tokens; ++j) {
+                            size_t pos = group_position_id + j;
+                            visual_pos_masks_data[j] = (mask && pos < mask->size()) ? (*mask)[pos] : false;
                         }
                     }
                 }
@@ -470,8 +541,13 @@ public:
                     input_ids_data += num_scheduled_tokens;
                 } else if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
                     inputs_embeds_data += num_scheduled_tokens * hidden_size;
+
                     if (have_token_type_ids)
                         token_type_ids_data += num_scheduled_tokens;
+                    
+                    if (have_deepstack_visual_inputs) {
+                        visual_pos_masks_data += num_scheduled_tokens;
+                    }
                 }
 
                 if (m_is_aggregate_attention_scores) {
@@ -509,6 +585,16 @@ public:
             }
             if (have_token_type_ids && !m_cached_token_type_ids) {
                 m_request.set_tensor("token_type_ids", token_type_ids);
+            }
+            
+            if (have_deepstack_visual_inputs) {
+                if (!m_cached_deepstack_visual_embeds) {
+                    m_request.set_tensor("deepstack_visual_embeds", deepstack_visual_embeds);
+                }
+
+                if (!m_cached_visual_pos_masks) {
+                    m_request.set_tensor("visual_pos_masks", visual_pos_masks);
+                }
             }
         }
         if (hidden_state_input && hidden_state_input.get_size() > 0) {
