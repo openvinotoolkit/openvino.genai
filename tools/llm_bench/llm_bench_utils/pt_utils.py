@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2025 Intel Corporation
+# Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 import os
 import time
@@ -53,7 +53,7 @@ def run_torch_compile(model, backend='openvino', dynamic=None, options=None, chi
         compile_time = end - start
         log.info(f'Compiling model via torch.compile() took: {compile_time}')
     if memory_data_collector:
-        memory_data_collector.stop_and_collect_data('compilation_phase')
+        memory_data_collector.stop_and_collect_data("compilation")
         memory_data_collector.log_data(compilation_phase=True)
     return compiled_model
 
@@ -88,7 +88,7 @@ def create_text_gen_model(model_path, device, memory_data_collector, **kwargs):
     end = time.perf_counter()
     from_pretrain_time = end - start
     if kwargs.get("mem_consumption"):
-        memory_data_collector.stop_and_collect_data('from_pretrained_phase')
+        memory_data_collector.stop_and_collect_data("pretrained")
         memory_data_collector.log_data(compilation_phase=True)
 
     log.info(f'model path:{model_path}, from pretrained time: {from_pretrain_time:.2f}s')
@@ -149,7 +149,7 @@ def create_image_gen_model(model_path, device, memory_data_collector, **kwargs):
             pipe = set_bf16(pipe, device, **kwargs)
             end = time.perf_counter()
             if kwargs.get("mem_consumption"):
-                memory_data_collector.stop_and_collect_data('from_pretrained_phase')
+                memory_data_collector.stop_and_collect_data("pretrained")
                 memory_data_collector.log_data(compilation_phase=True)
             from_pretrain_time = end - start
         else:
@@ -196,7 +196,7 @@ def create_text_2_speech_model(model_path, device, memory_data_collector, **kwar
             pipe = set_bf16(pipe, device, **kwargs)
             end = time.perf_counter()
             if kwargs.get("mem_consumption"):
-                memory_data_collector.stop_and_collect_data('from_pretrained_phase')
+                memory_data_collector.stop_and_collect_data("pretrained")
                 memory_data_collector.log_data(compilation_phase=True)
             from_pretrain_time = end - start
             processor = token_class.from_pretrained(model_path)
@@ -238,7 +238,7 @@ def create_ldm_super_resolution_model(model_path, device, memory_data_collector,
             pipe = model_class.from_pretrained(model_path)
             end = time.perf_counter()
             if kwargs.get("mem_consumption"):
-                memory_data_collector.stop_and_collect_data('from_pretrained_phase')
+                memory_data_collector.stop_and_collect_data("pretrained")
                 memory_data_collector.log_data(compilation_phase=True)
             from_pretrain_time = end - start
         else:
@@ -312,3 +312,51 @@ def create_text_reranker_model(model_path: Path, device: str, memory_monitor: Me
         pipe = compiled_model
 
     return pipe, processor, from_pretrain_time, None, False
+
+
+def create_video_gen_model(model_path, device, memory_data_collector, **kwargs):
+    model_path = Path(model_path)
+    from_pretrain_time = 0
+    if model_path.exists():
+        if model_path.is_dir() and len(os.listdir(model_path)) != 0:
+            log.info(f"Load image model from model path:{model_path}")
+            model_class = kwargs["use_case"].pt_cls
+            if kwargs.get("mem_consumption"):
+                memory_data_collector.start()
+            start = time.perf_counter()
+            pipe = model_class.from_pretrained(model_path)
+            pipe = set_bf16(pipe, device, **kwargs)
+            end = time.perf_counter()
+            if kwargs.get("mem_consumption"):
+                memory_data_collector.stop_and_collect_data("pretrained")
+                memory_data_collector.log_data(compilation_phase=True)
+            from_pretrain_time = end - start
+        else:
+            raise RuntimeError(f"==Failure ==: model path:{model_path} is not directory or directory is empty")
+    else:
+        raise RuntimeError(f"==Failure ==: model path:{model_path} is not exist")
+
+    log.info(f"Model path:{model_path}, from pretrained time: {from_pretrain_time:.2f}s")
+
+    if device:
+        # If the device is set to GPU there's a need to substitute it with 'cuda' so it will be accepted by PyTorch
+        if device.upper() == "GPU":
+            device = torch.device("cuda") if torch.cuda.is_available() else log.info("CUDA device is unavailable")
+        else:
+            device = torch.device(device.lower())
+        log.info(f"Torch device was set to: {device}")
+
+        pipe.to(device)
+    else:
+        raise RuntimeError("==Failure ==: no device to load")
+
+    if kwargs["torch_compile_backend"]:
+        backend = kwargs["torch_compile_backend"]
+        compiled_model = run_torch_compile(
+            pipe, backend, memory_data_collector if kwargs.get("mem_consumption") else None
+        )
+        pipe = compiled_model
+    tokenizer = None
+    bench_hook = None
+    use_genai = False
+    return pipe, tokenizer, from_pretrain_time, bench_hook, use_genai

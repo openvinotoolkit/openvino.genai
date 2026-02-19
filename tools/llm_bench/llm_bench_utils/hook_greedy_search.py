@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2023-2025 Intel Corporation
+# Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 # flake8: noqa
 import time
@@ -379,7 +379,11 @@ class GreedySearchHook:
         """Define a new greedy search function."""
         model._greedy_search = new_greedy_search.__get__(model, model.__class__)
         trans_version = version.parse(transformers.__version__)
-        if trans_version >= version.parse('4.55.0'):
+        if trans_version >= version.parse("4.57.0"):
+            import llm_bench_utils.llm_hook_sample.hook_sample_v57 as hook_sample_v57
+
+            type(model)._sample = hook_sample_v57.new_sample
+        elif trans_version >= version.parse("4.55.0"):
             import llm_bench_utils.llm_hook_sample.hook_sample_v55 as hook_sample_v55
             model._sample = hook_sample_v55.new_sample.__get__(model, model.__class__)
         elif trans_version >= version.parse('4.52.0'):

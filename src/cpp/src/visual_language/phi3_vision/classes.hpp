@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
@@ -42,7 +42,7 @@ public:
     EncodedImage encode(const ov::Tensor& image, const ov::AnyMap& config_map) override;
 
 private:
-    bool use_ov_image_preprocess = true; // default use ov image preprocessing, control by env IMAGE_PREPROCESS=CPP to use CPU image preprocessing
+    bool use_ov_vision_preprocess = true; // default use ov vision preprocessing, control by env VISION_PREPROCESS=CPP to use CPU vision preprocessing
 
 };
 

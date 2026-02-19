@@ -1,4 +1,4 @@
-# Copyright (C) 2023-2025 Intel Corporation
+# Copyright (C) 2023-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
 import datasets
@@ -34,6 +34,7 @@ OPTIMAL_KVCRUSH_CONFIGS = {
 
 
 @pytest.mark.parametrize("subset", ["samsum", "trec", "qasper"])
+@pytest.mark.xfail(reason="load_dataset fail because of remote code. Ticket: 181303")
 def test_kvcrush_vs_snapkv_baseline_longbench(subset):
     """Test that KVCrush performs equal or better than SnapKV baseline on LongBench datasets."""
     device = "CPU"

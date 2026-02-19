@@ -4,6 +4,10 @@
 import { LLMPipeline as LLM } from "./pipelines/llmPipeline.js";
 import { VLMPipeline as VLM } from "./pipelines/vlmPipeline.js";
 import { TextEmbeddingPipeline as Embedding } from "./pipelines/textEmbeddingPipeline.js";
+import {
+  TextRerankPipeline as TextRerank,
+  TextRerankPipelineOptions,
+} from "./pipelines/textRerankPipeline.js";
 import { LLMPipelineProperties, VLMPipelineProperties } from "./utils.js";
 
 class PipelineFactory {
@@ -47,12 +51,21 @@ class PipelineFactory {
 
     return pipeline;
   }
+
+  static async TextRerankPipeline(modelPath: string, options: TextRerankPipelineOptions = {}) {
+    const pipeline = new TextRerank(modelPath, options);
+    await pipeline.init();
+
+    return pipeline;
+  }
 }
 
-export const { LLMPipeline, VLMPipeline, TextEmbeddingPipeline } = PipelineFactory;
+export const { LLMPipeline, VLMPipeline, TextEmbeddingPipeline, TextRerankPipeline } =
+  PipelineFactory;
 export { DecodedResults, VLMDecodedResults } from "./decodedResults.js";
 export { PerfMetrics, VLMPerfMetrics } from "./perfMetrics.js";
 export * from "./utils.js";
 export * from "./addon.js";
 export type { TokenizedInputs, EncodeOptions, DecodeOptions } from "./tokenizer.js";
 export type { ChatMessage, ExtraContext, ToolDefinition } from "./chatHistory.js";
+export type { Parser, ReasoningParserOptions } from "./parsers.js";

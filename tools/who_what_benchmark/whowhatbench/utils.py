@@ -226,7 +226,9 @@ def parquet_generate_tables(self, files, *args, **kwargs):
             raise ValueError(
                 f"Tried to load parquet data with columns '{self.config.columns}' with mismatching features '{self.info.features}'"
             )
-    for file_idx, file in enumerate(itertools.chain.from_iterable(files)):
+
+    files_list = files if files and isinstance(files[0], str) else itertools.chain.from_iterable(files)
+    for file_idx, file in enumerate(files_list):
         try:
             with xopen(file, "rb") as f:
                 parquet_file = pq.ParquetFile(f)
@@ -252,3 +254,8 @@ def parquet_generate_tables(self, files, *args, **kwargs):
                 logger.warning(f"Skipping bad file '{file}'. {type(e).__name__}: {e}`")
             else:
                 logger.warning(f"Skipping bad file '{file}'. {type(e).__name__}: {e}`")
+
+
+def disable_diffusers_model_progress_bar(model):
+    if hasattr(model, "set_progress_bar_config"):
+        model.set_progress_bar_config(disable=True)

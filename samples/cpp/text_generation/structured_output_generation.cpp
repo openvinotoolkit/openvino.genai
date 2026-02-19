@@ -1,4 +1,4 @@
-// Copyright (C) 2023-2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/llm_pipeline.hpp"
@@ -78,7 +78,9 @@ int main(int argc, char* argv[]) try {
         return ov::genai::StreamingStatus::RUNNING;
     };
 
-    pipe.start_chat(sys_message);
+    ov::genai::ChatHistory chat_history;
+
+    chat_history.push_back({{"role", "system"}, {"content", std::move(sys_message)}});
     std::cout << "This is a sample of structured output generation.\n"
               << "You can enter a mathematical equation, and the model will solve it step by step.\n"
               << "For example, try: 2*x -2 + 15 = 0\n"
@@ -86,11 +88,12 @@ int main(int argc, char* argv[]) try {
               << "> ";
 
     while (std::getline(std::cin, prompt)) {
-        pipe.generate(prompt, config, streamer);
+        chat_history.push_back({{"role", "user"}, {"content", std::move(prompt)}});
+        ov::genai::DecodedResults decoded_results = pipe.generate(chat_history, config, streamer);
+        chat_history.push_back({{"role", "assistant"}, {"content", std::move(decoded_results.texts[0])}});
         std::cout << "\n----------\n"
             "> ";
     }
-    pipe.finish_chat();
 } catch (const std::exception& error) {
     try {
         std::cerr << error.what() << '\n';
