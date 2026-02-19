@@ -188,7 +188,6 @@ class LongBenchTestData:
     LongBenchTestData("samsum", 4, 1.6, 2.5),
     LongBenchTestData("trec", 3.2, 2.0, 3.3),
 ], ids=["samsum", "trec"])
-@pytest.mark.xfail(reason="load_dataset fail because of remote code. Ticket: 181303")
 def test_optimized_generation_longbench(test_struct):
     seqs_per_request = 32
     device = "CPU"
@@ -214,7 +213,7 @@ def test_optimized_generation_longbench(test_struct):
     generation_config.num_return_sequences = 1
     generation_config.max_new_tokens = max_new_tokens
 
-    data = datasets.load_dataset('THUDM/LongBench', subset, split='test[:32]', trust_remote_code=True)
+    data = datasets.load_dataset("zai-org/LongBench", subset, split="test[:32]", revision="8cbd1")
     with tqdm(total=len(data)) as progress_bar:
         batch = []
         answers = []
