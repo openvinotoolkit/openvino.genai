@@ -192,7 +192,14 @@ class MemoryMonitor:
 
         filename_label = f"{self.memory_type.value}_memory_usage{filename_suffix}"
         # Save measurements to text file
-        log_filepath = save_dir / f"{filename_label}.txt"
+        counter = 0
+        while True:
+            log_filepath = save_dir / f"{filename_label}_{counter}.txt"
+            if os.path.exists(log_filepath):
+                counter += 1
+            else:
+                break
+
         with open(log_filepath, "w") as log_file:
             if len(time_values) == 0:
                 log_file.write("No measurements recorded.\nPlease make sure logging duration or interval were enough.")
@@ -303,7 +310,7 @@ class MemMonitorWrapper():
             mm.start()
 
         # compilation could be very fast, apply delay
-        if delay:
+        if delay is not None:
             time.sleep(delay)
         else:
             time.sleep(self.interval * 3)
@@ -371,19 +378,20 @@ class MemoryDataSummarizer():
 
     def __init__(self, args):
         memory_monitor = MemMonitorWrapper()
-        if args.memory_consumption_delay:
-            memory_monitor.interval = args.memory_consumption_delay
+        memory_monitor.interval = args.memory_consumption_interval
+        self.cooldown = args.memory_consumption_cooldown
         memory_monitor.create_monitors()
         if args.memory_consumption_dir:
             memory_monitor.set_dir(args.memory_consumption_dir)
         self.memory_monitor = memory_monitor
-
         self.iteration_mem_data = []
         self.compilation_mem_info = {'max_mem': MemStatus(self.MEMORY_NOT_COLLECTED, self.MEMORY_NOT_COLLECTED),
                                      'increase_mem': MemStatus(self.MEMORY_NOT_COLLECTED, self.MEMORY_NOT_COLLECTED)}
         self.initial_mem_status = self.log_curent_memory_data(prefix="Start")
 
     def start(self):
+        if self.cooldown is not None:
+            time.sleep(int(self.cooldown))
         self.memory_monitor.start()
 
     def stop_and_collect_data(self, dir_name='mem_monitor_log'):
