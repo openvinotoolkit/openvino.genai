@@ -21,8 +21,8 @@ size_t get_total_allocated_bytes(std::shared_ptr<CacheManager> cache_manager) {
 }
 
 size_t get_num_kv_blocks(size_t cache_size, size_t block_size_bytes) {
-    size_t kv_cache_size_in_bytes = cache_size * 1024 * 1024 * 1024; // convert GBs to bytes
-    return kv_cache_size_in_bytes / block_size_bytes;
+    size_t kv_cache_usage_in_bytes = cache_size * 1024 * 1024 * 1024; // convert GBs to bytes
+    return kv_cache_usage_in_bytes / block_size_bytes;
 }
 
 TEST(TestCacheManager, test_cache_size_param) {

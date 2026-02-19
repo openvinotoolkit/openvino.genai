@@ -160,12 +160,14 @@ auto pipeline_metrics_docstring = R"(
     :param cache_usage: Percentage of KV cache usage in the last generation step.
     :type cache_usage: float
 
-    :param kv_cache_size_in_bytes: The total KV cache size in bytes in the last generation step.
-    :type kv_cache_size_in_bytes: int
+    :param kv_cache_usage_in_bytes: The total KV cache size in bytes in the last generation step.
+    :type kv_cache_usage_in_bytes: int
 
     :param max_cache_usage: Max KV cache usage during the lifetime of the pipeline in %
     :type max_cache_usage: float
 
+    :param inference_duration: Duration of the last generation step in microseconds.
+    :type inference_duration: float
 
     :param avg_cache_usage: Running average of the KV cache usage (in %) during the lifetime of the pipeline, with max window size of 1000 steps
     :type avg_cache_usage: float
@@ -392,6 +394,8 @@ void init_continuous_batching_pipeline(py::module_& m) {
             .def(py::init<>())
             .def_readonly("requests", &PipelineMetrics::requests)
             .def_readonly("scheduled_requests", &PipelineMetrics::scheduled_requests)
+            .def_readonly("inference_duration", &PipelineMetrics::inference_duration)
+            .def_readonly("kv_cache_usage_in_bytes", &PipelineMetrics::kv_cache_usage_in_bytes)
             .def_readonly("cache_usage", &PipelineMetrics::cache_usage)
             .def_readonly("avg_cache_usage", &PipelineMetrics::avg_cache_usage)
             .def_readonly("max_cache_usage", &PipelineMetrics::max_cache_usage);
