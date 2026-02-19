@@ -340,9 +340,12 @@ void init_image_generation_pipelines(py::module_& m) {
              py::arg("cache_interval") = 3,
              py::arg("disable_cache_before_step") = 6,
              py::arg("disable_cache_after_step") = -2)
-        .def("get_cache_interval", &ov::genai::TaylorSeerCacheConfig::get_cache_interval)
-        .def("get_disable_cache_before_step", &ov::genai::TaylorSeerCacheConfig::get_disable_cache_before_step)
-        .def("get_disable_cache_after_step", &ov::genai::TaylorSeerCacheConfig::get_disable_cache_after_step)
+        .def_readwrite("cache_interval", &ov::genai::TaylorSeerCacheConfig::cache_interval)
+        .def_readwrite("disable_cache_before_step", &ov::genai::TaylorSeerCacheConfig::disable_cache_before_step)
+        .def_readwrite("disable_cache_after_step", &ov::genai::TaylorSeerCacheConfig::disable_cache_after_step)
+        .def("validate", &ov::genai::TaylorSeerCacheConfig::validate,
+             py::arg("num_inference_steps"),
+             "Validates that the configuration is compatible with the number of inference steps")
         .def("to_string", &ov::genai::TaylorSeerCacheConfig::to_string)
         .def("__repr__", &ov::genai::TaylorSeerCacheConfig::to_string);
 

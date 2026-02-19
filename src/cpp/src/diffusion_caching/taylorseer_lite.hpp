@@ -51,27 +51,29 @@ public:
     bool should_compute(std::size_t current_step,
                        const TaylorSeerCacheConfig& config,
                        std::size_t num_inference_steps) const {
+        config.validate(num_inference_steps);
+
         // Always compute during warm-up phase
-        if (current_step < config.get_disable_cache_before_step()) {
+        if (current_step < config.disable_cache_before_step) {
             return true;
         }
 
-        int disable_cache_after_step = config.get_disable_cache_after_step();
+        int disable_cache_after_step = config.disable_cache_after_step;
         if (disable_cache_after_step < 0) {
             disable_cache_after_step = static_cast<int>(num_inference_steps) + disable_cache_after_step;
         }
-        if (disable_cache_after_step > 0 && current_step >= static_cast<std::size_t>(disable_cache_after_step)) {
+        if (disable_cache_after_step >= 0 && current_step >= static_cast<std::size_t>(disable_cache_after_step)) {
             return true;
         }
 
-        auto offset = current_step - config.get_disable_cache_before_step();
-        auto first_compute_offset = config.get_cache_interval() - 1;
+        auto offset = current_step - config.disable_cache_before_step;
+        auto first_compute_offset = config.cache_interval - 1;
 
         if (offset < first_compute_offset) {
             return false;  // Predict using cached values
         } else {
             // Compute at first_compute_offset, then every cache_interval steps
-            return ((offset - first_compute_offset) % config.get_cache_interval()) == 0;
+            return ((offset - first_compute_offset) % config.cache_interval) == 0;
         }
     }
 
@@ -88,6 +90,14 @@ public:
                        "Current step (", current_step,
                        ") must be greater than the last update step (",
                        *m_last_update_step, ") for TaylorSeerState update.");
+
+        // Validate tensor shape consistency
+        if (!is_first_update) {
+            const auto& prev_factor = get_taylor_factor(0);
+            OPENVINO_ASSERT(output.get_shape() == prev_factor.get_shape(),
+                           "Output tensor shape ", output.get_shape(),
+                           " does not match previous tensor shape ", prev_factor.get_shape());
+        }
 
         std::unordered_map<std::size_t, ov::Tensor> new_factors = {{0, output}};
 
@@ -173,8 +183,13 @@ private:
 
     /**
      * @brief Maximum order of Taylor series approximation to use.
+     *
+     * Set to 2 (linear approximation: f(x) ≈ f(x₀) + f'(x₀)·Δx) based on the
+     * TaylorSeer Lite findings that first-order approximation provides the best
+     * balance between accuracy, computational efficiency and memory footprint.
+     * Higher orders may introduce numerical instability without significant quality gains.
      */
-    std::size_t m_max_order = 2;
+    static constexpr std::size_t m_max_order = 2;
 };
 
 } // namespace ov::genai
