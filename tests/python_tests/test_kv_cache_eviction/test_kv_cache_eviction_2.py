@@ -34,7 +34,6 @@ OPTIMAL_KVCRUSH_CONFIGS = {
 
 
 @pytest.mark.parametrize("subset", ["samsum", "trec", "qasper"])
-@pytest.mark.xfail(reason="load_dataset fail because of remote code. Ticket: 181303")
 def test_kvcrush_vs_snapkv_baseline_longbench(subset):
     """Test that KVCrush performs equal or better than SnapKV baseline on LongBench datasets."""
     device = "CPU"
@@ -73,7 +72,7 @@ def test_kvcrush_vs_snapkv_baseline_longbench(subset):
     generation_config.max_new_tokens = max_new_tokens
     generation_config.apply_chat_template = False
 
-    data = datasets.load_dataset('THUDM/LongBench', subset, split='test[:32]')
+    data = datasets.load_dataset("zai-org/LongBench", subset, split="test[:32]", revision="8cbd1")
     with tqdm(total=len(data)) as progress_bar:
         batch = []
         baseline_answers = []
