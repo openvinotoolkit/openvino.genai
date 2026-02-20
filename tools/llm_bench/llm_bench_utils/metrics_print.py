@@ -283,21 +283,18 @@ def print_whisper_genai_perf_metrics(iter_str, whisper_perf_data, prompt_idx=-1)
     sampling_durations = whisper_perf_data.get('sampling_durations', [])
     tokenization_ms = whisper_perf_data.get('tokenization_duration', -1.0)
     detokenization_ms = whisper_perf_data.get('detokenization_duration', -1.0)
-    sampling_mean_ms = whisper_perf_data.get('sampling_duration', -1.0)
 
-    # Feature extraction total (already in ms from Python bindings)
-    feat_extract_total = sum(features_extraction) if features_extraction else 0.0
-    encode_total = sum(encode_durations) if encode_durations else 0.0
-
-    # First token breakdown: tokenization + feature extraction + encode + first decode + first sampling
+    # First token uses only the first chunk's feature extraction and encode
+    first_feat_extract_ms = features_extraction[0] if features_extraction else 0.0
+    first_encode_ms = encode_durations[0] if encode_durations else 0.0
     first_decode_ms = decode_durations[0] if len(decode_durations) > 0 else 0.0
     first_sampling_ms = sampling_durations[0] if len(sampling_durations) > 0 else 0.0
 
     log_str = f"{prefix} Whisper first token breakdown:"
     if tokenization_ms >= 0:
         log_str += f" Tokenization: {tokenization_ms:.2f} ms,"
-    log_str += f" Feature Extraction: {feat_extract_total:.2f} ms,"
-    log_str += f" Encode: {encode_total:.2f} ms,"
+    log_str += f" Feature Extraction: {first_feat_extract_ms:.2f} ms,"
+    log_str += f" Encode: {first_encode_ms:.2f} ms,"
     log_str += f" Decode: {first_decode_ms:.2f} ms,"
     log_str += f" Sampling: {first_sampling_ms:.2f} ms"
     log.info(log_str)

@@ -61,14 +61,14 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         tm_list = (np.array([first_token_time] + second_tokens_durations) / 1000).tolist()
         tm_infer_list = (np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000).tolist()
         # Collect per-stage whisper metrics for GenAI pipeline
+        # Raw durations from bindings are in microseconds, convert to milliseconds (consistent with tm_infer_list above)
         whisper_perf_data = {
             'tokenization_duration': perf_metrics.get_tokenization_duration().mean,
             'detokenization_duration': perf_metrics.get_detokenization_duration().mean,
-            'features_extraction_durations': perf_metrics.whisper_raw_metrics.features_extraction_durations,
-            'encode_inference_durations': perf_metrics.whisper_raw_metrics.encode_inference_durations,
-            'decode_inference_durations': perf_metrics.whisper_raw_metrics.decode_inference_durations,
-            'sampling_durations': perf_metrics.raw_metrics.sampling_durations,
-            'sampling_duration': perf_metrics.get_sampling_duration().mean,
+            'features_extraction_durations': (np.array(perf_metrics.whisper_raw_metrics.features_extraction_durations) / 1000).tolist(),
+            'encode_inference_durations': (np.array(perf_metrics.whisper_raw_metrics.encode_inference_durations) / 1000).tolist(),
+            'decode_inference_durations': (np.array(perf_metrics.whisper_raw_metrics.decode_inference_durations) / 1000).tolist(),
+            'sampling_durations': (np.array(perf_metrics.raw_metrics.sampling_durations) / 1000).tolist(),
         }
         result_text = result_text.texts[0]
     else:
