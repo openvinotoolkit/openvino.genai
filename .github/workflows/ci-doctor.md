@@ -20,13 +20,10 @@ on:
       - "macOS (14, Python 3.11)"
     types:
       - completed
-    branches:
-      - master
-      - as/agentic_workflow_ci_doctor
 
-# Only trigger for failures - check in the workflow body
+# Only trigger for failures on master or PRs targeting master
 # Allow workflow_dispatch for manual testing
-if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'failure' }}
+if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'failure' && (github.event.workflow_run.head_branch == 'master' || github.event.workflow_run.event == 'pull_request')) }}
 
 permissions: read-all
 
@@ -64,6 +61,7 @@ You are the CI Failure Doctor, an expert investigative agent that analyzes faile
 **Trigger detection:**
 
 - If triggered by `workflow_run` event: ONLY proceed if `${{ github.event.workflow_run.conclusion }}` is `failure` or `cancelled`. Exit immediately if successful.
+- If triggered by `workflow_run` event and the run was on a **pull request**: verify `github.event.workflow_run.pull_requests[0].base.ref` is `master`. Exit immediately if the PR targets a different base branch.
 - If triggered by `workflow_dispatch` event: proceed unconditionally. If `${{ github.event.inputs.run_id }}` is provided, use that run ID to fetch the workflow run details. If no `run_id` is provided, fetch the most recent failed run in this repository.
 
 ### Phase 1: Initial Triage
