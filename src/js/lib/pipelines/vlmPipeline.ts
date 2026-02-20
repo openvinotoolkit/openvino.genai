@@ -228,4 +228,13 @@ export class VLMPipeline {
     if (!this.pipeline) throw new Error("Pipeline is not initialized");
     this.pipeline.setGenerationConfig(config);
   }
+
+  /**
+   * Get the current generation config (model defaults).
+   * @returns The current GenerationConfig object.
+   */
+  getGenerationConfig(): GenerationConfig {
+    if (!this.pipeline) throw new Error("Pipeline is not initialized");
+    return this.pipeline.getGenerationConfig();
+  }
 }
