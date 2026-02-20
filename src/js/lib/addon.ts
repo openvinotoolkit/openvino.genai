@@ -169,11 +169,42 @@ export interface VLMPipeline {
   setGenerationConfig(config: GenerationConfig): void;
 }
 
+export type VideoGenerationPerfMetrics = {
+  loadTime: number;
+  generateDuration: number;
+  iterationDuration: { mean: number; std: number };
+  transformerInferDuration: { mean: number; std: number };
+  vaeDecoderInferDuration: number;
+};
+
+export type Text2VideoResult = {
+  video: Tensor;
+  perfMetrics: VideoGenerationPerfMetrics;
+};
+
+export interface Text2VideoPipelineWrapper {
+  new (): Text2VideoPipelineWrapper;
+  init(
+    modelPath: string,
+    device: string,
+    properties: Record<string, unknown>,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    prompt: string,
+    properties: Record<string, unknown>,
+    callback: (err: Error | null, result: Text2VideoResult) => void,
+  ): void;
+  getGenerationConfig(): Record<string, unknown>;
+  setGenerationConfig(config: Record<string, unknown>): void;
+}
+
 interface OpenVINOGenAIAddon {
   TextRerankPipeline: TextRerankPipeline;
   TextEmbeddingPipeline: TextEmbeddingPipelineWrapper;
   LLMPipeline: LLMPipeline;
   VLMPipeline: VLMPipeline;
+  Text2VideoPipeline: Text2VideoPipelineWrapper;
   ChatHistory: IChatHistory;
   Tokenizer: ITokenizer;
   ReasoningParser: IReasoningParser;
@@ -207,6 +238,7 @@ export const {
   TextRerankPipeline,
   LLMPipeline,
   VLMPipeline,
+  Text2VideoPipeline,
   ChatHistory,
   Tokenizer,
   ReasoningParser,
