@@ -298,7 +298,6 @@ def test_set_chat_template(ov_hf_tokenizers):
     [
         "optimum-intel-internal-testing/tiny-random-Phi3ForCausalLM",
         "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-        # ("black-forest-labs/FLUX.1-dev", dict(subfolder="tokenizer")),  # FLUX.1-dev has tokenizer in subfolder
     ],
     indirect=True,
 )
@@ -441,7 +440,6 @@ def hf_ov_genai_models(request, tmp_path_factory):
             "BAAI/bge-small-en-v1.5",
             {"padding_side": None},
         ),  # model with 2 RaggedToDense ops
-        # ("black-forest-labs/FLUX.1-dev", dict(subfolder="tokenizer")),  # FLUX.1-dev has tokenizer in subfolder
     ],
     ids=[
         "phi3",
@@ -449,7 +447,6 @@ def hf_ov_genai_models(request, tmp_path_factory):
         "llava-next-right",
         "llava-next-left",
         "bge-small-en-v1.5",
-        # "FLUX.1-dev",
     ],
     indirect=True,
 )
