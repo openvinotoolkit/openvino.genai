@@ -264,21 +264,23 @@ public:
             total_num_blocks += sequence_group->get_num_blocks() * num_sequences;
             max_context_len_val = std::max(max_context_len_val, sequence_group->get_context_len());
 
-            if (sequence_group->get_deepstack_visual_embeds() && sequence_group->get_visual_pos_masks()) {
-                have_deepstack_visual_inputs = true;
-            }
-
-            if (have_deepstack_visual_inputs) {
-                const bool is_prefill = sequence_group->get_num_processed_tokens() == 0;
-                const auto& deepstack_shape = sequence_group->get_deepstack_visual_embeds().get_shape();
-                const bool has_visual_tokens = deepstack_shape[1] > 1; // if no images/videos provided, deepstack_visual_embeds shape is [num_layers, 1, hidden_size]
-                if (is_prefill && has_visual_tokens) {
-                    total_deepstack_vision_tokens += deepstack_shape[1];
+            if (sequence_group_type == SequenceGroupType::EMBEDDINGS) {
+                if (sequence_group->get_deepstack_visual_embeds() && sequence_group->get_visual_pos_masks()) {
+                    have_deepstack_visual_inputs = true;
                 }
-                if (deepstack_layers_num == 0) {
-                    deepstack_layers_num = deepstack_shape[0];
-                } else {
-                    OPENVINO_ASSERT(deepstack_layers_num == deepstack_shape[0], "Inconsistent number of deepstack layers across sequence groups");
+    
+                if (have_deepstack_visual_inputs) {
+                    const bool is_prefill = sequence_group->get_num_processed_tokens() == 0;
+                    const auto& deepstack_shape = sequence_group->get_deepstack_visual_embeds().get_shape();
+                    const bool has_visual_tokens = deepstack_shape[1] > 1; // if no images/videos provided, deepstack_visual_embeds shape is [num_layers, 1, hidden_size]
+                    if (is_prefill && has_visual_tokens) {
+                        total_deepstack_vision_tokens += deepstack_shape[1];
+                    }
+                    if (deepstack_layers_num == 0) {
+                        deepstack_layers_num = deepstack_shape[0];
+                    } else {
+                        OPENVINO_ASSERT(deepstack_layers_num == deepstack_shape[0], "Inconsistent number of deepstack layers across sequence groups");
+                    }
                 }
             }
         }
