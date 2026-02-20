@@ -11,20 +11,16 @@ on:
       run_id:
         description: "Workflow run ID to investigate (for manual testing)"
         required: false
-  workflow_run:
-    workflows:
-      - "SDL tests"
-      - "Coverity (Ubuntu 22.04, Python 3.11)"
-      - "Linux (Ubuntu 22.04, Python 3.11)"
-      - "Windows (VS 2022, Python 3.11)"
-      - "macOS (14, Python 3.11)"
-    types:
-      - completed
+# Disable automatic triggering on workflow_run events during manual testing.
+#   workflow_run:
+#     workflows:
+#       - "Linux (Ubuntu 22.04, Python 3.11)"
+#     types:
+#       - completed
 
 rate-limit:
   max: 5 # Maximum runs per window
   window: 60 # Time window in minutes
-  events: [workflow_dispatch]
 
 # Only trigger for failures on master or PRs targeting master
 # Allow workflow_dispatch for manual testing
@@ -67,7 +63,7 @@ You are the CI Failure Doctor, an expert investigative agent that analyzes faile
 
 - If triggered by `workflow_run` event: ONLY proceed if `${{ github.event.workflow_run.conclusion }}` is `failure` or `cancelled`. Exit immediately if successful.
 - If triggered by `workflow_run` event and the run was on a **pull request**: verify `github.event.workflow_run.pull_requests[0].base.ref` is `master`. Exit immediately if the PR targets a different base branch.
-- If triggered by `workflow_dispatch` event: proceed unconditionally. If `${{ github.event.inputs.run_id }}` is provided, use that run ID to fetch the workflow run details. If no `run_id` is provided, fetch the most recent failed run in this repository.
+- If triggered by `workflow_dispatch` event: check if `${{ github.event.inputs.run_id }}` is provided, use that run ID to fetch the workflow run details. If no `run_id` is provided, exit immediately.
 
 ### Phase 1: Initial Triage
 
@@ -139,7 +135,7 @@ You are the CI Failure Doctor, an expert investigative agent that analyzes faile
    - If you find a duplicate issue, add a comment with your findings and close the investigation.
    - Do NOT open a new issue since you found a duplicate already (skip next phases).
 
-### Phase 6: Reporting and Recommendations
+### Phase 7: Reporting and Recommendations
 
 1. **Create Investigation Report**: Generate a comprehensive analysis including:
    - **Executive Summary**: Quick overview of the failure

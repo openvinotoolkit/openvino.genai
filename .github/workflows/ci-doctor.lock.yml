@@ -28,7 +28,7 @@
 #
 # Source: githubnext/agentics/workflows/ci-doctor.md@0aa94a6e40aeaf131118476bc6a07e55c4ceb147
 #
-# gh-aw-metadata: {"schema_version":"v1","frontmatter_hash":"7dc51d3da7fab055d27c1c46f6ec1f36fd8ec4db098dae1ff77ee4af6c1b9c14","compiler_version":"v0.46.5"}
+# gh-aw-metadata: {"schema_version":"v1","frontmatter_hash":"ab6f1bebb48e4555bacc8c6f7173e8338fc34d0c282b41e256a19c678a675565","compiler_version":"v0.46.5"}
 
 name: "CI Failure Doctor"
 "on":
@@ -37,16 +37,6 @@ name: "CI Failure Doctor"
       run_id:
         description: Workflow run ID to investigate (for manual testing)
         required: false
-  workflow_run:
-    # zizmor: ignore[dangerous-triggers] - workflow_run trigger is secured with role and fork validation
-    types:
-    - completed
-    workflows:
-    - SDL tests
-    - Coverity (Ubuntu 22.04, Python 3.11)
-    - Linux (Ubuntu 22.04, Python 3.11)
-    - Windows (VS 2022, Python 3.11)
-    - macOS (14, Python 3.11)
 
 permissions: {}
 
@@ -58,12 +48,9 @@ run-name: "CI Failure Doctor"
 jobs:
   activation:
     needs: pre_activation
-    # zizmor: ignore[dangerous-triggers] - workflow_run trigger is secured with role and fork validation
     if: >
-      ((needs.pre_activation.outputs.activated == 'true') && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'failure' &&
-      (github.event.workflow_run.head_branch == 'master' || github.event.workflow_run.event == 'pull_request')))) &&
-      ((github.event_name != 'workflow_run') || ((github.event.workflow_run.repository.id == github.repository_id) &&
-      (!(github.event.workflow_run.repository.fork))))
+      (needs.pre_activation.outputs.activated == 'true') && (github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'failure' &&
+      (github.event.workflow_run.head_branch == 'master' || github.event.workflow_run.event == 'pull_request')))
     runs-on: ubuntu-slim
     permissions:
       contents: read
@@ -1129,24 +1116,12 @@ jobs:
     permissions:
       actions: read
     outputs:
-      activated: ${{ (steps.check_membership.outputs.is_team_member == 'true') && (steps.check_rate_limit.outputs.rate_limit_ok == 'true') }}
+      activated: ${{ steps.check_rate_limit.outputs.rate_limit_ok == 'true' }}
     steps:
       - name: Setup Scripts
         uses: github/gh-aw/actions/setup@5a79466d65414632d47c7869b27170ade5b9404e # v0.46.5
         with:
           destination: /opt/gh-aw/actions
-      - name: Check team membership for workflow
-        id: check_membership
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
-        env:
-          GH_AW_REQUIRED_ROLES: admin,maintainer,write
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { setupGlobals } = require('/opt/gh-aw/actions/setup_globals.cjs');
-            setupGlobals(core, github, context, exec, io);
-            const { main } = require('/opt/gh-aw/actions/check_membership.cjs');
-            await main();
       - name: Check user rate limit
         id: check_rate_limit
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
