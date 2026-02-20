@@ -34,6 +34,11 @@ PIP_PRE=1 \
 PIP_EXTRA_INDEX_URL=https://storage.openvinotoolkit.org/simple/wheels/nightly \
 pip install .
 ```
+Some models require specific module versions, WWB supports installing certain configurations. For more information, please refer to `extras_require` in setup.py.
+For example:
+```
+pip install .[minicpm-o-2_6]
+```
 
 ## Usage
 ### Compare Text-generation Models (LLMs)
@@ -126,6 +131,22 @@ wwb --base-model BAAI/bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type
 # Compute the metric
 # Target data will be stored in the "target" subfolder under the same path with .csv.
 wwb --target-model ./bge-small-en-v1.5 --gt-data embed_test/gt.csv --model-type text-embedding --embeds_pooling mean --embeds_normalize --embeds_padding_side "left" --genai
+```
+
+### Compare Text-to-video models
+```sh
+# Export model to OpenVINO, you can specify weight format with --weight-format option, for example --weight-format fp32/fp16/int8
+optimum-cli export openvino -m Lightricks/LTX-Video --weight-format fp32 ltx-video-model
+# Collect the references and save the mapping in the .csv file.
+# Reference videos will be stored in the "reference" subfolder under the same path with .csv.
+wwb --base-model Lightricks/LTX-Video --gt-data video_gen_test/gt.csv --model-type text-to-video --hf
+# Compute the metric
+# Target video will be stored in the "target" subfolder under the same path with .csv.
+# you can also specify the parameter: --output [custom folder], then the target videos and the corresponding CSV files with metrics will be saved to that folder.
+# compute metrics with optimum-intel
+wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type text-to-video --output ltx_video_optimum
+# compute metrics with GenAI
+wwb --target-model ltx-video-model --gt-data video_gen_test/gt.csv --model-type text-to-video --genai --output ltx_video_genai
 ```
 
 ### API
