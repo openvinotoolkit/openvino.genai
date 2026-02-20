@@ -19,6 +19,7 @@
 #include "visual_language/llava_next_video/classes.hpp"
 #include "visual_language/internvl_chat/classes.hpp"
 #include "visual_language/gemma3/classes.hpp"
+#include "visual_language/mllama/classes.hpp"
 
 #include "utils.hpp"
 
@@ -198,6 +199,42 @@ ov::Tensor InputsEmbedder::IInputsEmbedder::get_inputs_embeds(
     OPENVINO_THROW("Current model doesn't support video preprocess currently. Input images are processed as separate images.");
 }
 
+
+std::vector<std::pair<std::string, ov::Tensor>> InputsEmbedder::IInputsEmbedder::get_language_model_inputs(
+    const std::string& prompt,
+    const std::vector<ov::genai::EncodedImage>& images,
+    const std::vector<ov::genai::EncodedVideo>& videos,
+    ov::genai::VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& images_sequence,
+    const std::vector<size_t>& videos_sequence,
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
+    std::vector<std::pair<std::string, ov::Tensor>> inputs;
+    if (has_token_type_ids()) {
+        auto [inputs_embeds, token_type_ids] = get_inputs_embeds_with_token_type_ids(prompt,
+                                                                                     images,
+                                                                                     videos,
+                                                                                     metrics,
+                                                                                     recalculate_merged_embeddings,
+                                                                                     images_sequence,
+                                                                                     videos_sequence,
+                                                                                     history_vision_count);
+        inputs.emplace_back("inputs_embeds", inputs_embeds);
+        inputs.emplace_back("token_type_ids", token_type_ids);
+    } else {
+        auto inputs_embeds = get_inputs_embeds(prompt,
+                                               images,
+                                               videos,
+                                               metrics,
+                                               recalculate_merged_embeddings,
+                                               images_sequence,
+                                               videos_sequence,
+                                               history_vision_count);
+        inputs.emplace_back("inputs_embeds", inputs_embeds);
+    }
+    return inputs;
+}
+
 std::vector<ov::genai::EncodedVideo> InputsEmbedder::IInputsEmbedder::encode_videos(const std::vector<ov::Tensor>& videos) {
     if (!videos.size()) {
         return {};
@@ -271,6 +308,8 @@ InputsEmbedder::InputsEmbedder(const std::filesystem::path& model_dir,
         m_impl = std::make_shared<InputsEmbedderQwen2_5_VL>(vlm_config, model_dir, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, model_dir, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::MLLAMA) {
+        m_impl = std::make_shared<InputsEmbedderMLlama>(vlm_config, model_dir, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
@@ -305,6 +344,8 @@ InputsEmbedder::InputsEmbedder(const ModelsMap& models_map,
         m_impl = std::make_shared<InputsEmbedderQwen2_5_VL>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else if (vlm_config.model_type == VLMModelType::GEMMA3) {
         m_impl = std::make_shared<InputsEmbedderGemma3>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
+    } else if (vlm_config.model_type == VLMModelType::MLLAMA) {
+        m_impl = std::make_shared<InputsEmbedderMLlama>(vlm_config, models_map, tokenizer, config_dir_path, device, device_config);
     } else {
         OPENVINO_THROW("Unsupported model type in VLM InputsEmbedder class. Please, create feature request on new model support");
     }
@@ -359,6 +400,25 @@ std::pair<ov::Tensor, ov::Tensor> InputsEmbedder::get_inputs_embeds_with_token_t
                                                          image_sequence,
                                                          videos_sequence,
                                                          history_vision_count);
+}
+
+std::vector<std::pair<std::string, ov::Tensor>> InputsEmbedder::get_language_model_inputs(
+    const std::string& prompt,
+    const std::vector<EncodedImage>& images,
+    const std::vector<EncodedVideo>& videos,
+    VLMPerfMetrics& metrics,
+    bool recalculate_merged_embeddings,
+    const std::vector<size_t>& image_sequence,
+    const std::vector<size_t>& videos_sequence,
+    const std::vector<std::pair<std::size_t, std::size_t>>& history_vision_count) {
+    return m_impl->get_language_model_inputs(prompt,
+                                             images,
+                                             videos,
+                                             metrics,
+                                             recalculate_merged_embeddings,
+                                             image_sequence,
+                                             videos_sequence,
+                                             history_vision_count);
 }
 
 bool InputsEmbedder::has_token_type_ids() const {
