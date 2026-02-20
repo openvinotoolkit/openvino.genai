@@ -19,6 +19,7 @@
 
 #include "visual_language/vision_registry.hpp"
 #include "visual_language/vlm_chat_context.hpp"
+#include "visual_language/chat_history_state.hpp"
 
 #include "sampling/sampler.hpp"
 #include "utils.hpp"
@@ -278,6 +279,20 @@ public:
 
         std::string decoded_results = decoded.texts.at(0);
         if (m_is_chat_conversation) {
+            // Update m_history with pruned content if pruning is enabled
+            if (generation_config.pruning_ratio > 0) {
+                auto history_state = ChatHistoryInternalState::get_or_create(m_history, m_vision_registry);
+                size_t last_user_idx = history_state->get_last_user_message_index();
+
+                OPENVINO_ASSERT(last_user_idx < m_history.size(), "Invalid last_user_idx");
+
+                // Replace the original prompt with the pruned prompt after CDPruner
+                auto user_message = m_history[last_user_idx];
+                std::string original_prompt = user_message["content"].get_string();
+                user_message["content"] = m_inputs_embedder->get_last_pruned_prompt(original_prompt);
+                m_history[last_user_idx] = user_message;
+            }
+
             m_inputs_embedder->update_chat_history(decoded_results, finish_info.streaming_finish_status);
 
             if (finish_info.streaming_finish_status != ov::genai::GenerationStatus::CANCEL) {
@@ -358,6 +373,9 @@ public:
             intermediate_remote_tensor = false;
         }
 
+        m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
+                                                           generation_config.relevance_weight);
+
         VLMChatContext chat_context(history, m_vision_registry, *m_inputs_embedder);
 
         auto processed_chat_data = chat_context.process(images, videos);
@@ -403,6 +421,11 @@ public:
         );
 
         EncodedResults& encoded_result = generation_finish_info.results;
+        
+        // Update pruned content after generation (CDPruner has run during prepare_inputs_and_generate)
+        if (generation_config.pruning_ratio > 0) {
+            chat_context.apply_pruning_to_last_message();
+        }
 
         auto decode_start_time = std::chrono::steady_clock::now();
         VLMDecodedResults decoded;

@@ -188,9 +188,15 @@ ChatHistory ChatHistoryInternalState::build_normalized_history(const ChatHistory
         JsonContainer normalized_msg = history[i].copy();
 
         if (normalized_msg["role"].get_string() == "user") {
-            normalized_msg["content"] = m_messages_metadata[i].normalized_content;
+            // Use pruned content if available, otherwise use normalized content
+            const auto& metadata = m_messages_metadata[i];
+            if (!metadata.pruned_content.empty()) {
+                normalized_msg["content"] = metadata.pruned_content;
+            } else {
+                normalized_msg["content"] = metadata.normalized_content;
+            }
         }
-        
+
         normalized_history.push_back(std::move(normalized_msg));
     }
     return normalized_history;
