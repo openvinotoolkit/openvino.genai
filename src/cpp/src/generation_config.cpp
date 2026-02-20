@@ -3,6 +3,7 @@
 
 #include <fstream>
 #include <limits>
+#include <sstream>
 
 #include <nlohmann/json.hpp>
 #include <openvino/runtime/core.hpp>
@@ -10,6 +11,7 @@
 #include "sampling/structured_output/structured_output_controller.hpp"
 #include "tokenizer/tokenizer_impl.hpp"
 #include "json_utils.hpp"
+#include "logger.hpp"
 #include "utils.hpp"
 
 
@@ -360,6 +362,89 @@ void GenerationConfig::validate() const {
     if(is_structured_output_generation()) {
         (*structured_output_config).validate();
     }
+}
+
+namespace {
+// TODO: Drop in favor of std::views::join_with() when C++23 is available.
+template <typename Range, typename Formatter>
+std::string join(const Range& range, const std::string& separator, Formatter formatter) {
+    std::ostringstream oss;
+    bool first = true;
+    for (const auto& item : range) {
+        if (!first) oss << separator;
+        formatter(oss, item);
+        first = false;
+    }
+    return oss.str();
+}
+}  // namespace
+
+std::string GenerationConfig::to_string() const {
+    std::ostringstream oss;
+    oss << "GenerationConfig { \n";
+
+    // Generic parameters
+    oss << "  max_new_tokens: " << max_new_tokens << "\n";
+    oss << "  max_length: " << max_length << "\n";
+    oss << "  ignore_eos: " << std::boolalpha << ignore_eos << "\n";
+    oss << "  min_new_tokens: " << min_new_tokens << "\n";
+    oss << "  echo: " << std::boolalpha << echo << "\n";
+    oss << "  logprobs: " << logprobs << "\n";
+
+    // EOS and stop conditions
+    oss << "  eos_token_id: " << eos_token_id << "\n";
+    oss << "  stop_strings: [" << join(stop_strings, ", ", [](std::ostringstream& os, const std::string& s) { os << "\"" << s << "\""; }) << "]\n";
+    oss << "  include_stop_str_in_output: " << std::boolalpha << include_stop_str_in_output << "\n";
+    oss << "  stop_token_ids: [" << join(stop_token_ids, ", ", [](std::ostringstream& os, int64_t id) { os << id; }) << "]\n";
+
+    // Penalties
+    oss << "  repetition_penalty: " << repetition_penalty << "\n";
+    oss << "  presence_penalty: " << presence_penalty << "\n";
+    oss << "  frequency_penalty: " << frequency_penalty << "\n";
+
+    // Beam search parameters
+    oss << "  num_beam_groups: " << num_beam_groups << "\n";
+    oss << "  num_beams: " << num_beams << "\n";
+    oss << "  diversity_penalty: " << diversity_penalty << "\n";
+    oss << "  length_penalty: " << length_penalty << "\n";
+    oss << "  num_return_sequences: " << num_return_sequences << "\n";
+    oss << "  no_repeat_ngram_size: " << no_repeat_ngram_size << "\n";
+    oss << "  stop_criteria: ";
+    switch (stop_criteria) {
+        case StopCriteria::EARLY: oss << "EARLY"; break;
+        case StopCriteria::HEURISTIC: oss << "HEURISTIC"; break;
+        case StopCriteria::NEVER: oss << "NEVER"; break;
+        default: oss << "UNKNOWN"; break;
+    }
+    oss << "\n";
+
+    // Multinomial sampling parameters
+    oss << "  temperature: " << temperature << "\n";
+    oss << "  top_p: " << top_p << "\n";
+    oss << "  top_k: " << top_k << "\n";
+    oss << "  do_sample: " << std::boolalpha << do_sample << "\n";
+    oss << "  rng_seed: " << rng_seed << "\n";
+
+    // CDPruner parameters
+    oss << "  pruning_ratio: " << pruning_ratio << "\n";
+    oss << "  relevance_weight: " << relevance_weight << "\n";
+
+    // Assistant generation parameters
+    oss << "  assistant_confidence_threshold: " << assistant_confidence_threshold << "\n";
+    oss << "  num_assistant_tokens: " << num_assistant_tokens << "\n";
+    oss << "  max_ngram_size: " << max_ngram_size << "\n";
+
+    // Structured output
+    oss << "  structured_output_config: " << (structured_output_config.has_value() ? "set" : "not set") << "\n";
+
+    // Adapters
+    oss << "  adapters: " << (adapters.has_value() ? "set" : "not set") << "\n";
+
+    // Chat template
+    oss << "  apply_chat_template: " << std::boolalpha << apply_chat_template << "\n";
+
+    oss << " }";
+    return oss.str();
 }
 
 void StructuredOutputConfig::validate() const {

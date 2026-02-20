@@ -20,6 +20,7 @@
 
 
 #include "sampling/sampler.hpp"
+#include "logger.hpp"
 
 namespace ov {
 
@@ -527,38 +528,35 @@ bool env_setup_for_print_debug_info() {
     return (env_var_value != nullptr && atoi(env_var_value) > static_cast<int>(ov::log::Level::WARNING));
 }
 
-void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const char* model_title) {
-    if (!env_setup_for_print_debug_info()) {
-        return;
-    }
+static std::string compiled_model_properties_to_string(const ov::CompiledModel& compiled_model, const char* model_title) {
     // output of the actual settings that the device selected
-    auto supported_properties = compiled_Model.get_property(ov::supported_properties);
-    std::cout << "Model: " << model_title << std::endl;
+    std::stringstream ss;
+    auto supported_properties = compiled_model.get_property(ov::supported_properties);
+    ss << "Model: " << model_title << "\n";
     for (const auto& cfg : supported_properties) {
         if (cfg == ov::supported_properties)
             continue;
         ov::Any prop;
         try {
-            prop = compiled_Model.get_property(cfg);
+            prop = compiled_model.get_property(cfg);
         } catch (const ov::Exception&) {
             continue;  // NPU: Unsupported configuration key: EXECUTION_MODE_HINT. Ticket 172485
         }
         if (cfg == ov::device::properties) {
             auto devices_properties = prop.as<ov::AnyMap>();
-            for (auto& item : devices_properties) {
-                std::cout << "  " << item.first << ": " << std::endl;
-                for (auto& item2 : item.second.as<ov::AnyMap>()) {
-                    std::cout << "    " << item2.first << ": " << item2.second.as<std::string>() << std::endl;
+            for (const auto& item : devices_properties) {
+                ss << "  " << item.first << ":\n";
+                for (const auto& item2 : item.second.as<ov::AnyMap>()) {
+                    ss << "    " << item2.first << ": " << item2.second.as<std::string>() << "\n";
                 }
             }
         } else {
-            std::cout << "  " << cfg << ": " << prop.as<std::string>() << std::endl;
+            ss << "  " << cfg << ": " << prop.as<std::string>() << "\n";
         }
     }
 
-    std::vector<std::string> exeTargets;
-    exeTargets = compiled_Model.get_property(ov::execution_devices);
-    std::cout << "EXECUTION_DEVICES:" << std::endl;
+    std::vector<std::string> exeTargets = compiled_model.get_property(ov::execution_devices);
+    ss << "EXECUTION_DEVICES:\n";
     for (const auto& device : exeTargets) {
         std::string full_name;
         try {
@@ -566,23 +564,25 @@ void print_compiled_model_properties(ov::CompiledModel& compiled_Model, const ch
         } catch (const ov::Exception&) {
             continue;  // NPU: No available devices. Ticket 172485
         }
-        std::cout << " " << device << ": " << full_name << std::endl;
+        ss << " " << device << ": " << full_name << "\n";
     }
+    return ss.str();
+}
+
+void print_compiled_model_properties(const ov::CompiledModel& compiled_model, const char* model_title) {
+    GENAI_DEBUG(compiled_model_properties_to_string(compiled_model, model_title));
 }
 
 void print_gguf_debug_info(const std::string &debug_info) {
-    if (!env_setup_for_print_debug_info()) {
-        return;
-    }
-    std::cout << "[GGUF Reader]: " << debug_info << std::endl;
+    GENAI_DEBUG(std::string("[GGUF Reader]: ") + debug_info);
 }
 
 void print_scheduler_config_info(const SchedulerConfig &scheduler_config) {
-    if (!env_setup_for_print_debug_info()) {
-        return;
-    }
+    GENAI_DEBUG(scheduler_config.to_string());
+}
 
-    std::cout << scheduler_config.to_string() << std::endl;
+void print_generation_config_info(const GenerationConfig &generation_config) {
+    GENAI_DEBUG(generation_config.to_string());
 }
 
 void import_npu_model(ov::CompiledModel& compiled,
