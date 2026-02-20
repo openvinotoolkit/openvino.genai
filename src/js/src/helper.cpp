@@ -825,7 +825,7 @@ Napi::Value cpp_to_js<size_t, Napi::Value>(const Napi::Env& env, const size_t& v
     if (value <= NAPI_NUMBER_MAX_INTEGER) {
         return Napi::Number::New(env, value);
     }
-    return Napi::BigInt::New(env, value);
+    return Napi::BigInt::New(env, static_cast<uint64_t>(value));
 }
 
 template <>
