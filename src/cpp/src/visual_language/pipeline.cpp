@@ -95,7 +95,9 @@ public:
 
         auto properties_copy = properties;
         auto language_model_path = models_dir / "openvino_language_model.xml";
-        auto language_model =  utils::singleton_core().read_model(language_model_path, {}, properties_copy);
+        auto extensions = utils::extract_extensions(properties_copy);
+        utils::add_extensions_to_core(extensions);
+        auto language_model = utils::singleton_core().read_model(language_model_path, {}, properties_copy);
         auto kv_pos = ov::genai::utils::get_kv_axes_pos(language_model);
 
         // In case user provided properties per-device
@@ -167,15 +169,18 @@ public:
         OPENVINO_ASSERT(!m_is_npu,
             "VLMPipeline initialization from string isn't supported for NPU device");
 
-        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties);
+        auto properties_copy = properties;
+        auto extensions = utils::extract_extensions(properties_copy);
+        utils::add_extensions_to_core(extensions);
+        m_inputs_embedder = std::make_shared<InputsEmbedder>(models_map, tokenizer, config_dir_path, device, properties_copy);
 
         m_tokenizer = m_inputs_embedder->get_tokenizer();
         m_embedding = m_inputs_embedder->get_embedding_model();
 
         auto m_language_pair = utils::get_model_weights_pair(models_map, "language");
-        m_language = utils::singleton_core().compile_model(
-            m_language_pair.first, m_language_pair.second, device, properties
-        ).create_infer_request();
+        m_language = utils::singleton_core()
+                         .compile_model(m_language_pair.first, m_language_pair.second, device, properties_copy)
+                         .create_infer_request();
 
         m_language.get_tensor("attention_mask").set_shape({1, 0});
 

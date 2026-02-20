@@ -791,6 +791,26 @@ std::pair<ov::AnyMap, std::string> extract_attention_backend(const ov::AnyMap& e
     return {properties, attention_backend};
 };
 
+PathExtensions extract_extensions(ov::AnyMap& properties) {
+    auto it = properties.find(EXTENSIONS_ARG_NAME);
+    PathExtensions extensions = {};
+    if (it != properties.end()) {
+        extensions = it->second.as<std::vector<std::variant<std::filesystem::path, std::shared_ptr<ov::Extension>>>>();
+        properties.erase(it);
+    }
+    return extensions;
+}
+
+void add_extensions_to_core(const PathExtensions& extensions) {
+    for (const auto& extension : extensions) {
+        if (std::holds_alternative<std::filesystem::path>(extension)) {
+            singleton_core().add_extension(std::get<std::filesystem::path>(extension));
+        } else {
+            singleton_core().add_extension(std::get<std::shared_ptr<ov::Extension>>(extension));
+        }
+    }
+}
+
 void release_core_plugin(const std::string& device) {
     try {
         singleton_core().unload_plugin(device);
