@@ -670,7 +670,7 @@ jobs:
         working-directory: ${{ env.SRC_DIR }}/src/js
         run: |
           npm install ${{ env.OV_INSTALL_DIR }}/openvino_node_npm_package/openvino-node-* --ignore-scripts
-          cp -R ${{ env.OV_INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
+          ln -s ${{ env.OV_INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
 
       - name: Check lint
