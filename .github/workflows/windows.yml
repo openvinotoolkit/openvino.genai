@@ -89,7 +89,8 @@ jobs:
       with:
         platform: windows
         commit_packages_to_provide: wheels,openvino_node_npm_package.zip
-        revision: latest_available_commit
+        # latest_available_commit fails with libopenvino_intel_npu_compiler.so: cannot open shared object file on Manylinux 2_28. Ticket: 181511
+        revision: 8f1e6829dc8eecdb9fca2a95d9271f35b780ddaa
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
@@ -956,7 +957,7 @@ jobs:
 
   genai_nodejs_tests:
     name: Node.js bindings tests
-    needs: [ smart_ci, openvino_download, genai_build_nodejs ]
+    needs: [ smart_ci, openvino_download, genai_build_wheels, genai_build_genai_wheel, genai_build_nodejs ]
     if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
     timeout-minutes: 20
     defaults:
@@ -976,10 +977,10 @@ jobs:
           path: ${{ env.SRC_DIR }}
           submodules: recursive
 
-      - name: Download OpenVINO Artifacts
+      - name: Download build artifacts (OpenVINO + wheels)
         uses: akashchi/download-artifact@d59a9c15fec3fdb7c9adf09464124d00f9c11415
         with:
-          name: ${{ needs.openvino_download.outputs.ov_artifact_name }}
+          pattern: "{${{ needs.openvino_download.outputs.ov_artifact_name }},genai_wheels,genai_wheel_python_*}"
           path: ${{ env.INSTALL_DIR }}
           merge-multiple: true
 
@@ -995,6 +996,12 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      - name: Setup Python
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
       # JS pacakges uses the OpenVINO and OpenVINO GenAI libraries from the bin directory.
       # Here we emulate the installation of the openvino-node package from NPM. The latest
       # release of the openvino-node package is installed, and we need to update the binaries
@@ -1005,6 +1012,13 @@ jobs:
           npm install $(Resolve-Path -Path "${{ env.INSTALL_DIR }}/openvino_node_npm_package/openvino-node-*") --ignore-scripts
           Copy-Item -Recurse ${{ env.INSTALL_DIR }}/openvino_node_npm_package/bin node_modules/openvino-node/bin
           npm install --verbose
+
+      - name: Install OpenVINO GenAI Python packages (from wheels)
+        uses: ./openvino.genai/.github/actions/install_wheel
+        with:
+          packages: "openvino;openvino_tokenizers[transformers];openvino_genai"
+          requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
+          local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: Run npm package tests
         working-directory: ${{ env.SRC_DIR }}/src/js

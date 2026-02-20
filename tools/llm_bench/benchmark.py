@@ -8,7 +8,6 @@ import logging as log
 from openvino import get_version
 import torch
 import traceback
-from llm_bench_utils.memory_monitor import MemMonitorWrapper, MemoryDataSummarizer
 import llm_bench_utils.output_csv
 import llm_bench_utils.output_json
 import task.visual_language_generation as bench_vlm
@@ -21,6 +20,7 @@ import task.text_embeddings as bench_text_embed
 import task.text_to_speech_generation as bench_text_to_speech
 import task.text_reranker as bench_text_rerank
 from llm_bench_utils.model_utils import analyze_args, get_ir_conversion_frontend, get_model_precision
+from llm_bench_utils.memory_monitor import MemoryDataSummarizer
 
 DEFAULT_TORCH_THREAD_NUMS = 16
 
@@ -116,23 +116,29 @@ def get_argparser():
         'Example for Pytorch: {\"PREC_BF16\":true}. Pytorch currently only supports bf16 settings.\n',
     )
     parser.add_argument(
-        '-mc',
-        '--memory_consumption',
+        "-mc",
+        "--memory_consumption",
         default=0,
         required=False,
         type=int,
-        help='Enables memory usage information collection mode. If the value is 1, output the maximum memory consumption in warm-up iterations.'
-        ' If the value is 2, output the maximum memory consumption in all iterations.\nIt is not recommended to run memory consumption and'
-        ' performance benchmarking at the same time. Effect on performance can be reduced by specifying a longer --memory_consumption_delay,'
-        ' but the impact is still expected. '
+        help="Enables memory usage monitoring mode. Use 1 to track maximum memory consumption during model compilation "
+        "and warm-up iteration, or 2 to track across all iterations. Warning: Concurrent memory consumption and "
+        "performance benchmarking is not recommended. Performance impact can be reduced by using longer "
+        "--memory_consumption_cooldown and --memory_consumption_interval values, though a degradation is unavoidable.",
     )
     parser.add_argument(
-        "--memory_consumption_delay",
+        "--memory_consumption_cooldown",
         default=None,
+        type=int,
+        help="Sleep interval in seconds before start of execution of each prompt (cooldown).",
+    )
+    parser.add_argument(
+        "--memory_consumption_interval",
+        default=0.01,
         required=False,
         type=float,
-        help="delay for memory consumption check in seconds, smaller value will lead to more precised memory consumption, but may affects performance."
-        "It is not recommended to run memory consumption and performance benchmarking in the same time",
+        help="Sampling interval (in s.) for monitoring memory consumption. Lower values increase measurement precision"
+        "but may degrade performance/latency. Avoid running memory consumption and performance benchmarks concurrently.",
     )
     parser.add_argument(
         '-mc_dir',
@@ -488,13 +494,7 @@ def main():
     log.info(out_str)
     memory_data_collector = None
     if args.memory_consumption:
-        memory_monitor = MemMonitorWrapper()
-        if args.memory_consumption_delay:
-            memory_monitor.interval = args.memory_consumption_delay
-        memory_monitor.create_monitors()
-        if args.memory_consumption_dir:
-            memory_monitor.set_dir(args.memory_consumption_dir)
-        memory_data_collector = MemoryDataSummarizer(memory_monitor)
+        memory_data_collector = MemoryDataSummarizer(args)
     try:
         if model_args['use_case'].task in ['text_gen', 'code_gen']:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case'].task](
@@ -543,7 +543,7 @@ def main():
         exit(1)
     finally:
         if memory_data_collector:
-            memory_data_collector.memory_monitor.stop()
+            memory_data_collector.stop()
 
 
 if __name__ == '__main__':
