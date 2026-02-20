@@ -633,6 +633,7 @@ VLMPipeline::VLMPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+    utils::clear_false_prompt_lookup_from_config(properties);
     if (device == "NPU") {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
@@ -676,6 +677,7 @@ VLMPipeline::VLMPipeline(
     auto start_time = std::chrono::steady_clock::now();
 
     auto [properties, attention_backend] = utils::extract_attention_backend(user_properties);
+    utils::clear_false_prompt_lookup_from_config(properties);
     if (device == "NPU") {
         auto it = properties.find("scheduler_config");
         OPENVINO_ASSERT(it == properties.end(), "scheduler_config should be removed for VLMPipeline initialization");
