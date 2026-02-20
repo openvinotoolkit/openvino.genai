@@ -751,6 +751,13 @@ def test_perf_metrics(model_descr, sample_from_dataset):
     assert perf_metrics.get_features_extraction_duration().mean > 0
     assert perf_metrics.get_word_level_timestamps_processing_duration().mean > 0
 
+    # Verify encode/decode inference durations
+    assert perf_metrics.get_encode_inference_duration().mean > 0
+    assert perf_metrics.get_decode_inference_duration().mean > 0
+
+    # Verify sampling duration
+    assert perf_metrics.get_sampling_duration().mean > 0
+
     # assert that calculating statistics manually from the raw counters we get the same results as from PerfMetrics
     whisper_raw_metrics = perf_metrics.whisper_raw_metrics
 
@@ -766,6 +773,30 @@ def test_perf_metrics(model_descr, sample_from_dataset):
     mean_dur, std_dur = perf_metrics.get_word_level_timestamps_processing_duration()
     assert np.allclose(mean_dur, np.mean(word_ts_raw_dur))
     assert np.allclose(std_dur, np.std(word_ts_raw_dur))
+
+    # Verify encode inference raw metrics match computed stats
+    assert len(whisper_raw_metrics.encode_inference_durations) > 0
+    raw_enc = np.array(whisper_raw_metrics.encode_inference_durations) / 1000
+    mean_enc, std_enc = perf_metrics.get_encode_inference_duration()
+    assert np.allclose(mean_enc, np.mean(raw_enc))
+    assert np.allclose(std_enc, np.std(raw_enc))
+
+    # Verify decode inference raw metrics match computed stats
+    assert len(whisper_raw_metrics.decode_inference_durations) > 0
+    raw_dec = np.array(whisper_raw_metrics.decode_inference_durations) / 1000
+    mean_dec, std_dec = perf_metrics.get_decode_inference_duration()
+    assert np.allclose(mean_dec, np.mean(raw_dec))
+    assert np.allclose(std_dec, np.std(raw_dec))
+
+    # Verify sampling raw metrics match computed stats
+    raw_metrics = perf_metrics.raw_metrics
+    assert len(raw_metrics.sampling_durations) > 0
+    # decode count should equal sampling count (one sample per decode)
+    assert len(whisper_raw_metrics.decode_inference_durations) == len(raw_metrics.sampling_durations)
+    raw_sampling = np.array(raw_metrics.sampling_durations) / 1000
+    mean_sampling, std_sampling = perf_metrics.get_sampling_duration()
+    assert np.allclose(mean_sampling, np.mean(raw_sampling))
+    assert np.allclose(std_sampling, np.std(raw_sampling))
 
 
 @pytest.fixture(params=[

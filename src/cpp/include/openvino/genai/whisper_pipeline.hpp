@@ -23,6 +23,10 @@ struct WhisperRawPerfMetrics {
     /** @brief Duration for each features extraction call */
     std::vector<MicroSeconds> features_extraction_durations;
     std::vector<MicroSeconds> word_level_timestamps_processing_durations;
+    /** @brief Duration for each encoder inference call */
+    std::vector<MicroSeconds> encode_inference_durations;
+    /** @brief Duration for each decoder inference call */
+    std::vector<MicroSeconds> decode_inference_durations;
 };
 
 struct OPENVINO_GENAI_EXPORTS WhisperPerfMetrics : public PerfMetrics {
@@ -33,6 +37,14 @@ struct OPENVINO_GENAI_EXPORTS WhisperPerfMetrics : public PerfMetrics {
 
     MeanStdPair word_level_timestamps_processing_duration;
     MeanStdPair get_word_level_timestamps_processing_duration();
+
+    /** @brief Mean and standard deviation of Encode Inference Duration in milliseconds */
+    MeanStdPair encode_inference_duration;
+    MeanStdPair get_encode_inference_duration();
+
+    /** @brief Mean and standard deviation of Decode Inference Duration in milliseconds */
+    MeanStdPair decode_inference_duration;
+    MeanStdPair get_decode_inference_duration();
 
     WhisperPerfMetrics() = default;
 

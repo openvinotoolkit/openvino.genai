@@ -18,6 +18,16 @@ MeanStdPair WhisperPerfMetrics::get_word_level_timestamps_processing_duration() 
     return word_level_timestamps_processing_duration;
 }
 
+MeanStdPair WhisperPerfMetrics::get_encode_inference_duration() {
+    evaluate_statistics();
+    return encode_inference_duration;
+}
+
+MeanStdPair WhisperPerfMetrics::get_decode_inference_duration() {
+    evaluate_statistics();
+    return decode_inference_duration;
+}
+
 void WhisperPerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time) {
     if (m_evaluated) {
         return;
@@ -27,6 +37,10 @@ void WhisperPerfMetrics::evaluate_statistics(std::optional<TimePoint> start_time
 
     word_level_timestamps_processing_duration =
         ov::genai::calc_mean_and_std(whisper_raw_metrics.word_level_timestamps_processing_durations);
+
+    encode_inference_duration = ov::genai::calc_mean_and_std(whisper_raw_metrics.encode_inference_durations);
+
+    decode_inference_duration = ov::genai::calc_mean_and_std(whisper_raw_metrics.decode_inference_durations);
 
     PerfMetrics::evaluate_statistics(start_time);
 };
@@ -52,6 +66,18 @@ WhisperPerfMetrics WhisperPerfMetrics::operator+(const WhisperPerfMetrics& right
     result_word_level_timestamps_processing_durations.insert(result_word_level_timestamps_processing_durations.end(),
                                                              right_word_level_timestamps_processing_durations.begin(),
                                                              right_word_level_timestamps_processing_durations.end());
+
+    auto& result_encode_inference_durations = result.whisper_raw_metrics.encode_inference_durations;
+    auto& right_encode_inference_durations = right.whisper_raw_metrics.encode_inference_durations;
+    result_encode_inference_durations.insert(result_encode_inference_durations.end(),
+                                            right_encode_inference_durations.begin(),
+                                            right_encode_inference_durations.end());
+
+    auto& result_decode_inference_durations = result.whisper_raw_metrics.decode_inference_durations;
+    auto& right_decode_inference_durations = right.whisper_raw_metrics.decode_inference_durations;
+    result_decode_inference_durations.insert(result_decode_inference_durations.end(),
+                                            right_decode_inference_durations.begin(),
+                                            right_decode_inference_durations.end());
     return result;
 }
 
