@@ -139,7 +139,7 @@ public:
         // NPU is not supporting history, so in chat scenarios let's use full chat history on each iteration
         m_use_full_chat_history = m_is_npu;
 
-        utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        utils::CacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
         kv_cache_state.seq_length_axis = kv_pos.seq_len;
 
         // If eos_token_id was not provided, take value
@@ -296,7 +296,7 @@ public:
                 }
             }
         } else {
-            utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+            utils::CacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
             kv_cache_state.reset_state();
         }
 
@@ -561,7 +561,7 @@ private:
                 " config option to increase the limit.");
         }
 
-        utils::KVCacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
+        utils::CacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
 
         if (m_is_chat_conversation) {
             if (m_use_full_chat_history) {

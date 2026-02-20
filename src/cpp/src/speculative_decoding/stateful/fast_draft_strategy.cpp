@@ -53,6 +53,8 @@ namespace genai {
     m_generation_config(model_desc.generation_config),
     m_tokenizer(model_desc.tokenizer) {
     m_kv_pos = ov::genai::utils::get_kv_axes_pos(model_desc.model);
+    // detect cache kinds (KV / Linear)
+    m_cache_types = utils::get_cache_types(model_desc.model);
     if (m_device == "NPU") {
         auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model_desc.model, m_properties, m_kv_pos);
         m_max_prompt_len = kv_desc.max_prompt_len;
@@ -276,7 +278,7 @@ void LLMInferWrapper::trim_kv_cache(const size_t tokens_to_remove) {
     // For NPU "trim" is done by position ids on NPUW side.
     if (m_device != "NPU") {
         // Trim kv_cache values on tokens_to_remove
-        ov::genai::utils::KVCacheState to_trim_state;
+        ov::genai::utils::CacheState to_trim_state(m_cache_types);
         to_trim_state.num_tokens_to_trim = tokens_to_remove;
         to_trim_state.seq_length_axis =  m_kv_pos.seq_len;
         to_trim_state.reset_mem_state = false;

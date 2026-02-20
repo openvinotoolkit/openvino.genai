@@ -435,13 +435,48 @@ size_t get_first_history_difference(const ov::Tensor& encoded_history, const std
     return idx;
 }
 
+
+CacheTypes get_cache_types(std::shared_ptr<const ov::Model> model) {
+    // "ReadValue" node is cache representation in stateful model
+    const std::string state_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
+    CacheTypes cache_types;
+
+    for (const auto op : model->get_ops()) {
+        // check input size, as in LoRA adapters case it could be 0
+        if (op->get_type_name() != state_node_type_name || op->get_input_size() < 1) {
+            continue;
+        }
+
+        // Shape example: [-1,4,0,64]
+        auto shape = op->get_input_partial_shape(0);
+        const auto rank = shape.rank().get_length();
+        size_t dynamic_axis_count = 0;
+        for (size_t i = 0; i < rank; i++) {
+            if (shape[i].is_dynamic()) {
+                dynamic_axis_count++;
+            }
+        }
+
+        if (rank == 4 && dynamic_axis_count == 2) {
+            cache_types.add_kvcache();
+        } else if (rank == 3 && dynamic_axis_count == 1) {
+            cache_types.add_linear();
+        } else {
+            continue;
+        }
+    }
+
+    return cache_types;
+}
+
+
 KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
     // sequence length axis in key/values tensors, for most cases [BATCH_SIZE, num_kv_heads, seq_len, head_size],
     // therefore usually seq_length_axis = 2 and batch = 0
     KVAxesPosition kv_pos { 0u, 2u };
 
     // "ReadValue" node is KV cache representation in stateful model
-    std::string kv_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
+    const std::string kv_node_type_name = std::string(ov::op::v6::ReadValue::get_type_info_static().name);
 
     for (const auto op : model->get_ops()) {
         // check input size, as in LoRA adapters case it could be 0
@@ -451,6 +486,10 @@ KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
 
         // Shape example: [-1,4,0,64]
         auto shape = op->get_input_partial_shape(0);
+        if (shape.rank().get_length() != 4) {
+            // kv cache should have 4 dimensions
+            continue;
+        }
 
         for (size_t i = 0; i < shape.rank().get_length(); i++) {
             // Find axis = 0. This would be sequence length axis.
@@ -467,8 +506,12 @@ KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
     return kv_pos;
 }
 
-void trim_kv_cache(ov::InferRequest request, KVCacheState& kv_cache_state, std::optional<AdapterController> adapter_controller) {
-    if (kv_cache_state.reset_mem_state) {
+void trim_kv_cache(ov::InferRequest request, CacheState& cache_state, std::optional<AdapterController> adapter_controller) {
+    if (
+        cache_state.reset_mem_state
+        // linear cache stores only the last state, trimming is not possible, so we reset the whole cache in this case
+        || (cache_state.num_tokens_to_trim > 0 && cache_state.has_linear())
+    ) {
         if (adapter_controller) {
             for(auto& state: request.query_state()) {
                 if(!adapter_controller->has_state_name(state.get_name())) {
@@ -483,11 +526,10 @@ void trim_kv_cache(ov::InferRequest request, KVCacheState& kv_cache_state, std::
     }
 
     // nothing to trim in this case
-    if (kv_cache_state.num_tokens_to_trim == 0)
+    if (cache_state.num_tokens_to_trim == 0)
         return;
 
     auto states = request.query_state();
-
     OPENVINO_ASSERT(states.size() > 0, "Request contains no states.");
 
     for (auto& state : states) {
@@ -497,7 +539,7 @@ void trim_kv_cache(ov::InferRequest request, KVCacheState& kv_cache_state, std::
         ov::Tensor old_tensor = state.get_state();
         // [BATCH_SIZE, num_kv_heads, seq_len, head_size]
         auto shape = old_tensor.get_shape();
-        shape[kv_cache_state.seq_length_axis] -= kv_cache_state.num_tokens_to_trim;
+        shape[cache_state.seq_length_axis] -= cache_state.num_tokens_to_trim;
 
         ov::Coordinate new_shape_begin{0, 0, 0, 0};
         ov::Coordinate new_shape_end{shape};

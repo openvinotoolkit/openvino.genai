@@ -694,7 +694,7 @@ ov::Tensor VisionTokenPruningProcessor::update_position_ids_1d(
 std::optional<VisionTokenPruningProcessor::PruningResult> VisionTokenPruningProcessor::execute(
     const PruningContext& context,
     ov::Tensor& position_ids,
-    utils::KVCacheState& kv_cache_state,
+    utils::CacheState& kv_cache_state,
     size_t prev_hist_length) {
     auto pruning_start = std::chrono::high_resolution_clock::now();
 

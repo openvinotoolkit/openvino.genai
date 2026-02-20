@@ -42,6 +42,9 @@ Eagle3InferWrapperBase::Eagle3InferWrapperBase(const ModelDesc& model_desc)
       m_sampler(model_desc.tokenizer) {
     m_kv_axes_pos = utils::get_kv_axes_pos(model_desc.model);
 
+    // detect cache kinds (KV / Linear)
+    m_cache_types = utils::get_cache_types(model_desc.model);
+
     if (m_device == "NPU") {
         auto [compiled, kv_desc] = utils::compile_decoder_for_npu(model_desc.model, m_properties, m_kv_axes_pos);
         m_max_prompt_len = kv_desc.max_prompt_len;
@@ -99,7 +102,7 @@ void Eagle3InferWrapperBase::trim_kv_cache(size_t tokens_to_remove) {
                     " tokens. Valid range: 0 < tokens_to_remove < current_len");
 
     if (m_device != "NPU") {
-        utils::KVCacheState state;
+        utils::CacheState state(m_cache_types);
         state.num_tokens_to_trim = tokens_to_remove;
         state.seq_length_axis = m_kv_axes_pos.seq_len;
         state.reset_mem_state = false;

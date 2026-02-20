@@ -90,7 +90,7 @@ public:
     Tokenizer get_tokenizer() const;
 
     // get reflection of tokens contained in the kv cache
-    utils::KVCacheState& get_kv_cache_state();
+    utils::CacheState& get_kv_cache_state();
 
     // starts chat and adds optional system_message to chat history
     void start_chat(const std::string& system_message);
@@ -143,7 +143,7 @@ private:
         // Finish reason of last generation for chat scenario
         ov::genai::GenerationStatus m_chat_generation_finish_status = ov::genai::GenerationStatus::RUNNING;
         // reflection of tokens contained in the kv cache
-        utils::KVCacheState m_kv_cache_state;
+        utils::CacheState m_cache_state;
         // length of attention_mask/kv cache at the beginning of generation()
         size_t m_prev_hist_length = 0;
         // True if tokenizer should add special tokens
@@ -213,8 +213,8 @@ private:
             m_pruning_processor->set_config(config);
         }
 
-        utils::KVCacheState& get_kv_cache_state() {
-            return m_kv_cache_state;
+        utils::CacheState& get_kv_cache_state() {
+            return m_cache_state;
         }
 
         void set_apply_chat_template_status(bool apply_chat_template) {
@@ -314,7 +314,7 @@ private:
          */
         std::optional<VisionTokenPruningProcessor::PruningResult> execute_pruning_pipeline(
             const PruningContext& context) {
-            return m_pruning_processor->execute(context, m_position_ids, m_kv_cache_state, m_prev_hist_length);
+            return m_pruning_processor->execute(context, m_position_ids, m_cache_state, m_prev_hist_length);
         }
     };
 

@@ -81,7 +81,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
     std::vector<SequenceGroup::Ptr> sequence_groups,
     std::optional<ov::Tensor> position_ids,
     std::optional<ov::Tensor> token_type_ids,
-    utils::KVCacheState& kv_cache_state,
+    utils::CacheState& cache_state,
     EmbeddingsModel::Ptr m_embedding,
     std::optional<int64_t> rope_delta,
     const size_t max_kv_cache_size,
@@ -139,7 +139,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         if (token_type_ids.has_value())
             m_llm.set_tensor("token_type_ids", *token_type_ids);
     } else {
-        kv_cache_state.add_inputs(input_ids);
+        cache_state.add_inputs(input_ids);
         m_llm.set_tensor("input_ids", input_ids);
     }
     m_llm.set_tensor("attention_mask", attention_mask);
@@ -247,7 +247,7 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
         // in case of beam_search in chat mode, kv cache contains info about longest generated result among all sequences
         // last answer will be removed from kv_cache and will be included to the prompt on the next step
         if (new_input_ids.get_size() == 1)
-            kv_cache_state.add_inputs(new_input_ids);
+            cache_state.add_inputs(new_input_ids);
 
         update_attention_mask_with_beams(m_llm.get_tensor("attention_mask"), next_beams);
 
@@ -310,24 +310,24 @@ ov::genai::utils::GenerationFinishInfo get_lm_encoded_results(
 }
 
 
-TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, utils::KVCacheState& kv_cache_state) {
+TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, utils::CacheState& cache_state) {
     TokenizedInputs encoded_input;
-    size_t kv_cache_len = kv_cache_state.get_state().size();
-    if (kv_cache_len == 0) {
+    size_t cache_len = cache_state.get_state().size();
+    if (cache_len == 0) {
         encoded_input.input_ids = new_chat_tokens;
         ov::Tensor new_attention_mask(ov::element::i64, new_chat_tokens.get_shape());
         std::fill_n(new_attention_mask.data<int64_t>(), new_chat_tokens.get_shape()[1], 1);
         encoded_input.attention_mask = new_attention_mask;
     } else {
         ov::Tensor new_tensor = ov::Tensor(new_chat_tokens.get_element_type(),
-                                            {1, new_chat_tokens.get_shape().at(1) - kv_cache_len},
-                                            new_chat_tokens.data<int64_t>() + kv_cache_len);
+                                            {1, new_chat_tokens.get_shape().at(1) - cache_len},
+                                            new_chat_tokens.data<int64_t>() + cache_len);
 
         ov::Tensor new_attention_mask(ov::element::i64, new_tensor.get_shape());
         std::fill_n(new_attention_mask.data<int64_t>(), new_tensor.get_shape()[1], 1);
 
         encoded_input.input_ids = ov::Tensor(new_chat_tokens.get_element_type(),
-                                             {1, new_chat_tokens.get_shape().at(1) - kv_cache_len});
+                                             {1, new_chat_tokens.get_shape().at(1) - cache_len});
         new_tensor.copy_to(encoded_input.input_ids);
 
         encoded_input.attention_mask = new_attention_mask;
@@ -337,7 +337,7 @@ TokenizedInputs get_chat_encoded_input(const ov::Tensor& new_chat_tokens, utils:
 }
 
 
-void align_kv_cache_and_history(const ov::Tensor& new_chat_tokens, utils::KVCacheState& kv_cache_state) {
+void align_kv_cache_and_history(const ov::Tensor& new_chat_tokens, utils::CacheState& cache_state) {
     // KV cache in model already contains prompts and answers from previous iterations.
     // So only new prompt wrapped into chat template to be sent into model. Tokenizer always returns
     // token_ids = {<bos token>, ...<valuable tokens>}. So if tokenizer applies only to the new prompt,
@@ -347,17 +347,17 @@ void align_kv_cache_and_history(const ov::Tensor& new_chat_tokens, utils::KVCach
     // Also some symbols combinations can be encoded by the tokenizer in different ways.
     // So let's check it out, find the same part of tokenized history and templated one, and use that part on the next step.
 
-    std::vector<int64_t>& state = kv_cache_state.get_state();
+    std::vector<int64_t>& state = cache_state.get_state();
 
     if (state.empty())
         return;
 
     size_t first_diverse_tokens_idx = ov::genai::utils::get_first_history_difference(new_chat_tokens, state);
     // in the case of beam_search the longest answer is in the kv cache, but the best one is needed
-    // so generated tokens were not added to KVCacheState and num_tokens_to_trim was set to the size of the generated serquence
-    kv_cache_state.num_tokens_to_trim += state.size() - first_diverse_tokens_idx;
+    // so generated tokens were not added to KVCacheState and num_tokens_to_trim was set to the size of the generated sequence
+    cache_state.num_tokens_to_trim += state.size() - first_diverse_tokens_idx;
     state.resize(first_diverse_tokens_idx);
-    kv_cache_state.reset_mem_state = state.empty();
+    cache_state.reset_mem_state = state.empty() || cache_state.has_linear();
 }
 
 }  // namespace genai

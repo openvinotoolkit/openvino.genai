@@ -6,6 +6,7 @@
 #include <optional>
 #include <stdexcept>
 #include <utility>
+#include <cstdint>
 
 #include "openvino/genai/llm_pipeline.hpp"
 #include "openvino/genai/visual_language/pipeline.hpp"
@@ -144,6 +145,21 @@ void release_core_plugin(const std::string& device);
 
 size_t get_first_history_difference(const ov::Tensor& encoded_history, const std::vector<int64_t> tokenized_history);
 
+struct CacheTypes {
+    CacheTypes() = default;
+    explicit CacheTypes(uint8_t m) : mask(m) {}
+    void add_kvcache() { mask |= (1u << 0); }
+    void add_linear() { mask |= (1u << 1); }
+    bool has_kvcache() const { return (mask & (1u << 0)) != 0; }
+    bool has_linear() const { return (mask & (1u << 1)) != 0; }
+    bool is_hybrid() const { return has_kvcache() && has_linear(); }
+    uint8_t value() const { return mask; }
+private:
+    uint8_t mask = 0;
+};
+
+CacheTypes get_cache_types(std::shared_ptr<const ov::Model> model);
+
 struct KVAxesPosition {
     size_t batch;
     size_t seq_len;
@@ -151,9 +167,21 @@ struct KVAxesPosition {
 
 KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model);
 
-class KVCacheState {
+class CacheState {
     std::vector<int64_t> state;
+    CacheTypes cache_types;
 public:
+    // Default constructor
+    CacheState() = default;
+
+    // Construct from CacheTypes
+    explicit CacheState(CacheTypes cache_types) : cache_types(cache_types) {}
+
+    // Construct from model by detecting cache types inside the model
+    explicit CacheState(const std::shared_ptr<const ov::Model>& model) {
+        cache_types = get_cache_types(model);
+    }
+
     size_t num_tokens_to_trim = 0;
     size_t seq_length_axis = 2;
     bool reset_mem_state = false;
@@ -171,9 +199,14 @@ public:
         num_tokens_to_trim = 0;
         state.clear();
     }
+
+    bool has_linear() const { return cache_types.has_linear(); }
+    bool has_kvcache() const { return cache_types.has_kvcache(); }
+    bool is_hybrid() const { return cache_types.is_hybrid(); }
+
 };
 
-void trim_kv_cache(ov::InferRequest request, KVCacheState& kv_cache_state, std::optional<AdapterController> adapter_controller);
+void trim_kv_cache(ov::InferRequest request, CacheState& cache_state, std::optional<AdapterController> adapter_controller);
 
 ov::Tensor push_front_inputs(const ov::Tensor& base_tensor, int64_t add_to_front);
 
