@@ -28,7 +28,7 @@
 #
 # Source: githubnext/agentics/workflows/ci-doctor.md@0aa94a6e40aeaf131118476bc6a07e55c4ceb147
 #
-# gh-aw-metadata: {"schema_version":"v1","frontmatter_hash":"f8990bd2d51ab8f19595bd3f24095f36e36dd997b4c0171823c8d3c6c4eda14b","compiler_version":"v0.46.5"}
+# gh-aw-metadata: {"schema_version":"v1","frontmatter_hash":"7dc51d3da7fab055d27c1c46f6ec1f36fd8ec4db098dae1ff77ee4af6c1b9c14","compiler_version":"v0.46.5"}
 
 name: "CI Failure Doctor"
 "on":
@@ -1126,8 +1126,10 @@ jobs:
       ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'failure' &&
       (github.event.workflow_run.head_branch == 'master' || github.event.workflow_run.event == 'pull_request')) }}
     runs-on: ubuntu-slim
+    permissions:
+      actions: read
     outputs:
-      activated: ${{ steps.check_membership.outputs.is_team_member == 'true' }}
+      activated: ${{ (steps.check_membership.outputs.is_team_member == 'true') && (steps.check_rate_limit.outputs.rate_limit_ok == 'true') }}
     steps:
       - name: Setup Scripts
         uses: github/gh-aw/actions/setup@5a79466d65414632d47c7869b27170ade5b9404e # v0.46.5
@@ -1144,6 +1146,21 @@ jobs:
             const { setupGlobals } = require('/opt/gh-aw/actions/setup_globals.cjs');
             setupGlobals(core, github, context, exec, io);
             const { main } = require('/opt/gh-aw/actions/check_membership.cjs');
+            await main();
+      - name: Check user rate limit
+        id: check_rate_limit
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          GH_AW_RATE_LIMIT_MAX: "5"
+          GH_AW_RATE_LIMIT_WINDOW: "60"
+          GH_AW_RATE_LIMIT_EVENTS: "workflow_dispatch"
+          GH_AW_RATE_LIMIT_IGNORED_ROLES: "admin,maintain,write"
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { setupGlobals } = require('/opt/gh-aw/actions/setup_globals.cjs');
+            setupGlobals(core, github, context, exec, io);
+            const { main } = require('/opt/gh-aw/actions/check_rate_limit.cjs');
             await main();
 
   safe_outputs:
