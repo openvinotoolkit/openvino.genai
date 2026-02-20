@@ -15,6 +15,7 @@
 #include <variant>
 
 #include "openvino/openvino.hpp"
+#include "openvino/genai/llm_pipeline.hpp"
 
 extern "C" {
 #include <gguflib.h>
@@ -36,9 +37,24 @@ void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
                          std::unordered_map<std::string, gguf_tensor_type>& qtype_map,
                          const gguf_tensor& tensor);
 
+// Quantization functions for requantization during GGUF load
+void quantize_q4_0(const float* src,
+                   ov::Tensor& weights_out,
+                   ov::Tensor& scales_out,
+                   ov::Tensor& biases_out,
+                   int64_t n_elements,
+                   int64_t block_size);
+
+void quantize_q8_0(const float* src,
+                   ov::Tensor& weights_out,
+                   ov::Tensor& scales_out,
+                   ov::Tensor& biases_out,
+                   int64_t n_elements,
+                   int64_t block_size);
+
 std::tuple<std::map<std::string, GGUFMetaData>,
            std::unordered_map<std::string, ov::Tensor>,
            std::unordered_map<std::string, gguf_tensor_type>>
-load_gguf(const std::string& file);
+load_gguf(const std::string& file, const ov::genai::OVModelQuantizeMode& quantize_mode = ov::genai::OVModelQuantizeMode::ORIGINAL);
 
-GGUFLoad get_gguf_data(const std::string& file);
+GGUFLoad get_gguf_data(const std::string& file, const ov::genai::OVModelQuantizeMode& quantize_mode = ov::genai::OVModelQuantizeMode::ORIGINAL);

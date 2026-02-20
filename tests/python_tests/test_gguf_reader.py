@@ -178,7 +178,9 @@ def test_full_gguf_pipeline(
 
     if enable_save_ov_model:
         gguf_full_path = Path(gguf_full_path)
-        ov_pipe_native = create_ov_pipeline(gguf_full_path.parent, pipeline_type=pipeline_type, dynamic_quantization_group_size=dynamic_quantization_group_size)
+        # Model is saved to ov_model_original/ subdirectory (default mode when enable_save_ov_model=True)
+        saved_model_dir = gguf_full_path.parent / "ov_model_original"
+        ov_pipe_native = create_ov_pipeline(saved_model_dir, pipeline_type=pipeline_type, dynamic_quantization_group_size=dynamic_quantization_group_size)
         res_string_input_3  = ov_pipe_native.generate(prompt, generation_config=ov_generation_config)
         del ov_pipe_native
         gc.collect()
@@ -222,3 +224,121 @@ def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
     res_string_input_2 = ov_pipe_gguf.generate(prompt, generation_config=ov_generation_config)
 
     assert res_string_input_1 == res_string_input_2
+
+
+@pytest.mark.parametrize("model_gguf", [GGUF_MODEL_LIST[0]], indirect=True)
+@pytest.mark.parametrize(
+    "save_ov_model_quantize_mode,enable_save_ov_model,expected_log",
+    [
+        ("ORIGINAL", True, "quantization_mode=ORIGINAL, save_file=YES"),
+        ("ORIGINAL", False, "quantization_mode=ORIGINAL, save_file=NO"),
+        ("ORIGINAL", None, "quantization_mode=ORIGINAL, save_file=NO"),
+        ("GPU_OPTIMIZED", True, "quantization_mode=GPU_OPTIMIZED, save_file=YES"),
+        ("GPU_OPTIMIZED", False, "quantization_mode=GPU_OPTIMIZED, save_file=NO"),
+        ("GPU_OPTIMIZED", None, "quantization_mode=GPU_OPTIMIZED, save_file=NO"),
+        (None, True, "quantization_mode=ORIGINAL, save_file=YES"),
+        (None, False, "quantization_mode=ORIGINAL, save_file=NO"),
+        (None, None, "quantization_mode=ORIGINAL, save_file=NO"),
+        ("gpu_optimized", True, "quantization_mode=GPU_OPTIMIZED, save_file=YES"),
+    ],
+    ids=[
+        "ORIGINAL_save",
+        "ORIGINAL_no_save",
+        "ORIGINAL_default_save",
+        "GPU_OPTIMIZED_save",
+        "GPU_OPTIMIZED_no_save",
+        "GPU_OPTIMIZED_default_save",
+        "default_ORIGINAL_save",
+        "default_ORIGINAL_no_save",
+        "all_defaults",
+        "lowercase_test",
+    ]
+)
+def test_ov_model_quantize_mode_log_verification(
+    model_gguf: ModelInfo, 
+    save_ov_model_quantize_mode: str,
+    enable_save_ov_model: bool,
+    expected_log: str,
+    capfd,
+    monkeypatch
+):
+    """Configuration Validation Test: Verifies save_ov_model_quantize_mode x enable_save_ov_model matrix via log output
+    
+    Objectives:
+    1. Integration: String-based config (pipe_config dict, following OV PerformanceMode) → C++ extract_gguf_properties → correct processing
+    2. Independence: save_ov_model_quantize_mode ⊥ enable_save_ov_model (decoupled control)
+       - "GPU_OPTIMIZED_no_save": GPU_OPTIMIZED processing WITHOUT file saving for model encryption
+    3. Default: No auto-save. enable_save_ov_model must be explicitly True to save.
+    4. Case-insensitive: "GPU_OPTIMIZED"/"gpu_optimized" → same result
+    
+    Test Matrix (10 scenarios):
+    - save_ov_model_quantize_mode ∈ {ORIGINAL, GPU_OPTIMIZED, None} x enable_save_ov_model ∈ {True, False, None}
+    - + 1 lowercase test ("gpu_optimized")
+    
+    Tools: monkeypatch (OPENVINO_LOG_LEVEL=3) + capfd (capture logs)
+    """
+    if sys.platform == 'darwin':
+        pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
+    
+    gguf_full_path = model_gguf.gguf_full_path
+    monkeypatch.setenv("OPENVINO_LOG_LEVEL", "3")
+    
+    pipe_config = {}
+    if save_ov_model_quantize_mode is not None:
+        pipe_config["save_ov_model_quantize_mode"] = save_ov_model_quantize_mode
+    if enable_save_ov_model is not None:
+        pipe_config["enable_save_ov_model"] = enable_save_ov_model
+    
+    pipe = ov_genai.LLMPipeline(gguf_full_path, "CPU", pipe_config)
+    del pipe
+    gc.collect()
+    
+    captured = capfd.readouterr()
+    output = captured.out + captured.err
+    
+    assert expected_log in output, \
+        f"Expected log '{expected_log}' not found in output:\n{output}"
+    
+    print(f"✓ Test passed: mode={save_ov_model_quantize_mode}, enable_save_ov_model={enable_save_ov_model}")
+
+
+@pytest.mark.parametrize("model_gguf", [GGUF_MODEL_LIST[0]], indirect=True)
+def test_full_gguf_pipeline_quantize_mode(
+    model_gguf: ModelInfo,
+):
+    """E2E Inference Test: Validates GPU_OPTIMIZED maintains output consistency in short generation
+    
+    Verifies that GPU_OPTIMIZED mode (larger group-size requantization) produces identical outputs
+    as ORIGINAL in short-text scenario (30 tokens), proving requant functionality works correctly.
+    Note: Single model test is sufficient to validate requant mechanism. Minor differences with
+    other models/prompts or longer outputs are acceptable due to quantization precision trade-offs.
+    """
+    if sys.platform == 'darwin':
+        pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
+    
+    gguf_full_path = model_gguf.gguf_full_path
+    prompt = 'Why is the Sun yellow?'
+    
+    ov_generation_config = ov_genai.GenerationConfig()
+    ov_generation_config.max_new_tokens = 30
+    ov_generation_config.apply_chat_template = False
+    
+    outputs = {}
+    for mode in ["ORIGINAL", "GPU_OPTIMIZED"]:
+        pipe_config = {
+            "save_ov_model_quantize_mode": mode,
+            "enable_save_ov_model": False
+        }
+        
+        pipe = ov_genai.LLMPipeline(gguf_full_path, "CPU", pipe_config)
+        output = pipe.generate(prompt, generation_config=ov_generation_config)
+        outputs[mode] = output
+        del pipe
+        gc.collect()
+        
+        print(f"✓ {mode}: output_length={len(output)}")
+    
+    assert outputs["ORIGINAL"] == outputs["GPU_OPTIMIZED"], \
+        f"Outputs must be identical!\nORIGINAL: {outputs['ORIGINAL']}\nGPU_OPTIMIZED: {outputs['GPU_OPTIMIZED']}"
+    
+    print(f"✓ Inference correctness validated: ORIGINAL == GPU_OPTIMIZED")
