@@ -113,6 +113,7 @@ public:
 
         ov::CompiledModel compiled_language_model;
         auto embedder_device = device;
+
         if (m_is_npu) {
             embedder_device = "AUTO";
             utils::KVDesc kv_desc;
@@ -196,7 +197,7 @@ public:
         GenerationConfig generation_config,
         const StreamerVariant& streamer
     ) override {
-        return generate(prompt, images, {}, std::move(generation_config), streamer);
+        return generate(prompt, images, {}, std::move(generation_config), streamer, {});
     }
 
     VLMDecodedResults generate(
@@ -205,6 +206,17 @@ public:
         const std::vector<ov::Tensor>& videos,
         GenerationConfig generation_config,
         const StreamerVariant& streamer
+    ) override {
+        return generate(prompt, images, videos, std::move(generation_config), streamer, {});
+    }
+
+    VLMDecodedResults generate(
+        const std::string& prompt,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer,
+        const ov::AnyMap& config_map
     ) override {
         auto generate_start_time = std::chrono::steady_clock::now();
         VLMPerfMetrics perf_metrics;
@@ -226,7 +238,7 @@ public:
         m_inputs_embedder->set_vision_token_pruning_config(generation_config.pruning_ratio,
                                                            generation_config.relevance_weight);
 
-        auto encoded_images = m_inputs_embedder->encode_images(images);
+        auto encoded_images = m_inputs_embedder->encode_images(images, config_map);
         const auto encoded_videos = m_inputs_embedder->encode_videos(videos);
         auto [unified_prompt, image_sequence, video_sequence] = m_inputs_embedder->normalize_prompt(prompt, m_image_id, m_video_id, encoded_images, encoded_videos);
 
@@ -719,6 +731,17 @@ VLMDecodedResults VLMPipeline::generate(
     const StreamerVariant& streamer
 ) {
     return m_pimpl->generate(prompt, images, videos, generation_config, streamer);
+}
+
+VLMDecodedResults VLMPipeline::generate(
+    const std::string& prompt,
+    const std::vector<ov::Tensor>& images,
+    const std::vector<ov::Tensor>& videos,
+    const GenerationConfig& generation_config,
+    const StreamerVariant& streamer,
+    const ov::AnyMap& config_map
+) {
+    return m_pimpl->generate(prompt, images, videos, generation_config, streamer, config_map);
 }
 
 VLMDecodedResults VLMPipeline::generate(

@@ -111,6 +111,17 @@ public:
                                  const std::vector<ov::Tensor>& images,
                                  const std::vector<ov::Tensor>& videos,
                                  GenerationConfig sampling_params);
+    GenerationHandle add_request(uint64_t request_id,
+                                 const std::string& prompt,
+                                 const std::vector<ov::Tensor>& images,
+                                 GenerationConfig sampling_params,
+                                 const ov::AnyMap& config_map);
+    GenerationHandle add_request(uint64_t request_id,
+                                 const std::string& prompt,
+                                 const std::vector<ov::Tensor>& images,
+                                 const std::vector<ov::Tensor>& videos,
+                                 GenerationConfig sampling_params,
+                                 const ov::AnyMap& config_map);
 
     /**
      * Checks whether server (pipeline) has non-finished requests and step() should be called within a loop

@@ -25,6 +25,22 @@ class ov::genai::VLMPipeline::VLMPipelineBase {
         std::vector<ov::Tensor> images_vector = {};
         std::vector<ov::Tensor> videos_vector = {};
 
+    virtual VLMDecodedResults generate(
+        const std::string& prompt,
+        const std::vector<ov::Tensor>& images,
+        const std::vector<ov::Tensor>& videos,
+        GenerationConfig generation_config,
+        const StreamerVariant& streamer,
+        const ov::AnyMap& config_map
+    ) {
+        (void)config_map;
+        return generate(prompt, images, videos, std::move(generation_config), streamer);
+    }
+
+    VLMDecodedResults generate(
+        const std::string& prompt,
+        const ov::AnyMap& config_map
+    ) {
         auto image = config_map.find(ov::genai::image.name());
         auto images = config_map.find(ov::genai::images.name());
         auto videos = config_map.find(ov::genai::videos.name());
@@ -82,7 +98,7 @@ public:
     ) {
         auto [images_vector, videos_vector] = extract_images_and_videos_from_config_map(config_map);
         GenerationConfig config = resolve_generation_config(config_map);
-        return generate(prompt, images_vector, videos_vector, config, utils::get_streamer_from_map(config_map));
+        return generate(prompt, images_vector, videos_vector, config, utils::get_streamer_from_map(config_map), config_map);
     }
 
     virtual VLMDecodedResults generate(
