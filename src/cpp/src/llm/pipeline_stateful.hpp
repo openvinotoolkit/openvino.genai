@@ -91,6 +91,11 @@ public:
 
     void finish_chat() override;
 
+    std::vector<float> get_next_token_log_probs(
+        const std::string& prompt,
+        const std::vector<int64_t>& token_ids
+    ) override;
+
     ~StatefulLLMPipeline();
 };
 
