@@ -7,6 +7,7 @@ There are several sample files:
  - [`text2image_concurrency.cpp`](./text2image_concurrency.cpp) demonstrates concurrent usage of the text to image pipeline to create multiple images with different prompts
  - [`lora_text2image.cpp`](./lora_text2image.cpp) shows how to apply LoRA adapters to the pipeline
  - [`heterogeneous_stable_diffusion.cpp`](./heterogeneous_stable_diffusion.cpp) shows how to assemble a heterogeneous txt2image pipeline from individual subcomponents (scheduler, text encoder, unet, vae decoder)
+ - [`encrypted_stable_diffusion.cpp`](./encrypted_stable_diffusion.cpp) demonstrates how to use the text to image pipeline with encrypted models and cache encryption callbacks
  - [`image2image.cpp`](./image2image.cpp) demonstrates basic usage of the image to image pipeline
  - [`image2image_concurrency.cpp.cpp`](./image2image_concurrency.cpp) demonstrates concurrent usage of the image to image pipeline to create multiple images with different prompts
  - [`inpainting.cpp`](./inpainting.cpp) demonstrates basic usage of the inpainting pipeline
@@ -121,6 +122,52 @@ For example:
 `./heterogeneous_stable_diffusion ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting' CPU NPU GPU`
 
 The sample will create a stable diffusion pipeline such that the text encoder is executed on the CPU, UNet on the NPU, and VAE decoder on the GPU.
+
+## Run text to image with encrypted models
+
+The `encrypted_stable_diffusion.cpp` sample demonstrates how to load and use the text to image pipeline with encrypted models. The Text2ImagePipeline and individual model components can be initialized directly from memory buffers when decrypting models on-the-fly.
+
+The following code snippet demonstrates how to load text encoder models from memory buffers:
+
+```cpp
+auto [text_encoder_model_str, text_encoder_model_weights] = decrypt_model(
+    models_path / "text_encoder", "openvino_model.xml", "openvino_model.bin");
+ov::genai::Tokenizer text_tokenizer = decrypt_tokenizer(models_path / "tokenizer");
+
+ov::genai::CLIPTextModel text_encoder(
+    text_encoder_model_str,
+    text_encoder_model_weights,
+    ov::genai::CLIPTextModel::Config::Config(models_path / "text_encoder" / "config.json"),
+    text_tokenizer, device, config);
+
+...
+
+// Initialize stable diffusion xl pipeline
+auto pipe = ov::genai::Text2ImagePipeline::stable_diffusion_xl(
+    ov::genai::Scheduler::from_config(models_path / "scheduler" / "scheduler_config.json"),
+    text_encoder,
+    text_encoder_2,
+    unet,
+    vae_decoder
+);
+```
+
+The sample also demonstrates how to enable user-defined encryption for plugin cache using `ov::EncryptionCallbacks`.
+
+**Main Features:**
+- Read model and tokenizer directly from memory buffers
+- Support for encrypted model files with custom decryption
+- Cache encryption callbacks for secure compiled model storage
+
+**Run Command:**
+```bash
+./encrypted_stable_diffusion <MODEL_DIR> "<PROMPT>" [DEVICE]
+```
+
+**Example:**
+```bash
+./encrypted_stable_diffusion ./dreamlike_anime_1_0_ov/FP16 'cyberpunk cityscape like Tokyo New York with tall buildings at dusk golden hour cinematic lighting'
+```
 
 ## Run image to image pipeline
 
