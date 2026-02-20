@@ -691,6 +691,7 @@ jobs:
           - name: 'VLM (qwen3-vl)'
             cmd: |
               python -m pip install transformers==4.57.0
+              python -m pip install "optimum-intel"@git+https://github.com/huggingface/optimum-intel.git
               python -m pytest -s -v tests/python_tests/test_vlm_pipeline.py --override-ini cache_dir=/mount/caches/pytest/ -k "qwen3-vl"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 60
