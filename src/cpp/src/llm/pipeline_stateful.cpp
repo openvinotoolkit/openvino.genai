@@ -260,9 +260,9 @@ DecodedResults StatefulLLMPipeline::generate(
     }
 
     if (!is_history_continuation) {
-        reset_kv_state();
+        reset_state();
         m_model_runner.get_tensor("attention_mask").set_shape({1, 0});
-        m_kv_cache_state.reset_state();
+        m_cache_state.reset_state();
     }
 
     m_history = history;
