@@ -579,11 +579,11 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).whisper.test }}
             timeout: 45
           - name: 'Cacheopt E2E (Part 1)'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_1.py -s'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
             timeout: 180
           - name: 'Cacheopt E2E (Part 2)'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_2.py'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_kv_cache_eviction/test_kv_cache_eviction_2.py -s'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).continuous_batching.test }}
             timeout: 360
           - name: 'LLM & VLM'
@@ -601,7 +601,7 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).visual_language.test }}
             timeout: 60
           - name: 'GGUF Reader tests'
-            cmd: 'python -m pytest -v ./tests/python_tests/test_gguf_reader.py'
+            cmd: 'python -m pytest -v ./tests/python_tests/test_gguf_reader.py -s'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).GGUF.test || fromJSON(needs.smart_ci.outputs.affected_components).LLM.test }}
             timeout: 360
           - name: 'Tokenizer tests'
@@ -617,13 +617,13 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
             timeout: 30
           - name: 'WWB tests'
-            cmd: 'python -m pytest -v ./tools/who_what_benchmark/tests -m "not nanollava"'
+            cmd: 'python -m pytest -v ./tools/who_what_benchmark/tests -m "not nanollava" -s'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 120
           - name: 'WWB tests (nanollava)'
             cmd: |
               python -m pip install transformers==4.48.0
-              python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
+              python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava -s
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 90
           - name: 'EAGLE3 speculative decoding tests'
