@@ -3,6 +3,7 @@
 
 #pragma once
 #include <napi.h>
+
 #include <set>
 
 #include "openvino/core/type/element_type.hpp"
@@ -12,8 +13,12 @@
 #include "openvino/genai/visual_language/pipeline.hpp"
 #include "openvino/openvino.hpp"
 
-template<class... Ts> struct overloaded : Ts... {using Ts::operator()...;};
-template<class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+template <class... Ts>
+struct overloaded : Ts... {
+    using Ts::operator()...;
+};
+template <class... Ts>
+overloaded(Ts...) -> overloaded<Ts...>;
 
 using GenerateInputs = std::variant<ov::genai::StringInputs, ov::genai::ChatHistory>;
 
@@ -46,21 +51,25 @@ std::string js_to_cpp<std::string>(const Napi::Env& env, const Napi::Value& valu
 template <>
 int64_t js_to_cpp<int64_t>(const Napi::Env& env, const Napi::Value& value);
 template <>
+size_t js_to_cpp<size_t>(const Napi::Env& env, const Napi::Value& value);
+template <>
 double js_to_cpp<double>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType std::vector<std::string> */
 template <>
 std::vector<std::string> js_to_cpp<std::vector<std::string>>(const Napi::Env& env, const Napi::Value& value);
 template <>
 std::vector<int64_t> js_to_cpp<std::vector<int64_t>>(const Napi::Env& env, const Napi::Value& value);
+template <>
+std::vector<size_t> js_to_cpp<std::vector<size_t>>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType std::set<std::string> (accepts JS Array or Set) */
 template <>
 std::set<std::string> js_to_cpp<std::set<std::string>>(const Napi::Env& env, const Napi::Value& value);
-/** @brief  A template specialization for TargetType std::set<int64_t> (accepts JS Array or Set) */
+/** @brief  A template specialization for TargetType ov::genai::StopCriteria (accepts number 0, 1, 2) */
 template <>
-std::set<int64_t> js_to_cpp<std::set<int64_t>>(const Napi::Env& env, const Napi::Value& value);
-/** @brief  A template specialization for TargetType std::vector<float> (e.g. raw speech) */
+ov::genai::StopCriteria js_to_cpp<ov::genai::StopCriteria>(const Napi::Env& env, const Napi::Value& value);
+/** @brief  A template specialization for TargetType std::vector<double> (e.g. raw speech) */
 template <>
-std::vector<float> js_to_cpp<std::vector<float>>(const Napi::Env& env, const Napi::Value& value);
+std::vector<double> js_to_cpp<std::vector<double>>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType GenerateInputs */
 template <>
 GenerateInputs js_to_cpp<GenerateInputs>(const Napi::Env& env, const Napi::Value& value);
@@ -72,13 +81,17 @@ template <>
 ov::genai::SchedulerConfig js_to_cpp<ov::genai::SchedulerConfig>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType ov::genai::StructuredOutputConfig */
 template <>
-ov::genai::StructuredOutputConfig js_to_cpp<ov::genai::StructuredOutputConfig>(const Napi::Env& env, const Napi::Value& value);
+ov::genai::StructuredOutputConfig js_to_cpp<ov::genai::StructuredOutputConfig>(const Napi::Env& env,
+                                                                               const Napi::Value& value);
 /** @brief  A template specialization for TargetType ov::genai::StructuredOutputConfig::Tag */
 template <>
-ov::genai::StructuredOutputConfig::Tag js_to_cpp<ov::genai::StructuredOutputConfig::Tag>(const Napi::Env& env, const Napi::Value& value);
+ov::genai::StructuredOutputConfig::Tag js_to_cpp<ov::genai::StructuredOutputConfig::Tag>(const Napi::Env& env,
+                                                                                         const Napi::Value& value);
 /** @brief  A template specialization for TargetType ov::genai::StructuredOutputConfig::StructuralTag */
 template <>
-ov::genai::StructuredOutputConfig::StructuralTag js_to_cpp<ov::genai::StructuredOutputConfig::StructuralTag>(const Napi::Env& env, const Napi::Value& value);
+ov::genai::StructuredOutputConfig::StructuralTag js_to_cpp<ov::genai::StructuredOutputConfig::StructuralTag>(
+    const Napi::Env& env,
+    const Napi::Value& value);
 template <>
 ov::Tensor js_to_cpp<ov::Tensor>(const Napi::Env& env, const Napi::Value& value);
 template <>
@@ -131,17 +144,13 @@ Napi::Value cpp_to_js<float, Napi::Value>(const Napi::Env& env, const float& val
 
 /** @brief  A template specialization for TargetType Napi::Value and SourceType ov::genai::EmbeddingResult */
 template <>
-Napi::Value cpp_to_js<ov::genai::EmbeddingResult, Napi::Value>(
-    const Napi::Env& env,
-    const ov::genai::EmbeddingResult& embedding_result
-);
+Napi::Value cpp_to_js<ov::genai::EmbeddingResult, Napi::Value>(const Napi::Env& env,
+                                                               const ov::genai::EmbeddingResult& embedding_result);
 
 /** @brief  A template specialization for TargetType Napi::Value and SourceType ov::genai::EmbeddingResults */
 template <>
-Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(
-    const Napi::Env& env,
-    const ov::genai::EmbeddingResults& embedding_result
-);
+Napi::Value cpp_to_js<ov::genai::EmbeddingResults, Napi::Value>(const Napi::Env& env,
+                                                                const ov::genai::EmbeddingResults& embedding_result);
 
 /** @brief  A template specialization for TargetType Napi::Value and SourceType std::vector<std::string> */
 template <>
@@ -149,12 +158,10 @@ Napi::Value cpp_to_js<std::vector<std::string>, Napi::Value>(const Napi::Env& en
                                                              const std::vector<std::string>& value);
 /** @brief  A template specialization for TargetType Napi::Value and SourceType std::set<std::string> (JS Set) */
 template <>
-Napi::Value cpp_to_js<std::set<std::string>, Napi::Value>(const Napi::Env& env,
-                                                          const std::set<std::string>& value);
+Napi::Value cpp_to_js<std::set<std::string>, Napi::Value>(const Napi::Env& env, const std::set<std::string>& value);
 /** @brief  A template specialization for TargetType Napi::Value and SourceType std::set<int64_t> (JS Set) */
 template <>
-Napi::Value cpp_to_js<std::set<int64_t>, Napi::Value>(const Napi::Env& env,
-                                                      const std::set<int64_t>& value);
+Napi::Value cpp_to_js<std::set<int64_t>, Napi::Value>(const Napi::Env& env, const std::set<int64_t>& value);
 
 /** @brief  A template specialization for TargetType Napi::Value and SourceType std::vector<float> */
 template <>
@@ -184,9 +191,11 @@ template <>
 Napi::Value cpp_to_js<ov::Tensor, Napi::Value>(const Napi::Env& env, const ov::Tensor& tensor);
 
 template <>
-Napi::Value cpp_to_js<ov::genai::TokenizedInputs, Napi::Value>(const Napi::Env& env, const ov::genai::TokenizedInputs& tokenized_inputs);
+Napi::Value cpp_to_js<ov::genai::TokenizedInputs, Napi::Value>(const Napi::Env& env,
+                                                               const ov::genai::TokenizedInputs& tokenized_inputs);
 
-/** @brief  A template specialization for TargetType Napi::Value and SourceType ov::genai::StructuredOutputConfig::StructuralTag */
+/** @brief  A template specialization for TargetType Napi::Value and SourceType
+ * ov::genai::StructuredOutputConfig::StructuralTag */
 template <>
 Napi::Value cpp_to_js<ov::genai::StructuredOutputConfig::StructuralTag, Napi::Value>(
     const Napi::Env& env,
@@ -195,9 +204,10 @@ Napi::Value cpp_to_js<ov::genai::StructuredOutputConfig::StructuralTag, Napi::Va
 /** @brief  A template specialization for TargetType Napi::Value and SourceType ov::genai::StructuredOutputConfig */
 template <>
 Napi::Value cpp_to_js<ov::genai::StructuredOutputConfig, Napi::Value>(const Napi::Env& env,
-                                                                       const ov::genai::StructuredOutputConfig& config);
+                                                                      const ov::genai::StructuredOutputConfig& config);
 
-/** @brief  A template specialization for TargetType Napi::Value and SourceType std::vector<std::shared_ptr<ov::genai::Parser>> */
+/** @brief  A template specialization for TargetType Napi::Value and SourceType
+ * std::vector<std::shared_ptr<ov::genai::Parser>> */
 template <>
 Napi::Value cpp_to_js<std::vector<std::shared_ptr<ov::genai::Parser>>, Napi::Value>(
     const Napi::Env& env,
@@ -215,8 +225,7 @@ Napi::Value cpp_to_js<ov::genai::GenerationConfig, Napi::Value>(const Napi::Env&
 
 /** @brief  A template specialization for TargetType Napi::Value and SourceType ov::genai::StopCriteria */
 template <>
-Napi::Value cpp_to_js<ov::genai::StopCriteria, Napi::Value>(const Napi::Env& env,
-                                                           const ov::genai::StopCriteria& value);
+Napi::Value cpp_to_js<ov::genai::StopCriteria, Napi::Value>(const Napi::Env& env, const ov::genai::StopCriteria& value);
 
 template <typename MapElementType>
 Napi::Object cpp_map_to_js_object(const Napi::Env& env, const std::map<std::string, MapElementType>& map) {

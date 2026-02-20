@@ -58,7 +58,7 @@ OpenVINO GenAI supports multiple sampling strategies and generation configuratio
           const pipe = await LLMPipeline(model_path, "CPU");
 
           // Get default configuration
-          auto config = pipe.getGenerationConfig();
+          const config = pipe.getGenerationConfig();
 
           // Modify parameters
           config.max_new_tokens = 100;
@@ -122,7 +122,7 @@ OpenVINO GenAI supports multiple sampling strategies and generation configuratio
           const pipe = await LLMPipeline(model_path, "CPU");
 
           // Get default configuration
-          auto config = pipe.getGenerationConfig();
+          const config = pipe.getGenerationConfig();
 
           // Modify parameters
           config.max_new_tokens = 256;
