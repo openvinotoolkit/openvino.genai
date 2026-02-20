@@ -106,6 +106,68 @@ Run Python commands through wrapper:
 
 ## 8) Test inference
 
+Python script to test the inference
+```bash
+#!/usr/bin/env python3
+"""
+Test script for SmolVLM model with OpenVINO GenAI
+"""
+import numpy as np
+import openvino_genai
+from PIL import Image
+from openvino import Tensor
+import sys
+
+def read_image(path: str) -> Tensor:
+    pic = Image.open(path).convert("RGB")
+    image_data = np.array(pic)
+    return Tensor(image_data)
+
+def main():
+    if len(sys.argv) < 3:
+        print("Usage: python test_smolvlm.py <model_dir> <image_path> [device] [prompt]")
+        print("Example: python test_smolvlm.py SmolVLM-instruct_int4_sym_group-1 test.jpg CPU")
+        sys.exit(1)
+
+    model_dir = sys.argv[1]
+    image_path = sys.argv[2]
+    device = sys.argv[3] if len(sys.argv) > 3 else "CPU"
+    prompt = sys.argv[4] if len(sys.argv) > 4 else "Describe this image in detail."
+
+    print(f"Loading SmolVLM model from: {model_dir}")
+    print(f"Device: {device}")
+
+    # Load the model
+    pipe = openvino_genai.VLMPipeline(model_dir, device)
+
+    # Read the image
+    print(f"Reading image: {image_path}")
+    image = read_image(image_path)
+
+    # Configure generation
+    config = openvino_genai.GenerationConfig()
+    config.max_new_tokens = 100
+    config.do_sample = False  # Use greedy decoding
+    config.apply_chat_template = False  # Disable chat template and format manually
+
+    # Disable chat template and format manually
+    # SmolVLM uses format: <|im_start|>User:<image>\n{prompt}<end_of_utterance>\n<|im_start|>Assistant:
+    formatted_prompt = f"User:<image>\n{prompt}\nAssistant:"
+
+    # Test with the provided prompt
+    print(f"\nPrompt: {prompt}")
+    print("\nGenerating response...")
+
+    # Generate response
+    result = pipe.generate(formatted_prompt, images=[image], generation_config=config)
+
+    print(f"\nResponse: {result.texts[0]}")
+    print("\nSuccess! SmolVLM is working with OpenVINO GenAI!")
+
+if __name__ == "__main__":
+    main()
+```
+
 ```bash
 ./use-built-python-bindings.sh \
   python test-smolvlm.py SmolVLM-instruct_int4_sym_group-128 cat.jpg GPU "Describe this image"
