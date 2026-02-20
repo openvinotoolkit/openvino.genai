@@ -65,6 +65,8 @@ public:
         bool is_prompt = false;
         // current cache usage
         float m_cache_usage = 0.0;
+        // cache size in bytes
+        size_t m_cache_size_in_bytes = 0;
     };
 
     Scheduler(size_t block_size, std::shared_ptr<CacheManager> cache_manager, const SchedulerConfig & config = {}, size_t num_layers = 1, bool can_use_partial_preemption = true, size_t snapkv_window_size = 1) :
@@ -114,6 +116,7 @@ public:
         m_cache_manager->allocate_cache_if_needed(m_block_manager->get_total_number_of_kv_blocks());
         _clear_waiting_sequences(sequence_groups);
         scheduler_output.m_cache_usage = m_block_manager->get_used_percentage();
+        scheduler_output.m_cache_size_in_bytes = m_block_manager->get_total_number_of_kv_blocks() * m_cache_manager->get_block_size_in_bytes();
 
         static ManualTimer copy_blocks_timer("copy block");
         copy_blocks_timer.start();

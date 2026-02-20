@@ -347,6 +347,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
         scheduler_output = m_scheduler->schedule(m_requests);
         scheduling_timer.end();
 
+        m_pipeline_metrics.kv_cache_usage_in_bytes = scheduler_output.m_cache_size_in_bytes;
         m_pipeline_metrics.scheduled_requests = scheduler_output.m_scheduled_sequence_groups_ids.size();
         m_pipeline_metrics.cache_usage = scheduler_output.m_cache_usage;
         m_pipeline_metrics.max_cache_usage = std::max(m_pipeline_metrics.max_cache_usage, scheduler_output.m_cache_usage);
@@ -649,6 +650,7 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::_reset_cache_usage_stat
     m_previous_step_cache_usages.clear();
     m_pipeline_metrics.max_cache_usage = 0.0;
     m_pipeline_metrics.avg_cache_usage = 0.0;
+    m_pipeline_metrics.kv_cache_usage_in_bytes = 0;
 }
 
 void ContinuousBatchingPipeline::ContinuousBatchingImpl::drop_requests() {

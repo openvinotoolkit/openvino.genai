@@ -57,6 +57,11 @@ struct PipelineMetrics {
      * Duration of the last generation step in microseconds.
      */
     float inference_duration = 0.0;
+
+    /**
+     * The total KV cache size in bytes or currently used size for dynamic KV cache.
+     */
+    size_t kv_cache_usage_in_bytes = 0;
 };
 
 class OPENVINO_GENAI_EXPORTS ContinuousBatchingPipeline {
