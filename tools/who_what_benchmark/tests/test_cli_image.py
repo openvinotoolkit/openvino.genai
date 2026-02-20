@@ -188,6 +188,100 @@ def test_image_model_genai(model_id, model_type, tmp_path):
 
 
 @pytest.mark.parametrize(
+    ("model_id", "model_type"),
+    list(itertools.product(OV_IMAGE_MODELS,
+                           ["image-to-image",
+                            "text-to-image",
+                            "image-inpainting"
+                            ])),
+)
+def test_image_model_genai_optimized(model_id, model_type, tmp_path):
+    """Optimized version: merges target eval + output into one subprocess call."""
+    if ("flux-fill" in model_id) and (model_type != "image-inpainting"):
+        pytest.skip(reason="FLUX-Fill is supported as inpainting only")
+    if model_id == "optimum-intel-internal-testing/tiny-random-flux" and model_type == "image-to-image":
+        pytest.xfail("Randomly wwb died with <Signals.SIGABRT: 6>. Ticket 170878")
+    if (model_type == "image-to-image" or model_type == "image-inpainting") and sys.platform == "win32":
+        pytest.xfail("Ticket 178790")
+
+    mac_arm64_skip = any(substring in model_id for substring in ('stable-diffusion-xl',
+                                                                 'tiny-random-stable-diffusion',
+                                                                 'stable-diffusion-3',
+                                                                 'tiny-random-flux'))
+
+    if mac_arm64_skip and sys.platform == 'darwin':
+        pytest.xfail("Ticket 173169")
+
+    _log(f"test_image_model_genai_optimized: model_id={model_id} model_type={model_type}")
+    GT_FILE = tmp_path / "gt.csv"
+    with _stage("convert_model"):
+        MODEL_PATH = convert_model(model_id)
+    _log(f"Model converted to: {MODEL_PATH}")
+
+    # Step 1: Generate HF ground truth
+    with _stage("run_wwb_gt_data_gen"):
+        run_wwb([
+            "--base-model",
+            model_id,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--num-inference-steps",
+            "2",
+        ])
+    assert GT_FILE.exists()
+    assert (tmp_path / "reference").exists()
+
+    # Step 2: Run genai target WITH --output (merges original steps 2 & 3)
+    with _stage("run_wwb_genai_target_with_output"):
+        output = run_wwb([
+            "--target-model",
+            MODEL_PATH,
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--output",
+            tmp_path,
+            "--genai",
+            "--num-inference-steps",
+            "2",
+        ])
+
+    assert "Metrics for model" in output
+    similarity = get_similarity(output)
+    assert similarity >= 0.97751  # Ticket 166496
+    assert (tmp_path / "target").exists()
+    assert (tmp_path / "target.csv").exists()
+
+    # Step 3: test w/o models (reuses CSV from step 2)
+    with _stage("run_wwb_metrics_without_models"):
+        run_wwb([
+            "--target-data",
+            tmp_path / "target.csv",
+            "--num-samples",
+            "1",
+            "--gt-data",
+            GT_FILE,
+            "--device",
+            "CPU",
+            "--model-type",
+            model_type,
+            "--num-inference-steps",
+            "2",
+        ])
+
+
+@pytest.mark.parametrize(
     ("model_id", "model_type", "backend"),
     [
         ("hf-internal-testing/tiny-stable-diffusion-torch", "text-to-image", "hf"),
