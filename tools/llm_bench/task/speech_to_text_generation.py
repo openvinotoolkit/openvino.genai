@@ -38,6 +38,7 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
     ret_timestamps = input_param['speech_param'].get('timestamp', True)
     max_gen_tokens = DEFAULT_OUTPUT_TOKEN_SIZE if args['infer_count'] is None else args['infer_count']
 
+    whisper_perf_data = None
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.start()
     if use_genai:
@@ -59,6 +60,16 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         ).tolist()
         tm_list = (np.array([first_token_time] + second_tokens_durations) / 1000).tolist()
         tm_infer_list = (np.array(perf_metrics.raw_metrics.token_infer_durations) / 1000 / 1000).tolist()
+        # Collect per-stage whisper metrics for GenAI pipeline
+        whisper_perf_data = {
+            'tokenization_duration': perf_metrics.get_tokenization_duration().mean,
+            'detokenization_duration': perf_metrics.get_detokenization_duration().mean,
+            'features_extraction_durations': perf_metrics.whisper_raw_metrics.features_extraction_durations,
+            'encode_inference_durations': perf_metrics.whisper_raw_metrics.encode_inference_durations,
+            'decode_inference_durations': perf_metrics.whisper_raw_metrics.decode_inference_durations,
+            'sampling_durations': perf_metrics.raw_metrics.sampling_durations,
+            'sampling_duration': perf_metrics.get_sampling_duration().mean,
+        }
         result_text = result_text.texts[0]
     else:
         from optimum.intel.utils.import_utils import is_transformers_version
@@ -112,7 +123,8 @@ def run_speech_2_txt_generation(input_param, args, md5_list, iter_data_list):
         tms_infer=tm_infer_list,
         warm_up=(num == 0),
         prompt_idx=speech_id,
-        whisper=whisper_hook
+        whisper=whisper_hook if not use_genai else None,
+        whisper_perf_data=whisper_perf_data if use_genai else None,
     )
     if num > 0:
         prev_md5 = md5_list[num - 1][speech_id]

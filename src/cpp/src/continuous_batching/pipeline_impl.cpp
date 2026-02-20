@@ -411,10 +411,12 @@ void ContinuousBatchingPipeline::ContinuousBatchingImpl::step() {
     SamplerOutput sampler_output;
     {
         static ManualTimer timer("sample");
+        const auto sampling_start = std::chrono::steady_clock::now();
         timer.start();
         sampler_output = m_sampler->sample(m_requests, logits, m_is_validation_mode_enabled);
         m_batch_size = sampler_output.num_generated_tokens;
         timer.end();
+        m_pipeline_metrics.sampling_duration = PerfMetrics::get_microsec(std::chrono::steady_clock::now() - sampling_start);
     }
 
     // process sampler_output (e.g. fork or drop sequences from BlockScheduler)
@@ -531,6 +533,7 @@ ContinuousBatchingPipeline::ContinuousBatchingImpl::generate(const std::vector<o
             // During prefill step (or steps if max_batch_size < prompt_len) we don't generate new tokens,
             // but still inference took place, so we need to add this time to the total inference duration.
             raw_perf_counters.m_inference_durations[0] += MicroSeconds(m_pipeline_metrics.inference_duration);
+            raw_perf_counters.m_sampling_durations.emplace_back(m_pipeline_metrics.sampling_duration);
             if (m_batch_size > 0) {
                 const auto infer_end = std::chrono::steady_clock::now();
                 const auto infer_ms = PerfMetrics::get_microsec(infer_end - infer_start);
