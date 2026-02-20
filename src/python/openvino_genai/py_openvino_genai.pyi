@@ -3260,9 +3260,6 @@ class TaylorSeerCacheConfig:
       disable_cache_before_step: Step before which caching is disabled for warmup (default: 6)
       disable_cache_after_step: Step after which caching is disabled. If negative, calculated as num_inference_steps + disable_cache_after_step (default: -2)
     """
-    cache_interval: int
-    disable_cache_after_step: int
-    disable_cache_before_step: int
     def __init__(self, cache_interval: typing.SupportsInt = 3, disable_cache_before_step: typing.SupportsInt = 6, disable_cache_after_step: typing.SupportsInt = -2) -> None:
         ...
     def __repr__(self) -> str:
@@ -3270,6 +3267,26 @@ class TaylorSeerCacheConfig:
     def to_string(self) -> str:
         ...
     def validate(self, num_inference_steps: typing.SupportsInt) -> None:
+        """
+        Validates that the configuration is compatible with the number of inference steps
+        """
+    @property
+    def cache_interval(self) -> int:
+        ...
+    @cache_interval.setter
+    def cache_interval(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def disable_cache_after_step(self) -> int:
+        ...
+    @disable_cache_after_step.setter
+    def disable_cache_after_step(self, arg0: typing.SupportsInt) -> None:
+        ...
+    @property
+    def disable_cache_before_step(self) -> int:
+        ...
+    @disable_cache_before_step.setter
+    def disable_cache_before_step(self, arg0: typing.SupportsInt) -> None:
         ...
 class Text2ImagePipeline:
     """
