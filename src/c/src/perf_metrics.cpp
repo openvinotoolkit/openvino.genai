@@ -1,4 +1,4 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
 #include "openvino/genai/c/perf_metrics.h"
@@ -6,7 +6,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include <memory>
+
 #include "openvino/genai/perf_metrics.hpp"
+#include "openvino/genai/speech_generation/speech_generation_perf_metrics.hpp"
 #include "types_c.h"
 
 ov_genai_perf_metrics* ov_genai_perf_metrics_create() {
@@ -172,6 +175,23 @@ ov_status_e ov_genai_perf_metrics_add_in_place(ov_genai_perf_metrics* left, cons
     }
     try {
         *(left->object) += *(right->object);
+    } catch (...) {
+        return ov_status_e::UNKNOW_EXCEPTION;
+    }
+    return ov_status_e::OK;
+}
+
+ov_status_e ov_genai_perf_metrics_get_num_generated_samples(const ov_genai_perf_metrics* metrics,
+                                                            size_t* num_generated_samples) {
+    if (!metrics || !(metrics->object) || !num_generated_samples) {
+        return ov_status_e::INVALID_C_PARAM;
+    }
+    try {
+        if (auto speech_metrics = std::dynamic_pointer_cast<ov::genai::SpeechGenerationPerfMetrics>(metrics->object)) {
+            *num_generated_samples = speech_metrics->num_generated_samples;
+        } else {
+            *num_generated_samples = 0;
+        }
     } catch (...) {
         return ov_status_e::UNKNOW_EXCEPTION;
     }
