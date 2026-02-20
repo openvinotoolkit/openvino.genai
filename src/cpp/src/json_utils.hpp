@@ -70,6 +70,15 @@ void read_json_param(const nlohmann::json& data, const std::string& name, std::v
         for (const auto elem : data[name]) {
             param.push_back(elem.get<V>());
         }
+    } else if (name.find(".") != std::string::npos) {
+        size_t delimiter_pos = name.find(".");
+        std::string key = name.substr(0, delimiter_pos);
+        if (!data.contains(key)) {
+            return;
+        }
+        std::string rest_key = name.substr(delimiter_pos + 1);
+
+        read_json_param(data[key], rest_key, param);
     }
 }
 

@@ -113,7 +113,7 @@ protected:
         const std::vector<EncodedVideo>& videos,
         const std::vector<size_t>& videos_sequence);
 
-    ov::Tensor get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw);
+    virtual ov::Tensor get_rotary_pos_emb(const std::vector<std::array<size_t, 3>>& grids_thw) const;
 
     ov::Tensor create_position_ids(
         const ov::Tensor& input_ids_tensor,
@@ -149,6 +149,15 @@ ov::Tensor get_attention_mask(const std::vector<std::array<size_t, 3>>& reordere
 ov::Tensor get_cu_seqlens(const std::vector<std::array<size_t, 3>>& reordered_images_grid_thw, const std::vector<std::array<size_t, 3>>& reordered_videos_grid_thw);
 
 ov::Tensor concatenate_video_image_embeds(const std::vector<ov::Tensor>& reordered_video_embeds, const std::vector<ov::Tensor>& reordered_image_embeds);
+
+ov::Tensor merge_text_and_video_image_embeddings(
+    const ov::Tensor& input_ids,
+    const ov::Tensor& text_embeds, 
+    const ov::Tensor& processed_image_embeds,
+    const ov::Tensor& processed_video_embeds,
+    const int64_t image_pad_token_id,
+    const int64_t video_pad_token_id
+);
 
 } // namespace qwen2vl_utils
 

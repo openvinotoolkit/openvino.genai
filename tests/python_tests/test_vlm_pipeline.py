@@ -97,6 +97,7 @@ VIDEO_MODEL_IDS = [
     "optimum-intel-internal-testing/tiny-random-llava-next-video",
     "optimum-intel-internal-testing/tiny-random-qwen2vl",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
+    "optimum-intel-internal-testing/tiny-random-qwen3-vl",
 ]
 
 
@@ -125,6 +126,7 @@ IMAGE_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next": lambda idx: "<image>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
+    "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|image_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-gemma3": lambda idx: "<start_of_image>",
     "optimum-intel-internal-testing/tiny-random-internvl2": lambda idx: "<image>\n",
     "optimum-intel-internal-testing/tiny-random-minicpmv-2_6": lambda idx: "<image>./</image>\n",
@@ -138,6 +140,7 @@ VIDEO_TAG_GENERATOR_BY_MODEL: dict[str, Callable[[int], str]] = {
     "optimum-intel-internal-testing/tiny-random-llava-next-video": lambda idx: "<video>",
     "optimum-intel-internal-testing/tiny-random-qwen2vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
+    "optimum-intel-internal-testing/tiny-random-qwen3-vl": lambda idx: "<|vision_start|><|video_pad|><|vision_end|>",
 }
 
 
@@ -148,6 +151,7 @@ RESOLUTION_BY_MODEL: dict[str, int | None] = {
     "optimum-intel-internal-testing/tiny-random-MiniCPM-o-2_6": 448,
     "optimum-intel-internal-testing/tiny-random-qwen2vl": 336,
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": 336,
+    "optimum-intel-internal-testing/tiny-random-qwen3-vl": 336,
 }
 
 
@@ -216,6 +220,10 @@ def _get_ov_model(model_id: str) -> str:
     ):
         pytest.skip(
             "ValueError: The current version of Transformers does not allow for the export of the model. Maximum supported version is 4.51.3"
+        )
+    if "optimum-intel-internal-testing/tiny-random-qwen3-vl" == model_id and is_transformers_version("<", "4.57.0"):
+        pytest.skip(
+            "ValueError: The current version of Transformers does not allow for the export of the model. Minimum required is 4.57.0."
         )
 
     ov_cache_converted_dir = get_ov_cache_converted_models_dir()
@@ -1463,6 +1471,7 @@ TAG_INSERTED_BY_TEMPLATE = [
     ("optimum-intel-internal-testing/tiny-random-llava-next", "PA"),
     ("optimum-intel-internal-testing/tiny-random-qwen2vl", "PA"),
     ("optimum-intel-internal-testing/tiny-random-qwen2.5-vl", "PA"),
+    ("optimum-intel-internal-testing/tiny-random-qwen3-vl", "PA"),
     ("optimum-intel-internal-testing/tiny-random-gemma3", "SDPA"),
     ("qnguyen3/nanoLLaVA", "PA"),
     ("optimum-intel-internal-testing/tiny-random-llava-next-video", "PA"),
@@ -1885,11 +1894,13 @@ OPTIMUM_VS_GENAI_DEFAULT_VIDEO_RESOLUTIONS = [(32, 32), (176, 132), (640, 480)]
 OPTIMUM_VS_GENAI_PER_MODEL_IMAGE_RESOLUTIONS = {
     "optimum-intel-internal-testing/tiny-random-qwen2vl": [(100, 77), (350, 350), (480, 512)],
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": [(100, 77), (350, 350), (480, 512)],
+    "optimum-intel-internal-testing/tiny-random-qwen3-vl": [(100, 77), (350, 350), (480, 512)],
 }
 
 OPTIMUM_VS_GENAI_PER_MODEL_VIDEO_RESOLUTIONS = {
     "optimum-intel-internal-testing/tiny-random-qwen2vl": [(32, 32), (70, 70)],
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl": [(32, 32), (70, 70)],
+    "optimum-intel-internal-testing/tiny-random-qwen3-vl": [(32, 32), (70, 70)],
 }
 
 # test-id glob pattern -> xfail reason
@@ -1923,6 +1934,7 @@ MODELS_THAT_SUPPORT_GRAPH_PREPROCESSING = [
     "optimum-intel-internal-testing/tiny-random-phi-4-multimodal",
     "optimum-intel-internal-testing/tiny-random-qwen2vl",
     "optimum-intel-internal-testing/tiny-random-qwen2.5-vl",
+    "optimum-intel-internal-testing/tiny-random-qwen3-vl",
 ]
 
 # For these models, we will only add GRAPH pre-processing tests.
