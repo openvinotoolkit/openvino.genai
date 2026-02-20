@@ -8,6 +8,7 @@
 #include "image_generation/diffusion_pipeline.hpp"
 #include "image_generation/numpy_utils.hpp"
 #include "image_generation/threaded_callback.hpp"
+#include "diffusion_caching/taylorseer_lite.hpp"
 
 #include "openvino/genai/image_generation/autoencoder_kl.hpp"
 #include "openvino/genai/image_generation/clip_text_model.hpp"
@@ -508,12 +509,28 @@ public:
         ov::Tensor timestep(ov::element::f32, {1});
         float* timestep_data = timestep.data<float>();
 
+        TaylorSeerState taylorseer_state;
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
             auto step_start = std::chrono::steady_clock::now();
             timestep_data[0] = timesteps[inference_step] / 1000.0f;
 
             auto infer_start = std::chrono::steady_clock::now();
-            ov::Tensor noise_pred_tensor = m_transformer->infer(latents, timestep);
+
+            ov::Tensor noise_pred_tensor;
+            // Use TaylorSeer if enabled and caching is appropriate
+            if (m_custom_generation_config.taylorseer_config) {
+                if (!taylorseer_state.should_compute(inference_step,
+                                                     *m_custom_generation_config.taylorseer_config,
+                                                     timesteps.size())) {
+                    noise_pred_tensor = taylorseer_state.predict(inference_step);
+                } else {
+                    noise_pred_tensor = m_transformer->infer(latents, timestep);
+                    taylorseer_state.update(inference_step, noise_pred_tensor);
+                }
+            } else {
+                noise_pred_tensor = m_transformer->infer(latents, timestep);
+            }
+
             auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);
             m_perf_metrics.raw_metrics.transformer_inference_durations.emplace_back(MicroSeconds(infer_duration));
 
