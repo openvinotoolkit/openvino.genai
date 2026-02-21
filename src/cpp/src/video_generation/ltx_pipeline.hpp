@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cmath>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <numeric>
