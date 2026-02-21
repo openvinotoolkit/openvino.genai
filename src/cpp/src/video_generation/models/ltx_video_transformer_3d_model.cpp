@@ -93,7 +93,7 @@ void LTXVideoTransformer3DModel::set_hidden_states(const std::string& tensor_nam
 void LTXVideoTransformer3DModel::set_adapters(const std::optional<AdapterConfig>& adapters) {
     OPENVINO_ASSERT(m_request, "Transformer model must be compiled first");
     if (adapters) {
-        OPENVINO_ASSERT(m_adapter_controller, 
+        OPENVINO_ASSERT(m_adapter_controller,
             "Adapter controller is not initialized. Adapters must be provided during model construction or compilation to enable adapter support.");
         m_adapter_controller.apply(m_request, *adapters);
     }

@@ -232,6 +232,19 @@ class TestText2VideoPipelineAdvanced:
         result = pipe.generate("test prompt", num_inference_steps=2)
         assert result.video is not None
 
+    def test_generate_without_cfg_default_compile(self, video_generation_model):
+        """Regression test: direct-compile constructor should work with guidance_scale <= 1."""
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
+        result = pipe.generate(
+            "test prompt",
+            guidance_scale=1.0,
+            height=32,
+            width=32,
+            num_frames=9,
+            num_inference_steps=2,
+        )
+        assert result.video is not None
+
     def test_generate_without_cfg_after_reshape_with_cfg(self, video_generation_model):
         """Test: reshape with CFG then generate without CFG should raise error."""
         pipe = ov_genai.Text2VideoPipeline(video_generation_model)
@@ -274,11 +287,10 @@ class TestLoRAVideoGeneration:
 
     def test_lora_adapters_generate(self, video_generation_model):
         """Test that LoRA adapters can be passed to generate() without error"""
-        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU")
-
         adapter_config = ov_genai.AdapterConfig()
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU", adapters=adapter_config)
 
-        result = pipe.generate("test prompt", adapters=adapter_config)
+        result = pipe.generate("test prompt", height=32, width=32, num_frames=9, num_inference_steps=2, adapters=adapter_config)
         assert result is not None
         assert result.video is not None
 

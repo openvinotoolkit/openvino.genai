@@ -63,6 +63,25 @@ GPUs usually provide better performance compared to CPUs. Modify the source code
   ./text2video ltx_video_ov/INT8 "A woman with long brown hair and light skin smiles at another woman with long blonde hair"
   ```
 
+### LoRA Text to Video Sample (`lora_text2video.cpp`)
+
+- **Description:**
+  Video generation with LoRA adapters using a text-to-video model. This sample demonstrates how to generate videos from text prompts while applying multiple LoRA adapters.
+
+  Recommended models: Lightricks/LTX-Video
+
+- **Main Feature:** Apply LoRA adapters to a text-to-video pipeline for customized generation.
+
+- **Run Command:**
+  ```bash
+  ./lora_text2video model_dir prompt [lora_adapter_path] [alpha] ...
+  ```
+
+  Example:
+  ```bash
+  ./lora_text2video ltx_video_ov/INT8 "A woman with long brown hair and light skin smiles at another woman with long blonde hair"  adapter1.safetensors 1.0 adapter2.safetensors 0.5
+  ```
+
 The sample will generate a video file `genai_video.avi` in the current directory.
 
 Users can modify the source code to experiment with different generation parameters:

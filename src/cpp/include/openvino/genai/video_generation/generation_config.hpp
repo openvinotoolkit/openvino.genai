@@ -56,6 +56,9 @@ struct VideoGenerationConfig {
     /// Video frame rate. Affects rope_interpolation_scale. Any value can be used although positive
     /// non-infinity makes the most sense. NaN corresponds to model default which is 25.0f for LTX-Video.
     std::optional<float> frame_rate = std::nullopt;
+
+    /// LoRA adapters applied during generation.
+    std::optional<AdapterConfig> adapters = std::nullopt;
 };
 
 /**
