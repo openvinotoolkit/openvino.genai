@@ -94,8 +94,7 @@ void check_inputs(const VideoGenerationConfig& generation_config, size_t vae_sca
                     vae_scale_factor);
 }
 
-// Rescales the CFG noise prediction to fix overexposure when using zero terminal SNR, as described in
-// https://arxiv.org/pdf/2305.08891.pdf (Section 3.4, Equation 16).
+// Rescales the CFG noise prediction to fix overexposure when using zero terminal SNR
 // noise_cfg and noise_pred_text each contain batch_size * elements_per_sample consecutive floats.
 void rescale_noise_cfg(float* noise_cfg,
                        const float* noise_pred_text,
