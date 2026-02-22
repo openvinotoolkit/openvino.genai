@@ -100,6 +100,13 @@ void init_ltx_video_transformer_3d_model(py::module_& m) {
                 tensor_name (str): Name of the tensor input.
                 encoder_hidden_states (ov.Tensor): Hidden states from text encoder.
             )")
+        .def("set_adapters",
+             &ov::genai::LTXVideoTransformer3DModel::set_adapters,
+             py::arg("adapters"),
+             R"(
+                Sets LoRA adapters for the model.
+                adapters (AdapterConfig or None): Adapter configuration to apply, or None to disable adapters.
+            )")
         .def("infer",
              &ov::genai::LTXVideoTransformer3DModel::infer,
              py::call_guard<py::gil_scoped_release>(),
