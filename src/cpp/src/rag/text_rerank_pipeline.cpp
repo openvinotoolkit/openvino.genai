@@ -7,7 +7,9 @@
 
 #include "debug_utils.hpp"
 #include "json_utils.hpp"
+#include "lora/helper.hpp"
 #include "openvino/core/except.hpp"
+#include "openvino/genai/lora_adapter.hpp"
 #include "openvino/genai/tokenizer.hpp"
 #include "openvino/opsets/opset.hpp"
 #include "openvino/opsets/opset1.hpp"
@@ -29,11 +31,16 @@ ov::AnyMap remove_config_properties(const ov::AnyMap& properties) {
     return properties_copy;
 }
 
-std::optional<std::string> read_model_type(const std::filesystem::path& models_path) {
-    // config.json not found. Skip parameters initialization from file, use defaults.
+struct ModelMetadata {
+    std::optional<std::string> model_type;
+    bool is_qwen3 = false;
+};
+
+ModelMetadata read_model_type(const std::filesystem::path& models_path) {
+    ModelMetadata info;
     const std::filesystem::path& json_path = models_path / "config.json";
     if (!std::filesystem::exists(json_path)) {
-        return std::nullopt;
+        return info;
     }
 
     using ov::genai::utils::read_json_param;
@@ -43,9 +50,11 @@ std::optional<std::string> read_model_type(const std::filesystem::path& models_p
 
     nlohmann::json data = nlohmann::json::parse(f);
 
-    std::optional<std::string> model_type;
-    read_json_param(data, "model_type", model_type);
-    return model_type;
+    read_json_param(data, "model_type", info.model_type);
+    if (info.model_type.has_value()) {
+        info.is_qwen3 = (info.model_type.value() == "qwen3");
+    }
+    return info;
 }
 
 bool has_input(const std::shared_ptr<Model>& model, const std::string& name) {
@@ -68,10 +77,8 @@ std::shared_ptr<Model> apply_postprocessing(std::shared_ptr<Model> model) {
                 return std::make_shared<op::v0::Sigmoid>(node);
             }
 
-            // apply softmax to the axis = 1
             const auto softmax = std::make_shared<op::v8::Softmax>(node, 1);
 
-            // take first class score only
             auto start = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
             auto stop = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{2});
             auto step = std::make_shared<op::v0::Constant>(ov::element::i64, ov::Shape{1}, std::vector<int64_t>{1});
@@ -144,15 +151,25 @@ TextRerankPipeline::Config::Config(const ov::AnyMap& properties) {
     read_anymap_param(properties, ov::genai::pad_to_max_length.name(), pad_to_max_length);
 };
 
+void TextRerankPipeline::Config::validate() const {
+    if (max_length.has_value()) {
+        OPENVINO_ASSERT(max_length.value() > 0, "max_length should be greater than 0");
+    }
+
+    OPENVINO_ASSERT(top_n > 0, "top_n should be greater than 0");
+}
+
 class TextRerankPipeline::TextRerankPipelineImpl {
 public:
     TextRerankPipelineImpl(const std::filesystem::path& models_path,
                            const std::string& device,
                            const Config& config,
                            const ov::AnyMap& properties = {})
-        : m_config{config} {
-        const auto model_type = read_model_type(models_path);
-        const bool is_qwen3 = model_type.has_value() && model_type.value() == "qwen3";
+        : m_config{config}{
+
+        m_config.validate();
+        const auto model_info = read_model_type(models_path);
+        const bool is_qwen3 = model_info.is_qwen3;
 
         if (m_config.max_length) {
             m_tokenization_params.insert({max_length.name(), *m_config.max_length});
@@ -166,12 +183,16 @@ public:
             m_tokenization_params.insert({padding_side.name(), *m_config.padding_side});
         }
 
-        // qwen3 tokenizer doesn't support add_second_input(true)
         m_tokenizer = Tokenizer(models_path, ov::genai::add_second_input(!is_qwen3));
 
         ov::Core core = utils::singleton_core();
 
         auto model = core.read_model(models_path / "openvino_model.xml", {}, properties);
+
+        auto filtered_properties = extract_adapters_from_properties(properties, &m_adapters);
+        if (m_adapters.has_value()) {
+            m_adapter_controller = setup_lora(model, *m_adapters, device);
+        }
 
         m_has_position_ids = has_input(model, "position_ids");
         m_has_beam_idx = has_input(model, "beam_idx");
@@ -185,10 +206,15 @@ public:
             model = apply_postprocessing(model);
         }
 
-        ov::CompiledModel compiled_model = core.compile_model(model, device, properties);
+        const ov::AnyMap& compile_props = *filtered_properties;
+        m_compiled_model = core.compile_model(model, device, compile_props);
 
-        utils::print_compiled_model_properties(compiled_model, "text rerank model");
-        m_request = compiled_model.create_infer_request();
+        utils::print_compiled_model_properties(m_compiled_model, "text rerank model");
+        m_request = m_compiled_model.create_infer_request();
+
+        if (m_adapters.has_value() && m_adapter_controller.has_value()) {
+            m_adapter_controller->apply(m_request, *m_adapters);
+        }
     };
 
     std::vector<std::pair<size_t, float>> rerank(const std::string& query, const std::vector<std::string>& texts) {
@@ -225,7 +251,6 @@ public:
     std::vector<std::pair<size_t, float>> wait_rerank() {
         m_request.wait();
 
-        // postprocessing applied to output, it's the scores tensor
         auto scores_tensor = m_request.get_tensor("logits");
         auto scores_tensor_shape = scores_tensor.get_shape();
         const size_t batch_size = scores_tensor_shape[0];
@@ -241,7 +266,6 @@ public:
 
         const size_t top_n = m_config.top_n;
 
-        // partial sort to get top_n results
         std::partial_sort(results.begin(),
                           results.begin() + std::min(top_n, results.size()),
                           results.end(),
@@ -260,14 +284,30 @@ public:
         return results;
     }
 
+    void set_adapters(const std::optional<AdapterConfig>& adapters) {
+        OPENVINO_ASSERT(m_adapter_controller.has_value(),
+                        "Cannot set adapters: pipeline was not constructed with LoRA support. "
+                        "Provide adapters in the constructor properties to enable LoRA.");
+        if (adapters.has_value()) {
+            m_adapter_controller->apply(m_request, *adapters);
+        } else {
+            m_adapter_controller->apply(m_request, std::nullopt);
+        }
+    }
+    bool has_adapters() const {
+        return m_adapters.has_value();
+    }
 private:
     Tokenizer m_tokenizer;
+    ov::CompiledModel m_compiled_model;
     InferRequest m_request;
     Config m_config;
     AnyMap m_tokenization_params;
     bool m_has_position_ids = false;
     bool m_has_beam_idx = false;
-
+    std::optional<AdapterConfig> m_adapters;
+    std::optional<AdapterController> m_adapter_controller;
+	
     TokenizedInputs tokenize(const std::string& query, const std::vector<std::string>& texts) {
         if (m_tokenizer.supports_paired_input()) {
             return m_tokenizer.encode({query}, texts, m_tokenization_params);
@@ -311,6 +351,12 @@ std::vector<std::pair<size_t, float>> TextRerankPipeline::wait_rerank() {
     return m_impl->wait_rerank();
 }
 
+void TextRerankPipeline::set_adapters(const std::optional<AdapterConfig>& adapters) {
+    m_impl->set_adapters(adapters);
+}
+bool TextRerankPipeline::has_adapters() const {
+    return m_impl->has_adapters();
+}
 TextRerankPipeline::~TextRerankPipeline() = default;
 
 }  // namespace genai

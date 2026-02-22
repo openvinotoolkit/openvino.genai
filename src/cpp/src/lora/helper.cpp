@@ -58,5 +58,13 @@ std::optional<AdapterConfig> derived_adapters(const AdapterConfig& adapters, con
     return updated_adapters;
 }
 
+AdapterController setup_lora(std::shared_ptr<ov::Model>& model,
+                             AdapterConfig& adapters,
+                             const std::string& device) {
+    if (!adapters.get_tensor_name_prefix().has_value()) {
+        adapters.set_tensor_name_prefix("");
+    }
+    return AdapterController(model, adapters, device);
+}
 }
 }
