@@ -182,8 +182,8 @@ export type Text2VideoResult = {
   perfMetrics: VideoGenerationPerfMetrics;
 };
 
-export interface Text2VideoPipelineWrapper {
-  new (): Text2VideoPipelineWrapper;
+export interface Text2VideoPipeline {
+  new (): Text2VideoPipeline;
   init(
     modelPath: string,
     device: string,
@@ -204,7 +204,7 @@ interface OpenVINOGenAIAddon {
   TextEmbeddingPipeline: TextEmbeddingPipelineWrapper;
   LLMPipeline: LLMPipeline;
   VLMPipeline: VLMPipeline;
-  Text2VideoPipeline: Text2VideoPipelineWrapper;
+  Text2VideoPipeline: Text2VideoPipeline;
   ChatHistory: IChatHistory;
   Tokenizer: ITokenizer;
   ReasoningParser: IReasoningParser;
