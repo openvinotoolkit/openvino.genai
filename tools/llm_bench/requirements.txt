@@ -28,7 +28,7 @@ num2words==0.5.14
 # For video-to-text VLM sample
 opencv-python<=4.13.0.92
 # For Qwen
-bitsandbytes==0.49.1
+bitsandbytes==0.49.2
 transformers_stream_generator==0.0.5
 einops==0.8.2
 # For microsoft/Phi-3.5-vision-instruct
