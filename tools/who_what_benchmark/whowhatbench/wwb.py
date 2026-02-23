@@ -35,11 +35,11 @@ def relevance_weight_type(value: str) -> float:
     return fvalue
 
 
-def num_infer_count_type(x):
-    x = int(x)
-    if x < 1:
+def positive_integer(value: str) -> int:
+    value = int(value)
+    if value < 1:
         raise argparse.ArgumentTypeError("Minimum input value is 1")
-    return x
+    return value
 
 
 def parse_args():
@@ -326,10 +326,10 @@ def parse_args():
     )
     parser.add_argument(
         "--max_new_tokens",
-        type=num_infer_count_type,
+        type=positive_integer,
         default=None,
         required=False,
-        help="Amount of the generated token, the value must be greater than 0.",
+        help="Max numbers of tokens to generate, excluding the number of tokens in the prompt; the value must be greater than 0.",
     )
 
     return parser.parse_args()
@@ -683,7 +683,6 @@ def create_evaluator(base_model, args):
                 base_model=base_model,
                 gt_data=args.gt_data,
                 test_data=prompts,
-                max_new_tokens=args.max_new_tokens,
                 num_samples=args.num_samples,
                 resolution=(args.image_size, args.image_size),
                 num_inference_steps=args.num_inference_steps,
@@ -718,6 +717,7 @@ def create_evaluator(base_model, args):
                 tokenizer=tokenizer,
                 num_samples=args.num_samples,
                 similarity_model_id=args.data_encoder,
+                max_new_tokens=args.max_new_tokens,
                 gen_answer_fn=genai_gen_visual_text if args.genai else None,
                 processor=processor,
                 crop_question=crop_question,
