@@ -12,15 +12,8 @@ namespace ov::genai {
 namespace {
 
 /**
- * Ensure the dimension is divisible by patch_size
- */
-int ensure_divide(int length, int patch_size) {
-    return std::max(static_cast<int>(std::round(static_cast<float>(length) / patch_size) * patch_size), patch_size);
-}
-
-/**
  * Preprocess image for Idefics3 vision encoder.
- * Handles resizing to longest edge constraint and normalization.
+ * Handles resizing to a fixed square size and normalization.
  */
 clip_image_f32 preprocess_idefics3_image(const clip_image_u8& image, const ProcessorConfig& config) {
     // Idefics3 expects 378x378 images to produce 27x27 = 729 patches
@@ -43,7 +36,7 @@ clip_image_f32 preprocess_idefics3_image(const clip_image_u8& image, const Proce
     return normalized_image;
 }
 
-ov::Tensor create_patch_attention_mask(int height, int width, int num_patches_h, int num_patches_w) {
+ov::Tensor create_patch_attention_mask(int num_patches_h, int num_patches_w) {
     // Create attention mask for patches
     ov::Tensor mask(ov::element::boolean, {1, num_patches_h, num_patches_w});
     bool* mask_data = mask.data<bool>();
@@ -83,7 +76,7 @@ EncodedImage VisionEncoderIdefics3::encode(const ov::Tensor& image, const ov::An
     size_t num_patches = num_patches_h * num_patches_w;
     
     // Create attention mask and position IDs
-    ov::Tensor patch_attention_mask = create_patch_attention_mask(height, width, num_patches_h, num_patches_w);
+    ov::Tensor patch_attention_mask = create_patch_attention_mask(num_patches_h, num_patches_w);
     ov::Tensor patch_position_ids = create_patch_position_ids(num_patches);
     
     // Set inputs
@@ -136,7 +129,7 @@ NormalizedPrompt InputsEmbedderIdefics3::normalize_prompt(
         const auto& encoded_image = images.at(new_image_id - base_id);
         image_embeds.push_back(encoded_image.resized_source);
         
-        // Each image produces image_seq_len tokens (81 for SmolVLM)
+        // Each image produces image_seq_len tokens (729 for SmolVLM)
         size_t num_tokens = encoded_image.resized_source.get_shape().at(1);
         
         std::string expanded_tag;

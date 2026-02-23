@@ -126,7 +126,7 @@ def read_image(path: str) -> Tensor:
 def main():
     if len(sys.argv) < 3:
         print("Usage: python test_smolvlm.py <model_dir> <image_path> [device] [prompt]")
-        print("Example: python test_smolvlm.py SmolVLM-instruct_int4_sym_group-1 test.jpg CPU")
+        print("Example: python test_smolvlm.py SmolVLM-instruct_int4_sym_group-128 test.jpg CPU")
         sys.exit(1)
 
     model_dir = sys.argv[1]
@@ -173,7 +173,7 @@ if __name__ == "__main__":
   python test-smolvlm.py SmolVLM-instruct_int4_sym_group-128 cat.jpg GPU "Describe this image"
 ```
 
-(Try with GPU / NPU / NPU)
+(Try with CPU / GPU / NPU)
 
 ---
 
