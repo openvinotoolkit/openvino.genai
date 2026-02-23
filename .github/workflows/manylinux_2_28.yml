@@ -95,8 +95,7 @@ jobs:
       with:
         platform: almalinux8
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
-        # latest_available_commit fails with libopenvino_intel_npu_compiler.so: cannot open shared object file on Manylinux 2_28. Ticket: 181511
-        revision: 8f1e6829dc8eecdb9fca2a95d9271f35b780ddaa
+        revision: latest_available_commit
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
