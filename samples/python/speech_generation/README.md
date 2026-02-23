@@ -36,7 +36,7 @@ tokenizer = AutoTokenizer.from_pretrained("microsoft/speecht5_tts")
 export_tokenizer(tokenizer, output_dir)
 ```
 
-**Note:** Currently, text-to-speech in OpenVINO GenAI supports the `SpeechT5 TTS` model. 
+**Note:** Currently, text-to-speech in OpenVINO GenAI supports the `SpeechT5 TTS` model.
 When exporting the model, you must specify a vocoder using the `--model-kwargs` option in JSON format.
 
 ## Prepare speaker embedding file
@@ -75,5 +75,5 @@ import openvino_genai
 pipe = openvino_genai.Text2SpeechPipeline(model_dir, device)
 result = pipe.generate("Hello OpenVINO GenAI", speaker_embedding)
 speech = result.speeches[0]
-# speech tensor contains the waveform of the spoken phrase 
+# speech tensor contains the waveform of the spoken phrase
 ```

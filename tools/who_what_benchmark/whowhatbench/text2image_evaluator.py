@@ -29,7 +29,7 @@ default_data = {
 
 @register_evaluator("text-to-image")
 class Text2ImageEvaluator(BaseEvaluator):
-    DEF_NUM_INFERENCE_STEP = 4
+    DEFAULT_NUM_INFERENCE_STEPS = 4
 
     def __init__(
         self,
@@ -56,7 +56,7 @@ class Text2ImageEvaluator(BaseEvaluator):
         self.resolution = resolution
         self.crop_prompt = crop_prompts
         self.num_samples = num_samples
-        self.num_inference_steps = num_inference_steps or self.DEF_NUM_INFERENCE_STEP
+        self.num_inference_steps = num_inference_steps or self.DEFAULT_NUM_INFERENCE_STEPS
         self.seed = seed
         self.similarity = None
         self.similarity = ImageSimilarity(similarity_model_id)
@@ -158,7 +158,7 @@ class Text2ImageEvaluator(BaseEvaluator):
         if not os.path.exists(image_dir):
             os.makedirs(image_dir)
 
-        for i, prompt in tqdm(enumerate(prompts), desc="Evaluate pipeline"):
+        for i, prompt in tqdm(enumerate(prompts), total=len(prompts), desc="Evaluate pipeline"):
             set_seed(self.seed)
             rng = rng.manual_seed(self.seed)
             image = generation_fn(

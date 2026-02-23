@@ -1,1 +1,0 @@
-auto-gptq>=0.5.1 # for gptq
