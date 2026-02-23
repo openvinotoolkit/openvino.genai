@@ -2,7 +2,7 @@
 
 This example showcases inference of text-generation Vision Language Models (VLMs): `miniCPM-V-2_6` and other models with the same signature. The application doesn't have many configuration options to encourage the reader to explore and modify the source code. For example, change the device for inference to GPU. The sample features `openvino-genai-node.VLMPipeline` and configures it for the chat scenario.
 
-There are three sample files:
+There are two sample files:
  - [`visual_language_chat.js`](./visual_language_chat.js) demonstrates basic usage of the VLM pipeline.
  - [`video_to_text_chat.js`](./video_to_text_chat.js) demonstrates video to text usage of the VLM pipeline.
 
