@@ -121,10 +121,11 @@ def get_argparser():
         default=0,
         required=False,
         type=int,
-        help="Enables memory usage monitoring mode. Use 1 to track maximum memory consumption during model compilation "
-        "and warm-up iteration, or 2 to track across all iterations. Warning: Concurrent memory consumption and "
-        "performance benchmarking is not recommended. Performance impact can be reduced by using longer "
-        "--memory_consumption_cooldown and --memory_consumption_interval values, though a degradation is unavoidable.",
+        help="Enables memory usage monitoring mode. Use 1 to track maximum memory consumption during model compilation"
+        " and warm-up iteration, 2 to track across all iterations, or 3 to track for debug in separated process over"
+        " whole benchmarking. Warning: Concurrent memory consumption and performance benchmarking is not recommended."
+        " Performance impact can be reduced by using longer --memory_consumption_cooldown and --memory_consumption_interval"
+        " values, though a degradation is unavoidable.",
     )
     parser.add_argument(
         "--memory_consumption_cooldown",
@@ -495,6 +496,8 @@ def main():
     memory_data_collector = None
     if args.memory_consumption:
         memory_data_collector = MemoryDataSummarizer(args)
+        memory_data_collector.update_marker("setup")
+
     try:
         if model_args['use_case'].task in ['text_gen', 'code_gen']:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case'].task](
@@ -503,6 +506,8 @@ def main():
         else:
             iter_data_list, pretrain_time, iter_timestamp = CASE_TO_BENCH[model_args['use_case'].task](
                 model_path, framework, args.device, model_args, args.num_iters, memory_data_collector)
+        if args.memory_consumption:
+            memory_data_collector.update_marker("teardown")
 
         if args.report is not None or args.report_json is not None:
             model_precision = ''
@@ -543,8 +548,9 @@ def main():
         exit(1)
     finally:
         if memory_data_collector:
+            if memory_data_collector.mmh is not None:
+                memory_data_collector.mmh.stop()
             memory_data_collector.stop()
-
 
 if __name__ == '__main__':
     main()

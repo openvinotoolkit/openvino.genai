@@ -404,6 +404,8 @@ def run_video_generation_benchmark(model_path, framework, device, args, num_iter
         )
         args |= input_args
 
+    if mem_consumption_meter:
+        mem_consumption_meter.update_marker("model")
     pipe, tokenizer, pretrain_time, _, use_genai = FW_UTILS[framework].create_video_gen_model(
         model_path, device, mem_consumption, **args
     )

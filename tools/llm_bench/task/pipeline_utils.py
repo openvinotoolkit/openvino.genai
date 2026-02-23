@@ -238,6 +238,8 @@ def launch(
     proc_id: int,
     bench_hook: object | None,
 ) -> dict:
+    if pipeline.mem_consumption_meter is not None:
+        pipeline.mem_consumption_meter.update_marker(f"step-{iter_num}-{prompt_idx}")
     iter_timestamp[iter_num][prompt_idx]["start"] = datetime.datetime.now().isoformat()
     iter_data, _ = pipeline.run(input_item, iter_num, prompt_idx, proc_id, bench_hook)
     iter_timestamp[iter_num][prompt_idx]["end"] = datetime.datetime.now().isoformat()
