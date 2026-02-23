@@ -2162,7 +2162,7 @@ class PipelineMetrics:
         :param cache_usage: Percentage of KV cache usage in the last generation step.
         :type cache_usage: float
 
-        :param kv_cache_usage_in_bytes: The total KV cache size in bytes in the last generation step.
+        :param kv_cache_usage_in_bytes: KV cache usage in bytes in the last generation step.
         :type kv_cache_usage_in_bytes: int
     
         :param max_cache_usage: Max KV cache usage during the lifetime of the pipeline in %
@@ -2183,7 +2183,10 @@ class PipelineMetrics:
     def cache_usage(self) -> float:
         ...
     @property
-    def max_cache_usage(self) -> float:
+    def cache_usage(self) -> float:
+        ...
+    @property
+    def inference_duration(self) -> float:
         ...
     @property
     def requests(self) -> int:
