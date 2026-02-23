@@ -230,6 +230,8 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
         if "guidance_scale" in static_input_args:
             args["guidance_scale"] = static_input_args["guidance_scale"]
 
+    if mem_consumption:
+        mem_consumption.update_marker("model")
     pipe, pretrain_time, use_genai, callback = FW_UTILS[framework].create_image_gen_model(model_path, device, mem_consumption, **args)
     iter_data_list = []
 
@@ -251,6 +253,8 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
             for image_id, image_param in enumerate(image_list):
+                if mem_consumption:
+                    mem_consumption.update_marker(f"step-{num}-{image_id}")
                 p_idx = prompt_idx_list[image_id]
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 image_gen_fn(image_param, num, prompt_idx_list[image_id], pipe, args, iter_data_list, proc_id, mem_consumption, callback)
@@ -261,6 +265,8 @@ def run_image_generation_benchmark(model_path, framework, device, args, num_iter
         for image_id, image_param in enumerate(image_list):
             p_idx = prompt_idx_list[image_id]
             for num in range(num_iters + 1):
+                if mem_consumption:
+                    mem_consumption.update_marker(f"step-{num}-{image_id}")
                 iter_timestamp[num][p_idx]['start'] = datetime.datetime.now().isoformat()
                 image_gen_fn(image_param, num, p_idx, pipe, args, iter_data_list, proc_id, mem_consumption)
                 iter_timestamp[num][p_idx]['end'] = datetime.datetime.now().isoformat()
