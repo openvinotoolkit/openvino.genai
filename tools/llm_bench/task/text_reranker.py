@@ -368,6 +368,8 @@ class TextRerankerGenAI(CommonPipeline):
 def run_text_reranker_benchmark(
     model_path: Path, framework: str, device: str, args: dict, num_iters: int, mem_consumption: MemMonitorWrapper
 ) -> tuple[list, float, dict]:
+    if mem_consumption is not None:
+        mem_consumption.update_marker("model")
     model, tokenizer, pretrain_time, bench_hook, use_genai = FW_UTILS[framework].create_text_reranker_model(model_path, device, mem_consumption, **args)
     iter_data_list = []
     text_list, prompt_idx_list = collect_prompts_step(args, get_text_prompt)
@@ -395,6 +397,8 @@ def run_text_reranker_benchmark(
 
 
 def launch(pipeline: CommonPipeline, iter_num: int, prompt_idx: int, iter_timestamp: dict, input_text: str, proc_id: int, bench_hook: object | None) -> dict:
+    if mem_consumption is not None:
+        mem_consumption.update_marker(f"step-{iter_num}-{prompt_idx}")
     if iter_num == 0:
         metrics_print.print_unicode(
             f"[warm-up][P{prompt_idx}] Input query: {input_text}\n Input texts: {pipeline.texts}", f"[warm-up][P{prompt_idx}] Unable print input text"

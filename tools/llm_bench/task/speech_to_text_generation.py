@@ -146,6 +146,8 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
     if len(speech_list) == 0:
         raise RuntimeError('==Failure speech list is empty ==')
     log.info(f'Benchmarking iter nums(exclude warm-up): {num_iters}, speech file nums: {len(speech_file_list)}, speech idx: {speech_idx_list}')
+    if mem_consumption:
+        mem_consumption.update_marker("model")
     pipe, processor, pretrain_time, use_genai = FW_UTILS[framework].create_speech_2_txt_model(model_path, device, mem_consumption, **args)
     md5_list = {num : {} for num in range(num_iters + 1)}
     iter_timestamp = model_utils.init_timestamp(num_iters, speech_list, speech_idx_list)
@@ -162,6 +164,8 @@ def run_speech_2_txt_benchmark(model_path, framework, device, args, num_iters, m
         whisper_hook.new_text_sample(pipe)
     for num in range(num_iters + 1):
         for idx, speech_param in enumerate(speech_list):
+            if mem_consumption:
+                mem_consumption.update_marker(f"step-{num}-{idx}")
             p_idx = speech_idx_list[idx]
             raw_speech = model_utils.read_wav(speech_param['media'], processor.feature_extractor.sampling_rate)
             input_param['speech_idx'] = p_idx

@@ -51,6 +51,7 @@ def run_visual_language_generation_optimum(
 
     tok_encode_end = time.perf_counter()
     tok_encode_time = (tok_encode_end - tok_encode_start) * 1000
+
     # Remove `token_type_ids` from inputs
     input_tokens = input_data['input_ids'] if 'input_ids' in input_data else input_data
     input_token_size = input_tokens[0].numel()
@@ -89,13 +90,13 @@ def run_visual_language_generation_optimum(
             **additional_args
         )
     end = time.perf_counter()
+    generation_time = end - start
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
         mem_consumption.stop_and_collect_data(f"{'P' + str(num) if num > 0 else 'warm-up'}")
         memory_metrics = mem_consumption.get_data(dict_format=True)
     else:
         memory_metrics = {}
 
-    generation_time = end - start
     tok_decode_start = time.perf_counter()
     generated_text = processor["tokenizer"].batch_decode(result[:, input_data["input_ids"].shape[1]:], skip_special_tokens=True)
     tok_decode_end = time.perf_counter()
@@ -212,6 +213,7 @@ def run_visual_language_generation_genai(
     start = time.perf_counter()
     generation_result = model.generate(prompts[0], generation_config=gen_config, **kwargs)
     end = time.perf_counter()
+    generation_time = end - start
     generated_text = generation_result.texts
     perf_metrics = generation_result.perf_metrics
     if (args['mem_consumption'] == 1 and num == 0) or args['mem_consumption'] == 2:
@@ -220,7 +222,6 @@ def run_visual_language_generation_genai(
     else:
         memory_metrics = {}
 
-    generation_time = end - start
     result_md5_list = []
     generated_text_len = perf_metrics.get_num_generated_tokens()
     if generated_text_len > max_gen_tokens:
@@ -287,6 +288,8 @@ def run_visual_language_generation_genai(
 
 
 def run_visual_language_generation_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
+    if mem_consumption is not None:
+        mem_consumption.update_marker("model")
     outs = FW_UTILS[framework].create_image_text_gen_model(model_path, device, mem_consumption, **args)
     model, processor, pretrain_time, bench_hook, use_genai = outs
     model_precision = model_utils.get_model_precision(model_path.parts)
@@ -318,6 +321,8 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
             for idx, input_text in enumerate(image_text_list):
+                if mem_consumption is not None:
+                    mem_consumption.update_marker(f"step-{num}-{idx}")
                 p_idx = prompt_idx_list[idx]
                 if num == 0:
                     prefix = f'[warm-up][P{p_idx}] Input text: {input_text}'
@@ -333,6 +338,8 @@ def run_visual_language_generation_benchmark(model_path, framework, device, args
         for idx, input_text in enumerate(image_text_list):
             p_idx = prompt_idx_list[idx]
             for num in range(num_iters + 1):
+                if mem_consumption is not None:
+                    mem_consumption.update_marker(f"step-{num}-{idx}")
                 if num == 0:
                     prefix = f'[warm-up][P{p_idx}] Input text: {input_text}'
                     metrics_print.print_unicode(prefix, max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)

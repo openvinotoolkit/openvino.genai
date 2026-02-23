@@ -178,6 +178,8 @@ def run_text_to_speech_generation_genai(
 
 
 def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, mem_consumption):
+    if mem_consumption is not None:
+        mem_consumption.update_marker("model")
     model, processor, vocoder, pretrain_time, use_genai = FW_UTILS[framework].create_text_2_speech_model(model_path, device, mem_consumption, **args)
     model_precision = model_utils.get_model_precision(model_path.parts)
     iter_data_list = []
@@ -216,6 +218,8 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
     if args['subsequent'] is False:
         for num in range(num_iters + 1):
             for idx, input_text in enumerate(text_list):
+                if mem_consumption is not None:
+                    mem_consumption.update_marker(f"step-{num}-{idx}")
                 p_idx = prompt_idx_list[idx]
                 if num == 0:
                     metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
@@ -230,6 +234,8 @@ def run_text_2_speech_benchmark(model_path, framework, device, args, num_iters, 
         for idx, input_text in enumerate(text_list):
             p_idx = prompt_idx_list[idx]
             for num in range(num_iters + 1):
+                if mem_consumption is not None:
+                    mem_consumption.update_marker(f"step-{num}-{idx}")
                 if num == 0:
                     metrics_print.print_unicode(f'[warm-up][P{p_idx}] Input text: {input_text}', f'[warm-up][P{p_idx}] Unable print input text',
                                                 max_output=metrics_print.MAX_INPUT_TXT_IN_LOG)
