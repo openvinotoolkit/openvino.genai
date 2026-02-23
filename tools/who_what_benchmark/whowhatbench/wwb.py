@@ -35,6 +35,13 @@ def relevance_weight_type(value: str) -> float:
     return fvalue
 
 
+def num_infer_count_type(x):
+    x = int(x)
+    if x < 1:
+        raise argparse.ArgumentTypeError("Minimum input value is 1")
+    return x
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         prog="WWB CLI",
@@ -316,6 +323,13 @@ def parse_args():
         help="Float value from 0 to 1, control the trade-off between diversity and relevance for visual tokens pruning, "
         "a value of 0 disables relevance weighting, while higher values (up to 1.0) emphasize relevance, "
         "making pruning more conservative on borderline tokens.",
+    )
+    parser.add_argument(
+        "--max_new_tokens",
+        type=num_infer_count_type,
+        default=None,
+        required=False,
+        help="Amount of the generated token, the value must be greater than 0.",
     )
 
     return parser.parse_args()
@@ -649,6 +663,7 @@ def create_evaluator(base_model, args):
                 test_data=prompts,
                 tokenizer=tokenizer,
                 similarity_model_id=args.data_encoder,
+                max_new_tokens=args.max_new_tokens,
                 num_samples=args.num_samples,
                 language=args.language,
                 gen_answer_fn=gen_answer_fn,
@@ -668,6 +683,7 @@ def create_evaluator(base_model, args):
                 base_model=base_model,
                 gt_data=args.gt_data,
                 test_data=prompts,
+                max_new_tokens=args.max_new_tokens,
                 num_samples=args.num_samples,
                 resolution=(args.image_size, args.image_size),
                 num_inference_steps=args.num_inference_steps,
