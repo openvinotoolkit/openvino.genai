@@ -1139,7 +1139,7 @@ Napi::Value cpp_to_js<std::vector<std::shared_ptr<ov::genai::Parser>>, Napi::Val
         }
         auto* jsp = dynamic_cast<JSParser*>(p.get());
         if (jsp) {
-            arr[i] = jsp->GetJSObject(env);
+            arr[i] = jsp->get_js_object(env);
             continue;
         }
         if (auto dp = std::dynamic_pointer_cast<ov::genai::DeepSeekR1ReasoningParser>(p)) {

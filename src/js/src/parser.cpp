@@ -29,7 +29,7 @@ void JSParser::parse(ov::genai::JsonContainer& message) {
     message = promise.get_future().get();
 }
 
-Napi::Object JSParser::GetJSObject(Napi::Env env) const {
+Napi::Object JSParser::get_js_object(Napi::Env env) const {
     return js_parser_ref.Value();
 }
 

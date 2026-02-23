@@ -15,7 +15,7 @@ public:
         js_parser_ref.Unref();
     };
     void parse(ov::genai::JsonContainer& message) override;
-    Napi::Object GetJSObject(Napi::Env env) const;
+    Napi::Object get_js_object(Napi::Env env) const;
 
 private:
     Napi::ThreadSafeFunction parser_tsfn;
