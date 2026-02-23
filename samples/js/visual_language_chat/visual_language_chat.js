@@ -4,9 +4,8 @@
 import { promises as fs } from "node:fs";
 import { basename } from "node:path";
 import readline from "node:readline/promises";
+import { readImageWithFfmpeg } from "../ffmpeg_utils.js";
 import { VLMPipeline } from "openvino-genai-node";
-import { addon as ov } from "openvino-node";
-import sharp from "sharp";
 import { hideBin } from "yargs/helpers";
 import yargs from "yargs/yargs";
 
@@ -20,31 +19,14 @@ function streamer(chunk) {
 }
 
 /**
- * Reads an image from disk and converts it to an OpenVINO tensor.
- * @param {string} filePath - Path to the image file.
- * @returns {Promise<ov.Tensor>} Tensor in HWC layout with type u8.
- */
-async function readImage(filePath) {
-    try {
-        const { data, info } = await sharp(filePath)
-            .raw()
-            .toBuffer({ resolveWithObject: true });
-
-        return new ov.Tensor("u8", [info.height, info.width, 3], data);
-    } catch (err) {
-        throw new Error(`Failed to read image: ${filePath}. ${err.message}`);
-    }
-}
-
-/**
  * Reads one image or all images from a directory and converts them to tensors.
  * @param {string} path - File path or directory path containing images.
- * @returns {Promise<ov.Tensor[]>} List of image tensors sorted by filename.
+ * @returns List of image tensors sorted by filename.
  */
 async function readImages(path) {
     const stat = await fs.stat(path);
     if (!stat.isDirectory()) {
-        return [await readImage(path)];
+        return [await readImageWithFfmpeg(path)];
     }
 
     const entries = await fs.readdir(path);
@@ -54,7 +36,7 @@ async function readImages(path) {
 
     const tensors = [];
     for (const file of files) {
-        tensors.push(await readImage(file));
+        tensors.push(await readImageWithFfmpeg(file));
     }
 
     return tensors;

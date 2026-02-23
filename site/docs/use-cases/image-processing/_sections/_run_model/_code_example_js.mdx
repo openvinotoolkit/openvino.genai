@@ -4,24 +4,16 @@ import CodeBlock from '@theme/CodeBlock';
 {`import { addon as ov } from "openvino-node";
 import { VLMPipeline } from "openvino-genai-node";
 import { stat, readdir } from "node:fs/promises";
-import sharp from "sharp";
 import path from "node:path";
-
-async function readImage(imagePath) {
-    const img = sharp(imagePath);
-    const metadata = await img.metadata();
-    const { width, height, channels } = metadata;
-    const imageBuffer = await img.raw().toBuffer();
-    return new ov.Tensor(ov.element.u8, [height, width, channels], imageBuffer);
-}
+import { readImageWithFfmpeg } from "./ffmpeg_utils.js";
 
 async function readImages(imagePath) {
     const stats = await stat(imagePath);
     if (stats.isDirectory()) {
         const files = await readdir(imagePath);
-        return Promise.all(files.sort().map((file) => readImage(path.join(imagePath, file))));
+        return Promise.all(files.sort().map((file) => readImageWithFfmpeg(path.join(imagePath, file))));
     }
-    return [await readImage(imagePath)];
+    return [await readImageWithFfmpeg(imagePath)];
 }
 
 const images = await readImages("./images");
