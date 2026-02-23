@@ -268,8 +268,7 @@ Napi::Value LLMPipelineWrapper::get_generation_config(const Napi::CallbackInfo& 
     auto env = info.Env();
     try {
         OPENVINO_ASSERT(this->pipe, "LLMPipeline is not initialized");
-        ov::genai::GenerationConfig config = this->pipe->get_generation_config();
-        return cpp_to_js<ov::genai::GenerationConfig, Napi::Value>(env, config);
+        return cpp_to_js<ov::genai::GenerationConfig, Napi::Value>(env, this->pipe->get_generation_config());
     } catch (const std::exception& ex) {
         Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
     }
@@ -281,8 +280,7 @@ Napi::Value LLMPipelineWrapper::set_generation_config(const Napi::CallbackInfo& 
     try {
         OPENVINO_ASSERT(this->pipe, "LLMPipeline is not initialized");
         VALIDATE_ARGS_COUNT(info, 1, "setGenerationConfig()");
-        ov::genai::GenerationConfig config = js_to_cpp<ov::genai::GenerationConfig>(env, info[0]);
-        this->pipe->set_generation_config(config);
+        this->pipe->set_generation_config(js_to_cpp<ov::genai::GenerationConfig>(env, info[0]));
     } catch (const std::exception& ex) {
         Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
     }
