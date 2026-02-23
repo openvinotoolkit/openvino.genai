@@ -29,7 +29,7 @@ For OpenVINO 2025.4
 pip install -U openvino==2025.4.1 openvino-tokenizers==2025.4.1.0 
 ```
 ```bash
-pip install transformers pillow numpy optimum-intel nncf
+pip install transformers pillow numpy optimum-intel nncf librosa diffusers opencv-python
 ```
 
 ## Download model
