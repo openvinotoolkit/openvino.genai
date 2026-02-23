@@ -13,7 +13,6 @@ tokenizer_model_ids = [
     "openbmb/MiniCPM-o-2_6",
     "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
     "NousResearch/Meta-Llama-3-8B-Instruct", # Open analog for gated "meta-llama/Meta-Llama-3-8B-Instruct",
-    # ("black-forest-labs/FLUX.1-dev", dict(subfolder="tokenizer")),  # FLUX.1-dev has tokenizer in subfolder
 ]
 
 # Check that fix for CVS-157216 works.
