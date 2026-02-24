@@ -110,7 +110,7 @@ bool DenoiserLoopModule::initialize() {
     }
 
     if (m_splitted_model) {
-        m_splitted_model_infer = CSplittedModelInfer::create(transformer_model_path,
+        m_splitted_model_infer = CSplittedModelInfer::create(transformer_model_path.string(),
                                                              module_desc->device,
                                                              m_dynamic_load_weights,
                                                              properties);
