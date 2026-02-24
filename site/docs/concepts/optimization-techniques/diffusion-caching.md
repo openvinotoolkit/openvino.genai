@@ -22,7 +22,7 @@ TaylorSeer Lite is configured through `ov::genai::TaylorSeerCacheConfig` and exp
 ### Parameters
 * **`cache_interval`** (`size_t`, defaults to `3`) - Number of consecutive prediction steps between full forward passes. After a full computation, the cached output is reused for this many subsequent denoising steps before refreshing with a new full forward pass.
 
-* **`disable_cache_before_step`** (`size_t`, defaults to `6`) - Number of initial steps where caching is disabled. Full computation is performed for steps 0 through `disable_cache_before_step - 1` to establish stable derivatives before prediction begins. This warmup period improves prediction accuracy.
+* **`disable_cache_before_step`** (`size_t`, defaults to `6`) - Number of initial steps where caching is disabled. Full computation is performed for steps 0 through `disable_cache_before_step - 1` to establish stable derivatives before prediction begins. This warm-up period improves prediction accuracy.
 
 * **`disable_cache_after_step`** (`int`, defaults to `-2`) - Step index after which caching is disabled to ensure quality in final denoising stages. Negative values are interpreted relative to the end: `num_inference_steps + disable_cache_after_step`.
 

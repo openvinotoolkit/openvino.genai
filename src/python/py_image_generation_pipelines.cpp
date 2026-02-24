@@ -327,7 +327,7 @@ void init_image_generation_pipelines(py::module_& m) {
         py::arg("scheduler_config_path"),
         py::arg_v("scheduler_type", ov::genai::Scheduler::Type::AUTO, "Scheduler.Type.AUTO"));
 
-    py::class_<ov::genai::TaylorSeerCacheConfig, std::shared_ptr<ov::genai::TaylorSeerCacheConfig>>(
+    py::class_<ov::genai::TaylorSeerCacheConfig>(
         m, "TaylorSeerCacheConfig",
         "Configuration for TaylorSeer cache mechanism in diffusion transformers.\n\n"
         "See paper: https://arxiv.org/pdf/2503.06923\n\n"

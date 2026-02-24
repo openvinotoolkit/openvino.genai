@@ -2,6 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <gtest/gtest.h>
+#include <vector>
+#include <optional>
+#include <cstring>
+
 #include "openvino/genai/taylorseer_config.hpp"
 #include "diffusion_caching/taylorseer_lite.hpp"
 
