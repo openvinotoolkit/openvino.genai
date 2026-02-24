@@ -571,19 +571,19 @@ static std::string compiled_model_properties_to_string(const ov::CompiledModel& 
 }
 
 void print_compiled_model_properties(const ov::CompiledModel& compiled_model, const char* model_title) {
-    GENAI_DEBUG(compiled_model_properties_to_string(compiled_model, model_title));
+    // GENAI_DEBUG(compiled_model_properties_to_string(compiled_model, model_title));
 }
 
 void print_gguf_debug_info(const std::string &debug_info) {
-    GENAI_DEBUG(std::string("[GGUF Reader]: ") + debug_info);
+    // GENAI_DEBUG(std::string("[GGUF Reader]: ") + debug_info);
 }
 
 void print_scheduler_config_info(const SchedulerConfig &scheduler_config) {
-    GENAI_DEBUG(scheduler_config.to_string());
+    // GENAI_DEBUG(scheduler_config.to_string());
 }
 
 void print_generation_config_info(const GenerationConfig &generation_config) {
-    GENAI_DEBUG(generation_config.to_string());
+    // GENAI_DEBUG(generation_config.to_string());
 }
 
 void import_npu_model(ov::CompiledModel& compiled,
