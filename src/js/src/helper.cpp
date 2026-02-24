@@ -4,6 +4,7 @@
 #include "include/helper.hpp"
 
 #include <cmath>
+#include <typeindex>
 
 #include "include/addon.hpp"
 #include "include/chat_history.hpp"
@@ -50,6 +51,41 @@ Napi::Value get_first_set_value(const Napi::Env& env, const Napi::Value& value) 
     return item.Get("value");
 }
 
+/** Determine C++ scalar type for the first collection element. */
+std::type_index get_cpp_type(const Napi::Env& env, const Napi::Value& value) {
+    if (value.IsUndefined()) {
+        return typeid(void);
+    }
+    if (value.IsBoolean()) {
+        return typeid(bool);
+    }
+    if (value.IsString()) {
+        return typeid(std::string);
+    }
+    if (value.IsNumber()) {
+        if (is_js_integer(env, value.As<Napi::Number>())) {
+            return typeid(int64_t);
+        }
+        return typeid(double);
+    }
+    if (value.IsBigInt()) {
+        bool lossless = false;
+        value.As<Napi::BigInt>().Int64Value(&lossless);
+        if (lossless) {
+            return typeid(int64_t);
+        }
+        const uint64_t uval = value.As<Napi::BigInt>().Uint64Value(&lossless);
+        if (!lossless || uval > static_cast<uint64_t>(SIZE_MAX)) {
+            OPENVINO_THROW("BigInt value is too large to fit in int64_t or size_t.");
+        }
+        return typeid(size_t);
+    }
+    if (value.IsArray()) {
+        return typeid(std::vector<ov::Any>);
+    }
+    return typeid(std::nullptr_t);
+}
+
 /** Collects elements of a JS Set into a vector of Napi::Value. Value must be a JS Set. */
 std::vector<Napi::Value> js_set_to_values(const Napi::Env& env, const Napi::Value& value) {
     const auto object_value = value.As<Napi::Object>();
@@ -71,67 +107,41 @@ std::vector<Napi::Value> js_set_to_values(const Napi::Env& env, const Napi::Valu
  * conversion is set<string>, set<float>, set<size_t>, or set<int64_t> as for arrays.
  */
 ov::Any js_set_to_any(const Napi::Env& env, const Napi::Value& value) {
-    const Napi::Value first = get_first_set_value(env, value);
-    if (first.IsUndefined()) {
+    const auto first_element_type = get_cpp_type(env, get_first_set_value(env, value));
+    const std::vector<Napi::Value> values = js_set_to_values(env, value);
+    if (first_element_type == typeid(void)) {
         return ov::Any();
     }
-    if (first.IsString()) {
-        return ov::Any(js_to_cpp<std::set<std::string>>(env, value));
-    }
-    if (first.IsNumber() || first.IsBigInt()) {
-        const std::vector<Napi::Value> values = js_set_to_values(env, value);
-        bool has_non_integer_number = false;
-        bool all_lossless_int64 = true;
-        bool all_fit_size_t = true;
+    if (first_element_type == typeid(std::string)) {
+        std::set<std::string> result;
         for (const Napi::Value& v : values) {
-            if (v.IsNumber()) {
-                if (!is_js_integer(env, v.As<Napi::Number>()))
-                    has_non_integer_number = true;
-                else {
-                    const int64_t sval = v.As<Napi::Number>().Int64Value();
-                    if (sval < 0 || static_cast<uint64_t>(sval) > static_cast<uint64_t>(SIZE_MAX))
-                        all_fit_size_t = false;
-                }
-            } else if (v.IsBigInt()) {
-                bool lossless = false;
-                v.As<Napi::BigInt>().Int64Value(&lossless);
-                if (!lossless) {
-                    all_lossless_int64 = false;
-                    const uint64_t uval = v.As<Napi::BigInt>().Uint64Value(&lossless);
-                    if (!lossless || uval > static_cast<uint64_t>(SIZE_MAX))
-                        OPENVINO_THROW("Set BigInt element is too large for int64_t or size_t.");
-                    all_fit_size_t = false;
-                } else {
-                    const int64_t sval = v.As<Napi::BigInt>().Int64Value(&lossless);
-                    if (sval < 0 || static_cast<uint64_t>(sval) > static_cast<uint64_t>(SIZE_MAX))
-                        all_fit_size_t = false;
-                }
-            } else {
-                OPENVINO_THROW("Set of numbers must contain only Number or BigInt.");
-            }
+            result.insert(js_to_cpp<std::string>(env, v));
         }
-        if (has_non_integer_number) {
-            std::set<double> result;
-            for (const Napi::Value& v : values) {
-                result.insert(js_to_cpp<double>(env, v));
-            }
-            return ov::Any(std::move(result));
-        }
-        if (all_lossless_int64) {
-            std::set<int64_t> result;
-            for (const Napi::Value& v : values)
-                result.insert(js_to_cpp<int64_t>(env, v));
-            return ov::Any(std::move(result));
-        }
-        if (all_fit_size_t) {
-            std::set<size_t> result;
-            for (const Napi::Value& v : values)
-                result.insert(js_to_cpp<size_t>(env, v));
-            return ov::Any(std::move(result));
-        }
-        OPENVINO_THROW("Set of numbers: not all elements fit in double, int64_t or size_t.");
+        return ov::Any(std::move(result));
     }
-    OPENVINO_THROW("Cannot convert Set to ov::Any: unsupported element type.");
+    if (first_element_type == typeid(double)) {
+        std::set<double> result;
+        for (const Napi::Value& v : values) {
+            result.insert(js_to_cpp<double>(env, v));
+        }
+        return ov::Any(std::move(result));
+    }
+    if (first_element_type == typeid(int64_t)) {
+        std::set<int64_t> result;
+        for (const Napi::Value& v : values) {
+            result.insert(js_to_cpp<int64_t>(env, v));
+        }
+        return ov::Any(std::move(result));
+    }
+    if (first_element_type == typeid(size_t)) {
+        std::set<size_t> result;
+        for (const Napi::Value& v : values) {
+            result.insert(js_to_cpp<size_t>(env, v));
+        }
+        return ov::Any(std::move(result));
+    }
+    OPENVINO_THROW("Cannot convert Set to ov::Any. " + std::string(first_element_type.name()) +
+                   " is not a supported element type.");
 }
 
 /**
@@ -142,92 +152,55 @@ ov::Any js_array_to_any(const Napi::Env& env, const Napi::Array& array) {
     if (arrayLength == 0) {
         return ov::Any(std::vector<ov::Any>());
     }
-
-    const Napi::Value firstElem = array[0u];
-
-    if (firstElem.IsString()) {
+    const auto first_element_type = get_cpp_type(env, array[0u]);
+    if (first_element_type == typeid(std::string)) {
         return ov::Any(js_to_cpp<std::vector<std::string>>(env, array));
     }
-
-    if (firstElem.IsBigInt()) {
-        // Prefer int64_t when all elements convert losslessly; otherwise use size_t.
-        bool all_lossless_int64 = true;
-        for (uint32_t i = 0; i < arrayLength; ++i) {
-            const Napi::BigInt bigint = array[i].As<Napi::BigInt>();
-            bool lossless = false;
-            bigint.Int64Value(&lossless);
-            if (!lossless) {
-                all_lossless_int64 = false;
-                const uint64_t uval = bigint.Uint64Value(&lossless);
-                if (!lossless || uval > static_cast<uint64_t>(SIZE_MAX))
-                    OPENVINO_THROW("BigInt value in array is too large to fit in int64_t or size_t.");
-                break;  // type will be size_t, no need to check the rest
-            }
-        }
-        if (all_lossless_int64) {
-            std::vector<int64_t> vec(arrayLength);
-            for (uint32_t i = 0; i < arrayLength; ++i) {
-                bool lossless = false;
-                vec[i] = array[i].As<Napi::BigInt>().Int64Value(&lossless);
-            }
-            return ov::Any(std::move(vec));
-        }
-        std::vector<size_t> vec(arrayLength);
-        for (uint32_t i = 0; i < arrayLength; ++i) {
-            bool lossless = false;
-            const uint64_t uval = array[i].As<Napi::BigInt>().Uint64Value(&lossless);
-            if (!lossless || uval > static_cast<uint64_t>(SIZE_MAX))
-                OPENVINO_THROW("BigInt value in array is too large to fit in size_t.");
-            vec[i] = static_cast<size_t>(uval);
-        }
-        return ov::Any(std::move(vec));
-    }
-
-    if (firstElem.IsNumber()) {
-        if (is_js_integer(env, firstElem.As<Napi::Number>())) {
-            return ov::Any(js_to_cpp<std::vector<int64_t>>(env, array));
-        }
+    if (first_element_type == typeid(double)) {
         return ov::Any(js_to_cpp<std::vector<double>>(env, array));
     }
-
-    if (firstElem.IsArray()) {
+    if (first_element_type == typeid(int64_t)) {
+        return ov::Any(js_to_cpp<std::vector<int64_t>>(env, array));
+    }
+    if (first_element_type == typeid(size_t)) {
+        return ov::Any(js_to_cpp<std::vector<size_t>>(env, array));
+    }
+    if (first_element_type == typeid(std::vector<ov::Any>)) {
         std::vector<ov::Any> inner_anys;
         for (uint32_t i = 0; i < arrayLength; ++i) {
             inner_anys.push_back(js_array_to_any(env, array[i].As<Napi::Array>()));
         }
         return ov::Any(inner_anys);
     }
-
-    OPENVINO_THROW("Cannot convert array to ov::Any: unsupported element type.");
+    OPENVINO_THROW("Cannot convert Array to ov::Any. " + std::string(first_element_type.name()) +
+                   " is not a supported element type.");
 }
 
 }  // namespace
 
 template <>
 ov::Any js_to_cpp<ov::Any>(const Napi::Env& env, const Napi::Value& value) {
-    if (value.IsString()) {
-        return ov::Any(value.ToString().Utf8Value());
+    const auto cpp_type = get_cpp_type(env, value);
+    if (cpp_type == typeid(void)) {
+        return ov::Any();
     }
-    if (value.IsBigInt()) {
-        bool lossless = false;
-        const int64_t sval = value.As<Napi::BigInt>().Int64Value(&lossless);
-        if (lossless) {
-            return ov::Any(sval);
-        }
-        const uint64_t uval = value.As<Napi::BigInt>().Uint64Value(&lossless);
-        if (lossless && uval <= static_cast<uint64_t>(SIZE_MAX))
-            return ov::Any(static_cast<size_t>(uval));
-        OPENVINO_THROW("BigInt value is too large to fit in int64_t or size_t.");
+    if (cpp_type == typeid(std::string)) {
+        return ov::Any(js_to_cpp<std::string>(env, value));
     }
-    if (value.IsNumber()) {
-        const Napi::Number num = value.As<Napi::Number>();
-        if (!is_js_integer(env, num))
-            return ov::Any(js_to_cpp<double>(env, num));
-        const int64_t v = num.Int64Value();
-        return ov::Any(v);
+    if (cpp_type == typeid(double)) {
+        return ov::Any(js_to_cpp<double>(env, value));
     }
-    if (value.IsBoolean()) {
+    if (cpp_type == typeid(int64_t)) {
+        return ov::Any(js_to_cpp<int64_t>(env, value));
+    }
+    if (cpp_type == typeid(size_t)) {
+        return ov::Any(js_to_cpp<size_t>(env, value));
+    }
+    if (cpp_type == typeid(bool)) {
         return ov::Any(value.ToBoolean().Value());
+    }
+    if (cpp_type == typeid(std::vector<ov::Any>)) {
+        return js_array_to_any(env, value.As<Napi::Array>());
     }
     if (value.IsTypedArray()) {
         const napi_typedarray_type type = value.As<Napi::TypedArray>().TypedArrayType();
@@ -250,9 +223,6 @@ ov::Any js_to_cpp<ov::Any>(const Napi::Env& env, const Napi::Value& value) {
             OPENVINO_THROW("Cannot convert TypedArray to ov::Any: unsupported type.");
         }
     }
-    if (value.IsArray()) {
-        return js_array_to_any(env, value.As<Napi::Array>());
-    }
     if (value.IsObject()) {
         if (is_js_set(value)) {
             return js_set_to_any(env, value);
@@ -260,7 +230,7 @@ ov::Any js_to_cpp<ov::Any>(const Napi::Env& env, const Napi::Value& value) {
             return ov::Any(js_to_cpp<ov::AnyMap>(env, value));
         }
     }
-    OPENVINO_THROW("Cannot convert to ov::Any");
+    OPENVINO_THROW("Cannot convert " + value.ToString().Utf8Value() + " to ov::Any");
 }
 
 template <>
@@ -323,7 +293,8 @@ int64_t js_to_cpp<int64_t>(const Napi::Env& env, const Napi::Value& value) {
 template <>
 double js_to_cpp<double>(const Napi::Env& env, const Napi::Value& value) {
     OPENVINO_ASSERT(value.IsNumber(), "Passed argument must be of type Number.");
-    return value.As<Napi::Number>().DoubleValue();
+    auto result = value.As<Napi::Number>().DoubleValue();
+    return result;
 }
 
 template <>
@@ -341,7 +312,8 @@ size_t js_to_cpp<size_t>(const Napi::Env& env, const Napi::Value& value) {
     const uint64_t uval = value.As<Napi::BigInt>().Uint64Value(&lossless);
     if (!lossless || uval > static_cast<uint64_t>(SIZE_MAX))
         OPENVINO_THROW("BigInt value is too large for size_t.");
-    return static_cast<size_t>(uval);
+    auto result = static_cast<size_t>(uval);
+    return result;
 }
 
 template <>
@@ -404,22 +376,6 @@ std::vector<int64_t> js_to_cpp<std::vector<int64_t>>(const Napi::Env& env, const
     for (auto i = 0; i < len; ++i)
         vec[i] = js_to_cpp<int64_t>(env, obj[i]);
     return vec;
-}
-
-template <>
-std::set<std::string> js_to_cpp<std::set<std::string>>(const Napi::Env& env, const Napi::Value& value) {
-    if (value.IsArray()) {
-        const auto vec = js_to_cpp<std::vector<std::string>>(env, value);
-        return std::set<std::string>(vec.begin(), vec.end());
-    }
-    if (is_js_set(value)) {
-        std::set<std::string> result;
-        for (const auto& v : js_set_to_values(env, value)) {
-            result.insert(js_to_cpp<std::string>(env, v));
-        }
-        return result;
-    }
-    OPENVINO_THROW("Passed argument must be of type Array or Set.");
 }
 
 template <>

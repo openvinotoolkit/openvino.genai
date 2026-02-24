@@ -133,4 +133,21 @@ describe("GenerationConfig JS <-> C++ conversion", () => {
       assertRoundTrip({ stop_token_ids: stopTokenIds });
     });
   });
+
+  describe("check types", () => {
+    it("check bigint and number", () => {
+      const config = pipeline.getGenerationConfig();
+      assert.strictEqual(typeof config.max_new_tokens, "bigint");
+      pipeline.setGenerationConfig({ max_new_tokens: 100 });
+      const updatedConfig = pipeline.getGenerationConfig();
+      assert.strictEqual(typeof updatedConfig.max_new_tokens, "number");
+    });
+
+    it("throws if too large bigint value used", () => {
+      assert.throws(
+        () => pipeline.setGenerationConfig({ max_new_tokens: BigInt(2 ** 100) }),
+        /BigInt value is too large/,
+      );
+    });
+  });
 });

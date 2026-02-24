@@ -61,9 +61,6 @@ template <>
 std::vector<int64_t> js_to_cpp<std::vector<int64_t>>(const Napi::Env& env, const Napi::Value& value);
 template <>
 std::vector<size_t> js_to_cpp<std::vector<size_t>>(const Napi::Env& env, const Napi::Value& value);
-/** @brief  A template specialization for TargetType std::set<std::string> (accepts JS Array or Set) */
-template <>
-std::set<std::string> js_to_cpp<std::set<std::string>>(const Napi::Env& env, const Napi::Value& value);
 /** @brief  A template specialization for TargetType ov::genai::StopCriteria (accepts number 0, 1, 2) */
 template <>
 ov::genai::StopCriteria js_to_cpp<ov::genai::StopCriteria>(const Napi::Env& env, const Napi::Value& value);
