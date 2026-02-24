@@ -6,6 +6,7 @@
 #include <variant>
 #include <fstream>
 #include <memory>
+#include <sstream>
 
 #include "openvino/op/add.hpp"
 #include "openvino/op/divide.hpp"

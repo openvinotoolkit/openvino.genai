@@ -11,7 +11,6 @@
 #include "sampling/structured_output/structured_output_controller.hpp"
 #include "tokenizer/tokenizer_impl.hpp"
 #include "json_utils.hpp"
-#include "logger.hpp"
 #include "utils.hpp"
 
 
