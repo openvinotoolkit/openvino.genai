@@ -1,5 +1,4 @@
 import json
-import dataclasses
 from llm_bench_utils.memory_monitor import MemoryUnit, MemoryDataSummarizer
 
 
@@ -11,6 +10,7 @@ def estimate_throughput(latency, bs, ms=True):
     except ValueError:
         return None
     return None
+
 
 KEY_MAPPING = {
     "iteration": "iteration",
@@ -35,6 +35,7 @@ KEY_MAPPING = {
     "chat_idx": "chat_idx",
     "prompt_idx": "prompt_idx"
 }
+
 
 def write_result(report_file, model, framework, device, model_args, iter_data_list, pretrain_time, model_precision, iter_timestamp, memory_data_collector):
     metadata = {'model': model, 'framework': framework, 'device': device, 'precision': model_precision,
@@ -64,13 +65,15 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             "end": timestamp_end,
         }
 
-        for key in ["latency", "generation_time", "first_token_latency", "first_token_infer_latency", "other_tokens_infer_avg_latency", "tokenization_time", "detokenization_time"]:
+        for key in ["latency", "generation_time", "first_token_latency", "first_token_infer_latency",
+                    "other_tokens_infer_avg_latency", "tokenization_time", "detokenization_time"]:
             value = round(iter_data[key], 5) if iter_data[key] != "" else iter_data[key]
             json_key = KEY_MAPPING[key]
             res_data[json_key] = value
 
         # optional metrics
-        for key in ["max_rss_mem_consumption", "max_sys_mem_consumption", "max_rss_mem_increase", "max_sys_mem_increase", "max_rss_mem_share", "max_sys_mem_share"]:
+        for key in ["max_rss_mem_consumption", "max_sys_mem_consumption", "max_rss_mem_increase", "max_sys_mem_increase",
+                    "max_rss_mem_share", "max_sys_mem_share"]:
             if key in iter_data:
                 value = iter_data[key]
                 if value is None or value == "":
