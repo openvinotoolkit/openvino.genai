@@ -642,6 +642,7 @@ def _subtract_first_element(data):
     return data
 
 
+<<<<<<< HEAD
 ######################################################
 # Memory Marker Monitoring (in separate process)
 
@@ -1135,3 +1136,8 @@ class MemoryMarkerHandler:
             self.stop()
         except Exception:
             pass
+=======
+def should_collect_memory_info(mem_consumption, iteration_num):
+    return ((mem_consumption == MemoryConsuptionLevel.CollectionOnWarmUp.value and iteration_num == 0)
+            or mem_consumption == MemoryConsuptionLevel.AllIterationCollection.value)
+>>>>>>> a7a2512de (+ vlm)
