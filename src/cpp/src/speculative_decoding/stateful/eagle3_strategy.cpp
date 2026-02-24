@@ -731,6 +731,12 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     if (tokens_after_accept > max_new_tokens) {
         // Truncate to exactly max_new_tokens
         size_t excess_tokens = tokens_after_accept - max_new_tokens;
+        OPENVINO_ASSERT(excess_tokens < validated_tokens.size(),
+                        "excess_tokens (",
+                        excess_tokens,
+                        ") must be less than validated_tokens.size() (",
+                        validated_tokens.size(),
+                        ")");
         size_t tokens_to_keep = validated_tokens.size() - excess_tokens;
 
         validated_tokens.resize(tokens_to_keep);
