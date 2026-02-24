@@ -507,11 +507,7 @@ KVAxesPosition get_kv_axes_pos(std::shared_ptr<const ov::Model> model) {
 }
 
 void trim_kv_cache(ov::InferRequest request, CacheState& cache_state, std::optional<AdapterController> adapter_controller) {
-    if (
-        cache_state.reset_mem_state
-        // linear cache stores only the last state, trimming is not possible, so we reset the whole cache in this case
-        || (cache_state.num_tokens_to_trim > 0 && cache_state.has_linear())
-    ) {
+    if (cache_state.needs_reset()) {
         if (adapter_controller) {
             for(auto& state: request.query_state()) {
                 if(!adapter_controller->has_state_name(state.get_name())) {

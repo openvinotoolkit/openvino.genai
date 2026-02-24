@@ -139,8 +139,9 @@ public:
         // NPU is not supporting history, so in chat scenarios let's use full chat history on each iteration
         m_use_full_chat_history = m_is_npu;
 
-        utils::CacheState& kv_cache_state = m_inputs_embedder->get_kv_cache_state();
-        kv_cache_state.seq_length_axis = kv_pos.seq_len;
+        utils::CacheState& cache_state = m_inputs_embedder->get_kv_cache_state();
+        cache_state.set_cache_types(utils::get_cache_types(language_model));
+        cache_state.seq_length_axis = kv_pos.seq_len;
 
         // If eos_token_id was not provided, take value
         if (m_generation_config.eos_token_id == -1) {

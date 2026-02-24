@@ -54,7 +54,7 @@ void InputsEmbedder::IInputsEmbedder::update_chat_history(const std::string& dec
 
         m_cache_state.num_tokens_to_trim = state.size() - m_prev_hist_length;
         state.resize(m_prev_hist_length);
-        m_cache_state.reset_mem_state = state.empty() || m_cache_state.has_linear();
+        m_cache_state.reset_mem_state = m_cache_state.needs_reset();
     }
 }
 

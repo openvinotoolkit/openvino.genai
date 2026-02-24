@@ -200,10 +200,17 @@ public:
         state.clear();
     }
 
+    void set_cache_types(CacheTypes types) {
+        cache_types = types;
+    }
+
     bool has_linear() const { return cache_types.has_linear(); }
     bool has_kvcache() const { return cache_types.has_kvcache(); }
     bool is_hybrid() const { return cache_types.is_hybrid(); }
 
+    bool needs_reset() const {
+        return reset_mem_state || state.empty() || (num_tokens_to_trim > 0 && has_linear());
+    }
 };
 
 void trim_kv_cache(ov::InferRequest request, CacheState& cache_state, std::optional<AdapterController> adapter_controller);

@@ -357,7 +357,7 @@ void align_kv_cache_and_history(const ov::Tensor& new_chat_tokens, utils::CacheS
     // so generated tokens were not added to KVCacheState and num_tokens_to_trim was set to the size of the generated sequence
     cache_state.num_tokens_to_trim += state.size() - first_diverse_tokens_idx;
     state.resize(first_diverse_tokens_idx);
-    cache_state.reset_mem_state = state.empty() || cache_state.has_linear();
+    cache_state.reset_mem_state = cache_state.needs_reset();
 }
 
 }  // namespace genai
