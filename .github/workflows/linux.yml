@@ -616,11 +616,14 @@ jobs:
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).RAG.test }}
             timeout: 30
           - name: 'WWB tests'
-            cmd: 'python -m pytest -v ./tools/who_what_benchmark/tests -m "not nanollava"'
+            cmd: |
+              python -m pip install ${{ github.workspace }}/install/wheels/whowhatbench*.whl
+              python -m pytest -v ./tools/who_what_benchmark/tests -m "not nanollava"
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
             timeout: 120
           - name: 'WWB tests (nanollava)'
             cmd: |
+              python -m pip install ${{ github.workspace }}/install/wheels/whowhatbench*.whl
               python -m pip install transformers==4.48.0
               python -m pytest -v ./tools/who_what_benchmark/tests -m nanollava
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).WWB.test }}
@@ -667,7 +670,7 @@ jobs:
         if: ${{ matrix.test.run_condition }}
         uses: ./src/.github/actions/install_wheel
         with:
-          packages: "openvino;openvino_tokenizers[transformers];openvino_genai;whowhatbench"
+          packages: "openvino;openvino_tokenizers[transformers];openvino_genai"
           requirements_files: "${{ env.SRC_DIR }}/tests/python_tests/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
@@ -871,7 +874,7 @@ jobs:
         uses: ./src/.github/actions/install_wheel
         with:
           packages: "openvino;openvino_tokenizers[transformers];openvino_genai[testing]"
-          requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt;${{ env.SRC_DIR }}/tools/llm_bench/requirements.txt"
+          requirements_files: "${{ env.SRC_DIR }}/samples/requirements.txt"
           local_wheel_dir: ${{ env.INSTALL_DIR }}/wheels
 
       - name: gtests unit tests
@@ -893,6 +896,7 @@ jobs:
         if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).llm_bench }}
         run: |
           source ${{ env.INSTALL_DIR }}/setupvars.sh
+          python -m pip install -r ${{ env.SRC_DIR }}/tools/llm_bench/requirements.txt
           python -m pytest -vs ${{ env.SRC_DIR }}/tests/python_tests/samples/test_tools_llm_benchmark.py -m "samples"
         env:
           SAMPLES_PY_DIR: "${{ env.SRC_DIR }}/tools"
