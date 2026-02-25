@@ -2,7 +2,6 @@ import sys
 import pytest
 import shutil
 import logging
-import tempfile
 from pathlib import Path
 from test_cli_image import get_similarity
 from conftest import convert_model, run_wwb
@@ -10,7 +9,6 @@ from conftest import convert_model, run_wwb
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-tmp_dir = tempfile.mkdtemp()
 
 
 def remove_artifacts(artifacts_path: Path):
@@ -21,15 +19,15 @@ def remove_artifacts(artifacts_path: Path):
 @pytest.mark.parametrize(
     ("model_id", "threshold"),
     [
-        ("cross-encoder/ms-marco-TinyBERT-L2-v2", 0.9),
-        ("Qwen/Qwen3-Reranker-0.6B", 0.9),
-        ("tomaarsen/Qwen3-Reranker-0.6B-seq-cls", 0.9),
+        ("cross-encoder/ms-marco-TinyBERT-L2-v2", 0.99),
+        ("Qwen/Qwen3-Reranker-0.6B", 0.99),
+        ("tomaarsen/Qwen3-Reranker-0.6B-seq-cls", 0.99),
     ],
 )
 @pytest.mark.xfail(sys.platform == "darwin", reason="Hangs. Ticket 175534", run=False)
 @pytest.mark.xfail(sys.platform == "win32", reason="Ticket 178790", run=False)
 def test_reranking_optimum(model_id, threshold, tmp_path):
-    GT_FILE = Path(tmp_dir) / "gt.csv"
+    GT_FILE = Path(tmp_path) / "gt.csv"
     MODEL_PATH = convert_model(model_id)
 
     # Collect reference with HF model
@@ -50,7 +48,7 @@ def test_reranking_optimum(model_id, threshold, tmp_path):
     )
 
     assert GT_FILE.exists()
-    assert Path(tmp_dir, "reference").exists()
+    assert Path(tmp_path, "reference").exists()
 
     outputs_path = tmp_path / "optimum"
     # test Optimum
