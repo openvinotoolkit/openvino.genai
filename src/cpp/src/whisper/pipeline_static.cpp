@@ -1268,10 +1268,6 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
     result.perf_metrics.raw_metrics.detokenization_durations.emplace_back(
             PerfMetrics::get_microsec(std::chrono::steady_clock::now() - decode_start_time));
 
-    // if return_timestamps wasn't enabled by user
-    if (!config.return_timestamps) {
-        return result;
-    }
 
     if (segments.size()) {
         std::vector<WhisperDecodedResultChunk> chunks;
