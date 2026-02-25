@@ -52,7 +52,9 @@ def main():
     parser.add_argument("model_dir", help="Path to the model directory")
     parser.add_argument("image_dir", help="Image file or dir with images")
     parser.add_argument("device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
-    parser.add_argument("prompt_lookup", nargs="?", default="false", help="Enable prompt lookup decoding (default: false)")
+    parser.add_argument(
+        "prompt_lookup", nargs="?", default="false", help="Enable prompt lookup decoding (default: false)"
+    )
     args = parser.parse_args()
 
     rgbs = read_images(args.image_dir)
@@ -60,7 +62,7 @@ def main():
     # GPU and NPU can be used as well.
     # Note: If NPU is selected, only the language model will be run on the NPU.
     # Prompt lookup decoding in VLM pipeline enforces ContinuousBatching backend
-    prompt_lookup = (args.prompt_lookup == "true")
+    prompt_lookup = args.prompt_lookup == "true"
     properties = {"prompt_lookup": prompt_lookup}
     if args.device == "GPU":
         # Cache compiled models on disk for GPU to save time on the next run.

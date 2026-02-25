@@ -73,7 +73,7 @@ class TestVisualLanguageChat:
     @pytest.mark.parametrize(
         "convert_model, download_test_content, questions",
         [
-            pytest.param("Qwen2-VL-2B-Instruct", "monalisa.jpg", 'Who drew this painting?\nWhen did the painter live?'),
+            pytest.param("Qwen2-VL-2B-Instruct", "monalisa.jpg", "Who drew this painting?\nWhen did the painter live?"),
         ],
         indirect=["convert_model", "download_test_content"],
     )
