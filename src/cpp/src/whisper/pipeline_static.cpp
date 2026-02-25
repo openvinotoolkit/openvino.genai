@@ -1139,6 +1139,8 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
     raw_metrics.m_token_infer_durations.reserve(max_new_tokens);
     raw_metrics.m_inference_durations = {{MicroSeconds(0.0f)}};
 
+    perf_metrics.whisper_raw_metrics.word_level_timestamps_processing_durations = {{MicroSeconds(0.0f)}};
+
     const auto extract_start = std::chrono::steady_clock::now();
     auto input_features = m_feature_extractor.extract(raw_speech_input);
     const auto extract_ms = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - extract_start);
@@ -1246,8 +1248,7 @@ WhisperDecodedResults WhisperPipeline::StaticWhisperPipeline::generate(
             const auto word_timestamps_processing_duration = ov::genai::PerfMetrics::get_microsec(
                 std::chrono::steady_clock::now() - word_timestamps_processing_start);
 
-            perf_metrics.whisper_raw_metrics.word_level_timestamps_processing_durations.emplace_back(
-                word_timestamps_processing_duration);
+            perf_metrics.whisper_raw_metrics.word_level_timestamps_processing_durations[0] += MicroSeconds(word_timestamps_processing_duration);
 
             if (!result.words.has_value()) {
                 result.words = std::vector<WhisperWordTiming>{};

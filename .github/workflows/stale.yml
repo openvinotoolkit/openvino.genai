@@ -23,5 +23,3 @@ jobs:
           # Disable issue handling
           days-before-issue-stale: -1
           days-before-issue-close: -1
-
-          debug-only: true

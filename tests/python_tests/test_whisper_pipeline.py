@@ -204,7 +204,7 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
     # TODO: temporary always use long_form for until "mozilla-foundation/common_voice_11_0" 
     # https://github.com/huggingface/datasets/issues/7647 dataset is fixed for streaming mode
     # if not long_form:
-    if False:  
+    if False:
         ds = datasets.load_dataset(
             "mozilla-foundation/common_voice_11_0",
             language,
@@ -217,7 +217,6 @@ def get_whisper_dataset(language: str, long_form: bool) -> list:
             "distil-whisper/meanwhile",
             split="test",
             streaming=True,
-            trust_remote_code=True,
         )
     ds = typing.cast(datasets.IterableDataset, ds)
     ds = ds.cast_column("audio", datasets.Audio(sampling_rate=16000))
@@ -759,6 +758,9 @@ def test_perf_metrics(model_descr, sample_from_dataset):
     mean_dur, std_dur = perf_metrics.get_features_extraction_duration()
     assert np.allclose(mean_dur, np.mean(raw_dur))
     assert np.allclose(std_dur, np.std(raw_dur))
+
+    # processing duration is a single value per generate
+    assert len(whisper_raw_metrics.word_level_timestamps_processing_durations) == 1
 
     word_ts_raw_dur = np.array(whisper_raw_metrics.word_level_timestamps_processing_durations) / 1000
     mean_dur, std_dur = perf_metrics.get_word_level_timestamps_processing_duration()

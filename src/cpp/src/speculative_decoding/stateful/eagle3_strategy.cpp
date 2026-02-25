@@ -462,6 +462,8 @@ StatefulEagle3LLMPipeline::StatefulEagle3LLMPipeline(const ov::genai::ModelDesc&
 
     auto target_model = target_model_desc.model;
     auto draft_model = draft_model_desc.model;
+    OPENVINO_ASSERT(target_model, "Target model must not be null");
+    OPENVINO_ASSERT(draft_model, "Draft model must not be null");
 
     // Model preparation
     utils::eagle3::share_vocabulary(target_model, draft_model);
