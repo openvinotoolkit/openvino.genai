@@ -216,7 +216,7 @@ inline void log_model_outputs(const ov::Tensor& logits,
             const size_t vocab_size = logits_shape[2];
 
             // Show only last few positions for long sequences
-            const size_t start_pos = (seq_len > 5) ? (seq_len - 5) : 0;
+            const size_t start_pos = (seq_len > 8) ? (seq_len - 8) : 0;
             if (start_pos > 0) {
                 std::cout << "[EAGLE3-OUTPUT] Showing last " << (seq_len - start_pos)
                           << " positions (total: " << seq_len << ")" << std::endl;

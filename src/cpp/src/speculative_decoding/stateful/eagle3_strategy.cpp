@@ -130,6 +130,59 @@ void Eagle3InferWrapperBase::trim_kv_cache(size_t tokens_to_remove) {
                       m_verbose);
 }
 
+void Eagle3InferWrapperBase::set_npu_sampling_result(size_t num_candidates,
+                                                     const std::vector<int64_t>& accepted_indices) {
+    // Build acceptance mask: mask[i] = true iff candidate i is in accepted_indices.
+    std::vector<bool> mask(num_candidates, false);
+    for (const int64_t idx : accepted_indices) {
+        OPENVINO_ASSERT(idx >= 0 && static_cast<size_t>(idx) < num_candidates,
+                        "accepted_index ",
+                        idx,
+                        " is out of range [0, ",
+                        num_candidates,
+                        ")");
+        mask[static_cast<size_t>(idx)] = true;
+    }
+    const size_t num_accepted = accepted_indices.size();
+
+    constexpr const char* STATE_NAME = "npuw_eagle3_sampling_result";
+    auto states = m_request.query_state();
+    for (auto& state : states) {
+        if (state.get_name() != STATE_NAME) {
+            continue;
+        }
+        auto tensor = state.get_state();
+        OPENVINO_ASSERT(tensor.get_element_type() == ov::element::i64,
+                        STATE_NAME,
+                        " VariableState must be of type int64");
+        OPENVINO_ASSERT(tensor.get_size() >= 2 + num_candidates,
+                        STATE_NAME,
+                        " tensor capacity (",
+                        tensor.get_size(),
+                        ") is too small for num_candidates=",
+                        num_candidates);
+
+        int64_t* data = tensor.data<int64_t>();
+        data[0] = static_cast<int64_t>(num_candidates);
+        data[1] = static_cast<int64_t>(num_accepted);
+        for (size_t i = 0; i < num_candidates; ++i) {
+            data[2 + i] = mask[i] ? 1 : 0;
+        }
+        state.set_state(tensor);
+
+        eagle3::log_debug(eagle3::PipelineStep::KV_CACHE,
+                          "NPU sampling result set: num_candidates=" + std::to_string(num_candidates) +
+                              ", num_accepted=" + std::to_string(num_accepted),
+                          m_verbose);
+        return;
+    }
+
+    // VariableState not found — this is expected on non-NPUW devices; silently ignore.
+    eagle3::log_debug(eagle3::PipelineStep::KV_CACHE,
+                      "'" + std::string(STATE_NAME) + "' VariableState not found; skipping NPU KV cache update",
+                      m_verbose);
+}
+
 void Eagle3InferWrapperBase::reset_state() {
     m_sequence_group = nullptr;
 
@@ -151,148 +204,230 @@ void Eagle3InferWrapperBase::build_model_inputs(const size_t input_token_count,
                                                 ov::Tensor& eagle_tree_mask,
                                                 InferencePhase phase,
                                                 size_t iteration_id,
-                                                std::shared_ptr<std::vector<int64_t>> iteration_history) {
+                                                std::shared_ptr<std::vector<int64_t>> iteration_history,
+                                                size_t past_generate_len) {
     OPENVINO_ASSERT(m_sequence_group, "SequenceGroup not initialized");
 
-    // Special handling for DRAFT_ITERATION with multiple sequences
+    // DRAFT_ITERATION: all running sequences (beam paths) are concatenated into a single flat
+    // sequence so that one infer call handles all paths simultaneously.
+    //
+    // draft generated_ids layout across speculative iterations:
+    //   [hist_0, ..., hist_{past_generate_len-2}, root, branch_0, branch_1, ...]
+    //
+    // past_generate_len equals the number of tokens already in the target's generated_ids at
+    // the start of this speculative window (i.e. tokens accepted in all prior iterations,
+    // INCLUDING the root token produced by DRAFT_INITIAL).
+    // The draft mirrors the target's accepted history, so the first past_generate_len entries
+    // of the draft's generated_ids are those same history+root tokens, all already in the KV
+    // cache.  Only the branch tokens starting at index past_generate_len are new and
+    // must be submitted to the draft model.
+    //
+    // Example: past_generate_len=2 (hist_0=initial_token, root=second_token), branching_factor=3, prompt_len=15
+    //   generated_ids: [hist_0, root, 271, 106287, 99692]
+    //   input_ids    : [271, 106287, 99692]        shape {1, 3}
+    //   history_len  : prompt_len + past_generate_len = 17
+    //   position_ids : [17, 17, 17]
+    //   attention_mask: {1, 20} all-ones           (15 prompt + 2 history+root in KV + 3 new)
     if (phase == InferencePhase::DRAFT_ITERATION) {
-        auto running_sequences = m_sequence_group->get_running_sequences();
-        const size_t sequence_numb = running_sequences.size();
-        OPENVINO_ASSERT(sequence_numb > 0, "No running sequences");
-
         const auto& prompt_ids = m_sequence_group->get_prompt_ids();
         const size_t prompt_len = prompt_ids.size();
 
-        // 1. Build input_ids: {1, sequence_numb} - last token from each sequence
-        input_ids = ov::Tensor(ov::element::i64, {1, sequence_numb});
-        int64_t* input_ids_ptr = input_ids.data<int64_t>();
+        auto running_sequences = m_sequence_group->get_running_sequences();
+        const size_t num_seqs = running_sequences.size();
+        OPENVINO_ASSERT(num_seqs > 0, "No running sequences");
 
-        for (size_t i = 0; i < sequence_numb; ++i) {
-            const auto& generated_ids = running_sequences[i]->get_generated_ids();
-            OPENVINO_ASSERT(!generated_ids.empty(), "Sequence ", i, " has no generated tokens");
-            input_ids_ptr[i] = generated_ids.back();
-        }
+        // generated_ids: [...past_generate_len tokens (including root)..., branch_0, ...]
+        // The first past_generate_len entries (history + root) are already in the KV cache.
+        // Branch tokens start at index past_generate_len.
+        const size_t full_path_len = running_sequences[0]->get_generated_ids().size();
+        OPENVINO_ASSERT(full_path_len > past_generate_len,
+                        "Expected generated_ids length > past_generate_len in DRAFT_ITERATION, got ",
+                        full_path_len,
+                        " with past_generate_len=",
+                        past_generate_len);
+        // branch tokens per sequence (excluding the past_generate_len history+root tokens)
+        const size_t branch_len = full_path_len - past_generate_len;
+        const size_t total_tokens = num_seqs * branch_len;
 
-        // 2. Build position_ids: {1, sequence_numb} - all same position value
-        const auto& first_seq_generated = running_sequences[0]->get_generated_ids();
-        const int64_t position_value = static_cast<int64_t>(prompt_len + first_seq_generated.size() - 1);
+        // history_len: prompt + past_generate_len (history tokens + root), all already in KV cache.
+        const size_t history_len = prompt_len + past_generate_len;
 
-        position_ids = ov::Tensor(ov::element::i64, {1, sequence_numb});
-        int64_t* position_ids_ptr = position_ids.data<int64_t>();
-        std::fill_n(position_ids_ptr, sequence_numb, position_value);
+        // 1. input_ids and position_ids — concatenate branch tokens of all paths.
+        input_ids = ov::Tensor(ov::element::i64, {1, total_tokens});
+        position_ids = ov::Tensor(ov::element::i64, {1, total_tokens});
+        int64_t* ids_ptr = input_ids.data<int64_t>();
+        int64_t* pos_ptr = position_ids.data<int64_t>();
 
-        // 3. Build attention_mask: {1, base_len + sequence_numb * iteration_id - 1}
-        // iteration_id starts from 1 (0 uses DRAFT_INITIAL phase, not DRAFT_ITERATION)
-        const size_t base_attention_mask_len = static_cast<size_t>(position_value + 1);
-        const size_t extended_attention_mask_len = base_attention_mask_len + sequence_numb * iteration_id - 1;
-
-        attention_mask = ov::Tensor(ov::element::i64, {1, extended_attention_mask_len});
-        std::fill_n(attention_mask.data<int64_t>(), extended_attention_mask_len, 1);
-
-        // 4. Build eagle_tree_mask: {1, 1, sequence_numb, extended_attention_mask_len}
-        eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, sequence_numb, extended_attention_mask_len});
-        float* mask_data = eagle_tree_mask.data<float>();
-
-        // Initialize all to -INF (cannot attend by default)
-        std::fill_n(mask_data, sequence_numb * extended_attention_mask_len, -std::numeric_limits<float>::infinity());
-
-        // The tree region starts at base_attention_mask_len - 1
-        const size_t tree_start_pos = base_attention_mask_len - 1;
-
-        // Step 1: All sequences can attend to the base region (prompt + initial tokens)
-        for (size_t row = 0; row < sequence_numb; ++row) {
-            const size_t row_offset = row * extended_attention_mask_len;
-            std::fill_n(mask_data + row_offset, tree_start_pos, 0.0f);
-        }
-
-        // Step 2: Build precise tree attention mask using iteration history
-        if (iteration_history && !iteration_history->empty()) {
-            const auto& history = *iteration_history;
-
-            // Calculate how many complete layers we have in history
-            // Each layer has sequence_numb tokens
-            const size_t completed_layers = history.size() / sequence_numb;
-
-            // For each sequence, find its path through the tree
-            for (size_t seq_idx = 0; seq_idx < sequence_numb; ++seq_idx) {
-                const auto& generated_ids = running_sequences[seq_idx]->get_generated_ids();
-                const size_t row_offset = seq_idx * extended_attention_mask_len;
-
-                // Find which positions in the history match this sequence's path
-                // We need to look at the last 'completed_layers' tokens from generated_ids
-                // These are the tokens that have already been generated in previous iterations
-
-                OPENVINO_ASSERT(generated_ids.size() >= completed_layers,
-                                "Sequence ",
-                                seq_idx,
-                                " has insufficient tokens: ",
-                                generated_ids.size(),
-                                " < ",
-                                completed_layers);
-
-                // Extract the path: tokens that led to the current position
-                std::vector<int64_t> seq_path;
-                for (size_t i = generated_ids.size() - completed_layers; i < generated_ids.size(); ++i) {
-                    seq_path.push_back(generated_ids[i]);
-                }
-
-                // Now match this path against the iteration history
-                // For each completed layer in the history, find which position matches this sequence's token
-                size_t history_offset = 0;
-                for (size_t layer = 0; layer < completed_layers; ++layer) {
-                    const int64_t target_token = seq_path[layer];
-
-                    // Search in this layer's history (sequence_numb tokens)
-                    for (size_t pos_in_layer = 0; pos_in_layer < sequence_numb; ++pos_in_layer) {
-                        const size_t history_idx = history_offset + pos_in_layer;
-                        OPENVINO_ASSERT(history_idx < history.size(),
-                                        "History index ",
-                                        history_idx,
-                                        " out of bounds ",
-                                        history.size());
-
-                        if (history[history_idx] == target_token) {
-                            // This position matches the path - allow attention
-                            const size_t abs_pos = tree_start_pos + layer * sequence_numb + pos_in_layer;
-                            mask_data[row_offset + abs_pos] = 0.0f;
-                            break;  // Found the match for this layer
-                        }
-                    }
-
-                    history_offset += sequence_numb;
-                }
-
-                // For the current layer (layer == iteration_id), allow attention to own position
-                // This is the layer we're currently generating
-                const size_t current_layer_start = tree_start_pos + iteration_id * sequence_numb;
-                mask_data[row_offset + current_layer_start + seq_idx] = 0.0f;
+        for (size_t s = 0; s < num_seqs; ++s) {
+            const auto& gen = running_sequences[s]->get_generated_ids();
+            OPENVINO_ASSERT(gen.size() == full_path_len,
+                            "Sequence ",
+                            s,
+                            " has length ",
+                            gen.size(),
+                            " but expected ",
+                            full_path_len);
+            for (size_t t = 0; t < branch_len; ++t) {
+                // Skip the first past_generate_len tokens (history + root, all in KV cache).
+                ids_ptr[s * branch_len + t] = gen[past_generate_len + t];
+                // Root sits at position history_len-1; branch token t sits at history_len+t.
+                pos_ptr[s * branch_len + t] = static_cast<int64_t>(history_len + t);
             }
-        } else {
-            // Fallback: if no history available (shouldn't happen), use simple strategy
-            eagle3::log_debug(eagle3::PipelineStep::ITER,
-                              "Warning: iteration_history not available, using fallback mask strategy",
-                              m_verbose);
+        }
 
-            for (size_t row = 0; row < sequence_numb; ++row) {
-                const size_t row_offset = row * extended_attention_mask_len;
-                // Allow attention to tree region for current sequence's position
-                const size_t current_layer_start = tree_start_pos + iteration_id * sequence_numb;
-                mask_data[row_offset + current_layer_start + row] = 0.0f;
+        // 2. attention_mask — covers history + all branch tokens, all-ones.
+        const size_t attn_len = history_len + total_tokens;
+        attention_mask = ov::Tensor(ov::element::i64, {1, attn_len});
+        std::fill_n(attention_mask.data<int64_t>(), attn_len, 1);
+
+        // 3. eagle_tree_mask — shape {1, 1, total_tokens, attn_len}.
+        //    History columns [0, history_len): 0 (prompt + past accepted + root, all accessible).
+        //    Branch columns  [history_len, attn_len): -INF by default; each row opens only
+        //    the columns belonging to its own path that are causally at or before it.
+        eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, total_tokens, attn_len});
+        float* mask = eagle_tree_mask.data<float>();
+        std::fill_n(mask, total_tokens * attn_len, -std::numeric_limits<float>::infinity());
+
+        for (size_t s = 0; s < num_seqs; ++s) {
+            for (size_t t = 0; t < branch_len; ++t) {
+                const size_t row = s * branch_len + t;
+                const size_t row_offset = row * attn_len;
+
+                // History region (prompt + past accepted + root): all rows can attend.
+                std::fill_n(mask + row_offset, history_len, 0.0f);
+
+                // Branch region: open own-path columns up to and including t.
+                const size_t path_col_start = history_len + s * branch_len;
+                for (size_t t2 = 0; t2 <= t; ++t2) {
+                    mask[row_offset + path_col_start + t2] = 0.0f;
+                }
             }
         }
 
         eagle3::log_debug(eagle3::PipelineStep::ITER,
-                          "Eagle tree mask (DRAFT_ITERATION): {1, 1, " + std::to_string(sequence_numb) + ", " +
-                              std::to_string(extended_attention_mask_len) + "}, iter=" + std::to_string(iteration_id) +
-                              ", position=" + std::to_string(position_value) + ", history_size=" +
-                              (iteration_history ? std::to_string(iteration_history->size()) : "N/A"),
+                          "Built model inputs (DRAFT_ITERATION): num_seqs=" + std::to_string(num_seqs) +
+                              ", past_generate_len=" + std::to_string(past_generate_len) + ", branch_len=" +
+                              std::to_string(branch_len) + ", total_tokens=" + std::to_string(total_tokens) +
+                              ", history_len=" + std::to_string(history_len) + ", attn_len=" + std::to_string(attn_len),
                           m_verbose);
+        return;
+    }
+
+    // TARGET_VALIDATION: feed all N+1 tree candidate tokens (root + N tree nodes) to the
+    // target model using the exact tree attention structure stored in EagleMetaData.
+    //
+    // Key insight: the root token is the LAST token output by the previous target step.
+    // Although the target model produced it, its KV has NOT been written to the target
+    // KV cache yet — the target processed only the prompt during prefill and the previous
+    // accepted tokens during prior iterations.  Therefore the root must be re-submitted
+    // as part of input_ids together with its N children.
+    //
+    // EagleMetaData layout (set by select_top_k, indexed over all N+1 candidates):
+    //   tree_mask[i][j] == 1  → candidate j IS an ancestor of candidate i (attend allowed)
+    //   tree_mask[i][j] == 0  → not an ancestor (blocked → -INF)
+    //   tree_position_ids[i]  = tree depth of candidate i (root depth = 0, children depth > 0)
+    //   Both are size N+1, index 0 = root.
+    //
+    // generated_ids layout (after sync from draft):
+    //   all N+1 entries = root followed by N tree-node tokens
+    //   (the last N+1 entries of generated_ids, taken from draft sequence)
+    //
+    // Attention layout for the target forward pass:
+    //   context_len = prompt_len       (only the original prompt tokens are in target KV)
+    //   attn_len    = context_len + (N+1)
+    //
+    //   input_ids    : {1, N+1} = all N+1 candidates (root first, then tree nodes)
+    //   position_ids : {1, N+1} = prompt_len + tree_position_ids[i]  for i in 0..N
+    //   attention_mask: {1, attn_len} all-ones
+    //   eagle_tree_mask: {1, 1, N+1, attn_len}
+    //     history columns [0, context_len): 0.0  (all candidates attend to prompt)
+    //     tree columns [context_len, attn_len): tree_mask[i][j]==1 → 0.0, else -INF
+    if (phase == InferencePhase::TARGET_VALIDATION) {
+        auto current_sequence = get_current_sequence();
+        OPENVINO_ASSERT(current_sequence, "SequenceGroup not initialized");
+
+        const auto& prompt_ids = m_sequence_group->get_prompt_ids();
+        const size_t prompt_len = prompt_ids.size();
+        const auto& generated_ids = current_sequence->get_generated_ids();
+        const auto& metadata = current_sequence->get_eagle_metadata();
+        const auto& tree_mask_bin = metadata.tree_mask;         // (N+1)×(N+1)
+        const auto& tree_pos_ids = metadata.tree_position_ids;  // size = N+1 (root depth=0)
+
+        // tree_mask_bin covers all N+1 candidates (root + N tree nodes).
+        OPENVINO_ASSERT(tree_mask_bin.size() >= 2,
+                        "tree_mask must cover at least root + one tree node, got ",
+                        tree_mask_bin.size());
+        const size_t num_candidates = tree_mask_bin.size();  // N+1 (root + N nodes)
+        const size_t num_tree_nodes = num_candidates - 1;    // N  (non-root nodes)
+
+        OPENVINO_ASSERT(tree_pos_ids.size() == num_candidates,
+                        "tree_position_ids size (",
+                        tree_pos_ids.size(),
+                        ") != num_candidates (",
+                        num_candidates,
+                        ")");
+        OPENVINO_ASSERT(generated_ids.size() >= num_candidates,
+                        "generated_ids has ",
+                        generated_ids.size(),
+                        " entries but expected at least ",
+                        num_candidates,
+                        " tokens (root + N tree nodes)");
+
+        // context_len = prompt_len only: the root token has NOT been fed to the target KV
+        // cache yet (prefill processed only the prompt; the root was just sampled from it).
+        const size_t context_len = prompt_len;
+        const size_t attn_len = context_len + num_candidates;
+
+        // 1. input_ids: all N+1 candidates — root then tree nodes
+        //    (last num_candidates entries of generated_ids).
+        input_ids = ov::Tensor(ov::element::i64, {1, num_candidates});
+        int64_t* ids_ptr = input_ids.data<int64_t>();
+        const size_t gen_offset = generated_ids.size() - num_candidates;
+        for (size_t i = 0; i < num_candidates; ++i) {
+            ids_ptr[i] = generated_ids[gen_offset + i];
+        }
+
+        // 2. position_ids: prompt_len + tree depth of each candidate.
+        //    tree_pos_ids[0] = 0 → root sits at position prompt_len.
+        //    tree_pos_ids[i] = depth → node sits at prompt_len + depth.
+        position_ids = ov::Tensor(ov::element::i64, {1, num_candidates});
+        int64_t* pos_ptr = position_ids.data<int64_t>();
+        for (size_t i = 0; i < num_candidates; ++i) {
+            pos_ptr[i] = static_cast<int64_t>(context_len) + static_cast<int64_t>(tree_pos_ids[i]);
+        }
+
+        // 3. attention_mask: all-ones over the full attention span.
+        attention_mask = ov::Tensor(ov::element::i64, {1, attn_len});
+        std::fill_n(attention_mask.data<int64_t>(), attn_len, 1);
+
+        // 4. eagle_tree_mask: shape {1, 1, num_candidates, attn_len}.
+        //    history columns [0, context_len): 0.0 (all candidates attend to prompt).
+        //    tree columns [context_len, attn_len): tree_mask_bin[i][j]==1 → 0.0, else -INF.
+        eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, num_candidates, attn_len});
+        float* mask = eagle_tree_mask.data<float>();
+        const float neg_inf = -std::numeric_limits<float>::infinity();
+
+        for (size_t i = 0; i < num_candidates; ++i) {
+            float* row = mask + i * attn_len;
+            // History region (prompt): fully accessible.
+            std::fill_n(row, context_len, 0.0f);
+            // Tree region: use tree_mask_bin[i][j] directly (includes root at index 0).
+            OPENVINO_ASSERT(tree_mask_bin[i].size() == num_candidates,
+                            "tree_mask row ",
+                            i,
+                            " has ",
+                            tree_mask_bin[i].size(),
+                            " columns, expected ",
+                            num_candidates);
+            for (size_t j = 0; j < num_candidates; ++j) {
+                row[context_len + j] = (tree_mask_bin[i][j] == 1) ? 0.0f : neg_inf;
+            }
+        }
 
         eagle3::log_debug(eagle3::PipelineStep::ITER,
-                          "Built model inputs (DRAFT_ITERATION): sequence_numb=" + std::to_string(sequence_numb) +
-                              ", iteration_id=" + std::to_string(iteration_id) +
-                              ", position=" + std::to_string(position_value) +
-                              ", attn_mask_len=" + std::to_string(extended_attention_mask_len),
+                          "Built model inputs (TARGET_VALIDATION): num_candidates=" + std::to_string(num_candidates) +
+                              ", num_tree_nodes=" + std::to_string(num_tree_nodes) +
+                              ", context_len=" + std::to_string(context_len) + ", attn_len=" + std::to_string(attn_len),
                           m_verbose);
         return;
     }
@@ -364,63 +499,10 @@ void Eagle3InferWrapperBase::build_model_inputs(const size_t input_token_count,
                           m_verbose);
         break;
 
-    case InferencePhase::TARGET_VALIDATION: {
-        // During validation phase: construct EAGLE tree attention mask
-        // Shape: {1, 1, input_token_count, attention_mask_len}
-        eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, input_token_count, attention_mask_len});
-        float* mask_data = eagle_tree_mask.data<float>();
-
-        // Step 1: Get proposed_token_numb from first position_id
-        const int64_t proposed_token_numb = position_ids_ptr[0];
-        const size_t proposed_token_numb_sz = static_cast<size_t>(proposed_token_numb);
-
-        // Step 2: First proposed_token_numb positions in each row: set first {1, 1, input_token_count,
-        // proposed_token_numb} to all zeros
-        for (size_t row = 0; row < input_token_count; ++row) {
-            const size_t row_offset = row * attention_mask_len;
-            std::fill_n(mask_data + row_offset, proposed_token_numb_sz, 0.0f);
-        }
-
-        // Step 3: Remaining region [input_token_count, attention_mask_len - proposed_token_numb]
-        // This should be a triangular matrix: lower triangle = 0, upper triangle = -INF
-        const size_t tree_width = attention_mask_len - proposed_token_numb_sz;
-
-        // Verify: tree_width should theoretically equal input_token_count
-        if (tree_width != input_token_count) {
-            eagle3::log_debug(eagle3::PipelineStep::ITER,
-                              "Warning: tree_width (" + std::to_string(tree_width) + ") != input_token_count (" +
-                                  std::to_string(input_token_count) + ")",
-                              m_verbose);
-        }
-
-        // Build triangular matrix in the remaining region
-        for (size_t row = 0; row < input_token_count; ++row) {
-            const size_t row_offset = row * attention_mask_len;
-            const size_t tree_start = row_offset + proposed_token_numb_sz;
-
-            // For each column in the tree region
-            for (size_t col = 0; col < tree_width; ++col) {
-                if (col <= row) {
-                    // Lower triangle (including diagonal): 0
-                    mask_data[tree_start + col] = 0.0f;
-                } else {
-                    // Upper triangle: -INF
-                    mask_data[tree_start + col] = -std::numeric_limits<float>::infinity();
-                }
-            }
-        }
-
-        eagle3::log_debug(eagle3::PipelineStep::ITER,
-                          "Eagle tree mask (TARGET_VALIDATION): {1, 1, " + std::to_string(input_token_count) + ", " +
-                              std::to_string(attention_mask_len) + "}, proposed_token_numb=" +
-                              std::to_string(proposed_token_numb) + ", tree_width=" + std::to_string(tree_width),
-                          m_verbose);
-        break;
-    }
-
+    case InferencePhase::TARGET_VALIDATION:
     case InferencePhase::DRAFT_ITERATION:
-        // This case is handled at the beginning of the function
-        OPENVINO_ASSERT(false, "DRAFT_ITERATION should be handled in the early return path");
+        // Both cases are handled in the early-return paths above.
+        OPENVINO_ASSERT(false, "TARGET_VALIDATION and DRAFT_ITERATION should be handled in the early return paths");
         break;
     }
 
@@ -458,28 +540,52 @@ std::vector<int64_t> Eagle3InferWrapperBase::sample_tokens(const ov::Tensor& log
     const size_t logits_seq_len = shape[1];
     const size_t vocab_size = shape[2];
 
-    // Slice logits to last 'sample_count' positions if needed
+    // Get num_sequences BEFORE slicing, as we need it for slicing logic
+    auto running_sequences = sequence_group->get_running_sequences();
+    const size_t num_sequences = running_sequences.size();
+    OPENVINO_ASSERT(num_sequences > 0, "No running sequences");
+
+    // In validation mode the sampler's validate_tree_candidates indexes logits from the end
+    // using (seq_len - token_idx - 1), so it needs the full [1, num_candidates, vocab] tensor.
+    // In non-validation (draft) mode, slice to the last num_sequences positions so each
+    // running beam gets the logit from its own output position.
     ov::Tensor sliced_logits = logits;
-    if (sample_count < logits_seq_len) {
+    if (!is_validation_mode && num_sequences < logits_seq_len) {
         auto [start_coord, end_coord] =
-            ov::genai::utils::make_roi(shape, 1, logits_seq_len - sample_count, logits_seq_len);
+            ov::genai::utils::make_roi(shape, 1, logits_seq_len - num_sequences, logits_seq_len);
         sliced_logits = ov::Tensor(logits, start_coord, end_coord);
     }
+
+    eagle3::log_debug(eagle3::PipelineStep::SAMPLE,
+                      "sliced_logits shape: " + eagle3::format_shape(sliced_logits.get_shape()),
+                      m_verbose);
 
     // Configure sequence group for sampling
     sequence_group->schedule_tokens(input_token_count);
     sequence_group->set_output_seq_len(sample_count);
     sequence_group->set_num_validated_tokens(num_tokens_to_validate);
 
+    // In validation mode, record the length of generated_ids just before the sampler runs.
+    // At this point generated_ids = [...history..., root, n_1, ..., n_N] where N =
+    // num_tokens_to_validate.  After validate_tree_candidates the sequence is rewritten to
+    // [...history..., root, acc_1, ..., acc_k, bonus].  Slicing from (pre_sample_len - N)
+    // (i.e. the position right after the history, at the root) gives exactly
+    // [root, acc_1, ..., acc_k, bonus]; we then drop the root at index 0 to get the result.
+    size_t root_index_in_generated = 0;
+    if (is_validation_mode) {
+        const auto& gen = running_sequences[0]->get_generated_ids();
+        OPENVINO_ASSERT(gen.size() > num_tokens_to_validate,
+                        "generated_ids too short before validation: ",
+                        gen.size(),
+                        " <= num_tokens_to_validate: ",
+                        num_tokens_to_validate);
+        // root sits at generated_ids[gen.size() - num_tokens_to_validate - 1]
+        root_index_in_generated = gen.size() - num_tokens_to_validate - 1;
+    }
+
     // Execute sampling
     m_sampler.sample({sequence_group}, sliced_logits, is_validation_mode);
     sequence_group->finish_iteration();
-
-    // Extract results from all sequences
-    // Note: Get num_sequences AFTER sampling, as sample() may update the sequence group
-    auto running_sequences = sequence_group->get_running_sequences();
-    const size_t num_sequences = running_sequences.size();
-    OPENVINO_ASSERT(num_sequences > 0, "No running sequences after sampling");
 
     eagle3::log_debug(eagle3::PipelineStep::SAMPLE,
                       "Processing " + std::to_string(num_sequences) + " sequence(s) after sampling",
@@ -509,25 +615,31 @@ std::vector<int64_t> Eagle3InferWrapperBase::sample_tokens(const ov::Tensor& log
 
         return result_tokens;
     } else {
-        // Validation mode: collect last token from each sequence
-        // In validation mode, sampler has already updated sequences, we just need to collect the last tokens
-        for (size_t seq_idx = 0; seq_idx < num_sequences; ++seq_idx) {
-            auto seq = running_sequences[seq_idx];
-            OPENVINO_ASSERT(seq, "Invalid sequence at index ", seq_idx);
+        // Validation mode: the sampler's validate_tree_candidates has already rewritten the
+        // sequence to [...history..., root, acc_1, ..., acc_k, bonus_token].
+        // root_index_in_generated points to the root position recorded before sampling.
+        // Return [acc_1, ..., acc_k, bonus_token], i.e. everything after the root.
+        OPENVINO_ASSERT(num_sequences == 1, "Validation mode expects exactly one running sequence");
+        auto seq = running_sequences[0];
+        OPENVINO_ASSERT(seq, "Invalid sequence in validation mode");
 
-            const auto& generated_ids = seq->get_generated_ids();
-            OPENVINO_ASSERT(!generated_ids.empty(), "Sequence ", seq_idx, " has no generated tokens");
-
-            // Add the last token from this sequence
-            result_tokens.push_back(generated_ids.back());
-        }
+        const auto& generated_ids = seq->get_generated_ids();
+        // generated_ids[root_index_in_generated]     = root  (stays in sequence as context)
+        // generated_ids[root_index_in_generated + 1..] = acc_1, ..., acc_k, bonus_token
+        const size_t result_start = root_index_in_generated + 1;
+        OPENVINO_ASSERT(generated_ids.size() > result_start,
+                        "Validation result sequence too short: size=",
+                        generated_ids.size(),
+                        ", expected > root_index+1=",
+                        result_start);
+        result_tokens.assign(generated_ids.begin() + result_start, generated_ids.end());
 
         record_generated_tokens(result_tokens.size());
 
         eagle3::log_debug(eagle3::PipelineStep::VALID,
-                          "Validation result: collected " + std::to_string(result_tokens.size()) + " token(s) from " +
-                              std::to_string(num_sequences) +
-                              " sequence(s), tokens=" + eagle3::format_tokens(result_tokens),
+                          "Validation result: collected " + std::to_string(result_tokens.size()) + " token(s) " +
+                              "(accepted=" + std::to_string(result_tokens.size() - 1) + " + bonus=1)" +
+                              ", tokens=" + eagle3::format_tokens(result_tokens),
                           m_verbose);
 
         return result_tokens;
@@ -763,7 +875,8 @@ InferResult Eagle3DraftWrapper::forward(const InferContext& ctx) {
                        eagle_tree_mask,
                        phase,
                        ctx.iteration_id,
-                       ctx.iteration_history);
+                       ctx.iteration_history,
+                       ctx.past_generate_len);
 
     // 2. Get hidden states from appropriate source
     ov::Tensor hidden_states;
@@ -773,28 +886,28 @@ InferResult Eagle3DraftWrapper::forward(const InferContext& ctx) {
         hidden_states = ctx.target_sequence->get_hidden_state();
         OPENVINO_ASSERT(hidden_states && hidden_states.get_size() > 0, "Source sequence contains invalid hidden state");
     } else {
-        // DRAFT_ITERATION: Simply concatenate hidden states from all sequences
-        // Each sequence stores only its current hidden_state {1, 1, hidden_size}
-        // We just concatenate them along dim=1: [seq0, seq1, seq2, ...] → {1, sequence_numb, hidden_size}
+        // DRAFT_ITERATION: Concatenate the full stored hidden-state path of every sequence.
+        // After the DRAFT_INITIAL pass each sequence holds {1, 1, hidden_size} (the root).
+        // After each subsequent iteration the stored tensor grows by one token per sequence,
+        // so at iteration k each sequence holds {1, k, hidden_size}.
+        // Concatenating all sequences yields {1, num_seqs * branch_len, hidden_size}, which
+        // matches the flat input_ids layout produced by build_model_inputs (DRAFT_ITERATION).
         auto running_sequences = m_sequence_group->get_running_sequences();
         const size_t sequence_numb = running_sequences.size();
         OPENVINO_ASSERT(sequence_numb > 0, "No running sequences");
 
-        // Collect hidden states from all sequences
         std::vector<ov::Tensor> seq_hidden_states;
+        seq_hidden_states.reserve(sequence_numb);
         for (size_t i = 0; i < sequence_numb; ++i) {
             auto seq_hidden = running_sequences[i]->get_hidden_state();
             OPENVINO_ASSERT(seq_hidden && seq_hidden.get_size() > 0, "Sequence ", i, " contains invalid hidden state");
-
-            const auto& shape = seq_hidden.get_shape();
-            OPENVINO_ASSERT(shape.size() == 3 && shape[0] == 1 && shape[1] == 1,
-                            "Expected hidden state shape [1, 1, hidden_size], got: ",
-                            eagle3::format_shape(shape));
-
+            const auto& h_shape = seq_hidden.get_shape();
+            OPENVINO_ASSERT(h_shape.size() == 3 && h_shape[0] == 1,
+                            "Expected hidden state shape [1, branch_len, hidden_size], got: ",
+                            eagle3::format_shape(h_shape));
             seq_hidden_states.push_back(seq_hidden);
         }
 
-        // Concatenate all hidden states along dim=1
         hidden_states = utils::eagle3::concatenate_hidden_states(seq_hidden_states);
 
         eagle3::log_debug(eagle3::PipelineStep::ITER,
@@ -806,59 +919,121 @@ InferResult Eagle3DraftWrapper::forward(const InferContext& ctx) {
     // 3. Infer
     auto output = infer(input_ids, attention_mask, position_ids, eagle_tree_mask, hidden_states);
 
-    // 4. Sample
-    auto sampled = sample_tokens(output.logits, ctx.input_token_count, 1);
-
-    // 5. Store hidden states for next iteration
-    // After sampling, update each sequence's hidden_state history
+    // 4. Store hidden states BEFORE sampling so that each sequence holds its correct path
+    //    hidden states regardless of how the sampler may later fork or prune paths.
     auto running_sequences = m_sequence_group->get_running_sequences();
     const size_t sequence_numb = running_sequences.size();
 
     if (ctx.use_target_hidden) {
-        // DRAFT_INITIAL: All sequences get the same hidden state (last position)
-        auto next_hidden = utils::eagle3::slice_hidden_state_for_last_token(output.hidden_features);
-
+        // DRAFT_INITIAL: The output has a single new position (the root token).
+        // All beam sequences start from the same root, so they all receive the same hidden state.
+        auto next_hidden = utils::eagle3::slice_hidden_state_at_position(output.hidden_features,
+                                                                         output.hidden_features.get_shape()[1] - 1);
         for (size_t i = 0; i < sequence_numb; ++i) {
             running_sequences[i]->update_hidden_state(next_hidden);
         }
 
         eagle3::log_debug(eagle3::PipelineStep::ITER,
-                          "Stored same hidden state for " + std::to_string(sequence_numb) + " sequence(s)",
+                          "Stored root hidden state for " + std::to_string(sequence_numb) + " sequence(s)",
                           m_verbose);
     } else {
-        // DRAFT_ITERATION: Each sequence stores only its current iteration's hidden state
-        // No history accumulation - just replace with the new hidden state
-        // Strategy: Slice from the END (reverse order) because hardware alignment may pad at the front
+        // DRAFT_ITERATION: output.hidden_features has shape {1, total_tokens, hidden_size}
+        // where total_tokens = num_seqs * branch_len (flat layout, same order as input_ids).
+        // For each sequence we append the hidden state of its LAST branch token to the
+        // sequence's accumulated hidden state, growing it from {1, k, H} to {1, k+1, H}.
+        // This is done before sample_tokens so that if the sampler forks sequences the
+        // per-sequence hidden state is already correctly assigned.
         const auto& hidden_shape = output.hidden_features.get_shape();
-        OPENVINO_ASSERT(hidden_shape.size() == 3 && hidden_shape[1] >= sequence_numb,
+        OPENVINO_ASSERT(hidden_shape.size() == 3 && hidden_shape[0] == 1,
                         "Invalid hidden features shape: ",
-                        eagle3::format_shape(hidden_shape),
-                        ", expected seq_len >= ",
-                        sequence_numb);
+                        eagle3::format_shape(hidden_shape));
 
-        const size_t output_seq_len = hidden_shape[1];
+        // Recover branch_len from the stored hidden state of the first sequence (= k tokens).
+        // After this iteration it will become k+1.
+        const size_t branch_len = running_sequences[0]->get_hidden_state().get_shape()[1];
+        const size_t total_hidden_tokens = sequence_numb * branch_len;
+        // Hardware may pad the sequence dimension at the front; valid tokens are at the tail.
+        OPENVINO_ASSERT(hidden_shape[1] >= total_hidden_tokens,
+                        "hidden_features seq_len (",
+                        hidden_shape[1],
+                        ") < num_seqs (",
+                        sequence_numb,
+                        ") * branch_len (",
+                        branch_len,
+                        ")");
+        const size_t hidden_pad_offset = hidden_shape[1] - total_hidden_tokens;
 
         for (size_t i = 0; i < sequence_numb; ++i) {
-            // Slice from the END: position = output_seq_len - sequence_numb + i
-            // This ensures we get the valid data, skipping any front padding
-            const size_t slice_position = output_seq_len - sequence_numb + i;
+            // The last branch token for sequence i sits at hidden_pad_offset + (i+1)*branch_len - 1.
+            const size_t last_tok_pos = hidden_pad_offset + (i + 1) * branch_len - 1;
+            auto new_tok_hidden = utils::eagle3::slice_hidden_state_at_position(output.hidden_features, last_tok_pos);
 
-            // Slice the new hidden state for this sequence
-            auto new_hidden = utils::eagle3::slice_hidden_state_at_position(output.hidden_features, slice_position);
-
-            // Simply store the new hidden state (no accumulation)
-            running_sequences[i]->update_hidden_state(new_hidden);
+            // Append the new token's hidden state to the existing path: {1,k,H} → {1,k+1,H}.
+            const auto existing_hidden = running_sequences[i]->get_hidden_state();
+            auto updated_hidden = utils::eagle3::concatenate_hidden_states({existing_hidden, new_tok_hidden});
+            running_sequences[i]->update_hidden_state(updated_hidden);
 
             eagle3::log_debug(eagle3::PipelineStep::ITER,
-                              "Sequence " + std::to_string(i) + ": stored hidden state from position " +
-                                  std::to_string(slice_position),
+                              "Sequence " + std::to_string(i) + ": appended hidden state at flat pos " +
+                                  std::to_string(last_tok_pos) + ", new stored shape " +
+                                  eagle3::format_shape(updated_hidden.get_shape()),
                               m_verbose);
         }
 
         eagle3::log_debug(eagle3::PipelineStep::ITER,
-                          "Stored current hidden states for " + std::to_string(sequence_numb) + " sequence(s)",
+                          "Updated hidden states for " + std::to_string(sequence_numb) + " sequence(s)",
                           m_verbose);
     }
+
+    // 5. Sample
+    // For DRAFT_ITERATION the model produced logits with shape {1, total_tokens, vocab_size}
+    // where total_tokens = num_seqs * branch_len (flat layout).  The sampler expects one logit
+    // row per running sequence, i.e. shape {1, num_seqs, vocab_size}.  We must gather the
+    // last-branch-token logit of each sequence (positions branch_len-1, 2*branch_len-1, …)
+    // into a compact tensor before calling sample_tokens.
+    //
+    // For DRAFT_INITIAL the logits shape is {1, prompt_len, vocab_size} with a single sequence;
+    // sample_tokens' existing tail-slice handles that correctly without any pre-processing.
+    ov::Tensor logits_for_sampling = output.logits;
+    if (!ctx.use_target_hidden) {
+        // DRAFT_ITERATION path: gather last-position logits for each sequence.
+        const auto& lshape = output.logits.get_shape();
+        // branch_len was already computed and used when storing hidden states above;
+        // recover it from the sequence hidden state which was just grown to branch_len+1.
+        // The stored hidden state now has shape {1, branch_len+1, H}, so branch_len = shape[1]-1.
+        const size_t new_branch_len = running_sequences[0]->get_hidden_state().get_shape()[1];
+        const size_t prev_branch_len = new_branch_len - 1;  // branch_len used during this infer pass
+        OPENVINO_ASSERT(prev_branch_len > 0, "branch_len must be positive in DRAFT_ITERATION");
+        const size_t total_tokens = sequence_numb * prev_branch_len;
+        // Hardware may pad the sequence dimension to a multiple of 8 at the front.
+        // The valid tokens always occupy the tail: [lshape[1] - total_tokens, lshape[1]).
+        OPENVINO_ASSERT(lshape[1] >= total_tokens,
+                        "Logits seq_len (",
+                        lshape[1],
+                        ") < num_seqs (",
+                        sequence_numb,
+                        ") * branch_len (",
+                        prev_branch_len,
+                        ")");
+        const size_t pad_offset = lshape[1] - total_tokens;
+
+        const size_t vocab_size = lshape[2];
+        logits_for_sampling = ov::Tensor(ov::element::f32, {1, sequence_numb, vocab_size});
+        float* dst = logits_for_sampling.data<float>();
+        const float* src = output.logits.data<const float>();
+
+        for (size_t s = 0; s < sequence_numb; ++s) {
+            // Last token of sequence s sits at flat position pad_offset + (s+1)*prev_branch_len - 1.
+            const size_t flat_pos = pad_offset + (s + 1) * prev_branch_len - 1;
+            std::copy_n(src + flat_pos * vocab_size, vocab_size, dst + s * vocab_size);
+        }
+
+        eagle3::log_debug(eagle3::PipelineStep::SAMPLE,
+                          "Gathered logits for sampling: " + eagle3::format_shape(logits_for_sampling.get_shape()),
+                          m_verbose);
+    }
+
+    auto sampled = sample_tokens(logits_for_sampling, ctx.input_token_count, 1);
 
     return InferResult{std::move(output), std::move(sampled)};
 }
@@ -1151,6 +1326,17 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     // Record pre-draft sequence lengths for potential rollback
     const size_t pre_draft_token_len = m_draft->get_sequence_length();
 
+    // past_generate_len = number of tokens already in the target model's generated_ids before
+    // this speculative window begins.  This equals the number of tokens the target has accepted
+    // across all previous speculative iterations (including the initial_token from prefill).
+    // DRAFT_ITERATION uses this offset to locate the current root inside the draft's accumulated
+    // generated_ids, since the draft mirrors the target's accepted history token-for-token.
+    const size_t past_generate_len = m_target->get_current_sequence()->get_generated_ids().size();
+
+    // Clear stale EagleMetaData left over from the previous iteration so that
+    // select_top_k starts from a clean slate.
+    m_draft->get_current_sequence()->set_eagle_metadata({});
+
     // Create iteration history to track all generated tokens across iterations
     auto iteration_history = std::make_shared<std::vector<int64_t>>();
     iteration_history->reserve(m_draft_iterations * 10);  // Reserve space for efficiency
@@ -1162,6 +1348,7 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     first_ctx.target_sequence = m_target->get_current_sequence();
     first_ctx.iteration_id = 0;
     first_ctx.iteration_history = iteration_history;
+    first_ctx.past_generate_len = past_generate_len;
     auto first_result = m_draft->forward(first_ctx);
 
     // first_result.sampled_tokens contains tokens from all sequences (one token per sequence)
@@ -1180,9 +1367,6 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     // Record first iteration tokens in history
     iteration_history->insert(iteration_history->end(), first_draft_tokens.begin(), first_draft_tokens.end());
 
-    // Append first tokens to target model (draft model already has them from sampler)
-    m_target->append_tokens(first_draft_tokens);
-
     // Step 2: Generate additional draft tokens using internal hidden states
     for (size_t i = 1; i < m_draft_iterations; ++i) {
         InferContext more_ctx;
@@ -1190,6 +1374,7 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
         more_ctx.use_target_hidden = false;
         more_ctx.iteration_id = i;                       // Pass the current iteration index
         more_ctx.iteration_history = iteration_history;  // Share the history
+        more_ctx.past_generate_len = past_generate_len;
         auto more_result = m_draft->forward(more_ctx);
 
         const auto& draft_tokens = more_result.sampled_tokens;
@@ -1204,11 +1389,6 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
 
         // Record this iteration's tokens in history
         iteration_history->insert(iteration_history->end(), draft_tokens.begin(), draft_tokens.end());
-
-        // Append draft tokens to target sequence for validation phase
-        // During validation, target model will retrieve tokens from its own sequence
-        // so we need to speculatively add draft predictions here
-        m_target->append_tokens(draft_tokens);
     }
 
     eagle3::log_debug("Draft candidates: " + eagle3::format_tokens(draft_candidates), is_verbose());
@@ -1217,12 +1397,46 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     // Step 3: Validate draft tokens with target model
     eagle3::log_debug("--- Validation Phase Start ---", is_verbose());
 
-    const size_t validation_window_size = m_draft_iterations + 1;
+    // In tree-search mode the draft model generates a tree of N+1 candidates:
+    //   draft generated_ids tail = [root, node_1, …, node_N]
+    //   EagleMetaData.tree_mask  = (N+1)×(N+1), index 0 = root.
+    // The root token is the LAST token sampled by the target in the previous iteration.
+    // It has NOT been fed back to the target KV cache yet, so the target must process
+    // all N+1 candidates (root + N tree nodes) during validation.
+    const auto& draft_gen_ids = m_draft->get_current_sequence()->get_generated_ids();
+    const auto& draft_metadata = m_draft->get_current_sequence()->get_eagle_metadata();
+    const size_t num_candidates = draft_metadata.tree_mask.size();  // N+1 (root + N nodes)
+    OPENVINO_ASSERT(num_candidates >= 2, "Expected at least root + one tree node");
+    const size_t num_tree_nodes = num_candidates - 1;  // N non-root tokens (used for validation count)
 
+    // The EagleMetaData is written into the DRAFT sequence by select_top_k.
+    // Sync it to the TARGET sequence so that build_model_inputs can read it.
+    m_target->get_current_sequence()->set_eagle_metadata(draft_metadata);
+
+    // Sync all N+1 candidate tokens to target sequence.
+    // Target's generated_ids already contains the root (appended by the sampler after prefill/
+    // previous iteration).  Append the N non-root tree-node tokens (draft generated_ids[1..N]).
+    OPENVINO_ASSERT(draft_gen_ids.size() >= num_candidates,
+                    "draft generated_ids too short: ",
+                    draft_gen_ids.size(),
+                    " < num_candidates: ",
+                    num_candidates);
+    for (size_t i = 1; i < num_candidates; ++i) {
+        m_target->get_current_sequence()->append_token(draft_gen_ids[i], 0.0f);
+    }
+
+    eagle3::log_debug("Synced draft metadata and " + std::to_string(num_tree_nodes) +
+                          " tree-node tokens to target sequence (total candidates: " + std::to_string(num_candidates) +
+                          ")",
+                      is_verbose());
+
+    // input_token_count = num_candidates: the target processes all N+1 tokens (root + N nodes).
+    // num_tokens_to_validate = num_tree_nodes: the sampler checks the N non-root draft tokens.
+    // sample_count = num_candidates: one output position per input token.
     InferContext val_ctx;
-    val_ctx.input_token_count = validation_window_size;
-    val_ctx.sample_count = validation_window_size;
-    val_ctx.num_tokens_to_validate = m_draft_iterations;
+    val_ctx.input_token_count = num_candidates;
+    val_ctx.sample_count = num_candidates;
+    val_ctx.num_tokens_to_validate = num_tree_nodes;
     auto val_result = m_target->forward(val_ctx);
 
     // Sampler validates draft tokens and returns accepted + new sampled token
@@ -1231,11 +1445,12 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     // Result: [accepted_draft_tokens..., new_sampled_token]
     const size_t accepted_count = validated_tokens.size() - 1;
     const int64_t target_predicted_token = validated_tokens.back();
-    const size_t tokens_to_remove = m_draft_iterations - accepted_count;
     const size_t total_accepted_tokens = validated_tokens.size();
+    // Target KV cache now holds num_candidates new tokens; keep only total_accepted_tokens.
+    const size_t tokens_to_remove = num_candidates - total_accepted_tokens;
 
     eagle3::log_debug("Validation result: accepted=" + std::to_string(accepted_count) + "/" +
-                          std::to_string(m_draft_iterations) + ", new_token=" + std::to_string(target_predicted_token),
+                          std::to_string(num_tree_nodes) + ", new_token=" + std::to_string(target_predicted_token),
                       is_verbose());
     eagle3::log_debug("Validated tokens: " + eagle3::format_tokens(validated_tokens), is_verbose());
 
@@ -1245,8 +1460,25 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
     m_draft->truncate_sequence(pre_draft_token_len);
     m_draft->append_tokens(validated_tokens);
 
-    // Trim KV cache for rejected tokens
-    if (tokens_to_remove > 0) {
+    // KV cache management after tree-search validation:
+    //
+    // TARGET (NPU): The accepted candidates form a non-contiguous path through the tree, so a
+    //   simple tail-trim is incorrect.  Instead, write the acceptance mask into the
+    //   "npuw_eagle3_sampling_result" VariableState.  NPUW reads this before the next infer
+    //   call and retains only the KV entries whose mask bit is 1.
+    //   validated_indices contains the accepted candidate path indices set by validate_tree_candidates
+    //   (e.g. [0, 2, 5] = root accepted + candidates 2 and 5 accepted; the rest are rejected).
+    //
+    // DRAFT (NPU): no explicit KV cache management is needed.  In the next iteration, all
+    //   accepted tokens are re-submitted as input_ids with their correct position_ids.  NPUW
+    //   uses the position_ids to overwrite the relevant KV slots, so stale entries are
+    //   implicitly replaced without any explicit trim or mask.
+    //
+    // NON-NPU: the KV cache is a plain tensor; trim the tail to remove the rejected positions.
+    if (m_target->device() == "NPU") {
+        const auto& target_validated_indices = m_target->get_current_sequence()->get_eagle_metadata().validated_indices;
+        m_target->set_npu_sampling_result(num_candidates, target_validated_indices);
+    } else if (tokens_to_remove > 0) {
         m_target->trim_kv_cache(tokens_to_remove);
         m_draft->trim_kv_cache(tokens_to_remove);
         eagle3::log_debug("KV cache trimmed: removed " + std::to_string(tokens_to_remove) + " rejected tokens",

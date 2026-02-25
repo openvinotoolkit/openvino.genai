@@ -1583,130 +1583,153 @@ SequenceGroupSamplingInfo Sampler::sample_from_sequence_group(SequenceGroup::Ptr
         }
     } else if (sampling_params.is_tree_search()) {
         uint64_t request_id = sequence_group->get_request_id();
-        std::cout << "\n[TREE_SEARCH DEBUG] ========== Tree Search Sampling ==========" << std::endl;
-        std::cout << "[TREE_SEARCH DEBUG] Request ID: " << request_id << std::endl;
-        std::cout << "[TREE_SEARCH DEBUG] Eagle tree params - branching_factor: "
-                  << sampling_params.eagle_tree_params.branching_factor
-                  << ", tree_depth: " << sampling_params.eagle_tree_params.tree_depth
-                  << ", total_tokens: " << sampling_params.eagle_tree_params.total_tokens << std::endl;
 
-        // create eagle tree search info if we are on the first generate
-        TreeSearcher* tree_searcher;
-        {
-            std::lock_guard<std::mutex> lock(m_tree_search_info_mutex);
-            if (m_tree_search_info.find(request_id) == m_tree_search_info.end()) {
-                std::cout << "[TREE_SEARCH DEBUG] Creating new TreeSearcher for request " << request_id << std::endl;
-                m_tree_search_info.emplace(
-                    request_id,
-                    TreeSearcher(sequence_group, m_d2t_mapping ? m_d2t_mapping->get_tensor_view() : ov::Tensor()));
-            } else {
-                std::cout << "[TREE_SEARCH DEBUG] Reusing existing TreeSearcher for request " << request_id
-                          << std::endl;
+        if (is_validation_mode_enabled && num_generated_tokens_to_validate > 0) {
+            // Target-model validation pass: validate the draft tree candidates.
+            std::vector<Sequence::Ptr> running_sequences = sequence_group->get_running_sequences();
+            OPENVINO_ASSERT(running_sequences.size() == 1);
+            size_t valid_tokens = validate_tree_candidates(running_sequences[0],
+                                                           sequence_group_logits,
+                                                           logit_processor,
+                                                           num_generated_tokens_to_validate);
+            assisting_pipeline_info.max_removed_tokens_per_request =
+                std::max(assisting_pipeline_info.max_removed_tokens_per_request,
+                         num_generated_tokens_to_validate + 1 - valid_tokens);
+            for (const auto& dropped_seq_id : _try_finish_generation(sequence_group)) {
+                sg_sampling_info.sampler_output.m_dropped_sequences.push_back(dropped_seq_id);
             }
-            tree_searcher = &m_tree_search_info.at(request_id);
-        }
-
-        if (!sequence_group->has_finished()) {
-            sg_sampling_info.sampler_output.num_generated_tokens++;
-            std::cout << "[TREE_SEARCH DEBUG] Incremented num_generated_tokens to: "
-                      << sg_sampling_info.sampler_output.num_generated_tokens << std::endl;
+            sg_sampling_info.sampler_output.num_generated_tokens += valid_tokens;
+            assisting_pipeline_info.min_generated_len =
+                std::min(assisting_pipeline_info.min_generated_len, running_sequences[0]->get_generated_len());
         } else {
-            std::cout << "[TREE_SEARCH DEBUG] Sequence group has finished" << std::endl;
-        }
+            std::cout << "\n[TREE_SEARCH DEBUG] ========== Tree Search Sampling ==========" << std::endl;
+            std::cout << "[TREE_SEARCH DEBUG] Request ID: " << request_id << std::endl;
+            std::cout << "[TREE_SEARCH DEBUG] Eagle tree params - branching_factor: "
+                      << sampling_params.eagle_tree_params.branching_factor
+                      << ", tree_depth: " << sampling_params.eagle_tree_params.tree_depth
+                      << ", total_tokens: " << sampling_params.eagle_tree_params.total_tokens << std::endl;
 
-        std::cout << "[TREE_SEARCH DEBUG] Calling select_top_k..." << std::endl;
-        // current algorithm already adds new tokens to running sequences and
-        tree_searcher->select_top_k(sequence_group_logits, sg_sampling_info.sampler_output, logit_processor);
-        std::cout << "[TREE_SEARCH DEBUG] select_top_k completed" << std::endl;
-
-        // Debug: Print sequence_group information after select_top_k
-        std::cout << "\n[TREE_SEARCH DEBUG] ========== Sequence Group State After select_top_k ==========" << std::endl;
-        auto running_sequences = sequence_group->get_running_sequences();
-        std::cout << "[TREE_SEARCH DEBUG] Number of running sequences: " << running_sequences.size() << std::endl;
-
-        for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
-            auto& seq = running_sequences[seq_idx];
-            std::cout << "\n[TREE_SEARCH DEBUG] --- Sequence [" << seq_idx << "] ---" << std::endl;
-            std::cout << "[TREE_SEARCH DEBUG]   Sequence ID: " << seq->get_id() << std::endl;
-            std::cout << "[TREE_SEARCH DEBUG]   Grouped ID: " << seq->get_grouped_id() << std::endl;
-            std::cout << "[TREE_SEARCH DEBUG]   Generated length: " << seq->get_generated_len() << std::endl;
-
-            // Print generated token IDs
-            auto generated_ids = seq->get_generated_ids();
-            std::cout << "[TREE_SEARCH DEBUG]   Generated IDs (" << generated_ids.size() << " tokens): [";
-            for (size_t i = 0; i < generated_ids.size() && i < 20; ++i) {  // Print first 20 tokens
-                std::cout << generated_ids[i];
-                if (i < generated_ids.size() - 1 && i < 19)
-                    std::cout << ", ";
+            // create eagle tree search info if we are on the first generate
+            TreeSearcher* tree_searcher;
+            {
+                std::lock_guard<std::mutex> lock(m_tree_search_info_mutex);
+                if (m_tree_search_info.find(request_id) == m_tree_search_info.end()) {
+                    std::cout << "[TREE_SEARCH DEBUG] Creating new TreeSearcher for request " << request_id
+                              << std::endl;
+                    m_tree_search_info.emplace(
+                        request_id,
+                        TreeSearcher(sequence_group, m_d2t_mapping ? m_d2t_mapping->get_tensor_view() : ov::Tensor()));
+                } else {
+                    std::cout << "[TREE_SEARCH DEBUG] Reusing existing TreeSearcher for request " << request_id
+                              << std::endl;
+                }
+                tree_searcher = &m_tree_search_info.at(request_id);
             }
-            if (generated_ids.size() > 20) {
-                std::cout << ", ... (" << (generated_ids.size() - 20) << " more)";
-            }
-            std::cout << "]" << std::endl;
 
-            // Print EAGLE metadata
-            auto& eagle_metadata = seq->get_eagle_metadata();
-            std::cout << "[TREE_SEARCH DEBUG]   EAGLE Metadata:" << std::endl;
-            std::cout << "[TREE_SEARCH DEBUG]     - tree_mask size: " << eagle_metadata.tree_mask.size();
-            if (!eagle_metadata.tree_mask.empty()) {
-                std::cout << " x " << eagle_metadata.tree_mask[0].size();
+            if (!sequence_group->has_finished()) {
+                sg_sampling_info.sampler_output.num_generated_tokens++;
+                std::cout << "[TREE_SEARCH DEBUG] Incremented num_generated_tokens to: "
+                          << sg_sampling_info.sampler_output.num_generated_tokens << std::endl;
+            } else {
+                std::cout << "[TREE_SEARCH DEBUG] Sequence group has finished" << std::endl;
             }
-            std::cout << std::endl;
 
-            std::cout << "[TREE_SEARCH DEBUG]     - retrieve_indices size: " << eagle_metadata.retrieve_indices.size()
+            std::cout << "[TREE_SEARCH DEBUG] Calling select_top_k..." << std::endl;
+            // current algorithm already adds new tokens to running sequences and
+            tree_searcher->select_top_k(sequence_group_logits, sg_sampling_info.sampler_output, logit_processor);
+            std::cout << "[TREE_SEARCH DEBUG] select_top_k completed" << std::endl;
+
+            // Debug: Print sequence_group information after select_top_k
+            std::cout << "\n[TREE_SEARCH DEBUG] ========== Sequence Group State After select_top_k =========="
                       << std::endl;
-            if (!eagle_metadata.retrieve_indices.empty()) {
-                std::cout << "[TREE_SEARCH DEBUG]     - retrieve_indices paths:" << std::endl;
-                for (size_t path_idx = 0; path_idx < std::min(size_t(5), eagle_metadata.retrieve_indices.size());
-                     ++path_idx) {
-                    const auto& path = eagle_metadata.retrieve_indices[path_idx];
-                    std::cout << "[TREE_SEARCH DEBUG]       Path[" << path_idx << "] (len=" << path.size() << "): [";
-                    for (size_t i = 0; i < path.size() && i < 15; ++i) {
-                        std::cout << path[i];
-                        if (i < path.size() - 1 && i < 14)
+            auto running_sequences = sequence_group->get_running_sequences();
+            std::cout << "[TREE_SEARCH DEBUG] Number of running sequences: " << running_sequences.size() << std::endl;
+
+            for (size_t seq_idx = 0; seq_idx < running_sequences.size(); ++seq_idx) {
+                auto& seq = running_sequences[seq_idx];
+                std::cout << "\n[TREE_SEARCH DEBUG] --- Sequence [" << seq_idx << "] ---" << std::endl;
+                std::cout << "[TREE_SEARCH DEBUG]   Sequence ID: " << seq->get_id() << std::endl;
+                std::cout << "[TREE_SEARCH DEBUG]   Grouped ID: " << seq->get_grouped_id() << std::endl;
+                std::cout << "[TREE_SEARCH DEBUG]   Generated length: " << seq->get_generated_len() << std::endl;
+
+                // Print generated token IDs
+                auto generated_ids = seq->get_generated_ids();
+                std::cout << "[TREE_SEARCH DEBUG]   Generated IDs (" << generated_ids.size() << " tokens): [";
+                for (size_t i = 0; i < generated_ids.size() && i < 20; ++i) {  // Print first 20 tokens
+                    std::cout << generated_ids[i];
+                    if (i < generated_ids.size() - 1 && i < 19)
+                        std::cout << ", ";
+                }
+                if (generated_ids.size() > 20) {
+                    std::cout << ", ... (" << (generated_ids.size() - 20) << " more)";
+                }
+                std::cout << "]" << std::endl;
+
+                // Print EAGLE metadata
+                auto& eagle_metadata = seq->get_eagle_metadata();
+                std::cout << "[TREE_SEARCH DEBUG]   EAGLE Metadata:" << std::endl;
+                std::cout << "[TREE_SEARCH DEBUG]     - tree_mask size: " << eagle_metadata.tree_mask.size();
+                if (!eagle_metadata.tree_mask.empty()) {
+                    std::cout << " x " << eagle_metadata.tree_mask[0].size();
+                }
+                std::cout << std::endl;
+
+                std::cout << "[TREE_SEARCH DEBUG]     - retrieve_indices size: "
+                          << eagle_metadata.retrieve_indices.size() << std::endl;
+                if (!eagle_metadata.retrieve_indices.empty()) {
+                    std::cout << "[TREE_SEARCH DEBUG]     - retrieve_indices paths:" << std::endl;
+                    for (size_t path_idx = 0; path_idx < std::min(size_t(5), eagle_metadata.retrieve_indices.size());
+                         ++path_idx) {
+                        const auto& path = eagle_metadata.retrieve_indices[path_idx];
+                        std::cout << "[TREE_SEARCH DEBUG]       Path[" << path_idx << "] (len=" << path.size()
+                                  << "): [";
+                        for (size_t i = 0; i < path.size() && i < 15; ++i) {
+                            std::cout << path[i];
+                            if (i < path.size() - 1 && i < 14)
+                                std::cout << ", ";
+                        }
+                        if (path.size() > 15)
+                            std::cout << ", ...";
+                        std::cout << "]" << std::endl;
+                    }
+                    if (eagle_metadata.retrieve_indices.size() > 5) {
+                        std::cout << "[TREE_SEARCH DEBUG]       ... (" << (eagle_metadata.retrieve_indices.size() - 5)
+                                  << " more paths)" << std::endl;
+                    }
+                }
+
+                std::cout << "[TREE_SEARCH DEBUG]     - tree_position_ids size: "
+                          << eagle_metadata.tree_position_ids.size() << std::endl;
+                if (!eagle_metadata.tree_position_ids.empty()) {
+                    std::cout << "[TREE_SEARCH DEBUG]     - tree_position_ids: [";
+                    for (size_t i = 0; i < std::min(size_t(20), eagle_metadata.tree_position_ids.size()); ++i) {
+                        std::cout << eagle_metadata.tree_position_ids[i];
+                        if (i < eagle_metadata.tree_position_ids.size() - 1 && i < 19)
                             std::cout << ", ";
                     }
-                    if (path.size() > 15)
-                        std::cout << ", ...";
+                    if (eagle_metadata.tree_position_ids.size() > 20) {
+                        std::cout << ", ... (" << (eagle_metadata.tree_position_ids.size() - 20) << " more)";
+                    }
                     std::cout << "]" << std::endl;
                 }
-                if (eagle_metadata.retrieve_indices.size() > 5) {
-                    std::cout << "[TREE_SEARCH DEBUG]       ... (" << (eagle_metadata.retrieve_indices.size() - 5)
-                              << " more paths)" << std::endl;
-                }
-            }
 
-            std::cout << "[TREE_SEARCH DEBUG]     - tree_position_ids size: " << eagle_metadata.tree_position_ids.size()
-                      << std::endl;
-            if (!eagle_metadata.tree_position_ids.empty()) {
-                std::cout << "[TREE_SEARCH DEBUG]     - tree_position_ids: [";
-                for (size_t i = 0; i < std::min(size_t(20), eagle_metadata.tree_position_ids.size()); ++i) {
-                    std::cout << eagle_metadata.tree_position_ids[i];
-                    if (i < eagle_metadata.tree_position_ids.size() - 1 && i < 19)
-                        std::cout << ", ";
+                std::cout << "[TREE_SEARCH DEBUG]     - accepted_indices size: "
+                          << eagle_metadata.validated_indices.size() << std::endl;
+                if (!eagle_metadata.validated_indices.empty()) {
+                    std::cout << "[TREE_SEARCH DEBUG]     - validated_indices: [";
+                    for (size_t i = 0; i < std::min(size_t(20), eagle_metadata.validated_indices.size()); ++i) {
+                        std::cout << eagle_metadata.validated_indices[i];
+                        if (i < eagle_metadata.validated_indices.size() - 1 && i < 19)
+                            std::cout << ", ";
+                    }
+                    if (eagle_metadata.validated_indices.size() > 20) {
+                        std::cout << ", ...";
+                    }
+                    std::cout << "]" << std::endl;
                 }
-                if (eagle_metadata.tree_position_ids.size() > 20) {
-                    std::cout << ", ... (" << (eagle_metadata.tree_position_ids.size() - 20) << " more)";
-                }
-                std::cout << "]" << std::endl;
             }
-
-            std::cout << "[TREE_SEARCH DEBUG]     - accepted_indices size: " << eagle_metadata.validated_indices.size()
-                      << std::endl;
-            if (!eagle_metadata.validated_indices.empty()) {
-                std::cout << "[TREE_SEARCH DEBUG]     - validated_indices: [";
-                for (size_t i = 0; i < std::min(size_t(20), eagle_metadata.validated_indices.size()); ++i) {
-                    std::cout << eagle_metadata.validated_indices[i];
-                    if (i < eagle_metadata.validated_indices.size() - 1 && i < 19)
-                        std::cout << ", ";
-                }
-                if (eagle_metadata.validated_indices.size() > 20) {
-                    std::cout << ", ...";
-                }
-                std::cout << "]" << std::endl;
-            }
-        }
-        std::cout << "[TREE_SEARCH DEBUG] ========== End Sequence Group State ==========" << std::endl;
+            std::cout << "[TREE_SEARCH DEBUG] ========== End Sequence Group State ==========" << std::endl;
+        }  // end else (draft tree search)
     } else {
         OPENVINO_THROW("Unsupported sampling method");
     }

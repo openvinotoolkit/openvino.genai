@@ -38,7 +38,8 @@ struct InferContext {
     size_t num_tokens_to_validate = 0;        ///< Number of draft tokens to validate
     size_t iteration_id = 0;                  ///< Draft iteration index (0 = first iteration)
     std::shared_ptr<std::vector<int64_t>> iteration_history =
-        nullptr;  ///< History of all generated tokens across iterations
+        nullptr;                   ///< History of all generated tokens across iterations
+    size_t past_generate_len = 0;  ///< Number of tokens already accepted by target (before this speculative window)
 };
 
 /// @brief Result from a forward pass
@@ -76,6 +77,19 @@ public:
     void append_tokens(const std::vector<int64_t>& tokens);
     void truncate_sequence(size_t size);
     void trim_kv_cache(size_t tokens_to_remove);
+
+    /// @brief Communicates the Eagle3 tree-search sampling result to NPUW via VariableState.
+    ///
+    /// On NPU devices the KV cache is managed internally by NPUW.  Instead of calling
+    /// trim_kv_cache (which is a no-op on NPU), the pipeline writes the acceptance mask
+    /// into the "npuw_eagle3_sampling_result" VariableState before the next infer call so
+    /// that NPUW can prune the correct (non-contiguous) tree positions.
+    ///
+    /// @param num_candidates   Total number of candidate tokens fed to the model (N+1).
+    /// @param accepted_indices Candidate indices that were accepted (from EagleMetaData::validated_indices).
+    ///                         Index 0 is always the root; subsequent entries are accepted draft nodes.
+    void set_npu_sampling_result(size_t num_candidates, const std::vector<int64_t>& accepted_indices);
+
     void reset_state();
     void release_memory();
 
@@ -144,7 +158,8 @@ public:
                             ov::Tensor& eagle_tree_mask,
                             InferencePhase phase,
                             size_t iteration_id = 0,
-                            std::shared_ptr<std::vector<int64_t>> iteration_history = nullptr);
+                            std::shared_ptr<std::vector<int64_t>> iteration_history = nullptr,
+                            size_t past_generate_len = 0);
 
     /// @brief Samples tokens from logits
     /// @param num_tokens_to_validate Draft tokens to validate (0 for standard sampling)
