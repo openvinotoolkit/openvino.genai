@@ -127,7 +127,11 @@ class InpaintingEvaluator(Text2ImageEvaluator):
         if not os.path.exists(image_dir):
             os.makedirs(image_dir)
 
-        for i, (prompt, image, mask) in tqdm(enumerate(zip(prompts, images, masks)), desc="Evaluate pipeline"):
+        for i, (prompt, image, mask) in tqdm(
+            enumerate(zip(prompts, images, masks)),
+            total=min(len(prompts), len(images), len(masks)),
+            desc="Evaluate pipeline",
+        ):
             set_seed(self.seed)
             rng = rng.manual_seed(self.seed)
             output = generation_fn(

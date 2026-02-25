@@ -25,6 +25,8 @@ env:
   SCCACHE_CACHE_SIZE: 30G
   SCCACHE_AZURE_KEY_PREFIX: genai/ubuntu/22_04/x64
   HF_HOME: /mount/caches/huggingface/lin
+  # mount directory leads to issue with load_dataset lock file. It's either cannot be released or there is a deadlock. Ticket: 181288
+  HF_DATASETS_CACHE: /tmp/.hf_cache/datasets/
   OV_CACHE: /mount/caches/huggingface/.ov_cache/lin/
   OPENVINO_LOG_LEVEL: 4
   GENAI_ARCHIVE_NAME: genai.tar.gz
@@ -93,7 +95,8 @@ jobs:
       with:
         platform: ubuntu22
         commit_packages_to_provide: wheels,developer_package.tar.gz,openvino_node_npm_package.tar.gz
-        revision: latest_available_commit
+        # latest_available_commit fails with libopenvino_intel_npu_compiler.so: cannot open shared object file on Manylinux 2_28. Ticket: 181511
+        revision: 8f1e6829dc8eecdb9fca2a95d9271f35b780ddaa
         # Set specific revision and uncomment to use OV from its PR build:
         # branch_name: master
         # event_name: pull_request
@@ -702,11 +705,12 @@ jobs:
             cmd: 'tests/python_tests/samples'
             run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).Image_generation_samples.test }}
             runner: 'aks-linux-4-cores-16gb'
-          - name: 'VLM'
-            marker: 'vlm'
-            cmd: 'tests/python_tests/samples'
-            run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).VLM_samples.test }}
-            runner: 'aks-linux-8-cores-32gb'
+          # Test hangs on Linux. Ticket: 181387
+          # - name: 'VLM'
+          #   marker: 'vlm'
+          #   cmd: 'tests/python_tests/samples'
+          #   run_condition: ${{ fromJSON(needs.smart_ci.outputs.affected_components).VLM_samples.test }}
+          #   runner: 'aks-linux-8-cores-32gb'
           - name: 'Rag'
             marker: 'rag'
             cmd: 'tests/python_tests/samples'

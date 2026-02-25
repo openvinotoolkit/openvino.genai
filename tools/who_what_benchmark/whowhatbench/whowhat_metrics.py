@@ -23,7 +23,9 @@ def evaluate_similarity(model, data_gold, data_prediction):
 
     metric_per_question = []
     for gold, prediction in tqdm(
-        zip(answers_gold, answers_prediction), desc="Similarity evaluation"
+        zip(answers_gold, answers_prediction),
+        total=min(len(answers_gold), len(answers_prediction)),
+        desc="Similarity evaluation",
     ):
         embeddings = model.encode([gold, prediction])
         cos_sim = util.cos_sim(embeddings, embeddings)
@@ -145,7 +147,9 @@ def evaluate_image_similarity(processor, model, data_gold, data_prediction):
 
     metric_per_image = []
     for gold, prediction in tqdm(
-        zip(images_gold, images_prediction), desc="Image Similarity evaluation"
+        zip(images_gold, images_prediction),
+        total=min(len(images_gold), len(images_prediction)),
+        desc="Image Similarity evaluation",
     ):
         gold_image = Image.open(gold)
         prediction_image = Image.open(prediction)
@@ -184,12 +188,14 @@ class EmbedsSimilarity:
         metric_per_gen = []
         metric_per_passages = []
         for gold, prediction in tqdm(
-            zip(embeds_gold, embeds_prediction), desc="Embeds Similarity evaluation"
+            zip(embeds_gold, embeds_prediction),
+            total=min(len(embeds_gold), len(embeds_prediction)),
+            desc="Embeds Similarity evaluation",
         ):
-            with open(gold, 'rb') as f:
+            with open(gold, "rb") as f:
                 gold_data = np.load(f)
 
-            with open(prediction, 'rb') as f:
+            with open(prediction, "rb") as f:
                 prediction_data = np.load(f)
 
             cos_sim_all = cosine_similarity(gold_data, prediction_data)
@@ -211,12 +217,14 @@ class RerankingSimilarity:
         metric_per_query = []
         similarity_per_query = []
         for gold, prediction in tqdm(
-            zip(gold_results, prediction_results), desc="Reranking Similarity evaluation"
+            zip(gold_results, prediction_results),
+            total=min(len(gold_results), len(prediction_results)),
+            desc="Reranking Similarity evaluation",
         ):
-            with open(gold, 'rb') as f:
+            with open(gold, "rb") as f:
                 gold_data = np.load(f)
 
-            with open(prediction, 'rb') as f:
+            with open(prediction, "rb") as f:
                 prediction_data = np.load(f)
 
             prediction_scores = {int(pred_info[0]): pred_info[1] for pred_info in prediction_data}

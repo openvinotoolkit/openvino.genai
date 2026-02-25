@@ -167,7 +167,7 @@ class Text2VideoEvaluator(BaseEvaluator):
         if not os.path.exists(videos_dir):
             os.makedirs(videos_dir)
 
-        for i, input in tqdm(enumerate(inputs), desc="Evaluate pipeline"):
+        for i, input in tqdm(enumerate(inputs), total=len(inputs), desc="Evaluate pipeline"):
             set_seed(self.seed)
             rng = rng.manual_seed(self.seed)
             guidance_rescale = input[5] if len(input) > 5 else self.DEF_GUIDANCE_RESCALE
