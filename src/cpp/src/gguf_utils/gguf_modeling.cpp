@@ -140,7 +140,7 @@ std::shared_ptr<ov::Model> create_language_model(
 
 std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
                                             const bool enable_save_ov_model,
-                                            const ov::genai::OVModelQuantizeMode& save_ov_model_quantize_mode) {
+                                            ov::genai::OVModelQuantizeMode save_ov_model_quantize_mode) {
     auto start_time = std::chrono::high_resolution_clock::now();
     std::stringstream ss;
     ss << "Loading and unpacking model from: " << model_path;
