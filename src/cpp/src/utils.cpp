@@ -132,7 +132,7 @@ void update_npu_config_text_embedding(ov::AnyMap& config,
 }
 
 inline bool is_paged_attention_available() {
-#if defined(OPENVINO_ARCH_X86_64) || defined(OPENVINO_ARCH_ARM64)
+#if defined(OPENVINO_ARCH_X86_64) || (defined(OPENVINO_ARCH_ARM64) && defined(HAVE_SVE))
     return true;
 #else
     return false;

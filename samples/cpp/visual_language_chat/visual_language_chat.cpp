@@ -11,16 +11,19 @@ ov::genai::StreamingStatus print_subword(std::string&& subword) {
 }
 
 int main(int argc, char* argv[]) try {
-    if (argc < 3 || argc > 4) {
-        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <DEVICE>");
+    if (argc < 3 || argc > 5) {
+        throw std::runtime_error(std::string{"Usage "} + argv[0] + " <MODEL_DIR> <IMAGE_FILE OR DIR_WITH_IMAGES> <DEVICE> <PROMPT_LOOKUP>");
     }
 
     std::vector<ov::Tensor> rgbs = utils::load_images(argv[2]);
 
     // GPU and NPU can be used as well.
     // Note: If NPU is selected, only language model will be run on NPU
-    std::string device = (argc == 4) ? argv[3] : "CPU";
-    ov::AnyMap properties = {ov::genai::prompt_lookup(true)};
+    std::string device = (argc >= 4) ? argv[3] : "CPU";
+    std::string lookup = (argc == 5) ? argv[4] : "false";
+    bool prompt_lookup = (lookup == "true");
+    // Prompt lookup decoding in VLM pipeline enforces ContinuousBatching backend
+    ov::AnyMap properties = {ov::genai::prompt_lookup(prompt_lookup)};
     if (device == "GPU") {
         // Cache compiled models on disk for GPU to save time on the
         // next run. It's not beneficial for CPU.
@@ -31,10 +34,12 @@ int main(int argc, char* argv[]) try {
 
     ov::genai::GenerationConfig generation_config;
     generation_config.max_new_tokens = 100;
-    // Define candidates number for candidate generation
-    generation_config.num_assistant_tokens = 5;
-    // Define max_ngram_size
-    generation_config.max_ngram_size = 3;
+    if (prompt_lookup) {
+        // Define candidates number for candidate generation
+        generation_config.num_assistant_tokens = 5;
+        // Define max_ngram_size
+        generation_config.max_ngram_size = 3;
+    }
 
     std::string prompt;
 

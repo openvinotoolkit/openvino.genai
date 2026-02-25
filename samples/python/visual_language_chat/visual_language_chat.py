@@ -52,13 +52,16 @@ def main():
     parser.add_argument("model_dir", help="Path to the model directory")
     parser.add_argument("image_dir", help="Image file or dir with images")
     parser.add_argument("device", nargs="?", default="CPU", help="Device to run the model on (default: CPU)")
+    parser.add_argument("prompt_lookup", nargs="?", default="false", help="Enable prompt lookup decoding (default: false)")
     args = parser.parse_args()
 
     rgbs = read_images(args.image_dir)
 
     # GPU and NPU can be used as well.
     # Note: If NPU is selected, only the language model will be run on the NPU.
-    properties = {"prompt_lookup": True}
+    # Prompt lookup decoding in VLM pipeline enforces ContinuousBatching backend
+    prompt_lookup = (args.prompt_lookup == "true")
+    properties = {"prompt_lookup": prompt_lookup}
     if args.device == "GPU":
         # Cache compiled models on disk for GPU to save time on the next run.
         # It's not beneficial for CPU.
@@ -68,10 +71,11 @@ def main():
 
     config = openvino_genai.GenerationConfig()
     config.max_new_tokens = 100
-    # add parameter to enable prompt lookup decoding to generate `num_assistant_tokens` candidates per iteration
-    config.num_assistant_tokens = 5
-    # Define max_ngram_size
-    config.max_ngram_size = 3
+    if prompt_lookup:
+        # add parameter to enable prompt lookup decoding to generate `num_assistant_tokens` candidates per iteration
+        config.num_assistant_tokens = 5
+        # Define max_ngram_size
+        config.max_ngram_size = 3
 
     history = openvino_genai.ChatHistory()
     prompt = input('question:\n')
