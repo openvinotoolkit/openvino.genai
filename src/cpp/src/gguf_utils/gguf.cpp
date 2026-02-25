@@ -440,6 +440,10 @@ void load_arrays(gguf_ctx* ctx,
 
                 if (use_q8_0) {
                     // Q8_0_C: channel-wise scale (per output channel), symmetric quant (biases replicated for compat)
+                    OPENVINO_ASSERT(shape[1] > 0, "[load_gguf] Expected shape[1] > 0 for Q8_0_C requantization");
+                    OPENVINO_ASSERT(shape[1] % 4 == 0,
+                                    "[load_gguf] Expected shape[1] to be divisible by 4 for Q8_0_C packing, got ",
+                                    shape[1]);
                     size_t num_blocks_per_row = shape[1] / block_size;  // Should be 1 for channel-wise
                     weights_out =
                         ov::Tensor(ov::element::u32, ov::Shape{shape[0], shape[1] / 4});  // 4 u8 packed per u32
@@ -450,6 +454,14 @@ void load_arrays(gguf_ctx* ctx,
                     quantize_q8_0(fp32_data.data(), weights_out, scales_out, biases_out, n_elements, block_size);
                 } else {
                     // Q4_0_128 format
+                    OPENVINO_ASSERT(shape[1] % static_cast<size_t>(block_size) == 0,
+                                    "[load_gguf] Expected shape[1] to be divisible by block_size ",
+                                    block_size,
+                                    " for Q4_0_128, got ",
+                                    shape[1]);
+                    OPENVINO_ASSERT(shape[1] % 8 == 0,
+                                    "[load_gguf] Expected shape[1] to be divisible by 8 for Q4_0_128 packing, got ",
+                                    shape[1]);
                     size_t num_blocks_per_row = shape[1] / block_size;
                     size_t packed_width = shape[1] / 8;  // 2 u4 per u8, then 4 u8 per u32 = 8 u4 per u32
                     weights_out = ov::Tensor(ov::element::u32, ov::Shape{shape[0], packed_width});
