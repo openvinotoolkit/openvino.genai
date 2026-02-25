@@ -175,9 +175,6 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
             std::filesystem::create_directories(save_dir);
             std::filesystem::path save_path = save_dir / "openvino_model.xml";
             ov::genai::utils::save_openvino_model(model, save_path.string(), true);
-            ss.str("");
-            ss << "Saved OpenVINO model to: " << save_path.string();
-            ov::genai::utils::print_gguf_debug_info(ss.str());
         }
     } else {
         OPENVINO_THROW("Unsupported model architecture '", model_arch, "'");
