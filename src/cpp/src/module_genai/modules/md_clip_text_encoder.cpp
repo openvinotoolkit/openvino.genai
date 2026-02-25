@@ -89,14 +89,11 @@ bool ClipTextEncoderModule::initialize() {
     // Create cache key hash from model XML content and device
     std::size_t cache_key = compute_cache_key(text_encoder_path, device);
 
-    // Check if resources already exist in cache
-    bool is_cached = ClipTextEncoderResourceCache::instance().exists(cache_key);
-    if (is_cached) {
-        GENAI_INFO("ClipTextEncoderModule: Reusing cached model for: " + root_dir.string() + " on device: " + device);
-    }
+    // Get pipeline-scoped resource cache (resources released when pipeline is destroyed)
+    auto& resource_cache = pipeline_desc->get_resource_cache();
 
-    // Get or create shared resources
-    m_shared_resources = ClipTextEncoderResourceCache::instance().get_or_create(
+    // Get or create shared resources (cache hit detected atomically under the same lock)
+    auto [shared_resources, was_cached] = resource_cache.get_or_create<ClipTextEncoderSharedResources>(
         cache_key,
         [this, &root_dir, &device, &text_encoder_path, model_type]() -> std::shared_ptr<ClipTextEncoderSharedResources> {
             GENAI_INFO("ClipTextEncoderModule: Loading model from: " + root_dir.string() + " to device: " + device);
@@ -147,6 +144,11 @@ bool ClipTextEncoderModule::initialize() {
 
             return resources;
         });
+
+    m_shared_resources = shared_resources;
+    if (was_cached) {
+        GENAI_INFO("ClipTextEncoderModule: Reusing cached model for: " + root_dir.string() + " on device: " + device);
+    }
 
     if (!m_shared_resources) {
         GENAI_ERR("ClipTextEncoderModule[" + module_desc->name + "]: Failed to initialize shared resources");

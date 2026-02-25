@@ -4,8 +4,6 @@
 #pragma once
 
 #include <yaml-cpp/yaml.h>
-#include <mutex>
-#include <unordered_map>
 #include <fstream>
 #include <filesystem>
 
@@ -50,43 +48,6 @@ inline std::size_t compute_cache_key(const std::filesystem::path& model_xml_path
     return std::hash<std::string_view>{}(std::string_view(content.data(), content.size()));
 }
 
-// Global cache for shared resources
-class ClipTextEncoderResourceCache {
-public:
-    static ClipTextEncoderResourceCache& instance() {
-        static ClipTextEncoderResourceCache cache;
-        return cache;
-    }
-
-    std::shared_ptr<ClipTextEncoderSharedResources> get_or_create(
-        std::size_t cache_key,
-        std::function<std::shared_ptr<ClipTextEncoderSharedResources>()> creator) {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        auto it = m_cache.find(cache_key);
-        if (it != m_cache.end()) {
-            return it->second;
-        }
-        auto resources = creator();
-        m_cache[cache_key] = resources;
-        return resources;
-    }
-
-    bool exists(std::size_t cache_key) {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        return m_cache.find(cache_key) != m_cache.end();
-    }
-
-    void clear() {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_cache.clear();
-    }
-
-private:
-    ClipTextEncoderResourceCache() = default;
-    std::mutex m_mutex;
-    std::unordered_map<std::size_t, std::shared_ptr<ClipTextEncoderSharedResources>> m_cache;
-};
-
 class ClipTextEncoderModule : public IBaseModule {
     DeclareModuleConstructor(ClipTextEncoderModule);
 
@@ -94,7 +55,7 @@ private:
     bool initialize();
     bool do_classifier_free_guidance(float guidance_scale);
 
-    // Shared resources (shared across modules with same model_path)
+    // Shared resources (shared across modules with same model_path within the same pipeline)
     std::shared_ptr<ClipTextEncoderSharedResources> m_shared_resources;
 
     // Per-instance infer request (each module has its own)

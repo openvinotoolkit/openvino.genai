@@ -3,6 +3,11 @@
 
 #pragma once
 
+#include <mutex>
+#include <any>
+#include <functional>
+#include <memory>
+
 #include "module_genai/module_data_type.hpp"
 #include "module_genai/module_print_config.hpp"
 #include "module_genai/module_type.hpp"
@@ -52,14 +57,56 @@ public:
 // map: module name -> module desc
 using PipelineModulesDesc = std::unordered_map<std::string, IBaseModuleDesc::PTR>;
 
+// Pipeline-scoped resource cache for sharing compiled models across modules
+// Resources are automatically released when PipelineDesc is destroyed
+class PipelineResourceCache {
+public:
+    PipelineResourceCache() = default;
+    ~PipelineResourceCache() = default;
+
+    // Non-copyable
+    PipelineResourceCache(const PipelineResourceCache&) = delete;
+    PipelineResourceCache& operator=(const PipelineResourceCache&) = delete;
+
+    // Get or create a resource with the given key
+    // Returns {resource, was_cached} - the bool indicates whether the resource was already in the cache
+    template<typename T>
+    std::pair<std::shared_ptr<T>, bool> get_or_create(
+        std::size_t cache_key,
+        std::function<std::shared_ptr<T>()> creator) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_cache.find(cache_key);
+        if (it != m_cache.end()) {
+            auto typed = std::any_cast<std::shared_ptr<T>>(&it->second);
+            if (!typed) {
+                OPENVINO_THROW("PipelineResourceCache: cache key collision - entry exists with a different type for key ",
+                               cache_key);
+            }
+            return {*typed, true};
+        }
+        auto resource = creator();
+        m_cache[cache_key] = resource;
+        return {resource, false};
+    }
+
+    void clear() {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_cache.clear();
+    }
+
+private:
+    std::mutex m_mutex;
+    std::unordered_map<std::size_t, std::any> m_cache;
+};
+
 class PipelineDesc {
 protected:
-    PipelineDesc() = default;
+    PipelineDesc();
     PipelineDesc(const PipelineDesc&) = delete;
     PipelineDesc& operator=(const PipelineDesc&) = delete;
 
 public:
-    ~PipelineDesc() = default;
+    ~PipelineDesc();
     // global_context;
     std::string model_type;
 
@@ -75,6 +122,10 @@ public:
         return m_models_map;
     }
 
+    // Pipeline-scoped resource cache for modules to share resources
+    // Resources are released when PipelineDesc is destroyed
+    PipelineResourceCache& get_resource_cache();
+
     using PTR = std::shared_ptr<PipelineDesc>;
     static PTR create() {
         return std::shared_ptr<PipelineDesc>(new PipelineDesc());
@@ -82,6 +133,7 @@ public:
 
 private:
     ConfigModelsMap m_models_map;
+    std::unique_ptr<PipelineResourceCache> m_resource_cache;
 };
 
 }  // namespace module
