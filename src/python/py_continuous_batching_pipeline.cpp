@@ -167,7 +167,7 @@ auto pipeline_metrics_docstring = R"(
     :type avg_cache_usage: float
 
     :param kv_cache_size_in_bytes: The total KV cache size in bytes or currently used size for dynamic KV cache
-    :type kv_cache_size_in_bytes: float
+    :type kv_cache_size_in_bytes: int
 )";
 
 std::ostream& operator << (std::ostream& stream, const GenerationResult& generation_result) {
