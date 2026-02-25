@@ -415,68 +415,72 @@ void load_arrays(gguf_ctx* ctx,
                 name_prefix.resize(name.size() - weight_suffix.size());
             }
 
-            {
-                // Mixed requant: token_embd/output.weight → Q8_0_C (channel-wise); others → Q4_0_128
-                bool is_token_embd = (name.find("token_embd.weight") != std::string::npos);
-                bool is_output = (name == "output.weight");
+            // Mixed requant: token_embd/output.weight → Q8_0_C (channel-wise); others → Q4_0_128
+            bool is_token_embd = (name.find("token_embd.weight") != std::string::npos);
+            bool is_output = (name == "output.weight");
 
-                bool use_q8_0 = (is_token_embd || is_output);
-                int64_t block_size = use_q8_0 ? static_cast<int64_t>(fp16_bits_tensor.get_shape()[1]) : 128;
+            auto shape = fp16_bits_tensor.get_shape();
+            OPENVINO_ASSERT(shape.size() == 2,
+                            "[load_gguf] Expected 2D weight tensor for GPU_OPTIMIZED requantization");
+            OPENVINO_ASSERT(
+                shape[0] > 0 && shape[1] > 0,
+                "[load_gguf] Expected non-empty [rows, cols] weight tensor for GPU_OPTIMIZED requantization");
 
-                // Decode FP16 bit-pattern storage (u16) to FP32 values for requantization.
-                auto shape = fp16_bits_tensor.get_shape();
-                int64_t n_elements = fp16_bits_tensor.get_size();
-                std::vector<float> fp32_data(n_elements);
-                OPENVINO_ASSERT(fp16_bits_tensor.get_element_type() == ov::element::u16,
-                                "[load_gguf] Expected FP16 bit-pattern tensor in u16 storage");
-                const uint16_t* fp16_ptr = fp16_bits_tensor.data<uint16_t>();
-                for (int64_t i = 0; i < n_elements; i++) {
-                    fp32_data[i] = from_half(fp16_ptr[i]);
-                }
+            bool use_q8_0 = (is_token_embd || is_output);
+            int64_t block_size = use_q8_0 ? static_cast<int64_t>(shape[1]) : 128;
 
-                // Create output tensors
-                ov::Tensor weights_out, scales_out, biases_out;
-
-                if (use_q8_0) {
-                    // Q8_0_C: channel-wise scale (per output channel), symmetric quant (biases replicated for compat)
-                    OPENVINO_ASSERT(shape[1] > 0, "[load_gguf] Expected shape[1] > 0 for Q8_0_C requantization");
-                    OPENVINO_ASSERT(shape[1] % 4 == 0,
-                                    "[load_gguf] Expected shape[1] to be divisible by 4 for Q8_0_C packing, got ",
-                                    shape[1]);
-                    size_t num_blocks_per_row = shape[1] / block_size;  // Should be 1 for channel-wise
-                    weights_out =
-                        ov::Tensor(ov::element::u32, ov::Shape{shape[0], shape[1] / 4});  // 4 u8 packed per u32
-                    scales_out = ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});
-                    biases_out =
-                        ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});  // Match scales shape
-
-                    quantize_q8_0(fp32_data.data(), weights_out, scales_out, biases_out, n_elements, block_size);
-                } else {
-                    // Q4_0_128 format
-                    OPENVINO_ASSERT(shape[1] % static_cast<size_t>(block_size) == 0,
-                                    "[load_gguf] Expected shape[1] to be divisible by block_size ",
-                                    block_size,
-                                    " for Q4_0_128, got ",
-                                    shape[1]);
-                    OPENVINO_ASSERT(shape[1] % 8 == 0,
-                                    "[load_gguf] Expected shape[1] to be divisible by 8 for Q4_0_128 packing, got ",
-                                    shape[1]);
-                    size_t num_blocks_per_row = shape[1] / block_size;
-                    size_t packed_width = shape[1] / 8;  // 2 u4 per u8, then 4 u8 per u32 = 8 u4 per u32
-                    weights_out = ov::Tensor(ov::element::u32, ov::Shape{shape[0], packed_width});
-                    scales_out = ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});
-                    biases_out =
-                        ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});  // Match scales shape
-
-                    quantize_q4_0(fp32_data.data(), weights_out, scales_out, biases_out, n_elements, block_size);
-                }
-
-                // Store requantized tensors (same structure as gguf_load_quantized)
-                check_insert(array_map.emplace(name, std::move(weights_out)));
-                check_insert(array_map.emplace(name_prefix + ".scales", std::move(scales_out)));
-                check_insert(array_map.emplace(name_prefix + ".biases", std::move(biases_out)));
-                qtype_map.emplace(name_prefix + ".qtype", use_q8_0 ? GGUF_TYPE_Q8_0 : GGUF_TYPE_Q4_0);
+            // Decode FP16 bit-pattern storage (u16) to FP32 values for requantization.
+            int64_t n_elements = fp16_bits_tensor.get_size();
+            std::vector<float> fp32_data(n_elements);
+            OPENVINO_ASSERT(fp16_bits_tensor.get_element_type() == ov::element::u16,
+                            "[load_gguf] Expected FP16 bit-pattern tensor in u16 storage");
+            const uint16_t* fp16_ptr = fp16_bits_tensor.data<uint16_t>();
+            for (int64_t i = 0; i < n_elements; i++) {
+                fp32_data[i] = from_half(fp16_ptr[i]);
             }
+
+            // Create output tensors
+            ov::Tensor weights_out, scales_out, biases_out;
+
+            if (use_q8_0) {
+                // Q8_0_C: channel-wise scale (per output channel), symmetric quant (biases replicated for compat)
+                OPENVINO_ASSERT(shape[1] > 0, "[load_gguf] Expected shape[1] > 0 for Q8_0_C requantization");
+                OPENVINO_ASSERT(shape[1] % 4 == 0,
+                                "[load_gguf] Expected shape[1] to be divisible by 4 for Q8_0_C packing, got ",
+                                shape[1]);
+                size_t num_blocks_per_row = shape[1] / block_size;  // Should be 1 for channel-wise
+                weights_out = ov::Tensor(ov::element::u32, ov::Shape{shape[0], shape[1] / 4});  // 4 u8 packed per u32
+                scales_out = ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});
+                biases_out =
+                    ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});  // Match scales shape
+
+                quantize_q8_0(fp32_data.data(), weights_out, scales_out, biases_out, n_elements, block_size);
+            } else {
+                // Q4_0_128 format
+                OPENVINO_ASSERT(shape[1] % static_cast<size_t>(block_size) == 0,
+                                "[load_gguf] Expected shape[1] to be divisible by block_size ",
+                                block_size,
+                                " for Q4_0_128, got ",
+                                shape[1]);
+                OPENVINO_ASSERT(shape[1] % 8 == 0,
+                                "[load_gguf] Expected shape[1] to be divisible by 8 for Q4_0_128 packing, got ",
+                                shape[1]);
+                size_t num_blocks_per_row = shape[1] / block_size;
+                size_t packed_width = shape[1] / 8;  // 2 u4 per u8, then 4 u8 per u32 = 8 u4 per u32
+                weights_out = ov::Tensor(ov::element::u32, ov::Shape{shape[0], packed_width});
+                scales_out = ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});
+                biases_out =
+                    ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});  // Match scales shape
+
+                quantize_q4_0(fp32_data.data(), weights_out, scales_out, biases_out, n_elements, block_size);
+            }
+
+            // Store requantized tensors (same structure as gguf_load_quantized)
+            check_insert(array_map.emplace(name, std::move(weights_out)));
+            check_insert(array_map.emplace(name_prefix + ".scales", std::move(scales_out)));
+            check_insert(array_map.emplace(name_prefix + ".biases", std::move(biases_out)));
+            qtype_map.emplace(name_prefix + ".qtype", use_q8_0 ? GGUF_TYPE_Q8_0 : GGUF_TYPE_Q4_0);
+
         }
         // Other quantized types: keep quantized format (exclude Q4_K/Q6_K when gpu_optimized)
         else if (tensor.type == GGUF_TYPE_Q4_0 || tensor.type == GGUF_TYPE_Q4_1 || tensor.type == GGUF_TYPE_Q8_0 ||
