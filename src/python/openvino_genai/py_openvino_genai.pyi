@@ -2169,7 +2169,7 @@ class PipelineMetrics:
         :type avg_cache_usage: float
 
         :param kv_cache_size_in_bytes: The total KV cache size in bytes or currently used size for dynamic KV cache
-        :type kv_cache_size_in_bytes: float
+        :type kv_cache_size_in_bytes: int
 
     """
     def __init__(self) -> None:
@@ -2178,10 +2178,10 @@ class PipelineMetrics:
     def avg_cache_usage(self) -> float:
         ...
     @property
-    def kv_cache_size_in_bytes(self) -> float:
+    def cache_usage(self) -> float:
         ...
     @property
-    def cache_usage(self) -> float:
+    def kv_cache_size_in_bytes(self) -> int:
         ...
     @property
     def max_cache_usage(self) -> float:
