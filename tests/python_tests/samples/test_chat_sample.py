@@ -20,6 +20,7 @@ class TestChatSample:
     def test_chat_sample_refs(self, request, convert_model, prompts):
         if sys.platform == 'darwin':
             pytest.xfail("Ticket 173586")
+        
         # C++ test
         cpp_sample = SAMPLES_CPP_DIR / 'chat_sample'
         cpp_command = [cpp_sample, convert_model]
