@@ -7,7 +7,7 @@ safetensors==0.6.2; platform_system == "Darwin" and platform_machine == "x86_64"
 einops==0.8.2  # For Qwen
 transformers_stream_generator==0.0.5  # For Qwen
 diffusers==0.36.0 # For image generation pipelines
-timm==1.0.24  # For exporting InternVL2
+timm==1.0.25  # For exporting InternVL2
 # torchvision for visual language models
 torchvision==0.17.2; platform_system == "Darwin" and platform_machine == "x86_64"
 torchvision==0.23.0; platform_system != "Darwin" or platform_machine != "x86_64"

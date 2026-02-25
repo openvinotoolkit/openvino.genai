@@ -57,14 +57,15 @@ OpenVINO GenAI supports multiple sampling strategies and generation configuratio
 
           const pipe = await LLMPipeline(model_path, "CPU");
 
-          // Define custom configuration
-          const config = {
-              max_new_tokens: 100,
-              temperature: 0.7,
-              top_k: 50,
-              top_p: 0.9,
-              repetition_penalty: 1.2
-          };
+          // Get default configuration
+          const config = pipe.getGenerationConfig();
+
+          // Modify parameters
+          config.max_new_tokens = 100;
+          config.temperature = 0.7;
+          config.top_k = 50;
+          config.top_p = 0.9;
+          config.repetition_penalty = 1.2;
 
           // Generate text with custom configuration
           const output = await pipe.generate(prompt, config);
@@ -120,13 +121,14 @@ OpenVINO GenAI supports multiple sampling strategies and generation configuratio
 
           const pipe = await LLMPipeline(model_path, "CPU");
 
-          // Define beam search configuration
-          const config = {
-              max_new_tokens: 256,
-              num_beams: 15,
-              num_beam_groups: 3,
-              diversity_penalty: 1.0
-          };
+          // Get default configuration
+          const config = pipe.getGenerationConfig();
+
+          // Modify parameters
+          config.max_new_tokens = 256;
+          config.num_beams = 15;
+          config.num_beam_groups = 3;
+          config.diversity_penalty = 1.0;
 
           // Generate text with custom configuration
           const output = await pipe.generate(prompt, config);

@@ -136,6 +136,8 @@ export interface LLMPipeline {
   startChat(systemMessage: string, callback: (err: Error | null) => void): void;
   finishChat(callback: (err: Error | null) => void): void;
   getTokenizer(): ITokenizer;
+  getGenerationConfig(): GenerationConfig;
+  setGenerationConfig(config: GenerationConfig): void;
 }
 
 export interface VLMPipeline {
@@ -167,6 +169,7 @@ export interface VLMPipeline {
   getTokenizer(): ITokenizer;
   setChatTemplate(template: string): void;
   setGenerationConfig(config: GenerationConfig): void;
+  getGenerationConfig(): GenerationConfig;
 }
 
 interface OpenVINOGenAIAddon {

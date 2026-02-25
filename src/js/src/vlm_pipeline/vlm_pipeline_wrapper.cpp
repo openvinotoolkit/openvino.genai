@@ -139,6 +139,7 @@ Napi::Function VLMPipelineWrapper::get_class(Napi::Env env) {
                         InstanceMethod("startChat", &VLMPipelineWrapper::start_chat),
                         InstanceMethod("finishChat", &VLMPipelineWrapper::finish_chat),
                         InstanceMethod("setChatTemplate", &VLMPipelineWrapper::set_chat_template),
+                        InstanceMethod("getGenerationConfig", &VLMPipelineWrapper::get_generation_config),
                         InstanceMethod("setGenerationConfig", &VLMPipelineWrapper::set_generation_config)});
 }
 
@@ -276,10 +277,20 @@ Napi::Value VLMPipelineWrapper::set_generation_config(const Napi::CallbackInfo& 
     try {
         OPENVINO_ASSERT(this->pipe, "VLMPipeline is not initialized");
         VALIDATE_ARGS_COUNT(info, 1, "setGenerationConfig()");
-        auto config_map = js_to_cpp<ov::AnyMap>(env, info[0]);
-        ov::genai::GenerationConfig config;
-        config.update_generation_config(config_map);
+        ov::genai::GenerationConfig config = js_to_cpp<ov::genai::GenerationConfig>(env, info[0]);
         this->pipe->set_generation_config(config);
+    } catch (const std::exception& ex) {
+        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
+    }
+    return env.Undefined();
+}
+
+Napi::Value VLMPipelineWrapper::get_generation_config(const Napi::CallbackInfo& info) {
+    auto env = info.Env();
+    try {
+        OPENVINO_ASSERT(this->pipe, "VLMPipeline is not initialized");
+        ov::genai::GenerationConfig config = this->pipe->get_generation_config();
+        return cpp_to_js<ov::genai::GenerationConfig, Napi::Value>(env, config);
     } catch (const std::exception& ex) {
         Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
     }

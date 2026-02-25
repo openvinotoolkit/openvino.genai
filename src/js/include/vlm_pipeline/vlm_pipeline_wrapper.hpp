@@ -21,6 +21,7 @@ public:
     Napi::Value finish_chat(const Napi::CallbackInfo& info);
     Napi::Value get_tokenizer(const Napi::CallbackInfo& info);
     Napi::Value set_chat_template(const Napi::CallbackInfo& info);
+    Napi::Value get_generation_config(const Napi::CallbackInfo& info);
     Napi::Value set_generation_config(const Napi::CallbackInfo& info);
 
 private:
