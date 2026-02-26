@@ -417,6 +417,7 @@ enum class OVModelQuantizeMode {
 };
 
 /** @cond INTERNAL */
+// Intentionally not marked noexcept: unsupported enum values may trigger OPENVINO_THROW.
 inline std::ostream& operator<<(std::ostream& os, const OVModelQuantizeMode& mode) {
     switch (mode) {
     case OVModelQuantizeMode::ORIGINAL:
@@ -428,6 +429,7 @@ inline std::ostream& operator<<(std::ostream& os, const OVModelQuantizeMode& mod
     }
 }
 
+// Intentionally not marked noexcept: invalid input strings may trigger OPENVINO_THROW.
 inline std::istream& operator>>(std::istream& is, OVModelQuantizeMode& mode) {
     std::string str;
     is >> str;
