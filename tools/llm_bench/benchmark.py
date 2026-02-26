@@ -25,14 +25,14 @@ from llm_bench_utils.memory_monitor import MemoryDataSummarizer
 DEFAULT_TORCH_THREAD_NUMS = 16
 
 
-def num_iters_type(x):
+def num_positive_integers(x):
     x = int(x)
     if x < 0:
         raise argparse.ArgumentTypeError("Minimum input value is 0")
     return x
 
 
-def num_infer_count_type(x):
+def num_more_then_one(x):
     x = int(x)
     if x < 1:
         raise argparse.ArgumentTypeError("Minimum input value is 1")
@@ -82,7 +82,7 @@ def get_argparser():
         "-pi",
         "--prompt_index",
         nargs="+",
-        type=num_iters_type,
+        type=num_positive_integers,
         default=None,
         help="Run the specified prompt index. You can specify multiple prompt indexes, separated by spaces.",
     )
@@ -91,14 +91,14 @@ def get_argparser():
         "-ic",
         "--infer_count",
         default=None,
-        type=num_infer_count_type,
+        type=num_more_then_one,
         help="set the output token size, the value must be greater than 0.",
     )
     parser.add_argument(
         '-n',
         '--num_iters',
         default=0,
-        type=num_iters_type,
+        type=num_positive_integers,
         help='number of benchmarking iterations, '
         'if the value is greater than 0, the average numbers exclude the first(0th) iteration,\n'
         'if the value equals 0 (default), execute the warm-up iteration(0th iteration).',
@@ -269,7 +269,7 @@ def get_argparser():
         help="Stop the generation even if output token size does not achieve infer_count or max token size ({DEFAULT_OUTPUT_TOKEN_SIZE}}).",
     )
     parser.add_argument(
-        "--set_torch_thread", default=0, type=num_infer_count_type, help="Set the number of Torch thread. "
+        "--set_torch_thread", default=0, type=num_positive_integers, help="Set the number of Torch thread. "
     )
     parser.add_argument(
         "-tl",
@@ -422,9 +422,11 @@ def get_argparser():
     )
     parser.add_argument(
         "--chat_iter",
-        type=int,
+        type=num_more_then_one,
         default=None,
-        help="",
+        help="Triggers chat mode. The chat will run chat_iter iterations with the same prompt."
+        " Alternative option is setup prompt list in JSONL with -pf."
+        " The parameter specifies the amount of the chat iteration. Applicable for VLM and LLM Pipeline.",
     )
     return parser.parse_args()
 
