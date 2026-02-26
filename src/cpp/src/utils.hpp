@@ -137,6 +137,8 @@ ov::Core& singleton_core();
 
 std::tuple<ov::AnyMap, bool, ov::genai::OVModelQuantizeMode> extract_gguf_properties(const ov::AnyMap& external_properties);
 
+std::string get_ov_model_subdir_name(ov::genai::OVModelQuantizeMode quantize_mode);
+
 std::pair<ov::AnyMap, bool> extract_paired_input_props(const ov::AnyMap& external_properties);
 
 std::shared_ptr<ov::Model> read_model(const std::filesystem::path& model_dir,  const ov::AnyMap& config);

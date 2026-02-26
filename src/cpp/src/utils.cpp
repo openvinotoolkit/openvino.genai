@@ -408,6 +408,17 @@ std::tuple<ov::AnyMap, bool, ov::genai::OVModelQuantizeMode> extract_gguf_proper
     return {properties, enable_save_ov_model, save_ov_model_quantize_mode};
 }
 
+std::string get_ov_model_subdir_name(ov::genai::OVModelQuantizeMode quantize_mode) {
+    switch (quantize_mode) {
+    case ov::genai::OVModelQuantizeMode::ORIGINAL:
+        return "ov_model_original";
+    case ov::genai::OVModelQuantizeMode::GPU_OPTIMIZED:
+        return "ov_model_gpu_optimized";
+    default:
+        OPENVINO_THROW("Unsupported OVModelQuantizeMode");
+    }
+}
+
 void save_openvino_model(const std::shared_ptr<ov::Model>& model, const std::string& save_path, bool compress_to_fp16) {
     try {
         auto serialize_start_time = std::chrono::high_resolution_clock::now();

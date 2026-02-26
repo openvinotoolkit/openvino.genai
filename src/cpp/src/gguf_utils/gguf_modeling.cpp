@@ -169,9 +169,7 @@ std::shared_ptr<ov::Model> create_from_gguf(const std::string& model_path,
         if (enable_save_ov_model){
             std::filesystem::path gguf_model_path(model_path);
             std::filesystem::path save_dir = gguf_model_path.parent_path() /
-                (save_ov_model_quantize_mode == ov::genai::OVModelQuantizeMode::GPU_OPTIMIZED 
-                    ? "ov_model_gpu_optimized" 
-                    : "ov_model_original");
+                ov::genai::utils::get_ov_model_subdir_name(save_ov_model_quantize_mode);
             std::filesystem::create_directories(save_dir);
             std::filesystem::path save_path = save_dir / "openvino_model.xml";
             ov::genai::utils::save_openvino_model(model, save_path.string(), true);
