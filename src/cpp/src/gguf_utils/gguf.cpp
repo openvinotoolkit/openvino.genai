@@ -449,6 +449,7 @@ void load_arrays(gguf_ctx* ctx,
                 biases_out =
                     ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});  // Match scales shape
 
+                // Row-wise Q8_0: block_size == shape[1], so n_elements / block_size == number of rows.
                 quantize_q8_0(fp32_data.data(), weights_out, scales_out, biases_out, n_elements, block_size);
             } else {
                 // Q4_0_128 format

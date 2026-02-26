@@ -358,6 +358,7 @@ void quantize_q4_0(const float* src,
 // Quantize FP32 weights to Q8_0 format (symmetric, 8-bit)
 // Algorithm: Find max absolute value in each block, map to [-128, 127] range
 // Output: U8 weights, FP16 scales, FP16 biases (replicated for building_blocks compatibility)
+// In GPU_OPTIMIZED usage, block_size == row width, so num_blocks equals row count.
 void quantize_q8_0(const float* src,
                    ov::Tensor& weights_out,
                    ov::Tensor& scales_out,
