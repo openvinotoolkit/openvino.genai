@@ -1,7 +1,10 @@
 #include "splitted_model_infer.hpp"
 
 #include <regex>
+
 #include "logger.hpp"
+#include "module_genai/utils/tensor_utils.hpp"
+#include "module_genai/utils/thread_helper.hpp"
 
 namespace ov::genai::module {
 
@@ -12,9 +15,18 @@ CSplittedModelInfer::CSplittedModelInfer(const std::string& model_path,
     : m_dynamic_load_model_weights(dynamic_load_model_weights),
       m_is_gpu(device.find("GPU") != std::string::npos || device.find("gpu") != std::string::npos),
       m_properties(properties) {
+#ifndef ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS
+    OPENVINO_ASSERT(!m_dynamic_load_model_weights,
+                    "Dynamic loading of model weights is not enabled in this build. Please set "
+                    "ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS to 1 and rebuild.");
+#endif
+
+    if (m_dynamic_load_model_weights) {
+        OPENVINO_ASSERT(m_is_gpu, "Dynamic loading of model weights is currently only supported for GPU device.");
+    }
     // parse all splitted model paths, model_path is the directory that contains all splitted models
     get_splitted_model_paths(model_path, device);
-    load_model(model_path, properties, device);
+    load_model(model_path, m_properties, device);
 }
 
 void CSplittedModelInfer::get_splitted_model_paths(const std::string& model_path, const std::string& device) {
@@ -40,7 +52,8 @@ void CSplittedModelInfer::get_splitted_model_paths(const std::string& model_path
                 continue;
             }
 
-            // check if the file name end with "_preprocess.xml" or "_postprocess.xml" for preprocess and postprocess model
+            // check if the file name end with "_preprocess.xml" or "_postprocess.xml" for preprocess and postprocess
+            // model
             if (filename.size() > 15 && filename.substr(filename.size() - 15) == "_preprocess.xml") {
                 m_preprocess_model_path = entry.path().string();
             } else if (filename.size() > 16 && filename.substr(filename.size() - 16) == "_postprocess.xml") {
@@ -73,7 +86,9 @@ void CSplittedModelInfer::get_splitted_model_paths(const std::string& model_path
                     "Both preprocessing (_preprocess.xml) and postprocessing (_postprocess.xml) models are required.");
 }
 
-void CSplittedModelInfer::load_model(const std::string& model_path, const ov::AnyMap& properties, const std::string& device) {
+void CSplittedModelInfer::load_model(const std::string& model_path,
+                                     const ov::AnyMap& properties,
+                                     const std::string& device) {
 #if USE_FULL_MODEL
 #else
     {
@@ -96,14 +111,30 @@ void CSplittedModelInfer::load_model(const std::string& model_path, const ov::An
         m_postprocess_infer_request = m_postprocess_compiled_model.create_infer_request();
     }
 
+    auto properties_splitted_model = properties;
     for (const auto& path : m_splitted_model_paths) {
         auto model = utils::singleton_core().read_model(path);
         if (m_is_gpu) {
-            m_compiled_models.push_back(utils::singleton_core().compile_model(model, m_context, properties));
+            if (m_dynamic_load_model_weights) {
+                properties_splitted_model[ov::weights_path.name()] =
+                    std::filesystem::path(path).replace_extension(".bin").string();
+                auto cm = utils::singleton_core().compile_model(model, m_context, properties_splitted_model);
+#    ifdef ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS
+                // Release model weights after compilation to save GPU memory. Load weights again in infer() when
+                // weights are needed.
+                cm.release_model_weights();
+#    endif
+                m_compiled_models.push_back(std::move(cm));
+            } else {
+                m_compiled_models.push_back(
+                    utils::singleton_core().compile_model(model, m_context, properties_splitted_model));
+                m_infer_requests.push_back(m_compiled_models.back().create_infer_request());
+            }
         } else {
-            m_compiled_models.push_back(utils::singleton_core().compile_model(model, device, properties));
+            m_compiled_models.push_back(
+                utils::singleton_core().compile_model(model, device, properties_splitted_model));
+            m_infer_requests.push_back(m_compiled_models.back().create_infer_request());
         }
-        m_infer_requests.push_back(m_compiled_models.back().create_infer_request());
     }
 #endif
 }
@@ -128,6 +159,24 @@ void CSplittedModelInfer::infer(const ov::AnyMap& inputs) {
 
     m_full_infer_request.infer();
 #else
+    int num_splitted_models = static_cast<int>(m_compiled_models.size());
+    OPENVINO_ASSERT(num_splitted_models > 1,
+                    "Splitted models should be at least 2, but got " + std::to_string(num_splitted_models));
+
+#    ifdef ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS
+#        if ENABLE_MULTIPLE_THREAD_LOAD_MODEL_WEIGHT
+    std::future<bool> future_flag;
+    if (m_dynamic_load_model_weights) {
+        future_flag = std::move(thread_utils::load_model_weights_async(m_compiled_models[0]));
+    }
+#        else   // ENABLE_MULTIPLE_THREAD_LOAD_MODEL_WEIGHT
+    if (m_dynamic_load_model_weights) {
+        PROFILE(pm, "load_model_weights");
+        m_compiled_models[0].load_model_weights();
+    }
+#        endif  // ENABLE_MULTIPLE_THREAD_LOAD_MODEL_WEIGHT
+#    endif      // ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS
+
     // Preprocess
     for (const auto& input : inputs) {
         m_preprocess_infer_request.set_tensor(input.first, input.second.as<ov::Tensor>());
@@ -155,17 +204,64 @@ void CSplittedModelInfer::infer(const ov::AnyMap& inputs) {
     ov::Tensor ppw_tensor = m_preprocess_infer_request.get_tensor("ppw");
 
     // Splitted models
-    for (size_t i = 0; i < m_infer_requests.size(); ++i) {
-        m_infer_requests[i].set_output_tensor(0, hidden_states_tensor);
-        m_infer_requests[i].set_tensor("hidden_states", hidden_states_tensor);
-        m_infer_requests[i].set_tensor("text_embeds", text_embeds_tensor);
-        m_infer_requests[i].set_tensor("timestep_proj", timestep_proj_tensor);
-        m_infer_requests[i].set_tensor("rotary_cos", rotary_cos_tensor);
-        m_infer_requests[i].set_tensor("rotary_sin", rotary_sin_tensor);
-        m_infer_requests[i].infer();
+    std::future<bool> next_future_flag;
+    for (int i = 0; i < num_splitted_models; ++i) {
+        PROFILE(pm, "splitted_model_infer_" + std::to_string(i));
+        ov::InferRequest curInferRequest;
+        if (m_dynamic_load_model_weights) {
+#    ifdef ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS
+            if (i + 1 < num_splitted_models) {
+#        if ENABLE_MULTIPLE_THREAD_LOAD_MODEL_WEIGHT
+                next_future_flag = thread_utils::load_model_weights_async(m_compiled_models[i + 1]);
+#        else
+                m_compiled_models[i + 1].load_model_weights();
+#        endif  // ENABLE_MULTIPLE_THREAD_LOAD_MODEL_WEIGHT
+            }
+#        if ENABLE_MULTIPLE_THREAD_LOAD_MODEL_WEIGHT
+            if (future_flag.valid())
+                future_flag.wait();
+#        endif  // ENABLE_MULTIPLE_THREAD_LOAD_MODEL_WEIGHT
+            curInferRequest = m_compiled_models[i].create_infer_request();
+#    endif      // ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS
+        } else {
+            curInferRequest = m_infer_requests[i];
+        }
+
+        curInferRequest.set_output_tensor(0, hidden_states_tensor);
+        curInferRequest.set_tensor("hidden_states", hidden_states_tensor);
+        curInferRequest.set_tensor("text_embeds", text_embeds_tensor);
+        curInferRequest.set_tensor("timestep_proj", timestep_proj_tensor);
+        curInferRequest.set_tensor("rotary_cos", rotary_cos_tensor);
+        curInferRequest.set_tensor("rotary_sin", rotary_sin_tensor);
+        {
+            PROFILE(pmi, "infer");
+            curInferRequest.infer();
+        }
+
+#    ifdef ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS
+        if (m_dynamic_load_model_weights) {
+#        if ENABLE_MULTIPLE_THREAD_LOAD_MODEL_WEIGHT
+            auto release_future =
+                thread_utils::release_model_weights_async(m_compiled_models[i], std::move(curInferRequest));
+            if (release_future.valid()) {
+                release_future.wait();
+            }
+#        else
+            curInferRequest = ov::InferRequest();  // release infer request before releasing model weights to ensure the
+                                                   // model weights can be released successfully.
+            m_compiled_models[i].release_model_weights();
+#        endif
+        }
+
+#        if ENABLE_MULTIPLE_THREAD_LOAD_MODEL_WEIGHT
+        future_flag = std::move(next_future_flag);
+#        endif
+#    endif  // ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS
     }
 
-    GENAI_DEBUG("hidden_states_tensor is remote tensor: " + std::to_string(hidden_states_tensor.is<ov::RemoteTensor>()));
+    GENAI_DEBUG(
+        "hidden_states_tensor is remote tensor: " + std::to_string(hidden_states_tensor.is<ov::RemoteTensor>()) +
+        ", shape:" + tensor_utils::shape_to_string(hidden_states_tensor.get_shape()));
 
     // Postprocess
     m_postprocess_infer_request.set_tensor("hidden_states", hidden_states_tensor);

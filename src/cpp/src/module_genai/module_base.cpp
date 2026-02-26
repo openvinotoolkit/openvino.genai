@@ -146,6 +146,24 @@ void IBaseModule::check_splitted_model() {
     }
 }
 
+bool IBaseModule::check_bool_param(const std::string& param_name, const bool& default_value) {
+    auto p = get_optional_param(param_name);
+    if (p.empty()) {
+        return default_value;
+    }
+
+    if (p == "true" || p == "True" || p == "TRUE" || p == "1") {
+        GENAI_INFO("Module[" + module_desc->name + "]: " + param_name + " = true");
+        return true;
+    } else if (p == "false" || p == "False" || p == "FALSE" || p == "0") {
+        GENAI_INFO("Module[" + module_desc->name + "]: " + param_name + " = false");
+        return false;
+    }
+    GENAI_ERR("Module[" + module_desc->name + "]: Invalid bool param value for '" + param_name + "': " + p +
+              ", use default value: " + (default_value ? "true" : "false"));
+    return default_value;
+}
+
 // PipelineDesc implementation
 PipelineDesc::PipelineDesc() : m_resource_cache(std::make_unique<PipelineResourceCache>()) {}
 

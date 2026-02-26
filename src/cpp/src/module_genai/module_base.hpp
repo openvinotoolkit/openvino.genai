@@ -76,6 +76,8 @@ protected:
     bool m_splitted_model = false;
     void check_splitted_model();
 
+    bool check_bool_param(const std::string& param_name, const bool& default_value);
+
     // Initialize ov::Model from config models_map with param_name: "ov_model"
     void init_ov_model();
 };

@@ -1,2 +1,3 @@
 dumped*.yaml
 profile*.json
+unittest_cache_dir_*

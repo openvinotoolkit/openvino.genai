@@ -14,6 +14,7 @@ struct DenoiserLoopTestData {
     ov::genai::DiffusionModelType model_type;
     std::string model_path;
     bool splitted_model = false;
+    bool dynamic_load_model_weights = false;
     ov::Tensor latents;
     ov::Tensor prompt_embed;
     ov::Tensor negative_prompt_embed;
@@ -52,9 +53,18 @@ std::vector<DenoiserLoopTestData> denoiser_loop_test_data() {
     };
     datas.push_back(wan_data);
 
+    // Split model for Wan
     DenoiserLoopTestData wan_data_splitted_model = wan_data;
     wan_data_splitted_model.splitted_model = true;
     datas.push_back(wan_data_splitted_model);
+
+#ifdef ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS
+    // Dynamic load weights for Split model
+    DenoiserLoopTestData wan_data_dyn_weights = wan_data;
+    wan_data_dyn_weights.splitted_model = true;
+    wan_data_dyn_weights.dynamic_load_model_weights = true;
+    datas.push_back(wan_data_dyn_weights);
+#endif
     return datas;
 }
 
@@ -77,12 +87,18 @@ public:
         result = std::regex_replace(diffusion_model_type_to_string(test_data.model_type), std::regex("\\."), "_");
         result = result + "_" + device;
         result = result + "_SplittedModel_" + (test_data.splitted_model ? "true" : "false");
+        result = result + "_DynamicLoadWeights_" + (test_data.dynamic_load_model_weights ? "true" : "false");
         return result;
     }
 
     void SetUp() override {
         REGISTER_TEST_NAME();
         std::tie(m_test_data, m_device) = GetParam();
+
+        bool is_gpu = m_device.find("GPU") != std::string::npos || m_device.find("gpu") != std::string::npos;
+        if (!is_gpu && m_test_data.dynamic_load_model_weights) {
+            GTEST_SKIP() << "dynamic_load_model_weights is only supported for GPU device.";
+        }
     }
 
     void TearDown() override {}
@@ -122,6 +138,10 @@ protected:
         YAML::Node params;
         params["model_path"] = m_test_data.model_path;
         params["splitted_model"] = m_test_data.splitted_model ? "true" : "false";
+        params["dynamic_load_weights"] = m_test_data.dynamic_load_model_weights ? "true" : "false";
+        if (m_test_data.dynamic_load_model_weights) {
+            params["cache_dir"] = "./unittest_cache_dir_denoiserloop";
+        }
         denoiser_loop["params"] = params;
         pipeline_modules["denoiser_loop"] = denoiser_loop;
         return YAML::Dump(config);

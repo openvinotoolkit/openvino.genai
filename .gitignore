@@ -45,3 +45,11 @@ __pycache__
 _codeql_detected_source_root
 install
 *.avi
+
+# Module-GenAI generated files
+dumped_*.yaml
+generated_*.bmp
+samples/python/module_genai/*.sh
+tests/module_genai/cpp/*.sh
+tests/module_genai/cpp/*.yaml
+tests/module_genai/cpp/test_data/*.json
