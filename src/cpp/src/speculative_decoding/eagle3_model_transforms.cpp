@@ -122,13 +122,12 @@ void share_vocabulary(const std::shared_ptr<ov::Model>& main_model, const std::s
         clone_node_recursive =
             [&](const std::shared_ptr<ov::Node>& node,
                 std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>>& cloned_nodes) -> std::shared_ptr<ov::Node> {
-        // Check if already cloned
+
         auto it = cloned_nodes.find(node.get());
         if (it != cloned_nodes.end()) {
             return it->second;
         }
 
-        // Clone this node
         std::shared_ptr<ov::Node> cloned;
 
         if (auto constant = ov::as_type_ptr<ov::op::v0::Constant>(node)) {
@@ -161,7 +160,7 @@ void share_vocabulary(const std::shared_ptr<ov::Model>& main_model, const std::s
                     "This is required for Eagle3 speculative decoding.");
 
     // Replace draft model's weight node with the cloned subgraph
-    // This ensures no cross-model references while achieving weight sharing
+    // This avoids cross-model references by duplicating the vocabulary weights
     draft_weight_node->output(0).replace(cloned_weight_node->output(0));
 }
 
