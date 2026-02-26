@@ -1,24 +1,43 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
-numpy
+numpy==1.26.4; platform_system == "Darwin" and platform_machine == "x86_64"
+numpy>=1.16.6,<=2.4.2; platform_system != "Darwin" or platform_machine != "x86_64"
 --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly
 openvino
 openvino-tokenizers
 openvino_genai
-pillow
-torch
-transformers[sentencepiece]>=4.40.0
-diffusers>=0.22.0
-#optimum is in dependency list of optimum-intel
-optimum-intel[nncf]>=1.25.0
-packaging
+# Image processing for VLMs
+pillow==12.1.1
+torch>=2.1.0,<=2.10
+transformers[sentencepiece]>=4.40.0,<=4.57.0
+diffusers>=0.22.0,<=0.36.0
+# optimum is in dependency list of optimum-intel
+optimum-intel[nncf]>=1.25.0,<=1.27.0
+packaging>=20.0,<=26.0
 psutil
-timm
-tiktoken
-librosa # For Whisper
-matplotlib
-jinja2>=3.1.0
-scipy
-gguf_parser
-gguf>=0.10
-num2words
-opencv-python
+timm==1.0.24
+tiktoken>=0.3.0,<=0.12.0
+librosa==0.11.0 # For Whisper
+matplotlib>=3.3.4,<=3.10.8
+jinja2>=3.1.0,<=3.1.6
+# For text_rerank model types
+scipy>=1.3.2,<=1.17.1
+gguf_parser==0.1.1
+gguf>=0.10,<=0.17.1
+# For smolvlm2-256m-video-instruct model
+num2words==0.5.14
+# For video-to-text VLM sample
+opencv-python<=4.13.0.92
+# For Qwen
+bitsandbytes==0.49.2
+transformers_stream_generator==0.0.5
+einops==0.8.2
+# For microsoft/Phi-3.5-vision-instruct
+backoff==2.2.1
+# For openbmb/MiniCPM-o-2_6
+# Please, be advised that MiniCPM-o-2_6 requires transformers>=4.50,<=4.51.3
+vector-quantize-pytorch==1.27.20
+vocos==0.1.0
+torchaudio>=2.1.0,<=2.10.0
+torchcodec==0.7.0; sys_platform == "linux"
+torchvision>=0.16,<=0.25.0
+soundfile==0.13.1

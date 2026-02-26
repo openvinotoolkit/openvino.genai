@@ -254,3 +254,8 @@ def parquet_generate_tables(self, files, *args, **kwargs):
                 logger.warning(f"Skipping bad file '{file}'. {type(e).__name__}: {e}`")
             else:
                 logger.warning(f"Skipping bad file '{file}'. {type(e).__name__}: {e}`")
+
+
+def disable_diffusers_model_progress_bar(model):
+    if hasattr(model, "set_progress_bar_config"):
+        model.set_progress_bar_config(disable=True)
