@@ -8,10 +8,13 @@ import { WhisperPipeline, StreamingStatus } from "../dist/index.js";
 import { createTestRawSpeech } from "./utils.js";
 import { WhisperPipeline as WhisperPipelineClass } from "../dist/pipelines/whisperPipeline.js";
 
-const WHISPER_MODEL_PATH =
-  process.env.WHISPER_MODEL_PATH ||
-  resolve("/opt/home/ksuvorov/git/openvino.genai/ov_cache/test_models", "whisper-tiny-int8");
+const { WHISPER_MODEL_PATH } = process.env;
 
+if (!WHISPER_MODEL_PATH) {
+  throw new Error(
+    "Environment variable WHISPER_MODEL_PATH must be set to the Whisper model directory for tests.",
+  );
+}
 describe("WhisperPipeline creation", () => {
   it("WhisperPipeline(modelPath, device) creates and initializes pipeline", async () => {
     const pipeline = await WhisperPipeline(WHISPER_MODEL_PATH, "CPU");

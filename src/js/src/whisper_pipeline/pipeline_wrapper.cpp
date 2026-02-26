@@ -34,7 +34,7 @@ void whisperPerformInferenceThread(WhisperTsfnContext* context) {
             try {
                 js_callback.Call(
                     {Napi::Error::New(env, "whisperPerformInferenceThread error. " + message).Value(), env.Null()});
-            } catch (std::exception& err) {
+            } catch (const std::exception& err) {
                 std::cerr
                     << "The callback failed when attempting to return an error from whisperPerformInferenceThread. "
                        "Details:\n"

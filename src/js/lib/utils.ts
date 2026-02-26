@@ -303,13 +303,6 @@ export type CDPrunerGenerationConfig = {
   relevance_weight?: number;
 };
 
-export type CDPrunerGenerationConfig = {
-  /** the percentage of visual tokens to prune [0-100). Set to 0 to disable pruning. */
-  pruning_ratio?: number;
-  /** the weight of relevance for visual tokens. */
-  relevance_weight?: number;
-};
-
 export type GenericGenerationConfig = {
   // adapters?: AdapterConfig | None
   /** if set to true, the model will echo the prompt in the output. */
@@ -372,7 +365,6 @@ export type ParserGenerationConfig = {
 export type GenerationConfig = GenericGenerationConfig &
   BeamSearchGenerationConfig &
   RandomSamplingsGenerationConfig &
-  CDPrunerGenerationConfig &
   CDPrunerGenerationConfig &
   AssistingGenerationConfig &
   StructuredOutputGenerationConfig &
