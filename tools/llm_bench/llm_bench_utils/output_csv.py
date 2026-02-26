@@ -19,15 +19,17 @@ def output_comments(result, use_case, writer):
         comment_list.append('input_size: Input token size')
         comment_list.append('output_size: Text/Code generation models: generated text token size')
         comment_list.append("infer_count: Limit the Text/Code generation models' output token size")
-        comment_list.append('latency: Text/Code generation models: ms/token. Output token size / generation time')
-        comment_list.append('1st_latency: Text/Code generation models: First token latency')
-        comment_list.append('2nd_avg_latency: Text/Code generation models: Other tokens (exclude first token) latency')
-        comment_list.append('1st_infer_latency: Text/Code generation models: First inference latency')
-        comment_list.append('2nd_infer_avg_latency: Text/Code generation models: Other inferences (exclude first inference) latency')
-        comment_list.append('result_md5: MD5 of generated text')
-        comment_list.append('prompt_idx: Index of prompts')
-        comment_list.append('chat_idx: Index of chats')
-    elif use_case == 'image_gen':
+        comment_list.append("latency: Text/Code generation models: ms/token. Output token size / generation time")
+        comment_list.append("1st_latency: Text/Code generation models: First token latency")
+        comment_list.append("2nd_avg_latency: Text/Code generation models: Other tokens (exclude first token) latency")
+        comment_list.append("1st_infer_latency: Text/Code generation models: First inference latency")
+        comment_list.append(
+            "2nd_infer_avg_latency: Text/Code generation models: Other inferences (exclude first inference) latency"
+        )
+        comment_list.append("result_md5: MD5 of generated text")
+        comment_list.append("prompt_idx: Index of prompts")
+        comment_list.append("chat_idx: Index of chats")
+    elif use_case == "image_gen":
         comment_list.append("infer_count: Tex2Image models' Inference(or Sampling) step size")
         comment_list.append('1st_latency: First step latency of unet')
         comment_list.append('2nd_avg_latency: Other steps latency of unet(exclude first step)')
@@ -141,16 +143,23 @@ def gen_data_to_csv(
     if other_token_infer_latency < 0:
         result['2nd_infer_avg_latency(ms)'] = 'NA'
     else:
-        result['2nd_infer_avg_latency(ms)'] = round(other_token_infer_latency, 5) if other_token_infer_latency != '' else other_token_infer_latency
-    result[f'max_rss_mem({mem_unit.value})'] = round(rss_mem, 5) if rss_mem != '' else rss_mem
-    result[f'max_sys_mem({mem_unit.value})'] = round(sys_mem, 5) if sys_mem != '' else sys_mem
-    result[f'max_increase_rss_mem({mem_unit.value})'] = round(rss_mem_increase, 5) if rss_mem_increase != '' else rss_mem_increase
-    result[f'max_increase_sys_mem({mem_unit.value})'] = round(sys_mem_increase, 5) if sys_mem_increase != '' else sys_mem_increase
-    result['prompt_idx'] = iter_data['prompt_idx']
-    result['chat_idx'] = iter_data['chat_idx']
-    result['tokenization_time'] = round(token_time, 5) if token_time != '' else token_time
-    result['detokenization_time'] = round(detoken_time, 5) if detoken_time != '' else detoken_time
-    result['start'], result['end'] = output_json.get_timestamp(iter_data['iteration'], iter_data['prompt_idx'], iter_timestamp)
+        result["2nd_infer_avg_latency(ms)"] = (
+            round(other_token_infer_latency, 5) if other_token_infer_latency != "" else other_token_infer_latency
+        )
+    result[f"max_rss_mem({mem_unit.value})"] = round(rss_mem, 5) if rss_mem != "" else rss_mem
+    result[f"max_sys_mem({mem_unit.value})"] = round(sys_mem, 5) if sys_mem != "" else sys_mem
+    result[f"max_increase_rss_mem({mem_unit.value})"] = (
+        round(rss_mem_increase, 5) if rss_mem_increase != "" else rss_mem_increase
+    )
+    result[f"max_increase_sys_mem({mem_unit.value})"] = (
+        round(sys_mem_increase, 5) if sys_mem_increase != "" else sys_mem_increase
+    )
+    result["prompt_idx"] = iter_data["prompt_idx"]
+    result["chat_idx"] = iter_data["chat_idx"]
+    result["tokenization_time"] = round(token_time, 5) if token_time != "" else token_time
+    result["detokenization_time"] = round(detoken_time, 5) if detoken_time != "" else detoken_time
+    input_idx = iter_data["chat_idx"] if iter_data["chat_idx"] != "" else iter_data["prompt_idx"]
+    result["start"], result["end"] = output_json.get_timestamp(iter_data["iteration"], input_idx, iter_timestamp)
     result = result | output_json.get_pre_gen_memory_data(memory_data_collector, print_unit=mem_unit)
 
 
@@ -170,40 +179,40 @@ def write_result(
     if memory_data_collector.mth:
         mem_unit = memory_data_collector.mth.memory_unit
     header = [
-        'iteration',
-        'model',
-        'framework',
-        'device',
-        'pretrain_time(s)',
-        f'initial_sys_mem({mem_unit.value})',
-        f'initial_rss_mem({mem_unit.value})',
-        f'compile_max_rss_mem({mem_unit.value})',
-        f'compile_max_sys_mem({mem_unit.value})',
-        f'compile_max_increase_rss_mem({mem_unit.value})',
-        f'compile_max_increase_sys_mem({mem_unit.value})',
-        'input_size',
-        'infer_count',
-        'generation_time(s)',
-        'output_size',
-        'latency(ms)',
-        '1st_latency(ms)',
-        '2nd_avg_latency(ms)',
-        'precision',
-        f'max_rss_mem({mem_unit.value})',
-        f'max_sys_mem({mem_unit.value})',
-        f'max_increase_rss_mem({mem_unit.value})',
-        f'max_increase_sys_mem({mem_unit.value})',
-        'prompt_idx',
-        'chat_idx',
-        '1st_infer_latency(ms)',
-        '2nd_infer_avg_latency(ms)',
-        'num_beams',
-        'batch_size',
-        'tokenization_time',
-        'detokenization_time',
-        'result_md5',
-        'start',
-        'end'
+        "iteration",
+        "model",
+        "framework",
+        "device",
+        "pretrain_time(s)",
+        f"initial_sys_mem({mem_unit.value})",
+        f"initial_rss_mem({mem_unit.value})",
+        f"compile_max_rss_mem({mem_unit.value})",
+        f"compile_max_sys_mem({mem_unit.value})",
+        f"compile_max_increase_rss_mem({mem_unit.value})",
+        f"compile_max_increase_sys_mem({mem_unit.value})",
+        "input_size",
+        "infer_count",
+        "generation_time(s)",
+        "output_size",
+        "latency(ms)",
+        "1st_latency(ms)",
+        "2nd_avg_latency(ms)",
+        "precision",
+        f"max_rss_mem({mem_unit.value})",
+        f"max_sys_mem({mem_unit.value})",
+        f"max_increase_rss_mem({mem_unit.value})",
+        f"max_increase_sys_mem({mem_unit.value})",
+        "prompt_idx",
+        "chat_idx",
+        "1st_infer_latency(ms)",
+        "2nd_infer_avg_latency(ms)",
+        "num_beams",
+        "batch_size",
+        "tokenization_time",
+        "detokenization_time",
+        "result_md5",
+        "start",
+        "end",
     ]
     out_file = Path(report_file)
 

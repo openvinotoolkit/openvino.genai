@@ -106,20 +106,21 @@ def extract_prompt_data(inputs, required_frames, genai_flag):
             input_videos = input_data["video"]
             if not isinstance(input_data["video"], (list, tuple, set)):
                 input_videos = [input_data["video"]]
-            input_videos_tensors = []
             for video in input_videos:
-                entry = Path(video)
-                if entry.is_dir():
-                    for filename in sorted(entry.iterdir()):
-                        video_tensor = make_video_tensor(filename, required_frames, genai_flag)
+                input_videos_tensors = []
+                if video:
+                    entry = Path(video)
+                    if entry.is_dir():
+                        for filename in sorted(entry.iterdir()):
+                            video_tensor = make_video_tensor(filename, required_frames, genai_flag)
+                            input_videos_tensors.append(video_tensor)
+                    else:
+                        video_tensor = make_video_tensor(entry, required_frames, genai_flag)
                         input_videos_tensors.append(video_tensor)
+                if isinstance(input_data["video"], (list, tuple, set)):
+                    videos.append(input_videos_tensors)
                 else:
-                    video_tensor = make_video_tensor(entry, required_frames, genai_flag)
-                    input_videos_tensors.append(video_tensor)
-            if isinstance(input_data["video"], (list, tuple, set)):
-                videos.append(input_videos_tensors)
-            else:
-                videos.extend(input_videos_tensors)
+                    videos.extend(input_videos_tensors)
         if input_data.get("media") is not None:
             input_medias = input_data["media"]
             if not isinstance(input_data["media"], (list, tuple, set)):
@@ -127,14 +128,15 @@ def extract_prompt_data(inputs, required_frames, genai_flag):
             func_load_image = load_image_genai if genai_flag else load_image
             for media in input_medias:
                 input_medias_tensors = []
-                entry = Path(media)
-                if entry.is_dir():
-                    for file in sorted(entry.iterdir()):
-                        img = func_load_image(str(file))
+                if media:
+                    entry = Path(media)
+                    if entry.is_dir():
+                        for file in sorted(entry.iterdir()):
+                            img = func_load_image(str(file))
+                            input_medias_tensors.append(img)
+                    else:
+                        img = func_load_image(media)
                         input_medias_tensors.append(img)
-                else:
-                    img = func_load_image(media)
-                    input_medias_tensors.append(img)
                 if isinstance(input_data["media"], (list, tuple, set)):
                     images.append(input_medias_tensors)
                 else:
@@ -150,7 +152,7 @@ def get_vlm_prompt(args):
         vlm_param_list = parse_vlm_json_data(output_data_list)
         if len(vlm_param_list) > 0:
             for vlm_file in vlm_param_list:
-                if args['prompt_file'] is None or len(args['prompt_file']) == 0:
+                if args["prompt_file"] is None or len(args["prompt_file"]) == 0:
                     continue
                 # media/video content can be set as string for the question mode
                 # and as list of string for the chat mode.
@@ -160,12 +162,14 @@ def get_vlm_prompt(args):
                     if visual_input in vlm_file:
                         input_data = vlm_file.get(visual_input)
                         if isinstance(input_data, list):
-                            vlm_file[visual_input] = [resolve_media_file_path(data, args['prompt_file'][0]) for data in input_data]
+                            vlm_file[visual_input] = [
+                                resolve_media_file_path(data, args["prompt_file"][0]) for data in input_data
+                            ]
                         else:
-                            vlm_file[visual_input] = resolve_media_file_path(input_data, args['prompt_file'][0])
+                            vlm_file[visual_input] = resolve_media_file_path(input_data, args["prompt_file"][0])
                 vlm_file_list.append(vlm_file)
     else:
-        vlm_file_list.append(output_data_list)
+        vlm_file_list = output_data_list
     return vlm_file_list
 
 
