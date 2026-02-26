@@ -45,6 +45,19 @@ describe("LLMPipeline initialization", () => {
 
     await assert.rejects(pipeline.generate("prompt"), /LLMPipeline is not initialized/);
   });
+
+  it("getGenerationConfig throws if pipeline not initialized", () => {
+    const uninitPipeline = new LLM(LLM_PATH, "CPU");
+    assert.throws(() => uninitPipeline.getGenerationConfig(), /LLMPipeline is not initialized/);
+  });
+
+  it("setGenerationConfig throws if pipeline not initialized", () => {
+    const uninitPipeline = new LLM(LLM_PATH, "CPU");
+    assert.throws(
+      () => uninitPipeline.setGenerationConfig({ max_new_tokens: 10 }),
+      /LLMPipeline is not initialized/,
+    );
+  });
 });
 
 describe("General LLM test", () => {
@@ -69,6 +82,24 @@ describe("General LLM test", () => {
     it("should include tokenizer", async () => {
       const tokenizer = pipeline.getTokenizer();
       assert.strictEqual(typeof tokenizer, "object");
+    });
+
+    it("getGenerationConfig returns object with expected fields", async () => {
+      const config = pipeline.getGenerationConfig();
+      const result = await pipeline.generate("What is OpenVINO?", { ...config, max_new_tokens: 5 });
+      assert.strictEqual(result.texts.length, 1);
+    });
+
+    it("setGenerationConfig updates config, getGenerationConfig returns updated values", async () => {
+      const original = pipeline.getGenerationConfig();
+      const originalMaxNewTokens = original.max_new_tokens;
+      const config = { ...original, max_new_tokens: 5 };
+      pipeline.setGenerationConfig(config);
+      const newConfig = pipeline.getGenerationConfig();
+      assert.deepEqual(config, newConfig);
+      assert.notEqual(newConfig.max_new_tokens, originalMaxNewTokens);
+      const result = await pipeline.generate("What is OpenVINO?", newConfig);
+      assert.strictEqual(result.texts.length, 1);
     });
 
     it("should throw an error if pipeline is already initialized", async () => {
