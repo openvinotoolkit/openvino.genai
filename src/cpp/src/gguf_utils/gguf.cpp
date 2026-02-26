@@ -440,9 +440,9 @@ void load_arrays(gguf_ctx* ctx,
             if (use_q8_0) {
                 // Q8_0_C: channel-wise scale (per output channel), symmetric quant (biases replicated for compat)
                 OPENVINO_ASSERT(shape[1] > 0, "[load_gguf] Expected shape[1] > 0 for Q8_0_C requantization");
-                OPENVINO_ASSERT(shape[1] % 4 == 0,
-                                "[load_gguf] Expected shape[1] to be divisible by 4 for Q8_0_C packing, got ",
-                                shape[1]);
+                OPENVINO_ASSERT(block_size % 4 == 0,
+                                "[load_gguf] quantize_q8_0 requires block_size divisible by 4, got ",
+                                block_size);
                 size_t num_blocks_per_row = shape[1] / block_size;  // Should be 1 for channel-wise
                 weights_out = ov::Tensor(ov::element::u32, ov::Shape{shape[0], shape[1] / 4});  // 4 u8 packed per u32
                 scales_out = ov::Tensor(ov::element::f16, ov::Shape{shape[0], num_blocks_per_row});
