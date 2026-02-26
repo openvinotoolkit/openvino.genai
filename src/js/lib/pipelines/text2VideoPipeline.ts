@@ -58,11 +58,7 @@ export class Text2VideoPipeline {
    * @param device - Inference device (e.g. "CPU", "GPU").
    * @param properties - Additional device/pipeline properties.
    */
-  constructor(
-    modelPath: string,
-    device: string,
-    properties: Record<string, unknown> = {},
-  ) {
+  constructor(modelPath: string, device: string, properties: Record<string, unknown> = {}) {
     this.modelPath = modelPath;
     this.device = device;
     this.properties = properties;
@@ -91,8 +87,7 @@ export class Text2VideoPipeline {
     prompt: string,
     options: Text2VideoGenerateOptions = {},
   ): Promise<Text2VideoResult> {
-    if (!this.pipeline)
-      throw new Error("Text2VideoPipeline is not initialized");
+    if (!this.pipeline) throw new Error("Text2VideoPipeline is not initialized");
 
     const properties: Record<string, unknown> = {};
 
@@ -100,26 +95,20 @@ export class Text2VideoPipeline {
       properties["negative_prompt"] = options.negative_prompt;
     if (options.height !== undefined) properties["height"] = options.height;
     if (options.width !== undefined) properties["width"] = options.width;
-    if (options.num_frames !== undefined)
-      properties["num_frames"] = options.num_frames;
+    if (options.num_frames !== undefined) properties["num_frames"] = options.num_frames;
     if (options.num_inference_steps !== undefined)
       properties["num_inference_steps"] = options.num_inference_steps;
-    if (options.guidance_scale !== undefined)
-      properties["guidance_scale"] = options.guidance_scale;
-    if (options.frame_rate !== undefined)
-      properties["frame_rate"] = options.frame_rate;
+    if (options.guidance_scale !== undefined) properties["guidance_scale"] = options.guidance_scale;
+    if (options.frame_rate !== undefined) properties["frame_rate"] = options.frame_rate;
     if (options.num_videos_per_prompt !== undefined)
       properties["num_videos_per_prompt"] = options.num_videos_per_prompt;
     if (options.max_sequence_length !== undefined)
       properties["max_sequence_length"] = options.max_sequence_length;
     if (options.guidance_rescale !== undefined)
       properties["guidance_rescale"] = options.guidance_rescale;
-    if (options.callback !== undefined)
-      properties["callback"] = options.callback;
+    if (options.callback !== undefined) properties["callback"] = options.callback;
 
-    const innerGenerate = util.promisify(
-      this.pipeline.generate.bind(this.pipeline),
-    );
+    const innerGenerate = util.promisify(this.pipeline.generate.bind(this.pipeline));
     return await innerGenerate(prompt, properties);
   }
 
@@ -128,8 +117,7 @@ export class Text2VideoPipeline {
    * @returns The current generation config.
    */
   getGenerationConfig(): VideoGenerationConfig {
-    if (!this.pipeline)
-      throw new Error("Text2VideoPipeline is not initialized");
+    if (!this.pipeline) throw new Error("Text2VideoPipeline is not initialized");
     return this.pipeline.getGenerationConfig() as VideoGenerationConfig;
   }
 
@@ -138,8 +126,7 @@ export class Text2VideoPipeline {
    * @param config - Generation configuration parameters to set.
    */
   setGenerationConfig(config: VideoGenerationConfig): void {
-    if (!this.pipeline)
-      throw new Error("Text2VideoPipeline is not initialized");
+    if (!this.pipeline) throw new Error("Text2VideoPipeline is not initialized");
     this.pipeline.setGenerationConfig(config);
   }
 }

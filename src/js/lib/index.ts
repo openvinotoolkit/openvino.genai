@@ -72,8 +72,13 @@ class PipelineFactory {
   }
 }
 
-export const { LLMPipeline, VLMPipeline, Text2VideoPipeline, TextEmbeddingPipeline, TextRerankPipeline } =
-  PipelineFactory;
+export const {
+  LLMPipeline,
+  VLMPipeline,
+  Text2VideoPipeline,
+  TextEmbeddingPipeline,
+  TextRerankPipeline,
+} = PipelineFactory;
 export { DecodedResults, VLMDecodedResults } from "./decodedResults.js";
 export { PerfMetrics, VLMPerfMetrics } from "./perfMetrics.js";
 export type {
