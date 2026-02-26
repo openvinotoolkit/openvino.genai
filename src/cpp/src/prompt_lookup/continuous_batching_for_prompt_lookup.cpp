@@ -3,8 +3,6 @@
 
 #include "continuous_batching_for_prompt_lookup.hpp"
 
-#include "logger.hpp"
-
 namespace ov::genai {
 
 const int64_t PADDING_TOKEN_ID = -1;
