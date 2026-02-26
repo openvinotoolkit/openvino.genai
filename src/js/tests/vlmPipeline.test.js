@@ -163,4 +163,24 @@ describe("VLMPipeline", { skip: process.platform === "darwin" }, () => {
     );
     assert.ok(result.texts.length > 0, "Should generate some output");
   });
+
+  it("getGenerationConfig returns object with expected fields", async () => {
+    const config = pipeline.getGenerationConfig();
+    const result = await pipeline.generate("What is OpenVINO?", {
+      generationConfig: { ...config, max_new_tokens: 5 },
+    });
+    assert.strictEqual(result.texts.length, 1);
+  });
+
+  it("setGenerationConfig updates config, getGenerationConfig returns updated values", async () => {
+    const original = pipeline.getGenerationConfig();
+    const originalMaxNewTokens = original.max_new_tokens;
+    const config = { ...original, max_new_tokens: 5 };
+    pipeline.setGenerationConfig(config);
+    const newConfig = pipeline.getGenerationConfig();
+    assert.deepEqual(config, newConfig);
+    assert.notEqual(newConfig.max_new_tokens, originalMaxNewTokens);
+    const result = await pipeline.generate("What is OpenVINO?", { generationConfig: newConfig });
+    assert.strictEqual(result.texts.length, 1);
+  });
 });
