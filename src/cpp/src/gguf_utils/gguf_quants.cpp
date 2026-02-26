@@ -335,7 +335,8 @@ void quantize_q4_0(const float* src,
                 float x0 = src[idx0] * id;
                 float x1 = src[idx1] * id;
 
-                // Clamp to [0, 15] range (4-bit)
+                // Q4_0 uses zero-point 8 with +0.5 rounding bias: x + 8.5f == x + 8.0f + 0.5f.
+                // Clamp to [0, 15] because values are stored in 4-bit unsigned integers.
                 uint8_t q0 = static_cast<uint8_t>(std::clamp(static_cast<int>(x0 + 8.5f), 0, 15));
                 uint8_t q1 = static_cast<uint8_t>(std::clamp(static_cast<int>(x1 + 8.5f), 0, 15));
 
