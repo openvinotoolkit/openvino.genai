@@ -273,12 +273,6 @@ void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
 // Quantization Functions (for requantization during GGUF load)
 // ====================================================================
 
-// Use gguflib's FP16 conversion functions
-extern "C" {
-uint16_t to_half(float f);
-float from_half(uint16_t h);
-}
-
 // Quantize FP32 weights to Q4_0 format (symmetric, 4-bit)
 // Algorithm: Find max value in each block, map to [-8, 7] range
 // Output: U4 packed weights (2 per byte), FP16 scales, single FP16 bias
@@ -293,9 +287,8 @@ void quantize_q4_0(const float* src,
     const int64_t num_blocks = n_elements / block_size;
 
     auto* weights = static_cast<uint32_t*>(weights_out.data());  // u32 packed format
-    // scales_out and biases_out are f16 type, but we write uint16_t bit representation
-    auto* scales = reinterpret_cast<uint16_t*>(scales_out.data());
-    auto* biases = reinterpret_cast<uint16_t*>(biases_out.data());
+    auto* scales = scales_out.data<ov::element_type_traits<ov::element::f16>::value_type>();
+    auto* biases = biases_out.data<ov::element_type_traits<ov::element::f16>::value_type>();
 
     for (int64_t i = 0; i < num_blocks; i++) {
         // Find absolute max value in block
@@ -315,8 +308,8 @@ void quantize_q4_0(const float* src,
 
         if (d == 0.0f) {
             // Zero block - use dummy scale and zero point at 8
-            scales[i] = to_half(1.0f);
-            biases[i] = to_half(-8.0f);
+            scales[i] = ov::float16(1.0f);
+            biases[i] = ov::float16(-8.0f);
             // Fill with zeros packed into u32 (zp=8 means 0x88 bytes)
             uint32_t zp_packed = 0x88888888;  // 4 bytes of 0x88
             for (int64_t j = 0; j < block_size / 8; j++) {
@@ -326,11 +319,11 @@ void quantize_q4_0(const float* src,
         }
 
         float id = 1.0f / d;
-        scales[i] = to_half(d);
+        scales[i] = ov::float16(d);
 
         // Symmetric quantization: replicate bias for all blocks
         // (building_blocks.cpp expects biases.shape == scales.shape)
-        biases[i] = to_half(-8.0f * d);
+        biases[i] = ov::float16(-8.0f * d);
 
         // Quantize and pack weights: 2 q4 per byte, 4 bytes per u32 (8 q4 per u32)
         for (int64_t j = 0; j < block_size; j += 8) {
@@ -371,9 +364,8 @@ void quantize_q8_0(const float* src,
     const int64_t num_blocks = n_elements / block_size;
 
     auto* weights = static_cast<uint32_t*>(weights_out.data());  // u32 packed format
-    // scales_out and biases_out are f16 type, but we write uint16_t bit representation
-    auto* scales = reinterpret_cast<uint16_t*>(scales_out.data());
-    auto* biases = reinterpret_cast<uint16_t*>(biases_out.data());
+    auto* scales = scales_out.data<ov::element_type_traits<ov::element::f16>::value_type>();
+    auto* biases = biases_out.data<ov::element_type_traits<ov::element::f16>::value_type>();
 
     for (int64_t i = 0; i < num_blocks; i++) {
         // Find absolute max value in block
@@ -390,11 +382,11 @@ void quantize_q8_0(const float* src,
         float d = amax / 127.0f;
         float id = (d != 0.0f) ? 1.0f / d : 0.0f;
 
-        scales[i] = to_half(d);
+        scales[i] = ov::float16(d);
 
         // Symmetric quantization: replicate bias for all blocks
         // (building_blocks.cpp expects biases.shape == scales.shape)
-        biases[i] = to_half(-128.0f * d);
+        biases[i] = ov::float16(-128.0f * d);
 
         // Quantize weights to [0, 255] range (offset by 128), pack 4 u8 per u32
         for (int64_t j = 0; j < block_size; j += 4) {
