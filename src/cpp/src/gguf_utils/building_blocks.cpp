@@ -22,6 +22,42 @@ using namespace ov::op;
 static const size_t GGML_QUANTIZATION_GROUP_SIZE = 32;
 static const size_t NNCF_QUANTIZATION_GROUP_SIZE = 128;
 
+// Validate scales layout and derive dequantization group size from scales metadata.
+// Returns num_groups and writes derived group_size via output reference.
+static size_t derive_group_size_from_scales(const std::string& key,
+                                            const ov::Tensor& scales,
+                                            size_t expanded_weight_dim,
+                                            size_t requested_group_size,
+                                            size_t& derived_group_size) {
+    const auto& scales_shape = scales.get_shape();
+    OPENVINO_ASSERT(scales_shape.size() == 2 && scales_shape[1] > 0,
+                    "Invalid scales shape for ", key,
+                    ": expected 2D [rows, num_groups] with num_groups > 0, got rank ", scales_shape.size());
+
+    const size_t num_groups = scales_shape[1];
+
+    OPENVINO_ASSERT(expanded_weight_dim % num_groups == 0,
+                    "Inconsistent quantization layout for ", key,
+                    ": expanded weight dimension ", expanded_weight_dim,
+                    " is not divisible by num_groups ", num_groups);
+
+    derived_group_size = expanded_weight_dim / num_groups;
+    const bool channel_wise = num_groups == 1;
+    // Keep warning-only behavior for non-channel-wise layouts if group size differs from
+    // the expected GGML/NNCF block sizes. For channel-wise (num_groups == 1), derived_group_size
+    // is full-row and intentionally does not match block-size constants.
+    const bool accepted_size = derived_group_size == requested_group_size ||
+                               derived_group_size == NNCF_QUANTIZATION_GROUP_SIZE;
+    if (!channel_wise && !accepted_size) {
+        ov::genai::utils::print_gguf_debug_info(
+            "group_size mismatch for " + key +
+            ": requested=" + std::to_string(requested_group_size) +
+            ", derived=" + std::to_string(derived_group_size));
+    }
+
+    return num_groups;
+}
+
 Output<ov::Node> causal_mask(
     const Output<ov::Node>& attention_mask,
     const Output<ov::Node>& keys,
@@ -570,29 +606,10 @@ ov::Output<ov::Node> make_int8_weights(
     ov::Shape orig_shape = weight.get_shape();
     orig_shape[1] *= sizeof(uint32_t) / sizeof(uint8_t);
     
-    // Infer effective group_size from scales metadata.
-    // Needed when model uses channel-wise quantization (num_groups == 1)
-    // or non-default block sizes, where configured/default group_size may not match.
-    OPENVINO_ASSERT(scales.get_shape().size() == 2,
-                    "Invalid scales rank for ", key,
-                    ": expected 2D [rows, num_groups], got rank ", scales.get_shape().size());
-    size_t num_groups = scales.get_shape()[1];
-    OPENVINO_ASSERT(num_groups > 0, "Invalid scales shape for ", key, ": num_groups must be > 0");
-    OPENVINO_ASSERT(orig_shape[1] % num_groups == 0,
-                    "Inconsistent quantization layout for ", key,
-                    ": expanded weight dimension ", orig_shape[1],
-                    " is not divisible by num_groups ", num_groups);
-    size_t inferred_group_size = orig_shape[1] / num_groups;
-    const bool channel_wise = num_groups == 1;
-    const bool accepted_size = inferred_group_size == group_size || inferred_group_size == NNCF_QUANTIZATION_GROUP_SIZE;
-    if (!channel_wise && !accepted_size) {
-        ov::genai::utils::print_gguf_debug_info(
-            "group_size mismatch for " + key +
-            ": requested=" + std::to_string(group_size) +
-            ", inferred=" + std::to_string(inferred_group_size));
-    }
-    // Use scales-derived group_size as the single source of truth for layout-consistent dequantization.
-    group_size = inferred_group_size;
+    // Derive quantization layout from scales and use it as source of truth.
+    size_t derived_group_size = 0;
+    size_t num_groups = derive_group_size_from_scales(key, scales, orig_shape[1], group_size, derived_group_size);
+    group_size = derived_group_size;
 
     // Expand dimensions for scales and biases
     auto scale_shape = scales.get_shape();
@@ -662,29 +679,10 @@ ov::Output<ov::Node> make_int4_weights(
     ov::Tensor scales = get_tensor(consts, key + ".scales");
     ov::Tensor biases = get_tensor(consts, key + ".biases");
     
-    // Infer effective group_size from scales metadata.
-    // Needed when model uses channel-wise quantization (num_groups == 1)
-    // or non-default block sizes, where configured/default group_size may not match.
-    OPENVINO_ASSERT(scales.get_shape().size() == 2,
-                    "Invalid scales rank for ", key,
-                    ": expected 2D [rows, num_groups], got rank ", scales.get_shape().size());
-    size_t num_groups = scales.get_shape()[1];
-    OPENVINO_ASSERT(num_groups > 0, "Invalid scales shape for ", key, ": num_groups must be > 0");
-    OPENVINO_ASSERT(orig_weight_shape[1] % num_groups == 0,
-                    "Inconsistent quantization layout for ", key,
-                    ": expanded weight dimension ", orig_weight_shape[1],
-                    " is not divisible by num_groups ", num_groups);
-    size_t inferred_group_size = orig_weight_shape[1] / num_groups;
-    const bool channel_wise = num_groups == 1;
-    const bool accepted_size = inferred_group_size == group_size || inferred_group_size == NNCF_QUANTIZATION_GROUP_SIZE;
-    if (!channel_wise && !accepted_size) {
-        ov::genai::utils::print_gguf_debug_info(
-            "group_size mismatch for " + key +
-            ": requested=" + std::to_string(group_size) +
-            ", inferred=" + std::to_string(inferred_group_size));
-    }
-    // Use scales-derived group_size as the single source of truth for layout-consistent dequantization.
-    group_size = inferred_group_size;
+    // Derive quantization layout from scales and use it as source of truth.
+    size_t derived_group_size = 0;
+    size_t num_groups = derive_group_size_from_scales(key, scales, orig_weight_shape[1], group_size, derived_group_size);
+    group_size = derived_group_size;
 
     // Expand dimensions for scales and biases
     ov::Shape scale_bias_shape = scales.get_shape();
