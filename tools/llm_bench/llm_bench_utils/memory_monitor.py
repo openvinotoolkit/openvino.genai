@@ -29,7 +29,7 @@ import logging as log
 matplotlib.use('Agg')
 
 
-class MemoryConsuptionLevel(Enum):
+class MemoryConsumptionLevel(Enum):
     NoCollection = 0
     CollectionOnWarmUp = 1
     AllIterationCollection = 2
@@ -508,5 +508,6 @@ def _subtract_first_element(data):
 
 
 def should_collect_memory_info(mem_consumption, iteration_num):
-    return ((mem_consumption == MemoryConsuptionLevel.CollectionOnWarmUp.value and iteration_num == 0)
-            or mem_consumption == MemoryConsuptionLevel.AllIterationCollection.value)
+    return (
+        mem_consumption == MemoryConsumptionLevel.CollectionOnWarmUp.value and iteration_num == 0
+    ) or mem_consumption == MemoryConsumptionLevel.AllIterationCollection.value

@@ -59,8 +59,11 @@ video_generation_json = [
 ]
 llm_chat_json = [
     {
-        "prompt": ["Tell me the plot of Mulan. ", "Who is the main character ?"],
+        "prompt": ["Tell me the plot of Mulan.", "Who is the main character ?"],
     }
+]
+llm_chat_vlm_json = [
+    {"prompt": ["Describe this image in detail", "What color is the background?"], "media": ["cat.png", ""]}
 ]
 
 
@@ -497,17 +500,45 @@ class TestBenchmarkLLM:
         ] + sample_args
         run_sample(benchmark_py_command)
 
-
     @pytest.mark.samples
     @pytest.mark.parametrize(
         "sample_args",
         [
-            ["-d", "cpu", "-n", "1", "-ic", "10", "--task", "text", "--optimum", "-p", "Why the Sun is yellow ?", "chat_iter", "3"],
-            ["-d", "cpu", "-n", "1", "-ic", "10", "--task", "text", "--genai", "-p", "Why the Sun is yellow ?", "chat_iter", "3"],
-            ["-d", "cpu", "-n", "1", "-ic", "10", "--task", "text", "--genai"],
+            [
+                "-d",
+                "cpu",
+                "-n",
+                "1",
+                "-ic",
+                "10",
+                "--task",
+                "text_gen",
+                "--optimum",
+                "-p",
+                "Why the Sun is yellow ?",
+                "--chat_iter",
+                "2",
+            ],
+            ["-d", "cpu", "-n", "1", "-ic", "10", "--task", "text_gen", "--optimum"],
+            [
+                "-d",
+                "cpu",
+                "-n",
+                "1",
+                "-ic",
+                "10",
+                "--task",
+                "text_gen",
+                "--genai",
+                "-p",
+                "Why the Sun is yellow ?",
+                "--chat_iter",
+                "3",
+            ],
+            ["-d", "cpu", "-n", "1", "-ic", "10", "--task", "text_gen", "--genai"],
         ],
     )
-    @pytest.mark.parametrize("convert_model", ["tiny-random-ltx-video"], indirect=True)
+    @pytest.mark.parametrize("convert_model", ["tiny-random-qwen2"], indirect=True)
     @pytest.mark.parametrize(
         "generate_llm_bench_input_generation_jsonl", [("llm_chat_json.jsonl", llm_chat_json)], indirect=True
     )
@@ -517,12 +548,48 @@ class TestBenchmarkLLM:
         prompt_args = [] if "-p" in sample_args else ["-pf", generate_llm_bench_input_generation_jsonl]
         # Run Python benchmark
         benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
-        benchmark_py_command = [
-            sys.executable,
-            benchmark_script,
-            "-m",
-            convert_model,
-            *prompt_args
-        ] + sample_args
+        benchmark_py_command = [sys.executable, benchmark_script, "-m", convert_model, *prompt_args] + sample_args
         run_sample(benchmark_py_command)
 
+    @pytest.mark.samples
+    @pytest.mark.parametrize(
+        "sample_args",
+        [
+            [
+                "-d",
+                "cpu",
+                "-n",
+                "1",
+                "-ic",
+                "10",
+                "--task",
+                "visual_text_gen",
+                "--genai",
+                "-p",
+                "Why the Sun is yellow ?",
+                "--chat_iter",
+                "3",
+            ],
+            ["-d", "cpu", "-n", "1", "-ic", "10", "--task", "visual_text_gen", "--genai"],
+        ],
+    )
+    @pytest.mark.parametrize("convert_model", ["tiny-random-llava"], indirect=True)
+    @pytest.mark.parametrize("download_test_content", ["cat"], indirect=True)
+    @pytest.mark.parametrize(
+        "generate_llm_bench_input_generation_jsonl", [("llm_chat_vlm_json.jsonl", llm_chat_vlm_json)], indirect=True
+    )
+    def test_python_tool_llm_benchmark_vlm_chat(
+        self, convert_model, download_test_content, generate_llm_bench_input_generation_jsonl, sample_args
+    ):
+        prompt_args = []
+        if "-p" in sample_args:
+            prompt_args = ["--media", download_test_content]
+        else:
+            # to use the relative media and mask_image paths
+            os.chdir(os.path.dirname(download_test_content))
+            prompt_args = ["-pf", generate_llm_bench_input_generation_jsonl]
+
+        # Run Python benchmark
+        benchmark_script = SAMPLES_PY_DIR / "llm_bench/benchmark.py"
+        benchmark_py_command = [sys.executable, benchmark_script, "-m", convert_model, *prompt_args] + sample_args
+        run_sample(benchmark_py_command)

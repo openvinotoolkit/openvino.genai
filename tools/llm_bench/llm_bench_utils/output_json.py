@@ -33,7 +33,7 @@ KEY_MAPPING = {
     "tokenization_time": "tokenization_time",
     "detokenization_time": "detokenization_time",
     "chat_idx": "chat_idx",
-    "prompt_idx": "prompt_idx"
+    "prompt_idx": "prompt_idx",
 }
 
 
@@ -49,8 +49,8 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
         for idx_md5 in range(len(iter_data['result_md5'])):
             result_md5.append(iter_data['result_md5'][idx_md5])
 
-        input_idx = iter_data['chat_idx'] if iter_data['chat_idx'] != "" else iter_data['prompt_idx']
-        timestamp_start, timestamp_end = get_timestamp(iter_data['iteration'], input_idx, iter_timestamp)
+        input_idx = iter_data["chat_idx"] if iter_data["chat_idx"] != "" else iter_data["prompt_idx"]
+        timestamp_start, timestamp_end = get_timestamp(iter_data["iteration"], input_idx, iter_timestamp)
         other_latency = iter_data["other_tokens_avg_latency"]
         res_data = {
             "iteration": iter_data["iteration"],
@@ -65,15 +65,32 @@ def write_result(report_file, model, framework, device, model_args, iter_data_li
             "end": timestamp_end,
         }
 
-        for key in ["latency", "generation_time", "first_token_latency", "first_token_infer_latency",
-                    "other_tokens_infer_avg_latency", "tokenization_time", "detokenization_time"]:
-            value = round(iter_data[key], 5) if iter_data[key] != "" else iter_data[key]
+        for key in [
+            "latency",
+            "generation_time",
+            "first_token_latency",
+            "first_token_infer_latency",
+            "other_tokens_infer_avg_latency",
+            "tokenization_time",
+            "detokenization_time",
+        ]:
+            value = (
+                round(iter_data[key], 5)
+                if iter_data[key] != "" and iter_data[key] is not None and isinstance(iter_data[key], (int, float))
+                else iter_data[key]
+            )
             json_key = KEY_MAPPING[key]
             res_data[json_key] = value
 
         # optional metrics
-        for key in ["max_rss_mem_consumption", "max_sys_mem_consumption", "max_rss_mem_increase", "max_sys_mem_increase",
-                    "max_rss_mem_share", "max_sys_mem_share"]:
+        for key in [
+            "max_rss_mem_consumption",
+            "max_sys_mem_consumption",
+            "max_rss_mem_increase",
+            "max_sys_mem_increase",
+            "max_rss_mem_share",
+            "max_sys_mem_share",
+        ]:
             if key in iter_data:
                 value = iter_data[key]
                 if value is None or value == "":

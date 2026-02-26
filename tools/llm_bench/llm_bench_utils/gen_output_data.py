@@ -20,7 +20,7 @@ def gen_iterate_data(
     prompt_idx="",
     tokenization_time=[],
     mm_embeddings_preparation_time="",
-    chat_idx=""
+    chat_idx="",
 ):
     iter_data = {}
     iter_data["iteration"] = iter_idx
