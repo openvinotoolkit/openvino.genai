@@ -312,8 +312,9 @@ def test_ov_model_quantize_mode_log_verification(
     captured = capfd.readouterr()
     output = captured.out + captured.err
 
-    assert expected_log in output, \
+    assert expected_log in output, (
         f"Expected log '{expected_log}' not found in output:\n{output}"
+    )
 
 @pytest.mark.parametrize("model_gguf", [GGUF_MODEL_LIST[0]], indirect=True)
 def test_full_gguf_pipeline_quantize_mode(
@@ -351,5 +352,6 @@ def test_full_gguf_pipeline_quantize_mode(
 
 
     # In this fixed short-generation setup, outputs are expected to match exactly.
-    assert outputs["ORIGINAL"] == outputs["GPU_OPTIMIZED"], \
+    assert outputs["ORIGINAL"] == outputs["GPU_OPTIMIZED"], (
         f"Outputs must be identical!\nORIGINAL: {outputs['ORIGINAL']}\nGPU_OPTIMIZED: {outputs['GPU_OPTIMIZED']}"
+    )
