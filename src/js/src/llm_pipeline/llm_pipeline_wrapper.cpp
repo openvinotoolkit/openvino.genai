@@ -147,6 +147,8 @@ Napi::Function LLMPipelineWrapper::get_class(Napi::Env env) {
                        {InstanceMethod("init", &LLMPipelineWrapper::init),
                         InstanceMethod("generate", &LLMPipelineWrapper::generate),
                         InstanceMethod("getTokenizer", &LLMPipelineWrapper::get_tokenizer),
+                        InstanceMethod("getGenerationConfig", &LLMPipelineWrapper::get_generation_config),
+                        InstanceMethod("setGenerationConfig", &LLMPipelineWrapper::set_generation_config),
                         InstanceMethod("startChat", &LLMPipelineWrapper::start_chat),
                         InstanceMethod("finishChat", &LLMPipelineWrapper::finish_chat)});
 }
@@ -256,6 +258,29 @@ Napi::Value LLMPipelineWrapper::get_tokenizer(const Napi::CallbackInfo& info) {
         OPENVINO_ASSERT(this->pipe, "LLMPipeline is not initialized");
         auto tokenizer = this->pipe->get_tokenizer();
         return TokenizerWrapper::wrap(env, tokenizer);
+    } catch (const std::exception& ex) {
+        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
+    }
+    return env.Undefined();
+}
+
+Napi::Value LLMPipelineWrapper::get_generation_config(const Napi::CallbackInfo& info) {
+    auto env = info.Env();
+    try {
+        OPENVINO_ASSERT(this->pipe, "LLMPipeline is not initialized");
+        return cpp_to_js<ov::genai::GenerationConfig, Napi::Value>(env, this->pipe->get_generation_config());
+    } catch (const std::exception& ex) {
+        Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
+    }
+    return env.Undefined();
+}
+
+Napi::Value LLMPipelineWrapper::set_generation_config(const Napi::CallbackInfo& info) {
+    auto env = info.Env();
+    try {
+        OPENVINO_ASSERT(this->pipe, "LLMPipeline is not initialized");
+        VALIDATE_ARGS_COUNT(info, 1, "setGenerationConfig()");
+        this->pipe->set_generation_config(js_to_cpp<ov::genai::GenerationConfig>(env, info[0]));
     } catch (const std::exception& ex) {
         Napi::Error::New(env, ex.what()).ThrowAsJavaScriptException();
     }

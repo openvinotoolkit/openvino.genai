@@ -79,6 +79,24 @@ export class LLMPipeline {
   }
 
   /**
+   * Get the current generation config (model defaults).
+   * @returns The current GenerationConfig object.
+   */
+  getGenerationConfig(): GenerationConfig {
+    if (!this.pipeline) throw new Error("LLMPipeline is not initialized");
+    return this.pipeline.getGenerationConfig();
+  }
+
+  /**
+   * Set generation configuration parameters.
+   * @param config - Generation configuration parameters.
+   */
+  setGenerationConfig(config: GenerationConfig): void {
+    if (!this.pipeline) throw new Error("LLMPipeline is not initialized");
+    this.pipeline.setGenerationConfig(config);
+  }
+
+  /**
    * Stream generation results as an async iterator of strings.
    * The iterator yields subword chunks.
    * @param inputs - Input prompt string or chat history.

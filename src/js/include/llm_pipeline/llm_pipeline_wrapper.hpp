@@ -17,6 +17,8 @@ public:
     Napi::Value start_chat(const Napi::CallbackInfo& info);
     Napi::Value finish_chat(const Napi::CallbackInfo& info);
     Napi::Value get_tokenizer(const Napi::CallbackInfo& info);
+    Napi::Value get_generation_config(const Napi::CallbackInfo& info);
+    Napi::Value set_generation_config(const Napi::CallbackInfo& info);
 
 private:
     std::shared_ptr<ov::genai::LLMPipeline> pipe = nullptr;
