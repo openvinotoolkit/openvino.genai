@@ -262,8 +262,7 @@ void gguf_load_quantized(std::unordered_map<std::string, ov::Tensor>& a,
                         ". This can happen when loading quantized tensors");
     };
 
-    constexpr std::string_view weight_suffix = ".weight";
-    const std::string name_prefix = name.substr(0, name.length() - weight_suffix.length());
+    const std::string name_prefix = strip_weight_suffix(name);
     check_insert(a.emplace(name_prefix + ".scales", std::move(scales)));
     check_insert(a.emplace(name_prefix + ".biases", std::move(biases)));
 

@@ -399,7 +399,6 @@ void load_arrays(gguf_ctx* ctx,
     };
 
     bool is_gpu_optimized = (quantize_mode == ov::genai::OVModelQuantizeMode::GPU_OPTIMIZED);
-    constexpr std::string_view weight_suffix = ".weight";
 
     while (gguf_get_tensor(ctx, &tensor)) {
         // GPU_OPTIMIZED: dequantize Q4_0/Q4_K/Q6_K → FP16 → requantize to Q4_0_128/Q8_0_C
@@ -408,12 +407,7 @@ void load_arrays(gguf_ctx* ctx,
             std::string name(tensor.name, tensor.namelen);
             ov::Tensor fp16_bits_tensor = extract_tensor_data(&tensor);
 
-            std::string name_prefix = name;
-            // Strip suffix only for names ending with ".weight".
-            if (name.size() >= weight_suffix.size() &&
-                name.compare(name.size() - weight_suffix.size(), weight_suffix.size(), weight_suffix) == 0) {
-                name_prefix.resize(name.size() - weight_suffix.size());
-            }
+            std::string name_prefix = strip_weight_suffix(name);
 
             // Mixed requant: token_embd/output.weight → Q8_0_C (channel-wise); others → Q4_0_128
             bool is_token_embd = (name.find("token_embd.weight") != std::string::npos);
@@ -492,12 +486,7 @@ void load_arrays(gguf_ctx* ctx,
             ov::Tensor loaded_array = extract_tensor_data(&tensor);
             check_insert(array_map.emplace(name, loaded_array));
 
-            std::string name_prefix = name;
-            // Strip suffix only for names ending with ".weight".
-            if (name.size() >= weight_suffix.size() &&
-                name.compare(name.size() - weight_suffix.size(), weight_suffix.size(), weight_suffix) == 0) {
-                name_prefix.resize(name.size() - weight_suffix.size());
-            }
+            std::string name_prefix = strip_weight_suffix(name);
             qtype_map.emplace(name_prefix + ".qtype", static_cast<gguf_tensor_type>(tensor.type));
         }
     }

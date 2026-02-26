@@ -11,6 +11,7 @@
 #include <cstring>
 #include <fstream>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <variant>
 
@@ -27,6 +28,15 @@ using GGUFMetaData =
 using GGUFLoad = std::tuple<std::unordered_map<std::string, GGUFMetaData>,
                             std::unordered_map<std::string, ov::Tensor>,
                             std::unordered_map<std::string, gguf_tensor_type>>;
+
+inline std::string strip_weight_suffix(const std::string& name) {
+    constexpr std::string_view weight_suffix = ".weight";
+    if (name.size() >= weight_suffix.size() &&
+        name.compare(name.size() - weight_suffix.size(), weight_suffix.size(), weight_suffix) == 0) {
+        return name.substr(0, name.size() - weight_suffix.size());
+    }
+    return name;
+}
 
 template <typename... Args>
 std::string format(std::string fmt, Args... args);
