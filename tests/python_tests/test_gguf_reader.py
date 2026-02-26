@@ -268,7 +268,7 @@ def test_full_gguf_qwen3_pipeline(pipeline_type, model_ids):
         "default_ORIGINAL_no_save",
         "all_defaults",
         "lowercase_test",
-    ]
+    ],
 )
 def test_ov_model_quantize_mode_log_verification(
     model_gguf: ModelInfo,
@@ -276,7 +276,7 @@ def test_ov_model_quantize_mode_log_verification(
     enable_save_ov_model: bool,
     expected_log: str,
     capfd,
-    monkeypatch
+    monkeypatch,
 ):
     """Configuration Validation Test: Verifies save_ov_model_quantize_mode x enable_save_ov_model matrix via log output
 
@@ -293,7 +293,7 @@ def test_ov_model_quantize_mode_log_verification(
 
     Tools: monkeypatch (OPENVINO_LOG_LEVEL=3) + capfd (capture logs)
     """
-    if sys.platform == 'darwin':
+    if sys.platform == "darwin":
         pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
 
     gguf_full_path = model_gguf.gguf_full_path
@@ -312,9 +312,8 @@ def test_ov_model_quantize_mode_log_verification(
     captured = capfd.readouterr()
     output = captured.out + captured.err
 
-    assert expected_log in output, (
-        f"Expected log '{expected_log}' not found in output:\n{output}"
-    )
+    assert expected_log in output, f"Expected log '{expected_log}' not found in output:\n{output}"
+
 
 @pytest.mark.parametrize("model_gguf", [GGUF_MODEL_LIST[0]], indirect=True)
 def test_full_gguf_pipeline_quantize_mode(
@@ -327,11 +326,11 @@ def test_full_gguf_pipeline_quantize_mode(
     Note: Single model test is sufficient to validate requant mechanism. Minor differences with
     other models/prompts or longer outputs are acceptable due to quantization precision trade-offs.
     """
-    if sys.platform == 'darwin':
+    if sys.platform == "darwin":
         pytest.skip(reason="168882: Sporadic segmentation fault failure on MacOS.")
 
     gguf_full_path = model_gguf.gguf_full_path
-    prompt = 'Why is the Sun yellow?'
+    prompt = "Why is the Sun yellow?"
 
     ov_generation_config = ov_genai.GenerationConfig()
     ov_generation_config.max_new_tokens = 30
@@ -349,7 +348,6 @@ def test_full_gguf_pipeline_quantize_mode(
         outputs[mode] = output
         del pipe
         gc.collect()
-
 
     # In this fixed short-generation setup, outputs are expected to match exactly.
     assert outputs["ORIGINAL"] == outputs["GPU_OPTIMIZED"], (
