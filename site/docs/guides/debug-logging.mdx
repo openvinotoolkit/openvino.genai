@@ -82,10 +82,7 @@ When a GGUF model is passed to the pipeline, the detailed debug info will also b
 For example, when the pipeline is configured with:
 
 ```cpp
-// Available in OV25.3+: enable_save_ov_model
 pipe_config["enable_save_ov_model"] = true;
-
-// Add in OV26.1: save_ov_model_quantize_mode
 pipe_config["save_ov_model_quantize_mode"] = "GPU_OPTIMIZED";
 ```
 
@@ -99,9 +96,5 @@ pipe_config["save_ov_model_quantize_mode"] = "GPU_OPTIMIZED";
 [GGUF Reader]: Save generated OpenVINO model to: <gguf_dir>/ov_model_gpu_optimized/openvino_model.xml done. Time: 457 ms
 [GGUF Reader]: Model generation done. Time: 538ms
 ```
-Note: 
-`save_ov_model_quantize_mode` maps to `OVModelQuantizeMode` in
-[`llm_pipeline.hpp`](../../../src/cpp/include/openvino/genai/llm_pipeline.hpp).
 
-Since `save_ov_model_quantize_mode` supports saving multiple model variants,
-mode-specific directories are used to avoid overwriting files (for example, `ov_model_gpu_optimized`).
+For GGUF usage and configuration details, see [GGUF Reader](./gguf-reader).

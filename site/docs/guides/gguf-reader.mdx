@@ -1,0 +1,72 @@
+---
+sidebar_position: 1
+---
+
+# GGUF Reader
+
+`LLMPipeline` can load GGUF models and create OpenVINO graphs, and run CPU/GPU inference on-the-fly.
+
+For supported model families and examples, see [OpenVINO GenAI supports GGUF models (blog)](https://intel-openvino-blog.webflow.io/blog-posts/openvino-genai-supports-gguf-models).
+
+## Advanced usage (with config)
+
+This section explains optional GGUF Reader config usage.
+
+### Save generated OV model (OV25.3+)
+
+<Tabs groupId="lang">
+	<TabItem label="C++" value="cpp">
+		```cpp
+		ov::AnyMap pipe_config;
+		pipe_config["enable_save_ov_model"] = true;
+		```
+	</TabItem>
+	<TabItem label="Python" value="python">
+		```python
+		pipe_config = {}
+		pipe_config["enable_save_ov_model"] = True
+		```
+	</TabItem>
+</Tabs>
+
+`enable_save_ov_model` enables saving generated OV model files (`xml/bin`) from GGUF.
+
+For sample code, see [OpenVINO GenAI GGUF feature update (blog)](https://intel-openvino-blog.webflow.io/blog-posts/openvino-genai-gguf-feature-update).
+
+### Select requantization mode (OV26.1+)
+
+<Tabs groupId="lang">
+	<TabItem label="C++" value="cpp">
+		```cpp
+		ov::AnyMap pipe_config;
+		pipe_config["save_ov_model_quantize_mode"] = "GPU_OPTIMIZED";
+		```
+	</TabItem>
+	<TabItem label="Python" value="python">
+		```python
+		pipe_config = {}
+		pipe_config["save_ov_model_quantize_mode"] = "GPU_OPTIMIZED"
+		```
+	</TabItem>
+</Tabs>
+
+`save_ov_model_quantize_mode` selects `OVModelQuantizeMode`:
+
+Preview: `save_ov_model_quantize_mode` is currently preview for `Q4_0/Q4KM`.
+
+- `ORIGINAL`: keep original GGUF quantization (for example, `Q4_K` / `Q6_K`).
+- `GPU_OPTIMIZED`: requantize for better GPU performance (for example, `Q4_0_128` / `Q8_0_C`).
+
+Background: GGUF’s distinct quantization (for example, group sizes) can lead to worse performance in the OV GenAI pipeline and limited GPU support, which also blocks NPU support for the GGUF reader.
+
+Recommend: Save optimized OV model to skip requant overhead (infer directly).
+
+Independent of `enable_save_ov_model` (`save_ov_model_quantize_mode` requantization works unsaved in encryption scenarios).
+
+### Saved OV model path
+
+OV26.1+: with `save_ov_model_quantize_mode`, saved path changes from `<gguf_dir>/openvino_model.xml` to `<gguf_dir>/ov_model_*/openvino_model.xml`.
+
+## Debug
+
+Set `OPENVINO_LOG_LEVEL=3` (`DEBUG`) to print detailed GGUF reader logs, including selected `OVModelQuantizeMode`, see [Debug Logging](./debug-logging).
