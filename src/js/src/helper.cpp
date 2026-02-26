@@ -11,6 +11,7 @@
 #include "include/parser.hpp"
 #include "include/perf_metrics.hpp"
 #include "include/vlm_pipeline/perf_metrics.hpp"
+#include "include/whisper_pipeline/perf_metrics.hpp"
 
 namespace {
 constexpr const char* JS_SCHEDULER_CONFIG_KEY = "schedulerConfig";
@@ -19,6 +20,8 @@ constexpr const char* POOLING_TYPE_KEY = "pooling_type";
 constexpr const char* STRUCTURED_OUTPUT_CONFIG_KEY = "structured_output_config";
 constexpr const char* PARSERS_KEY = "parsers";
 constexpr const char* STOP_CRITERIA_KEY = "stop_criteria";
+constexpr const char* LANG_TO_ID_KEY = "lang_to_id";
+constexpr const char* ALIGNMENT_HEADS_KEY = "alignment_heads";
 
 // Safe integer range for JS Number: -(2^53 - 1) .. (2^53 - 1).
 constexpr int64_t NAPI_NUMBER_MIN_INTEGER = -(1LL << 53) + 1;
@@ -75,7 +78,7 @@ std::type_index get_cpp_type(const Napi::Env& env, const Napi::Value& value) {
             return typeid(int64_t);
         }
         const uint64_t uval = value.As<Napi::BigInt>().Uint64Value(&lossless);
-        if (!lossless || uval > static_cast<uint64_t>(SIZE_MAX)) {
+        if (!lossless || uval > SIZE_MAX) {
             OPENVINO_THROW("BigInt value is too large to fit in int64_t or size_t.");
         }
         return typeid(size_t);
@@ -261,11 +264,38 @@ ov::AnyMap js_to_cpp<ov::AnyMap>(const Napi::Env& env, const Napi::Value& value)
             result_map[key_name] = js_to_cpp<std::vector<std::shared_ptr<ov::genai::Parser>>>(env, value_by_key);
         } else if (key_name == STOP_CRITERIA_KEY) {
             result_map[key_name] = ov::Any(js_to_cpp<ov::genai::StopCriteria>(env, value_by_key));
+        } else if (key_name == LANG_TO_ID_KEY) {
+            result_map[key_name] = js_to_cpp<std::map<std::string, int64_t>>(env, value_by_key);
+        } else if (key_name == ALIGNMENT_HEADS_KEY) {
+            result_map[key_name] = js_to_cpp<std::vector<std::pair<size_t, size_t>>>(env, value_by_key);
         } else {
             result_map[key_name] = js_to_cpp<ov::Any>(env, value_by_key);
         }
     }
 
+    return result_map;
+}
+
+template <>
+std::map<std::string, int64_t> js_to_cpp<std::map<std::string, int64_t>>(const Napi::Env& env,
+                                                                         const Napi::Value& value) {
+    std::map<std::string, int64_t> result_map;
+    if (value.IsUndefined() || value.IsNull()) {
+        return result_map;
+    }
+    if (!value.IsObject()) {
+        OPENVINO_THROW("Passed Napi::Value must be an object.");
+    }
+    const auto& object = value.ToObject();
+    const auto& keys = object.GetPropertyNames();
+    for (uint32_t i = 0; i < keys.Length(); ++i) {
+        const std::string& key_name = keys.Get(i).ToString();
+        auto value_by_key = object.Get(key_name);
+        if (value_by_key.IsUndefined() || value_by_key.IsNull()) {
+            continue;
+        }
+        result_map[key_name] = js_to_cpp<int64_t>(env, value_by_key);
+    }
     return result_map;
 }
 
@@ -298,6 +328,13 @@ double js_to_cpp<double>(const Napi::Env& env, const Napi::Value& value) {
 }
 
 template <>
+float js_to_cpp<float>(const Napi::Env& env, const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsNumber(), "Passed argument must be of type Number.");
+    auto result = value.As<Napi::Number>().FloatValue();
+    return result;
+}
+
+template <>
 size_t js_to_cpp<size_t>(const Napi::Env& env, const Napi::Value& value) {
     OPENVINO_ASSERT(value.IsNumber() || value.IsBigInt(), "Passed argument must be of type Number or BigInt.");
     if (value.IsNumber()) {
@@ -305,12 +342,12 @@ size_t js_to_cpp<size_t>(const Napi::Env& env, const Napi::Value& value) {
         OPENVINO_ASSERT(is_js_integer(env, number_value), "Passed argument must be an integer.");
         const auto int_value = number_value.Int64Value();
         OPENVINO_ASSERT(int_value >= 0, "Passed argument must be non-negative for size_t.");
-        OPENVINO_ASSERT(int_value <= static_cast<int64_t>(SIZE_MAX), "Number value is too large for size_t.");
+        OPENVINO_ASSERT(int_value <= SIZE_MAX, "Number value is too large for size_t.");
         return static_cast<size_t>(int_value);
     }
     bool lossless = false;
     const uint64_t uval = value.As<Napi::BigInt>().Uint64Value(&lossless);
-    if (!lossless || uval > static_cast<uint64_t>(SIZE_MAX))
+    if (!lossless || uval > SIZE_MAX)
         OPENVINO_THROW("BigInt value is too large for size_t.");
     auto result = static_cast<size_t>(uval);
     return result;
@@ -412,6 +449,31 @@ std::vector<double> js_to_cpp<std::vector<double>>(const Napi::Env& env, const N
 }
 
 template <>
+std::vector<float> js_to_cpp<std::vector<float>>(const Napi::Env& env, const Napi::Value& value) {
+    if (value.IsTypedArray()) {
+        OPENVINO_ASSERT(value.As<Napi::TypedArray>().TypedArrayType() == napi_float32_array,
+                        "TypedArray must be Float32Array for std::vector<float>.");
+        Napi::TypedArrayOf<float> typed = value.As<Napi::TypedArrayOf<float>>();
+        size_t length = typed.ElementLength();
+        std::vector<float> vector(length);
+        for (size_t i = 0; i < length; ++i) {
+            vector[i] = typed[i];
+        }
+        return vector;
+    }
+    if (value.IsArray()) {
+        auto array = value.As<Napi::Array>();
+        size_t arrayLength = array.Length();
+        std::vector<float> vector(arrayLength);
+        for (uint32_t i = 0; i < arrayLength; ++i) {
+            vector[i] = js_to_cpp<float>(env, array.Get(i));
+        }
+        return vector;
+    }
+    OPENVINO_THROW("Passed argument must be of type Array or Float32Array (e.g. raw speech).");
+}
+
+template <>
 std::vector<size_t> js_to_cpp<std::vector<size_t>>(const Napi::Env& env, const Napi::Value& value) {
     OPENVINO_ASSERT(value.IsTypedArray(), "Passed argument must be of type TypedArray (BigUint64Array).");
     const napi_typedarray_type type = value.As<Napi::TypedArray>().TypedArrayType();
@@ -422,11 +484,33 @@ std::vector<size_t> js_to_cpp<std::vector<size_t>>(const Napi::Env& env, const N
     std::vector<size_t> vec(len);
     for (size_t i = 0; i < len; ++i) {
         const uint64_t u = typed[i];
-        if (u > static_cast<uint64_t>(SIZE_MAX))
+        if (u > SIZE_MAX)
             OPENVINO_THROW("BigUint64Array element is too large for size_t.");
         vec[i] = static_cast<size_t>(u);
     }
     return vec;
+}
+
+template <>
+std::vector<std::pair<size_t, size_t>> js_to_cpp<std::vector<std::pair<size_t, size_t>>>(const Napi::Env& env,
+                                                                                         const Napi::Value& value) {
+    OPENVINO_ASSERT(value.IsArray(), "Passed argument must be of type Array.");
+    const auto outer = value.As<Napi::Array>();
+    const size_t outer_length = outer.Length();
+    std::vector<std::pair<size_t, size_t>> result;
+    result.reserve(outer_length);
+
+    for (uint32_t i = 0; i < outer_length; ++i) {
+        const Napi::Value pair_value = outer.Get(i);
+        OPENVINO_ASSERT(pair_value.IsArray(), "Passed argument must contain only [number, number] arrays.");
+        const auto pair_array = pair_value.As<Napi::Array>();
+        OPENVINO_ASSERT(pair_array.Length() == 2, "Passed argument must contain only [number, number] arrays.");
+        const size_t layer_id = js_to_cpp<size_t>(env, pair_array.Get(static_cast<uint32_t>(0u)));
+        const size_t head_id = js_to_cpp<size_t>(env, pair_array.Get(static_cast<uint32_t>(1u)));
+        result.emplace_back(layer_id, head_id);
+    }
+
+    return result;
 }
 
 template <>
@@ -647,6 +731,18 @@ std::vector<std::shared_ptr<ov::genai::Parser>> js_to_cpp<std::vector<std::share
 template <>
 ov::genai::GenerationConfig js_to_cpp<ov::genai::GenerationConfig>(const Napi::Env& env, const Napi::Value& value) {
     ov::genai::GenerationConfig config;
+    if (value.IsUndefined() || value.IsNull()) {
+        return config;
+    }
+    ov::AnyMap config_map = js_to_cpp<ov::AnyMap>(env, value);
+    config.update_generation_config(config_map);
+    return config;
+}
+
+template <>
+ov::genai::WhisperGenerationConfig js_to_cpp<ov::genai::WhisperGenerationConfig>(const Napi::Env& env,
+                                                                                 const Napi::Value& value) {
+    ov::genai::WhisperGenerationConfig config;
     if (value.IsUndefined() || value.IsNull()) {
         return config;
     }
@@ -1194,6 +1290,83 @@ Napi::Value cpp_to_js<ov::genai::GenerationConfig, Napi::Value>(const Napi::Env&
     return obj;
 }
 
+template <>
+Napi::Value cpp_to_js<ov::genai::WhisperGenerationConfig, Napi::Value>(
+    const Napi::Env& env,
+    const ov::genai::WhisperGenerationConfig& config) {
+    Napi::Object obj = cpp_to_js<ov::genai::GenerationConfig, Napi::Value>(env, config).As<Napi::Object>();
+    if (config.language.has_value()) {
+        obj.Set("language", Napi::String::New(env, config.language.value()));
+    } else {
+        obj.Set("language", env.Undefined());
+    }
+    if (config.task.has_value()) {
+        obj.Set("task", Napi::String::New(env, config.task.value()));
+    } else {
+        obj.Set("task", env.Undefined());
+    }
+    obj.Set("return_timestamps", Napi::Boolean::New(env, config.return_timestamps));
+    obj.Set("word_timestamps", Napi::Boolean::New(env, config.word_timestamps));
+    obj.Set("decoder_start_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.decoder_start_token_id));
+    obj.Set("pad_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.pad_token_id));
+    obj.Set("translate_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.translate_token_id));
+    obj.Set("transcribe_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.transcribe_token_id));
+    obj.Set("prev_sot_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.prev_sot_token_id));
+    obj.Set("no_timestamps_token_id", cpp_to_js<int64_t, Napi::Value>(env, config.no_timestamps_token_id));
+    obj.Set("max_initial_timestamp_index", cpp_to_js<size_t, Napi::Value>(env, config.max_initial_timestamp_index));
+    obj.Set("is_multilingual", Napi::Boolean::New(env, config.is_multilingual));
+    if (!config.lang_to_id.empty()) {
+        Napi::Object lang_to_id = Napi::Object::New(env);
+        for (const auto& [k, v] : config.lang_to_id) {
+            lang_to_id.Set(k, cpp_to_js<int64_t, Napi::Value>(env, v));
+        }
+        obj.Set("lang_to_id", lang_to_id);
+    } else {
+        obj.Set("lang_to_id", env.Undefined());
+    }
+    if (!config.alignment_heads.empty()) {
+        Napi::Array arr = Napi::Array::New(env, config.alignment_heads.size());
+        for (size_t i = 0; i < config.alignment_heads.size(); ++i) {
+            Napi::Array pair = Napi::Array::New(env, 2);
+            pair[0u] = cpp_to_js<size_t, Napi::Value>(env, config.alignment_heads[i].first);
+            pair[1u] = cpp_to_js<size_t, Napi::Value>(env, config.alignment_heads[i].second);
+            arr[static_cast<uint32_t>(i)] = pair;
+        }
+        obj.Set("alignment_heads", arr);
+    } else {
+        obj.Set("alignment_heads", env.Undefined());
+    }
+    if (config.initial_prompt.has_value()) {
+        obj.Set("initial_prompt", Napi::String::New(env, config.initial_prompt.value()));
+    } else {
+        obj.Set("initial_prompt", env.Undefined());
+    }
+    if (config.hotwords.has_value()) {
+        obj.Set("hotwords", Napi::String::New(env, config.hotwords.value()));
+    } else {
+        obj.Set("hotwords", env.Undefined());
+    }
+    if (!config.begin_suppress_tokens.empty()) {
+        Napi::Array arr = Napi::Array::New(env, config.begin_suppress_tokens.size());
+        for (size_t i = 0; i < config.begin_suppress_tokens.size(); ++i) {
+            arr[static_cast<uint32_t>(i)] = cpp_to_js<int64_t, Napi::Value>(env, config.begin_suppress_tokens[i]);
+        }
+        obj.Set("begin_suppress_tokens", arr);
+    } else {
+        obj.Set("begin_suppress_tokens", env.Undefined());
+    }
+    if (!config.suppress_tokens.empty()) {
+        Napi::Array arr = Napi::Array::New(env, config.suppress_tokens.size());
+        for (size_t i = 0; i < config.suppress_tokens.size(); ++i) {
+            arr[static_cast<uint32_t>(i)] = cpp_to_js<int64_t, Napi::Value>(env, config.suppress_tokens[i]);
+        }
+        obj.Set("suppress_tokens", arr);
+    } else {
+        obj.Set("suppress_tokens", env.Undefined());
+    }
+    return obj;
+}
+
 bool is_napi_value_int(const Napi::Env& env, const Napi::Value& num) {
     return env.Global().Get("Number").ToObject().Get("isInteger").As<Napi::Function>().Call({num}).ToBoolean().Value();
 }
@@ -1298,5 +1471,42 @@ Napi::Object to_vlm_decoded_result(const Napi::Env& env, const ov::genai::VLMDec
     obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, results.scores));
     obj.Set("perfMetrics", VLMPerfMetricsWrapper::wrap(env, results.perf_metrics));
     obj.Set("parsed", cpp_to_js<std::vector<ov::genai::JsonContainer>, Napi::Value>(env, results.parsed));
+    return obj;
+}
+
+Napi::Object to_whisper_decoded_result(const Napi::Env& env, const ov::genai::WhisperDecodedResults& results) {
+    Napi::Object obj = Napi::Object::New(env);
+    obj.Set("texts", cpp_to_js<std::vector<std::string>, Napi::Value>(env, results.texts));
+    obj.Set("scores", cpp_to_js<std::vector<float>, Napi::Value>(env, results.scores));
+    obj.Set("perfMetrics", WhisperPerfMetricsWrapper::wrap(env, results.perf_metrics));
+    if (results.chunks.has_value()) {
+        Napi::Array chunks = Napi::Array::New(env, results.chunks->size());
+        for (size_t i = 0; i < results.chunks->size(); ++i) {
+            const auto& c = results.chunks->at(i);
+            Napi::Object chunk = Napi::Object::New(env);
+            chunk.Set("text", Napi::String::New(env, c.text));
+            chunk.Set("startTs", cpp_to_js<float, Napi::Value>(env, c.start_ts));
+            chunk.Set("endTs", cpp_to_js<float, Napi::Value>(env, c.end_ts));
+            chunks[i] = chunk;
+        }
+        obj.Set("chunks", chunks);
+    }
+    if (results.words.has_value()) {
+        Napi::Array words = Napi::Array::New(env, results.words->size());
+        for (size_t i = 0; i < results.words->size(); ++i) {
+            const auto& w = results.words->at(i);
+            Napi::Object wordObj = Napi::Object::New(env);
+            wordObj.Set("word", Napi::String::New(env, w.word));
+            wordObj.Set("startTs", cpp_to_js<float, Napi::Value>(env, w.start_ts));
+            wordObj.Set("endTs", cpp_to_js<float, Napi::Value>(env, w.end_ts));
+            const size_t token_ids_size = w.token_ids.size();
+            auto token_ids_buffer = Napi::ArrayBuffer::New(env, token_ids_size * sizeof(int64_t));
+            std::memcpy(token_ids_buffer.Data(), w.token_ids.data(), token_ids_size * sizeof(int64_t));
+            const auto tokenIds = Napi::BigInt64Array::New(env, token_ids_size, token_ids_buffer, 0);
+            wordObj.Set("tokenIds", tokenIds);
+            words[i] = wordObj;
+        }
+        obj.Set("words", words);
+    }
     return obj;
 }

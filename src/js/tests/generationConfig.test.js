@@ -1,15 +1,19 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2023-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-import { LLMPipeline, StopCriteria } from "../dist/index.js";
+import { LLMPipeline, WhisperPipeline, StopCriteria } from "../dist/index.js";
 
 import assert from "node:assert/strict";
 import { describe, it, before, afterEach } from "node:test";
 
-const { LLM_PATH } = process.env;
+const { LLM_PATH, WHISPER_MODEL_PATH } = process.env;
 
 if (!LLM_PATH) {
   throw new Error("Please set LLM_PATH environment variable to run the tests.");
+}
+
+if (!WHISPER_MODEL_PATH) {
+  throw new Error("Please set WHISPER_MODEL_PATH environment variable to run the tests.");
 }
 
 /** Compare two values that may be Set or array; for Sets compare sorted array form. */
@@ -26,7 +30,12 @@ function valuesEqual(a, b) {
     if (!Array.isArray(b)) return false;
     return a.length === b.length && a.every((v, i) => valuesEqual(v, b[i]));
   }
-  return false;
+  try {
+    assert.deepStrictEqual(Object.keys(a).sort(), Object.keys(b).sort());
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 describe("GenerationConfig JS <-> C++ conversion", () => {
@@ -148,6 +157,66 @@ describe("GenerationConfig JS <-> C++ conversion", () => {
         () => pipeline.setGenerationConfig({ max_new_tokens: BigInt(2 ** 100) }),
         /BigInt value is too large/,
       );
+    });
+  });
+});
+
+describe("WhisperGenerationConfig JS <-> C++ conversion", () => {
+  let pipeline = null;
+  let initialConfig = null;
+
+  function assertRoundTrip(configPatch) {
+    pipeline.setGenerationConfig(configPatch);
+    const back = pipeline.getGenerationConfig();
+
+    for (const key of Object.keys(configPatch)) {
+      assert.ok(
+        valuesEqual(configPatch[key], back[key]),
+        `round-trip mismatch for ${key}: expected ${JSON.stringify(configPatch[key])}, actual ${JSON.stringify(back[key])}`,
+      );
+    }
+  }
+
+  before(async () => {
+    pipeline = await WhisperPipeline(WHISPER_MODEL_PATH, "CPU");
+    initialConfig = pipeline.getGenerationConfig();
+  });
+
+  afterEach(() => pipeline.setGenerationConfig(initialConfig));
+
+  it("round-trips language/task and timestamp flags", () => {
+    assertRoundTrip({
+      language: "<|en|>",
+      lang_to_id: { "<|en|>": 50259, "<|fr|>": 50265 },
+      task: "transcribe",
+      return_timestamps: true,
+      word_timestamps: false,
+    });
+  });
+
+  it("round-trips Whisper token id and size_t fields", () => {
+    assertRoundTrip({
+      decoder_start_token_id: 50258,
+      pad_token_id: 50257,
+      no_timestamps_token_id: 50363,
+      transcribe_token_id: 50359,
+      translate_token_id: 50358,
+      prev_sot_token_id: 50361,
+      max_initial_timestamp_index: 50,
+      is_multilingual: true,
+    });
+  });
+
+  it("round-trips alignment_heads, lang_to_id and suppress token arrays", () => {
+    assertRoundTrip({
+      alignment_heads: [
+        [0, 0],
+        [1, 2],
+      ],
+      begin_suppress_tokens: [220, 50256],
+      suppress_tokens: [1, 2, 3],
+      initial_prompt: "hello",
+      hotwords: "openvino",
     });
   });
 });

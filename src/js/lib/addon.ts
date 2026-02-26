@@ -20,8 +20,11 @@ import {
   StreamingStatus,
   VLMPipelineProperties,
   LLMPipelineProperties,
+  WhisperGenerationConfig,
+  WhisperPipelineProperties,
 } from "./utils.js";
-import { VLMPerfMetrics, PerfMetrics } from "./perfMetrics.js";
+import { VLMPerfMetrics, PerfMetrics, WhisperPerfMetrics } from "./perfMetrics.js";
+import type { WhisperDecodedResultChunk, WhisperWordTiming } from "./decodedResults.js";
 
 export type EmbeddingResult = Float32Array | Int8Array | Uint8Array;
 export type EmbeddingResults = Float32Array[] | Int8Array[] | Uint8Array[];
@@ -140,6 +143,34 @@ export interface LLMPipeline {
   setGenerationConfig(config: GenerationConfig): void;
 }
 
+export interface WhisperPipeline {
+  new (): WhisperPipeline;
+  init(
+    modelPath: string,
+    device: string,
+    properties: WhisperPipelineProperties,
+    callback: (err: Error | null) => void,
+  ): void;
+  generate(
+    rawSpeech: Float32Array | number[],
+    generationConfig: WhisperGenerationConfig,
+    streamer: ((chunk: string) => StreamingStatus) | undefined,
+    callback: (
+      err: Error | null,
+      result: {
+        texts: string[];
+        scores: number[];
+        perfMetrics: WhisperPerfMetrics;
+        chunks?: WhisperDecodedResultChunk[];
+        words?: WhisperWordTiming[];
+      },
+    ) => void,
+  ): void;
+  getTokenizer(): ITokenizer;
+  getGenerationConfig(): Partial<WhisperGenerationConfig>;
+  setGenerationConfig(config: WhisperGenerationConfig): void;
+}
+
 export interface VLMPipeline {
   new (): VLMPipeline;
   init(
@@ -177,6 +208,7 @@ interface OpenVINOGenAIAddon {
   TextEmbeddingPipeline: TextEmbeddingPipelineWrapper;
   LLMPipeline: LLMPipeline;
   VLMPipeline: VLMPipeline;
+  WhisperPipeline: WhisperPipeline;
   ChatHistory: IChatHistory;
   Tokenizer: ITokenizer;
   ReasoningParser: IReasoningParser;
@@ -210,6 +242,7 @@ export const {
   TextRerankPipeline,
   LLMPipeline,
   VLMPipeline,
+  WhisperPipeline,
   ChatHistory,
   Tokenizer,
   ReasoningParser,
@@ -225,3 +258,4 @@ export type DeepSeekR1ReasoningParser = IDeepSeekR1ReasoningParser;
 export type Phi4ReasoningParser = IPhi4ReasoningParser;
 export type Llama3PythonicToolParser = ILlama3PythonicToolParser;
 export type Llama3JsonToolParser = ILlama3JsonToolParser;
+export type { WhisperGenerationConfig, WhisperPipelineProperties } from "./utils.js";
