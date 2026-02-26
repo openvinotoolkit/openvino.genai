@@ -450,14 +450,16 @@ CacheTypes get_cache_types(std::shared_ptr<const ov::Model> model) {
         // Shape example: [-1,4,0,64]
         auto shape = op->get_input_partial_shape(0);
         const auto rank = shape.rank().get_length();
-        size_t dynamic_axis_count = 0;
+        size_t dynamic_axis_count = 0, zero_axis_count = 0;
         for (size_t i = 0; i < rank; i++) {
             if (shape[i].is_dynamic()) {
                 dynamic_axis_count++;
+            } else if (shape[i] == 0) {
+                zero_axis_count++;
             }
         }
 
-        if (rank == 4 && dynamic_axis_count == 2) {
+        if (rank == 4 && dynamic_axis_count == 1 && zero_axis_count == 1) {
             cache_types.add_kvcache();
         } else if (rank == 3 && dynamic_axis_count == 1) {
             cache_types.add_linear();
