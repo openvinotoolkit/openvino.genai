@@ -411,7 +411,8 @@ void load_arrays(gguf_ctx* ctx,
             std::string name_prefix = strip_weight_suffix(name);
 
             // Mixed requant: token_embd/output.weight → Q8_0_C (channel-wise); others → Q4_0_128
-            bool is_token_embd = (name.find("token_embd.weight") != std::string::npos);
+            // GGUF conversion normalizes the main embedding tensor name to the exact key "token_embd.weight".
+            bool is_token_embd = (name == "token_embd.weight");
             bool is_output = (name == "output.weight");
 
             auto shape = fp16_bits_tensor.get_shape();
