@@ -217,8 +217,9 @@ ov::Tensor extract_tensor_data(gguf_tensor* tensor) {
 
     auto shape = get_shape(*tensor);
     const size_t new_size = tensor->num_weights * sizeof(int16_t);
-    // Use u16 as FP16 bit-pattern storage for the dequant staging path.
-    // This is a transport representation for half bits, not integer compute semantics.
+    // Use ov::element::u16 as raw FP16 bit-pattern storage for the dequantization staging path.
+    // The tensor element type is u16 for transport only; the payload is IEEE-754 FP16 bits,
+    // and must be interpreted as half-precision floating-point values, not as integer data.
     ov::Tensor weights(ov::element::u16, shape);
     memcpy(weights.data(), data, new_size);
     free(data);
