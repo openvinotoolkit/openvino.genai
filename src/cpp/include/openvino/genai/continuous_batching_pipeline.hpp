@@ -59,7 +59,9 @@ struct PipelineMetrics {
     float inference_duration = 0.0;
 
     /**
-     * The total KV cache size in bytes or currently used size for dynamic KV cache.
+     * Total allocated KV cache size in bytes, based on the total number of KV blocks.
+     * This value represents reserved/allocated memory for the KV cache and does not
+     * distinguish between used and unused portions in dynamic KV cache configurations.
      */
     size_t kv_cache_size_in_bytes = 0;
 };
