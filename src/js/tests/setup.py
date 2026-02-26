@@ -15,7 +15,7 @@ from optimum.intel import (
     OVModelForVisualCausalLM,
     OVModelForFeatureExtraction,
     OVModelForSequenceClassification,
-    OVModelForSpeechSeq2Seq
+    OVModelForSpeechSeq2Seq,
 )
 
 # Add the Python tests utils directory to the path
