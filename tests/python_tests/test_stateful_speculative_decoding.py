@@ -4,6 +4,7 @@
 
 import pytest
 import numpy as np
+import os
 
 import openvino as ov
 import openvino_genai as ov_genai
@@ -303,3 +304,50 @@ def test_eagle3_perf_metrics(target_model, target_device, draft_model, draft_dev
     draft_iterations = len(extended_perf_metrics.draft_model_metrics.raw_metrics.m_durations)
     assert target_iterations > 0 and target_iterations <= generation_config.max_new_tokens
     assert draft_iterations > 0, "Draft model had no iterations"
+
+
+@pytest.mark.parametrize("target_model,draft_model", [(m[0], m[1]) for m in eagle3_models_and_input])
+def test_eagle3_memory_footprint(target_model, draft_model):
+    """Verify that the Eagle3 pipeline does not retain excess memory while alive.
+
+    The RSS increase from pipeline creation must stay below 2 × the combined
+    on-disk weight size of the target and draft models. Staying under this
+    bound proves that only one copy of the weights is resident in memory and
+    that no extra allocations are retained beyond normal runtime overhead.
+    """
+    psutil = pytest.importorskip("psutil", reason="psutil is required for RSS measurement")
+
+    target_model_path = download_and_convert_model(target_model).models_path
+    draft_model_path = download_and_convert_model(draft_model).models_path
+
+    def model_bin_size_mb(model_path) -> float:
+        bin_file = model_path / "openvino_model.bin"
+        return bin_file.stat().st_size / 1024 / 1024
+
+    target_bin_mb = model_bin_size_mb(target_model_path)
+    draft_bin_mb = model_bin_size_mb(draft_model_path)
+    combined_bin_mb = target_bin_mb + draft_bin_mb
+    allowed_rss_increase_mb = 2.0 * combined_bin_mb
+
+    process = psutil.Process(os.getpid())
+    rss_before_mb = process.memory_info().rss / 1024 / 1024
+
+    pipe = ov_genai.LLMPipeline(
+        target_model_path,
+        "GPU",
+        get_default_llm_properties(),
+        draft_model=ov_genai.draft_model(draft_model_path, "GPU", **get_default_llm_properties()),
+    )
+
+    rss_peak_mb = process.memory_info().rss / 1024 / 1024
+    rss_increase_mb = rss_peak_mb - rss_before_mb
+
+    assert rss_increase_mb < allowed_rss_increase_mb, (
+        f"RSS increased by {rss_increase_mb:.1f} MB, "
+        f"exceeding the {allowed_rss_increase_mb:.1f} MB limit "
+        f"(2 × {combined_bin_mb:.1f} MB combined on-disk model weight size). "
+        f"Only one copy of the weights should be resident in memory; "
+        f"excess growth indicates that allocations are not being released."
+    )
+
+    del pipe
