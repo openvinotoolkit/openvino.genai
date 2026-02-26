@@ -34,7 +34,7 @@ def main():
     pipe = openvino_genai.LLMPipeline(args.model_dir, main_device, draft_model=draft_model, MAX_PROMPT_LEN=1024, MIN_RESPONSE_LEN=128, NPU_COMPILER_TYPE="DRIVER")
     
     config = openvino_genai.GenerationConfig()
-    config.max_new_tokens = 20
+    config.max_new_tokens = 50
     # Speculative decoding generation parameters like `num_assistant_tokens` and `assistant_confidence_threshold` are mutually excluded.
     # Add parameter to enable speculative decoding to generate `num_assistant_tokens` candidates by draft_model per iteration.
     # NOTE: ContinuousBatching backend uses `num_assistant_tokens` as is. Stateful backend uses `num_assistant_tokens`'s copy as initial

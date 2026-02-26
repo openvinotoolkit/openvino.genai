@@ -318,7 +318,7 @@ void Eagle3InferWrapperBase::build_model_inputs(const size_t input_token_count,
     //
     // Key insight: the root token is the LAST token output by the previous target step.
     // Although the target model produced it, its KV has NOT been written to the target
-    // KV cache yet — the target processed only the prompt during prefill and the previous
+    // KV cache yet — the target processed only the prompt during prefill and the previously
     // accepted tokens during prior iterations.  Therefore the root must be re-submitted
     // as part of input_ids together with its N children.
     //
@@ -328,19 +328,20 @@ void Eagle3InferWrapperBase::build_model_inputs(const size_t input_token_count,
     //   tree_position_ids[i]  = tree depth of candidate i (root depth = 0, children depth > 0)
     //   Both are size N+1, index 0 = root.
     //
-    // generated_ids layout (after sync from draft):
-    //   all N+1 entries = root followed by N tree-node tokens
-    //   (the last N+1 entries of generated_ids, taken from draft sequence)
+    // generated_ids layout (at this point, after syncing draft candidates to target):
+    //   [hist_0, ..., hist_{K-1}, root, node_1, ..., node_N]
+    //   where K = generated_ids.size() - num_candidates  (tokens already in target KV cache)
+    //   and the last num_candidates entries are the current candidates.
     //
     // Attention layout for the target forward pass:
-    //   context_len = prompt_len       (only the original prompt tokens are in target KV)
-    //   attn_len    = context_len + (N+1)
+    //   context_len = prompt_len + K   (all tokens already in target KV cache)
+    //   attn_len    = context_len + num_candidates
     //
     //   input_ids    : {1, N+1} = all N+1 candidates (root first, then tree nodes)
-    //   position_ids : {1, N+1} = prompt_len + tree_position_ids[i]  for i in 0..N
+    //   position_ids : {1, N+1} = context_len + tree_position_ids[i]  for i in 0..N
     //   attention_mask: {1, attn_len} all-ones
     //   eagle_tree_mask: {1, 1, N+1, attn_len}
-    //     history columns [0, context_len): 0.0  (all candidates attend to prompt)
+    //     history columns [0, context_len): 0.0  (all candidates attend to prompt + past accepted)
     //     tree columns [context_len, attn_len): tree_mask[i][j]==1 → 0.0, else -INF
     if (phase == InferencePhase::TARGET_VALIDATION) {
         auto current_sequence = get_current_sequence();
@@ -373,9 +374,11 @@ void Eagle3InferWrapperBase::build_model_inputs(const size_t input_token_count,
                         num_candidates,
                         " tokens (root + N tree nodes)");
 
-        // context_len = prompt_len only: the root token has NOT been fed to the target KV
-        // cache yet (prefill processed only the prompt; the root was just sampled from it).
-        const size_t context_len = prompt_len;
+        // context_len = prompt + all previously accepted generated tokens (already in KV cache).
+        // The last num_candidates entries of generated_ids are the current candidates (root +
+        // N tree nodes), which are NOT yet in the KV cache and must be submitted as input_ids.
+        const size_t past_accepted_len = generated_ids.size() - num_candidates;
+        const size_t context_len = prompt_len + past_accepted_len;
         const size_t attn_len = context_len + num_candidates;
 
         // 1. input_ids: all N+1 candidates — root then tree nodes
@@ -387,9 +390,9 @@ void Eagle3InferWrapperBase::build_model_inputs(const size_t input_token_count,
             ids_ptr[i] = generated_ids[gen_offset + i];
         }
 
-        // 2. position_ids: prompt_len + tree depth of each candidate.
-        //    tree_pos_ids[0] = 0 → root sits at position prompt_len.
-        //    tree_pos_ids[i] = depth → node sits at prompt_len + depth.
+        // 2. position_ids: context_len + tree depth of each candidate.
+        //    tree_pos_ids[0] = 0 → root sits at position context_len (right after KV cache).
+        //    tree_pos_ids[i] = depth → node sits at context_len + depth.
         position_ids = ov::Tensor(ov::element::i64, {1, num_candidates});
         int64_t* pos_ptr = position_ids.data<int64_t>();
         for (size_t i = 0; i < num_candidates; ++i) {
@@ -401,7 +404,7 @@ void Eagle3InferWrapperBase::build_model_inputs(const size_t input_token_count,
         std::fill_n(attention_mask.data<int64_t>(), attn_len, 1);
 
         // 4. eagle_tree_mask: shape {1, 1, num_candidates, attn_len}.
-        //    history columns [0, context_len): 0.0 (all candidates attend to prompt).
+        //    history columns [0, context_len): 0.0 (all candidates attend to prompt + past accepted).
         //    tree columns [context_len, attn_len): tree_mask_bin[i][j]==1 → 0.0, else -INF.
         eagle_tree_mask = ov::Tensor(ov::element::f32, {1, 1, num_candidates, attn_len});
         float* mask = eagle_tree_mask.data<float>();
@@ -409,7 +412,7 @@ void Eagle3InferWrapperBase::build_model_inputs(const size_t input_token_count,
 
         for (size_t i = 0; i < num_candidates; ++i) {
             float* row = mask + i * attn_len;
-            // History region (prompt): fully accessible.
+            // History region (prompt + past accepted tokens): fully accessible.
             std::fill_n(row, context_len, 0.0f);
             // Tree region: use tree_mask_bin[i][j] directly (includes root at index 0).
             OPENVINO_ASSERT(tree_mask_bin[i].size() == num_candidates,
@@ -426,7 +429,8 @@ void Eagle3InferWrapperBase::build_model_inputs(const size_t input_token_count,
 
         eagle3::log_debug(eagle3::PipelineStep::ITER,
                           "Built model inputs (TARGET_VALIDATION): num_candidates=" + std::to_string(num_candidates) +
-                              ", num_tree_nodes=" + std::to_string(num_tree_nodes) +
+                              ", num_tree_nodes=" + std::to_string(num_tree_nodes) + ", prompt_len=" +
+                              std::to_string(prompt_len) + ", past_accepted_len=" + std::to_string(past_accepted_len) +
                               ", context_len=" + std::to_string(context_len) + ", attn_len=" + std::to_string(attn_len),
                           m_verbose);
         return;
@@ -1421,14 +1425,25 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
                     draft_gen_ids.size(),
                     " < num_candidates: ",
                     num_candidates);
+    // draft_gen_ids tail layout: [..., root, node_1, ..., node_N]
+    // The last num_candidates entries are: [root, node_1, ..., node_N].
+    // The root is already present in the target sequence; append only the N non-root nodes.
+    const size_t draft_tail_offset = draft_gen_ids.size() - num_candidates;
     for (size_t i = 1; i < num_candidates; ++i) {
-        m_target->get_current_sequence()->append_token(draft_gen_ids[i], 0.0f);
+        m_target->get_current_sequence()->append_token(draft_gen_ids[draft_tail_offset + i], 0.0f);
     }
 
     eagle3::log_debug("Synced draft metadata and " + std::to_string(num_tree_nodes) +
                           " tree-node tokens to target sequence (total candidates: " + std::to_string(num_candidates) +
                           ")",
                       is_verbose());
+
+    // 打印出目前 draft 和 target group sequence 里面的 sequence 存储的generated ids 内容
+    eagle3::log_debug("Draft generated_ids: " + eagle3::format_tokens(draft_gen_ids), is_verbose());
+    eagle3::log_debug(
+        "Target generated_ids: " + eagle3::format_tokens(m_target->get_current_sequence()->get_generated_ids()),
+        is_verbose());
+    eagle3::log_debug("past_generate_len: " + std::to_string(past_generate_len), is_verbose());
 
     // input_token_count = num_candidates: the target processes all N+1 tokens (root + N nodes).
     // num_tokens_to_validate = num_tree_nodes: the sampler checks the N non-root draft tokens.
