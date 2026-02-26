@@ -113,8 +113,56 @@ void share_vocabulary(const std::shared_ptr<ov::Model>& main_model, const std::s
         return;
     }
 
-    GENAI_INFO("Sharing embedding weights between main and draft models for eagle3 speculative decoding.");
-    draft_weight_node->output(0).replace(main_weight_node->output(0));
+    GENAI_INFO("Copying embedding weights from main to draft model for eagle3 speculative decoding.");
+
+    // Helper function to recursively clone a node and its inputs
+    // This handles cases where embedding has intermediate ops (Convert, FakeQuantize, etc.)
+    std::function<std::shared_ptr<ov::Node>(const std::shared_ptr<ov::Node>&,
+                                            std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>>&)>
+        clone_node_recursive =
+            [&](const std::shared_ptr<ov::Node>& node,
+                std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>>& cloned_nodes) -> std::shared_ptr<ov::Node> {
+        // Check if already cloned
+        auto it = cloned_nodes.find(node.get());
+        if (it != cloned_nodes.end()) {
+            return it->second;
+        }
+
+        // Clone this node
+        std::shared_ptr<ov::Node> cloned;
+
+        if (auto constant = ov::as_type_ptr<ov::op::v0::Constant>(node)) {
+            // For Constant nodes, create a deep copy with new data
+            cloned = std::make_shared<ov::op::v0::Constant>(constant->get_element_type(),
+                                                            constant->get_shape(),
+                                                            constant->get_data_ptr());
+        } else {
+            // For other nodes, clone recursively with cloned inputs
+            ov::OutputVector cloned_inputs;
+            for (size_t i = 0; i < node->get_input_size(); ++i) {
+                auto input_node = node->get_input_node_shared_ptr(i);
+                auto cloned_input = clone_node_recursive(input_node, cloned_nodes);
+                cloned_inputs.push_back(cloned_input->output(node->get_input_source_output(i).get_index()));
+            }
+            cloned = node->clone_with_new_inputs(cloned_inputs);
+        }
+
+        cloned->set_friendly_name(node->get_friendly_name() + "_cloned_for_draft");
+        cloned_nodes[node.get()] = cloned;
+        return cloned;
+    };
+
+    // Clone the entire subgraph from main model
+    std::unordered_map<ov::Node*, std::shared_ptr<ov::Node>> cloned_nodes;
+    auto cloned_weight_node = clone_node_recursive(main_weight_node, cloned_nodes);
+
+    OPENVINO_ASSERT(cloned_weight_node,
+                    "Failed to clone embedding weight node from main model to draft model. "
+                    "This is required for Eagle3 speculative decoding.");
+
+    // Replace draft model's weight node with the cloned subgraph
+    // This ensures no cross-model references while achieving weight sharing
+    draft_weight_node->output(0).replace(cloned_weight_node->output(0));
 }
 
 void move_fc_from_draft_to_main(std::shared_ptr<ov::Model>& draft_model, std::shared_ptr<ov::Model>& main_model) {
