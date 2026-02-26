@@ -340,7 +340,7 @@ def load_visual_text_genai_pipeline(model_dir, device="CPU", ov_config=None, **k
     if is_continuous_batching:
         logger.info("Using OpenVINO GenAI Continuous Batching API")
         scheduler_config = get_scheduler_config_genai(kwargs["cb_config"])
-        pipeline = openvino_genai.VLMPipeline(model_dir, device=device, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA", **ov_config)
+        pipeline = openvino_genai.VLMPipeline(model_dir, device=device, adapters=adapter_config, scheduler_config=scheduler_config, ATTENTION_BACKEND="PA", **ov_config)
     else:
         logger.info("Using OpenVINO GenAI VLMPipeline API")
         pipeline = openvino_genai.VLMPipeline(model_dir, device=device, adapters=adapter_config, **ov_config)
