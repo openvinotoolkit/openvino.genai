@@ -53,7 +53,7 @@ def relevance_weight_type(value: str) -> float:
     return fvalue
 
 
-def get_argprser():
+def get_argparser():
     parser = argparse.ArgumentParser(
         "LLM benchmarking tool", add_help=True, formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
@@ -356,6 +356,11 @@ def get_argprser():
         "--embedding_normalize", action="store_true", help="Normalize embeddings. Applicable only for text embeddings"
     )
     parser.add_argument(
+        "--embedding_pad_to_max_length",
+        action="store_true",
+        help="Pad embeddings. Applicable only for text embeddings",
+    )
+    parser.add_argument(
         "--embedding_max_length",
         type=int,
         default=None,
@@ -434,7 +439,7 @@ def main():
         stream=sys.stdout,
         **logging_kwargs,
     )
-    args = get_argprser()
+    args = get_argparser()
 
     if args.tokens_len is not None and not args.streaming:
         log.error("--tokens_len requires --streaming to be set.")

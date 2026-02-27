@@ -94,6 +94,8 @@ image_generation:
 video_generation:
   revalidate:
     - Video_generation_samples
+    - llm_bench
+    - WWB
 
 RAG:
   revalidate:

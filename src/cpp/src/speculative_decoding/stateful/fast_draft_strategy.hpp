@@ -1,13 +1,13 @@
-// Copyright (C) 2025 Intel Corporation
+// Copyright (C) 2025-2026 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
-
-#include "speculative_decoding_metrics.hpp"
-#include "llm/pipeline_base.hpp"
 #include "sampling/sampler.hpp"
 #include "utils.hpp"
 #include "openvino/genai/perf_metrics.hpp"
 #include "openvino/genai/speculative_decoding/perf_metrics.hpp"
+
+#include "speculative_decoding/speculative_decoding_metrics.hpp"
+#include "stateful_pipeline_base.hpp"
 
 namespace ov {
 namespace genai {
@@ -77,57 +77,36 @@ private:
     std::vector<int64_t> m_new_atten_mask_data;
 };
 
-class StatefulSpeculativeLLMPipeline : public ov::genai::LLMPipelineImplBase {
+class StatefulSpeculativeLLMPipeline : public StatefulSpeculativePipelineBase {
 public:
     StatefulSpeculativeLLMPipeline(
     const ov::genai::ModelDesc& main_model_desc, 
     const ov::genai::ModelDesc& draft_model_desc
     );
 
-    DecodedResults generate(
-        StringInputs inputs,
-        OptionalGenerationConfig generation_config,
-        StreamerVariant streamer
-    ) override;
+    ~StatefulSpeculativeLLMPipeline();
 
-    DecodedResults generate(
-        const ChatHistory& history,
-        OptionalGenerationConfig generation_config,
-        StreamerVariant streamer
-    ) override;
+    ov::genai::SpeculativeDecodingMetrics get_speculative_decoding_metrics() const;
 
-    EncodedResults generate(
-        const EncodedInputs& inputs,
-        OptionalGenerationConfig generation_config,
-        StreamerVariant streamer
-    ) override;
-
-    void start_chat(const std::string& system_message) override;
-
+    // Override to reset model states
     void finish_chat() override;
 
-    ov::genai::SpeculativeDecodingMetrics
-    get_speculative_decoding_metrics() const;
+protected:
+    // Override base class methods
+    GenerationConfig resolve_generation_config(OptionalGenerationConfig generation_config) override;
 
-    ~StatefulSpeculativeLLMPipeline();
+    EncodedResults generate_tokens(const EncodedInputs& inputs,
+                                   const GenerationConfig& config,
+                                   StreamerVariant streamer) override;
 
 private:
     void update_candidate_strategy(const std::size_t matches_num);
-
-    GenerationConfig resolve_generation_config(OptionalGenerationConfig generation_config);
 
 private:
     std::unique_ptr<LLMInferWrapper> m_draft_request;
     std::unique_ptr<LLMInferWrapper> m_main_request;
     std::size_t m_candidates_num = 5;
     std::size_t m_max_candidates_num = 10;
-
-    ov::genai::SpeculativeDecodingMetrics m_sd_metrics;
-    ov::genai::SDPerModelsPerfMetrics m_sd_perf_metrics;
-
-    bool m_is_chat_conversation = false;
-    ChatHistory m_history;
-    bool m_streaming_was_cancelled = false;
 };
 
 }  // namespace genai

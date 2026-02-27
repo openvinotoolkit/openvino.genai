@@ -707,7 +707,10 @@ jobs:
   genai_nodejs_tests:
     name: Node.js bindings tests
     needs: [ smart_ci, openvino_download, genai_build_nodejs ]
-    if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
+    # if: ${{ fromJSON(needs.smart_ci.outputs.affected_components).JS_API }}
+    # nodejs tests fails on mac with: "mutex lock failed: Invalid argument"
+    # ticket: 179949
+    if: false
     timeout-minutes: 20
     defaults:
       run:
