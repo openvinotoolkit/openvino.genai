@@ -509,7 +509,9 @@ public:
         ov::Tensor timestep(ov::element::f32, {1});
         float* timestep_data = timestep.data<float>();
 
-        TaylorSeerState taylorseer_state;
+        // Initialize TaylorSeer if configured
+        TaylorSeerState ts_state(m_custom_generation_config.taylorseer_config, timesteps.size());
+
         for (size_t inference_step = 0; inference_step < timesteps.size(); ++inference_step) {
             auto step_start = std::chrono::steady_clock::now();
             timestep_data[0] = timesteps[inference_step] / 1000.0f;
@@ -518,17 +520,13 @@ public:
 
             ov::Tensor noise_pred_tensor;
             // Use TaylorSeer if enabled and caching is appropriate
-            if (m_custom_generation_config.taylorseer_config) {
-                if (!taylorseer_state.should_compute(inference_step,
-                                                     *m_custom_generation_config.taylorseer_config,
-                                                     timesteps.size())) {
-                    noise_pred_tensor = taylorseer_state.predict(inference_step);
-                } else {
-                    noise_pred_tensor = m_transformer->infer(latents, timestep);
-                    taylorseer_state.update(inference_step, noise_pred_tensor);
-                }
+            if (ts_state.is_active() && !ts_state.should_compute(inference_step)) {
+                noise_pred_tensor = ts_state.predict(inference_step);
             } else {
                 noise_pred_tensor = m_transformer->infer(latents, timestep);
+                if (ts_state.is_active()) {
+                    ts_state.update(inference_step, noise_pred_tensor);
+                }
             }
 
             auto infer_duration = ov::genai::PerfMetrics::get_microsec(std::chrono::steady_clock::now() - infer_start);

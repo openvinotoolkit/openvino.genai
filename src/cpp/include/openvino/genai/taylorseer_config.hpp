@@ -36,29 +36,6 @@ public:
         }
     }
 
-    /**
-     * @brief Validates that the configuration is compatible with the number of inference steps.
-     * @param num_inference_steps The total number of inference steps.
-     */
-    void validate(std::size_t num_inference_steps) const {
-        if (disable_cache_before_step > num_inference_steps) {
-            OPENVINO_THROW("TaylorSeerCacheConfig: disable_cache_before_step (",
-                           disable_cache_before_step,
-                           ") cannot be greater than num_inference_steps (",
-                           num_inference_steps, ")");
-        }
-
-        if (disable_cache_after_step < 0) {
-            std::size_t abs_disable_after = static_cast<std::size_t>(-disable_cache_after_step);
-            if (abs_disable_after > num_inference_steps) {
-                OPENVINO_THROW("TaylorSeerCacheConfig: abs(disable_cache_after_step) (",
-                               abs_disable_after,
-                               ") cannot be greater than num_inference_steps (",
-                               num_inference_steps, ")");
-            }
-        }
-    }
-
     std::string to_string() const {
         std::ostringstream oss;
         oss << "TaylorSeerCacheConfig {\n"

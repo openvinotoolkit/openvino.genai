@@ -45,50 +45,9 @@ int32_t main(int32_t argc, char* argv[]) try {
         }
     }
 
-    // Initialize pipeline
     ov::genai::Text2ImagePipeline pipe(models_path, device);
-
-    // Configure TaylorSeer caching
-    ov::genai::TaylorSeerCacheConfig taylorseer_config(cache_interval, disable_before, disable_after);
-
-    auto generation_config = pipe.get_generation_config();
-    generation_config.taylorseer_config = taylorseer_config;
-    pipe.set_generation_config(generation_config);
-
-    std::cout << "TaylorSeer Configuration:\n";
-    std::cout << "  Cache interval: " << cache_interval << "\n";
-    std::cout << "  Disable before step: " << disable_before << "\n";
-    std::cout << "  Disable after step: " << disable_after << "\n\n";
-
-    // Generate with TaylorSeer
-    std::cout << "Generating image with TaylorSeer caching...\n";
+    std::cout << "Generating baseline image without caching...\n";
     auto start_time = std::chrono::high_resolution_clock::now();
-
-    ov::Tensor image = pipe.generate(prompt,
-        ov::genai::width(512),
-        ov::genai::height(512),
-        ov::genai::num_inference_steps(num_inference_steps),
-        ov::genai::num_images_per_prompt(1),
-        ov::genai::rng_seed(42),
-        ov::genai::callback(progress_bar));
-
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto taylorseer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
-
-    std::cout << "TaylorSeer generation completed in " << taylorseer_duration.count() / 1000.0 << "s\n";
-
-    imwrite("taylorseer.bmp", image, true);
-    std::cout << "Image saved to taylorseer.bmp\n";
-
-    // Generate baseline for comparison
-    std::cout << "\nGenerating baseline image without caching for comparison...\n";
-
-    // Disable TaylorSeer by removing the config
-    auto baseline_config = pipe.get_generation_config();
-    baseline_config.taylorseer_config = std::nullopt;
-    pipe.set_generation_config(baseline_config);
-
-    start_time = std::chrono::high_resolution_clock::now();
 
     ov::Tensor baseline_image = pipe.generate(prompt,
         ov::genai::width(512),
@@ -98,13 +57,40 @@ int32_t main(int32_t argc, char* argv[]) try {
         ov::genai::rng_seed(42),
         ov::genai::callback(progress_bar));
 
-    end_time = std::chrono::high_resolution_clock::now();
+    auto end_time = std::chrono::high_resolution_clock::now();
     auto baseline_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
     std::cout << "Baseline generation completed in " << baseline_duration.count() / 1000.0 << "s\n";
 
     imwrite("taylorseer_baseline.bmp", baseline_image, true);
     std::cout << "Baseline image saved to taylorseer_baseline.bmp\n";
+
+    // Configure TaylorSeer caching
+    std::cout << "\nGenerating image with TaylorSeer caching...\n";
+
+    ov::genai::TaylorSeerCacheConfig taylorseer_config(cache_interval, disable_before, disable_after);
+    std::cout << taylorseer_config.to_string() << "\n";
+    auto generation_config = pipe.get_generation_config();
+    generation_config.taylorseer_config = taylorseer_config;
+    pipe.set_generation_config(generation_config);
+
+    start_time = std::chrono::high_resolution_clock::now();
+
+    ov::Tensor image = pipe.generate(prompt,
+        ov::genai::width(512),
+        ov::genai::height(512),
+        ov::genai::num_inference_steps(num_inference_steps),
+        ov::genai::num_images_per_prompt(1),
+        ov::genai::rng_seed(42),
+        ov::genai::callback(progress_bar));
+
+    end_time = std::chrono::high_resolution_clock::now();
+    auto taylorseer_duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+
+    std::cout << "TaylorSeer generation completed in " << taylorseer_duration.count() / 1000.0 << "s\n";
+
+    imwrite("taylorseer.bmp", image, true);
+    std::cout << "Image saved to taylorseer.bmp\n";
 
     // Performance comparison
     double baseline_ms = static_cast<double>(baseline_duration.count());

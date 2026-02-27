@@ -36,7 +36,7 @@ python taylorseer_text2image.py \
     "a beautiful sunset over mountains" \
     --steps 28 \
     --cache-interval 3 \
-    --disable-before 4 \
+    --disable-before 6 \
     --disable-after -2
 ```
 
@@ -44,7 +44,7 @@ Configuration in code:
 ```python
 taylorseer_config = openvino_genai.TaylorSeerCacheConfig(
     cache_interval=3,
-    disable_cache_before_step=4,
+    disable_cache_before_step=6,
     disable_cache_after_step=-2,
 )
 ```

@@ -3,9 +3,9 @@
 
 #pragma once
 
+#include <array>
 #include <cmath>
 #include <optional>
-#include <unordered_map>
 #include <sstream>
 
 #include <openvino/core/except.hpp>
@@ -25,6 +25,65 @@ public:
     TaylorSeerState() = default;
 
     /**
+     * @brief Constructs TaylorSeerState with optional configuration.
+     * @param config Optional TaylorSeer configuration.
+     * @param num_inference_steps Total number of inference steps in the generation process.
+     * @note If config is not provided or invalid, TaylorSeer remains inactive.
+     */
+    TaylorSeerState(const std::optional<TaylorSeerCacheConfig>& config, std::size_t num_inference_steps) {
+        initialize(config, num_inference_steps);
+    }
+
+    /**
+     * @brief Initializes TaylorSeer with the given configuration.
+     * @param config Optional TaylorSeer configuration.
+     * @param num_inference_steps Total number of inference steps.
+     */
+    void initialize(const std::optional<TaylorSeerCacheConfig>& config, std::size_t num_inference_steps) {
+        if (!config) {
+            m_is_active = false;
+            return;
+        }
+
+        // Check if TaylorSeer will be effective
+        if (config->disable_cache_before_step >= num_inference_steps) {
+            m_is_active = false;
+            return;
+        }
+
+        int disable_cache_after_step = config->disable_cache_after_step;
+        if (disable_cache_after_step < 0) {
+            disable_cache_after_step = static_cast<int>(num_inference_steps) + disable_cache_after_step;
+            if (disable_cache_after_step < 0) { // If still negative, it means caching is disabled for all steps
+                m_is_active = false;
+                return;
+            }
+        }
+
+        if (static_cast<std::size_t>(disable_cache_after_step) <= config->disable_cache_before_step) {
+            m_is_active = false;
+            return;
+        }
+
+        // Precompute schedule and check if schedule has any prediction steps
+        bool has_predictions = false;
+        m_schedule.resize(num_inference_steps);
+        for (std::size_t step = 0; step < num_inference_steps; ++step) {
+            m_schedule[step] = should_compute_at_step(step, *config, num_inference_steps);
+            has_predictions |= !m_schedule[step];
+        }
+        m_is_active = has_predictions;
+    }
+
+    /**
+     * @brief Checks if TaylorSeer is active and will perform caching.
+     * @return true if TaylorSeer is active, false otherwise.
+     */
+    bool is_active() const {
+        return m_is_active;
+    }
+
+    /**
      * @brief Gets the step index when the Taylor factors were last updated.
      * @return The last update step index, or std::nullopt if never updated.
      */
@@ -38,43 +97,18 @@ public:
      * @return The Taylor factor tensor for the specified order.
      */
     const ov::Tensor& get_taylor_factor(std::size_t order) const {
-        return m_taylor_factors.at(order);
+        return m_taylor_factors[order];
     }
 
     /**
-     * @brief Determines if a full computation should be performed at the current step.
+     * @brief Determines if a full computation should be performed at the current step using precomputed schedule.
      * @param current_step The current denoising step index.
-     * @param config The TaylorSeer cache configuration.
-     * @param num_inference_steps Total number of inference steps in the generation process.
      * @return true if full computation is required, false if cached prediction can be used.
      */
-    bool should_compute(std::size_t current_step,
-                       const TaylorSeerCacheConfig& config,
-                       std::size_t num_inference_steps) const {
-        config.validate(num_inference_steps);
-
-        // Always compute during warm-up phase
-        if (current_step < config.disable_cache_before_step) {
-            return true;
-        }
-
-        int disable_cache_after_step = config.disable_cache_after_step;
-        if (disable_cache_after_step < 0) {
-            disable_cache_after_step = static_cast<int>(num_inference_steps) + disable_cache_after_step;
-        }
-        if (disable_cache_after_step >= 0 && current_step >= static_cast<std::size_t>(disable_cache_after_step)) {
-            return true;
-        }
-
-        auto offset = current_step - config.disable_cache_before_step;
-        auto first_compute_offset = config.cache_interval - 1;
-
-        if (offset < first_compute_offset) {
-            return false;  // Predict using cached values
-        } else {
-            // Compute at first_compute_offset, then every cache_interval steps
-            return ((offset - first_compute_offset) % config.cache_interval) == 0;
-        }
+    bool should_compute(std::size_t current_step) const {
+        OPENVINO_ASSERT(current_step < m_schedule.size(),
+                       "Step ", current_step, " is out of bounds for precomputed schedule of size ", m_schedule.size());
+        return m_schedule[current_step];
     }
 
     /**
@@ -99,7 +133,8 @@ public:
                            " does not match previous tensor shape ", prev_factor.get_shape());
         }
 
-        std::unordered_map<std::size_t, ov::Tensor> new_factors = {{0, output}};
+        std::array<ov::Tensor, m_max_order> new_factors;
+        new_factors[0] = output;
 
         if (!is_first_update) {
             const float divisor = 1.0f / static_cast<float>(current_step - *m_last_update_step);
@@ -122,9 +157,9 @@ public:
             }
         }
 
-        // Update stored factors
-        for (const auto& [order, new_taylor_factor]: new_factors) {
-            m_taylor_factors[order] = new_taylor_factor;
+        // Update Taylor factors
+        for (std::size_t order = 0; order < m_max_order; ++order) {
+            m_taylor_factors[order] = std::move(new_factors[order]);
         }
 
         m_last_update_step = current_step;
@@ -169,17 +204,32 @@ public:
     }
 
 private:
-    /**
-     * @brief Maps order to corresponding Taylor factor tensor.
-     * Order 0 stores the base output, order 1 stores the first derivative approximation, etc.
-     */
-    std::unordered_map<std::size_t, ov::Tensor> m_taylor_factors = {};
+    bool should_compute_at_step(std::size_t current_step,
+                                const TaylorSeerCacheConfig& config,
+                                std::size_t num_inference_steps) const {
+        // Always compute during warm-up phase and guarantee enough steps to compute Taylor factors
+        if (current_step < std::max(config.disable_cache_before_step, m_max_order)) {
+            return true;
+        }
 
-    /**
-     * @brief The step index when Taylor factors were last updated.
-     * Initialized to std::nullopt to indicate no updates yet.
-     */
-    std::optional<std::size_t> m_last_update_step = std::nullopt;
+        int disable_cache_after_step = config.disable_cache_after_step;
+        if (disable_cache_after_step < 0) {
+            disable_cache_after_step = static_cast<int>(num_inference_steps) + disable_cache_after_step;
+        }
+        if (disable_cache_after_step >= 0 && current_step >= static_cast<std::size_t>(disable_cache_after_step)) {
+            return true;
+        }
+
+        auto offset = current_step - std::max(config.disable_cache_before_step, m_max_order);
+        auto first_compute_offset = config.cache_interval - 1;
+
+        if (offset < first_compute_offset) {
+            return false;  // Predict using cached values
+        } else {
+            // Compute at first_compute_offset, then every cache_interval steps
+            return ((offset - first_compute_offset) % config.cache_interval) == 0;
+        }
+    }
 
     /**
      * @brief Maximum order of Taylor series approximation to use.
@@ -190,6 +240,29 @@ private:
      * Higher orders may introduce numerical instability without significant quality gains.
      */
     static constexpr std::size_t m_max_order = 2;
+
+    /**
+     * @brief Array of Taylor factor tensors indexed by order.
+     * Order 0 stores the base output, order 1 stores the first derivative approximation.
+     */
+    std::array<ov::Tensor, m_max_order> m_taylor_factors = {};
+
+    /**
+     * @brief The step index when Taylor factors were last updated.
+     * Initialized to std::nullopt to indicate no updates yet.
+     */
+    std::optional<std::size_t> m_last_update_step = std::nullopt;
+
+    /**
+     * @brief Precomputed schedule of compute vs predict decisions for each step.
+     * Empty if not using precomputed schedule.
+     */
+    std::vector<bool> m_schedule;
+
+    /**
+     * @brief Whether TaylorSeer is active for this generation.
+     */
+    bool m_is_active = false;
 };
 
 } // namespace ov::genai

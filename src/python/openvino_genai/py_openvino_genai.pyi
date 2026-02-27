@@ -3273,10 +3273,6 @@ class TaylorSeerCacheConfig:
         ...
     def to_string(self) -> str:
         ...
-    def validate(self, num_inference_steps: typing.SupportsInt) -> None:
-        """
-        Validates that the configuration is compatible with the number of inference steps
-        """
     @property
     def cache_interval(self) -> int:
         ...

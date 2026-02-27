@@ -30,22 +30,6 @@ def main():
         print(f"Step {step + 1}/{num_steps}")
         return False
 
-    # Configure TaylorSeer caching
-    taylorseer_config = openvino_genai.TaylorSeerCacheConfig(
-        cache_interval=args.cache_interval,
-        disable_cache_before_step=args.disable_before,
-        disable_cache_after_step=args.disable_after,
-    )
-    generation_config = pipe.get_generation_config()
-    generation_config.taylorseer_config = taylorseer_config
-    pipe.set_generation_config(generation_config)
-
-    print(f"TaylorSeer Configuration:")
-    print(f"  Cache interval: {args.cache_interval}")
-    print(f"  Disable before step: {args.disable_before}")
-    print(f"  Disable after step: {args.disable_after}")
-
-    print(f"Generating image with TaylorSeer caching...")
     generate_kwargs = {
         "width": 512,
         "height": 512,
@@ -54,6 +38,32 @@ def main():
         "num_images_per_prompt": 1,
         "callback": callback,
     }
+
+    # Generate baseline for comparison
+    print(f"\nGenerating baseline image without caching...")
+    start_time = time.time()
+    baseline_tensor = pipe.generate(args.prompt, **generate_kwargs)
+    baseline_time = time.time() - start_time
+
+    print(f"Baseline generation completed in {baseline_time:.2f}s")
+
+    baseline_filename = "taylorseer_baseline.bmp"
+    baseline_image = Image.fromarray(baseline_tensor.data[0])
+    baseline_image.save(baseline_filename)
+    print(f"Baseline image saved to {baseline_filename}")
+
+    # Configure TaylorSeer caching
+    print(f"\nGenerating image with TaylorSeer caching...")
+
+    taylorseer_config = openvino_genai.TaylorSeerCacheConfig(
+        cache_interval=args.cache_interval,
+        disable_cache_before_step=args.disable_before,
+        disable_cache_after_step=args.disable_after,
+    )
+    print(taylorseer_config)
+    generation_config = pipe.get_generation_config()
+    generation_config.taylorseer_config = taylorseer_config
+    pipe.set_generation_config(generation_config)
 
     start_time = time.time()
     image_tensor = pipe.generate(args.prompt, **generate_kwargs)
@@ -64,24 +74,6 @@ def main():
     image = Image.fromarray(image_tensor.data[0])
     image.save(image_filename)
     print(f"Image saved to {image_filename}")
-
-    print("\nGenerating baseline image without caching for comparison...")
-
-    # Disable TaylorSeer by removing the config
-    baseline_config = pipe.get_generation_config()
-    baseline_config.taylorseer_config = None
-    pipe.set_generation_config(baseline_config)
-
-    start_time = time.time()
-    baseline_tensor = pipe.generate(args.prompt, **generate_kwargs)
-    baseline_time = time.time() - start_time
-
-    print(f"Baseline generation completed in {baseline_time:.2f}s")
-
-    baseline_filename = image_filename.replace(".bmp", "_baseline.bmp")
-    baseline_image = Image.fromarray(baseline_tensor.data[0])
-    baseline_image.save(baseline_filename)
-    print(f"Baseline image saved to {baseline_filename}")
 
     # Performance comparison
     speedup = baseline_time / taylorseer_time if taylorseer_time > 0 else 0.0
