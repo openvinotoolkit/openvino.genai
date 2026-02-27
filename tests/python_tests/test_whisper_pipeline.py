@@ -839,14 +839,29 @@ def test_streamers(model_descr, sample_from_dataset, streamer_for_test):
     result = genai_pipe.generate(sample_from_dataset, streamer=streamer)
 
     expected = result.texts[0]
+    print("Expected:")
+    print(expected)
 
-    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    as_property_result = result_handler.decode(genai_pipe.get_tokenizer())
+
+    print("As property:")
+    print(as_property_result)
+
+    assert expected == as_property_result
     result_handler.reset()
 
     config = genai_pipe.get_generation_config()
-    genai_pipe.generate(sample_from_dataset, config, streamer)
+    expected_with_config = genai_pipe.generate(sample_from_dataset, config, streamer)
 
-    assert expected == result_handler.decode(genai_pipe.get_tokenizer())
+    as_argument_result = result_handler.decode(genai_pipe.get_tokenizer())
+
+    print("Expected with config:")
+    print(expected_with_config)
+
+    print("As argument:")
+    print(as_argument_result)
+
+    assert expected == as_argument_result
     result_handler.reset()
 
     genai_pipe.generate(sample_from_dataset, config, streamer=streamer)
