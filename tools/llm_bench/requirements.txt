@@ -7,7 +7,7 @@ openvino-tokenizers
 openvino_genai
 # Image processing for VLMs
 pillow==12.1.1
-torch>=2.1.0,<=2.10
+torch>=2.1.0,<=2.10.0+cpu
 transformers[sentencepiece]>=4.40.0,<=4.57.0
 diffusers>=0.22.0,<=0.36.0
 # optimum is in dependency list of optimum-intel
