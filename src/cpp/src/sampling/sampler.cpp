@@ -1181,14 +1181,80 @@ size_t Sampler::validate_tree_candidates(Sequence::Ptr& sequence,
                                          const ov::Tensor& sequence_group_logits,
                                          LogitProcessor& logit_processor,
                                          size_t num_tokens_to_validate) {
+    // // ===== DEBUG: Force all draft tokens to be rejected (accuracy debug mode) =====
+    // {
+    //     auto& eagle_metadata = sequence->get_eagle_metadata();
+    //     auto retrieve_indices = eagle_metadata.retrieve_indices;
+    //     if (retrieve_indices.empty())
+    //         return 0;
+
+    //     // Remove all draft tokens and sample one bonus token from target model
+    //     sequence->remove_last_tokens(num_tokens_to_validate);
+
+    //     // Sample bonus token using the first logit position (token_idx_to_end = num_tokens_to_validate)
+    //     auto logit_vector = _get_logit_vector(sequence_group_logits, 0, num_tokens_to_validate);
+    //     logit_processor.apply(logit_vector);
+    //     Token bonus_token = _greedy_sample(logit_vector, 0);
+
+    //     sequence->append_token(bonus_token.m_index, bonus_token.m_log_prob);
+    //     logit_processor.register_new_generated_token(bonus_token.m_index);
+
+    //     std::cout << "[VALIDATE_TREE DEBUG][FORCE_REJECT] All draft tokens rejected. Bonus token: "
+    //               << bonus_token.m_index << std::endl;
+
+    //     // Prune validate_path to length 1 (root only, no accepted draft tokens)
+    //     auto validate_path = retrieve_indices[0];
+    //     validate_path.resize(1);
+    //     sequence->set_eagle_metadata({{}, {}, eagle_metadata.tree_position_ids, validate_path});
+    //     return 1;  // validated_steps = 1 (only bonus token)
+    // }
+    // // ===== END DEBUG =====
+
+    // ===== DEBUG: validate_tree_candidates entry =====
+    std::cout << "\n[VALIDATE_TREE DEBUG] ========== validate_tree_candidates Entry ==========" << std::endl;
+    std::cout << "[VALIDATE_TREE DEBUG] num_tokens_to_validate: " << num_tokens_to_validate << std::endl;
+    std::cout << "[VALIDATE_TREE DEBUG] sequence_group_logits shape: [";
+    for (size_t d = 0; d < sequence_group_logits.get_shape().size(); ++d) {
+        std::cout << sequence_group_logits.get_shape()[d];
+        if (d + 1 < sequence_group_logits.get_shape().size())
+            std::cout << ", ";
+    }
+    std::cout << "]" << std::endl;
+
     auto& eagle_metadata = sequence->get_eagle_metadata();
     auto retrieve_indices = eagle_metadata.retrieve_indices;
-    if (retrieve_indices.empty())
+
+    std::cout << "[VALIDATE_TREE DEBUG] retrieve_indices count: " << retrieve_indices.size() << std::endl;
+    for (size_t pi = 0; pi < retrieve_indices.size(); ++pi) {
+        std::cout << "[VALIDATE_TREE DEBUG]   retrieve_indices[" << pi << "]: [";
+        for (size_t j = 0; j < retrieve_indices[pi].size(); ++j) {
+            std::cout << retrieve_indices[pi][j];
+            if (j + 1 < retrieve_indices[pi].size())
+                std::cout << ", ";
+        }
+        std::cout << "]" << std::endl;
+    }
+
+    if (retrieve_indices.empty()) {
+        std::cout << "[VALIDATE_TREE DEBUG] retrieve_indices empty, returning 0" << std::endl;
         return 0;
+    }
+
     // reconstruct the candidate lists from retrieve_indices
     auto generated_len = sequence->get_generated_len();
     auto generated_ids = sequence->get_generated_ids();
     auto tokens_to_validate = generated_ids.end() - num_tokens_to_validate;
+
+    std::cout << "[VALIDATE_TREE DEBUG] generated_len: " << generated_len << std::endl;
+    std::cout << "[VALIDATE_TREE DEBUG] total generated_ids size: " << generated_ids.size() << std::endl;
+    std::cout << "[VALIDATE_TREE DEBUG] last " << num_tokens_to_validate << " generated_ids (tokens to validate): [";
+    for (size_t i = generated_ids.size() - num_tokens_to_validate; i < generated_ids.size(); ++i) {
+        std::cout << generated_ids[i];
+        if (i + 1 < generated_ids.size())
+            std::cout << ", ";
+    }
+    std::cout << "]" << std::endl;
+
     std::vector<std::vector<int64_t>> candidate_token_ids;
     candidate_token_ids.reserve(retrieve_indices.size());
     for (const auto& path : retrieve_indices) {
@@ -1200,6 +1266,17 @@ size_t Sampler::validate_tree_candidates(Sequence::Ptr& sequence,
         candidate_token_ids.push_back(candidate_tokens);
     }
 
+    std::cout << "[VALIDATE_TREE DEBUG] Reconstructed candidate_token_ids:" << std::endl;
+    for (size_t ci = 0; ci < candidate_token_ids.size(); ++ci) {
+        std::cout << "[VALIDATE_TREE DEBUG]   path[" << ci << "]: [";
+        for (size_t j = 0; j < candidate_token_ids[ci].size(); ++j) {
+            std::cout << candidate_token_ids[ci][j];
+            if (j + 1 < candidate_token_ids[ci].size())
+                std::cout << ", ";
+        }
+        std::cout << "]" << std::endl;
+    }
+
     // validate tokens one by one
     size_t valid_tokens = 0;
     size_t token_idx = 1;
@@ -1208,61 +1285,106 @@ size_t Sampler::validate_tree_candidates(Sequence::Ptr& sequence,
     for (const auto& path : retrieve_indices) {
         max_retrieve_indices_size = std::max(max_retrieve_indices_size, path.size());
     }
+    std::cout << "[VALIDATE_TREE DEBUG] max_retrieve_indices_size: " << max_retrieve_indices_size << std::endl;
 
     std::vector<size_t> path_pos(candidate_token_ids.size(), 1);
     size_t validated_steps = 1;
     size_t token_idx_to_end = num_tokens_to_validate;
     Token bonus_token;
+
+    std::cout << "[VALIDATE_TREE DEBUG] Starting validation loop (max steps: " << max_retrieve_indices_size << ")"
+              << std::endl;
+
     for (size_t step = 1;
          step < max_retrieve_indices_size && !candidate_token_ids.empty() && validated_steps < num_tokens_to_validate;
          ++step) {
+        std::cout << "\n[VALIDATE_TREE DEBUG] --- Step " << step << " ---" << std::endl;
+        std::cout << "[VALIDATE_TREE DEBUG]   validated_steps so far: " << validated_steps << std::endl;
+        std::cout << "[VALIDATE_TREE DEBUG]   token_idx_to_end: " << token_idx_to_end << std::endl;
+        std::cout << "[VALIDATE_TREE DEBUG]   remaining paths: " << candidate_token_ids.size() << std::endl;
+
         std::vector<int64_t> tokens_this_step;
         for (size_t i = 0; i < candidate_token_ids.size(); ++i) {
             if (path_pos[i] < candidate_token_ids[i].size()) {
                 tokens_this_step.push_back(candidate_token_ids[i][path_pos[i]]);
             }
         }
+
+        std::cout << "[VALIDATE_TREE DEBUG]   candidate tokens this step: [";
+        for (size_t i = 0; i < tokens_this_step.size(); ++i) {
+            std::cout << tokens_this_step[i];
+            if (i + 1 < tokens_this_step.size())
+                std::cout << ", ";
+        }
+        std::cout << "]" << std::endl;
+
         // logits for this step
         auto logit_vector = _get_logit_vector(sequence_group_logits, 0, token_idx_to_end);
         logit_processor.apply(logit_vector);
         Token sampled_token = _greedy_sample(logit_vector, 0);
         int64_t pred_token = sampled_token.m_index;
+
+        std::cout << "[VALIDATE_TREE DEBUG]   target model predicted token: " << pred_token
+                  << " (log_prob: " << sampled_token.m_log_prob << ")" << std::endl;
+
         bool matched = false;
 
         for (size_t i = 0; i < tokens_this_step.size(); ++i) {
             if (tokens_this_step[i] == pred_token) {
                 matched = true;
+                std::cout << "[VALIDATE_TREE DEBUG]   MATCH found: pred_token=" << pred_token
+                          << " matches candidate at position " << i << std::endl;
+
                 // find corresponding index of the pred_token in the retrieve indices
                 // for example, candidate token list[5109, 53, 20198, 3394, 1750, 1404, 55, 52, 220, 55]
                 // retrieve_indices = [[0,2],[0,1,3],[0,1,4,7]，[0,1,5,8], [0,1,4,6,9]]
                 // candidate_token_ids =
                 // [[5109,20198],[5109,53,3394],[5109,53,1750,52],[5109,53,1404,220],[5109,53,1750,55,55]]
 
+                size_t paths_before = candidate_token_ids.size();
                 for (size_t j = 0; j < candidate_token_ids.size();) {
                     if (path_pos[j] < candidate_token_ids[j].size() &&
                         candidate_token_ids[j][path_pos[j]] == pred_token) {
                         path_pos[j]++;
                         ++j;
                     } else {
+                        std::cout << "[VALIDATE_TREE DEBUG]   Pruning path[" << j << "] (token mismatch or exhausted)"
+                                  << std::endl;
                         retrieve_indices.erase(retrieve_indices.begin() + j);
                         candidate_token_ids.erase(candidate_token_ids.begin() + j);
                         path_pos.erase(path_pos.begin() + j);
                     }
                 }
+                std::cout << "[VALIDATE_TREE DEBUG]   Paths remaining after pruning: " << candidate_token_ids.size()
+                          << " (was: " << paths_before << ")" << std::endl;
                 break;
             }
         }
+
         if (!matched) {
             // get the bonus token and quit the loop
             bonus_token = sampled_token;
+            std::cout << "[VALIDATE_TREE DEBUG]   NO MATCH - mismatch at step " << step
+                      << ". Bonus token set to: " << bonus_token.m_index << " (log_prob: " << bonus_token.m_log_prob
+                      << ")" << std::endl;
             break;
         }
+
         token_idx_to_end = num_tokens_to_validate - retrieve_indices[0][path_pos[0] - 1];
         validated_steps++;
+        std::cout << "[VALIDATE_TREE DEBUG]   Token accepted. validated_steps now: " << validated_steps
+                  << ", next token_idx_to_end: " << token_idx_to_end << std::endl;
+
         if (validated_steps + generated_len - num_tokens_to_validate ==
-            sequence->get_sequence_group_ptr()->get_max_new_tokens())
+            sequence->get_sequence_group_ptr()->get_max_new_tokens()) {
+            std::cout << "[VALIDATE_TREE DEBUG]   Reached max_new_tokens limit. Stopping validation." << std::endl;
             break;
+        }
     }
+
+    std::cout << "\n[VALIDATE_TREE DEBUG] Validation loop done. Total validated_steps: " << validated_steps
+              << std::endl;
+
     // prune the retrieve_indices to validated_steps, use the first retrieve_indice is enough
     auto& validate_path = retrieve_indices[0];
     auto& candidate_path = candidate_token_ids[0];
@@ -1271,23 +1393,58 @@ size_t Sampler::validate_tree_candidates(Sequence::Ptr& sequence,
         candidate_path.erase(candidate_path.begin() + validated_steps, candidate_path.end());
     }
 
+    std::cout << "[VALIDATE_TREE DEBUG] Final validate_path (after prune): [";
+    for (size_t i = 0; i < validate_path.size(); ++i) {
+        std::cout << validate_path[i];
+        if (i + 1 < validate_path.size())
+            std::cout << ", ";
+    }
+    std::cout << "]" << std::endl;
+
+    std::cout << "[VALIDATE_TREE DEBUG] Final candidate_path (after prune): [";
+    for (size_t i = 0; i < candidate_path.size(); ++i) {
+        std::cout << candidate_path[i];
+        if (i + 1 < candidate_path.size())
+            std::cout << ", ";
+    }
+    std::cout << "]" << std::endl;
+
     // remove tokens from sequence
     sequence->remove_last_tokens(num_tokens_to_validate);
+    std::cout << "[VALIDATE_TREE DEBUG] Removed " << num_tokens_to_validate << " tokens from sequence." << std::endl;
+
     // append validated tokens back to sequence
+    std::cout << "[VALIDATE_TREE DEBUG] Appending " << (validated_steps - 1) << " validated tokens: [";
     for (size_t i = 1; i < validated_steps; ++i) {
+        std::cout << candidate_path[i];
+        if (i + 1 < validated_steps)
+            std::cout << ", ";
         sequence->append_token(candidate_path[i], 0.0f);
         logit_processor.register_new_generated_token(candidate_path[i]);
     }
+    std::cout << "]" << std::endl;
+
     if (bonus_token.m_index == 0) {
         // sample an extra token if all tokens are validated
+        std::cout << "[VALIDATE_TREE DEBUG] bonus_token.m_index == 0 (all steps matched), sampling extra bonus token "
+                     "at token_idx_to_end="
+                  << token_idx_to_end << std::endl;
         auto logit_vector = _get_logit_vector(sequence_group_logits, 0, token_idx_to_end);
         logit_processor.apply(logit_vector);
         bonus_token = _greedy_sample(logit_vector, 0);
     }
+
+    std::cout << "[VALIDATE_TREE DEBUG] Bonus token: " << bonus_token.m_index
+              << " (log_prob: " << bonus_token.m_log_prob << ")" << std::endl;
+
     sequence->append_token(bonus_token.m_index, bonus_token.m_log_prob);
     logit_processor.register_new_generated_token(bonus_token.m_index);
-    // std::cout << "accepted tokens in this step : " << validate_path.size() - 1 << std::endl;
-    // std::cout << "bonus token : " << bonus_token.m_index << std::endl;
+
+    std::cout << "[VALIDATE_TREE DEBUG] Accepted tokens in this step (excl. bonus): " << (validate_path.size() - 1)
+              << std::endl;
+    std::cout << "[VALIDATE_TREE DEBUG] Returning validated_steps: " << validated_steps << std::endl;
+    std::cout << "[VALIDATE_TREE DEBUG] ========== validate_tree_candidates Exit ==========" << std::endl;
+
     //  update eagle meta data
     sequence->set_eagle_metadata({{}, {}, eagle_metadata.tree_position_ids, validate_path});
     return validated_steps;

@@ -1500,21 +1500,52 @@ StatefulEagle3LLMPipeline::SpeculativeResult StatefulEagle3LLMPipeline::run_spec
                           is_verbose());
     }
 
-    // Step 5: Update hidden states for next iteration
-    // Note: forward() already stored hidden_features to sequence, but we need to slice it
+    // Step 5: Update hidden states for next iteration.
+    //
+    // current_hidden has shape {1, num_candidates, H}, where the seq dimension is a flat
+    // enumeration of all N+1 tree candidates submitted to the target model (root at index 0,
+    // then tree nodes 1..N in tree order).
+    //
+    // validated_indices (= validate_path from validate_tree_candidates) contains the
+    // tree-position indices of the accepted path, e.g. [0, 2, 5] means the root (index 0),
+    // node at tree position 2, and node at tree position 5 were accepted.  These indices are
+    // used directly as row selectors into current_hidden — they are NOT contiguous, so a
+    // simple head/tail slice is wrong.
+    //
+    // Gather the hidden-state rows corresponding to the accepted positions to form
+    // {1, total_accepted_tokens, H} for the next draft-model pass.
     auto current_hidden = val_result.output.hidden_features;
     OPENVINO_ASSERT(current_hidden && current_hidden.get_size() > 0, "Missing hidden features");
 
     const auto h_shape = current_hidden.get_shape();
-    OPENVINO_ASSERT(h_shape.size() == 3 && h_shape[0] == 1 && h_shape[1] >= total_accepted_tokens,
+    OPENVINO_ASSERT(h_shape.size() == 3 && h_shape[0] == 1,
                     "Invalid hidden state shape: ",
-                    eagle3::format_shape(h_shape),
-                    ", expected seq_len >= ",
-                    total_accepted_tokens);
+                    eagle3::format_shape(h_shape));
 
-    // Store sliced hidden states (only accepted tokens) for next iteration
-    auto [start_coord, end_coord] = ov::genai::utils::make_roi(h_shape, 1, 0, total_accepted_tokens);
-    auto next_hidden = ov::Tensor(current_hidden, start_coord, end_coord);
+    const auto& target_validated_indices = m_target->get_current_sequence()->get_eagle_metadata().validated_indices;
+    OPENVINO_ASSERT(target_validated_indices.size() == total_accepted_tokens,
+                    "validated_indices size (",
+                    target_validated_indices.size(),
+                    ") != total_accepted_tokens (",
+                    total_accepted_tokens,
+                    ")");
+
+    const size_t hidden_size = h_shape[2];
+    ov::Tensor next_hidden(ov::element::f32, {1, total_accepted_tokens, hidden_size});
+    const float* src = current_hidden.data<const float>();
+    float* dst = next_hidden.data<float>();
+    for (size_t i = 0; i < total_accepted_tokens; ++i) {
+        const size_t row = static_cast<size_t>(target_validated_indices[i]);
+        OPENVINO_ASSERT(row < h_shape[1],
+                        "validated_indices[",
+                        i,
+                        "] = ",
+                        row,
+                        " is out of range [0, ",
+                        h_shape[1],
+                        ")");
+        std::copy_n(src + row * hidden_size, hidden_size, dst + i * hidden_size);
+    }
     m_target->get_current_sequence()->update_hidden_state(next_hidden);
 
     result.accepted_tokens_count = accepted_count;
