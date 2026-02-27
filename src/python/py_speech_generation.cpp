@@ -28,6 +28,16 @@ namespace {
 
 auto speech_generation_config_docstring = R"(
     SpeechGenerationConfig
+
+    Shared parameters:
+    :param speech_model_type: backend override; one of "speecht5_tts" or "kokoro". Empty value means auto-detect.
+    :type speech_model_type: str
+
+    :param speed: speech speed multiplier.
+    :type speed: float
+
+    :param sample_rate: output sample rate.
+    :type sample_rate: int
     
     Speech-generation specific parameters:
     :param minlenratio: minimum ratio of output length to input text length; prevents output that's too short.
@@ -38,6 +48,16 @@ auto speech_generation_config_docstring = R"(
 
     :param threshold: probability threshold for stopping decoding; when output probability exceeds above this, generation will stop.
     :type threshold: float
+
+    Kokoro-specific parameters:
+    :param language: language code for Kokoro G2P (for example, "en-us" or "en-gb").
+    :type language: str
+
+    :param voice: voice identifier used by Kokoro backend.
+    :type voice: str
+
+    :param max_phoneme_length: maximum phoneme chunk length for Kokoro preprocessing.
+    :type max_phoneme_length: int
 )";
 
 auto speech_generation_perf_metrics_docstring = R"(
@@ -99,9 +119,15 @@ void init_speech_generation_pipeline(py::module_& m) {
         .def(py::init([](const py::kwargs& kwargs) {
             return update_speech_generation_config_from_kwargs(SpeechGenerationConfig(), kwargs);
         }))
+        .def_readwrite("speech_model_type", &SpeechGenerationConfig::model_type)
+        .def_readwrite("speed", &SpeechGenerationConfig::speed)
+        .def_readwrite("sample_rate", &SpeechGenerationConfig::sample_rate)
         .def_readwrite("minlenratio", &SpeechGenerationConfig::minlenratio)
         .def_readwrite("maxlenratio", &SpeechGenerationConfig::maxlenratio)
         .def_readwrite("threshold", &SpeechGenerationConfig::threshold)
+        .def_readwrite("language", &SpeechGenerationConfig::language)
+        .def_readwrite("voice", &SpeechGenerationConfig::voice)
+        .def_readwrite("max_phoneme_length", &SpeechGenerationConfig::max_phoneme_length)
         .def("update_generation_config", [](ov::genai::SpeechGenerationConfig& config, const py::kwargs& kwargs) {
             config.update_generation_config(pyutils::kwargs_to_any_map(kwargs));
         });
@@ -143,18 +169,15 @@ void init_speech_generation_pipeline(py::module_& m) {
                const std::string& text,
                py::object speaker_embedding,
                const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
-                SpeechGenerationConfig base_config = pipe.get_generation_config();
-
-                auto updated_config = update_speech_generation_config_from_kwargs(base_config, kwargs);
-
                 ov::genai::Text2SpeechDecodedResults res;
                 {
                     py::gil_scoped_release rel;
+                    const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
                     if (speaker_embedding.is_none()) {
-                        res = pipe.generate(text);
+                        res = pipe.generate(text, ov::Tensor(), properties);
                     } else {
                         const ov::Tensor& tensor = speaker_embedding.cast<ov::Tensor>();
-                        res = pipe.generate(text, tensor);
+                        res = pipe.generate(text, tensor, properties);
                     }
                 }
                 return py::cast(res);
@@ -171,18 +194,15 @@ void init_speech_generation_pipeline(py::module_& m) {
                const std::vector<std::string>& texts,
                py::object speaker_embedding,
                const py::kwargs& kwargs) -> py::typing::Union<ov::genai::Text2SpeechDecodedResults> {
-                SpeechGenerationConfig base_config = pipe.get_generation_config();
-
-                auto updated_config = update_speech_generation_config_from_kwargs(base_config, kwargs);
-
                 ov::genai::Text2SpeechDecodedResults res;
                 {
                     py::gil_scoped_release rel;
+                    const ov::AnyMap properties = pyutils::kwargs_to_any_map(kwargs);
                     if (speaker_embedding.is_none()) {
-                        res = pipe.generate(texts);
+                        res = pipe.generate(texts, ov::Tensor(), properties);
                     } else {
                         const ov::Tensor& tensor = speaker_embedding.cast<ov::Tensor>();
-                        res = pipe.generate(texts, tensor);
+                        res = pipe.generate(texts, tensor, properties);
                     }
                 }
                 return py::cast(res);

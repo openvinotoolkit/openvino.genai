@@ -18,12 +18,13 @@ namespace audio {
 void save_to_wav(const float* waveform_ptr,
                  size_t waveform_size,
                  const std::filesystem::path& file_path,
-                 uint32_t bits_per_sample) {
+                 uint32_t bits_per_sample,
+                 uint32_t sample_rate) {
     drwav_data_format format;
     format.container = drwav_container_riff;
     format.format = DR_WAVE_FORMAT_IEEE_FLOAT;
     format.channels = 1;
-    format.sampleRate = 16000;  // assume it is always 16 KHz
+    format.sampleRate = sample_rate;
     format.bitsPerSample = bits_per_sample;
 
     drwav wav;
@@ -50,11 +51,9 @@ ov::Tensor read_speaker_embedding(const std::filesystem::path& file_path) {
     // Check size is multiple of float
     OPENVINO_ASSERT(buffer_size % sizeof(float) == 0, "File size is not a multiple of float size.");
     size_t num_floats = buffer_size / sizeof(float);
-    OPENVINO_ASSERT(num_floats == 512, "File must contain speaker embedding including 512 32-bit floats.");
-
-    OPENVINO_ASSERT(input, "Failed to read all data from file.");
     ov::Tensor floats_tensor(ov::element::f32, ov::Shape{1, num_floats});
     input.read(reinterpret_cast<char*>(floats_tensor.data()), buffer_size);
+    OPENVINO_ASSERT(input, "Failed to read all data from file.");
 
     return floats_tensor;
 }

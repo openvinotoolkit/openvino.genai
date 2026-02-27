@@ -36,8 +36,9 @@ tokenizer = AutoTokenizer.from_pretrained("microsoft/speecht5_tts")
 export_tokenizer(tokenizer, output_dir)
 ```
 
-**Note:** Currently, text-to-speech in OpenVINO GenAI supports the `SpeechT5 TTS` model.
-When exporting the model, you must specify a vocoder using the `--model-kwargs` option in JSON format.
+**Note:** OpenVINO GenAI speech generation supports multiple backends.
+For `SpeechT5 TTS`, model export requires a vocoder via `--model-kwargs` in JSON format.
+For `Kokoro`, use a directory containing `openvino_model.xml/.bin` and `config.json`.
 
 ## Prepare speaker embedding file
 
@@ -61,9 +62,15 @@ python create_speaker_embedding.py
 Install [deployment-requirements.txt](../../deployment-requirements.txt)
 via `pip install -r ../../deployment-requirements.txt` and then, run a sample:
 
-`python text2speech.py --speaker_embedding_file_path speaker_embedding.bin speecht5_tts "Hello OpenVINO GenAI"`
+SpeechT5 example:
 
-It generates `output_audio.wav` file containing the phrase `Hello OpenVINO GenAI` spoken in the target voice.
+`python text2speech.py --speech_model_type speecht5_tts --speaker_embedding_file_path speaker_embedding.bin speecht5_tts "Hello OpenVINO GenAI"`
+
+Kokoro example (voice-based, no speaker embedding file):
+
+`python text2speech.py --speech_model_type kokoro --voice af_heart --language en-us standalone_python_ov/Kokoro-82M "Hello from Kokoro in OpenVINO GenAI"`
+
+It generates `output_audio.wav` file containing the spoken phrase.
 
 Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai/docs/supported-models/#speech-generation-models) for more details.
 
@@ -73,7 +80,10 @@ Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai
 import openvino_genai
 
 pipe = openvino_genai.Text2SpeechPipeline(model_dir, device)
-result = pipe.generate("Hello OpenVINO GenAI", speaker_embedding)
+result = pipe.generate("Hello OpenVINO GenAI", speaker_embedding, speech_model_type="speecht5_tts")
+
+# Kokoro voice-based generation (speaker embedding not required)
+result = pipe.generate("Hello from Kokoro", None, speech_model_type="kokoro", voice="af_heart", language="en-us")
 speech = result.speeches[0]
 # speech tensor contains the waveform of the spoken phrase
 ```

@@ -22,7 +22,8 @@ namespace audio {
 void save_to_wav(const float* waveform_ptr,
                  size_t waveform_size,
                  const std::filesystem::path& file_path,
-                 uint32_t bits_per_sample);
+                 uint32_t bits_per_sample,
+                 uint32_t sample_rate = 16000);
 
 /**
  * This function reads a binary file containing speaker embedding or 32-bit floating-point values and returns

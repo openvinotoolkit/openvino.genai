@@ -15,8 +15,9 @@ pip install --upgrade-strategy eager -r ../../export-requirements.txt
 optimum-cli export openvino --model microsoft/speecht5_tts --model-kwargs "{\"vocoder\": \"microsoft/speecht5_hifigan\"}" speecht5_tts
 ```
 
-**Note:** Currently, text-to-speech in OpenVINO GenAI supports the `SpeechT5 TTS` model.
-When exporting the model, you must specify a vocoder using the `--model-kwargs` option in JSON format.
+**Note:** OpenVINO GenAI speech generation supports multiple backends.
+For `SpeechT5 TTS`, model export requires a vocoder via `--model-kwargs` in JSON format.
+For `Kokoro`, use a directory containing `openvino_model.xml/.bin` and `config.json`.
 
 ## Prepare speaker embedding file
 
@@ -41,7 +42,13 @@ python create_speaker_embedding.py
 Follow [Get Started with Samples](https://docs.openvino.ai/2025/get-started/learn-openvino/openvino-samples/get-started-demos.html)
 to run the sample.
 
-`text-to-speech speecht5_tts "Hello OpenVINO GenAI" speaker_embedding.bin`
+SpeechT5 example:
+
+`text-to-speech speecht5_tts "Hello OpenVINO GenAI" speaker_embedding.bin --speech_model_type speecht5_tts`
+
+Kokoro example (voice-based, no speaker embedding file):
+
+`text-to-speech standalone_python_ov/Kokoro-82M "Hello from Kokoro in OpenVINO GenAI" --speech_model_type kokoro --voice af_heart --language en-us`
 
 It generates `output_audio.wav` file containing the phrase `Hello OpenVINO GenAI` spoken in the target voice.
 
@@ -53,7 +60,14 @@ Refer to the [Supported Models](https://openvinotoolkit.github.io/openvino.genai
 #include "openvino/genai/speech_generation/text2speech_pipeline.hpp"
 
 ov::genai::Text2SpeechPipeline pipe(models_path, device);
-gen_speech = pipe.generate(prompt, speaker_embedding);
+gen_speech = pipe.generate(prompt, speaker_embedding, ov::AnyMap{{"speech_model_type", "speecht5_tts"}});
+
+// Kokoro voice-based generation (speaker embedding not required)
+gen_speech = pipe.generate(prompt,
+						   ov::Tensor(),
+						   ov::AnyMap{{"speech_model_type", "kokoro"},
+									  {"voice", "af_heart"},
+									  {"language", "en-us"}});
 
 auto speech = gen_speech.speeches[0];
 // speech tensor contains the waveform of the spoken phrase
