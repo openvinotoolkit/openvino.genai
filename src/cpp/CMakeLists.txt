@@ -146,8 +146,8 @@ if(ENABLE_GGUF)
     target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_GGUF)
 endif()
 
-if(ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS)
-    target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS=1)
+if(ENABLE_DYNAMIC_WEIGHT_MANAGEMENT)
+    target_compile_definitions(${TARGET_NAME_OBJ} PRIVATE ENABLE_DYNAMIC_WEIGHT_MANAGEMENT=1)
 endif()
 
 target_include_directories(${TARGET_NAME_OBJ} SYSTEM PRIVATE "${safetensors.h_SOURCE_DIR}")

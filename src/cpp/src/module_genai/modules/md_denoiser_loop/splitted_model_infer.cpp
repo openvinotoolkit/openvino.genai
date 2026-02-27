@@ -15,10 +15,10 @@ CSplittedModelInfer::CSplittedModelInfer(const std::string& model_path,
     : m_dynamic_load_model_weights(dynamic_load_model_weights),
       m_is_gpu(device.find("GPU") != std::string::npos || device.find("gpu") != std::string::npos),
       m_properties(properties) {
-#ifndef ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS
+#ifndef ENABLE_DYNAMIC_WEIGHT_MANAGEMENT
     OPENVINO_ASSERT(!m_dynamic_load_model_weights,
                     "Dynamic loading of model weights is not enabled in this build. Please set "
-                    "ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS to 1 and rebuild.");
+                    "ENABLE_DYNAMIC_WEIGHT_MANAGEMENT to 'ON' and rebuild.");
 #endif
 
     if (m_dynamic_load_model_weights) {
@@ -89,8 +89,7 @@ void CSplittedModelInfer::get_splitted_model_paths(const std::string& model_path
 void CSplittedModelInfer::load_model(const std::string& model_path,
                                      const ov::AnyMap& properties,
                                      const std::string& device) {
-#if USE_FULL_MODEL
-#else
+#if !USE_FULL_MODEL
     {
         auto model = utils::singleton_core().read_model(m_preprocess_model_path);
         m_preprocess_compiled_model = utils::singleton_core().compile_model(model, device, properties);
@@ -119,7 +118,7 @@ void CSplittedModelInfer::load_model(const std::string& model_path,
                 properties_splitted_model[ov::weights_path.name()] =
                     std::filesystem::path(path).replace_extension(".bin").string();
                 auto cm = utils::singleton_core().compile_model(model, m_context, properties_splitted_model);
-#    ifdef ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS
+#    ifdef ENABLE_DYNAMIC_WEIGHT_MANAGEMENT
                 // Release model weights after compilation to save GPU memory. Load weights again in infer() when
                 // weights are needed.
                 cm.release_model_weights();
@@ -163,7 +162,7 @@ void CSplittedModelInfer::infer(const ov::AnyMap& inputs) {
     OPENVINO_ASSERT(num_splitted_models > 1,
                     "Splitted models should be at least 2, but got " + std::to_string(num_splitted_models));
 
-#    ifdef ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS
+#    ifdef ENABLE_DYNAMIC_WEIGHT_MANAGEMENT
 #        if ENABLE_MULTIPLE_THREAD_LOAD_MODEL_WEIGHT
     std::future<bool> future_flag;
     if (m_dynamic_load_model_weights) {
@@ -175,7 +174,7 @@ void CSplittedModelInfer::infer(const ov::AnyMap& inputs) {
         m_compiled_models[0].load_model_weights();
     }
 #        endif  // ENABLE_MULTIPLE_THREAD_LOAD_MODEL_WEIGHT
-#    endif      // ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS
+#    endif      // ENABLE_DYNAMIC_WEIGHT_MANAGEMENT
 
     // Preprocess
     for (const auto& input : inputs) {
@@ -209,7 +208,7 @@ void CSplittedModelInfer::infer(const ov::AnyMap& inputs) {
         PROFILE(pm, "splitted_model_infer_" + std::to_string(i));
         ov::InferRequest curInferRequest;
         if (m_dynamic_load_model_weights) {
-#    ifdef ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS
+#    ifdef ENABLE_DYNAMIC_WEIGHT_MANAGEMENT
             if (i + 1 < num_splitted_models) {
 #        if ENABLE_MULTIPLE_THREAD_LOAD_MODEL_WEIGHT
                 next_future_flag = thread_utils::load_model_weights_async(m_compiled_models[i + 1]);
@@ -222,7 +221,7 @@ void CSplittedModelInfer::infer(const ov::AnyMap& inputs) {
                 future_flag.wait();
 #        endif  // ENABLE_MULTIPLE_THREAD_LOAD_MODEL_WEIGHT
             curInferRequest = m_compiled_models[i].create_infer_request();
-#    endif      // ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS
+#    endif      // ENABLE_DYNAMIC_WEIGHT_MANAGEMENT
         } else {
             curInferRequest = m_infer_requests[i];
         }
@@ -238,7 +237,7 @@ void CSplittedModelInfer::infer(const ov::AnyMap& inputs) {
             curInferRequest.infer();
         }
 
-#    ifdef ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS
+#    ifdef ENABLE_DYNAMIC_WEIGHT_MANAGEMENT
         if (m_dynamic_load_model_weights) {
 #        if ENABLE_MULTIPLE_THREAD_LOAD_MODEL_WEIGHT
             auto release_future =
@@ -256,7 +255,7 @@ void CSplittedModelInfer::infer(const ov::AnyMap& inputs) {
 #        if ENABLE_MULTIPLE_THREAD_LOAD_MODEL_WEIGHT
         future_flag = std::move(next_future_flag);
 #        endif
-#    endif  // ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS
+#    endif  // ENABLE_DYNAMIC_WEIGHT_MANAGEMENT
     }
 
     GENAI_DEBUG(

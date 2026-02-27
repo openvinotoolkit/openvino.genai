@@ -16,7 +16,7 @@ namespace ov::genai::module::thread_utils {
 #    define ENABLE_MULTIPLE_THREAD_LOAD_MODEL_WEIGHT 0  // Current multiple threads may cause GPU crash.
 #endif
 
-#ifdef ENABLE_DYNAMIC_LOAD_MODEL_WEIGHTS
+#ifdef ENABLE_DYNAMIC_WEIGHT_MANAGEMENT
 inline std::future<bool> load_model_weights_async(ov::CompiledModel compiled_model) {
     auto load_fun = [compiled_model]() mutable -> bool {
         PROFILE(pm, "load_model_weights async");
