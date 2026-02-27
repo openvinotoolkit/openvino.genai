@@ -331,3 +331,33 @@ class TestTaylorSeer:
         assert not np.array_equal(baseline_latents[-1], taylorseer_latents[-1]), (
             "Last step latents are identical — TaylorSeer prediction should have changed the result"
         )
+
+
+class TestLoRAVideoGeneration:
+    def test_lora_adapters_constructor(self, video_generation_model):
+        """Test that LoRA adapters can be passed to the constructor without error"""
+        adapter_config = ov_genai.AdapterConfig()
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU", adapters=adapter_config)
+        assert pipe is not None
+
+    def test_lora_adapters_generate(self, video_generation_model):
+        """Test that LoRA adapters can be passed to generate() without error"""
+        adapter_config = ov_genai.AdapterConfig()
+        pipe = ov_genai.Text2VideoPipeline(video_generation_model, "CPU", adapters=adapter_config)
+
+        result = pipe.generate(
+            "test prompt", height=32, width=32, num_frames=9, num_inference_steps=2, adapters=adapter_config
+        )
+        assert result is not None
+        assert result.video is not None
+
+    def test_transformer_has_set_adapters_method(self, video_generation_model):
+        """Test that the LTXVideoTransformer3DModel has the set_adapters method"""
+        model_path = Path(video_generation_model) / "transformer"
+        if model_path.exists():
+            model = ov_genai.LTXVideoTransformer3DModel(str(model_path))
+            model.compile("CPU")
+
+            assert hasattr(model, "set_adapters")
+
+            model.set_adapters(None)
