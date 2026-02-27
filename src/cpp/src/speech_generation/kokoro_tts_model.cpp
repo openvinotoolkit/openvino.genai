@@ -423,7 +423,7 @@ Text2SpeechDecodedResults KokoroTTSImpl::generate(const std::vector<std::string>
             ov::Tensor ref_s_tensor(ov::element::f32,
                                     ov::Shape{1, speaker_shape[1]},
                                     style_slice.data());
-            ov::Tensor speed_tensor(ov::element::f32, ov::Shape{}, &generation_config.speed);
+            ov::Tensor speed_tensor(ov::element::f32, ov::Shape{1}, &generation_config.speed);
 
             m_request.set_tensor(m_input_ids_name, input_ids_tensor);
             m_request.set_tensor(m_ref_s_name, ref_s_tensor);
