@@ -18,8 +18,7 @@ public:
         const SchedulerConfig& scheduler_config,
         const std::string& device,
         const ov::AnyMap& properties,
-        const ov::genai::GenerationConfig& generation_config,
-        bool is_validation_mode_enabled = false) :
+        const ov::genai::GenerationConfig& generation_config) :
     ContinuousBatchingImpl{ model,
                             tokenizer,
                             scheduler_config,
@@ -34,8 +33,7 @@ public:
                                           const SchedulerConfig& scheduler_config,
                                           const std::string& device,
                                           const ov::AnyMap& properties,
-                                          const ov::genai::GenerationConfig& generation_config,
-                                          bool is_validation_mode_enabled = false)
+                                          const ov::genai::GenerationConfig& generation_config)
         : ContinuousBatchingImpl{model,
                                  inputs_embedder,
                                  tokenizer,
